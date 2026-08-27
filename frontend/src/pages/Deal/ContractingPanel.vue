@@ -78,15 +78,15 @@
 
       <!-- Signatory detail: edit unsigned signatories, resend/regenerate links -->
       <div
-        v-if="contractExists && lc.signatories?.length"
+        v-if="contractExists && facilitySignatories.length"
         class="mt-6 border-t border-outline-gray-2 pt-4"
       >
         <p class="mb-2 text-xs font-medium uppercase tracking-wide text-ink-gray-4">
-          {{ __('Signatories') }}
+          {{ __('Facility Signatories') }}
         </p>
         <div class="space-y-2">
           <div
-            v-for="s in lc.signatories"
+            v-for="s in facilitySignatories"
             :key="s.role"
             class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
           >
@@ -101,49 +101,56 @@
               </div>
               <span class="ml-auto text-xs font-medium" :class="statusText(s.status)">{{ __(s.status) }}</span>
 
-              <!-- Actions for still-pending signatories -->
+              <!-- Actions for signatories who have not yet signed -->
               <div
-                v-if="isPending(s.status)"
+                v-if="canEdit(s.status)"
                 class="flex w-full items-center gap-4 pt-1 sm:w-auto sm:basis-full sm:justify-end sm:pt-1"
               >
                 <button
                   type="button"
                   class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
-                  :disabled="!canGenerate || resendingRole === s.role"
+                  :disabled="!canGenerate || resendingKey === rowKey(s)"
                   :title="canGenerate ? __('Edit this signatory') : __('Sales Manager role required')"
                   @click="startEdit(s)"
                 >
                   {{ __('Edit') }}
                 </button>
                 <button
+                  v-if="isPendingStatus(s.status)"
                   type="button"
                   class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
-                  :disabled="!canGenerate || resendingRole === s.role"
+                  :disabled="!canGenerate || resendingKey === rowKey(s)"
                   :title="canGenerate ? __('Regenerate and re-send the signing link') : __('Sales Manager role required')"
-                  @click="doResend(s.role)"
+                  @click="doResend(s.role, s.row_name)"
                 >
-                  {{ resendingRole === s.role ? __('Sending…') : __('Resend link') }}
+                  {{ resendingKey === rowKey(s) ? __('Sending…') : __('Resend link') }}
                 </button>
               </div>
             </div>
 
-            <!-- Inline edit form -->
+            <!-- Inline edit form — free-text name + email for every signatory -->
             <div v-else class="space-y-2">
               <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input
                   v-model="editName"
                   type="text"
                   :placeholder="__('Full legal name')"
-                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-1"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
                 />
                 <input
                   v-model="editEmail"
                   type="email"
                   :placeholder="__('signatory@hospital.org')"
-                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-1"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
                 />
               </div>
-              <p class="text-xs text-ink-gray-4">
+              <p
+                v-if="isSignedStatus(s.status)"
+                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
+              >
+                {{ __('This signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.') }}
+              </p>
+              <p v-else class="text-xs text-ink-gray-4">
                 {{ __('Changing the email invalidates the old link and re-sends a fresh one to the new address.') }}
               </p>
               <div class="flex items-center justify-end gap-2">
@@ -302,9 +309,11 @@
         </div>
       </div>
 
-      <!-- Co-signatories — resolved from the network config + Opt-In Settings,
-           not nominated here. Invited automatically (7-day link) once both
-           facility parties have signed; each signs via the same OTP + pad. -->
+      <!-- Co-signatories — Network Signatory(ies) + Tiberbu Signatory.
+           Pre-generate: read-only preview resolved from the network / Opt-In config.
+           Post-generate: editable per-contract — correct an unsigned row, or add a
+           configured co-signatory that is missing from the contract (legacy /
+           reconfigured). Each signs via the same OTP + pad once invited. -->
       <div class="mb-6">
         <div class="mb-2 flex items-center justify-between">
           <label class="block text-xs font-medium text-ink-gray-6">
@@ -313,8 +322,192 @@
           <span v-if="coSignersLoading" class="text-xs text-ink-gray-4">{{ __('Loading…') }}</span>
         </div>
 
-        <!-- Populated: read-only chips resolved from configuration -->
-        <div v-if="coSigners.length" class="space-y-2">
+        <!-- Post-generate: editable rows (on-contract rows + configured-but-missing) -->
+        <div v-if="contractExists" class="space-y-2">
+          <div
+            v-for="item in coSignatoryItems"
+            :key="item.key"
+            class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+          >
+            <!-- Display row -->
+            <div v-if="coEditKey !== item.key" class="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-xs font-semibold text-ink-gray-7 dark:bg-surface-gray-4">
+                {{ initials(item.name || item.email) }}
+              </span>
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-ink-gray-8">{{ item.name || __(item.role) }}</p>
+                <p class="truncate text-xs text-ink-gray-5">
+                  {{ __(item.role) }}<template v-if="item.email"> · {{ item.email }}</template>
+                </p>
+              </div>
+              <span
+                v-if="item.onContract"
+                class="ml-auto text-xs font-medium"
+                :class="statusText(item.status)"
+              >{{ __(item.status) }}</span>
+              <span
+                v-else
+                class="ml-auto rounded-full bg-surface-gray-3 px-2 py-0.5 text-xs font-medium text-ink-gray-6 dark:bg-surface-gray-4"
+              >{{ __('Not on contract') }}</span>
+
+              <!-- Actions: Edit an unsigned on-contract row, or Add a missing one -->
+              <div
+                v-if="!item.onContract || canEdit(item.status)"
+                class="flex w-full items-center gap-4 pt-1 sm:w-auto sm:basis-full sm:justify-end sm:pt-1"
+              >
+                <button
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="!canGenerate || savingCo || resendingKey === rowKey(item)"
+                  :title="canGenerate
+                    ? (item.onContract ? __('Edit this co-signatory') : __('Add this co-signatory to the contract'))
+                    : __('Sales Manager role required')"
+                  @click="startCoEdit(item)"
+                >
+                  {{ item.onContract ? __('Edit') : __('Add to contract') }}
+                </button>
+                <button
+                  v-if="item.onContract && isPendingStatus(item.status)"
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="!canGenerate || resendingKey === rowKey(item)"
+                  :title="canGenerate ? __('Regenerate and re-send the signing link') : __('Sales Manager role required')"
+                  @click="doResend(item.role, item.row_name)"
+                >
+                  {{ resendingKey === rowKey(item) ? __('Sending…') : __('Resend link') }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Inline edit / add form — free-text name + email for every co-signatory -->
+            <div v-else class="space-y-2">
+              <label class="block text-xs font-medium text-ink-gray-6">
+                {{ isTiberbuRole(item.role) ? __('Tiberbu Signatory') : __('Network Signatory') }}
+              </label>
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input
+                  v-model="coEditName"
+                  type="text"
+                  :placeholder="__('Full legal name')"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+                <input
+                  v-model="coEditEmail"
+                  type="email"
+                  :placeholder="isTiberbuRole(item.role) ? __('signatory@tiberbu.com') : __('signatory@network.org')"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+              </div>
+              <p
+                v-if="!coEditIsAdd && isSignedStatus(item.status)"
+                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
+              >
+                {{ __('This co-signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.') }}
+              </p>
+              <p v-else class="text-xs text-ink-gray-4">
+                <template v-if="isTiberbuRole(item.role)">
+                  {{ coEditIsAdd
+                      ? __('Adds a Tiberbu co-signatory to this contract only. Opt-In Settings is not changed.')
+                      : __('Changing the email invalidates the old link and re-sends a fresh one. This contract only — Opt-In Settings is not changed.') }}
+                </template>
+                <template v-else>
+                  {{ __('Saves this signatory to the network configuration (used by future contracts) and updates them on this contract. Changing the email re-sends a fresh signing link.') }}
+                </template>
+              </p>
+              <div class="flex items-center justify-end gap-2">
+                <Button variant="subtle" @click="cancelCoEdit">{{ __('Cancel') }}</Button>
+                <Button
+                  variant="solid"
+                  :loading="savingCo"
+                  :disabled="!coEditName.trim() || !coEditEmail.trim()"
+                  @click="saveCoEdit"
+                >
+                  {{ coEditIsAdd ? __('Add to contract') : __('Save') }}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <!-- Add a co-signatory from scratch. Network → written back to the network
+               config; Tiberbu → this contract only (never the Opt-In singleton). -->
+          <div
+            v-if="coEditKey === ADD_KEY"
+            class="space-y-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+          >
+            <label class="block text-xs font-medium text-ink-gray-6">
+              {{ isTiberbuRole(coEditRole) ? __('Add Tiberbu Signatory') : __('Add Network Signatory') }}
+            </label>
+
+            <!-- Free-text name + email for both roles -->
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input
+                v-model="coEditName"
+                type="text"
+                :placeholder="__('Full legal name')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+              />
+              <input
+                v-model="coEditEmail"
+                type="email"
+                :placeholder="isTiberbuRole(coEditRole) ? __('signatory@tiberbu.com') : __('signatory@network.org')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+              />
+            </div>
+
+            <p class="text-xs text-ink-gray-4">
+              {{ isTiberbuRole(coEditRole)
+                  ? __('Adds a Tiberbu co-signatory to this contract only. Opt-In Settings is not changed.')
+                  : __('Saves this signatory to the network configuration (used by future contracts) and adds them to this contract.') }}
+            </p>
+            <div class="flex items-center justify-end gap-2">
+              <Button variant="subtle" @click="cancelCoEdit">{{ __('Cancel') }}</Button>
+              <Button
+                variant="solid"
+                :loading="savingCo"
+                :disabled="!coEditName.trim() || !coEditEmail.trim()"
+                @click="saveCoEdit"
+              >
+                {{ __('Add to contract') }}
+              </Button>
+            </div>
+          </div>
+
+          <!-- Add actions (hidden while an edit/add form is open) -->
+          <div v-else-if="!coEditKey" class="flex flex-wrap items-center gap-4 pt-1">
+            <button
+              type="button"
+              class="text-xs font-medium underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+              :disabled="!canGenerate || !networkSlug"
+              :title="!canGenerate
+                ? __('Sales Manager role required')
+                : (!networkSlug
+                    ? __('No opt-in network is linked to this deal, so a network signatory cannot be saved.')
+                    : __('Add a network signatory (saved to the network configuration)'))"
+              @click="startAddNetwork"
+            >
+              + {{ __('Add Network Signatory') }}
+            </button>
+            <button
+              v-if="!tiberbuOnContract"
+              type="button"
+              class="text-xs font-medium underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+              :disabled="!canGenerate"
+              :title="canGenerate ? __('Add the Tiberbu signatory to this contract') : __('Sales Manager role required')"
+              @click="startAddTiberbu"
+            >
+              + {{ __('Add Tiberbu Signatory') }}
+            </button>
+          </div>
+
+          <p v-if="coSignatoryItems.length" class="text-xs text-ink-gray-4">
+            {{ __('Co-signatories are invited automatically once the facility signatory and witness have both signed.') }}
+          </p>
+          <p v-else class="text-xs text-ink-gray-4">
+            {{ __('No co-signatories yet. Add a Network or Tiberbu signatory so the contract can be co-signed.') }}
+          </p>
+        </div>
+
+        <!-- Pre-generate: read-only preview resolved from configuration -->
+        <div v-else-if="!contractExists && coSigners.length" class="space-y-2">
           <div
             v-for="(cs, i) in coSigners"
             :key="`${cs.signer_role}:${cs.email}:${i}`"
@@ -331,17 +524,18 @@
             </div>
           </div>
           <p class="text-xs text-ink-gray-4">
-            {{ __('These co-signatories are invited automatically once the facility signatory and witness have both signed.') }}
+            {{ __('These co-signatories are seeded onto the contract at generation and invited automatically once the facility signatory and witness have both signed.') }}
           </p>
         </div>
 
-        <!-- Empty: nothing configured — surfaces the config gap instead of failing silently -->
+        <!-- Pre-generate, nothing configured — co-signatories are added on the
+             contract itself once it is generated (see the Add controls above). -->
         <div
           v-else-if="!coSignersLoading"
           class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-800 dark:bg-amber-900/20"
         >
           <p class="text-xs text-amber-700 dark:text-amber-400">
-            {{ __('No Network Signatories are configured for this network, and no Tiberbu Signatory is set in Opt-In Settings. Configure them so the contract can be co-signed.') }}
+            {{ __('No Network or Tiberbu co-signatories are configured for this network. You can add them on the contract once it is generated.') }}
           </p>
         </div>
       </div>
@@ -437,6 +631,13 @@ const coSignersResource = createResource({ url: 'crm.api.contracts.get_network_s
 const coSignersLoading  = ref(true)
 
 const coSigners = computed(() => coSignersResource.data?.signers ?? [])
+const networkSlug = computed(() => coSignersResource.data?.network_slug ?? '')
+
+// The top "Signatories" block owns only the facility parties; the Network /
+// Tiberbu counterparties are edited in their own block below (coSignatoryItems).
+const facilitySignatories = computed(() =>
+  (lc.value.signatories ?? []).filter((s) => !isCoRole(s.role))
+)
 
 onMounted(async () => {
   try {
@@ -607,15 +808,22 @@ async function doGenerate() {
 // Resend / regenerate signing invitation
 // ---------------------------------------------------------------------------
 const resendResource = createResource({ url: 'crm.api.contracts.resend_invitation' })
-const resendingRole  = ref('')
+// Tracked by a per-row key (row_name when present, else role) so resending on one
+// Network Signatory doesn't spin the button on its sibling row sharing the role.
+const resendingKey   = ref('')
 
-async function doResend(role) {
-  if (!canGenerate.value || resendingRole.value) return
-  resendingRole.value = role
+function rowKey(row) {
+  return row?.row_name || row?.role || ''
+}
+
+async function doResend(role, rowName) {
+  if (!canGenerate.value || resendingKey.value) return
+  resendingKey.value = rowName || role
   try {
     const res = await resendResource.submit({
       contract: lc.value.contract?.name ?? '',
       role,
+      row_name: rowName ?? '',
     })
     toast.success(__('Signing link re-sent to {0}', [res?.email ?? role]))
     emit('lifecycle-reload')
@@ -623,7 +831,7 @@ async function doResend(role) {
     const msg = err?.messages?.[0] ?? err?.message ?? __('Could not resend the signing link.')
     toast.error(msg)
   } finally {
-    resendingRole.value = ''
+    resendingKey.value = ''
   }
 }
 
@@ -632,23 +840,48 @@ async function doResend(role) {
 // ---------------------------------------------------------------------------
 const updateSignatoryResource = createResource({ url: 'crm.api.contracts.update_signatory' })
 const editingRole = ref('')
+const editRowName = ref('')
 const editName    = ref('')
 const editEmail   = ref('')
 const savingEdit  = ref(false)
 
-function isPending(status) {
+// Every signatory row is editable — Pending, Declined, or Signed. Editing a
+// Signed row invalidates its signature server-side (update_signatory clears the
+// signature + resets to Pending) so the person re-signs the current terms.
+function canEdit(_status) {
+  return true
+}
+
+// True for an already-signed row — used to warn that editing will invalidate
+// the captured signature and require the party to sign again.
+function isSignedStatus(status) {
+  return (status ?? '').toLowerCase() === 'signed'
+}
+
+// Resending a signing link only makes sense for a Pending (invited) row;
+// resend_invitation throws for any other status.
+function isPendingStatus(status) {
   return (status ?? '').toLowerCase() === 'pending'
+}
+
+// Distinguishes the two counterparty roles for labels, helper text, and the
+// per-role save routing. Every signatory — including Tiberbu — is captured as
+// free-text name + email so the signing flow is identical across the board.
+function isTiberbuRole(role) {
+  return (role ?? '').toLowerCase() === 'tiberbu signatory'
 }
 
 function startEdit(s) {
   if (!canGenerate.value) return
   editingRole.value = s.role
+  editRowName.value = s.row_name ?? ''
   editName.value    = s.name ?? ''
   editEmail.value   = s.email ?? ''
 }
 
 function cancelEdit() {
   editingRole.value = ''
+  editRowName.value = ''
   editName.value    = ''
   editEmail.value   = ''
 }
@@ -657,11 +890,14 @@ async function saveEdit(role) {
   if (!editName.value.trim() || !editEmail.value.trim() || savingEdit.value) return
   savingEdit.value = true
   try {
+    const email = editEmail.value.trim()
+    const name = editName.value.trim()
     const res = await updateSignatoryResource.submit({
       contract: lc.value.contract?.name ?? '',
       role,
-      name:  editName.value.trim(),
-      email: editEmail.value.trim(),
+      name,
+      email,
+      row_name: editRowName.value ?? '',
     })
     toast.success(
       res?.resent
@@ -675,6 +911,187 @@ async function saveEdit(role) {
     toast.error(msg)
   } finally {
     savingEdit.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Network & Tiberbu co-signatories — editable per-contract (post-generate).
+//
+// The "Signatories" block above handles the facility parties. This surface owns
+// the counterparties (Network Signatory, Tiberbu Signatory): it edits the rows
+// already on the contract AND lets the exec add a configured co-signatory that
+// is missing from the contract (e.g. legacy contracts generated before co-signing
+// was wired, or where the network/Tiberbu config changed after generation).
+//
+// Persistence differs by role (per the confirmed design):
+//   • Network Signatory — writes back to the network configuration (source of
+//     truth, for future contracts) AND syncs onto this contract.
+//   • Tiberbu Signatory — per-contract only; never overwrites the Opt-In Settings
+//     singleton (shared across all networks).
+// ---------------------------------------------------------------------------
+const addSignatoryResource = createResource({ url: 'crm.api.contracts.add_signatory' })
+const saveNetworkSignerResource = createResource({ url: 'crm.api.contracts.save_network_signer' })
+
+const ADD_KEY = '__add__'         // sentinel: the standalone "add from scratch" form is open
+
+const coEditKey     = ref('')     // unique key of the row being edited (role + email)
+const coEditRole    = ref('')
+const coEditRowName = ref('')     // child docname — targets the exact row when a role repeats
+const coEditName    = ref('')
+const coEditEmail   = ref('')
+const coEditOrigEmail = ref('')   // network write-back: the config row to update (blank → append)
+const coEditIsAdd   = ref(false)  // true → row is configured but not yet on the contract
+const savingCo    = ref(false)
+
+// Counterparty roles this surface owns — matches contracts.py _COUNTERPARTY_ROLES.
+function isCoRole(role) {
+  const r = (role ?? '').toLowerCase()
+  return r === 'network signatory' || r === 'tiberbu signatory'
+}
+
+function coKey(role, email) {
+  return `${(role ?? '').toLowerCase()}::${(email ?? '').trim().toLowerCase()}`
+}
+
+// Merge the contract's counterparty rows with the configured co-signatories that
+// are not yet on the contract. `onContract` rows are edited via update_signatory;
+// the rest are added via add_signatory. Deduped on email (Tiberbu is singular).
+const coSignatoryItems = computed(() => {
+  const rows = (lc.value.signatories ?? []).filter((s) => isCoRole(s.role))
+  const onContractEmails = new Set(
+    rows.map((r) => (r.email ?? '').trim().toLowerCase()).filter(Boolean)
+  )
+  // Tiberbu is singular per contract; its config email may have changed after
+  // generation, so it is deduped by role (not email) — else a reconfigured
+  // Tiberbu would offer a phantom "Add" the backend singular-guard rejects.
+  const hasTiberbuOnContract = rows.some((r) => isTiberbuRole(r.role))
+  const items = rows.map((r) => ({
+    key: coKey(r.role, r.email),
+    row_name: r.row_name,
+    role: r.role,
+    name: r.name,
+    email: r.email,
+    status: r.status,
+    onContract: true,
+  }))
+  for (const cs of coSigners.value) {
+    const email = (cs.email ?? '').trim().toLowerCase()
+    const role = cs.signer_role || 'Network Signatory'
+    // Skip config entries already represented by a contract row.
+    if (isTiberbuRole(role)) {
+      if (hasTiberbuOnContract) continue
+    } else if (email && onContractEmails.has(email)) {
+      continue
+    }
+    items.push({
+      key: coKey(role, cs.email),
+      row_name: null,
+      role,
+      name: cs.full_name || cs.email,
+      email: cs.email,
+      status: null,
+      onContract: false,
+    })
+  }
+  return items
+})
+
+// A Tiberbu Signatory is singular per contract — hide "Add Tiberbu" once present.
+const tiberbuOnContract = computed(() =>
+  coSignatoryItems.value.some((i) => isTiberbuRole(i.role) && i.onContract)
+)
+
+function startCoEdit(item) {
+  if (!canGenerate.value) return
+  coEditKey.value     = item.key
+  coEditRole.value    = item.role
+  coEditRowName.value = item.row_name ?? ''
+  coEditName.value    = item.name ?? ''
+  coEditEmail.value   = item.email ?? ''
+  coEditOrigEmail.value = item.email ?? ''
+  coEditIsAdd.value   = !item.onContract
+}
+
+// Open the standalone "add from scratch" form for a given counterparty role.
+function startAddNetwork() {
+  if (!canGenerate.value) return
+  cancelCoEdit()
+  coEditKey.value  = ADD_KEY
+  coEditRole.value = 'Network Signatory'
+  coEditIsAdd.value = true
+}
+
+function startAddTiberbu() {
+  if (!canGenerate.value) return
+  cancelCoEdit()
+  coEditKey.value  = ADD_KEY
+  coEditRole.value = 'Tiberbu Signatory'
+  coEditIsAdd.value = true
+}
+
+function cancelCoEdit() {
+  coEditKey.value     = ''
+  coEditRole.value    = ''
+  coEditRowName.value = ''
+  coEditName.value    = ''
+  coEditEmail.value   = ''
+  coEditOrigEmail.value = ''
+  coEditIsAdd.value   = false
+}
+
+async function saveCoEdit() {
+  if (!coEditName.value.trim() || !coEditEmail.value.trim() || savingCo.value) return
+  savingCo.value = true
+  try {
+    const role  = coEditRole.value
+    const email = coEditEmail.value.trim()
+    const name  = coEditName.value.trim()
+    const contract = lc.value.contract?.name ?? ''
+
+    if (isTiberbuRole(role)) {
+      // Tiberbu stays per-contract — never overwrites the Opt-In Settings singleton.
+      if (coEditIsAdd.value) {
+        await addSignatoryResource.submit({ contract, role, name, email })
+        toast.success(__('Tiberbu signatory added to the contract.'))
+      } else {
+        const res = await updateSignatoryResource.submit({
+          contract, role, name, email, row_name: coEditRowName.value ?? '',
+        })
+        toast.success(
+          res?.resent
+            ? __('Tiberbu signatory updated — new signing link sent to {0}', [res.email])
+            : __('Tiberbu signatory updated.')
+        )
+      }
+    } else {
+      // Network Signatory writes back to the network config (source of truth) and
+      // syncs onto this contract in one call.
+      if (!networkSlug.value) {
+        throw new Error(__('No network is resolved for this deal, so the signer cannot be saved.'))
+      }
+      const res = await saveNetworkSignerResource.submit({
+        network_slug: networkSlug.value,
+        name,
+        email,
+        original_email: coEditOrigEmail.value ?? '',
+        contract,
+      })
+      toast.success(
+        res?.contract_synced === 'updated'
+          ? __('Network signatory saved to the network and updated on this contract.')
+          : __('Network signatory saved to the network and added to this contract.')
+      )
+      // Refresh the resolved config so the list reflects the write-back.
+      await coSignersResource.submit({ deal: props.dealId })
+    }
+
+    cancelCoEdit()
+    emit('lifecycle-reload')
+  } catch (err) {
+    const msg = err?.messages?.[0] ?? err?.message ?? __('Could not save the co-signatory.')
+    toast.error(msg)
+  } finally {
+    savingCo.value = false
   }
 }
 
