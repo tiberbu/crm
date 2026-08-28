@@ -135,7 +135,7 @@
         Back
       </button>
       <button
-        :disabled="loading || !!errorMsg || !pricing"
+        :disabled="loading || !!errorMsg || !canContinue"
         class="rounded-xl px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         style="background-color: var(--brand-primary)"
         @click="emit('continue')"
@@ -147,7 +147,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useOptInStore } from './useOptInStore.js'
 
@@ -162,6 +162,7 @@ const store = useOptInStore()
 const loading = ref(false)
 const errorMsg = ref('')
 const pricing = ref(store.pricing || null)
+const canContinue = computed(() => (pricing.value?.facilities || []).length > 0)
 
 const pricingResource = createResource({ url: 'crm.api.optin.get_pricing' })
 
@@ -178,6 +179,12 @@ async function loadPricing() {
       selected_mfl_codes: JSON.stringify(mflCodes),
       deal_invitation: props.dealInvitation,
     })
+    if (!(data?.facilities || []).length) {
+      pricing.value = null
+      store.setPricing(null)
+      errorMsg.value = 'No valid pricing is available for the selected facilities. Please go back and review your selection.'
+      return
+    }
     pricing.value = data
     store.setPricing(data)
   } catch (err) {

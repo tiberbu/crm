@@ -56,6 +56,7 @@
       </button>
 
       <button
+        v-if="!dealInvitation"
         :disabled="loading"
         class="w-full rounded-xl border border-gray-200 bg-white px-6 py-3.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
         @click="handleCommit(false)"
@@ -87,7 +88,7 @@ const props = defineProps({
   dealInvitation: { type: String, default: '' },
 })
 
-const emit = defineEmits(['submitted', 'back'])
+const emit = defineEmits(['submitted', 'saved-for-later', 'back'])
 
 const store = useOptInStore()
 
@@ -114,23 +115,36 @@ function fmtKes(v) {
 }
 
 const submitResource = createResource({ url: 'crm.api.optin.submit_async' })
+const savePartialResource = createResource({ url: 'crm.api.optin.save_partial' })
 
 async function handleCommit(committed) {
   loading.value = true
   commitMode.value = committed ? 'commit' : 'later'
   errorMsg.value = ''
 
-  const payload = {
-    contact: store.contact,
-    witness: store.witness,
-    facilities: store.selectedFacilities,
-    pricing: store.pricing?.facilities || [],
-    tc_doc_name: store.termsDocName,
-    tc_doc_hash: store.termsDocHash,
-    committed,
-  }
-
   try {
+    if (!committed) {
+      const data = await savePartialResource.fetch({
+        signing_token: store.signingToken,
+        email: store.contact.email,
+        network_slug: props.networkSlug,
+        expiry: store.signingExpiry,
+        contact_json: JSON.stringify(store.contact),
+      })
+      emit('saved-for-later', data?.submission_ref || '')
+      return
+    }
+
+    const payload = {
+      contact: store.contact,
+      witness: store.witness,
+      facilities: store.selectedFacilities,
+      pricing: store.pricing?.facilities || [],
+      tc_doc_name: store.termsDocName,
+      tc_doc_hash: store.termsDocHash,
+      terms_accepted: store.termsAccepted,
+      committed: true,
+    }
     const data = await submitResource.fetch({
       signing_token: store.signingToken,
       email: store.contact.email,
