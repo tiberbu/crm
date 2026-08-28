@@ -11,6 +11,9 @@
   "contact_name",
   "contact_email",
   "contact_phone",
+  "section_break_invitation",
+  "invite_email_queue",
+  "invite_sent_at",
   "otp_hash",
   "otp_expiry",
   "otp_attempts"
@@ -51,6 +54,24 @@
    "fieldtype": "Data",
    "label": "Contact Phone",
    "reqd": 1
+  },
+  {
+   "fieldname": "section_break_invitation",
+   "fieldtype": "Section Break",
+   "label": "Invitation"
+  },
+  {
+   "fieldname": "invite_email_queue",
+   "fieldtype": "Link",
+   "label": "Invitation Email Queue",
+   "options": "Email Queue",
+   "read_only": 1
+  },
+  {
+   "fieldname": "invite_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Invitation Sent At",
+   "read_only": 1
   },
   {
    "fieldname": "otp_hash",

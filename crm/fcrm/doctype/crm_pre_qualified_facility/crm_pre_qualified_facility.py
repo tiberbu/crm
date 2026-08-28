@@ -6,36 +6,61 @@ class CRMPreQualifiedFacility(Document):
     def after_insert(self):
         if self.flags.get("skip_invitation"):
             return
-        _send_facility_invitation(self)
+        for membership in self.memberships or []:
+            if _can_invite(membership):
+                try:
+                    _send_membership_invitation(self, membership)
+                except Exception:
+                    frappe.log_error(
+                        frappe.get_traceback(),
+                        "CRMPreQualifiedFacility: invitation email failed",
+                    )
 
 
-def _send_facility_invitation(doc):
-    """Send one invitation email per network membership on the facility.
+def _can_invite(membership):
+    return bool(
+        membership.network
+        and membership.contact_email
+        and (membership.status or "Active") == "Active"
+    )
 
-    The network and contact live on the CRM Facility Membership child rows (a
-    facility can belong to up to two networks) — NOT on the parent facility, which
-    only carries mfl_code / facility_name / keph_level. Each Active membership with
-    a contact email gets its own branded, per-network invitation.
-    """
-    for mem in (doc.memberships or []):
-        if not mem.network or not mem.contact_email:
-            continue
-        if (mem.status or "Active") != "Active":
-            continue
-        try:
-            network = frappe.get_doc("CRM Opt-In Network", mem.network)
-            # The opt-in portal keys on the network slug (verify_prequalified /
-            # get_settings filter by `slug`), not the Link docname.
-            slug = network.slug or mem.network
-            optin_url = "{}/opt-in?network={}".format(frappe.utils.get_url(), slug)
-            frappe.sendmail(
-                recipients=[mem.contact_email],
-                subject="You've been pre-qualified: {} — CareverseHIMS".format(network.display_name),
-                message=_invite_html(mem.contact_name, network.display_name, doc.facility_name, optin_url),
-                now=True,
-            )
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "CRMPreQualifiedFacility: invitation email failed")
+
+def _send_membership_invitation(doc, membership):
+    """Send and track a branded invitation for one active network membership."""
+    if not _can_invite(membership):
+        frappe.throw("Only active memberships with a contact email can be invited.")
+
+    network = frappe.get_doc("CRM Opt-In Network", membership.network)
+    slug = network.slug or membership.network
+    optin_url = "{}/opt-in?network={}".format(frappe.utils.get_url(), slug)
+    queue = frappe.sendmail(
+        recipients=[membership.contact_email],
+        subject="You've been pre-qualified: {} — CareverseHIMS".format(network.display_name),
+        message=_invite_html(
+            membership.contact_name, network.display_name, doc.facility_name, optin_url
+        ),
+        reference_doctype=doc.doctype,
+        reference_name=doc.name,
+        now=False,
+    )
+
+    if not queue:
+        frappe.throw("The invitation email could not be queued.")
+
+    sent_at = frappe.utils.now_datetime()
+    frappe.db.set_value(
+        "CRM Facility Membership",
+        membership.name,
+        {
+            "invite_email_queue": queue.name,
+            "invite_sent_at": sent_at,
+        },
+        update_modified=False,
+    )
+    membership.invite_email_queue = queue.name
+    membership.invite_sent_at = sent_at
+    queue.send()
+    return queue
 
 
 def _invite_html(contact_name, network_name, facility_name, optin_url):
