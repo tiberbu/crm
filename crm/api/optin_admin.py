@@ -12,11 +12,22 @@ import csv
 import io
 import json
 import math
+import re
 
 import frappe
 from frappe import _
-from frappe.utils.jinja import validate_template
+from frappe.utils.jinja import get_jenv
 from jinja2.exceptions import TemplateSyntaxError
+
+
+_OPTIN_TERMS_EXPRESSIONS = {
+    "network.display_name",
+    "date",
+    "contact.email",
+    "pricing_table",
+    "grand_total_monthly_display",
+    "grand_total_annual_display",
+}
 
 
 def _is_admin(user=None):
@@ -50,6 +61,30 @@ def _require_optin_settings_manager():
     """Only system administrators may change the global Opt-In agreement."""
     if "System Manager" not in frappe.get_roles(frappe.session.user) and frappe.session.user != "Administrator":
         frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+
+def _normalize_optin_terms_template(terms):
+    """Keep the supported dynamic values while preserving other braces as legal text."""
+    def replace_expression(match):
+        expression = match.group(1).strip()
+        if expression in _OPTIN_TERMS_EXPRESSIONS:
+            return "{{ %s }}" % expression
+        return "&#123;&#123;%s&#125;&#125;" % match.group(1)
+
+    terms = re.sub(r"{{(.*?)}}", replace_expression, terms, flags=re.DOTALL)
+    terms = re.sub(
+        r"{%(.*?)%}",
+        lambda match: "&#123;&#37;%s&#37;&#125;" % match.group(1),
+        terms,
+        flags=re.DOTALL,
+    )
+    terms = re.sub(
+        r"{#(.*?)#}",
+        lambda match: "&#123;&#35;%s&#35;&#125;" % match.group(1),
+        terms,
+        flags=re.DOTALL,
+    )
+    return terms
 
 
 # ---------------------------------------------------------------------------
@@ -213,13 +248,15 @@ def save_optin_terms(name=None, title=None, terms=None):
         frappe.throw(_("A document title is required."))
     if not terms.strip():
         frappe.throw(_("Terms and Conditions content is required."))
+
+    original_terms = terms
+    terms = _normalize_optin_terms_template(terms)
     try:
-        validate_template(terms, restrict_globals=True)
+        get_jenv(restrict_globals=True).from_string(terms)
     except TemplateSyntaxError as error:
         frappe.throw(
             _(
-                "Invalid dynamic placeholder on line {0}. Use 'and' instead of '&' "
-                "inside {{ ... }} or {{% ... %}}. Ampersands are allowed in ordinary agreement text."
+                "Could not save the agreement because a template delimiter is incomplete on line {0}."
             ).format(error.lineno or 1)
         )
 
@@ -235,7 +272,7 @@ def save_optin_terms(name=None, title=None, terms=None):
         )
         doc.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
     frappe.db.commit()
-    return {"name": doc.name}
+    return {"name": doc.name, "terms": terms, "normalized": terms != original_terms}
 
 
 @frappe.whitelist()
