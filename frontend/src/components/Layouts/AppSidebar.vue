@@ -323,6 +323,12 @@ const links = [
     gated: true,
   },
   {
+    label: 'Item Prices',
+    icon: OptInIcon,
+    to: 'ItemPrices',
+    gated: true,
+  },
+  {
     label: 'Call Logs',
     icon: PhoneIcon,
     to: 'Call Logs',

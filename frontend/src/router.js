@@ -124,6 +124,11 @@ const routes = [
     component: () => import('@/pages/PrequalifiedFacilities.vue'),
   },
   {
+    path: '/item-prices',
+    name: 'ItemPrices',
+    component: () => import('@/pages/ItemPrices.vue'),
+  },
+  {
     alias: '/call-logs',
     path: '/call-logs/view/:viewType?',
     name: 'Call Logs',

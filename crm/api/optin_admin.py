@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 
 import frappe
 from frappe import _
@@ -82,6 +83,13 @@ def save_network(data):
     if isinstance(data, str):
         data = json.loads(data)
 
+    price_list_override = frappe.utils.cstr(data.get("price_list_override") or "").strip()
+    if price_list_override and not frappe.db.exists(
+        "Price List", {"name": price_list_override, "selling": 1, "enabled": 1}
+    ):
+        frappe.throw(_("Select an enabled selling price list."))
+    data["price_list_override"] = price_list_override
+
     name = data.get("name")
     if name and frappe.db.exists("CRM Opt-In Network", name):
         doc = frappe.get_doc("CRM Opt-In Network", name)
@@ -116,6 +124,131 @@ def delete_network(name):
     frappe.delete_doc("CRM Opt-In Network", name, ignore_permissions=True)
     frappe.db.commit()
     return {"deleted": name}
+
+
+# ---------------------------------------------------------------------------
+# Negotiated price lists and item prices
+# ---------------------------------------------------------------------------
+
+
+def _get_negotiated_price_list(name):
+    name = frappe.utils.cstr(name).strip()
+    if not name:
+        frappe.throw(_("A negotiated price list is required."))
+    price_list = frappe.get_doc("Price List", name)
+    if (
+        not price_list.selling
+        or not price_list.enabled
+        or not price_list.name.startswith("Negotiated")
+    ):
+        frappe.throw(_("Select an enabled negotiated selling price list."))
+    return price_list
+
+
+@frappe.whitelist()
+def list_negotiated_price_lists():
+    """Return enabled negotiated selling price lists for opt-in configuration."""
+    if not _is_admin():
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    rows = frappe.get_list(
+        "Price List",
+        filters=[["selling", "=", 1], ["enabled", "=", 1], ["name", "like", "Negotiated%"]],
+        fields=["name", "currency"],
+        order_by="name asc",
+        limit_page_length=0,
+    )
+    return [{"value": row.name, "label": row.name, "currency": row.currency} for row in rows]
+
+
+@frappe.whitelist()
+def list_item_prices(price_list):
+    """Return all selling item prices configured on a negotiated price list."""
+    if not _is_admin():
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    price_list = _get_negotiated_price_list(price_list)
+    return frappe.get_list(
+        "Item Price",
+        filters={"price_list": price_list.name, "selling": 1},
+        fields=["name", "item_code", "item_name", "uom", "currency", "price_list_rate"],
+        order_by="item_code asc",
+        limit_page_length=0,
+    )
+
+
+@frappe.whitelist()
+def list_sellable_items(search=None):
+    """Return CRM-selectable ERPNext service items for negotiated pricing."""
+    if not _is_admin():
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    filters = {"disabled": 0, "is_sales_item": 1}
+    if search:
+        filters["item_name"] = ["like", "%%%s%%" % frappe.utils.cstr(search).strip()]
+    return frappe.get_list(
+        "Item",
+        filters=filters,
+        fields=["name as value", "item_name", "stock_uom"],
+        order_by="item_name asc",
+        limit_page_length=200,
+    )
+
+
+@frappe.whitelist()
+def create_negotiated_price_list(name):
+    """Create an empty, KES-denominated negotiated selling price list."""
+    if not _is_admin():
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    name = frappe.utils.cstr(name).strip()
+    if not name.startswith("Negotiated"):
+        frappe.throw(_("Negotiated price lists must begin with 'Negotiated'."))
+    if frappe.db.exists("Price List", name):
+        frappe.throw(_("A price list with this name already exists."))
+    price_list = frappe.get_doc(
+        {
+            "doctype": "Price List",
+            "price_list_name": name,
+            "currency": "KES",
+            "selling": 1,
+            "buying": 0,
+            "enabled": 1,
+        }
+    )
+    price_list.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": price_list.name}
+
+
+@frappe.whitelist()
+def save_item_price(price_list, item_code, rate):
+    """Create or update a selling Item Price in a negotiated price list."""
+    if not _is_admin():
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    price_list = _get_negotiated_price_list(price_list)
+    item_code = frappe.utils.cstr(item_code).strip()
+    if not frappe.db.exists("Item", item_code):
+        frappe.throw(_("Item not found."))
+    try:
+        rate = float(rate)
+    except (TypeError, ValueError):
+        frappe.throw(_("Enter a valid price."))
+    if not math.isfinite(rate) or rate < 0:
+        frappe.throw(_("Enter a non-negative finite price."))
+
+    existing = frappe.db.exists(
+        "Item Price", {"price_list": price_list.name, "item_code": item_code, "selling": 1}
+    )
+    item_price = (
+        frappe.get_doc("Item Price", existing) if existing else frappe.new_doc("Item Price")
+    )
+    item_price.price_list = price_list.name
+    item_price.item_code = item_code
+    item_price.price_list_rate = rate
+    item_price.currency = price_list.currency or "KES"
+    item_price.selling = 1
+    item_price.buying = 0
+    item_price.uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
+    item_price.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": item_price.name}
 
 
 # ---------------------------------------------------------------------------

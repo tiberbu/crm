@@ -20,6 +20,12 @@
             </span>
           </div>
           <div class="flex items-center gap-2">
+            <a
+              :href="optInUrl"
+              target="_blank"
+              rel="noopener"
+              class="text-xs text-ink-blue-6 hover:text-ink-blue-7 hover:underline"
+            >{{ __('Open Opt-In Portal') }}</a>
             <router-link
               to="/networks"
               class="text-xs text-ink-gray-5 hover:text-ink-gray-7"
@@ -113,11 +119,17 @@
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{ __('Price List Override') }}</label>
-            <input
+            <select
               v-model="networkForm.price_list_override"
-              type="text"
               class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            />
+            >
+              <option value="">{{ __('Use opt-in default') }}</option>
+              <option
+                v-for="priceList in negotiatedPriceLists"
+                :key="priceList.value"
+                :value="priceList.value"
+              >{{ priceList.label }}</option>
+            </select>
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{ __('Status') }}</label>
@@ -406,6 +418,7 @@ const networkResource = createResource({
 })
 
 const networkDoc = computed(() => networkResource.data ?? null)
+const optInUrl = computed(() => `/opt-in?network=${encodeURIComponent(props.networkSlug)}`)
 
 // ── Network edit form ──────────────────────────────────────────────────────
 
@@ -446,6 +459,11 @@ function setNetworkLogo(file) {
 }
 
 const saveNetworkResource = createResource({ url: 'crm.api.optin_admin.save_network' })
+const negotiatedPriceListsResource = createResource({
+  url: 'crm.api.optin_admin.list_negotiated_price_lists',
+  auto: true,
+})
+const negotiatedPriceLists = computed(() => negotiatedPriceListsResource.data ?? [])
 
 async function saveNetwork() {
   if (!networkForm.display_name.trim()) {
