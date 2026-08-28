@@ -69,6 +69,19 @@ def _get_signing_key():
     return key
 
 
+def _get_optin_lead_source():
+    """Ensure the source referenced by every Opt-In lead exists on this site."""
+    from crm.setup.optin import OPTIN_LEAD_SOURCE, ensure_lead_source
+
+    ensure_lead_source()
+    if not frappe.db.exists("CRM Lead Source", OPTIN_LEAD_SOURCE):
+        frappe.throw(
+            _("The Opt-In lead source could not be configured. Please contact support."),
+            frappe.ConfigurationError,
+        )
+    return OPTIN_LEAD_SOURCE
+
+
 def _hmac_hex(secret, message):
     """Return HMAC-SHA256 hex digest of message under secret (both str)."""
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
@@ -1395,7 +1408,7 @@ def save_partial(signing_token, email, network_slug, expiry, contact_json):
     lead.mobile_no = frappe.utils.cstr(contact.get("mobile_no", ""))
     lead.organization = frappe.utils.cstr(contact.get("organisation", ""))
     lead.job_title = frappe.utils.cstr(contact.get("role", ""))
-    lead.source = "Self Opt-In Portal"
+    lead.source = _get_optin_lead_source()
     lead.status = "Open"
     lead.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
 
@@ -1784,7 +1797,7 @@ def _process_submission(submission_ref):
         lead.mobile_no = frappe.utils.cstr(contact.get("mobile_no", ""))
         lead.organization = frappe.utils.cstr(contact.get("organisation", ""))
         lead.job_title = frappe.utils.cstr(contact.get("role", ""))
-        lead.source = "Self Opt-In Portal"
+        lead.source = _get_optin_lead_source()
         lead.status = "New"
 
         try:
