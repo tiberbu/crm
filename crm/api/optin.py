@@ -480,6 +480,38 @@ def _dispatch_otp(channel, contact_email, contact_phone, otp, network_slug=None)
         _send_otp_email(contact_email, otp, network)
 
 
+def _require_optin_manager():
+    """Restrict internal Opt-In handoffs to the users who can negotiate pricing."""
+    user = frappe.session.user
+    roles = frappe.get_roles(user)
+    if not (
+        "System Manager" in roles
+        or user == "Administrator"
+        or "Sales Manager" in roles
+    ):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+
+def _quote_pricing_rows(quote):
+    """Shape the finalized quotation lines for Opt-In summary and contract rendering."""
+    rows = []
+    for item in quote.items or []:
+        annual_kes = float(item.amount or (item.qty or 0) * (item.rate or 0))
+        rows.append(
+            {
+                "facility_name": frappe.utils.cstr(
+                    item.get("facility_name") or item.item_name or item.item_code
+                ).strip(),
+                "mfl_code": "",
+                "keph_level": frappe.utils.cstr(item.get("package_tier") or "").strip(),
+                "item_code": frappe.utils.cstr(item.item_code or "").strip(),
+                "monthly_kes": round(annual_kes / 12, 2),
+                "annual_kes": annual_kes,
+            }
+        )
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Public whitelisted API
 # ---------------------------------------------------------------------------
@@ -1776,6 +1808,77 @@ def retry_submission(submission_ref):
     )
 
     return {"status": "queued"}
+
+
+@frappe.whitelist()
+def submit_deal_optin_summary(deal, quote, network_slug):
+    """
+    Record the finalized quote as an Opt-In summary for an existing Deal.
+
+    This is the internal counterpart to the self-service Commit & Opt In step:
+    it deliberately skips lead/deal creation because both already exist, while
+    preserving the selected network and priced lines for contracting.
+    """
+    _require_optin_manager()
+    deal = frappe.utils.cstr(deal).strip()
+    quote = frappe.utils.cstr(quote).strip()
+    network_slug = frappe.utils.cstr(network_slug).strip()
+
+    if not frappe.has_permission("CRM Deal", "write", deal):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    if not frappe.db.exists(
+        "CRM Opt-In Network", {"name": network_slug, "enabled": 1}
+    ):
+        frappe.throw(_("Select an enabled Opt-In Network."))
+
+    quotation = frappe.get_doc("Quotation", quote)
+    if quotation.get("crm_deal") != deal:
+        frappe.throw(_("The quote does not belong to this Deal."))
+    if int(quotation.docstatus or 0) != 0:
+        frappe.throw(_("Only a draft quote can be submitted as an Opt-In summary."))
+
+    pricing = _quote_pricing_rows(quotation)
+    if not pricing:
+        frappe.throw(_("Add at least one quote line before submitting the Opt-In summary."))
+
+    deal_doc = frappe.get_doc("CRM Deal", deal)
+    contact = {
+        "first_name": frappe.utils.cstr(deal_doc.get("first_name") or "").strip(),
+        "last_name": frappe.utils.cstr(deal_doc.get("last_name") or "").strip(),
+        "email": frappe.utils.cstr(deal_doc.get("email") or "").strip().lower(),
+        "mobile_no": frappe.utils.cstr(deal_doc.get("mobile_no") or "").strip(),
+        "organisation": frappe.utils.cstr(deal_doc.get("organization") or "").strip(),
+    }
+    payload = {
+        "contact": contact,
+        "facilities": _quote_pricing_rows(quotation),
+        "pricing": pricing,
+        "committed": True,
+        "quote": quotation.name,
+        "submitted_by": frappe.session.user,
+    }
+
+    existing_name = frappe.utils.cstr(deal_doc.get("optin_submission") or "").strip()
+    if existing_name:
+        submission = frappe.get_doc("CRM Opt-In Submission", existing_name)
+    else:
+        submission = frappe.new_doc("CRM Opt-In Submission")
+        submission.naming_series = "OIS-.YYYY.-"
+
+    submission.status = "Processed"
+    submission.network_slug = network_slug
+    submission.submitter_email = contact["email"]
+    submission.submitted_at = frappe.utils.now_datetime()
+    submission.deal = deal
+    submission.raw_json = json.dumps(payload)
+    submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+
+    if deal_doc.get("optin_submission") != submission.name:
+        deal_doc.optin_submission = submission.name
+        deal_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    frappe.db.commit()
+
+    return {"submission_ref": submission.name, "quote": quotation.name}
 
 
 @frappe.whitelist()
