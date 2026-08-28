@@ -69,6 +69,19 @@ def _get_signing_key():
     return key
 
 
+def _get_optin_lead_source():
+    """Ensure the source referenced by every Opt-In lead exists on this site."""
+    from crm.setup.optin import OPTIN_LEAD_SOURCE, ensure_lead_source
+
+    ensure_lead_source()
+    if not frappe.db.exists("CRM Lead Source", OPTIN_LEAD_SOURCE):
+        frappe.throw(
+            _("The Opt-In lead source could not be configured. Please contact support."),
+            frappe.ConfigurationError,
+        )
+    return OPTIN_LEAD_SOURCE
+
+
 def _hmac_hex(secret, message):
     """Return HMAC-SHA256 hex digest of message under secret (both str)."""
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
@@ -382,6 +395,14 @@ def _update_job_step(submission_ref, name, status, label):
         json.dumps(data),
         expires_in_sec=3600,
     )
+
+
+def _public_submission_failure_message(submission_ref):
+    """Return an actionable, non-sensitive failure message for a guest submitter."""
+    return _(
+        "We could not finish this Opt-In submission. It has been saved for our team to review. "
+        "Please contact support and quote reference {0}."
+    ).format(submission_ref)
 
 
 DEFAULT_BRAND_COLOUR = "#b91c1c"  # Tiberbu red — used when a network has no colour set
@@ -1323,7 +1344,11 @@ def get_job_status(submission_ref, signing_token, email, network_slug, expiry):
     cached = frappe.cache().get_value("optin_job:%s" % submission_ref)
     if cached:
         try:
-            return json.loads(cached)
+            response = json.loads(cached)
+            response["submission_ref"] = submission_ref
+            if response.get("overall") == "failed":
+                response.setdefault("message", _public_submission_failure_message(submission_ref))
+            return response
         except Exception:
             pass
 
@@ -1341,11 +1366,15 @@ def get_job_status(submission_ref, signing_token, email, network_slug, expiry):
             db_status = row.get("status") or "Pending"
             overall_map = {"Processed": "complete", "Failed": "failed"}
             overall = overall_map.get(db_status, "in_progress")
-            return {
+            response = {
                 "steps": [],
                 "overall": overall,
                 "lead_id": row.get("lead") or None,
+                "submission_ref": submission_ref,
             }
+            if overall == "failed":
+                response["message"] = _public_submission_failure_message(submission_ref)
+            return response
     except Exception:
         pass
 
@@ -1379,7 +1408,7 @@ def save_partial(signing_token, email, network_slug, expiry, contact_json):
     lead.mobile_no = frappe.utils.cstr(contact.get("mobile_no", ""))
     lead.organization = frappe.utils.cstr(contact.get("organisation", ""))
     lead.job_title = frappe.utils.cstr(contact.get("role", ""))
-    lead.source = "Self Opt-In Portal"
+    lead.source = _get_optin_lead_source()
     lead.status = "Open"
     lead.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
 
@@ -1768,7 +1797,7 @@ def _process_submission(submission_ref):
         lead.mobile_no = frappe.utils.cstr(contact.get("mobile_no", ""))
         lead.organization = frappe.utils.cstr(contact.get("organisation", ""))
         lead.job_title = frappe.utils.cstr(contact.get("role", ""))
-        lead.source = "Self Opt-In Portal"
+        lead.source = _get_optin_lead_source()
         lead.status = "New"
 
         try:
@@ -2067,6 +2096,8 @@ def _process_submission(submission_ref):
         except Exception:
             data = {}
         data["overall"] = "failed"
+        data["submission_ref"] = submission_ref
+        data["message"] = _public_submission_failure_message(submission_ref)
         frappe.cache().set_value(
             "optin_job:%s" % submission_ref,
             json.dumps(data),
@@ -2104,7 +2135,7 @@ def list_submissions(status=None, page=0, page_size=20):
         filters=filters,
         fields=[
             "name", "status", "network_slug", "submitter_email",
-            "submitted_at", "lead", "deal", "has_duplicate_mfl",
+            "submitted_at", "lead", "deal", "has_duplicate_mfl", "error_log",
         ],
         order_by="submitted_at desc",
         limit_start=page * page_size,
@@ -2122,7 +2153,16 @@ def list_submissions(status=None, page=0, page_size=20):
         )
     )
 
-    return {"rows": rows, "total": total}
+    return {
+        "rows": [
+            {
+                **row,
+                "failure_reason": row.error_log if row.status == "Failed" else "",
+            }
+            for row in rows
+        ],
+        "total": total,
+    }
 
 
 @frappe.whitelist()

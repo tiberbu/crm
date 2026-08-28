@@ -109,7 +109,6 @@
           :network-slug="networkSlug"
           :deal-invitation="dealInvitation"
           @complete="store.setStep(8)"
-          @retry="store.setStep(6)"
         />
       </div>
     </div>

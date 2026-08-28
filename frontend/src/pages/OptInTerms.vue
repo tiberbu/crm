@@ -72,7 +72,10 @@ const loading = ref(true)
 const saving = ref(false)
 const settingDefault = ref(false)
 const original = ref('')
-const termsHint = __('You can use dynamic values such as {{ network.display_name }} and {{ pricing_table }}.')
+const termsHint = __(
+  'You can use dynamic values such as {{ network.display_name }} and {{ pricing_table }}. '
+  + 'Other text inside {{ ... }} is saved and shown as ordinary agreement text.',
+)
 
 const listResource = createResource({ url: 'crm.api.optin_admin.list_optin_terms' })
 const getResource = createResource({ url: 'crm.api.optin_admin.get_optin_terms' })
@@ -124,10 +127,15 @@ async function save() {
   try {
     const result = await saveResource.submit(editor.value)
     editor.value.name = result.name
+    editor.value.terms = result.terms
     selectedName.value = result.name
     original.value = JSON.stringify(editor.value)
     await loadDocuments(result.name)
-    toast.success(__('Terms and Conditions saved'))
+    toast.success(
+      result.normalized
+        ? __('Terms and Conditions saved. Unsupported dynamic text was preserved as agreement text.')
+        : __('Terms and Conditions saved'),
+    )
   } catch (error) {
     toast.error(error?.messages?.[0] ?? error?.message ?? __('Could not save Terms and Conditions'))
   } finally {
