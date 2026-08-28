@@ -2,8 +2,8 @@
   <div class="flex h-full flex-col overflow-hidden">
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-outline-gray-2 px-5 py-3">
       <div>
-        <h1 class="text-xl font-semibold text-ink-gray-9">{{ __('Negotiated Item Prices') }}</h1>
-        <p class="mt-1 text-sm text-ink-gray-5">{{ __('Manage the price lists used by opt-in networks.') }}</p>
+        <h1 class="text-xl font-semibold text-ink-gray-9">{{ __('Item Catalogue') }}</h1>
+        <p class="mt-1 text-sm text-ink-gray-5">{{ __('Manage sellable items and their negotiated price lists.') }}</p>
       </div>
       <Button variant="solid" size="sm" @click="showNewList = true">{{ __('New Price List') }}</Button>
     </div>
@@ -19,7 +19,7 @@
       </div>
 
       <label class="mb-5 flex max-w-md flex-col gap-1 text-xs font-medium text-ink-gray-6">
-        {{ __('Negotiated Price List') }}
+        {{ __('Price List') }}
         <select v-model="selectedPriceList" class="rounded border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3">
           <option value="">{{ __('Select a price list') }}</option>
           <option v-for="priceList in priceLists" :key="priceList.value" :value="priceList.value">{{ priceList.label }}</option>

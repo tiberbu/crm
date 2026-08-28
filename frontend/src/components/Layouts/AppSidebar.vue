@@ -317,7 +317,7 @@ const links = [
     gated: true,
   },
   {
-    label: 'Network Pricing',
+    label: 'Item Catalogue',
     icon: OptInIcon,
     to: 'NetworkPricing',
     gated: true,
