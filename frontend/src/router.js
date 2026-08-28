@@ -135,6 +135,11 @@ const routes = [
     component: () => import('@/pages/ItemPrices.vue'),
   },
   {
+    path: '/opt-in-terms',
+    name: 'OptInTerms',
+    component: () => import('@/pages/OptInTerms.vue'),
+  },
+  {
     alias: '/call-logs',
     path: '/call-logs/view/:viewType?',
     name: 'Call Logs',

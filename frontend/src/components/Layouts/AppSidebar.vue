@@ -323,6 +323,12 @@ const links = [
     gated: true,
   },
   {
+    label: 'Terms & Conditions',
+    icon: NoteIcon,
+    to: 'OptInTerms',
+    condition: () => isAdmin(),
+  },
+  {
     label: 'Call Logs',
     icon: PhoneIcon,
     to: 'Call Logs',

@@ -44,6 +44,12 @@ def _assert_network_access(network_slug):
         frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 
+def _require_optin_settings_manager():
+    """Only system administrators may change the global Opt-In agreement."""
+    if "System Manager" not in frappe.get_roles(frappe.session.user) and frappe.session.user != "Administrator":
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+
 # ---------------------------------------------------------------------------
 # Network CRUD
 # ---------------------------------------------------------------------------
@@ -54,7 +60,7 @@ def list_networks(page=0, page_size=20):
     page = int(page or 0)
     page_size = int(page_size or 20)
 
-    if _is_admin():
+    if _is_admin() or frappe.has_permission("CRM Opt-In Network", "read"):
         filters = {}
     else:
         allowed = _get_coordinator_networks()
@@ -156,6 +162,127 @@ def delete_network(name):
     frappe.delete_doc("CRM Opt-In Network", name, ignore_permissions=True)
     frappe.db.commit()
     return {"deleted": name}
+
+
+# ---------------------------------------------------------------------------
+# Opt-In terms and conditions
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def list_optin_terms():
+    """List agreements that can be selected as the Opt-In default."""
+    _require_optin_settings_manager()
+    active = frappe.db.get_single_value("CRM Opt-In Settings", "active_tc_document") or ""
+    rows = frappe.get_list(
+        "Terms and Conditions",
+        fields=["name", "title", "modified"],
+        order_by="modified desc",
+        limit_page_length=0,
+    )
+    return {
+        "active": active,
+        "rows": [
+            {
+                "name": row.name,
+                "title": row.title or row.name,
+                "modified": row.modified,
+                "active": row.name == active,
+            }
+            for row in rows
+        ],
+    }
+
+
+@frappe.whitelist()
+def get_optin_terms(name):
+    _require_optin_settings_manager()
+    doc = frappe.get_doc("Terms and Conditions", frappe.utils.cstr(name).strip())
+    return {"name": doc.name, "title": doc.title, "terms": doc.terms or ""}
+
+
+@frappe.whitelist()
+def save_optin_terms(name=None, title=None, terms=None):
+    """Create or update an Opt-In agreement and return its document name."""
+    _require_optin_settings_manager()
+    title = frappe.utils.cstr(title).strip()
+    terms = frappe.utils.cstr(terms)
+    if not title:
+        frappe.throw(_("A document title is required."))
+    if not terms.strip():
+        frappe.throw(_("Terms and Conditions content is required."))
+
+    name = frappe.utils.cstr(name).strip()
+    if name:
+        doc = frappe.get_doc("Terms and Conditions", name)
+        doc.title = title
+        doc.terms = terms
+        doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    else:
+        doc = frappe.get_doc(
+            {"doctype": "Terms and Conditions", "title": title, "selling": 1, "terms": terms}
+        )
+        doc.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+    frappe.db.commit()
+    return {"name": doc.name}
+
+
+@frappe.whitelist()
+def set_default_optin_terms(name):
+    """Set the agreement that every new Opt-In submission must render and accept."""
+    _require_optin_settings_manager()
+    name = frappe.utils.cstr(name).strip()
+    if not frappe.db.exists("Terms and Conditions", name):
+        frappe.throw(_("Terms and Conditions document not found."))
+    settings = frappe.get_single("CRM Opt-In Settings")
+    settings.active_tc_document = name
+    settings.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    frappe.db.commit()
+    return {"name": name}
+
+
+@frappe.whitelist()
+def get_optin_settings():
+    """Return non-secret global configuration used by the Opt-In process."""
+    _require_optin_settings_manager()
+    settings = frappe.get_single("CRM Opt-In Settings")
+    return {
+        "default_price_list": settings.default_price_list or "",
+        "active_tc_document": settings.active_tc_document or "",
+        "default_lead_owner": settings.default_lead_owner or "",
+        "tiberbu_signatory": settings.tiberbu_signatory or "",
+    }
+
+
+@frappe.whitelist()
+def update_optin_settings(settings):
+    """Update the non-secret global defaults for all new Opt-In submissions."""
+    _require_optin_settings_manager()
+    if isinstance(settings, str):
+        settings = json.loads(settings)
+
+    default_price_list = frappe.utils.cstr(settings.get("default_price_list")).strip()
+    active_tc_document = frappe.utils.cstr(settings.get("active_tc_document")).strip()
+    default_lead_owner = frappe.utils.cstr(settings.get("default_lead_owner")).strip()
+    tiberbu_signatory = frappe.utils.cstr(settings.get("tiberbu_signatory")).strip()
+
+    if default_price_list and not frappe.db.exists(
+        "Price List", {"name": default_price_list, "selling": 1, "enabled": 1}
+    ):
+        frappe.throw(_("Select an enabled selling price list."))
+    if active_tc_document and not frappe.db.exists("Terms and Conditions", active_tc_document):
+        frappe.throw(_("Terms and Conditions document not found."))
+    for field, user in (("Default Lead Owner", default_lead_owner), ("Tiberbu Signatory", tiberbu_signatory)):
+        if user and not frappe.db.exists("User", {"name": user, "enabled": 1}):
+            frappe.throw(_("{0} must be an enabled user.").format(field))
+
+    doc = frappe.get_single("CRM Opt-In Settings")
+    doc.default_price_list = default_price_list
+    doc.active_tc_document = active_tc_document
+    doc.default_lead_owner = default_lead_owner
+    doc.tiberbu_signatory = tiberbu_signatory
+    doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    frappe.db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +420,7 @@ def list_facilities(network=None, status=None, page=0, page_size=20):
     page = int(page or 0)
     page_size = int(page_size or 20)
 
-    if not _is_admin():
+    if not _is_admin() and not frappe.has_permission("CRM Pre-Qualified Facility", "read"):
         allowed_networks = _get_coordinator_networks()
         if not allowed_networks:
             return {"rows": [], "total": 0}

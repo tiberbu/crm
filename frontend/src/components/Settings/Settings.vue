@@ -81,6 +81,7 @@ import TelephonyPage from '@/components/Settings/Telephony/TelephonyPage.vue'
 import EmailConfig from '@/components/Settings/EmailConfig.vue'
 import SESSettings from '@/components/Settings/SESSettings.vue'
 import HFRSettings from '@/components/Settings/HFRSettings.vue'
+import OptInSettings from '@/components/Settings/OptInSettings.vue'
 import Icon from '@/components/Icon.vue'
 import { usersStore } from '@/stores/users'
 import {
@@ -95,7 +96,7 @@ import AssignmentRulePage from './AssignmentRules/AssignmentRulePage.vue'
 import ShieldCheck from '~icons/lucide/shield-check'
 import SlaConfig from './Sla/SlaConfig.vue'
 
-const { isManager, getUser } = usersStore()
+const { isAdmin, isManager, getUser } = usersStore()
 
 const user = computed(() => getUser() || {})
 
@@ -261,6 +262,12 @@ const tabs = computed(() => {
           icon: 'lucide-hospital',
           component: markRaw(HFRSettings),
           condition: () => isManager(),
+        },
+        {
+          label: __('Opt-In Process'),
+          icon: 'clipboard-list',
+          component: markRaw(OptInSettings),
+          condition: () => isAdmin(),
         },
       ],
     },
