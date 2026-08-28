@@ -1831,6 +1831,16 @@ def submit_deal_optin_summary(deal, quote, network_slug):
     ):
         frappe.throw(_("Select an enabled Opt-In Network."))
 
+    # Lock the Deal through the snapshot write so concurrent quote changes cannot
+    # pass their own finalized check before this summary is linked.
+    existing_name = frappe.utils.cstr(
+        frappe.db.get_value("CRM Deal", deal, "optin_submission", for_update=True) or ""
+    ).strip()
+    if existing_name:
+        frappe.throw(
+            _("This Deal already has an Opt-In submission and its summary cannot be replaced.")
+        )
+
     quotation = frappe.get_doc("Quotation", quote)
     if quotation.get("crm_deal") != deal:
         frappe.throw(_("The quote does not belong to this Deal."))
@@ -1851,19 +1861,15 @@ def submit_deal_optin_summary(deal, quote, network_slug):
     }
     payload = {
         "contact": contact,
-        "facilities": _quote_pricing_rows(quotation),
+        "facilities": pricing,
         "pricing": pricing,
         "committed": True,
         "quote": quotation.name,
         "submitted_by": frappe.session.user,
     }
 
-    existing_name = frappe.utils.cstr(deal_doc.get("optin_submission") or "").strip()
-    if existing_name:
-        submission = frappe.get_doc("CRM Opt-In Submission", existing_name)
-    else:
-        submission = frappe.new_doc("CRM Opt-In Submission")
-        submission.naming_series = "OIS-.YYYY.-"
+    submission = frappe.new_doc("CRM Opt-In Submission")
+    submission.naming_series = "OIS-.YYYY.-"
 
     submission.status = "Processed"
     submission.network_slug = network_slug
@@ -1873,9 +1879,10 @@ def submit_deal_optin_summary(deal, quote, network_slug):
     submission.raw_json = json.dumps(payload)
     submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 
-    if deal_doc.get("optin_submission") != submission.name:
-        deal_doc.optin_submission = submission.name
-        deal_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    quotation.crm_sent = 1
+    quotation.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    deal_doc.optin_submission = submission.name
+    deal_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
     frappe.db.commit()
 
     return {"submission_ref": submission.name, "quote": quotation.name}

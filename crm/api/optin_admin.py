@@ -113,6 +113,15 @@ def save_network(data):
                 frappe.throw(_("{0} must be a list.").format(fieldname))
             if any(not isinstance(row, dict) for row in rows):
                 frappe.throw(_("{0} contains an invalid row.").format(fieldname))
+            if fieldname == "network_signers":
+                signer_emails = [
+                    frappe.utils.cstr(row.get("email") or "").strip().lower()
+                    for row in rows
+                ]
+                if any(not email for email in signer_emails):
+                    frappe.throw(_("Every network signatory must have an email address."))
+                if len(signer_emails) != len(set(signer_emails)):
+                    frappe.throw(_("Each network signatory email must be unique."))
             doc.set(
                 fieldname,
                 [

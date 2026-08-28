@@ -107,6 +107,13 @@ def _derive_status(doc):
 	return _STATUS_DRAFT
 
 
+def _get_optin_submission_for_update(deal):
+	"""Lock a Deal while deciding whether its contractual quote remains editable."""
+	if not deal:
+		return ""
+	return frappe.db.get_value("CRM Deal", deal, "optin_submission", for_update=True) or ""
+
+
 def _ensure_customer(customer_name):
 	"""
 	Resolve an ERPNext Customer for a CRM Deal, creating it if absent. Deals with
@@ -441,6 +448,8 @@ def set_quote_price_list(quote, price_list):
 	doc = frappe.get_doc("Quotation", quote)
 	if int(doc.docstatus or 0) != 0:
 		frappe.throw("Cannot update price list on a submitted or cancelled Quotation")
+	if _get_optin_submission_for_update(doc.get("crm_deal")):
+		frappe.throw("Cannot update a quote after its Opt-In summary is submitted")
 
 	doc.selling_price_list = price_list
 	# Re-baseline every line to the new list's Item Price. A true miss resolves to
@@ -496,7 +505,9 @@ def get_quote_lines(quote):
 	return {
 		"name":          doc.name,
 		"status":        _derive_status(doc),
-		"editable":      int(doc.docstatus or 0) == 0,
+		"editable":      int(doc.docstatus or 0) == 0 and not frappe.db.get_value(
+			"CRM Deal", doc.get("crm_deal"), "optin_submission"
+		),
 		"currency":      doc.currency or "KES",
 		"price_list":    doc.get("selling_price_list") or DEFAULT_PRICE_LIST,
 		"payment_terms": doc.get("crm_payment_terms") or "Annual Upfront",
@@ -527,6 +538,8 @@ def save_quote_lines(quote, lines):
 	doc = frappe.get_doc("Quotation", quote)
 	if int(doc.docstatus or 0) != 0:
 		frappe.throw("Cannot edit a submitted or cancelled Quotation")
+	if _get_optin_submission_for_update(doc.get("crm_deal")):
+		frappe.throw("Cannot edit a quote after its Opt-In summary is submitted")
 
 	price_list = doc.get("selling_price_list") or DEFAULT_PRICE_LIST
 
