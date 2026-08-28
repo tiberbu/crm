@@ -317,9 +317,9 @@ const links = [
     gated: true,
   },
   {
-    label: 'Prequalified Facilities',
+    label: 'Item Catalogue',
     icon: OptInIcon,
-    to: 'PrequalifiedFacilities',
+    to: 'NetworkPricing',
     gated: true,
   },
   {

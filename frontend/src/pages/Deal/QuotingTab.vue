@@ -240,6 +240,18 @@
       :quote-name="selectedQuote"
       @saved="onQuoteSaved"
     />
+    <div
+      v-if="selectedQuoteData?.status === 'Draft'"
+      class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-outline-gray-2 bg-surface-gray-1 px-4 py-3 dark:bg-surface-gray-2"
+    >
+      <div>
+        <p class="text-sm font-medium text-ink-gray-8">{{ __('Ready to submit the Opt-In summary?') }}</p>
+        <p class="mt-0.5 text-xs text-ink-gray-5">{{ __('This records the finalized quote against this Deal for contracting without creating a duplicate Deal.') }}</p>
+      </div>
+      <Button variant="solid" @click="showOptInSummaryDialog = true">
+        {{ __('Submit Opt-In Summary') }}
+      </Button>
+    </div>
     </template>
     <!-- ═══ end non-OIS branch ═══ -->
 
@@ -261,6 +273,35 @@
       </template>
     </Dialog>
 
+    <Dialog
+      v-model="showOptInSummaryDialog"
+      :options="{ title: __('Submit Opt-In Summary'), size: 'md' }"
+    >
+      <template #body-content>
+        <div class="space-y-4">
+          <p class="text-sm text-ink-gray-6">
+            {{ __('Confirm the network for this finalized quote. The summary will be available to the contracting flow on this Deal.') }}
+          </p>
+          <FormControl
+            v-model="summaryNetwork"
+            type="select"
+            :label="__('Opt-In Network')"
+            :options="networkOptions"
+            :description="__('The network determines the portal branding, contracted price list, and network signatories.')"
+          />
+          <div class="rounded-lg bg-surface-gray-2 p-3 text-sm dark:bg-surface-gray-3">
+            <div class="flex justify-between gap-4"><span class="text-ink-gray-6">{{ __('Quote') }}</span><span class="font-medium text-ink-gray-9">{{ selectedQuote }}</span></div>
+            <div class="mt-2 flex justify-between gap-4"><span class="text-ink-gray-6">{{ __('Quote total') }}</span><span class="font-medium text-ink-gray-9">{{ fmtKes(selectedQuoteData?.grand_total) }}</span></div>
+          </div>
+          <p v-if="summaryError" class="text-sm text-ink-red-6">{{ summaryError }}</p>
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="subtle" :disabled="submittingSummary" @click="showOptInSummaryDialog = false">{{ __('Cancel') }}</Button>
+        <Button variant="solid" :disabled="!summaryNetwork" :loading="submittingSummary" @click="submitOptInSummary">{{ __('Submit Summary') }}</Button>
+      </template>
+    </Dialog>
+
     <!-- Contracting panel — mounted below the quotes section -->
     <ContractingPanel
       :deal-id="dealId"
@@ -274,7 +315,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { createResource, Button, Dialog, toast } from 'frappe-ui'
+import { createResource, Button, Dialog, FormControl, toast } from 'frappe-ui'
 import ContractingPanel from './ContractingPanel.vue'
 import QuotePanel from './QuotePanel.vue'
 
@@ -397,6 +438,9 @@ watch(shouldAutoBuild, (trigger) => {
 // ── Inline editor selection (non-OIS) ──────────────────────────────────────────
 
 const selectedQuote = ref(null)
+const selectedQuoteData = computed(() =>
+  quotes.value.find((quote) => quote.name === selectedQuote.value) ?? null,
+)
 
 function selectQuote(name) {
   selectedQuote.value = name
@@ -433,6 +477,49 @@ async function createQuote() {
     toast.error(err?.messages?.[0] ?? err?.message ?? __('Failed to create quote'))
   } finally {
     creating.value = false
+  }
+}
+
+// ── Internal Opt-In summary ───────────────────────────────────────────────────
+
+const showOptInSummaryDialog = ref(false)
+const summaryNetwork = ref('')
+const summaryError = ref('')
+const submittingSummary = ref(false)
+const networksResource = createResource({
+  url: 'crm.api.optin_admin.list_networks',
+  makeParams: () => ({ page: 0, page_size: 200 }),
+  auto: true,
+})
+const networkOptions = computed(() =>
+  (networksResource.data?.rows ?? [])
+    .filter((network) => network.enabled)
+    .map((network) => ({ label: network.display_name, value: network.slug })),
+)
+const submitSummaryResource = createResource({
+  url: 'crm.api.optin.submit_deal_optin_summary',
+})
+
+async function submitOptInSummary() {
+  if (!selectedQuote.value || !summaryNetwork.value) return
+  submittingSummary.value = true
+  summaryError.value = ''
+  try {
+    await submitSummaryResource.submit({
+      deal: props.dealId,
+      quote: selectedQuote.value,
+      network_slug: summaryNetwork.value,
+    })
+    showOptInSummaryDialog.value = false
+    toast.success(__('Opt-In summary submitted'))
+    await dealDocResource.reload()
+    await lifecycleResource.reload()
+    await quotesResource.reload()
+  } catch (error) {
+    summaryError.value =
+      error?.messages?.[0] ?? error?.message ?? __('Could not submit Opt-In summary')
+  } finally {
+    submittingSummary.value = false
   }
 }
 

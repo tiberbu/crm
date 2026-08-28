@@ -4,69 +4,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between border-b border-outline-gray-2 px-5 py-3">
       <h1 class="text-xl font-semibold text-ink-gray-9">{{ __('Opt-In Networks') }}</h1>
-      <Button variant="solid" size="sm" @click="openAddForm">{{ __('Add Network') }}</Button>
-    </div>
-
-    <!-- Inline add form (top, minimal) -->
-    <div v-if="showForm" class="border-b border-outline-gray-2 bg-surface-gray-1 px-5 py-4 dark:bg-surface-gray-2">
-      <h2 class="mb-4 text-sm font-semibold text-ink-gray-9">{{ __('New Network') }}</h2>
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-
-        <!-- Slug -->
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink-gray-6">
-            {{ __('Slug') }} <span class="text-red-600">*</span>
-          </label>
-          <input
-            v-model="form.slug"
-            type="text"
-            class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            placeholder="e.g. careverse-ke"
-          />
-        </div>
-
-        <!-- Display Name -->
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink-gray-6">
-            {{ __('Display Name') }} <span class="text-red-600">*</span>
-          </label>
-          <input
-            v-model="form.display_name"
-            type="text"
-            class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-          />
-        </div>
-
-        <!-- Contact Email -->
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink-gray-6">{{ __('Contact Email') }}</label>
-          <input
-            v-model="form.contact_email"
-            type="email"
-            class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-          />
-        </div>
-
-        <!-- Enabled -->
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink-gray-6">{{ __('Status') }}</label>
-          <label class="flex cursor-pointer items-center gap-2 pt-1.5">
-            <input
-              v-model="form.enabled"
-              type="checkbox"
-              class="h-4 w-4 rounded border-outline-gray-3 accent-red-600"
-            />
-            <span class="text-sm text-ink-gray-7">{{ __('Enabled') }}</span>
-          </label>
-        </div>
-      </div>
-
-      <p v-if="formError" class="mt-2 text-xs text-red-600">{{ formError }}</p>
-
-      <div class="mt-4 flex gap-2">
-        <Button variant="solid" :loading="saveResource.loading" @click="saveNetwork">{{ __('Save') }}</Button>
-        <Button variant="subtle" @click="cancelForm">{{ __('Cancel') }}</Button>
-      </div>
+      <Button variant="solid" size="sm" @click="router.push({ name: 'NewNetwork' })">{{ __('Add Network') }}</Button>
     </div>
 
     <!-- Table area -->
@@ -77,7 +15,7 @@
 
       <div v-else-if="!rows.length" class="flex flex-col items-center justify-center py-16 text-center">
         <p class="text-sm font-medium text-ink-gray-5">{{ __('No networks found') }}</p>
-        <p class="mt-1 text-xs text-ink-gray-4">{{ __('Click "Add Network" to create one.') }}</p>
+        <p class="mt-1 text-xs text-ink-gray-4">{{ __('Create a network to configure its portal, pricing, partners, coordinators, and signatories.') }}</p>
       </div>
 
       <table v-else class="w-full text-sm">
@@ -131,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { createResource, Button } from 'frappe-ui'
 
@@ -139,20 +77,6 @@ const router = useRouter()
 
 const page = ref(0)
 const pageSize = 20
-const showForm = ref(false)
-const formError = ref('')
-
-function emptyForm() {
-  return {
-    slug: '',
-    display_name: '',
-    enabled: true,
-    contact_email: '',
-  }
-}
-
-const form = reactive(emptyForm())
-
 const listResource = createResource({
   url: 'crm.api.optin_admin.list_networks',
   makeParams: () => ({ page: page.value, page_size: pageSize }),
@@ -161,33 +85,6 @@ const listResource = createResource({
 
 const rows = computed(() => listResource.data?.rows ?? [])
 const total = computed(() => listResource.data?.total ?? 0)
-
-const saveResource = createResource({ url: 'crm.api.optin_admin.save_network' })
-
-function openAddForm() {
-  Object.assign(form, emptyForm())
-  formError.value = ''
-  showForm.value = true
-}
-
-function cancelForm() {
-  showForm.value = false
-  formError.value = ''
-}
-
-async function saveNetwork() {
-  if (!form.slug.trim()) { formError.value = __('Slug is required.'); return }
-  if (!form.display_name.trim()) { formError.value = __('Display Name is required.'); return }
-  formError.value = ''
-  const slug = form.slug.trim()
-  try {
-    await saveResource.submit({ data: { ...form, slug } })
-    showForm.value = false
-    router.push({ name: 'NetworkDetail', params: { networkSlug: slug } })
-  } catch (e) {
-    formError.value = e?.messages?.[0] ?? e?.message ?? __('Save failed.')
-  }
-}
 
 function openNetwork(row) {
   router.push({ name: 'NetworkDetail', params: { networkSlug: row.slug } })
