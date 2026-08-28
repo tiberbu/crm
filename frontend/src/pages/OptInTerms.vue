@@ -72,7 +72,10 @@ const loading = ref(true)
 const saving = ref(false)
 const settingDefault = ref(false)
 const original = ref('')
-const termsHint = __('You can use dynamic values such as {{ network.display_name }} and {{ pricing_table }}.')
+const termsHint = __(
+  "You can use dynamic values such as {{ network.display_name }} and {{ pricing_table }}. "
+  + "Use 'and', not '&', inside dynamic placeholders; ordinary agreement text can include '&'.",
+)
 
 const listResource = createResource({ url: 'crm.api.optin_admin.list_optin_terms' })
 const getResource = createResource({ url: 'crm.api.optin_admin.get_optin_terms' })

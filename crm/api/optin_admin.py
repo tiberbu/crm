@@ -15,6 +15,8 @@ import math
 
 import frappe
 from frappe import _
+from frappe.utils.jinja import validate_template
+from jinja2.exceptions import TemplateSyntaxError
 
 
 def _is_admin(user=None):
@@ -211,6 +213,15 @@ def save_optin_terms(name=None, title=None, terms=None):
         frappe.throw(_("A document title is required."))
     if not terms.strip():
         frappe.throw(_("Terms and Conditions content is required."))
+    try:
+        validate_template(terms, restrict_globals=True)
+    except TemplateSyntaxError as error:
+        frappe.throw(
+            _(
+                "Invalid dynamic placeholder on line {0}. Use 'and' instead of '&' "
+                "inside {{ ... }} or {{% ... %}}. Ampersands are allowed in ordinary agreement text."
+            ).format(error.lineno or 1)
+        )
 
     name = frappe.utils.cstr(name).strip()
     if name:
