@@ -109,6 +109,7 @@ import { useOptInStore } from './useOptInStore.js'
 const props = defineProps({
   email: { type: String, required: true },
   networkSlug: { type: String, required: true },
+  dealInvitation: { type: String, default: '' },
 })
 
 const emit = defineEmits(['verified', 'back'])
@@ -203,6 +204,7 @@ async function handleVerify() {
       email: props.email,
       network_slug: props.networkSlug,
       otp: otpValue.value,
+      deal_invitation: props.dealInvitation,
     })
     clearInterval(timer)
     store.setSigningToken(data.signing_token, data.expiry)
@@ -228,6 +230,7 @@ async function handleResend() {
       email: props.email,
       network_slug: props.networkSlug,
       channel: store.otpChannel,
+      deal_invitation: props.dealInvitation,
     })
   } catch {
     // Silent — same as initial call

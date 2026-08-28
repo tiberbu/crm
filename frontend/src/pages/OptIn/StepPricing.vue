@@ -153,6 +153,7 @@ import { useOptInStore } from './useOptInStore.js'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
+  dealInvitation: { type: String, default: '' },
 })
 
 const emit = defineEmits(['continue', 'back'])
@@ -175,6 +176,7 @@ async function loadPricing() {
       network_slug: props.networkSlug,
       expiry: store.signingExpiry,
       selected_mfl_codes: JSON.stringify(mflCodes),
+      deal_invitation: props.dealInvitation,
     })
     pricing.value = data
     store.setPricing(data)

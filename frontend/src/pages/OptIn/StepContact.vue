@@ -188,7 +188,7 @@
         </button>
 
         <button
-          v-if="hasSigningToken"
+          v-if="hasSigningToken && !dealInvitation"
           type="button"
           :disabled="loading"
           class="w-full rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-600 transition hover:bg-gray-50 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
@@ -203,12 +203,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useOptInStore } from './useOptInStore.js'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
+  dealInvitation: { type: String, default: '' },
 })
 
 const emit = defineEmits(['otp-requested', 'partial-saved', 'back'])
@@ -234,6 +235,12 @@ const blockState = ref('')
 const hasSigningToken = computed(() => !!store.signingToken)
 const networkName = computed(() => store.networkConfig?.display_name || 'this network')
 const contactEmail = computed(() => store.networkConfig?.contact_email || '')
+
+watch(
+  () => store.contact,
+  (contact) => Object.assign(form, contact),
+  { deep: true },
+)
 
 // OTP delivery channel — persisted in the store so the OTP gate can honour it on resend
 const channel = computed({
@@ -290,6 +297,7 @@ async function handleContinue() {
       email: form.email,
       network_slug: props.networkSlug,
       channel: store.otpChannel,
+      deal_invitation: props.dealInvitation,
     })
   } catch {
     // Real network/server error — let them retry rather than mislabel them as

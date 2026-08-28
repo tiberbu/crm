@@ -9,9 +9,10 @@ import translationPlugin from './translation'
 
 const el = document.getElementById('optin-app')
 const networkSlug = (el && el.dataset.network) ? el.dataset.network : ''
+const dealInvitation = new URLSearchParams(window.location.search).get('deal_invitation') || ''
 
 const pinia = createPinia()
-const app = createApp(OptInWizard, { networkSlug })
+const app = createApp(OptInWizard, { networkSlug, dealInvitation })
 
 setConfig('resourceFetcher', frappeRequest)
 app.use(FrappeUI)

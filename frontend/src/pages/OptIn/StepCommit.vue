@@ -84,6 +84,7 @@ import { useOptInStore } from './useOptInStore.js'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
+  dealInvitation: { type: String, default: '' },
 })
 
 const emit = defineEmits(['submitted', 'back'])
@@ -136,6 +137,7 @@ async function handleCommit(committed) {
       network_slug: props.networkSlug,
       expiry: store.signingExpiry,
       payload_json: JSON.stringify(payload),
+      deal_invitation: props.dealInvitation,
     })
     store.setSubmissionRef(data.submission_ref)
     emit('submitted', data.submission_ref)

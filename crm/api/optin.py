@@ -24,6 +24,8 @@ Rules:
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -94,6 +96,75 @@ def _validate_signing_token(signing_token, email, network_slug, expiry):
 
     if not hmac.compare_digest(expected, frappe.utils.cstr(signing_token)):
         frappe.throw(_("Invalid session token."), frappe.AuthenticationError)
+
+
+def _encode_deal_invitation(context):
+    """Sign an opaque, time-limited invite that binds an OIS session to one Deal."""
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
+    ).decode().rstrip("=")
+    signature = _hmac_hex(_get_signing_key(), "deal-optin:%s" % encoded)
+    return "%s.%s" % (encoded, signature)
+
+
+def _decode_deal_invitation(deal_invitation, network_slug, email=None):
+    """Validate and return a Deal OIS invitation context, or None when absent."""
+    deal_invitation = frappe.utils.cstr(deal_invitation).strip()
+    if not deal_invitation:
+        return None
+    try:
+        encoded, signature = deal_invitation.rsplit(".", 1)
+        expected = _hmac_hex(_get_signing_key(), "deal-optin:%s" % encoded)
+        if not hmac.compare_digest(expected, signature):
+            raise ValueError
+        padded = encoded + "=" * (-len(encoded) % 4)
+        context = json.loads(base64.urlsafe_b64decode(padded).decode())
+    except (AttributeError, TypeError, ValueError, UnicodeDecodeError, binascii.Error, json.JSONDecodeError):
+        frappe.throw(_("This Opt-In invitation is invalid."), frappe.AuthenticationError)
+
+    try:
+        expiry = int(context.get("expiry") or 0)
+    except (AttributeError, TypeError, ValueError):
+        expiry = 0
+    if (
+        not isinstance(context, dict)
+        or not context.get("deal")
+        or context.get("network_slug") != network_slug
+        or time.time() > expiry
+    ):
+        frappe.throw(_("This Opt-In invitation has expired."), frappe.AuthenticationError)
+    if email and frappe.utils.cstr(context.get("email")).lower() != email.lower():
+        frappe.throw(_("This invitation is for a different email address."), frappe.AuthenticationError)
+    if not frappe.db.exists("CRM Deal", context["deal"]):
+        frappe.throw(_("The linked Deal no longer exists."), frappe.AuthenticationError)
+    return context
+
+
+def _deal_invitation_facilities(context):
+    """Return the invited Deal's facilities in the public Opt-In facility shape."""
+    deal = frappe.get_doc("CRM Deal", context["deal"])
+    facilities = []
+    for row in deal.get("facilities") or []:
+        mfl_code = frappe.utils.cstr(row.get("mfl_code") or "").strip()
+        facility_name = frappe.utils.cstr(row.get("facility_name") or "").strip()
+        keph_level = frappe.utils.cstr(row.get("facility_level") or "").strip()
+        if mfl_code and facility_name and keph_level:
+            facilities.append(
+                frappe._dict(
+                    {
+                        "mfl_code": mfl_code,
+                        "facility_name": facility_name,
+                        "keph_level": keph_level,
+                    }
+                )
+            )
+    return facilities
+
+
+def _deal_invitation_otp_key(deal_invitation):
+    return "optin_deal_invite_otp:%s" % hashlib.sha256(
+        frappe.utils.cstr(deal_invitation).encode()
+    ).hexdigest()
 
 
 def _keph_to_item_code(keph_level):
@@ -239,7 +310,7 @@ def _get_quoted_facility_map(mfl_codes):
     to that deal's name. Used to lock such facilities out of re-quoting on the
     wizard. There is no relational link between a pre-qualified facility and a
     deal, so correlation is by mfl_code value against CRM Deal Facility rows,
-    then filtered to deals that actually have a CRM Quote.
+    then filtered to deals that actually have an ERPNext Quotation.
 
     Returns {mfl_code: deal_name}. Guest/system path — ignore_permissions.
     """
@@ -260,14 +331,14 @@ def _get_quoted_facility_map(mfl_codes):
 
     # 2. Keep only deals that have at least one quote
     quoted_deals = {
-        q.deal
+        q.crm_deal
         for q in frappe.get_list(
-            "CRM Quote",
-            filters={"deal": ["in", deal_names]},
-            fields=["deal"],
+            "Quotation",
+            filters={"crm_deal": ["in", deal_names]},
+            fields=["crm_deal"],
             ignore_permissions=True,  # SYSTEM-INTERNAL
         )
-        if q.deal
+        if q.crm_deal
     }
     if not quoted_deals:
         return {}
@@ -518,7 +589,7 @@ def _quote_pricing_rows(quote):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_settings(network_slug):
+def get_settings(network_slug, deal_invitation=None):
     """
     Return network branding config, default price list, and KEPH item-code map.
     Unknown or disabled slug returns default Tiberbu config — never errors.
@@ -531,6 +602,7 @@ def get_settings(network_slug):
     except Exception:
         default_price_list = "Negotiated Year 1"
 
+    invitation = _decode_deal_invitation(deal_invitation, network_slug)
     network_doc = _get_network_doc(network_slug)
 
     if network_doc:
@@ -542,7 +614,11 @@ def get_settings(network_slug):
             "footer_legal_name": network_doc.get("footer_legal_name") or "",
             "partner_logos": _get_partner_logos(network_doc.get("name")),
         }
-        price_list = network_doc.get("price_list_override") or default_price_list
+        price_list = (
+            invitation.get("price_list")
+            if invitation
+            else network_doc.get("price_list_override") or default_price_list
+        )
     else:
         network_config = {
             "display_name": "CareverseHIMS",
@@ -552,17 +628,30 @@ def get_settings(network_slug):
             "footer_legal_name": "Tiberbu Healthnet Solutions",
             "partner_logos": [],
         }
-        price_list = default_price_list
+        price_list = invitation.get("price_list") if invitation else default_price_list
 
-    return {
+    result = {
         "network_config": network_config,
         "default_price_list": price_list,
         "keph_map": _KEPH_MAP,
     }
+    if invitation:
+        deal = frappe.get_doc("CRM Deal", invitation["deal"])
+        result["deal_invitation"] = {
+            "contact": {
+                "first_name": deal.get("first_name") or "",
+                "last_name": deal.get("last_name") or "",
+                "email": invitation["email"],
+                "mobile_no": deal.get("mobile_no") or "",
+                "organisation": deal.get("organization_name") or deal.get("organization") or "",
+            },
+            "facility_count": len(_deal_invitation_facilities(invitation)),
+        }
+    return result
 
 
 @frappe.whitelist(allow_guest=True)
-def verify_prequalified(email, network_slug, channel="email"):
+def verify_prequalified(email, network_slug, channel="email", deal_invitation=None):
     """
     Check email against pre-qualified list for this network.
     If matched: generate OTP, store HMAC on record, dispatch OTP via the chosen
@@ -588,9 +677,15 @@ def verify_prequalified(email, network_slug, channel="email"):
         return {"matched": False, "rate_limited": True}
     frappe.cache().set_value(rate_key, call_count + 1, expires_in_sec=600)
 
-    record = _get_membership(email, network_slug)
-    if not record:
+    invitation = _decode_deal_invitation(deal_invitation, network_slug, email)
+    record = _get_membership(email, network_slug) if not invitation else None
+    if not record and not invitation:
         return {"matched": False, "rate_limited": False}
+    if invitation and not _deal_invitation_facilities(invitation):
+        frappe.throw(
+            _("The linked Deal needs at least one facility with an MFL code, name, and KEPH level."),
+            frappe.ValidationError,
+        )
 
     # Generate 6-digit OTP
     otp = str(random.randint(100000, 999999))
@@ -598,13 +693,22 @@ def verify_prequalified(email, network_slug, channel="email"):
     otp_hash = _hmac_hex(key, otp)
     otp_expiry = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=10)
 
-    # Persist OTP hash on the membership record
-    mem_doc = frappe.get_doc("CRM Facility Membership", record.membership_name)
-    mem_doc.otp_hash = otp_hash
-    mem_doc.otp_expiry = otp_expiry
-    mem_doc.otp_attempts = 0
-    mem_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-    frappe.db.commit()
+    if invitation:
+        frappe.cache().set_value(
+            _deal_invitation_otp_key(deal_invitation),
+            json.dumps({"otp_hash": otp_hash, "otp_expiry": str(otp_expiry), "otp_attempts": 0}),
+            expires_in_sec=600,
+        )
+        contact_phone = frappe.get_doc("CRM Deal", invitation["deal"]).get("mobile_no") or ""
+    else:
+        # Persist OTP hash on the membership record
+        mem_doc = frappe.get_doc("CRM Facility Membership", record.membership_name)
+        mem_doc.otp_hash = otp_hash
+        mem_doc.otp_expiry = otp_expiry
+        mem_doc.otp_attempts = 0
+        mem_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+        frappe.db.commit()
+        contact_phone = record.contact_phone
 
     # Dispatch OTP via the requested channel. A single enqueue on both matched and
     # unmatched paths keeps timing equal, removing the side-channel that would reveal
@@ -613,8 +717,8 @@ def verify_prequalified(email, network_slug, channel="email"):
     frappe.enqueue(
         "crm.api.optin._dispatch_otp",
         channel=channel,
-        contact_email=record.contact_email,
-        contact_phone=record.contact_phone,
+        contact_email=email,
+        contact_phone=contact_phone,
         otp=otp,
         network_slug=network_slug,
         queue="short",
@@ -625,7 +729,7 @@ def verify_prequalified(email, network_slug, channel="email"):
 
 
 @frappe.whitelist(allow_guest=True)
-def verify_otp(email, network_slug, otp):
+def verify_otp(email, network_slug, otp, deal_invitation=None):
     """
     Validate OTP. On success: clear OTP, issue signing_token, return facility list.
     Raises frappe.AuthenticationError on wrong OTP, too many attempts, or expiry.
@@ -634,47 +738,75 @@ def verify_otp(email, network_slug, otp):
     network_slug = frappe.utils.cstr(network_slug).strip()
     otp = frappe.utils.cstr(otp).strip()
 
-    record = _get_membership(email, network_slug)
-    if not record:
+    invitation = _decode_deal_invitation(deal_invitation, network_slug, email)
+    record = _get_membership(email, network_slug) if not invitation else None
+    if not record and not invitation:
         frappe.throw(_("Verification failed."), frappe.AuthenticationError)
 
-    # Load full doc so we can read/write OTP fields including the Password field
-    pqf = frappe.get_doc("CRM Facility Membership", record.membership_name)
+    if invitation:
+        cache_key = _deal_invitation_otp_key(deal_invitation)
+        raw_otp = frappe.cache().get_value(cache_key)
+        try:
+            otp_state = json.loads(raw_otp) if raw_otp else {}
+        except json.JSONDecodeError:
+            otp_state = {}
+        if (
+            not otp_state
+            or int(otp_state.get("otp_attempts") or 0) >= 3
+            or not otp_state.get("otp_expiry")
+            or frappe.utils.now_datetime() > frappe.utils.get_datetime(otp_state["otp_expiry"])
+        ):
+            frappe.throw(_("Verification failed."), frappe.AuthenticationError)
 
-    # 1. Lockout check — before any DB write
-    if (pqf.otp_attempts or 0) >= 3:
-        frappe.throw(_("Verification failed."), frappe.AuthenticationError)
+        otp_state["otp_attempts"] = int(otp_state.get("otp_attempts") or 0) + 1
+        frappe.cache().set_value(cache_key, json.dumps(otp_state), expires_in_sec=600)
+        stored_hash = otp_state.get("otp_hash") or ""
+    else:
+        # Load full doc so we can read/write OTP fields including the Password field
+        pqf = frappe.get_doc("CRM Facility Membership", record.membership_name)
 
-    # 2. Expiry check — before incrementing attempts (no state mutation on expired codes)
-    if not pqf.otp_expiry or frappe.utils.now_datetime() > pqf.otp_expiry:
-        frappe.throw(_("Verification failed."), frappe.AuthenticationError)
+        # 1. Lockout check — before any DB write
+        if (pqf.otp_attempts or 0) >= 3:
+            frappe.throw(_("Verification failed."), frappe.AuthenticationError)
 
-    # 3. Increment attempt counter before validating (prevents brute-force)
-    pqf.otp_attempts = (pqf.otp_attempts or 0) + 1
-    pqf.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-    frappe.db.commit()
+        # 2. Expiry check — before incrementing attempts (no state mutation on expired codes)
+        if not pqf.otp_expiry or frappe.utils.now_datetime() > pqf.otp_expiry:
+            frappe.throw(_("Verification failed."), frappe.AuthenticationError)
+
+        # 3. Increment attempt counter before validating (prevents brute-force)
+        pqf.otp_attempts = (pqf.otp_attempts or 0) + 1
+        pqf.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+        frappe.db.commit()
+
+        stored_hash = pqf.get_password("otp_hash", raise_exception=False) or ""
 
     # 4. Validate HMAC — constant-time comparison
     key = _get_signing_key()
-    stored_hash = pqf.get_password("otp_hash", raise_exception=False) or ""
     expected_hash = _hmac_hex(key, otp)
 
     if not hmac.compare_digest(stored_hash, expected_hash):
         frappe.throw(_("Verification failed."), frappe.AuthenticationError)
 
-    # OTP valid — clear hash and reset counter
-    pqf.otp_hash = ""
-    pqf.otp_attempts = 0
-    pqf.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-    frappe.db.commit()
+    if invitation:
+        frappe.cache().delete_value(_deal_invitation_otp_key(deal_invitation))
+    else:
+        # OTP valid — clear hash and reset counter
+        pqf.otp_hash = ""
+        pqf.otp_attempts = 0
+        pqf.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+        frappe.db.commit()
 
     # Issue signing token valid for 2 hours
     expiry = int(time.time()) + 7200
     msg = "%s:%s:%s" % (email, network_slug, expiry)
     signing_token = _hmac_hex(key, msg)
 
-    all_records = _get_all_memberships(email, network_slug)
-    quoted_map = _get_quoted_facility_map([r.mfl_code for r in all_records])
+    all_records = (
+        _deal_invitation_facilities(invitation)
+        if invitation
+        else _get_all_memberships(email, network_slug)
+    )
+    quoted_map = {} if invitation else _get_quoted_facility_map([r.mfl_code for r in all_records])
     facilities = [
         {
             "mfl_code": r.mfl_code,
@@ -694,7 +826,7 @@ def verify_otp(email, network_slug, otp):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_pricing(signing_token, email, network_slug, expiry, selected_mfl_codes):
+def get_pricing(signing_token, email, network_slug, expiry, selected_mfl_codes, deal_invitation=None):
     """
     Compute KEPH-based pricing for selected MFL codes.
     Validates signing_token before any data access.
@@ -705,6 +837,7 @@ def get_pricing(signing_token, email, network_slug, expiry, selected_mfl_codes):
     network_slug = frappe.utils.cstr(network_slug).strip()
 
     _validate_signing_token(signing_token, email, network_slug, expiry)
+    invitation = _decode_deal_invitation(deal_invitation, network_slug, email)
 
     if isinstance(selected_mfl_codes, str):
         try:
@@ -720,16 +853,22 @@ def get_pricing(signing_token, email, network_slug, expiry, selected_mfl_codes):
     except Exception:
         default_pl = "Negotiated Year 1"
     price_list = (
-        (network_doc.get("price_list_override") if network_doc else None) or default_pl
+        invitation.get("price_list")
+        if invitation
+        else (network_doc.get("price_list_override") if network_doc else None) or default_pl
     )
 
     # Build MFL → facility info map from pre-qualified records via membership child table
-    all_records = _get_all_memberships(email, network_slug)
+    all_records = (
+        _deal_invitation_facilities(invitation)
+        if invitation
+        else _get_all_memberships(email, network_slug)
+    )
     facility_map = {r.mfl_code: r for r in all_records if r.mfl_code}
 
     # Defence-in-depth: facilities already linked+quoted to a deal are locked out
     # of re-quoting on the wizard UI; enforce the same server-side.
-    quoted_map = _get_quoted_facility_map(list(facility_map.keys()))
+    quoted_map = {} if invitation else _get_quoted_facility_map(list(facility_map.keys()))
 
     result_facilities = []
     subtotal_monthly = 0.0
@@ -906,7 +1045,7 @@ def build_tc_context_for_deal(deal):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_terms_text(signing_token, email, network_slug, expiry, selected_mfl_codes):
+def get_terms_text(signing_token, email, network_slug, expiry, selected_mfl_codes, deal_invitation=None):
     """
     Render the active T&C Jinja template with facility+pricing context.
     Returns rendered HTML and its SHA-256 hash (proves customer saw their specific numbers).
@@ -939,7 +1078,7 @@ def get_terms_text(signing_token, email, network_slug, expiry, selected_mfl_code
 
     # Compute pricing to embed in the T&C
     pricing_result = get_pricing(
-        signing_token, email, network_slug, expiry, selected_mfl_codes
+        signing_token, email, network_slug, expiry, selected_mfl_codes, deal_invitation
     )
 
     facilities = pricing_result.get("facilities", [])
@@ -974,7 +1113,7 @@ def get_terms_text(signing_token, email, network_slug, expiry, selected_mfl_code
 
 
 @frappe.whitelist(allow_guest=True)
-def submit_async(signing_token, email, network_slug, expiry, payload_json):
+def submit_async(signing_token, email, network_slug, expiry, payload_json, deal_invitation=None):
     """
     Validate signing_token, create CRM Opt-In Submission, enqueue background processor.
     Returns {submission_ref, status: "queued"} in under 1 second.
@@ -984,6 +1123,7 @@ def submit_async(signing_token, email, network_slug, expiry, payload_json):
     network_slug = frappe.utils.cstr(network_slug).strip()
 
     _validate_signing_token(signing_token, email, network_slug, expiry)
+    invitation = _decode_deal_invitation(deal_invitation, network_slug, email)
 
     # Normalise payload
     if isinstance(payload_json, dict):
@@ -995,6 +1135,20 @@ def submit_async(signing_token, email, network_slug, expiry, payload_json):
             payload = json.loads(payload_json)
         except Exception:
             frappe.throw(_("Invalid submission payload."))
+
+    if invitation:
+        existing_submission = frappe.db.get_value(
+            "CRM Deal", invitation["deal"], "optin_submission", for_update=True
+        )
+        if existing_submission:
+            frappe.throw(
+                _("This Deal already has an Opt-In submission."), frappe.ValidationError
+            )
+        payload["_deal_invitation"] = {
+            "deal": invitation["deal"],
+            "price_list": invitation["price_list"],
+        }
+        payload_json = json.dumps(payload)
 
     selected_mfl_codes = [
         frappe.utils.cstr(f.get("mfl_code"))
@@ -1031,6 +1185,8 @@ def submit_async(signing_token, email, network_slug, expiry, payload_json):
     sub.facility_witness_name = frappe.utils.cstr(witness.get("name") or "").strip()
     sub.facility_witness_email = frappe.utils.cstr(witness.get("email") or "").strip().lower()
     sub.submitted_at = frappe.utils.now_datetime()
+    if invitation:
+        sub.deal = invitation["deal"]
     sub.raw_json = payload_json
     sub.has_duplicate_mfl = 1 if has_duplicate else 0
     sub.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
@@ -1052,6 +1208,82 @@ def submit_async(signing_token, email, network_slug, expiry, payload_json):
     )
 
     return {"submission_ref": sub.name, "status": "queued"}
+
+
+@frappe.whitelist()
+def send_deal_optin_invitation(deal, price_list=None):
+    """Email a Deal-bound OIS link that preserves the selected negotiated price list."""
+    _require_optin_manager()
+    deal = frappe.utils.cstr(deal).strip()
+    if not frappe.has_permission("CRM Deal", "write", deal):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+    deal_doc = frappe.get_doc("CRM Deal", deal)
+    network_slug = frappe.utils.cstr(deal_doc.get("optin_network") or "").strip()
+    email = frappe.utils.cstr(deal_doc.get("email") or "").strip().lower()
+    if not network_slug:
+        frappe.throw(_("Select an Opt-In Network on this Deal before sending an invitation."))
+    if not email:
+        frappe.throw(_("Add a primary contact email to this Deal before sending an invitation."))
+    if deal_doc.get("optin_submission"):
+        frappe.throw(_("This Deal already has an Opt-In submission."))
+    if frappe.get_list("Quotation", filters={"crm_deal": deal}, fields=["name"], limit_page_length=1):
+        frappe.throw(_("This Deal already has a quote. Use the assisted quote workflow instead."))
+
+    network = _get_network_doc(network_slug)
+    if not network:
+        frappe.throw(_("Select an enabled Opt-In Network."))
+    if not _deal_invitation_facilities({"deal": deal}):
+        frappe.throw(
+            _("Add at least one facility with an MFL code, name, and KEPH level before sending an invitation.")
+        )
+
+    if not price_list:
+        settings = frappe.get_single("CRM Opt-In Settings")
+        price_list = network.get("price_list_override") or settings.default_price_list
+    price_list = frappe.utils.cstr(price_list).strip()
+    if not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
+        frappe.throw(_("Select an enabled selling price list."))
+
+    expiry = int(time.time()) + 7 * 24 * 60 * 60
+    invitation = _encode_deal_invitation(
+        {
+            "deal": deal,
+            "email": email,
+            "network_slug": network_slug,
+            "price_list": price_list,
+            "expiry": expiry,
+        }
+    )
+    url = "%s/opt-in?network=%s&deal_invitation=%s" % (
+        frappe.utils.get_url(),
+        network_slug,
+        invitation,
+    )
+    recipient_name = frappe.utils.escape_html(
+        " ".join(
+            part for part in (deal_doc.get("first_name"), deal_doc.get("last_name")) if part
+        )
+        or "there"
+    )
+    network_name = frappe.utils.escape_html(network.get("display_name") or network_slug)
+    frappe.sendmail(
+        recipients=[email],
+        subject="Complete your %s Opt-In" % (network.get("display_name") or "CareverseHIMS"),
+        message=(
+            "<p>Dear %s,</p>"
+            "<p>Please review your facility details, pricing, and agreement for "
+            "<strong>%s</strong>.</p>"
+            '<p style="margin:24px 0"><a href="%s" '
+            'style="background:#b91c1c;color:#fff;padding:12px 24px;border-radius:6px;'
+            'text-decoration:none;font-weight:600">Complete Opt-In</a></p>'
+            "<p>If the button does not work, paste this link into your browser:<br>"
+            '<a href="%s">%s</a></p><p>This invitation expires in seven days.</p>'
+        )
+        % (recipient_name, network_name, url, url, url),
+        now=True,
+    )
+    return {"sent_to": email, "price_list": price_list}
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1393,6 +1625,118 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 # ---------------------------------------------------------------------------
 
 
+def _process_deal_invitation_submission(sub, payload):
+    """Attach a completed invited OIS to its existing Deal and create its quote."""
+    context = payload.get("_deal_invitation") or {}
+    deal_name = frappe.utils.cstr(context.get("deal") or "").strip()
+    if not deal_name or not frappe.db.exists("CRM Deal", deal_name):
+        frappe.throw(_("The Deal for this Opt-In invitation no longer exists."))
+
+    deal = frappe.get_doc("CRM Deal", deal_name)
+    if deal.get("optin_submission") and deal.optin_submission != sub.name:
+        frappe.throw(_("This Deal already has an Opt-In submission."))
+    pricing = payload.get("pricing") or []
+    if not pricing:
+        frappe.throw(_("No pricing rows were submitted."))
+    existing_quotes = frappe.get_list(
+        "Quotation",
+        filters={"crm_deal": deal_name},
+        fields=["name", "crm_sent"],
+        limit_page_length=1,
+    )
+    if existing_quotes and not existing_quotes[0].crm_sent:
+        frappe.throw(_("This Deal already has a quote."))
+
+    _update_job_step(sub.name, "lead", "done", "Using the existing Deal")
+    _update_job_step(sub.name, "deal", "in_progress", "Updating your account...")
+    contact = payload.get("contact") or {}
+    sub.deal = deal_name
+    sub.facility_signatory_name = (
+        frappe.utils.cstr(contact.get("first_name") or "").strip()
+        + " "
+        + frappe.utils.cstr(contact.get("last_name") or "").strip()
+    ).strip()
+    sub.facility_signatory_email = frappe.utils.cstr(contact.get("email") or "").strip().lower()
+    sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    deal.optin_submission = sub.name
+    deal.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    frappe.db.commit()
+    _update_job_step(sub.name, "deal", "done", "Existing Deal updated")
+
+    _update_job_step(sub.name, "quote", "in_progress", "Generating your quote...")
+    from crm.api.quotes import _ensure_customer
+
+    if existing_quotes:
+        quote = frappe.get_doc("Quotation", existing_quotes[0].name)
+    else:
+        customer_name = _ensure_customer(deal.get("organization") or "")
+        quote = frappe.get_doc(
+            {
+                "doctype": "Quotation",
+                "quotation_to": "Customer",
+                "party_name": customer_name,
+                "company": frappe.db.get_single_value("Global Defaults", "default_company"),
+                "transaction_date": frappe.utils.today(),
+                "valid_till": frappe.utils.add_days(frappe.utils.today(), 30),
+                "currency": "KES",
+                "order_type": "Sales",
+                "crm_deal": deal_name,
+                "selling_price_list": context.get("price_list"),
+                "ignore_pricing_rule": 1,
+                "crm_sent": 1,
+            }
+        )
+        for product in pricing:
+            annual_rate = float(product.get("annual_kes") or 0)
+            quote.append(
+                "items",
+                {
+                    "item_code": frappe.utils.cstr(product.get("item_code") or ""),
+                    "item_name": "CareverseHIMS - %s"
+                    % frappe.utils.cstr(product.get("facility_name") or ""),
+                    "description": "KEPH %s - Annual Subscription"
+                    % frappe.utils.cstr(product.get("keph_level") or ""),
+                    "qty": 1,
+                    "price_list_rate": annual_rate,
+                    "rate": annual_rate,
+                    "discount_percentage": 0,
+                    "uom": "Nos",
+                    "facility_name": frappe.utils.cstr(product.get("facility_name") or ""),
+                },
+            )
+        quote.flags.ignore_permissions = True  # SYSTEM-INTERNAL
+        quote.flags.ignore_validate = True
+        quote.flags.ignore_mandatory = True
+        quote.set_missing_values()
+        quote.calculate_taxes_and_totals()
+        quote.vat_amount = round((quote.net_total or 0) * VAT_RATE, 2)
+        quote.insert(ignore_mandatory=True)
+        frappe.db.commit()
+    _update_job_step(sub.name, "quote", "done", "Quote ready")
+
+    recipient = sub.submitter_email
+    if recipient:
+        network = _get_network_doc(sub.network_slug)
+        frappe.sendmail(
+            recipients=[recipient],
+            subject="%s Opt-In Confirmed - Reference %s"
+            % (((network or {}).get("display_name") or "CareverseHIMS"), sub.name),
+            message=_confirmation_email_html(
+                contact.get("first_name") or "", sub.name, network, pricing
+            ),
+            now=True,
+        )
+    _update_job_step(sub.name, "email", "done", "Confirmation email sent")
+    sub.status = "Processed"
+    sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    frappe.db.commit()
+    frappe.cache().set_value(
+        "optin_job:%s" % sub.name,
+        json.dumps({"steps": [], "overall": "complete", "lead_id": None}),
+        expires_in_sec=3600,
+    )
+
+
 def _process_submission(submission_ref):
     """
     Background job: CRM Opt-In Submission → Lead → Deal → Quotation → Confirmation email.
@@ -1407,6 +1751,9 @@ def _process_submission(submission_ref):
         frappe.db.commit()
 
         payload = json.loads(sub.raw_json or "{}")
+        if payload.get("_deal_invitation"):
+            _process_deal_invitation_submission(sub, payload)
+            return
         contact = payload.get("contact", {})
         facilities = payload.get("facilities", [])
         pricing = payload.get("pricing", [])
