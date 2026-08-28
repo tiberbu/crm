@@ -578,6 +578,22 @@ def _prepare_submission_payload(
     return payload
 
 
+def _get_optin_deal_forecast_fields(pricing):
+    """Build the mandatory Deal forecast fields from the accepted Opt-In pricing."""
+    expected_deal_value = round(
+        sum(frappe.utils.flt(product.get("annual_kes")) for product in pricing or []), 2
+    )
+    if expected_deal_value <= 0:
+        frappe.throw(
+            _("Opt-In pricing must be greater than zero. Please contact support."),
+            frappe.ValidationError,
+        )
+    return {
+        "expected_deal_value": expected_deal_value,
+        "expected_closure_date": frappe.utils.add_days(frappe.utils.today(), 30),
+    }
+
+
 def _get_or_create_submission_contact(lead):
     """Reuse a Contact by email so a retry never fails on a duplicate person."""
     existing_name = ""
@@ -2162,6 +2178,7 @@ def _process_submission(submission_ref):
                 deal_name = convert_to_deal(
                     lead=lead.name,
                     doc=lead,
+                    deal=_get_optin_deal_forecast_fields(pricing),
                     existing_contact=contact_name,
                     existing_organization=organization_name,
                 )
