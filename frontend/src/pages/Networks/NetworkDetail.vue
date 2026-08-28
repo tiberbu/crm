@@ -63,12 +63,37 @@
             />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-gray-6">{{ __('Logo URL') }}</label>
-            <input
-              v-model="networkForm.logo_url"
-              type="url"
-              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            />
+            <label class="text-xs font-medium text-ink-gray-6">{{ __('Network Logo') }}</label>
+            <FileUploader
+              :validateFile="validateIsImageFile"
+              @success="setNetworkLogo"
+            >
+              <template #default="{ openFileSelector, uploading, progress, error }">
+                <div class="flex items-center gap-3">
+                  <img
+                    v-if="networkForm.logo_url"
+                    :src="networkForm.logo_url"
+                    :alt="__('Network logo preview')"
+                    class="h-10 w-10 rounded border border-outline-gray-2 object-contain bg-surface-white"
+                  />
+                  <button
+                    type="button"
+                    class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-7 hover:bg-surface-gray-2 disabled:opacity-50 dark:bg-surface-gray-3 dark:text-ink-gray-4"
+                    :disabled="uploading"
+                    @click="openFileSelector"
+                  >
+                    {{ uploading ? __('Uploading {0}%', [progress]) : networkForm.logo_url ? __('Change Logo') : __('Upload Logo') }}
+                  </button>
+                  <button
+                    v-if="networkForm.logo_url && !uploading"
+                    type="button"
+                    class="text-xs text-red-600 hover:underline"
+                    @click="networkForm.logo_url = ''"
+                  >{{ __('Remove') }}</button>
+                </div>
+                <p v-if="error" class="mt-1 text-xs text-red-600">{{ __(error) }}</p>
+              </template>
+            </FileUploader>
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{ __('Primary Colour') }}</label>
@@ -156,6 +181,7 @@
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Status') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Contact Name') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Contact Email') }}</th>
+            <th class="px-4 py-2.5 text-left font-medium">{{ __('Invite Email') }}</th>
             <th class="px-4 py-2.5 text-right font-medium">{{ __('Actions') }}</th>
           </tr>
         </thead>
@@ -175,8 +201,20 @@
             </td>
             <td class="px-4 py-3 text-xs text-ink-gray-7">{{ networkMembership(row)?.contact_name || '—' }}</td>
             <td class="px-4 py-3 text-xs text-ink-gray-6">{{ networkMembership(row)?.contact_email || '—' }}</td>
+            <td class="px-4 py-3">
+              <span :class="inviteStatusPill(networkMembership(row)?.invite_status)">
+                {{ networkMembership(row)?.invite_status || __('Not sent') }}
+              </span>
+            </td>
             <td class="px-4 py-3 text-right" @click.stop>
               <div class="flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  :loading="resendingMembership === networkMembership(row)?.name"
+                  :disabled="!canResendInvite(networkMembership(row))"
+                  @click="resendInvite(row)"
+                >{{ __('Resend Invite') }}</Button>
                 <Button size="sm" variant="subtle" @click="editContact(row)">{{ __('Edit') }}</Button>
                 <button
                   class="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-surface-red-1 disabled:opacity-50"
@@ -352,7 +390,8 @@
 
 <script setup>
 import { ref, computed, reactive, watch } from 'vue'
-import { createResource, Button } from 'frappe-ui'
+import { createResource, Button, FileUploader } from 'frappe-ui'
+import { validateIsImageFile } from '@/utils'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
@@ -400,6 +439,10 @@ function startEditNetwork() {
 function cancelEditNetwork() {
   editingNetwork.value = false
   networkFormError.value = ''
+}
+
+function setNetworkLogo(file) {
+  networkForm.logo_url = file?.file_url ?? ''
 }
 
 const saveNetworkResource = createResource({ url: 'crm.api.optin_admin.save_network' })
@@ -575,6 +618,28 @@ async function removeContact(row) {
   }
 }
 
+const resendInviteResource = createResource({ url: 'crm.api.optin_admin.resend_facility_invitation' })
+const resendingMembership = ref(null)
+
+function canResendInvite(membership) {
+  return !!membership?.name && membership.status === 'Active' && !!membership.contact_email
+}
+
+async function resendInvite(row) {
+  const membership = networkMembership(row)
+  if (!canResendInvite(membership)) return
+  resendingMembership.value = membership.name
+  try {
+    await resendInviteResource.submit({
+      facility_name: row.name,
+      membership_name: membership.name,
+    })
+  } finally {
+    resendingMembership.value = null
+    facilitiesResource.reload()
+  }
+}
+
 // ── CSV Import ─────────────────────────────────────────────────────────────
 
 const showCsvSection = ref(false)
@@ -684,6 +749,17 @@ function statusPill(status) {
     'Active':   `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`,
     'Opted In': `${base} bg-surface-gray-3 text-ink-gray-8 dark:bg-surface-gray-5 dark:text-ink-gray-3`,
     'Declined': `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400`,
+  }
+  return map[status] ?? `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`
+}
+
+function inviteStatusPill(status) {
+  const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
+  const map = {
+    Sent: `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`,
+    Error: `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400`,
+    'Not Sent': `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400`,
+    Sending: `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400`,
   }
   return map[status] ?? `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`
 }
