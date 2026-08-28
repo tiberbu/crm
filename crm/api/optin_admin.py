@@ -101,6 +101,29 @@ def save_network(data):
         if field in data:
             setattr(doc, field, data[field])
 
+    child_fields = {
+        "partner_logos": ("partner_name", "logo", "website"),
+        "coordinators": ("user",),
+        "network_signers": ("full_name", "email"),
+    }
+    for fieldname, allowed_fields in child_fields.items():
+        if fieldname in data:
+            rows = data[fieldname] or []
+            if not isinstance(rows, list):
+                frappe.throw(_("{0} must be a list.").format(fieldname))
+            if any(not isinstance(row, dict) for row in rows):
+                frappe.throw(_("{0} contains an invalid row.").format(fieldname))
+            doc.set(
+                fieldname,
+                [
+                   {
+                       field: frappe.utils.cstr(row.get(field) or "").strip()
+                       for field in allowed_fields
+                   }
+                   for row in rows
+                ],
+            )
+
     doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
     frappe.db.commit()
     return {"name": doc.name}

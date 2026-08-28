@@ -317,15 +317,9 @@ const links = [
     gated: true,
   },
   {
-    label: 'Prequalified Facilities',
+    label: 'Network Pricing',
     icon: OptInIcon,
-    to: 'PrequalifiedFacilities',
-    gated: true,
-  },
-  {
-    label: 'Item Prices',
-    icon: OptInIcon,
-    to: 'ItemPrices',
+    to: 'NetworkPricing',
     gated: true,
   },
   {

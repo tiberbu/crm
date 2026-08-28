@@ -113,6 +113,12 @@ const routes = [
     component: () => import('@/pages/Networks/NetworkManagement.vue'),
   },
   {
+    path: '/networks/new',
+    name: 'NewNetwork',
+    component: () => import('@/pages/Networks/NetworkDetail.vue'),
+    props: { networkSlug: 'new' },
+  },
+  {
     path: '/networks/:networkSlug',
     name: 'NetworkDetail',
     component: () => import('@/pages/Networks/NetworkDetail.vue'),
@@ -125,7 +131,7 @@ const routes = [
   },
   {
     path: '/item-prices',
-    name: 'ItemPrices',
+    name: 'NetworkPricing',
     component: () => import('@/pages/ItemPrices.vue'),
   },
   {

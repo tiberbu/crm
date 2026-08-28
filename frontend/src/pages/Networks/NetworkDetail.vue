@@ -10,9 +10,15 @@
       </div>
 
       <!-- View mode -->
-      <template v-else-if="!editingNetwork">
+      <template v-else-if="!editingNetwork && !isNewNetwork">
         <div class="mb-1 flex flex-wrap items-start justify-between gap-2">
           <div class="flex flex-wrap items-center gap-2">
+            <img
+              v-if="networkDoc?.logo_url"
+              :src="networkDoc.logo_url"
+              :alt="__('Network logo')"
+              class="size-9 rounded border border-outline-gray-2 object-contain"
+            />
             <h1 class="text-xl font-bold text-ink-gray-9">{{ networkDoc?.display_name || networkSlug }}</h1>
             <span class="font-mono text-xs text-ink-gray-4">{{ networkDoc?.slug || networkSlug }}</span>
             <span :class="enabledPill(networkDoc?.enabled)">
@@ -36,38 +42,61 @@
         <p class="text-sm text-ink-gray-5">
           {{ [networkDoc?.contact_email, networkDoc?.footer_legal_name].filter(Boolean).join(' · ') || '—' }}
         </p>
+        <div class="mt-5 grid gap-4 border-t border-outline-gray-2 pt-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">{{ __('Portal configuration') }}</p>
+            <p class="mt-2 text-sm text-ink-gray-7">{{ networkDoc?.custom_header_copy || __('No custom header copy') }}</p>
+            <p class="mt-2 text-sm text-ink-gray-6">{{ __('Price list: {0}', [networkDoc?.price_list_override || __('Opt-In default')]) }}</p>
+            <div class="mt-2 flex items-center gap-2 text-sm text-ink-gray-6"><span class="size-3 rounded-full border border-outline-gray-3" :style="{ backgroundColor: networkDoc?.primary_colour || '#e53e3e' }" />{{ networkDoc?.primary_colour || '#e53e3e' }}</div>
+          </div>
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">{{ __('Partners') }}</p>
+            <div v-if="networkDoc?.partner_logos?.length" class="mt-2 flex flex-wrap gap-2">
+              <a v-for="partner in networkDoc.partner_logos" :key="partner.name || partner.partner_name" :href="partner.website || undefined" target="_blank" rel="noopener" class="flex items-center gap-2 rounded border border-outline-gray-2 px-2 py-1 text-sm text-ink-gray-7">
+                <img v-if="partner.logo" :src="partner.logo" :alt="partner.partner_name" class="size-5 object-contain" />
+                {{ partner.partner_name }}
+              </a>
+            </div>
+            <p v-else class="mt-2 text-sm text-ink-gray-5">{{ __('No partners configured') }}</p>
+          </div>
+          <div class="space-y-3">
+            <div>
+              <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">{{ __('Coordinators') }}</p>
+              <p class="mt-1 text-sm text-ink-gray-7">{{ networkDoc?.coordinators?.map((row) => row.user).join(', ') || __('None') }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">{{ __('Network signatories') }}</p>
+              <p class="mt-1 text-sm text-ink-gray-7">{{ networkDoc?.network_signers?.map((row) => `${row.full_name} (${row.email})`).join(', ') || __('None') }}</p>
+            </div>
+          </div>
+        </div>
       </template>
 
       <!-- Edit mode -->
       <template v-else>
         <div class="mb-4 flex items-center justify-between">
-          <h2 class="text-sm font-semibold text-ink-gray-9">{{ __('Edit Network') }}</h2>
+          <h2 class="text-lg font-semibold text-ink-gray-9">{{ isNewNetwork ? __('New Opt-In Network') : __('Edit Network') }}</h2>
         </div>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-gray-6">{{ __('Display Name') }} <span class="text-red-600">*</span></label>
-            <input
-              v-model="networkForm.display_name"
-              type="text"
-              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-gray-6">{{ __('Contact Email') }}</label>
-            <input
-              v-model="networkForm.contact_email"
-              type="email"
-              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-gray-6">{{ __('Footer Legal Name') }}</label>
-            <input
-              v-model="networkForm.footer_legal_name"
-              type="text"
-              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            />
-          </div>
+          <FormControl
+            v-if="isNewNetwork"
+            v-model="networkForm.slug"
+            :label="__('Slug')"
+            :placeholder="__('e.g. careverse-ke')"
+          />
+          <FormControl
+            v-else
+            :model-value="networkForm.slug"
+            :label="__('Slug')"
+            disabled
+          />
+          <FormControl
+            v-model="networkForm.display_name"
+            :label="__('Display Name')"
+            :placeholder="__('Name shown to facilities')"
+          />
+          <FormControl v-model="networkForm.contact_email" :label="__('Contact Email')" type="email" />
+          <FormControl v-model="networkForm.footer_legal_name" :label="__('Footer Legal Name')" />
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{ __('Network Logo') }}</label>
             <FileUploader
@@ -133,14 +162,42 @@
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{ __('Status') }}</label>
-            <label class="flex cursor-pointer items-center gap-2 pt-1.5">
-              <input
-                v-model="networkForm.enabled"
-                type="checkbox"
-                class="h-4 w-4 rounded border-outline-gray-3 accent-red-600"
-              />
-              <span class="text-sm text-ink-gray-7">{{ __('Enabled') }}</span>
-            </label>
+            <Switch v-model="networkForm.enabled" :label="__('Enabled')" size="sm" />
+          </div>
+          <FormControl
+            v-model="networkForm.custom_header_copy"
+            :label="__('Custom Header Copy')"
+            type="textarea"
+            class="sm:col-span-2"
+          />
+        </div>
+        <div class="mt-6 grid gap-5 border-t border-outline-gray-2 pt-5 lg:grid-cols-3">
+          <div>
+            <div class="mb-3 flex items-center justify-between"><h3 class="text-sm font-semibold text-ink-gray-8">{{ __('Partner Logos') }}</h3><Button size="sm" variant="subtle" @click="addPartner">{{ __('Add Partner') }}</Button></div>
+            <div v-if="!networkForm.partner_logos.length" class="text-sm text-ink-gray-5">{{ __('No partners configured') }}</div>
+            <div v-for="(partner, index) in networkForm.partner_logos" :key="partner.key" class="mb-3 space-y-2 rounded-lg border border-outline-gray-2 p-3">
+              <div class="flex gap-2"><FormControl v-model="partner.partner_name" :label="__('Partner Name')" class="flex-1" /><Button variant="ghost" theme="red" icon="lucide-trash-2" @click="networkForm.partner_logos.splice(index, 1)" /></div>
+              <FormControl v-model="partner.website" :label="__('Website')" type="url" />
+              <FileUploader :validateFile="validateIsImageFile" @success="(file) => setPartnerLogo(index, file)">
+                <template #default="{ openFileSelector, uploading }">
+                  <div class="flex items-center gap-2">
+                    <img v-if="partner.logo" :src="partner.logo" :alt="partner.partner_name" class="size-7 rounded border border-outline-gray-2 object-contain" />
+                    <Button size="sm" variant="subtle" :loading="uploading" @click="openFileSelector">{{ partner.logo ? __('Change Logo') : __('Upload Logo') }}</Button>
+                    <Button v-if="partner.logo && !uploading" size="sm" variant="ghost" theme="red" @click="partner.logo = ''">{{ __('Remove') }}</Button>
+                  </div>
+                </template>
+              </FileUploader>
+            </div>
+          </div>
+          <div>
+            <div class="mb-3 flex items-center justify-between"><h3 class="text-sm font-semibold text-ink-gray-8">{{ __('Network Coordinators') }}</h3><Button size="sm" variant="subtle" @click="networkForm.coordinators.push({ key: newRowKey(), user: '' })">{{ __('Add Coordinator') }}</Button></div>
+            <div v-if="!networkForm.coordinators.length" class="text-sm text-ink-gray-5">{{ __('No coordinators configured') }}</div>
+            <div v-for="(coordinator, index) in networkForm.coordinators" :key="coordinator.key" class="mb-2 flex items-end gap-2"><FormControl v-model="coordinator.user" :label="__('CRM User')" class="flex-1" /><Button variant="ghost" theme="red" icon="lucide-trash-2" @click="networkForm.coordinators.splice(index, 1)" /></div>
+          </div>
+          <div>
+            <div class="mb-3 flex items-center justify-between"><h3 class="text-sm font-semibold text-ink-gray-8">{{ __('Network Signatories') }}</h3><Button size="sm" variant="subtle" @click="addSigner">{{ __('Add Signatory') }}</Button></div>
+            <div v-if="!networkForm.network_signers.length" class="text-sm text-ink-gray-5">{{ __('No signatories configured') }}</div>
+            <div v-for="(signer, index) in networkForm.network_signers" :key="signer.key" class="mb-3 space-y-2 rounded-lg border border-outline-gray-2 p-3"><div class="flex items-end gap-2"><FormControl v-model="signer.full_name" :label="__('Full Name')" class="flex-1" /><Button variant="ghost" theme="red" icon="lucide-trash-2" @click="networkForm.network_signers.splice(index, 1)" /></div><FormControl v-model="signer.email" :label="__('Email')" type="email" /></div>
           </div>
         </div>
 
@@ -152,6 +209,7 @@
       </template>
     </div>
 
+    <template v-if="!isNewNetwork">
     <!-- ── PREQUALIFIED CONTACTS ─────────────────────────────────────────── -->
     <div class="mt-6 flex items-center justify-between">
       <h2 class="text-base font-semibold text-ink-gray-9">{{ __('Prequalified Contacts') }}</h2>
@@ -397,24 +455,28 @@
     </div>
 
     <div class="h-8" />
+    </template>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, reactive, watch } from 'vue'
-import { createResource, Button, FileUploader } from 'frappe-ui'
+import { useRouter } from 'vue-router'
+import { createResource, Button, FileUploader, FormControl, Switch } from 'frappe-ui'
 import { validateIsImageFile } from '@/utils'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
 })
+const router = useRouter()
+const isNewNetwork = computed(() => props.networkSlug === 'new')
 
 // ── Network doc ────────────────────────────────────────────────────────────
 
 const networkResource = createResource({
   url: 'frappe.client.get',
   makeParams: () => ({ doctype: 'CRM Opt-In Network', name: props.networkSlug }),
-  auto: true,
+  auto: !isNewNetwork.value,
 })
 
 const networkDoc = computed(() => networkResource.data ?? null)
@@ -425,6 +487,7 @@ const optInUrl = computed(() => `/opt-in?network=${encodeURIComponent(props.netw
 const editingNetwork = ref(false)
 const networkFormError = ref('')
 const networkForm = reactive({
+  slug: '',
   display_name: '',
   enabled: true,
   contact_email: '',
@@ -432,11 +495,16 @@ const networkForm = reactive({
   logo_url: '',
   primary_colour: '#e53e3e',
   price_list_override: '',
+  custom_header_copy: '',
+  partner_logos: [],
+  coordinators: [],
+  network_signers: [],
 })
 
 function startEditNetwork() {
   const doc = networkDoc.value
   Object.assign(networkForm, {
+    slug: doc?.slug ?? '',
     display_name: doc?.display_name ?? '',
     enabled: !!doc?.enabled,
     contact_email: doc?.contact_email ?? '',
@@ -444,13 +512,21 @@ function startEditNetwork() {
     logo_url: doc?.logo_url ?? '',
     primary_colour: doc?.primary_colour ?? '#e53e3e',
     price_list_override: doc?.price_list_override ?? '',
+    custom_header_copy: doc?.custom_header_copy ?? '',
+    partner_logos: (doc?.partner_logos ?? []).map((row) => ({ ...row, key: newRowKey() })),
+    coordinators: (doc?.coordinators ?? []).map((row) => ({ ...row, key: newRowKey() })),
+    network_signers: (doc?.network_signers ?? []).map((row) => ({ ...row, key: newRowKey() })),
   })
   networkFormError.value = ''
   editingNetwork.value = true
 }
 
 function cancelEditNetwork() {
-  editingNetwork.value = false
+  if (isNewNetwork.value) {
+    router.push({ name: 'Networks' })
+  } else {
+    editingNetwork.value = false
+  }
   networkFormError.value = ''
 }
 
@@ -466,23 +542,55 @@ const negotiatedPriceListsResource = createResource({
 const negotiatedPriceLists = computed(() => negotiatedPriceListsResource.data ?? [])
 
 async function saveNetwork() {
+  if (isNewNetwork.value && !networkForm.slug.trim()) {
+    networkFormError.value = __('Slug is required.')
+    return
+  }
   if (!networkForm.display_name.trim()) {
     networkFormError.value = __('Display Name is required.')
     return
   }
   networkFormError.value = ''
   const data = {
-    name: props.networkSlug,
-    slug: props.networkSlug,
     ...networkForm,
   }
+  if (!isNewNetwork.value) {
+    data.name = props.networkSlug
+    data.slug = props.networkSlug
+  } else {
+    data.slug = networkForm.slug.trim()
+  }
   try {
-    await saveNetworkResource.submit({ data })
+    const result = await saveNetworkResource.submit({ data })
     editingNetwork.value = false
-    networkResource.reload()
+    if (isNewNetwork.value) {
+      router.replace({ name: 'NetworkDetail', params: { networkSlug: result.name } })
+    } else {
+      networkResource.reload()
+    }
   } catch (e) {
     networkFormError.value = e?.messages?.[0] ?? e?.message ?? __('Save failed.')
   }
+}
+
+function newRowKey() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function addPartner() {
+  networkForm.partner_logos.push({ key: newRowKey(), partner_name: '', logo: '', website: '' })
+}
+
+function setPartnerLogo(index, file) {
+  networkForm.partner_logos[index].logo = file?.file_url ?? ''
+}
+
+function addSigner() {
+  networkForm.network_signers.push({ key: newRowKey(), full_name: '', email: '' })
+}
+
+if (isNewNetwork.value) {
+  startEditNetwork()
 }
 
 // ── Facilities list ────────────────────────────────────────────────────────
