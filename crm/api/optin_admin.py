@@ -149,7 +149,17 @@ def list_facilities(network=None, status=None, page=0, page_size=20):
     mem_rows = frappe.get_list(
         "CRM Facility Membership",
         filters=mem_filters,
-        fields=["parent", "network", "status", "contact_name", "contact_email", "contact_phone"],
+        fields=[
+            "name",
+            "parent",
+            "network",
+            "status",
+            "contact_name",
+            "contact_email",
+            "contact_phone",
+            "invite_email_queue",
+            "invite_sent_at",
+        ],
         ignore_permissions=True,  # SYSTEM-INTERNAL
         limit_page_length=0,
     )
@@ -185,10 +195,14 @@ def list_facilities(network=None, status=None, page=0, page_size=20):
             "memberships": [
                 {
                     "network": m.network,
+                    "name": m.name,
                     "status": m.status,
                     "contact_name": m.contact_name,
                     "contact_email": m.contact_email,
                     "contact_phone": m.contact_phone,
+                    "invite_email_queue": m.invite_email_queue,
+                    "invite_sent_at": m.invite_sent_at,
+                    "invite_status": _get_invitation_status(m.invite_email_queue),
                 }
                 for m in mem_by_parent[fac.name]
             ],
@@ -228,6 +242,7 @@ def save_facility(data):
     name = data.get("name")
     mfl_code = frappe.utils.cstr(data.get("mfl_code") or "").strip()
 
+    is_new_facility = False
     if name and frappe.db.exists("CRM Pre-Qualified Facility", name):
         doc = frappe.get_doc("CRM Pre-Qualified Facility", name)
     elif mfl_code:
@@ -241,6 +256,8 @@ def save_facility(data):
         doc = frappe.get_doc("CRM Pre-Qualified Facility", existing[0]) if existing else frappe.new_doc("CRM Pre-Qualified Facility")
     else:
         doc = frappe.new_doc("CRM Pre-Qualified Facility")
+    is_new_facility = doc.is_new()
+    existing_networks = {m.network for m in (doc.memberships or [])}
 
     doc.mfl_code = mfl_code or doc.mfl_code
     doc.facility_name = frappe.utils.cstr(data.get("facility_name") or doc.facility_name or "")
@@ -264,6 +281,24 @@ def save_facility(data):
 
     doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
     frappe.db.commit()
+
+    # New parent facilities send their invitations in after_insert. For an existing
+    # facility, explicitly invite memberships newly added through this admin flow.
+    if not is_new_facility:
+        for membership in doc.memberships or []:
+            if membership.network in new_network_set and membership.network not in existing_networks:
+                from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility import (
+                    _send_membership_invitation,
+                )
+
+                try:
+                    _send_membership_invitation(doc, membership)
+                except Exception:
+                    frappe.log_error(
+                        frappe.get_traceback(),
+                        "optin_admin.save_facility: invitation email failed",
+                    )
+
     return {"name": doc.name}
 
 
@@ -280,6 +315,38 @@ def delete_facility(name):
     frappe.delete_doc("CRM Pre-Qualified Facility", name, ignore_permissions=True)
     frappe.db.commit()
     return {"deleted": name}
+
+
+def _get_invitation_status(queue_name):
+    if not queue_name:
+        return "Not sent"
+    return frappe.db.get_value("Email Queue", queue_name, "status") or "Not sent"
+
+
+@frappe.whitelist()
+def resend_facility_invitation(facility_name, membership_name):
+    """Resend an opt-in invitation for one facility membership and return queue state."""
+    facility_name = frappe.utils.cstr(facility_name).strip()
+    membership_name = frappe.utils.cstr(membership_name).strip()
+    facility = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
+    membership = next(
+        (m for m in (facility.memberships or []) if m.name == membership_name), None
+    )
+    if not membership:
+        frappe.throw(_("Facility membership not found."))
+
+    _assert_network_access(membership.network)
+
+    from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility import (
+        _send_membership_invitation,
+    )
+
+    queue = _send_membership_invitation(facility, membership)
+    return {
+        "queue_name": queue.name,
+        "status": _get_invitation_status(queue.name),
+        "sent_at": frappe.utils.now_datetime(),
+    }
 
 
 # ---------------------------------------------------------------------------
