@@ -68,6 +68,11 @@
                   v-if="row.has_duplicate_mfl"
                   class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                 >{{ __('Duplicate MFL') }}</span>
+                <p
+                  v-if="row.failure_reason"
+                  class="w-full text-xs text-ink-red-6"
+                  :title="row.failure_reason"
+                >{{ row.failure_reason }}</p>
               </div>
             </td>
             <td class="px-4 py-3" @click.stop>

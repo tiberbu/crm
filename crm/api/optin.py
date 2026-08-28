@@ -384,6 +384,14 @@ def _update_job_step(submission_ref, name, status, label):
     )
 
 
+def _public_submission_failure_message(submission_ref):
+    """Return an actionable, non-sensitive failure message for a guest submitter."""
+    return _(
+        "We could not finish this Opt-In submission. It has been saved for our team to review. "
+        "Please contact support and quote reference {0}."
+    ).format(submission_ref)
+
+
 DEFAULT_BRAND_COLOUR = "#b91c1c"  # Tiberbu red — used when a network has no colour set
 
 
@@ -1323,7 +1331,11 @@ def get_job_status(submission_ref, signing_token, email, network_slug, expiry):
     cached = frappe.cache().get_value("optin_job:%s" % submission_ref)
     if cached:
         try:
-            return json.loads(cached)
+            response = json.loads(cached)
+            response["submission_ref"] = submission_ref
+            if response.get("overall") == "failed":
+                response.setdefault("message", _public_submission_failure_message(submission_ref))
+            return response
         except Exception:
             pass
 
@@ -1341,11 +1353,15 @@ def get_job_status(submission_ref, signing_token, email, network_slug, expiry):
             db_status = row.get("status") or "Pending"
             overall_map = {"Processed": "complete", "Failed": "failed"}
             overall = overall_map.get(db_status, "in_progress")
-            return {
+            response = {
                 "steps": [],
                 "overall": overall,
                 "lead_id": row.get("lead") or None,
+                "submission_ref": submission_ref,
             }
+            if overall == "failed":
+                response["message"] = _public_submission_failure_message(submission_ref)
+            return response
     except Exception:
         pass
 
@@ -2067,6 +2083,8 @@ def _process_submission(submission_ref):
         except Exception:
             data = {}
         data["overall"] = "failed"
+        data["submission_ref"] = submission_ref
+        data["message"] = _public_submission_failure_message(submission_ref)
         frappe.cache().set_value(
             "optin_job:%s" % submission_ref,
             json.dumps(data),
@@ -2104,7 +2122,7 @@ def list_submissions(status=None, page=0, page_size=20):
         filters=filters,
         fields=[
             "name", "status", "network_slug", "submitter_email",
-            "submitted_at", "lead", "deal", "has_duplicate_mfl",
+            "submitted_at", "lead", "deal", "has_duplicate_mfl", "error_log",
         ],
         order_by="submitted_at desc",
         limit_start=page * page_size,
@@ -2122,7 +2140,16 @@ def list_submissions(status=None, page=0, page_size=20):
         )
     )
 
-    return {"rows": rows, "total": total}
+    return {
+        "rows": [
+            {
+                **row,
+                "failure_reason": row.error_log if row.status == "Failed" else "",
+            }
+            for row in rows
+        ],
+        "total": total,
+    }
 
 
 @frappe.whitelist()

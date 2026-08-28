@@ -37,7 +37,7 @@
 
     <p class="mb-8 text-sm text-gray-500 dark:text-gray-400">
       <span v-if="overall !== 'failed'">This usually takes a few seconds.</span>
-      <span v-else>Your data has been saved. Please try again.</span>
+      <span v-else>{{ failureMessage }}</span>
     </p>
 
     <!-- Step list -->
@@ -73,15 +73,9 @@
       </div>
     </div>
 
-    <!-- Error retry -->
-    <button
-      v-if="overall === 'failed'"
-      class="w-full rounded-xl px-6 py-3 text-sm font-semibold text-white"
-      style="background-color: var(--brand-primary)"
-      @click="emit('retry')"
-    >
-      Try Again
-    </button>
+    <p v-if="overall === 'failed' && submissionRef" class="text-center font-mono text-xs text-gray-400 dark:text-gray-500">
+      Reference: {{ submissionRef }}
+    </p>
   </div>
 </template>
 
@@ -94,12 +88,14 @@ const props = defineProps({
   networkSlug: { type: String, required: true },
 })
 
-const emit = defineEmits(['complete', 'retry'])
+const emit = defineEmits(['complete'])
 
 const store = useOptInStore()
 
 const steps = ref([])
 const overall = ref('in_progress')
+const failureMessage = ref('')
+const submissionRef = ref('')
 let pollInterval = null
 let consecutiveErrors = 0
 
@@ -135,6 +131,8 @@ async function poll() {
     })
     steps.value = data.steps || []
     overall.value = data.overall || 'in_progress'
+    failureMessage.value = data.message || ''
+    submissionRef.value = data.submission_ref || store.submissionRef
 
     if (data.overall === 'complete') {
       clearInterval(pollInterval)
