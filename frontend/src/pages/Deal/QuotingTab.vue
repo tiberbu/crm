@@ -99,17 +99,19 @@
       <h2 class="text-base font-semibold text-ink-gray-9">{{ __('Quotes') }}</h2>
 
       <!-- Non-OIS deals: start a new blank quote (OIS deals auto-build) -->
-      <Button
-        v-if="!isOis"
-        variant="solid"
-        :loading="creating"
-        @click="createQuote"
-      >
-        <template #prefix>
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </template>
-        {{ __('New Quote') }}
-      </Button>
+      <div v-if="!isOis" class="flex items-center gap-2">
+        <Button
+          v-if="dealDoc?.optin_network && !quotes.length"
+          variant="subtle"
+          @click="openInvitationDialog"
+        >{{ __('Send Opt-In Invite') }}</Button>
+        <Button variant="solid" :loading="creating" @click="createQuote">
+          <template #prefix>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </template>
+          {{ __('New Quote') }}
+        </Button>
+      </div>
     </div>
 
     <!-- ═══ OIS DEALS: inline quote (auto-built) ═══ -->
@@ -248,7 +250,7 @@
         <p class="text-sm font-medium text-ink-gray-8">{{ __('Ready to submit the Opt-In summary?') }}</p>
         <p class="mt-0.5 text-xs text-ink-gray-5">{{ __('This records the finalized quote against this Deal for contracting without creating a duplicate Deal.') }}</p>
       </div>
-      <Button variant="solid" @click="showOptInSummaryDialog = true">
+      <Button variant="solid" @click="openSummaryDialog">
         {{ __('Submit Opt-In Summary') }}
       </Button>
     </div>
@@ -270,6 +272,35 @@
         <Button variant="solid" theme="red" :loading="actionName !== null" @click="doReject">
           {{ __('Confirm Reject') }}
         </Button>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model="showInvitationDialog"
+      :options="{ title: __('Send Opt-In Invitation'), size: 'md' }"
+    >
+      <template #body-content>
+        <div class="space-y-4">
+          <p class="text-sm text-ink-gray-6">
+            {{ __('Send this Deal contact a secure link to review their facilities, confirm the negotiated pricing, and accept the agreement.') }}
+          </p>
+          <div class="rounded-lg bg-surface-gray-2 p-3 text-sm dark:bg-surface-gray-3">
+            <div class="flex justify-between gap-4"><span class="text-ink-gray-6">{{ __('Network') }}</span><span class="font-medium text-ink-gray-9">{{ linkedNetworkName }}</span></div>
+            <div class="mt-2 flex justify-between gap-4"><span class="text-ink-gray-6">{{ __('Recipient') }}</span><span class="font-medium text-ink-gray-9">{{ dealDoc?.email || __('No primary email') }}</span></div>
+          </div>
+          <FormControl
+            v-model="invitationPriceList"
+            type="select"
+            :label="__('Negotiated price list')"
+            :options="priceListOptions"
+            :description="__('The recipient sees this price list. It is locked into their invitation and does not change the Network default.')"
+          />
+          <p v-if="invitationError" class="text-sm text-ink-red-6">{{ invitationError }}</p>
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="subtle" :disabled="sendingInvitation" @click="showInvitationDialog = false">{{ __('Cancel') }}</Button>
+        <Button variant="solid" :disabled="!invitationPriceList" :loading="sendingInvitation" @click="sendInvitation">{{ __('Send invitation') }}</Button>
       </template>
     </Dialog>
 
@@ -496,9 +527,21 @@ const networkOptions = computed(() =>
     .filter((network) => network.enabled)
     .map((network) => ({ label: network.display_name, value: network.slug })),
 )
+const linkedNetwork = computed(() =>
+  (networksResource.data?.rows ?? []).find((network) => network.slug === dealDoc.value?.optin_network) ?? null,
+)
+const linkedNetworkName = computed(() => linkedNetwork.value?.display_name || dealDoc.value?.optin_network || '')
+const priceListsResource = createResource({ url: 'crm.api.quotes.list_price_lists', auto: true })
+const priceListOptions = computed(() => priceListsResource.data ?? [])
 const submitSummaryResource = createResource({
   url: 'crm.api.optin.submit_deal_optin_summary',
 })
+
+function openSummaryDialog() {
+  summaryNetwork.value = dealDoc.value?.optin_network || ''
+  summaryError.value = ''
+  showOptInSummaryDialog.value = true
+}
 
 async function submitOptInSummary() {
   if (!selectedQuote.value || !summaryNetwork.value) return
@@ -520,6 +563,36 @@ async function submitOptInSummary() {
       error?.messages?.[0] ?? error?.message ?? __('Could not submit Opt-In summary')
   } finally {
     submittingSummary.value = false
+  }
+
+  const showInvitationDialog = ref(false)
+  const invitationPriceList = ref('')
+  const invitationError = ref('')
+  const sendingInvitation = ref(false)
+  const sendInvitationResource = createResource({ url: 'crm.api.optin.send_deal_optin_invitation' })
+
+  function openInvitationDialog() {
+    invitationPriceList.value = linkedNetwork.value?.price_list_override || ''
+    invitationError.value = ''
+    showInvitationDialog.value = true
+  }
+
+  async function sendInvitation() {
+    sendingInvitation.value = true
+    invitationError.value = ''
+    try {
+      const result = await sendInvitationResource.submit({
+        deal: props.dealId,
+        price_list: invitationPriceList.value,
+      })
+      showInvitationDialog.value = false
+      toast.success(__('Opt-In invitation sent to {0}', [result.sent_to]))
+    } catch (error) {
+      invitationError.value =
+        error?.messages?.[0] ?? error?.message ?? __('Could not send Opt-In invitation')
+    } finally {
+      sendingInvitation.value = false
+    }
   }
 }
 

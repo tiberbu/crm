@@ -89,6 +89,7 @@ import { useOptInStore } from './useOptInStore.js'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
+  dealInvitation: { type: String, default: '' },
   // isActive is toggled by parent when navigating back to this step
   isActive: { type: Boolean, default: true },
 })
@@ -125,6 +126,7 @@ async function loadTerms() {
       network_slug: props.networkSlug,
       expiry: store.signingExpiry,
       selected_mfl_codes: JSON.stringify(mflCodes),
+      deal_invitation: props.dealInvitation,
     })
     store.setTerms(data.html, data.doc_name, data.doc_hash)
     termsLoaded.value = true

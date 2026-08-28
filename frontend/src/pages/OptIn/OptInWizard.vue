@@ -32,6 +32,7 @@
         <StepContact
           v-if="store.step === 1 && !store.showOtpGate"
           :network-slug="networkSlug"
+          :deal-invitation="dealInvitation"
           @otp-requested="store.setShowOtpGate(true)"
           @partial-saved="onPartialSaved"
           @back="store.setStep(0)"
@@ -42,6 +43,7 @@
           v-if="store.showOtpGate"
           :email="store.contact.email"
           :network-slug="networkSlug"
+          :deal-invitation="dealInvitation"
           @verified="onOtpVerified"
           @back="store.setShowOtpGate(false)"
         />
@@ -58,6 +60,7 @@
         <StepPricing
           v-if="store.step === 3"
           :network-slug="networkSlug"
+          :deal-invitation="dealInvitation"
           @continue="store.setStep(4)"
           @back="onBackFromPricing"
         />
@@ -75,6 +78,7 @@
         <StepTerms
           v-if="store.step === 5"
           :network-slug="networkSlug"
+          :deal-invitation="dealInvitation"
           :is-active="store.step === 5"
           @continue="store.setStep(6)"
           @back="onBackFromTerms"
@@ -84,6 +88,7 @@
         <StepCommit
           v-if="store.step === 6"
           :network-slug="networkSlug"
+          :deal-invitation="dealInvitation"
           @submitted="onSubmitted"
           @back="onBackFromCommit"
         />
@@ -102,6 +107,7 @@
       <div class="w-full max-w-sm bg-white rounded-xl shadow-lg py-6 dark:bg-gray-900">
         <StepProgress
           :network-slug="networkSlug"
+          :deal-invitation="dealInvitation"
           @complete="store.setStep(8)"
           @retry="store.setStep(6)"
         />
@@ -169,6 +175,7 @@ import StepSuccess from './StepSuccess.vue'
 
 const props = defineProps({
   networkSlug: { type: String, default: '' },
+  dealInvitation: { type: String, default: '' },
 })
 
 const store = useOptInStore()
@@ -204,8 +211,14 @@ const settingsResource = createResource({ url: 'crm.api.optin.get_settings' })
 
 onMounted(async () => {
   try {
-    const data = await settingsResource.fetch({ network_slug: props.networkSlug })
+    const data = await settingsResource.fetch({
+      network_slug: props.networkSlug,
+      deal_invitation: props.dealInvitation,
+    })
     store.setNetworkConfig(data.network_config || null)
+    if (data.deal_invitation?.contact) {
+      store.setContact(data.deal_invitation.contact)
+    }
   } catch {
     settingsError.value = true
     store.setNetworkConfig({

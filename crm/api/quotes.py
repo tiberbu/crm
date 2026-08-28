@@ -114,6 +114,31 @@ def _get_optin_submission_for_update(deal):
 	return frappe.db.get_value("CRM Deal", deal, "optin_submission", for_update=True) or ""
 
 
+def _resolve_leaf_tree_node(doctype, configured_name, group_field, parent_field, fallback_name):
+	"""Return a selectable tree node, creating one only when the tree has no leaf."""
+	if configured_name and frappe.db.get_value(doctype, configured_name, "is_group") == 0:
+		return configured_name
+
+	leaves = frappe.get_list(
+		doctype,
+		filters={"is_group": 0},
+		fields=["name"],
+		order_by="lft asc",
+		limit_page_length=1,
+	)
+	if leaves:
+		return leaves[0].name
+
+	doc = frappe.get_doc({
+		"doctype": doctype,
+		group_field: fallback_name,
+		parent_field: configured_name if frappe.db.exists(doctype, configured_name) else None,
+		"is_group": 0,
+	})
+	doc.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+	return doc.name
+
+
 def _ensure_customer(customer_name):
 	"""
 	Resolve an ERPNext Customer for a CRM Deal, creating it if absent. Deals with
@@ -123,20 +148,49 @@ def _ensure_customer(customer_name):
 	target = customer_name or "Default Customer"
 	if frappe.db.exists("Customer", target):
 		return target
-	try:
-		cust = frappe.get_doc({
-			"doctype": "Customer",
-			"customer_name": target,
-			"customer_type": "Company",
-			"customer_group": frappe.db.get_single_value("Selling Settings", "customer_group") or "All Customer Groups",
-			"territory": frappe.db.get_single_value("Selling Settings", "territory") or "All Territories",
-		})
-		cust.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
-		frappe.db.commit()
-		return target
-	except Exception:
-		existing = frappe.get_list("Customer", limit=1, pluck="name")
-		return existing[0] if existing else target
+
+	customer_group = _resolve_leaf_tree_node(
+		"Customer Group",
+		frappe.db.get_single_value("Selling Settings", "customer_group") or "All Customer Groups",
+		"customer_group_name",
+		"parent_customer_group",
+		"Default Customer Group",
+	)
+	territory = _resolve_leaf_tree_node(
+		"Territory",
+		frappe.db.get_single_value("Selling Settings", "territory") or "All Territories",
+		"territory_name",
+		"parent_territory",
+		"Default Territory",
+	)
+	cust = frappe.get_doc({
+		"doctype": "Customer",
+		"customer_name": target,
+		"customer_type": "Company",
+		"customer_group": customer_group,
+		"territory": territory,
+	})
+	cust.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+	return cust.name
+
+
+def _get_deal_price_list(deal, requested_price_list=None):
+	"""Resolve a quote's baseline, preferring the Deal's configured Opt-In Network."""
+	if requested_price_list:
+		return requested_price_list
+
+	network_name = frappe.db.get_value("CRM Deal", deal, "optin_network")
+	if network_name:
+		network = frappe.get_list(
+			"CRM Opt-In Network",
+			filters={"name": network_name, "enabled": 1},
+			fields=["price_list_override"],
+			limit_page_length=1,
+		)
+		if network and network[0].price_list_override:
+			return network[0].price_list_override
+	return DEFAULT_PRICE_LIST
 
 
 def _apply_manual_rates(doc, rates):
@@ -181,7 +235,7 @@ def create_quote(deal, price_list=None):
 	if not frappe.db.exists("CRM Deal", deal):
 		frappe.throw("CRM Deal not found: %s" % deal)
 
-	price_list = price_list or DEFAULT_PRICE_LIST
+	price_list = _get_deal_price_list(deal, price_list)
 	customer_name = _ensure_customer(frappe.db.get_value("CRM Deal", deal, "organization") or "")
 
 	doc = frappe.get_doc({
