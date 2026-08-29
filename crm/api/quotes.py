@@ -139,7 +139,7 @@ def _resolve_leaf_tree_node(doctype, configured_name, group_field, parent_field,
 	return doc.name
 
 
-def _ensure_customer(customer_name):
+def _ensure_customer(customer_name, *, commit=True):
 	"""
 	Resolve an ERPNext Customer for a CRM Deal, creating it if absent. Deals with
 	no organisation fall back to a "Default Customer" that is likewise created on
@@ -171,7 +171,8 @@ def _ensure_customer(customer_name):
 		"territory": territory,
 	})
 	cust.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
-	frappe.db.commit()
+	if commit:
+		frappe.db.commit()
 	return cust.name
 
 

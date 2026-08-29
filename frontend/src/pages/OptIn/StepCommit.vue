@@ -88,7 +88,7 @@ const props = defineProps({
   dealInvitation: { type: String, default: '' },
 })
 
-const emit = defineEmits(['submitted', 'saved-for-later', 'back'])
+const emit = defineEmits(['submitted', 'processed', 'saved-for-later', 'back'])
 
 const store = useOptInStore()
 
@@ -154,7 +154,11 @@ async function handleCommit(committed) {
       deal_invitation: props.dealInvitation,
     })
     store.setSubmissionRef(data.submission_ref)
-    emit('submitted', data.submission_ref)
+    if (data.status === 'processed') {
+      emit('processed', data.submission_ref)
+    } else {
+      emit('submitted', data.submission_ref)
+    }
   } catch (err) {
     errorMsg.value = (err && err.message) ? err.message : 'Submission failed. Please try again.'
   } finally {

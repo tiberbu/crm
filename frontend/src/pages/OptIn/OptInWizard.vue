@@ -90,6 +90,7 @@
           :network-slug="networkSlug"
           :deal-invitation="dealInvitation"
           @submitted="onSubmitted"
+          @processed="onProcessed"
           @saved-for-later="onPartialSaved"
           @back="onBackFromCommit"
         />
@@ -269,6 +270,11 @@ function onBackFromCommit() {
 function onSubmitted(submissionRef) {
   store.setSubmissionRef(submissionRef)
   store.setStep(7)
+}
+
+function onProcessed(submissionRef) {
+  store.setSubmissionRef(submissionRef)
+  store.setStep(8)
 }
 
 function onPartialSaved(ref) {
