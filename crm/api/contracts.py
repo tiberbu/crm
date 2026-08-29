@@ -312,7 +312,7 @@ def _signing_link(contract_name, role, token):
     )
 
 
-def _issue_and_send_invitation(contract_doc, signatory_row, now=True, commit=True):
+def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
     """
     Mint a fresh invitation token on the signatory row, persist it, and email the
     signatory a branded invitation with a Sign CTA. The caller is responsible for
@@ -323,8 +323,8 @@ def _issue_and_send_invitation(contract_doc, signatory_row, now=True, commit=Tru
     transaction. This is used by the synchronous Opt-In pipeline so a failed
     submission cannot leave a contract or signing link behind.
 
-    now=False queues the email (email queue) instead of sending synchronously — use it
-    on guest request paths so the guest isn't blocked on third-party SMTP delivery.
+    Contract invitations always use immediate delivery. This avoids a completed
+    signing step being held behind a background Email Queue worker.
     """
     token = _gen_token()
     signatory_row.invite_token = token
@@ -361,7 +361,7 @@ def _issue_and_send_invitation(contract_doc, signatory_row, now=True, commit=Tru
                     "This link expires in 7 days and is unique to you — please don't share it."
                 ),
             ),
-            now=now,
+            now=True,
         )
     except Exception:
         frappe.log_error(
@@ -408,10 +408,8 @@ def _transition(contract_name):
     facility_complete = fac_sig_signed and fac_wit_signed
 
     # Stage A → B: facility witness is invited only once the facility signatory signs.
-    # now=True: send synchronously so the invitation is delivered via SES rather than
-    # left sitting in the Email Queue awaiting a scheduled flush.
     if fac_sig_signed and fac_wit and fac_wit.status == "Pending" and not fac_wit.invite_token:
-        _issue_and_send_invitation(contract, fac_wit, now=True)
+        _issue_and_send_invitation(contract, fac_wit)
 
     # Stage B → C: once both facility parties have signed, invite the network +
     # tiberbu co-signatories in parallel. Guarded on invite_token so re-entry is safe.
@@ -423,7 +421,7 @@ def _transition(contract_name):
                 and row.status == "Pending"
                 and not row.invite_token
             ):
-                _issue_and_send_invitation(contract, row, now=True)
+                _issue_and_send_invitation(contract, row)
                 invited_any = True
         if invited_any:
             _set_contract_state(contract, "Awaiting Counterparty Signatures")
@@ -698,9 +696,7 @@ def _generate_contract(
     signatory_row = _get_signatory_row(contract, "Facility Signatory")
     invitation_queue = None
     if signatory_row:
-        invitation_queue = _issue_and_send_invitation(
-            contract, signatory_row, now=True, commit=commit
-        )
+        invitation_queue = _issue_and_send_invitation(contract, signatory_row, commit=commit)
 
     log_deal_event(
         deal,

@@ -28,6 +28,46 @@
       </button>
     </div>
 
+    <div class="flex flex-wrap items-end gap-2 border-b border-outline-gray-2 px-5 py-3">
+      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+        {{ __('Network') }}
+        <select
+          v-model="selectedNetwork"
+          class="h-8 min-w-36 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          @change="applyFilters"
+        >
+          <option value="">{{ __('All networks') }}</option>
+          <option v-for="network in filterNetworks" :key="network" :value="network">
+            {{ network }}
+          </option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+        {{ __('Facility level') }}
+        <select
+          v-model="selectedFacilityLevel"
+          class="h-8 min-w-32 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          @change="applyFilters"
+        >
+          <option value="">{{ __('All levels') }}</option>
+          <option v-for="level in filterFacilityLevels" :key="level" :value="level">
+            {{ level }}
+          </option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+        {{ __('Facility') }}
+        <input
+          v-model="facilitySearch"
+          class="h-8 w-48 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          :placeholder="__('Facility name or MFL code')"
+          @keyup.enter="applyFilters"
+        />
+      </label>
+      <Button size="sm" variant="subtle" @click="applyFilters">{{ __('Apply') }}</Button>
+      <Button size="sm" variant="ghost" @click="clearFilters">{{ __('Clear') }}</Button>
+    </div>
+
     <!-- Table -->
     <div class="flex-1 overflow-auto">
       <div
@@ -133,13 +173,27 @@
             </td>
             <td class="px-4 py-3">
               <div class="flex flex-col items-start gap-1">
-                <span :class="contractSigningPill(row.facility_signing_status)">
-                  {{ __(row.facility_signing_status) }}
-                </span>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs text-ink-gray-5">{{ __('Signatory') }}</span>
+                  <span :class="contractSigningPill(row.facility_signing_status)">
+                    {{ __(row.facility_signing_status) }}
+                  </span>
+                </div>
                 <span
                   v-if="row.facility_signatory_signed_at"
                   class="text-xs text-ink-gray-5"
                   >{{ formatDate(row.facility_signatory_signed_at) }}</span
+                >
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs text-ink-gray-5">{{ __('Witness') }}</span>
+                  <span :class="contractSigningPill(row.facility_witness_signing_status)">
+                    {{ __(row.facility_witness_signing_status) }}
+                  </span>
+                </div>
+                <span
+                  v-if="row.facility_witness_signed_at"
+                  class="text-xs text-ink-gray-5"
+                  >{{ formatDate(row.facility_witness_signed_at) }}</span
                 >
               </div>
             </td>
@@ -148,7 +202,7 @@
                 <span
                   :class="emailStatusPill(row.confirmation_email_status)"
                   :title="emailStatusHint(row.confirmation_email_status)"
-                  >{{ __('Summary') }}:
+                  >{{ __('Confirmation') }}:
                   {{ emailStatusLabel(row.confirmation_email_status) }}</span
                 >
                 <span
@@ -156,27 +210,17 @@
                   class="text-xs text-ink-gray-5"
                   >{{ formatDate(row.confirmation_email_queued_at) }}</span
                 >
-                <template
-                  v-if="row.contract || row.contract_invitation_email_queue"
+                <span
+                  :class="emailStatusPill(row.contract_invitation_email_status)"
+                  :title="emailStatusHint(row.contract_invitation_email_status)"
+                  >{{ __('Contract') }}:
+                  {{ emailStatusLabel(row.contract_invitation_email_status) }}</span
                 >
-                  <span
-                    :class="
-                      emailStatusPill(row.contract_invitation_email_status)
-                    "
-                    :title="
-                      emailStatusHint(row.contract_invitation_email_status)
-                    "
-                    >{{ __('Contract') }}:
-                    {{
-                      emailStatusLabel(row.contract_invitation_email_status)
-                    }}</span
-                  >
-                  <span
-                    v-if="row.contract_invitation_queued_at"
-                    class="text-xs text-ink-gray-5"
-                    >{{ formatDate(row.contract_invitation_queued_at) }}</span
-                  >
-                </template>
+                <span
+                  v-if="row.contract_invitation_queued_at"
+                  class="text-xs text-ink-gray-5"
+                  >{{ formatDate(row.contract_invitation_queued_at) }}</span
+                >
               </div>
             </td>
             <td class="px-4 py-3" @click.stop>
@@ -237,6 +281,9 @@ const router = useRouter()
 
 const statuses = ['All', 'Pending', 'Processing', 'Processed', 'Failed']
 const selectedStatus = ref('All')
+const selectedNetwork = ref('')
+const selectedFacilityLevel = ref('')
+const facilitySearch = ref('')
 const page = ref(0)
 const pageSize = 20
 const retrying = ref(null)
@@ -244,6 +291,7 @@ const retrying = ref(null)
 function setStatus(s) {
   selectedStatus.value = s
   page.value = 0
+  listResource.reload()
 }
 
 watch(page, () => listResource.reload())
@@ -252,16 +300,39 @@ const listResource = createResource({
   url: 'crm.api.optin.list_submissions',
   makeParams: () => ({
     status: selectedStatus.value === 'All' ? null : selectedStatus.value,
+    network_slug: selectedNetwork.value || null,
+    facility_level: selectedFacilityLevel.value || null,
+    facility: facilitySearch.value || null,
     page: page.value,
     page_size: pageSize,
   }),
   auto: true,
 })
 
-watch(selectedStatus, () => listResource.reload())
+const filtersResource = createResource({
+  url: 'crm.api.optin.get_submission_filter_options',
+  auto: true,
+})
 
 const rows = computed(() => listResource.data?.rows ?? [])
 const total = computed(() => listResource.data?.total ?? 0)
+const filterNetworks = computed(() => filtersResource.data?.networks ?? [])
+const filterFacilityLevels = computed(
+  () => filtersResource.data?.facility_levels ?? [],
+)
+
+function applyFilters() {
+  page.value = 0
+  listResource.reload()
+}
+
+function clearFilters() {
+  selectedStatus.value = 'All'
+  selectedNetwork.value = ''
+  selectedFacilityLevel.value = ''
+  facilitySearch.value = ''
+  applyFilters()
+}
 
 const retryResource = createResource({ url: 'crm.api.optin.retry_submission' })
 
@@ -359,6 +430,9 @@ function contractSigningPill(status) {
     Signed: `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`,
     Declined: `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400`,
     'Signing link expired': `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400`,
+    'Waiting for facility signatory': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
+    'Blocked by declined signatory': `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400`,
+    'Not required': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
   }
   return map[status] ?? map['Not generated']
 }

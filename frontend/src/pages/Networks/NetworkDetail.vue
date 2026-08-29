@@ -212,7 +212,12 @@
     <template v-if="!isNewNetwork">
     <!-- ── PREQUALIFIED CONTACTS ─────────────────────────────────────────── -->
     <div class="mt-6 flex items-center justify-between">
-      <h2 class="text-base font-semibold text-ink-gray-9">{{ __('Prequalified Contacts') }}</h2>
+      <div class="flex items-center gap-2">
+        <h2 class="text-base font-semibold text-ink-gray-9">{{ __('Prequalified Contacts') }}</h2>
+        <span class="rounded-full bg-surface-gray-2 px-2 py-0.5 text-xs font-semibold text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4">
+          {{ contactTotal }}
+        </span>
+      </div>
       <div class="flex gap-2">
         <Button variant="subtle" size="sm" @click="toggleCsvSection">{{ __('Import CSV') }}</Button>
         <Button variant="solid" size="sm" @click="openAddForm">{{ __('+ Add Contact') }}</Button>
@@ -247,6 +252,7 @@
           <tr>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('MFL Code') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Facility Name') }}</th>
+            <th class="px-4 py-2.5 text-left font-medium">{{ __('Organization') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('KEPH Level') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Status') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Contact Name') }}</th>
@@ -263,6 +269,7 @@
           >
             <td class="px-4 py-3 font-mono text-xs font-medium text-ink-gray-9">{{ row.mfl_code }}</td>
             <td class="px-4 py-3 text-ink-gray-7">{{ row.facility_name }}</td>
+            <td class="px-4 py-3 text-xs text-ink-gray-7">{{ row.organization || row.facility_name }}</td>
             <td class="px-4 py-3 text-xs text-ink-gray-6">{{ row.keph_level || '—' }}</td>
             <td class="px-4 py-3">
               <span :class="statusPill(networkMembership(row)?.status)">
@@ -343,16 +350,17 @@
           </span>
           <span v-else>{{ __('Lookup HFR') }}</span>
         </button>
-        <div v-if="form.facility_name" class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink-gray-6">{{ __('Facility Name') }}</label>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-ink-gray-6">{{ __('Facility Name') }} <span class="text-red-600">*</span></label>
           <input
             v-model="form.facility_name"
             type="text"
             class="w-56 rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+            @input="defaultOrganizationFromFacility"
           />
         </div>
-        <div v-if="form.keph_level" class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink-gray-6">{{ __('KEPH Level') }}</label>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-ink-gray-6">{{ __('KEPH Level') }} <span class="text-red-600">*</span></label>
           <input
             v-model="form.keph_level"
             type="text"
@@ -362,7 +370,17 @@
       </div>
 
       <!-- Row 2: Contact fields -->
-      <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-ink-gray-6">{{ __('Organization') }}</label>
+          <input
+            v-model="form.organization"
+            type="text"
+            :placeholder="__('Defaults to the facility name')"
+            class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+            @input="organizationEdited = true"
+          />
+        </div>
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-ink-gray-6">{{ __('Contact Name') }} <span class="text-red-600">*</span></label>
           <input
@@ -380,7 +398,7 @@
           />
         </div>
         <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-ink-gray-6">{{ __('Contact Phone') }}</label>
+          <label class="text-xs font-medium text-ink-gray-6">{{ __('Contact Phone') }} <span class="text-red-600">*</span></label>
           <input
             v-model="form.contact_phone"
             type="tel"
@@ -412,9 +430,9 @@
       <h3 class="mb-3 text-sm font-semibold text-ink-gray-9">{{ __('Import Contacts via CSV') }}</h3>
       <p class="mb-3 text-xs text-ink-gray-5">
         {{ __('Upload a CSV file to bulk-add facilities to this network.') }}
-        <button @click="downloadTemplate" class="text-ink-blue-6 underline hover:text-ink-blue-7">{{ __('Download template') }}</button>
+        <button class="text-ink-blue-6 underline hover:text-ink-blue-7" @click="downloadTemplate">{{ __('Download template') }}</button>
       </p>
-      <input type="file" accept=".csv" @change="onFileChange" class="mb-3 text-sm text-ink-gray-7" />
+      <input ref="csvFileInput" type="file" accept=".csv" class="mb-3 text-sm text-ink-gray-7" @change="onFileChange" />
 
       <!-- Preview table -->
       <div v-if="csvPreviewRows.length" class="mb-3 overflow-x-auto rounded-lg border border-outline-gray-2">
@@ -424,6 +442,7 @@
               <th class="px-3 py-2 text-left font-medium">{{ __('Row') }}</th>
               <th class="px-3 py-2 text-left font-medium">{{ __('MFL Code') }}</th>
               <th class="px-3 py-2 text-left font-medium">{{ __('Facility Name') }}</th>
+              <th class="px-3 py-2 text-left font-medium">{{ __('Organization') }}</th>
               <th class="px-3 py-2 text-left font-medium">{{ __('Contact Email') }}</th>
               <th class="px-3 py-2 text-left font-medium">{{ __('Status') }}</th>
             </tr>
@@ -437,6 +456,7 @@
               <td class="px-3 py-2 text-ink-gray-6">{{ r.row }}</td>
               <td class="px-3 py-2 font-mono text-ink-gray-9">{{ r.mfl_code }}</td>
               <td class="px-3 py-2 text-ink-gray-7">{{ r.facility_name }}</td>
+              <td class="px-3 py-2 text-ink-gray-7">{{ r.organization || r.facility_name }}</td>
               <td class="px-3 py-2 text-ink-gray-6">{{ r.contact_email }}</td>
               <td v-if="r.error" class="px-3 py-2 text-red-600">{{ r.error }}</td>
               <td v-else class="px-3 py-2 text-green-600">{{ __('OK') }}</td>
@@ -445,12 +465,15 @@
         </table>
       </div>
 
-      <div v-if="csvFile" class="flex gap-2">
-        <Button variant="solid" :loading="csvImporting" @click="importCsv">
-          {{ __('Import {0} rows', [validCsvCount]) }}
+      <div v-if="csvFile" class="flex flex-wrap items-center gap-2">
+        <Button variant="solid" :loading="csvImporting || csvPreviewLoading" :disabled="!validCsvCount" @click="importCsv">
+          {{ csvPreviewLoading ? __('Preparing preview…') : __('Import {0} valid rows', [validCsvCount]) }}
         </Button>
         <Button variant="subtle" @click="clearCsv">{{ __('Clear') }}</Button>
       </div>
+      <p v-if="csvFile && !csvPreviewLoading" class="mt-2 text-xs text-ink-gray-5">
+        {{ __('{0} valid rows, {1} rows needing correction.', [validCsvCount, csvPreviewRows.length - validCsvCount]) }}
+      </p>
       <p v-if="csvResult" class="mt-2 text-sm text-ink-gray-7">{{ csvResult }}</p>
     </div>
 
@@ -460,7 +483,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, watch } from 'vue'
+import { ref, computed, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { createResource, Button, FileUploader, FormControl, Switch } from 'frappe-ui'
 import { validateIsImageFile } from '@/utils'
@@ -634,21 +657,25 @@ const hfrLoading = ref(false)
 const form = reactive({
   mfl_code: '',
   facility_name: '',
+  organization: '',
   keph_level: '',
   contact_name: '',
   contact_email: '',
   contact_phone: '',
   status: 'Active',
 })
+const organizationEdited = ref(false)
 
 function resetForm() {
   form.mfl_code = ''
   form.facility_name = ''
+  form.organization = ''
   form.keph_level = ''
   form.contact_name = ''
   form.contact_email = ''
   form.contact_phone = ''
   form.status = 'Active'
+  organizationEdited.value = false
   formError.value = ''
   editingFacility.value = null
 }
@@ -663,6 +690,7 @@ function editContact(row) {
   Object.assign(form, {
     mfl_code: row.mfl_code ?? '',
     facility_name: row.facility_name ?? '',
+    organization: row.organization ?? row.facility_name ?? '',
     keph_level: row.keph_level ?? '',
     contact_name: m.contact_name ?? '',
     contact_email: m.contact_email ?? '',
@@ -670,6 +698,7 @@ function editContact(row) {
     status: m.status ?? 'Active',
   })
   editingFacility.value = row
+  organizationEdited.value = true
   formError.value = ''
   showForm.value = true
 }
@@ -690,6 +719,7 @@ async function lookupHFR() {
     if (result) {
       form.facility_name = result.facility_name ?? form.facility_name
       form.keph_level = result.keph_level ?? form.keph_level
+      defaultOrganizationFromFacility()
     }
   } catch (e) {
     formError.value = e?.messages?.[0] ?? __('HFR lookup failed.')
@@ -698,17 +728,27 @@ async function lookupHFR() {
   }
 }
 
+function defaultOrganizationFromFacility() {
+  if (!editingFacility.value && !organizationEdited.value) {
+    form.organization = form.facility_name
+  }
+}
+
 const saveFacilityResource = createResource({ url: 'crm.api.optin_admin.save_facility' })
 
 async function saveContact() {
   if (!form.mfl_code.trim()) { formError.value = __('MFL Code is required.'); return }
+  if (!form.facility_name.trim()) { formError.value = __('Facility Name is required.'); return }
+  if (!form.keph_level.trim()) { formError.value = __('KEPH Level is required.'); return }
   if (!form.contact_name.trim()) { formError.value = __('Contact Name is required.'); return }
   if (!form.contact_email.trim()) { formError.value = __('Contact Email is required.'); return }
+  if (!form.contact_phone.trim()) { formError.value = __('Contact Phone is required.'); return }
   formError.value = ''
   saveLoading.value = true
   const data = {
     mfl_code: form.mfl_code,
     facility_name: form.facility_name,
+    organization: form.organization,
     keph_level: form.keph_level,
     memberships: [{
       network: props.networkSlug,
@@ -770,11 +810,13 @@ async function resendInvite(row) {
 
 const showCsvSection = ref(false)
 const csvFile = ref(null)
+const csvFileInput = ref(null)
 const csvPreviewRows = ref([])
+const csvPreviewLoading = ref(false)
 const csvImporting = ref(false)
 const csvResult = ref('')
 
-const validCsvCount = computed(() => csvPreviewRows.value.filter((r) => !r.error).length)
+const validCsvCount = ref(0)
 
 function toggleCsvSection() {
   showCsvSection.value = !showCsvSection.value
@@ -796,8 +838,10 @@ async function onFileChange(e) {
   const file = e.target.files?.[0] ?? null
   csvFile.value = file
   csvPreviewRows.value = []
+  validCsvCount.value = 0
   csvResult.value = ''
   if (!file) return
+  csvPreviewLoading.value = true
   try {
     const csvData = await readFileAsText(file)
     const result = await csvPreviewResource.submit({
@@ -806,8 +850,11 @@ async function onFileChange(e) {
       dry_run: 1,
     })
     csvPreviewRows.value = result?.rows ?? []
+    validCsvCount.value = result?.valid_count ?? csvPreviewRows.value.filter((row) => !row.error).length
   } catch (e) {
     csvResult.value = e?.messages?.[0] ?? __('Preview failed.')
+  } finally {
+    csvPreviewLoading.value = false
   }
 }
 
@@ -823,11 +870,12 @@ async function importCsv() {
       dry_run: 0,
     })
     const imported = result?.imported ?? 0
-    const errors = result?.errors ?? 0
+    const errors = result?.error_count ?? result?.errors?.length ?? 0
     csvResult.value = __('{0} imported, {1} errors.', [imported, errors])
     facilitiesResource.reload()
     csvFile.value = null
     csvPreviewRows.value = []
+    validCsvCount.value = 0
   } catch (e) {
     csvResult.value = e?.messages?.[0] ?? __('Import failed.')
   } finally {
@@ -837,7 +885,9 @@ async function importCsv() {
 
 function clearCsv() {
   csvFile.value = null
+  if (csvFileInput.value) csvFileInput.value.value = ''
   csvPreviewRows.value = []
+  validCsvCount.value = 0
   csvResult.value = ''
 }
 

@@ -10,10 +10,12 @@ from crm.api.contracts import _issue_and_send_invitation, generate
 from crm.api.optin import (
 	_KEPH_MAP,
 	_facility_signing_state,
+	_facility_witness_signing_state,
 	_generate_contract_for_submission,
 	_get_optin_deal_forecast_fields,
 	_process_submission,
 	_queue_confirmation_email,
+	_submission_matches_facility_filter,
 	list_submissions,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
@@ -169,6 +171,28 @@ class TestOptInContractAutomation(UnitTestCase):
 		submission.save.assert_called_once_with(ignore_permissions=True)
 		self.assertEqual(generate_contract.call_args.kwargs["commit"], False)
 
+	def test_contract_generation_requires_a_tracked_invitation_queue(self):
+		submission = SimpleNamespace(
+			deal="DEAL-TEST-00001",
+			facility_signatory_name="Jane Signatory",
+			facility_signatory_email="jane@example.com",
+			facility_witness_name="John Witness",
+			facility_witness_email="john@example.com",
+			contract=None,
+			contract_invitation_email_queue=None,
+			contract_invitation_queued_at=None,
+			save=Mock(),
+		)
+
+		with patch(
+			"crm.api.contracts._generate_contract",
+			return_value={"contract": "CONT-TEST-00001", "invitation_queue": ""},
+		):
+			with self.assertRaises(frappe.ValidationError):
+				_generate_contract_for_submission(submission, "QUO-TEST-00001")
+
+		submission.save.assert_not_called()
+
 	def test_invitation_can_save_without_committing_the_caller_transaction(self):
 		contract = SimpleNamespace(name="CONT-TEST-00001", network_slug="", save=Mock())
 		signatory = SimpleNamespace(
@@ -185,7 +209,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
 			patch("crm.api.contracts.frappe.db.commit") as commit,
 		):
-			result = _issue_and_send_invitation(contract, signatory, now=True, commit=False)
+			result = _issue_and_send_invitation(contract, signatory, commit=False)
 
 		self.assertIs(result, queue)
 		contract.save.assert_called_once_with(ignore_permissions=True)
@@ -231,9 +255,72 @@ class TestOptInContractAutomation(UnitTestCase):
 			),
 			("Signed", "2026-08-29 12:00:00"),
 		)
+		self.assertEqual(
+			_facility_witness_signing_state(
+				SimpleNamespace(status="Pending"),
+				SimpleNamespace(status="Pending"),
+			),
+			("Waiting for facility signatory", None),
+		)
+
+	def test_facility_filter_matches_a_saved_multi_facility_submission(self):
+		raw_json = json.dumps(
+			{
+				"pricing": [
+					{"mfl_code": "10001", "facility_name": "Alpha Clinic", "keph_level": "Level 3"},
+					{"mfl_code": "10002", "facility_name": "Beta Hospital", "keph_level": "Level 5"},
+				]
+			}
+		)
+		self.assertTrue(_submission_matches_facility_filter(raw_json, "Level 5", "beta"))
+		self.assertFalse(_submission_matches_facility_filter(raw_json, "Level 4", "beta"))
 
 
 class TestOptInSubmissionList(UnitTestCase):
+	def test_submission_list_filters_and_paginates_by_saved_facility(self):
+		def submission(name, facility_name, level):
+			return frappe._dict(
+				{
+					"name": name,
+					"status": "Processed",
+					"network_slug": "test-network",
+					"submitter_email": "jane@example.com",
+					"submitted_at": "2026-08-29 10:00:00",
+					"lead": None,
+					"deal": None,
+					"has_duplicate_mfl": 0,
+					"error_log": None,
+					"confirmation_email_queue": None,
+					"confirmation_email_queued_at": None,
+					"contract": None,
+					"contract_invitation_email_queue": None,
+					"contract_invitation_queued_at": None,
+					"raw_json": json.dumps(
+						{
+							"pricing": [
+								{
+									"mfl_code": name,
+									"facility_name": facility_name,
+									"keph_level": level,
+								}
+							]
+						}
+					),
+				}
+			)
+
+		with patch(
+			"crm.api.optin.frappe.get_list",
+			return_value=[
+				submission("OIS-TEST-00001", "Alpha Clinic", "Level 3"),
+				submission("OIS-TEST-00002", "Beta Hospital", "Level 5"),
+			],
+		):
+			result = list_submissions(facility_level="Level 5", facility="beta")
+
+		self.assertEqual(result["total"], 1)
+		self.assertEqual([row["name"] for row in result["rows"]], ["OIS-TEST-00002"])
+
 	def test_submission_list_includes_live_confirmation_email_status(self):
 		submission = frappe._dict(
 			{
@@ -266,24 +353,37 @@ class TestOptInSubmissionList(UnitTestCase):
 				"creation": "2026-08-29 10:00:02",
 			}
 		)
-		facility_signatory = frappe._dict(
-			{
-				"parent": contract.name,
-				"status": "Pending",
-				"signed_at": None,
-				"invite_token": "token",
-				"invite_expiry": None,
-			}
-		)
+		facility_signatories = [
+			frappe._dict(
+				{
+					"parent": contract.name,
+					"signatory_role": "Facility Signatory",
+					"status": "Pending",
+					"signed_at": None,
+					"invite_token": "token",
+					"invite_expiry": None,
+				}
+			),
+			frappe._dict(
+				{
+					"parent": contract.name,
+					"signatory_role": "Facility Witness",
+					"status": "Pending",
+					"signed_at": None,
+					"invite_token": None,
+					"invite_expiry": None,
+				}
+			),
+		]
 
 		with patch(
 			"crm.api.optin.frappe.get_list",
 			side_effect=[
 				[submission],
+				[frappe._dict({"name": submission.name})],
 				email_queues,
 				[contract],
-				[facility_signatory],
-				[frappe._dict({"name": submission.name})],
+				facility_signatories,
 			],
 		):
 			result = list_submissions()
@@ -292,3 +392,7 @@ class TestOptInSubmissionList(UnitTestCase):
 		self.assertEqual(result["rows"][0]["confirmation_email_status"], "Sent")
 		self.assertEqual(result["rows"][0]["contract_invitation_email_status"], "Sending")
 		self.assertEqual(result["rows"][0]["facility_signing_status"], "Awaiting signature")
+		self.assertEqual(
+			result["rows"][0]["facility_witness_signing_status"],
+			"Waiting for facility signatory",
+		)

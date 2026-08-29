@@ -8,9 +8,17 @@ from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility impo
 	CRMPreQualifiedFacility,
 	_send_membership_invitation,
 )
+from crm.patches.v1_0.backfill_prequalified_facility_organization import execute as backfill_organization
 
 
 class TestCRMPreQualifiedFacility(UnitTestCase):
+	def test_blank_organization_defaults_to_the_facility_name(self):
+		facility = SimpleNamespace(organization="", facility_name="Example Hospital")
+
+		CRMPreQualifiedFacility.before_validate(facility)
+
+		self.assertEqual(facility.organization, "Example Hospital")
+
 	def test_membership_invitation_tracks_its_email_queue(self):
 		facility = SimpleNamespace(
 			doctype="CRM Pre-Qualified Facility",
@@ -46,10 +54,38 @@ class TestCRMPreQualifiedFacility(UnitTestCase):
 			message=sendmail.call_args.kwargs["message"],
 			reference_doctype="CRM Pre-Qualified Facility",
 			reference_name="FAC-0001",
-			now=False,
+			now=True,
 		)
 		set_value.assert_called_once()
-		queue.send.assert_called_once_with()
+		queue.send.assert_not_called()
+
+	def test_organization_backfill_only_updates_blank_organizations(self):
+		facilities = [
+			frappe._dict(
+				{"name": "FAC-EMPTY", "facility_name": "Default Hospital", "organization": ""}
+			),
+			frappe._dict(
+				{"name": "FAC-GROUP", "facility_name": "Branch Clinic", "organization": "Health Group"}
+			),
+			frappe._dict(
+				{"name": "FAC-NAMELESS", "facility_name": "", "organization": ""}
+			),
+		]
+		with (
+			patch.object(frappe.db, "table_exists", return_value=True),
+			patch.object(frappe.db, "has_column", return_value=True),
+			patch.object(frappe, "get_all", return_value=facilities),
+			patch.object(frappe.db, "set_value") as set_value,
+		):
+			backfill_organization()
+
+		set_value.assert_called_once_with(
+			"CRM Pre-Qualified Facility",
+			"FAC-EMPTY",
+			"organization",
+			"Default Hospital",
+			update_modified=False,
+		)
 
 	def test_after_insert_logs_an_invitation_failure_without_failing_the_insert(self):
 		facility = SimpleNamespace(
