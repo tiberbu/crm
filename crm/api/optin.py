@@ -380,21 +380,67 @@ def _get_client_ip():
         return "unknown"
 
 
-def _update_job_step(submission_ref, name, status, label):
-    """Upsert a single step entry in the Redis job-progress hash."""
-    raw = frappe.cache().get_value("optin_job:%s" % submission_ref) or "{}"
+def _get_job_progress(submission_ref):
+    """Read optional Redis-backed progress without affecting the submission workflow."""
     try:
-        data = json.loads(raw)
+        raw = frappe.cache().get_value("optin_job:%s" % submission_ref)
+        return json.loads(raw) if raw else None
     except Exception:
-        data = {}
+        # Redis is only a progress transport. The submission record is the
+        # source of truth and must remain usable when Redis is unavailable.
+        return None
+
+
+def _set_job_progress(submission_ref, data):
+    """Write optional guest progress and never make a CRM workflow depend on it."""
+    try:
+        frappe.cache().set_value(
+            "optin_job:%s" % submission_ref,
+            json.dumps(data),
+            expires_in_sec=3600,
+        )
+        return True
+    except Exception:
+        try:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "optin: progress cache unavailable for %s" % submission_ref,
+            )
+        except Exception:
+            pass
+        return False
+
+
+def _update_job_step(submission_ref, name, status, label):
+    """Upsert a best-effort guest progress entry for one background step."""
+    data = _get_job_progress(submission_ref) or {}
     steps = [s for s in data.get("steps", []) if s.get("name") != name]
     steps.append({"name": name, "status": status, "label": label})
     data["steps"] = steps
-    frappe.cache().set_value(
-        "optin_job:%s" % submission_ref,
-        json.dumps(data),
-        expires_in_sec=3600,
+    _set_job_progress(submission_ref, data)
+
+
+def _mark_active_job_step_failed(submission_ref):
+    """Turn the visible in-progress step into a safe failed state for the guest."""
+    data = _get_job_progress(submission_ref) or {}
+
+    steps = data.get("steps") or []
+    active_step = next(
+        (step for step in reversed(steps) if step.get("status") == "in_progress"), None
     )
+    if active_step:
+        active_step["status"] = "failed"
+        active_step["label"] = _("We could not complete this step.")
+    else:
+        steps.append(
+            {
+                "name": "lead",
+                "status": "failed",
+                "label": _("We could not start this submission."),
+            }
+        )
+    data["steps"] = steps
+    _set_job_progress(submission_ref, data)
 
 
 def _public_submission_failure_message(submission_ref):
@@ -403,6 +449,183 @@ def _public_submission_failure_message(submission_ref):
         "We could not finish this Opt-In submission. It has been saved for our team to review. "
         "Please contact support and quote reference {0}."
     ).format(submission_ref)
+
+
+def _enqueue_submission(submission_ref):
+    """Queue one staged submission for processing through the shared worker path."""
+    frappe.enqueue(
+        "crm.api.optin._process_submission",
+        submission_ref=submission_ref,
+        queue="default",
+        timeout=300,
+    )
+
+
+def _reset_submission_progress(submission_ref):
+    """Reset guest-visible progress before a new or retried worker run."""
+    _set_job_progress(
+        submission_ref,
+        {"steps": [], "overall": "in_progress", "lead_id": None},
+    )
+
+
+def _prepare_submission_payload(
+    payload, signing_token, email, network_slug, expiry, deal_invitation=None
+):
+    """Validate a completed wizard payload and replace client pricing with server pricing.
+
+    The browser can only request the facilities that belong to its signed session;
+    the server remains the authority for the actual facilities, item codes and
+    locked prices.  Rejecting an invalid or stale selection here means the person
+    can correct it in the wizard instead of receiving a generic background-job
+    failure after their submission has been staged.
+    """
+    if not isinstance(payload, dict):
+        frappe.throw(_("Invalid submission payload."), frappe.ValidationError)
+
+    contact = payload.get("contact")
+    if not isinstance(contact, dict):
+        frappe.throw(_("Please return to your contact details and try again."), frappe.ValidationError)
+
+    contact_email = frappe.utils.cstr(contact.get("email") or "").strip().lower()
+    if contact_email != email:
+        frappe.throw(
+            _("Your email address changed. Please verify the updated address before submitting."),
+            frappe.ValidationError,
+        )
+
+    witness = payload.get("witness")
+    if not isinstance(witness, dict):
+        frappe.throw(_("Please add your facility witness before submitting."), frappe.ValidationError)
+    witness_name = frappe.utils.cstr(witness.get("name") or "").strip()
+    witness_email = frappe.utils.cstr(witness.get("email") or "").strip().lower()
+    if not witness_name or frappe.utils.validate_email_address(witness_email) != witness_email:
+        frappe.throw(
+            _("Please provide a valid name and email address for your facility witness."),
+            frappe.ValidationError,
+        )
+
+    requested_codes = []
+    for facility in payload.get("facilities") or []:
+        if not isinstance(facility, dict):
+            continue
+        mfl_code = frappe.utils.cstr(facility.get("mfl_code") or "").strip()
+        if mfl_code:
+            requested_codes.append(mfl_code)
+
+    if not requested_codes:
+        frappe.throw(_("Select at least one facility before submitting."), frappe.ValidationError)
+    if len(set(requested_codes)) != len(requested_codes):
+        frappe.throw(_("Each selected facility must appear only once."), frappe.ValidationError)
+
+    pricing_result = get_pricing(
+        signing_token,
+        email,
+        network_slug,
+        expiry,
+        requested_codes,
+        deal_invitation,
+    )
+    pricing = pricing_result.get("facilities") or []
+    priced_codes = {
+        frappe.utils.cstr(row.get("mfl_code") or "").strip()
+        for row in pricing
+        if row.get("mfl_code")
+    }
+    if set(requested_codes) != priced_codes:
+        frappe.throw(
+            _("One or more selected facilities are no longer available. Please review your selection."),
+            frappe.ValidationError,
+        )
+
+    invalid_rows = [
+        row
+        for row in pricing
+        if not row.get("item_code")
+        or not frappe.db.exists("Item", {"name": row.get("item_code"), "disabled": 0})
+    ]
+    if invalid_rows:
+        frappe.throw(
+            _("Pricing is temporarily unavailable for one or more selected facilities. Please contact support."),
+            frappe.ValidationError,
+        )
+
+    default_company = frappe.db.get_single_value("Global Defaults", "default_company")
+    if not default_company or not frappe.db.exists("Company", default_company):
+        frappe.throw(
+            _("Opt-In is temporarily unavailable. Please contact support."),
+            frappe.ConfigurationError,
+        )
+
+    if not payload.get("terms_accepted") or not payload.get("tc_doc_name") or not payload.get("tc_doc_hash"):
+        frappe.throw(
+            _("Please review and accept the Terms and Conditions before submitting."),
+            frappe.ValidationError,
+        )
+
+    # Store canonical facility and price data, never the browser's editable copy.
+    payload["contact"] = contact
+    payload["witness"] = {"name": witness_name, "email": witness_email}
+    payload["facilities"] = [
+        {
+            "mfl_code": row.get("mfl_code"),
+            "facility_name": row.get("facility_name"),
+            "keph_level": row.get("keph_level"),
+        }
+        for row in pricing
+    ]
+    payload["pricing"] = pricing
+    return payload
+
+
+def _get_optin_deal_forecast_fields(pricing):
+    """Build the mandatory Deal forecast fields from the accepted Opt-In pricing."""
+    expected_deal_value = round(
+        sum(frappe.utils.flt(product.get("annual_kes")) for product in pricing or []), 2
+    )
+    if expected_deal_value <= 0:
+        frappe.throw(
+            _("Opt-In pricing must be greater than zero. Please contact support."),
+            frappe.ValidationError,
+        )
+    return {
+        "expected_deal_value": expected_deal_value,
+        "expected_closure_date": frappe.utils.add_days(frappe.utils.today(), 30),
+    }
+
+
+def _get_or_create_submission_contact(lead):
+    """Reuse a Contact by email so a retry never fails on a duplicate person."""
+    existing_name = ""
+    if lead.email:
+        existing_name = frappe.db.get_value("Contact Email", {"email_id": lead.email}, "parent") or ""
+    if existing_name and frappe.db.exists("Contact", existing_name):
+        return existing_name
+
+    contact_doc = frappe.new_doc("Contact")
+    contact_doc.first_name = lead.first_name or lead.organization or "Contact"
+    contact_doc.last_name = lead.last_name or ""
+    if lead.email:
+        contact_doc.append("email_ids", {"email_id": lead.email, "is_primary": 1})
+    if lead.mobile_no:
+        contact_doc.append("phone_nos", {"phone": lead.mobile_no, "is_primary_mobile_no": 1})
+    contact_doc.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+    return contact_doc.name
+
+
+def _get_or_create_submission_organization(lead, submission_ref):
+    """Return the organisation for a submission, reusing its stable display name."""
+    organization_name = lead.organization or lead.email or ("Org-%s" % submission_ref)
+    existing_name = frappe.db.get_value(
+        "CRM Organization", {"organization_name": organization_name}, "name"
+    )
+    if existing_name:
+        return existing_name
+
+    organization = frappe.new_doc("CRM Organization")
+    organization.organization_name = organization_name
+    organization.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+    return organization.name
 
 
 DEFAULT_BRAND_COLOUR = "#b91c1c"  # Tiberbu red — used when a network has no colour set
@@ -878,6 +1101,11 @@ def get_pricing(signing_token, email, network_slug, expiry, selected_mfl_codes, 
         if invitation
         else (network_doc.get("price_list_override") if network_doc else None) or default_pl
     )
+    if not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
+        frappe.throw(
+            _("Pricing is temporarily unavailable. Please contact support."),
+            frappe.ConfigurationError,
+        )
 
     # Build MFL → facility info map from pre-qualified records via membership child table
     all_records = (
@@ -905,12 +1133,17 @@ def get_pricing(signing_token, email, network_slug, expiry, selected_mfl_codes, 
 
         price_rows = frappe.get_list(
             "Item Price",
-            filters={"item_code": item_code, "price_list": price_list},
+            filters={"item_code": item_code, "price_list": price_list, "selling": 1},
             fields=["price_list_rate"],
             limit=1,
             ignore_permissions=True,  # SYSTEM-INTERNAL
         )
-        monthly_kes = float(price_rows[0].price_list_rate) if price_rows else 0.0
+        if not price_rows:
+            frappe.throw(
+                _("Pricing is temporarily unavailable for one or more selected facilities. Please contact support."),
+                frappe.ConfigurationError,
+            )
+        monthly_kes = float(price_rows[0].price_list_rate)
         annual_kes = round(monthly_kes * 12, 2)
 
         result_facilities.append({
@@ -1169,7 +1402,19 @@ def submit_async(signing_token, email, network_slug, expiry, payload_json, deal_
             "deal": invitation["deal"],
             "price_list": invitation["price_list"],
         }
-        payload_json = json.dumps(payload)
+
+    # Never carry browser-provided pricing or item codes into the background
+    # worker. Validate the final submission synchronously and persist the
+    # canonical facilities/pricing the server calculated for this signed session.
+    payload = _prepare_submission_payload(
+        payload,
+        signing_token,
+        email,
+        network_slug,
+        expiry,
+        deal_invitation,
+    )
+    payload_json = json.dumps(payload)
 
     selected_mfl_codes = [
         frappe.utils.cstr(f.get("mfl_code"))
@@ -1213,20 +1458,32 @@ def submit_async(signing_token, email, network_slug, expiry, payload_json, deal_
     sub.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
     frappe.db.commit()
 
-    # Initialise Redis progress tracker
-    frappe.cache().set_value(
-        "optin_job:%s" % sub.name,
-        json.dumps({"steps": [], "overall": "in_progress", "lead_id": None}),
-        expires_in_sec=3600,
-    )
+    _reset_submission_progress(sub.name)
 
-    # Enqueue background processor
-    frappe.enqueue(
-        "crm.api.optin._process_submission",
-        submission_ref=sub.name,
-        queue="default",
-        timeout=300,
-    )
+    # The staging record is already committed. If the queue is unavailable,
+    # retain that record as Failed so staff and the verified guest can retry it
+    # instead of silently leaving an unworkable Pending submission behind.
+    try:
+        _enqueue_submission(sub.name)
+    except Exception as exc:
+        frappe.log_error(
+            frappe.get_traceback(), "optin.submit_async: could not queue %s" % sub.name
+        )
+        sub.status = "Failed"
+        sub.error_log = frappe.utils.cstr(exc)
+        sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+        frappe.db.commit()
+        _mark_active_job_step_failed(sub.name)
+        progress = _get_job_progress(sub.name) or {}
+        progress.update(
+            {
+                "overall": "failed",
+                "submission_ref": sub.name,
+                "message": _public_submission_failure_message(sub.name),
+            }
+        )
+        _set_job_progress(sub.name, progress)
+        return {"submission_ref": sub.name, "status": "failed"}
 
     return {"submission_ref": sub.name, "status": "queued"}
 
@@ -1323,10 +1580,15 @@ def get_job_status(submission_ref, signing_token, email, network_slug, expiry):
     # Rate limiting — 20 req/IP/min
     client_ip = _get_client_ip()
     rate_key = "optin_rate_gjs:%s" % client_ip
-    call_count = int(frappe.cache().get_value(rate_key) or 0)
-    if call_count >= 20:
-        return {"steps": [], "overall": "in_progress", "lead_id": None}
-    frappe.cache().set_value(rate_key, call_count + 1, expires_in_sec=60)
+    try:
+        call_count = int(frappe.cache().get_value(rate_key) or 0)
+        if call_count >= 20:
+            return {"steps": [], "overall": "in_progress", "lead_id": None}
+        frappe.cache().set_value(rate_key, call_count + 1, expires_in_sec=60)
+    except Exception:
+        # Redis is unavailable: retain secure token/ownership validation and
+        # fall through to the database-backed submission status.
+        pass
 
     _validate_signing_token(signing_token, email, network_slug, expiry)
 
@@ -1341,16 +1603,12 @@ def get_job_status(submission_ref, signing_token, email, network_slug, expiry):
     if not owner_rows or (owner_rows[0].get("submitter_email") or "").lower() != email:
         frappe.throw(_("Access denied."), frappe.PermissionError)
 
-    cached = frappe.cache().get_value("optin_job:%s" % submission_ref)
-    if cached:
-        try:
-            response = json.loads(cached)
-            response["submission_ref"] = submission_ref
-            if response.get("overall") == "failed":
-                response.setdefault("message", _public_submission_failure_message(submission_ref))
-            return response
-        except Exception:
-            pass
+    response = _get_job_progress(submission_ref)
+    if response:
+        response["submission_ref"] = submission_ref
+        if response.get("overall") == "failed":
+            response.setdefault("message", _public_submission_failure_message(submission_ref))
+        return response
 
     # Fallback: read from DB
     try:
@@ -1656,6 +1914,7 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 
 def _process_deal_invitation_submission(sub, payload):
     """Attach a completed invited OIS to its existing Deal and create its quote."""
+    _update_job_step(sub.name, "deal", "in_progress", "Checking your existing account...")
     context = payload.get("_deal_invitation") or {}
     deal_name = frappe.utils.cstr(context.get("deal") or "").strip()
     if not deal_name or not frappe.db.exists("CRM Deal", deal_name):
@@ -1672,6 +1931,7 @@ def _process_deal_invitation_submission(sub, payload):
         filters={"crm_deal": deal_name},
         fields=["name", "crm_sent"],
         limit_page_length=1,
+        ignore_permissions=True,  # SYSTEM-INTERNAL
     )
     if existing_quotes and not existing_quotes[0].crm_sent:
         frappe.throw(_("This Deal already has a quote."))
@@ -1715,8 +1975,10 @@ def _process_deal_invitation_submission(sub, payload):
                 "crm_sent": 1,
             }
         )
+        annual_rates = []
         for product in pricing:
             annual_rate = float(product.get("annual_kes") or 0)
+            annual_rates.append(annual_rate)
             quote.append(
                 "items",
                 {
@@ -1737,6 +1999,10 @@ def _process_deal_invitation_submission(sub, payload):
         quote.flags.ignore_validate = True
         quote.flags.ignore_mandatory = True
         quote.set_missing_values()
+        for row, annual_rate in zip(quote.items or [], annual_rates):
+            row.price_list_rate = annual_rate
+            row.rate = annual_rate
+            row.discount_percentage = 0
         quote.calculate_taxes_and_totals()
         quote.vat_amount = round((quote.net_total or 0) * VAT_RATE, 2)
         quote.insert(ignore_mandatory=True)
@@ -1745,25 +2011,34 @@ def _process_deal_invitation_submission(sub, payload):
 
     recipient = sub.submitter_email
     if recipient:
-        network = _get_network_doc(sub.network_slug)
-        frappe.sendmail(
-            recipients=[recipient],
-            subject="%s Opt-In Confirmed - Reference %s"
-            % (((network or {}).get("display_name") or "CareverseHIMS"), sub.name),
-            message=_confirmation_email_html(
-                contact.get("first_name") or "", sub.name, network, pricing
-            ),
-            now=True,
-        )
-    _update_job_step(sub.name, "email", "done", "Confirmation email sent")
+        try:
+            network = _get_network_doc(sub.network_slug)
+            frappe.sendmail(
+                recipients=[recipient],
+                subject="%s Opt-In Confirmed - Reference %s"
+                % (((network or {}).get("display_name") or "CareverseHIMS"), sub.name),
+                message=_confirmation_email_html(
+                    contact.get("first_name") or "", sub.name, network, pricing
+                ),
+                now=True,
+            )
+            _update_job_step(sub.name, "email", "done", "Confirmation email sent")
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "optin._process_deal_invitation_submission: confirmation email failed for %s"
+                % sub.name,
+            )
+            _update_job_step(sub.name, "email", "done", "Confirmation email pending")
+    else:
+        _update_job_step(sub.name, "email", "done", "Email step complete")
     sub.status = "Processed"
     sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
     frappe.db.commit()
-    frappe.cache().set_value(
-        "optin_job:%s" % sub.name,
-        json.dumps({"steps": [], "overall": "complete", "lead_id": None}),
-        expires_in_sec=3600,
-    )
+    data = _get_job_progress(sub.name) or {}
+    data["overall"] = "complete"
+    data["lead_id"] = None
+    _set_job_progress(sub.name, data)
 
 
 def _process_submission(submission_ref):
@@ -1774,7 +2049,31 @@ def _process_submission(submission_ref):
     """
     frappe.set_user("Administrator")  # SYSTEM-INTERNAL: background job runs as system
     try:
+        # Claim the staged record before performing any side effects. A repeated
+        # RQ delivery or an overlapping retry must not create a second CRM
+        # pipeline for the same submission.
+        status = frappe.db.get_value(
+            "CRM Opt-In Submission", submission_ref, "status", for_update=True
+        )
+        if not status:
+            frappe.db.commit()
+            return
+
         sub = frappe.get_doc("CRM Opt-In Submission", submission_ref)
+        if status == "Processed":
+            frappe.db.commit()
+            progress = _get_job_progress(submission_ref) or {}
+            progress["overall"] = "complete"
+            progress["lead_id"] = sub.lead or None
+            _set_job_progress(submission_ref, progress)
+            return
+        if status == "Processing":
+            frappe.db.commit()
+            return
+        if status != "Pending":
+            frappe.db.commit()
+            return
+
         sub.status = "Processing"
         sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
         frappe.db.commit()
@@ -1790,69 +2089,67 @@ def _process_submission(submission_ref):
         # ── Step 1: Create CRM Lead ──────────────────────────────────────────
         _update_job_step(submission_ref, "lead", "in_progress", "Saving your details...")
 
-        lead = frappe.new_doc("CRM Lead")
-        lead.first_name = frappe.utils.cstr(contact.get("first_name", ""))
-        lead.last_name = frappe.utils.cstr(contact.get("last_name", ""))
-        lead.email = frappe.utils.cstr(contact.get("email", ""))
-        lead.mobile_no = frappe.utils.cstr(contact.get("mobile_no", ""))
-        lead.organization = frappe.utils.cstr(contact.get("organisation", ""))
-        lead.job_title = frappe.utils.cstr(contact.get("role", ""))
-        lead.source = _get_optin_lead_source()
-        lead.status = "New"
+        if sub.lead and frappe.db.exists("CRM Lead", sub.lead):
+            lead = frappe.get_doc("CRM Lead", sub.lead)
+        else:
+            lead = frappe.new_doc("CRM Lead")
+            lead.first_name = frappe.utils.cstr(contact.get("first_name", ""))
+            lead.last_name = frappe.utils.cstr(contact.get("last_name", ""))
+            lead.email = frappe.utils.cstr(contact.get("email", ""))
+            lead.mobile_no = frappe.utils.cstr(contact.get("mobile_no", ""))
+            lead.organization = frappe.utils.cstr(contact.get("organisation", ""))
+            lead.job_title = frappe.utils.cstr(contact.get("role", ""))
+            lead.source = _get_optin_lead_source()
+            lead.status = "New"
 
-        try:
-            _settings = frappe.get_single("CRM Opt-In Settings")
-            lead.lead_owner = _settings.default_lead_owner or "Administrator"
-        except Exception:
-            lead.lead_owner = "Administrator"
-
-        # Opt-in provenance / T&C fields — persisted as Custom Fields (oh-s1-1).
-        # Direct assignment: the fields now exist in the CRM Lead meta, so the
-        # ORM writes them on insert(); the prior defensive try/except .set()
-        # loop silently dropped them (gap D2) and is removed.
-        lead.optin_network_slug = sub.network_slug
-        lead.tc_accepted = 1
-        lead.tc_document = payload.get("tc_doc_name", "")
-        lead.tc_document_hash = payload.get("tc_doc_hash", "")
-        lead.tc_accepted_at = frappe.utils.now_datetime()
-        lead.tc_ip_address = payload.get("ip_address", "")
-
-        # Facility child rows
-        for fac in facilities:
             try:
-                lead.append("facilities", {
-                    "mfl_code": frappe.utils.cstr(fac.get("mfl_code", "")),
-                    "facility_name": frappe.utils.cstr(fac.get("facility_name", "")),
-                    "facility_level": frappe.utils.cstr(fac.get("keph_level", "")),
-                    "hfr_sync_status": "HFR Verified",
-                })
+                _settings = frappe.get_single("CRM Opt-In Settings")
+                lead.lead_owner = _settings.default_lead_owner or "Administrator"
             except Exception:
-                pass
+                lead.lead_owner = "Administrator"
 
-        # Product child rows. The CRM Products child table requires product_name and
-        # rate; product_code is a Link to CRM Product, which is NOT the ERPNext item
-        # code carried in the pricing rows, so it is left unset.
-        for prod in pricing:
-            try:
+            # Opt-in provenance / T&C fields are persisted as first-class Custom
+            # Fields. They are only written for the newly created lead so a retry
+            # cannot overwrite the original acceptance evidence.
+            lead.optin_network_slug = sub.network_slug
+            lead.tc_accepted = 1
+            lead.tc_document = payload.get("tc_doc_name", "")
+            lead.tc_document_hash = payload.get("tc_doc_hash", "")
+            lead.tc_accepted_at = frappe.utils.now_datetime()
+            lead.tc_ip_address = payload.get("ip_address", "")
+
+            for fac in facilities:
+                lead.append(
+                    "facilities",
+                    {
+                        "mfl_code": frappe.utils.cstr(fac.get("mfl_code", "")),
+                        "facility_name": frappe.utils.cstr(fac.get("facility_name", "")),
+                        "facility_level": frappe.utils.cstr(fac.get("keph_level", "")),
+                        "hfr_sync_status": "HFR Verified",
+                    },
+                )
+
+            # The CRM Products child table's product_code is a CRM Product Link,
+            # not the ERPNext Item code from pricing, so it is deliberately unset.
+            for prod in pricing:
                 product_name = (
                     frappe.utils.cstr(prod.get("facility_name", ""))
                     or frappe.utils.cstr(prod.get("item_code", ""))
                     or "CareverseHIMS Subscription"
                 )
-                lead.append("products", {
-                    "product_name": product_name,
-                    "qty": 1,
-                    "rate": float(prod.get("monthly_kes") or 0),
-                })
-            except Exception:
-                pass
+                lead.append(
+                    "products",
+                    {
+                        "product_name": product_name,
+                        "qty": 1,
+                        "rate": float(prod.get("monthly_kes") or 0),
+                    },
+                )
 
-        lead.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
-        frappe.db.commit()
-
-        sub.lead = lead.name
-        sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-        frappe.db.commit()
+            lead.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+            sub.lead = lead.name
+            sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+            frappe.db.commit()
 
         _update_job_step(
             submission_ref, "lead", "done",
@@ -1862,40 +2159,30 @@ def _process_submission(submission_ref):
         # ── Step 2: Create Contact + Organisation → convert Lead to Deal ─────
         _update_job_step(submission_ref, "deal", "in_progress", "Creating your account...")
 
-        contact_doc = frappe.new_doc("Contact")
-        contact_doc.first_name = lead.first_name or lead.organization or "Contact"
-        contact_doc.last_name = lead.last_name or ""
-        if lead.email:
-            contact_doc.append("email_ids", {"email_id": lead.email, "is_primary": 1})
-        if lead.mobile_no:
-            contact_doc.append("phone_nos", {"phone": lead.mobile_no, "is_primary_mobile_no": 1})
-        contact_doc.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+        contact_name = _get_or_create_submission_contact(lead)
+        organization_name = _get_or_create_submission_organization(lead, submission_ref)
         frappe.db.commit()
 
-        org_name = lead.organization or lead.email or ("Org-%s" % submission_ref)
-        # Idempotent: an org with this name may already exist (re-submission, or the
-        # facility was opted in before). CRM Organization autonames from
-        # organization_name, so reuse the existing doc rather than crashing on a
-        # duplicate-key insert.
-        if frappe.db.exists("CRM Organization", org_name):
-            org_doc = frappe.get_doc("CRM Organization", org_name)
+        is_existing_deal = bool(sub.deal and frappe.db.exists("CRM Deal", sub.deal))
+        if is_existing_deal:
+            deal_name = sub.deal
         else:
-            org_doc = frappe.new_doc("CRM Organization")
-            org_doc.organization_name = org_name
-            org_doc.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+            prior_deal = frappe.db.get_value("CRM Deal", {"lead": lead.name}, "name")
+            if prior_deal:
+                deal_name = prior_deal
+            else:
+                from crm.fcrm.doctype.crm_lead.crm_lead import convert_to_deal
+
+                # Set flag so convert_to_deal skips the has_permission guard.
+                lead.flags.ignore_permissions = True
+                deal_name = convert_to_deal(
+                    lead=lead.name,
+                    doc=lead,
+                    deal=_get_optin_deal_forecast_fields(pricing),
+                    existing_contact=contact_name,
+                    existing_organization=organization_name,
+                )
             frappe.db.commit()
-
-        from crm.fcrm.doctype.crm_lead.crm_lead import convert_to_deal
-
-        # Set flag so convert_to_deal skips the has_permission guard
-        lead.flags.ignore_permissions = True
-        deal_name = convert_to_deal(
-            lead=lead.name,
-            doc=lead,
-            existing_contact=contact_doc.name,
-            existing_organization=org_doc.name,
-        )
-        frappe.db.commit()
 
         sub.deal = deal_name
         # Persist signatory contact for exec pre-fill (oh-s2-2)
@@ -1917,11 +2204,12 @@ def _process_submission(submission_ref):
         # Deal transition timeline (oh-s1-3)
         from crm.api._timeline import log_deal_event
 
-        log_deal_event(
-            deal_name,
-            "Opt-in submission %s processed — Lead %s converted to Deal"
-            % (submission_ref, lead.name),
-        )
+        if not is_existing_deal:
+            log_deal_event(
+                deal_name,
+                "Opt-in submission %s processed — Lead %s converted to Deal"
+                % (submission_ref, lead.name),
+            )
 
         _update_job_step(submission_ref, "deal", "done", "Account set up")
 
@@ -1983,8 +2271,10 @@ def _process_submission(submission_ref):
             q.selling_price_list = quote_price_list
             q.ignore_pricing_rule = 1
 
+            annual_rates = []
             for prod in pricing:
                 annual_rate = float(prod.get("annual_kes") or 0)
+                annual_rates.append(annual_rate)
                 q.append("items", {
                     "item_code": frappe.utils.cstr(prod.get("item_code", "")),
                     "item_name": "CareverseHIMS - %s" % frappe.utils.cstr(
@@ -2022,6 +2312,15 @@ def _process_submission(submission_ref):
             # mandatory gaps so the pre-Sent quote is created reliably.
             q.flags.ignore_mandatory = True
             q.set_missing_values()
+            # set_missing_values may refresh rates from the price list. The
+            # accepted Opt-In annual rates are authoritative, so restore them
+            # before calculating the quotation totals.
+            for row, annual_rate in zip(q.items or [], annual_rates):
+                row.price_list_rate = annual_rate
+                row.rate = annual_rate
+                row.discount_percentage = 0
+            q.calculate_taxes_and_totals()
+            q.vat_amount = round((q.net_total or 0) * VAT_RATE, 2)
             if q.is_new():
                 q.insert(ignore_mandatory=True)
             else:
@@ -2064,24 +2363,25 @@ def _process_submission(submission_ref):
         sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
         frappe.db.commit()
 
-        raw = frappe.cache().get_value("optin_job:%s" % submission_ref) or "{}"
-        try:
-            data = json.loads(raw)
-        except Exception:
-            data = {}
+        data = _get_job_progress(submission_ref) or {}
         data["overall"] = "complete"
         data["lead_id"] = lead.name
-        frappe.cache().set_value(
-            "optin_job:%s" % submission_ref,
-            json.dumps(data),
-            expires_in_sec=3600,
-        )
+        _set_job_progress(submission_ref, data)
 
     except Exception as exc:
         frappe.log_error(
             frappe.get_traceback(),
             "Opt-In Submission Failed: %s" % submission_ref,
         )
+        try:
+            _mark_active_job_step_failed(submission_ref)
+        except Exception:
+            # Failure reporting must never obscure the original worker error.
+            frappe.log_error(
+                frappe.get_traceback(),
+                "optin._process_submission: could not update failed progress for %s"
+                % submission_ref,
+            )
         try:
             sub = frappe.get_doc("CRM Opt-In Submission", submission_ref)
             sub.status = "Failed"
@@ -2090,19 +2390,11 @@ def _process_submission(submission_ref):
             frappe.db.commit()
         except Exception:
             pass
-        raw = frappe.cache().get_value("optin_job:%s" % submission_ref) or "{}"
-        try:
-            data = json.loads(raw)
-        except Exception:
-            data = {}
+        data = _get_job_progress(submission_ref) or {}
         data["overall"] = "failed"
         data["submission_ref"] = submission_ref
         data["message"] = _public_submission_failure_message(submission_ref)
-        frappe.cache().set_value(
-            "optin_job:%s" % submission_ref,
-            json.dumps(data),
-            expires_in_sec=3600,
-        )
+        _set_job_progress(submission_ref, data)
 
 
 # ---------------------------------------------------------------------------
@@ -2170,9 +2462,10 @@ def retry_submission(submission_ref):
     """
     Re-enqueue _process_submission for a Failed/Pending submission.
 
-    _process_submission drives status Processing -> Processed on success and
-    Failed on error (see above), so the Failed -> Processing -> Processed flow
-    holds without any change to the processor. Requires write permission.
+    The worker atomically claims Pending work and drives it through Processing to
+    Processed (or Failed). Keeping a retried record Pending avoids a second job
+    mistaking the staff retry for an already-running worker. Requires write
+    permission.
     """
     submission_ref = frappe.utils.cstr(submission_ref)
 
@@ -2183,17 +2476,44 @@ def retry_submission(submission_ref):
     if status not in ("Failed", "Pending"):
         frappe.throw(_("Only failed or pending submissions can be retried."))
 
-    frappe.db.set_value("CRM Opt-In Submission", submission_ref, "status", "Processing")
+    frappe.db.set_value("CRM Opt-In Submission", submission_ref, "status", "Pending")
     frappe.db.commit()
+    _reset_submission_progress(submission_ref)
+    _enqueue_submission(submission_ref)
 
-    # Re-enqueue exactly as submit_async does (queue/default, 300s timeout).
-    frappe.enqueue(
-        "crm.api.optin._process_submission",
-        submission_ref=submission_ref,
-        queue="default",
-        timeout=300,
+    return {"status": "queued"}
+
+
+@frappe.whitelist(allow_guest=True)
+def retry_public_submission(signing_token, email, network_slug, expiry, submission_ref):
+    """Safely let the verified submitter retry their own failed submission.
+
+    The signing token proves the same verified email that created the staging
+    record.  The worker is idempotent, so a transient worker or email failure can
+    be retried without creating another Lead, Contact, Deal or Quotation.
+    """
+    signing_token = frappe.utils.cstr(signing_token)
+    email = frappe.utils.cstr(email).strip().lower()
+    network_slug = frappe.utils.cstr(network_slug).strip()
+    submission_ref = frappe.utils.cstr(submission_ref).strip()
+    _validate_signing_token(signing_token, email, network_slug, expiry)
+
+    rows = frappe.get_list(
+        "CRM Opt-In Submission",
+        filters={"name": submission_ref, "submitter_email": email},
+        fields=["name", "status"],
+        limit=1,
+        ignore_permissions=True,  # SYSTEM-INTERNAL
     )
+    if not rows:
+        frappe.throw(_("Access denied."), frappe.PermissionError)
+    if rows[0].status != "Failed":
+        frappe.throw(_("This submission is already being processed."), frappe.ValidationError)
 
+    frappe.db.set_value("CRM Opt-In Submission", submission_ref, "status", "Pending")
+    frappe.db.commit()
+    _reset_submission_progress(submission_ref)
+    _enqueue_submission(submission_ref)
     return {"status": "queued"}
 
 

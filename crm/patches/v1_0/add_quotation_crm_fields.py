@@ -189,7 +189,6 @@ def execute():
     frappe.db.commit()
 
     # Step 3 — create the correct Custom Field (skip if it already exists)
-    from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
     create_custom_fields(
         {
             "Sales Invoice": [

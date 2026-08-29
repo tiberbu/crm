@@ -90,6 +90,7 @@
           :network-slug="networkSlug"
           :deal-invitation="dealInvitation"
           @submitted="onSubmitted"
+          @saved-for-later="onPartialSaved"
           @back="onBackFromCommit"
         />
       </div>

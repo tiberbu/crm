@@ -40,6 +40,17 @@
       <span v-else>{{ failureMessage }}</span>
     </p>
 
+    <button
+      v-if="overall === 'failed' && submissionRef"
+      :disabled="retrying"
+      class="mb-6 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+      style="background-color: var(--brand-primary)"
+      @click="retrySubmission"
+    >
+      <span v-if="retrying">Retrying...</span>
+      <span v-else>Try Again</span>
+    </button>
+
     <!-- Step list -->
     <div class="mb-8 text-left">
       <div
@@ -52,6 +63,12 @@
           <div v-if="step.status === 'done'" class="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
             <svg class="h-3.5 w-3.5 text-green-600 dark:text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
+          <div v-else-if="step.status === 'failed'" class="flex h-6 w-6 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+            <svg class="h-3.5 w-3.5 text-red-600 dark:text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="7" y1="7" x2="17" y2="17" />
+              <line x1="17" y1="7" x2="7" y2="17" />
             </svg>
           </div>
           <div v-else-if="step.status === 'in_progress'" class="flex h-6 w-6 items-center justify-center rounded-full" :style="{ backgroundColor: 'color-mix(in srgb, var(--brand-primary) 15%, transparent)' }">
@@ -95,7 +112,8 @@ const store = useOptInStore()
 const steps = ref([])
 const overall = ref('in_progress')
 const failureMessage = ref('')
-const submissionRef = ref('')
+const submissionRef = ref(store.submissionRef)
+const retrying = ref(false)
 let pollInterval = null
 let consecutiveErrors = 0
 
@@ -119,6 +137,12 @@ const displaySteps = computed(() => {
 })
 
 const statusResource = createResource({ url: 'crm.api.optin.get_job_status' })
+const retryResource = createResource({ url: 'crm.api.optin.retry_public_submission' })
+
+function stopPolling() {
+  if (pollInterval) clearInterval(pollInterval)
+  pollInterval = null
+}
 
 async function poll() {
   try {
@@ -133,19 +157,45 @@ async function poll() {
     overall.value = data.overall || 'in_progress'
     failureMessage.value = data.message || ''
     submissionRef.value = data.submission_ref || store.submissionRef
+    consecutiveErrors = 0
 
     if (data.overall === 'complete') {
-      clearInterval(pollInterval)
+      stopPolling()
       emit('complete')
     } else if (data.overall === 'failed') {
-      clearInterval(pollInterval)
+      stopPolling()
     }
   } catch {
     consecutiveErrors++
     if (consecutiveErrors >= 5) {
-      clearInterval(pollInterval)
+      stopPolling()
       overall.value = 'failed'
+      failureMessage.value = 'We could not confirm the submission status. Please try again.'
     }
+  }
+}
+
+async function retrySubmission() {
+  retrying.value = true
+  failureMessage.value = ''
+  overall.value = 'in_progress'
+  steps.value = []
+  try {
+    await retryResource.fetch({
+      signing_token: store.signingToken,
+      email: store.contact.email,
+      network_slug: props.networkSlug,
+      expiry: store.signingExpiry,
+      submission_ref: submissionRef.value,
+    })
+    stopPolling()
+    pollInterval = setInterval(poll, 3500)
+    await poll()
+  } catch (err) {
+    overall.value = 'failed'
+    failureMessage.value = err?.message || 'We could not retry this submission. Please contact support.'
+  } finally {
+    retrying.value = false
   }
 }
 
@@ -155,6 +205,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  clearInterval(pollInterval)
+  stopPolling()
 })
 </script>
