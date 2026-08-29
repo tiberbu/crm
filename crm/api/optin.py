@@ -1937,9 +1937,15 @@ def _generate_contract_for_submission(submission, quote_name):
     )
     submission.contract = result["contract"]
     invitation_queue = result.get("invitation_queue") or ""
-    if invitation_queue:
-        submission.contract_invitation_email_queue = invitation_queue
-        submission.contract_invitation_queued_at = frappe.utils.now_datetime()
+    if not invitation_queue:
+        # A successful Opt-In is expected to result in both its confirmation and
+        # its first contract invitation. _generate_contract deliberately keeps
+        # the manual Deal workflow resilient when mail is unavailable; the
+        # synchronous Opt-In transaction instead rolls back so an operator never
+        # sees a "Processed" submission whose contract cannot be delivered.
+        frappe.throw(_("The contract invitation email could not be queued."))
+    submission.contract_invitation_email_queue = invitation_queue
+    submission.contract_invitation_queued_at = frappe.utils.now_datetime()
     submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
     return result
 
@@ -2046,30 +2052,15 @@ def _process_deal_invitation_submission(sub, payload):
 
     if _should_auto_generate_contract():
         _update_job_step(sub.name, "contract", "in_progress", "Preparing your contract...")
-        contract_result = _generate_contract_for_submission(sub, quote.name)
-        if contract_result.get("invitation_queue"):
-            contract_label = "Contract ready — signing invitation sending"
-        else:
-            contract_label = "Contract ready — signing invitation could not be queued"
-        _update_job_step(sub.name, "contract", "done", contract_label)
+        _generate_contract_for_submission(sub, quote.name)
+        _update_job_step(sub.name, "contract", "done", "Contract ready — signing invitation sending")
 
     recipient = sub.submitter_email
-    if recipient:
-        try:
-            network = _get_network_doc(sub.network_slug)
-            _queue_confirmation_email(
-                sub, recipient, contact.get("first_name") or "", network, pricing
-            )
-            _update_job_step(sub.name, "email", "done", "Confirmation email sending")
-        except Exception:
-            frappe.log_error(
-                frappe.get_traceback(),
-                "optin._process_deal_invitation_submission: confirmation email failed for %s"
-                % sub.name,
-            )
-            _update_job_step(sub.name, "email", "done", "Confirmation email could not be queued")
-    else:
-        _update_job_step(sub.name, "email", "done", "Email step complete")
+    if not recipient:
+        frappe.throw(_("A submitter email is required to send the Opt-In confirmation."))
+    network = _get_network_doc(sub.network_slug)
+    _queue_confirmation_email(sub, recipient, contact.get("first_name") or "", network, pricing)
+    _update_job_step(sub.name, "email", "done", "Confirmation email sending")
     sub.status = "Processed"
     sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
     data = _get_job_progress(sub.name) or {}
@@ -2364,37 +2355,22 @@ def _process_submission(submission_ref):
             _update_job_step(
                 submission_ref, "contract", "in_progress", "Preparing your contract..."
             )
-            contract_result = _generate_contract_for_submission(
-                sub, q.name if pricing else ""
+            _generate_contract_for_submission(sub, q.name if pricing else "")
+            _update_job_step(
+                submission_ref, "contract", "done", "Contract ready — signing invitation sending"
             )
-            if contract_result.get("invitation_queue"):
-                contract_label = "Contract ready — signing invitation sending"
-            else:
-                contract_label = "Contract ready — signing invitation could not be queued"
-            _update_job_step(submission_ref, "contract", "done", contract_label)
 
         # ── Step 4: Send confirmation email ──────────────────────────────────
         _update_job_step(submission_ref, "email", "in_progress", "Sending confirmation...")
 
         recipient = lead.email or ""
-        if recipient:
-            try:
-                network = _get_network_doc(sub.network_slug)
-                _queue_confirmation_email(sub, recipient, lead.first_name, network, pricing)
-                _update_job_step(
-                    submission_ref, "email", "done",
-                    "Confirmation email sending",
-                )
-            except Exception:
-                frappe.log_error(
-                    frappe.get_traceback(),
-                    "optin._process_submission: confirmation email failed for %s" % submission_ref,
-                )
-                _update_job_step(
-                    submission_ref, "email", "done", "Confirmation email could not be queued"
-                )
-        else:
-            _update_job_step(submission_ref, "email", "done", "Email step complete")
+        if not recipient:
+            frappe.throw(_("A submitter email is required to send the Opt-In confirmation."))
+        network = _get_network_doc(sub.network_slug)
+        _queue_confirmation_email(sub, recipient, lead.first_name, network, pricing)
+        _update_job_step(
+            submission_ref, "email", "done", "Confirmation email sending"
+        )
 
         # ── Mark submission complete ──────────────────────────────────────────
         sub.status = "Processed"
@@ -2455,7 +2431,35 @@ def _process_submission(submission_ref):
 
 
 @frappe.whitelist()
-def list_submissions(status=None, page=0, page_size=20):
+def get_submission_filter_options():
+    """Return permission-scoped choices for the Opt-In review list filters."""
+    submissions = frappe.get_list(
+        "CRM Opt-In Submission",
+        fields=["network_slug"],
+        limit_page_length=0,
+    )
+    networks = sorted(
+        {
+            frappe.utils.cstr(row.network_slug).strip()
+            for row in submissions
+            if frappe.utils.cstr(row.network_slug).strip()
+        }
+    )
+    return {
+        "networks": networks,
+        "facility_levels": [row["keph_level"] for row in _KEPH_MAP],
+    }
+
+
+@frappe.whitelist()
+def list_submissions(
+    status=None,
+    network_slug=None,
+    facility_level=None,
+    facility=None,
+    page=0,
+    page_size=20,
+):
     """
     Paginated Opt-In submissions for the staff review surface.
 
@@ -2463,26 +2467,64 @@ def list_submissions(status=None, page=0, page_size=20):
     the doctype permission model (System Manager r/w/c, Sales User r) governs what
     each caller sees. Returns {"rows": [...], "total": <int>}.
     """
-    page = int(page or 0)
-    page_size = int(page_size or 20)
+    page = max(int(page or 0), 0)
+    page_size = min(max(int(page_size or 20), 1), 100)
 
     filters = {}
     if status and status != "All":
         filters["status"] = status
+    network_slug = frappe.utils.cstr(network_slug).strip()
+    if network_slug:
+        filters["network_slug"] = network_slug
 
-    rows = frappe.get_list(
-        "CRM Opt-In Submission",
-        filters=filters,
-        fields=[
-            "name", "status", "network_slug", "submitter_email",
-            "submitted_at", "lead", "deal", "has_duplicate_mfl", "error_log",
-            "confirmation_email_queue", "confirmation_email_queued_at",
-            "contract", "contract_invitation_email_queue", "contract_invitation_queued_at",
-        ],
-        order_by="submitted_at desc",
-        limit_start=page * page_size,
-        limit_page_length=page_size,
-    )
+    facility_level = frappe.utils.cstr(facility_level).strip()
+    facility = frappe.utils.cstr(facility).strip()
+    fields = [
+        "name", "status", "network_slug", "submitter_email",
+        "submitted_at", "lead", "deal", "has_duplicate_mfl", "error_log",
+        "confirmation_email_queue", "confirmation_email_queued_at",
+        "contract", "contract_invitation_email_queue", "contract_invitation_queued_at",
+    ]
+
+    if facility_level or facility:
+        # Facility data is retained canonically in raw_json because one Opt-In can
+        # represent several facilities. Apply this uncommon, richer filter before
+        # slicing the page so both its results and total remain accurate without a
+        # schema migration or a brittle database-specific JSON query.
+        filtered_rows = frappe.get_list(
+            "CRM Opt-In Submission",
+            filters=filters,
+            fields=[*fields, "raw_json"],
+            order_by="submitted_at desc",
+            limit_page_length=0,
+        )
+        filtered_rows = [
+            row
+            for row in filtered_rows
+            if _submission_matches_facility_filter(row.raw_json, facility_level, facility)
+        ]
+        total = len(filtered_rows)
+        start = page * page_size
+        rows = filtered_rows[start : start + page_size]
+    else:
+        rows = frappe.get_list(
+            "CRM Opt-In Submission",
+            filters=filters,
+            fields=fields,
+            order_by="submitted_at desc",
+            limit_start=page * page_size,
+            limit_page_length=page_size,
+        )
+        # Total via a permission-scoped get_list (limit_page_length=0 => all rows)
+        # keeps the count on the same "get_list only" path as the page read.
+        total = len(
+            frappe.get_list(
+                "CRM Opt-In Submission",
+                filters=filters,
+                fields=["name"],
+                limit_page_length=0,
+            )
+        )
 
     queue_names = list(
         {
@@ -2532,23 +2574,15 @@ def list_submissions(status=None, page=0, page_size=20):
                 "parent": ["in", contract_names],
                 "parenttype": "CRM Contract",
                 "parentfield": "signatories",
-                "signatory_role": "Facility Signatory",
+                "signatory_role": ["in", ["Facility Signatory", "Facility Witness"]],
             },
-            fields=["parent", "status", "signed_at", "invite_token", "invite_expiry"],
+            fields=["parent", "signatory_role", "status", "signed_at", "invite_token", "invite_expiry"],
             ignore_permissions=True,  # SYSTEM-INTERNAL: expose only summary state
         )
-        facility_signatories = {row.parent: row for row in signatory_rows}
-
-    # Total via a permission-scoped get_list (limit_page_length=0 => all rows) —
-    # keeps the count on the same "get_list only" path as the page read.
-    total = len(
-        frappe.get_list(
-            "CRM Opt-In Submission",
-            filters=filters,
-            fields=["name"],
-            limit_page_length=0,
-        )
-    )
+        for signatory in signatory_rows:
+            facility_signatories.setdefault(signatory.parent, {})[
+                signatory.signatory_role
+            ] = signatory
 
     return {
         "rows": [
@@ -2566,15 +2600,20 @@ def list_submissions(status=None, page=0, page_size=20):
 
 def _submission_list_row(row, queue_statuses, contract, facility_signatories):
     """Build a permission-safe Opt-In review row with concise delivery/signing state."""
-    facility_signatory = facility_signatories.get(contract.name) if contract else None
+    facility_roles = facility_signatories.get(contract.name, {}) if contract else {}
+    facility_signatory = facility_roles.get("Facility Signatory")
+    facility_witness = facility_roles.get("Facility Witness")
     signing_status, signed_at = _facility_signing_state(facility_signatory)
+    witness_status, witness_signed_at = _facility_witness_signing_state(
+        facility_signatory, facility_witness
+    )
     contract_email_status = queue_statuses.get(row.contract_invitation_email_queue)
     if not contract_email_status:
         # Contracts created before Opt-In delivery tracking cannot be reliably
         # correlated to an Email Queue record, so do not present them as failures.
         contract_email_status = "Not tracked" if contract and not row.contract else "Not queued"
     return {
-        **row,
+        **{key: value for key, value in row.items() if key != "raw_json"},
         "contract": contract.name if contract else row.contract,
         "confirmation_email_status": queue_statuses.get(
             row.confirmation_email_queue, "Not queued"
@@ -2582,6 +2621,8 @@ def _submission_list_row(row, queue_statuses, contract, facility_signatories):
         "contract_invitation_email_status": contract_email_status,
         "facility_signing_status": signing_status,
         "facility_signatory_signed_at": signed_at,
+        "facility_witness_signing_status": witness_status,
+        "facility_witness_signed_at": witness_signed_at,
         "failure_reason": row.error_log if row.status == "Failed" else "",
     }
 
@@ -2604,6 +2645,36 @@ def _facility_signing_state(signatory):
             return "Signing link expired", None
         return "Awaiting signature", None
     return "Preparing invitation", None
+
+
+def _facility_witness_signing_state(facility_signatory, facility_witness):
+    """Make the witness's sequential contract step explicit in review lists."""
+    if not facility_witness:
+        return "Not required", None
+    if facility_witness.status == "Signed":
+        return "Signed", facility_witness.signed_at
+    if facility_signatory and facility_signatory.status == "Declined":
+        return "Blocked by declined signatory", None
+    if not facility_signatory or facility_signatory.status != "Signed":
+        return "Waiting for facility signatory", None
+    return _facility_signing_state(facility_witness)
+
+
+def _submission_matches_facility_filter(raw_json, facility_level, facility):
+    """Match a saved Opt-In against a requested KEPH level and/or facility search."""
+    wanted_level = frappe.utils.cstr(facility_level).strip().casefold()
+    wanted_facility = frappe.utils.cstr(facility).strip().casefold()
+    for saved_facility in _dashboard_facilities(_dashboard_payload(raw_json)):
+        if wanted_level and saved_facility["level"].casefold() != wanted_level:
+            continue
+        if wanted_facility:
+            haystack = " ".join(
+                [saved_facility["mfl_code"], saved_facility["facility_name"]]
+            ).casefold()
+            if wanted_facility not in haystack:
+                continue
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------

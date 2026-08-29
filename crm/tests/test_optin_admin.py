@@ -1,8 +1,9 @@
 from unittest.mock import patch
 
+import frappe
 from frappe.tests import UnitTestCase
 
-from crm.api.optin_admin import import_facilities_csv
+from crm.api.optin_admin import import_facilities_csv, list_networks
 
 
 class TestOptInFacilityCsvImport(UnitTestCase):
@@ -76,3 +77,33 @@ class TestOptInFacilityCsvImport(UnitTestCase):
 				],
 			}
 		)
+
+
+class TestOptInNetworkList(UnitTestCase):
+	def test_network_list_adds_the_visible_contact_count(self):
+		network = frappe._dict(
+			{
+				"name": "network-a",
+				"slug": "network-a",
+				"display_name": "Network A",
+				"enabled": 1,
+			}
+		)
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch(
+				"crm.api.optin_admin.frappe.get_list",
+				side_effect=[
+					[network],
+					[
+						frappe._dict({"network": "network-a"}),
+						frappe._dict({"network": "network-a"}),
+					],
+					[frappe._dict({"name": "network-a"})],
+				],
+			),
+		):
+			result = list_networks()
+
+		self.assertEqual(result["total"], 1)
+		self.assertEqual(result["rows"][0]["contact_count"], 2)

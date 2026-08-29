@@ -212,7 +212,12 @@
     <template v-if="!isNewNetwork">
     <!-- ── PREQUALIFIED CONTACTS ─────────────────────────────────────────── -->
     <div class="mt-6 flex items-center justify-between">
-      <h2 class="text-base font-semibold text-ink-gray-9">{{ __('Prequalified Contacts') }}</h2>
+      <div class="flex items-center gap-2">
+        <h2 class="text-base font-semibold text-ink-gray-9">{{ __('Prequalified Contacts') }}</h2>
+        <span class="rounded-full bg-surface-gray-2 px-2 py-0.5 text-xs font-semibold text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4">
+          {{ contactTotal }}
+        </span>
+      </div>
       <div class="flex gap-2">
         <Button variant="subtle" size="sm" @click="toggleCsvSection">{{ __('Import CSV') }}</Button>
         <Button variant="solid" size="sm" @click="openAddForm">{{ __('+ Add Contact') }}</Button>

@@ -93,9 +93,17 @@ def _normalize_optin_terms_template(terms):
 
 
 @frappe.whitelist()
-def list_networks(page=0, page_size=20):
-    page = int(page or 0)
-    page_size = int(page_size or 20)
+def list_networks(
+    page=0,
+    page_size=20,
+    search=None,
+    enabled=None,
+    facility_level=None,
+    facility=None,
+):
+    """Return permission-scoped Opt-In Networks with contact counts and filters."""
+    page = max(int(page or 0), 0)
+    page_size = min(max(int(page_size or 20), 1), 100)
 
     if _is_admin() or frappe.has_permission("CRM Opt-In Network", "read"):
         filters = {}
@@ -105,15 +113,99 @@ def list_networks(page=0, page_size=20):
             return {"rows": [], "total": 0}
         filters = {"name": ["in", allowed]}
 
+    enabled = frappe.utils.cstr(enabled).strip()
+    if enabled in ("0", "1"):
+        filters["enabled"] = frappe.utils.cint(enabled)
+
+    facility_level = frappe.utils.cstr(facility_level).strip()
+    facility = frappe.utils.cstr(facility).strip()
+    if facility_level or facility:
+        facility_filters = {}
+        if facility_level:
+            facility_filters["keph_level"] = facility_level
+        facility_or_filters = None
+        if facility:
+            facility_like = "%%%s%%" % facility
+            facility_or_filters = [
+                ["facility_name", "like", facility_like],
+                ["mfl_code", "like", facility_like],
+                ["organization", "like", facility_like],
+            ]
+        facilities = frappe.get_list(
+            "CRM Pre-Qualified Facility",
+            filters=facility_filters,
+            or_filters=facility_or_filters,
+            fields=["name"],
+            limit_page_length=0,
+            ignore_permissions=True,  # SYSTEM-INTERNAL: only resolves filter scope
+        )
+        if not facilities:
+            return {"rows": [], "total": 0}
+        memberships = frappe.get_list(
+            "CRM Facility Membership",
+            filters={
+                "parenttype": "CRM Pre-Qualified Facility",
+                "parent": ["in", [row.name for row in facilities]],
+            },
+            fields=["network"],
+            limit_page_length=0,
+            ignore_permissions=True,  # SYSTEM-INTERNAL: only resolves filter scope
+        )
+        matching_networks = {row.network for row in memberships if row.network}
+        if not matching_networks:
+            return {"rows": [], "total": 0}
+        if filters.get("name"):
+            matching_networks &= set(filters["name"][1])
+        if not matching_networks:
+            return {"rows": [], "total": 0}
+        filters["name"] = ["in", list(matching_networks)]
+
+    search = frappe.utils.cstr(search).strip()
+    search_or_filters = None
+    if search:
+        search_like = "%%%s%%" % search
+        search_or_filters = [
+            ["display_name", "like", search_like],
+            ["slug", "like", search_like],
+            ["contact_email", "like", search_like],
+        ]
+
     rows = frappe.get_list(
         "CRM Opt-In Network",
         filters=filters,
         fields=["name", "slug", "display_name", "enabled", "contact_email", "footer_legal_name", "logo_url", "primary_colour", "price_list_override"],
+        or_filters=search_or_filters,
         order_by="display_name asc",
         limit_start=page * page_size,
         limit_page_length=page_size,
     )
-    total = len(frappe.get_list("CRM Opt-In Network", filters=filters, fields=["name"], limit_page_length=0))
+    network_names = [row.name for row in rows]
+    contact_counts = {}
+    if network_names:
+        contact_memberships = frappe.get_list(
+            "CRM Facility Membership",
+            filters={
+                "parenttype": "CRM Pre-Qualified Facility",
+                "network": ["in", network_names],
+            },
+            fields=["network"],
+            limit_page_length=0,
+            ignore_permissions=True,  # SYSTEM-INTERNAL: only counts visible networks
+        )
+        for membership in contact_memberships:
+            contact_counts[membership.network] = contact_counts.get(membership.network, 0) + 1
+    for row in rows:
+        row["contact_count"] = contact_counts.get(row.name, 0)
+
+    total = len(
+        frappe.get_list(
+            "CRM Opt-In Network",
+            filters=filters,
+            or_filters=search_or_filters,
+            fields=["name"],
+            limit_page_length=0,
+        )
+    )
     return {"rows": rows, "total": total}
 
 

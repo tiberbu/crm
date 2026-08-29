@@ -7,6 +7,52 @@
       <Button variant="solid" size="sm" @click="router.push({ name: 'NewNetwork' })">{{ __('Add Network') }}</Button>
     </div>
 
+    <div class="flex flex-wrap items-end gap-2 border-b border-outline-gray-2 px-5 py-3">
+      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+        {{ __('Search') }}
+        <input
+          v-model="search"
+          class="h-8 w-44 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          :placeholder="__('Name, slug or email')"
+          @keyup.enter="applyFilters"
+        />
+      </label>
+      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+        {{ __('Status') }}
+        <select
+          v-model="enabled"
+          class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          @change="applyFilters"
+        >
+          <option value="">{{ __('All statuses') }}</option>
+          <option value="1">{{ __('Enabled') }}</option>
+          <option value="0">{{ __('Disabled') }}</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+        {{ __('Facility level') }}
+        <select
+          v-model="facilityLevel"
+          class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          @change="applyFilters"
+        >
+          <option value="">{{ __('All levels') }}</option>
+          <option v-for="level in facilityLevels" :key="level" :value="level">{{ level }}</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+        {{ __('Facility') }}
+        <input
+          v-model="facility"
+          class="h-8 w-44 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          :placeholder="__('Name, MFL or organization')"
+          @keyup.enter="applyFilters"
+        />
+      </label>
+      <Button size="sm" variant="subtle" @click="applyFilters">{{ __('Apply') }}</Button>
+      <Button size="sm" variant="ghost" @click="clearFilters">{{ __('Clear') }}</Button>
+    </div>
+
     <!-- Table area -->
     <div class="flex-1 overflow-auto">
       <div v-if="listResource.loading" class="flex items-center justify-center py-16">
@@ -24,6 +70,7 @@
             <th class="px-5 py-2.5 text-left font-medium">{{ __('Display Name') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Slug') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Status') }}</th>
+            <th class="px-4 py-2.5 text-right font-medium">{{ __('Contacts') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Contact Email') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Footer Name') }}</th>
             <th class="px-4 py-2.5 text-right font-medium"></th>
@@ -43,6 +90,7 @@
                 {{ row.enabled ? __('Enabled') : __('Disabled') }}
               </span>
             </td>
+            <td class="px-4 py-3 text-right font-medium text-ink-gray-7">{{ row.contact_count }}</td>
             <td class="px-4 py-3 text-xs text-ink-gray-6">{{ row.contact_email || '—' }}</td>
             <td class="px-4 py-3 text-xs text-ink-gray-6">{{ row.footer_legal_name || '—' }}</td>
             <td class="px-4 py-3 text-right text-ink-gray-4">
@@ -77,9 +125,31 @@ const router = useRouter()
 
 const page = ref(0)
 const pageSize = 20
+const search = ref('')
+const enabled = ref('')
+const facilityLevel = ref('')
+const facility = ref('')
+const facilityLevels = [
+  'Level 2',
+  'Level 3',
+  'Level 3C',
+  'Level 3A',
+  'Level 3B',
+  'Level 4',
+  'Level 4B',
+  'Level 5A',
+  'Level 5',
+]
 const listResource = createResource({
   url: 'crm.api.optin_admin.list_networks',
-  makeParams: () => ({ page: page.value, page_size: pageSize }),
+  makeParams: () => ({
+    page: page.value,
+    page_size: pageSize,
+    search: search.value || null,
+    enabled: enabled.value || null,
+    facility_level: facilityLevel.value || null,
+    facility: facility.value || null,
+  }),
   auto: true,
 })
 
@@ -98,6 +168,19 @@ function prevPage() {
 function nextPage() {
   page.value++
   listResource.reload()
+}
+
+function applyFilters() {
+  page.value = 0
+  listResource.reload()
+}
+
+function clearFilters() {
+  search.value = ''
+  enabled.value = ''
+  facilityLevel.value = ''
+  facility.value = ''
+  applyFilters()
 }
 
 function statusPill(enabled) {
