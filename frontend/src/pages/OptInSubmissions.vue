@@ -277,7 +277,11 @@ async function retry(row) {
 
 function openDeal(row) {
   if (!row.deal) return
-  router.push({ name: 'Deal', params: { dealId: row.deal } })
+  // An Opt-In review should open on the lightweight Deal activity view. Respecting
+  // the last-used Deal tab here could immediately mount the quote editor, which
+  // loads quote lines, price lists, and the catalogue before the reviewer asks
+  // for them.
+  router.push({ name: 'Deal', params: { dealId: row.deal }, hash: '#activity' })
 }
 
 function formatDate(d) {
