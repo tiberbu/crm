@@ -49,7 +49,7 @@
    "label": "Contract Automation"
   },
   {
-   "default": "0",
+   "default": "1",
    "description": "When enabled, a completed Opt-In submission creates a contract and immediately sends the Facility Signatory invitation using the existing contract workflow.",
    "fieldname": "auto_generate_contract_on_submission",
    "fieldtype": "Check",
