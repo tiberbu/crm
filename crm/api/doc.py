@@ -4,8 +4,8 @@ import frappe
 from frappe import _
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 from frappe.desk.form.assign_to import set_status
+from frappe.desk.form.linked_with import get_linked_docs, get_linked_doctypes
 from frappe.model import no_value_fields
-from frappe.model.delete_doc import get_dynamic_linked_docs, get_linked_docs
 from frappe.model.document import get_controller
 from frappe.utils import make_filter_tuple
 from pypika import Criterion
@@ -682,11 +682,17 @@ def get_linked_docs_of_document(doctype: str, docname: str):
 	except frappe.DoesNotExistError:
 		return []
 
-	linked_docs = get_linked_docs(doc)
-	dynamic_linked_docs = get_dynamic_linked_docs(doc)
-
-	linked_docs.extend(dynamic_linked_docs)
-	linked_docs = list({doc["reference_docname"]: doc for doc in linked_docs}.values())
+	linked_docs_by_doctype = get_linked_docs(
+		doctype, docname, get_linked_doctypes(doctype)
+	)
+	linked_docs = [
+		{
+			"reference_doctype": linked_doctype,
+			"reference_docname": linked_doc.name,
+		}
+		for linked_doctype, docs in linked_docs_by_doctype.items()
+		for linked_doc in docs
+	]
 
 	docs_data = []
 	for doc in linked_docs:
