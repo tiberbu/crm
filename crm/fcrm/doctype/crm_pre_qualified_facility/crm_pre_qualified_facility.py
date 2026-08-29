@@ -48,7 +48,7 @@ def _send_membership_invitation(doc, membership):
         ),
         reference_doctype=doc.doctype,
         reference_name=doc.name,
-        now=False,
+        now=True,
     )
 
     if not queue:
@@ -66,7 +66,6 @@ def _send_membership_invitation(doc, membership):
     )
     membership.invite_email_queue = queue.name
     membership.invite_sent_at = sent_at
-    queue.send()
     return queue
 
 

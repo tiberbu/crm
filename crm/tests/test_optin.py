@@ -209,7 +209,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
 			patch("crm.api.contracts.frappe.db.commit") as commit,
 		):
-			result = _issue_and_send_invitation(contract, signatory, now=True, commit=False)
+			result = _issue_and_send_invitation(contract, signatory, commit=False)
 
 		self.assertIs(result, queue)
 		contract.save.assert_called_once_with(ignore_permissions=True)
