@@ -80,7 +80,9 @@
                 :to="isLinkDisabled(link) ? undefined : link.to"
                 :label="__(link.label)"
                 :active="activeItem === link.key"
-                :class="isLinkDisabled(link) ? 'pointer-events-none opacity-40' : ''"
+                :class="
+                  isLinkDisabled(link) ? 'pointer-events-none opacity-40' : ''
+                "
                 @click="selectItem($event, link.key)"
               >
                 <template #prefix>
@@ -300,6 +302,12 @@ const links = [
     label: 'Quotes',
     icon: DealsIcon,
     to: 'Quotes',
+  },
+  {
+    label: 'Opt-In Dashboard',
+    icon: LucideLayoutDashboard,
+    to: 'OptInDashboard',
+    gated: true,
   },
   {
     // Exec pick-up queue for staged self opt-in submissions (oh-s2-1). Read is

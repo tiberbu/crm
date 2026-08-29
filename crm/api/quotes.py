@@ -277,22 +277,30 @@ def list_quotes(deal):
 		],
 		order_by="creation desc",
 	)
+	invoice_by_quotation = _invoices_for_quotations([r.name for r in rows])
 	# Derive frontend status from docstatus + crm_sent
 	for r in rows:
 		r["status"] = _derive_status(r)
-		r["erpnext_sales_invoice"] = _invoice_for_quotation(r["name"])
+		r["erpnext_sales_invoice"] = invoice_by_quotation.get(r["name"])
 	return rows
 
 
-def _invoice_for_quotation(quotation_name):
-	"""Return the first Sales Invoice name linked to this Quotation, if any."""
+def _invoices_for_quotations(quotation_names):
+	"""Return the newest Sales Invoice name for each quotation in one query."""
+	quotation_names = [name for name in quotation_names if name]
+	if not quotation_names:
+		return {}
+
 	rows = frappe.get_list(
 		"Sales Invoice",
-		filters=[["crm_quotation", "=", quotation_name]],
-		pluck="name",
-		limit=1,
+		filters=[["crm_quotation", "in", quotation_names]],
+		fields=["name", "crm_quotation"],
+		order_by="creation desc",
 	)
-	return rows[0] if rows else None
+	invoices = {}
+	for row in rows:
+		invoices.setdefault(row.crm_quotation, row.name)
+	return invoices
 
 
 @frappe.whitelist()
@@ -360,9 +368,10 @@ def list_all_quotes(status=None, from_date=None, to_date=None, search=None, page
 		limit_start=int(page) * int(page_size),
 	)
 
+	invoice_by_quotation = _invoices_for_quotations([r.name for r in rows])
 	for r in rows:
 		r["status"] = _derive_status(r)
-		r["erpnext_sales_invoice"] = _invoice_for_quotation(r["name"])
+		r["erpnext_sales_invoice"] = invoice_by_quotation.get(r["name"])
 
 	total = frappe.db.count("Quotation", filters)
 	kpis  = _quote_kpis()
@@ -671,9 +680,10 @@ def list_catalogue_items(search=None, price_list=None):
 		limit_page_length=100,
 	)
 
+	rates = _catalogue_item_rates([item.item_code for item in items], price_list)
 	out = []
 	for it in items:
-		rate = _get_item_price(it.item_code, price_list)
+		rate = rates.get(it.item_code, 0)
 		if not rate:
 			continue  # only surface items that have a sellable price
 		out.append({
@@ -683,6 +693,58 @@ def list_catalogue_items(search=None, price_list=None):
 			"rate":      rate,
 		})
 	return out
+
+
+def _catalogue_item_rates(item_codes, price_list):
+	"""Resolve catalogue item rates in bulk while preserving price-list fallback.
+
+	The former picker performed one or two Item Price queries for every catalogue
+	item. The quote editor can expose 100 items, so opening it could issue hundreds
+	of database reads. This batches the same valid-date and Standard Selling fallback
+	rules into one Item Price query.
+	"""
+	item_codes = [item_code for item_code in item_codes if item_code]
+	if not item_codes:
+		return {}
+
+	price_lists = [price_list]
+	if price_list != DEFAULT_PRICE_LIST:
+		price_lists.append(DEFAULT_PRICE_LIST)
+
+	price_rows = frappe.get_list(
+		"Item Price",
+		filters=[
+			["item_code", "in", item_codes],
+			["price_list", "in", price_lists],
+			["selling", "=", 1],
+		],
+		fields=["item_code", "price_list", "price_list_rate", "valid_from", "valid_upto"],
+		order_by="valid_from desc",
+		limit_page_length=0,
+	)
+	rows_by_item_and_list = {}
+	for row in price_rows:
+		rows_by_item_and_list.setdefault((row.item_code, row.price_list), []).append(row)
+
+	today = getdate(nowdate())
+
+	def best_rate(rows):
+		for row in rows:
+			valid_from = getdate(row.valid_from) if row.valid_from else None
+			valid_upto = getdate(row.valid_upto) if row.valid_upto else None
+			if (valid_from is None or valid_from <= today) and (
+				valid_upto is None or valid_upto >= today
+			):
+				return float(row.price_list_rate or 0)
+		return float(rows[0].price_list_rate or 0) if rows else None
+
+	rates = {}
+	for item_code in item_codes:
+		rate = best_rate(rows_by_item_and_list.get((item_code, price_list), []))
+		if rate is None and price_list != DEFAULT_PRICE_LIST:
+			rate = best_rate(rows_by_item_and_list.get((item_code, DEFAULT_PRICE_LIST), []))
+		rates[item_code] = float(rate or 0)
+	return rates
 
 
 @frappe.whitelist()

@@ -31,6 +31,7 @@ import hmac
 import json
 import random
 import time
+from collections import defaultdict
 
 import frappe
 from frappe import _
@@ -42,10 +43,12 @@ VAT_RATE = 0.16
 _KEPH_MAP = [
     {"keph_level": "Level 2",  "item_code": "CV-HIMS-KEPH-2"},
     {"keph_level": "Level 3",  "item_code": "CV-HIMS-KEPH-3"},
+    {"keph_level": "Level 3C", "item_code": "CV-HIMS-KEPH-3C"},
     {"keph_level": "Level 3A", "item_code": "CV-HIMS-KEPH-3A"},
     {"keph_level": "Level 3B", "item_code": "CV-HIMS-KEPH-3B"},
     {"keph_level": "Level 4",  "item_code": "CV-HIMS-KEPH-4"},
     {"keph_level": "Level 4B", "item_code": "CV-HIMS-KEPH-4B"},
+    {"keph_level": "Level 5A", "item_code": "CV-HIMS-KEPH-5A"},
     {"keph_level": "Level 5",  "item_code": "CV-HIMS-KEPH-5"},
 ]
 
@@ -1853,7 +1856,7 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
           <div style="background:%(tint)s;border-radius:10px;padding:16px 18px">
             <div style="font-size:13px;font-weight:700;color:#111827;margin:0 0 8px">What happens next</div>
             <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;color:#4b5563;line-height:1.5">
-              <tr><td style="padding:2px 8px 2px 0;color:%(brand)s;font-weight:700">1.</td><td style="padding:2px 0">Our onboarding team reviews your registration and prepares your contract.</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:%(brand)s;font-weight:700">1.</td><td style="padding:2px 0">Your registration is reviewed and advanced to the contracting step.</td></tr>
               <tr><td style="padding:2px 8px 2px 0;color:%(brand)s;font-weight:700">2.</td><td style="padding:2px 0">You'll receive your contract by email to review and sign online — no printing needed.</td></tr>
               <tr><td style="padding:2px 8px 2px 0;color:%(brand)s;font-weight:700">3.</td><td style="padding:2px 0">Once signed and approved, your facilities are activated on CareverseHIMS.</td></tr>
             </table>
@@ -1882,7 +1885,7 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 
 
 def _queue_confirmation_email(submission, recipient, first_name, network, pricing):
-    """Queue the confirmation email and retain its queue record on the submission."""
+    """Request immediate confirmation delivery and retain its queue record."""
     brand_name = (network.get("display_name") if network else "") or "CareverseHIMS"
     queue = frappe.sendmail(
         recipients=[recipient],
@@ -1890,7 +1893,7 @@ def _queue_confirmation_email(submission, recipient, first_name, network, pricin
         message=_confirmation_email_html(first_name, submission.name, network, pricing),
         reference_doctype="CRM Opt-In Submission",
         reference_name=submission.name,
-        now=False,
+        now=True,
     )
     if not queue:
         frappe.throw(_("The confirmation email could not be queued."))
@@ -1899,6 +1902,45 @@ def _queue_confirmation_email(submission, recipient, first_name, network, pricin
     submission.confirmation_email_queued_at = frappe.utils.now_datetime()
     submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
     return queue
+
+
+def _should_auto_generate_contract():
+    """Return whether completed Opt-In submissions should generate contracts."""
+    try:
+        settings = frappe.get_single("CRM Opt-In Settings")
+        return bool(frappe.utils.cint(settings.auto_generate_contract_on_submission))
+    except Exception:
+        # Contract automation is opt-in. A transient settings read failure must not
+        # change the established submission flow into a failed submission.
+        return False
+
+
+def _generate_contract_for_submission(submission, quote_name):
+    """Create the configured contract inside the active Opt-In transaction.
+
+    This deliberately reuses the exact contract-generation path used by the CRM
+    Deal page. commit=False is essential: the contract, its invitation token, and
+    its Email Queue record are all rolled back with the submission if any later
+    synchronous step fails.
+    """
+    from crm.api.contracts import _generate_contract
+
+    result = _generate_contract(
+        deal=submission.deal,
+        quote=quote_name,
+        facility_signatory_name=submission.facility_signatory_name,
+        facility_signatory_email=submission.facility_signatory_email,
+        facility_witness_name=submission.facility_witness_name,
+        facility_witness_email=submission.facility_witness_email,
+        commit=False,
+    )
+    submission.contract = result["contract"]
+    invitation_queue = result.get("invitation_queue") or ""
+    if invitation_queue:
+        submission.contract_invitation_email_queue = invitation_queue
+        submission.contract_invitation_queued_at = frappe.utils.now_datetime()
+    submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -2001,6 +2043,15 @@ def _process_deal_invitation_submission(sub, payload):
         quote.insert(ignore_mandatory=True)
     _update_job_step(sub.name, "quote", "done", "Quote ready")
 
+    if _should_auto_generate_contract():
+        _update_job_step(sub.name, "contract", "in_progress", "Preparing your contract...")
+        contract_result = _generate_contract_for_submission(sub, quote.name)
+        if contract_result.get("invitation_queue"):
+            contract_label = "Contract ready — signing invitation sending"
+        else:
+            contract_label = "Contract ready — signing invitation could not be queued"
+        _update_job_step(sub.name, "contract", "done", contract_label)
+
     recipient = sub.submitter_email
     if recipient:
         try:
@@ -2008,7 +2059,7 @@ def _process_deal_invitation_submission(sub, payload):
             _queue_confirmation_email(
                 sub, recipient, contact.get("first_name") or "", network, pricing
             )
-            _update_job_step(sub.name, "email", "done", "Confirmation email queued")
+            _update_job_step(sub.name, "email", "done", "Confirmation email sending")
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(),
@@ -2031,13 +2082,13 @@ def _process_submission(submission_ref):
     Process CRM Opt-In Submission → Lead → Deal → Quotation synchronously.
 
     The committed staging record remains as an audit trail on failure, while all
-    pipeline records created by this run are protected by a savepoint. Confirmation
-    delivery is deferred to Frappe's Email Queue and is not part of the save.
+    pipeline records created by this run are protected by a transaction rollback.
+    Email Queue records are created in the same transaction and requested for
+    immediate delivery on its final commit; delivery errors are recorded on Email
+    Queue without undoing the completed CRM data.
     """
     previous_user = frappe.session.user
     frappe.set_user("Administrator")  # SYSTEM-INTERNAL: create CRM records as system
-    savepoint = "optin_submission_processing"
-    frappe.db.savepoint(savepoint)
     try:
         # Claim the staged record before performing any side effects. A repeated
         # browser request or retry must not create a second CRM pipeline.
@@ -2308,6 +2359,19 @@ def _process_submission(submission_ref):
 
         _update_job_step(submission_ref, "quote", "done", "Draft quote ready")
 
+        if _should_auto_generate_contract():
+            _update_job_step(
+                submission_ref, "contract", "in_progress", "Preparing your contract..."
+            )
+            contract_result = _generate_contract_for_submission(
+                sub, q.name if pricing else ""
+            )
+            if contract_result.get("invitation_queue"):
+                contract_label = "Contract ready — signing invitation sending"
+            else:
+                contract_label = "Contract ready — signing invitation could not be queued"
+            _update_job_step(submission_ref, "contract", "done", contract_label)
+
         # ── Step 4: Send confirmation email ──────────────────────────────────
         _update_job_step(submission_ref, "email", "in_progress", "Sending confirmation...")
 
@@ -2318,7 +2382,7 @@ def _process_submission(submission_ref):
                 _queue_confirmation_email(sub, recipient, lead.first_name, network, pricing)
                 _update_job_step(
                     submission_ref, "email", "done",
-                    "Confirmation email queued",
+                    "Confirmation email sending",
                 )
             except Exception:
                 frappe.log_error(
@@ -2343,7 +2407,12 @@ def _process_submission(submission_ref):
         return True
 
     except Exception as exc:
-        frappe.db.rollback(save_point=savepoint)
+        # sendmail(now=True) registers an after_commit callback. A savepoint
+        # rollback leaves that callback intact, which could otherwise send an
+        # invitation for a contract that has just been rolled back. The staging
+        # submission was committed before this processor starts, so a full
+        # rollback safely clears pipeline data and pending callbacks together.
+        frappe.db.rollback()
         frappe.log_error(
             frappe.get_traceback(),
             "Opt-In Submission Failed: %s" % submission_ref,
@@ -2407,13 +2476,24 @@ def list_submissions(status=None, page=0, page_size=20):
             "name", "status", "network_slug", "submitter_email",
             "submitted_at", "lead", "deal", "has_duplicate_mfl", "error_log",
             "confirmation_email_queue", "confirmation_email_queued_at",
+            "contract", "contract_invitation_email_queue", "contract_invitation_queued_at",
         ],
         order_by="submitted_at desc",
         limit_start=page * page_size,
         limit_page_length=page_size,
     )
 
-    queue_names = [row.confirmation_email_queue for row in rows if row.confirmation_email_queue]
+    queue_names = list(
+        {
+            queue_name
+            for row in rows
+            for queue_name in (
+                row.confirmation_email_queue,
+                row.contract_invitation_email_queue,
+            )
+            if queue_name
+        }
+    )
     queue_statuses = {}
     if queue_names:
         email_queues = frappe.get_list(
@@ -2423,6 +2503,40 @@ def list_submissions(status=None, page=0, page_size=20):
             ignore_permissions=True,  # SYSTEM-INTERNAL: expose only the linked status
         )
         queue_statuses = {queue.name: queue.status for queue in email_queues}
+
+    # A contract may have been generated automatically (stored directly on the
+    # submission) or later by a CRM executive (linked through the Deal). Resolve
+    # both paths so the review list presents one reliable facility-signing state.
+    deal_names = [row.deal for row in rows if row.deal]
+    contracts_by_name = {}
+    contracts_by_deal = {}
+    if deal_names:
+        contract_rows = frappe.get_list(
+            "CRM Contract",
+            filters={"deal": ["in", deal_names]},
+            fields=["name", "deal", "workflow_state", "status", "creation"],
+            order_by="creation desc",
+            ignore_permissions=True,  # SYSTEM-INTERNAL: expose only summary state
+        )
+        for contract in contract_rows:
+            contracts_by_name[contract.name] = contract
+            contracts_by_deal.setdefault(contract.deal, contract)
+
+    contract_names = list(contracts_by_name)
+    facility_signatories = {}
+    if contract_names:
+        signatory_rows = frappe.get_list(
+            "CRM Contract Signatory",
+            filters={
+                "parent": ["in", contract_names],
+                "parenttype": "CRM Contract",
+                "parentfield": "signatories",
+                "signatory_role": "Facility Signatory",
+            },
+            fields=["parent", "status", "signed_at", "invite_token", "invite_expiry"],
+            ignore_permissions=True,  # SYSTEM-INTERNAL: expose only summary state
+        )
+        facility_signatories = {row.parent: row for row in signatory_rows}
 
     # Total via a permission-scoped get_list (limit_page_length=0 => all rows) —
     # keeps the count on the same "get_list only" path as the page read.
@@ -2437,16 +2551,366 @@ def list_submissions(status=None, page=0, page_size=20):
 
     return {
         "rows": [
-            {
-                **row,
-                "confirmation_email_status": queue_statuses.get(
-                    row.confirmation_email_queue, "Not queued"
-                ),
-                "failure_reason": row.error_log if row.status == "Failed" else "",
-            }
+            _submission_list_row(
+                row,
+                queue_statuses,
+                contracts_by_name.get(row.contract) or contracts_by_deal.get(row.deal),
+                facility_signatories,
+            )
             for row in rows
         ],
         "total": total,
+    }
+
+
+def _submission_list_row(row, queue_statuses, contract, facility_signatories):
+    """Build a permission-safe Opt-In review row with concise delivery/signing state."""
+    facility_signatory = facility_signatories.get(contract.name) if contract else None
+    signing_status, signed_at = _facility_signing_state(facility_signatory)
+    contract_email_status = queue_statuses.get(row.contract_invitation_email_queue)
+    if not contract_email_status:
+        # Contracts created before Opt-In delivery tracking cannot be reliably
+        # correlated to an Email Queue record, so do not present them as failures.
+        contract_email_status = "Not tracked" if contract and not row.contract else "Not queued"
+    return {
+        **row,
+        "contract": contract.name if contract else row.contract,
+        "confirmation_email_status": queue_statuses.get(
+            row.confirmation_email_queue, "Not queued"
+        ),
+        "contract_invitation_email_status": contract_email_status,
+        "facility_signing_status": signing_status,
+        "facility_signatory_signed_at": signed_at,
+        "failure_reason": row.error_log if row.status == "Failed" else "",
+    }
+
+
+def _facility_signing_state(signatory):
+    """Return an operator-friendly Facility Signatory status for a contract summary."""
+    if not signatory:
+        return "Not generated", None
+    if signatory.status == "Signed":
+        return "Signed", signatory.signed_at
+    if signatory.status == "Declined":
+        return "Declined", None
+    if signatory.invite_token:
+        invite_expiry = (
+            frappe.utils.get_datetime(signatory.invite_expiry)
+            if signatory.invite_expiry
+            else None
+        )
+        if invite_expiry and frappe.utils.now_datetime() > invite_expiry:
+            return "Signing link expired", None
+        return "Awaiting signature", None
+    return "Preparing invitation", None
+
+
+# ---------------------------------------------------------------------------
+# Opt-In sales dashboard — aggregate only the records the caller can review.
+# ---------------------------------------------------------------------------
+
+
+_DASHBOARD_PERIODS = {"7d": 6, "30d": 29, "90d": 89, "all": None}
+_DASHBOARD_KEPH_ORDER = {
+    level["keph_level"].lower(): index for index, level in enumerate(_KEPH_MAP)
+}
+
+
+def _dashboard_payload(raw_json):
+    """Safely recover the canonical Opt-In payload retained on a submission."""
+    try:
+        payload = json.loads(raw_json or "{}")
+        return payload if isinstance(payload, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _dashboard_signing_state(contract, facility_signatory):
+    """Return one concise current signing state for an Opt-In contract."""
+    if not contract:
+        return "No contract"
+    if contract.status == "Fully Executed":
+        return "Fully executed"
+    signing_status, _signed_at = _facility_signing_state(facility_signatory)
+    return signing_status
+
+
+def _dashboard_organisation(payload, fallback):
+    """Return an operator-friendly organisation name from a stored payload."""
+    contact = payload.get("contact") if isinstance(payload, dict) else None
+    organisation = contact.get("organisation") if isinstance(contact, dict) else ""
+    return frappe.utils.cstr(organisation or fallback).strip()
+
+
+def _dashboard_trend_label(submitted_at, period):
+    """Use days for short windows and month buckets for the all-time view."""
+    submitted_date = frappe.utils.getdate(submitted_at)
+    if period == "all":
+        return submitted_date.strftime("%b %Y")
+    return submitted_date.strftime("%d %b")
+
+
+def _dashboard_trend_key(submitted_at, period):
+    """Produce an ISO-sortable bucket key without exposing it to the client."""
+    submitted_date = frappe.utils.getdate(submitted_at)
+    if period == "all":
+        submitted_date = submitted_date.replace(day=1)
+    return submitted_date.isoformat()
+
+
+@frappe.whitelist()
+def get_optin_dashboard(period="30d", network_slug=None):
+    """Return the operational Opt-In dashboard for sales users.
+
+    The endpoint deliberately starts from permission-scoped Opt-In submissions,
+    then reads only the linked quote, contract, and signatory summaries needed
+    for the dashboard. It performs no writes and makes a fixed number of batched
+    reads regardless of the number of facilities in the selected time window.
+    """
+    if not frappe.has_permission("CRM Opt-In Submission", "read"):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+    period = frappe.utils.cstr(period or "30d").lower()
+    if period not in _DASHBOARD_PERIODS:
+        period = "30d"
+
+    filters = []
+    period_days = _DASHBOARD_PERIODS[period]
+    if period_days is not None:
+        filters.append(["submitted_at", ">=", frappe.utils.add_days(frappe.utils.today(), -period_days)])
+    network_slug = frappe.utils.cstr(network_slug or "").strip()
+    if network_slug:
+        filters.append(["network_slug", "=", network_slug])
+
+    submissions = frappe.get_list(
+        "CRM Opt-In Submission",
+        filters=filters,
+        fields=[
+            "name",
+            "status",
+            "network_slug",
+            "submitter_email",
+            "submitted_at",
+            "deal",
+            "raw_json",
+            "error_log",
+        ],
+        order_by="submitted_at desc",
+        limit_page_length=0,
+    )
+
+    processed_submissions = [row for row in submissions if row.status == "Processed"]
+    deal_names = list({row.deal for row in processed_submissions if row.deal})
+
+    quote_by_deal = {}
+    contract_by_deal = {}
+    facility_signatory_by_contract = {}
+    if deal_names:
+        quotes = frappe.get_list(
+            "Quotation",
+            filters={"crm_deal": ["in", deal_names]},
+            fields=["name", "crm_deal", "grand_total", "creation"],
+            order_by="creation desc",
+            ignore_permissions=True,  # SYSTEM-INTERNAL: linked aggregate only
+        )
+        for quote in quotes:
+            quote_by_deal.setdefault(quote.crm_deal, quote)
+
+        contracts = frappe.get_list(
+            "CRM Contract",
+            filters={"deal": ["in", deal_names]},
+            fields=["name", "deal", "status", "creation"],
+            order_by="creation desc",
+            ignore_permissions=True,  # SYSTEM-INTERNAL: linked aggregate only
+        )
+        for contract in contracts:
+            contract_by_deal.setdefault(contract.deal, contract)
+
+        contract_names = [contract.name for contract in contract_by_deal.values()]
+        if contract_names:
+            signatories = frappe.get_list(
+                "CRM Contract Signatory",
+                filters={
+                    "parent": ["in", contract_names],
+                    "parenttype": "CRM Contract",
+                    "parentfield": "signatories",
+                    "signatory_role": "Facility Signatory",
+                },
+                fields=["parent", "status", "signed_at", "invite_token", "invite_expiry"],
+                ignore_permissions=True,  # SYSTEM-INTERNAL: linked aggregate only
+            )
+            facility_signatory_by_contract = {row.parent: row for row in signatories}
+
+    status_counts = {"Processed": 0, "Pending": 0, "Processing": 0, "Failed": 0}
+    for submission in submissions:
+        status_counts[submission.status] = status_counts.get(submission.status, 0) + 1
+
+    signing_counts = {
+        "No contract": 0,
+        "Awaiting signature": 0,
+        "Preparing invitation": 0,
+        "Signing link expired": 0,
+        "Declined": 0,
+        "Signed": 0,
+        "Fully executed": 0,
+    }
+    trend = {}
+    facility_levels = defaultdict(lambda: {"facilities": 0, "annual_value": 0.0})
+    networks = defaultdict(
+        lambda: {"submissions": 0, "processed": 0, "facilities": 0, "annual_value": 0.0, "signed": 0}
+    )
+    attention = []
+    annual_value = 0.0
+    contract_count = 0
+    signed_count = 0
+    fully_executed_count = 0
+
+    for submission in submissions:
+        network = submission.network_slug or "Unassigned"
+        networks[network]["submissions"] += 1
+        trend_label = _dashboard_trend_label(submission.submitted_at, period)
+        trend_key = _dashboard_trend_key(submission.submitted_at, period)
+        trend.setdefault(
+            trend_key,
+            {"label": trend_label, "submissions": 0, "processed": 0, "signed": 0},
+        )
+        trend[trend_key]["submissions"] += 1
+
+        if submission.status == "Failed":
+            payload = _dashboard_payload(submission.raw_json)
+            attention.append(
+                {
+                    "submission_ref": submission.name,
+                    "organisation": _dashboard_organisation(payload, submission.submitter_email),
+                    "deal": submission.deal,
+                    "submitted_at": submission.submitted_at,
+                    "issue": "Submission failed",
+                    "state": "Failed",
+                    "annual_value": 0,
+                }
+            )
+
+    for submission in processed_submissions:
+        network = submission.network_slug or "Unassigned"
+        networks[network]["processed"] += 1
+        trend_key = _dashboard_trend_key(submission.submitted_at, period)
+        trend[trend_key]["processed"] += 1
+
+        quote = quote_by_deal.get(submission.deal)
+        quote_value = float(quote.grand_total or 0) if quote else 0.0
+        annual_value += quote_value
+        networks[network]["annual_value"] += quote_value
+
+        contract = contract_by_deal.get(submission.deal)
+        if contract:
+            contract_count += 1
+        facility_signatory = (
+            facility_signatory_by_contract.get(contract.name) if contract else None
+        )
+        signing_state = _dashboard_signing_state(contract, facility_signatory)
+        signing_counts[signing_state] = signing_counts.get(signing_state, 0) + 1
+        if signing_state in ("Signed", "Fully executed"):
+            signed_count += 1
+            networks[network]["signed"] += 1
+            trend[trend_key]["signed"] += 1
+        if signing_state == "Fully executed":
+            fully_executed_count += 1
+
+        payload = _dashboard_payload(submission.raw_json)
+        pricing = payload.get("pricing") or payload.get("facilities") or []
+        for facility in pricing:
+            if not isinstance(facility, dict):
+                continue
+            level = frappe.utils.cstr(facility.get("keph_level") or "Unspecified").strip()
+            level = level or "Unspecified"
+            facility_levels[level]["facilities"] += 1
+            facility_levels[level]["annual_value"] += float(facility.get("annual_kes") or 0)
+            networks[network]["facilities"] += 1
+
+        if signing_state not in ("Signed", "Fully executed"):
+            issue_map = {
+                "No contract": "Generate contract",
+                "Awaiting signature": "Awaiting facility signature",
+                "Preparing invitation": "Check contract invitation",
+                "Signing link expired": "Resend signing invitation",
+                "Declined": "Review declined contract",
+            }
+            attention.append(
+                {
+                    "submission_ref": submission.name,
+                    "organisation": _dashboard_organisation(payload, submission.submitter_email),
+                    "deal": submission.deal,
+                    "submitted_at": submission.submitted_at,
+                    "issue": issue_map.get(signing_state, signing_state),
+                    "state": signing_state,
+                    "annual_value": quote_value,
+                }
+            )
+
+    total_facilities = sum(row["facilities"] for row in facility_levels.values())
+    facility_level_rows = [
+        {
+            "level": level,
+            "facilities": values["facilities"],
+            "annual_value": round(values["annual_value"], 2),
+            "share": round(values["facilities"] / total_facilities * 100, 1)
+            if total_facilities
+            else 0,
+        }
+        for level, values in facility_levels.items()
+    ]
+    facility_level_rows.sort(
+        key=lambda row: (_DASHBOARD_KEPH_ORDER.get(row["level"].lower(), 99), row["level"])
+    )
+
+    signing_breakdown = [
+        {"label": "Signed", "value": signing_counts["Signed"] + signing_counts["Fully executed"], "tone": "green"},
+        {"label": "Awaiting signature", "value": signing_counts["Awaiting signature"] + signing_counts["Preparing invitation"], "tone": "blue"},
+        {"label": "Needs follow-up", "value": signing_counts["Signing link expired"] + signing_counts["Declined"], "tone": "red"},
+        {"label": "No contract", "value": signing_counts["No contract"], "tone": "gray"},
+    ]
+
+    network_rows = [
+        {
+            "network": network,
+            **values,
+            "signature_rate": round(values["signed"] / values["processed"] * 100, 1)
+            if values["processed"]
+            else 0,
+        }
+        for network, values in networks.items()
+    ]
+    network_rows.sort(key=lambda row: (-row["annual_value"], row["network"]))
+    attention.sort(key=lambda row: str(row["submitted_at"] or ""), reverse=True)
+
+    return {
+        "period": period,
+        "network_options": sorted(networks),
+        "summary": {
+            "submissions": len(submissions),
+            "processed": status_counts["Processed"],
+            "in_progress": status_counts["Pending"] + status_counts["Processing"],
+            "failed": status_counts["Failed"],
+            "clients": len({submission.deal for submission in processed_submissions if submission.deal}),
+            "facilities": total_facilities,
+            "annual_value": round(annual_value, 2),
+            "contracts": contract_count,
+            "signed": signed_count,
+            "fully_executed": fully_executed_count,
+            "signature_rate": round(signed_count / contract_count * 100, 1) if contract_count else 0,
+        },
+        "funnel": [
+            {"label": "Processed submissions", "value": status_counts["Processed"]},
+            {"label": "Contracts generated", "value": contract_count},
+            {"label": "Facility signed", "value": signed_count},
+            {"label": "Fully executed", "value": fully_executed_count},
+        ],
+        "signing_breakdown": signing_breakdown,
+        "trend": [trend[key] for key in sorted(trend)],
+        "facility_levels": facility_level_rows,
+        "networks": network_rows,
+        "attention": attention[:12],
+        "generated_at": frappe.utils.now_datetime(),
     }
 
 

@@ -108,6 +108,11 @@ const routes = [
     component: () => import('@/pages/OptInSubmissions.vue'),
   },
   {
+    path: '/opt-in-dashboard',
+    name: 'OptInDashboard',
+    component: () => import('@/pages/OptInDashboard.vue'),
+  },
+  {
     path: '/networks',
     name: 'Networks',
     component: () => import('@/pages/Networks/NetworkManagement.vue'),

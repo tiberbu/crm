@@ -312,11 +312,16 @@ def _signing_link(contract_name, role, token):
     )
 
 
-def _issue_and_send_invitation(contract_doc, signatory_row, now=True):
+def _issue_and_send_invitation(contract_doc, signatory_row, now=True, commit=True):
     """
     Mint a fresh invitation token on the signatory row, persist it, and email the
     signatory a branded invitation with a Sign CTA. The caller is responsible for
-    having a saved contract_doc; this saves + commits its own token write.
+    having a saved contract_doc; this saves its token write and, by default,
+    commits it.
+
+    commit=False keeps the token, contract, and queued invitation in the caller's
+    transaction. This is used by the synchronous Opt-In pipeline so a failed
+    submission cannot leave a contract or signing link behind.
 
     now=False queues the email (email queue) instead of sending synchronously — use it
     on guest request paths so the guest isn't blocked on third-party SMTP delivery.
@@ -327,15 +332,17 @@ def _issue_and_send_invitation(contract_doc, signatory_row, now=True):
         frappe.utils.now_datetime(), seconds=_INVITE_EXPIRY_SECONDS
     )
     contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-    frappe.db.commit()
+    if commit:
+        frappe.db.commit()
 
     role = frappe.utils.cstr(signatory_row.signatory_role)
     link = _signing_link(contract_doc.name, role, token)
     network = _network_for_contract(contract_doc)
     name = frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
 
+    queue = None
     try:
-        frappe.sendmail(
+        queue = frappe.sendmail(
             recipients=[signatory_row.signatory_email],
             subject="Action Required: Sign Your CareverseHIMS Contract",
             message=branded_email_html(
@@ -363,6 +370,7 @@ def _issue_and_send_invitation(contract_doc, signatory_row, now=True):
                 contract_doc.name, role
             ),
         )
+    return queue
 
 
 # ---------------------------------------------------------------------------
@@ -552,8 +560,7 @@ def get_network_signatories(deal="", network_slug=""):
     return {"network_slug": network_slug, "signers": signers}
 
 
-@frappe.whitelist()
-def generate(
+def _generate_contract(
     deal,
     quote,
     facility_signatory_name,
@@ -563,6 +570,7 @@ def generate(
     network_approver_1="",
     network_approver_2="",
     tiberbu_approver="",
+    commit=True,
 ):
     """
     Create a CRM Contract for a deal, render contract HTML from active T&C, and
@@ -572,11 +580,12 @@ def generate(
     (see _transition). network_approver_* params are legacy no-ops — the network /
     tiberbu co-signatories now come from configuration.
 
-    Requires: Sales Manager or System Manager role.
-    Returns: {contract: <name>}
-    """
-    _check_crm_role()
+    commit=False keeps creation and the facility-signatory invitation within the
+    caller's database transaction. The public generate() API uses commit=True,
+    preserving the existing CRM-executive workflow.
 
+    Returns: {contract: <name>, invitation_queue: <Email Queue name or "">}
+    """
     deal = frappe.utils.cstr(deal).strip()
     quote = frappe.utils.cstr(quote).strip()
     facility_signatory_name = frappe.utils.cstr(facility_signatory_name).strip()
@@ -682,19 +691,60 @@ def generate(
         })
 
     contract.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
-    frappe.db.commit()
+    if commit:
+        frappe.db.commit()
 
     # Send invitation to the Facility Signatory immediately
     signatory_row = _get_signatory_row(contract, "Facility Signatory")
+    invitation_queue = None
     if signatory_row:
-        _issue_and_send_invitation(contract, signatory_row)
+        invitation_queue = _issue_and_send_invitation(
+            contract, signatory_row, now=True, commit=commit
+        )
 
     log_deal_event(
         deal,
         "Contract %s generated — signing invitation sent to %s"
         % (contract.name, facility_signatory_email),
     )
-    return {"contract": contract.name}
+    return {
+        "contract": contract.name,
+        "invitation_queue": invitation_queue.name if invitation_queue else "",
+    }
+
+
+@frappe.whitelist()
+def generate(
+    deal,
+    quote,
+    facility_signatory_name,
+    facility_signatory_email,
+    facility_witness_name,
+    facility_witness_email,
+    network_approver_1="",
+    network_approver_2="",
+    tiberbu_approver="",
+):
+    """
+    Create and send a contract from the CRM Deal page.
+
+    Requires: Sales Manager or System Manager role.
+    Returns: {contract: <name>}.
+    """
+    _check_crm_role()
+    result = _generate_contract(
+        deal=deal,
+        quote=quote,
+        facility_signatory_name=facility_signatory_name,
+        facility_signatory_email=facility_signatory_email,
+        facility_witness_name=facility_witness_name,
+        facility_witness_email=facility_witness_email,
+        network_approver_1=network_approver_1,
+        network_approver_2=network_approver_2,
+        tiberbu_approver=tiberbu_approver,
+        commit=True,
+    )
+    return {"contract": result["contract"]}
 
 
 @frappe.whitelist()
