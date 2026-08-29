@@ -11,6 +11,13 @@ from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility impo
 
 
 class TestCRMPreQualifiedFacility(UnitTestCase):
+	def test_blank_organization_defaults_to_the_facility_name(self):
+		facility = SimpleNamespace(organization="", facility_name="Example Hospital")
+
+		CRMPreQualifiedFacility.before_validate(facility)
+
+		self.assertEqual(facility.organization, "Example Hospital")
+
 	def test_membership_invitation_tracks_its_email_queue(self):
 		facility = SimpleNamespace(
 			doctype="CRM Pre-Qualified Facility",

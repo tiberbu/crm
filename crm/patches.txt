@@ -41,3 +41,4 @@ crm.patches.v1_0.add_optin_crm_lead_fields
 crm.patches.v1_0.add_optin_provenance_fields
 crm.patches.v1_0.add_optin_deal_network
 crm.patches.v1_0.migrate_facility_memberships
+crm.patches.v1_0.backfill_prequalified_facility_organization

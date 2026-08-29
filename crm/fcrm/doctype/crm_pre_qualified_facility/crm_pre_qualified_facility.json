@@ -7,6 +7,7 @@
  "field_order": [
   "mfl_code",
   "facility_name",
+  "organization",
   "keph_level",
   "memberships"
  ],
@@ -27,6 +28,14 @@
    "in_list_view": 1
   },
   {
+   "description": "Owning organization. Defaults to the facility name when not specified.",
+   "fieldname": "organization",
+   "fieldtype": "Data",
+   "label": "Organization",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
    "fieldname": "keph_level",
    "fieldtype": "Data",
    "label": "KEPH Level",
@@ -43,7 +52,7 @@
  ],
  "is_submittable": 0,
  "links": [],
- "modified": "2026-08-26 00:00:00.000000",
+ "modified": "2026-08-29 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "FCRM",
  "name": "CRM Pre-Qualified Facility",

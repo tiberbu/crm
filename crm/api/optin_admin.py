@@ -518,7 +518,7 @@ def list_facilities(network=None, status=None, page=0, page_size=20):
     fac_rows = frappe.get_list(
         "CRM Pre-Qualified Facility",
         filters={"name": ["in", parent_names]},
-        fields=["name", "mfl_code", "facility_name", "keph_level"],
+        fields=["name", "mfl_code", "facility_name", "organization", "keph_level"],
         order_by="facility_name asc",
         limit_start=page * page_size,
         limit_page_length=page_size,
@@ -531,6 +531,7 @@ def list_facilities(network=None, status=None, page=0, page_size=20):
             "name": fac.name,
             "mfl_code": fac.mfl_code,
             "facility_name": fac.facility_name,
+            "organization": fac.organization or fac.facility_name,
             "keph_level": fac.keph_level,
             "memberships": [
                 {
@@ -559,6 +560,7 @@ def save_facility(data):
       name?: str,  # existing doc name (for update)
       mfl_code: str,
       facility_name: str,
+      organization?: str,  # blank defaults to the facility name
       keph_level: str,
       memberships: [{network, status, contact_name, contact_email, contact_phone}]
     }
@@ -601,6 +603,8 @@ def save_facility(data):
 
     doc.mfl_code = mfl_code or doc.mfl_code
     doc.facility_name = frappe.utils.cstr(data.get("facility_name") or doc.facility_name or "")
+    if "organization" in data:
+        doc.organization = frappe.utils.cstr(data.get("organization") or "").strip()
     doc.keph_level = frappe.utils.cstr(data.get("keph_level") or doc.keph_level or "")
 
     # Rebuild memberships: keep existing rows not in the new set (other network), update/add for this set
@@ -738,70 +742,118 @@ def import_facilities_csv(csv_data, network_slug, dry_run=0):
     Expected CSV columns (order flexible, matched by header name):
       mfl_code, facility_name (optional — auto-filled from HFR if blank),
       keph_level (optional — auto-filled from HFR if blank),
-      contact_name, contact_email, contact_phone
+      organization (optional — defaults to facility_name), contact_name,
+      contact_email, contact_phone
 
     Returns:
       {
         imported: int,
+        valid_count: int,
+        error_count: int,
+        rows: [{row, mfl_code, facility_name, organization, contact_email, error}],
         errors: [{row: int, mfl_code: str, message: str}],
         dry_run: bool
       }
     """
     _assert_network_access(network_slug)
 
-    dry_run = bool(int(dry_run or 0))
+    dry_run = bool(frappe.utils.cint(dry_run))
 
     if isinstance(csv_data, str):
         raw = csv_data
     else:
         raw = frappe.utils.cstr(csv_data)
 
-    reader = csv.DictReader(io.StringIO(raw))
+    # Excel commonly writes a UTF-8 BOM. Strip it before DictReader sees the
+    # header or otherwise `mfl_code` becomes an unrecognised column.
+    reader = csv.DictReader(io.StringIO(raw.lstrip("\ufeff")))
 
-    # Normalise header names (strip, lowercase)
-    def _norm(row):
-        return {k.strip().lower().replace(" ", "_"): frappe.utils.cstr(v or "").strip() for k, v in row.items()}
+    def normalize_header(value):
+        return re.sub(r"\s+", "_", frappe.utils.cstr(value or "").lstrip("\ufeff").strip().lower())
 
-    rows = [_norm(r) for r in reader]
+    headers = {normalize_header(header) for header in reader.fieldnames or [] if header}
+    required_headers = {"mfl_code", "contact_name", "contact_email", "contact_phone"}
+    missing_headers = sorted(required_headers - headers)
+    if missing_headers:
+        frappe.throw(
+            _("CSV is missing required columns: {0}").format(", ".join(missing_headers))
+        )
+
+    def normalize_row(row):
+        # DictReader uses None as the key when a row has more columns than its
+        # header. Ignore the overflow value and report normal field errors
+        # instead of failing the entire upload with an AttributeError.
+        return {
+            normalize_header(key): frappe.utils.cstr(value or "").strip()
+            for key, value in row.items()
+            if key is not None
+        }
 
     errors = []
+    preview_rows = []
     imported = 0
+    seen_mfl_codes = set()
 
-    for idx, row in enumerate(rows, start=2):  # row 1 is header
-        mfl_code = row.get("mfl_code") or row.get("mfl code") or ""
+    for idx, raw_row in enumerate(reader, start=2):  # row 1 is header
+        row = normalize_row(raw_row)
+        if not any(row.values()):
+            continue
+
+        mfl_code = row.get("mfl_code", "")
+        contact_name = row.get("contact_name", "")
+        contact_email = row.get("contact_email", "").lower()
+        contact_phone = row.get("contact_phone", "")
+        facility_name = row.get("facility_name", "")
+        keph_level = row.get("keph_level", "")
+        preview = {
+            "row": idx,
+            "mfl_code": mfl_code,
+            "facility_name": facility_name,
+            "organization": row.get("organization", ""),
+            "contact_email": contact_email,
+            "error": None,
+        }
+        error = None
+
         if not mfl_code:
-            errors.append({"row": idx, "mfl_code": "", "message": "mfl_code is required"})
-            continue
+            error = "mfl_code is required"
+        elif mfl_code in seen_mfl_codes:
+            error = "duplicate mfl_code in this CSV"
+        if not error and not contact_name:
+            error = "contact_name is required"
+        if not error and not contact_email:
+            error = "contact_email is required"
+        if not error and not contact_phone:
+            error = "contact_phone is required"
 
-        contact_name = row.get("contact_name") or ""
-        contact_email = (row.get("contact_email") or "").lower()
-        contact_phone = row.get("contact_phone") or ""
-
-        if not contact_email:
-            errors.append({"row": idx, "mfl_code": mfl_code, "message": "contact_email is required"})
-            continue
-
-        facility_name = row.get("facility_name") or ""
-        keph_level = row.get("keph_level") or row.get("keph level") or ""
-
-        # HFR enrichment if fields missing
-        if not facility_name or not keph_level:
+        # HFR enrichment if fields missing. It is safe in preview mode because
+        # it does not write; it also ensures the count matches what can import.
+        if not error and (not facility_name or not keph_level):
             try:
                 hfr = lookup_hfr(mfl_code)
                 facility_name = facility_name or hfr.get("facility_name") or ""
                 keph_level = keph_level or hfr.get("keph_level") or ""
             except Exception:
-                pass  # HFR lookup failure is non-fatal; row will save with whatever we have
+                # A facility name remains mandatory, but an absent KEPH level
+                # has the established Level 3 fallback used by this importer.
+                if not facility_name:
+                    error = "facility_name could not be resolved (not in CSV and HFR lookup failed)"
 
-        if not facility_name:
-            errors.append({"row": idx, "mfl_code": mfl_code, "message": "facility_name could not be resolved (not in CSV and HFR lookup failed)"})
-            continue
+        organization = row.get("organization", "") or facility_name
+        preview.update({"facility_name": facility_name, "organization": organization})
 
-        if not dry_run:
+        if not error and not facility_name:
+            error = "facility_name could not be resolved (not in CSV and HFR lookup failed)"
+
+        if not error:
+            seen_mfl_codes.add(mfl_code)
+
+        if not error and not dry_run:
             try:
                 save_facility({
                     "mfl_code": mfl_code,
                     "facility_name": facility_name,
+                    "organization": organization,
                     "keph_level": keph_level or "Level 3",
                     "memberships": [{
                         "network": network_slug,
@@ -811,16 +863,27 @@ def import_facilities_csv(csv_data, network_slug, dry_run=0):
                         "contact_phone": contact_phone,
                     }],
                 })
-                imported += 1
             except Exception as exc:
-                errors.append({"row": idx, "mfl_code": mfl_code, "message": frappe.utils.cstr(exc)})
-        else:
-            imported += 1  # count as "would import" in dry run
+                error = frappe.utils.cstr(exc)
 
-    return {"imported": imported, "errors": errors, "dry_run": dry_run}
+        if error:
+            preview["error"] = error
+            errors.append({"row": idx, "mfl_code": mfl_code, "message": error})
+        else:
+            imported += 1
+        preview_rows.append(preview)
+
+    return {
+        "imported": imported,
+        "valid_count": imported,
+        "error_count": len(errors),
+        "rows": preview_rows,
+        "errors": errors,
+        "dry_run": dry_run,
+    }
 
 
 @frappe.whitelist()
 def csv_template():
     """Return the CSV template as a string for download."""
-    return "mfl_code,facility_name,keph_level,contact_name,contact_email,contact_phone\n22999,Example Hospital,Level 4,Jane Wanjiku,jane@hospital.co.ke,0722000000\n"
+    return "mfl_code,facility_name,organization,keph_level,contact_name,contact_email,contact_phone\n22999,Example Hospital,Example Hospital Group,Level 4,Jane Wanjiku,jane@hospital.co.ke,0722000000\n"

@@ -3,6 +3,13 @@ from frappe.model.document import Document
 
 
 class CRMPreQualifiedFacility(Document):
+    def before_validate(self):
+        # Ownership is independent of network membership. Most facilities own
+        # themselves, so retain that useful default unless an operator provides
+        # the group/organization that owns multiple facilities.
+        if not frappe.utils.cstr(self.organization).strip():
+            self.organization = frappe.utils.cstr(self.facility_name).strip()
+
     def after_insert(self):
         if self.flags.get("skip_invitation"):
             return
