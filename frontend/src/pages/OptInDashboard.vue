@@ -332,6 +332,217 @@
           </div>
         </section>
 
+        <section class="border-b border-outline-gray-2 py-8">
+          <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold text-ink-gray-9">
+                {{ __('Facility contract sign-off') }}
+              </h2>
+              <p class="mt-1 text-sm text-ink-gray-5">
+                {{
+                  __(
+                    'See the current facility, network, and Tiberbu approval state for each submitted facility.',
+                  )
+                }}
+              </p>
+            </div>
+            <span class="text-xs text-ink-gray-4"
+              >{{ dashboard.facility_progress_total }}
+              {{ __('facilities') }}</span
+            >
+          </div>
+          <div
+            v-if="dashboard.facility_progress.length"
+            class="overflow-hidden rounded-xl border border-outline-gray-2 bg-surface-white dark:bg-surface-gray-1"
+          >
+            <button
+              v-for="row in dashboard.facility_progress"
+              :key="`${row.network}-${row.mfl_code || row.facility_name}`"
+              class="grid w-full gap-3 border-b border-outline-elevation-2 px-5 py-4 text-left last:border-b-0 transition-colors hover:bg-surface-gray-1 dark:hover:bg-surface-gray-2 lg:grid-cols-[minmax(180px,1.15fr)_minmax(230px,1fr)_auto] lg:items-center"
+              @click="openFacility(row)"
+            >
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-ink-gray-8">
+                  {{ row.facility_name }}
+                </p>
+                <p class="mt-0.5 truncate text-xs text-ink-gray-5">
+                  {{ row.network }} · {{ row.level }}
+                  <template v-if="row.mfl_code"> · {{ row.mfl_code }}</template>
+                </p>
+              </div>
+              <div class="grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <p class="text-ink-gray-4">{{ __('Facility') }}</p>
+                  <span :class="roleProgressClass(row.facility)">
+                    {{ roleProgress(row.facility) }}
+                  </span>
+                </div>
+                <div>
+                  <p class="text-ink-gray-4">{{ __('Network') }}</p>
+                  <span :class="roleProgressClass(row.network_signatories)">
+                    {{ roleProgress(row.network_signatories) }}
+                  </span>
+                </div>
+                <div>
+                  <p class="text-ink-gray-4">{{ __('Tiberbu') }}</p>
+                  <span :class="roleProgressClass(row.tiberbu_signatories)">
+                    {{ roleProgress(row.tiberbu_signatories) }}
+                  </span>
+                </div>
+              </div>
+              <span :class="signoffPill(row)">{{ __(row.state) }}</span>
+            </button>
+          </div>
+          <div
+            v-else
+            class="grid min-h-32 place-items-center rounded-xl border border-dashed border-outline-gray-2 text-sm text-ink-gray-4"
+          >
+            {{ __('No processed facilities in this period') }}
+          </div>
+        </section>
+
+        <section
+          class="grid gap-8 border-b border-outline-gray-2 py-8 xl:grid-cols-3"
+        >
+          <div>
+            <div class="mb-4">
+              <h2 class="text-base font-semibold text-ink-gray-9">
+                {{ __('Stage turnaround') }}
+              </h2>
+              <p class="mt-1 text-sm text-ink-gray-5">
+                {{ __('Median and slowest 10% of completed hand-offs.') }}
+              </p>
+            </div>
+            <div
+              class="divide-y divide-outline-elevation-2 border-y border-outline-gray-2"
+            >
+              <div
+                v-for="stage in dashboard.tat"
+                :key="stage.key"
+                class="flex items-center justify-between gap-3 py-3"
+              >
+                <div class="min-w-0">
+                  <p class="text-xs font-medium text-ink-gray-7">
+                    {{ __(stage.label) }}
+                  </p>
+                  <p class="mt-0.5 text-xs text-ink-gray-4">
+                    {{ stage.sample_size }} {{ __('completed') }}
+                  </p>
+                </div>
+                <div class="shrink-0 text-right">
+                  <p class="text-sm font-semibold text-ink-gray-8">
+                    {{ formatDuration(stage.median_hours) }}
+                  </p>
+                  <p class="mt-0.5 text-[11px] text-ink-gray-4">
+                    {{ __('P90') }} {{ formatDuration(stage.p90_hours) }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="mb-4">
+              <h2 class="text-base font-semibold text-ink-gray-9">
+                {{ __('Signatory leaders') }}
+              </h2>
+              <p class="mt-1 text-sm text-ink-gray-5">
+                {{
+                  __(
+                    'Network and Tiberbu signatories with the most completions.',
+                  )
+                }}
+              </p>
+            </div>
+            <div
+              v-if="dashboard.signatory_leaderboard.length"
+              class="divide-y divide-outline-elevation-2 border-y border-outline-gray-2"
+            >
+              <div
+                v-for="(row, index) in dashboard.signatory_leaderboard"
+                :key="`${row.role}-${row.email || row.name}`"
+                class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3"
+              >
+                <span
+                  class="grid size-6 place-items-center rounded-full bg-surface-gray-2 text-xs font-semibold text-ink-gray-6 dark:bg-surface-gray-3"
+                  >{{ index + 1 }}</span
+                >
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium text-ink-gray-8">
+                    {{ row.name }}
+                  </p>
+                  <p class="mt-0.5 truncate text-xs text-ink-gray-5">
+                    {{ __(row.role) }} · {{ row.networks.join(', ') }}
+                  </p>
+                </div>
+                <div class="text-right">
+                  <p class="text-sm font-semibold text-ink-gray-8">
+                    {{ row.signed }} / {{ row.assigned }}
+                  </p>
+                  <p class="mt-0.5 text-[11px] text-ink-gray-4">
+                    {{ formatDuration(row.median_response_hours) }}
+                    {{ __('median') }}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div
+              v-else
+              class="grid min-h-40 place-items-center border-y border-outline-gray-2 text-sm text-ink-gray-4"
+            >
+              {{ __('No completed counterparty signatures yet') }}
+            </div>
+          </div>
+
+          <div>
+            <div class="mb-4">
+              <h2 class="text-base font-semibold text-ink-gray-9">
+                {{ __('Fastest full sign-off') }}
+              </h2>
+              <p class="mt-1 text-sm text-ink-gray-5">
+                {{
+                  __('Facilities with the shortest end-to-end execution time.')
+                }}
+              </p>
+            </div>
+            <div
+              v-if="dashboard.facility_leaderboard.length"
+              class="divide-y divide-outline-elevation-2 border-y border-outline-gray-2"
+            >
+              <button
+                v-for="(row, index) in dashboard.facility_leaderboard"
+                :key="`${row.network}-${row.mfl_code || row.facility_name}`"
+                class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3 text-left transition-colors hover:text-ink-gray-9"
+                @click="openFacility(row)"
+              >
+                <span
+                  class="grid size-6 place-items-center rounded-full bg-emerald-50 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
+                  >{{ index + 1 }}</span
+                >
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium text-ink-gray-8">
+                    {{ row.facility_name }}
+                  </p>
+                  <p class="mt-0.5 truncate text-xs text-ink-gray-5">
+                    {{ row.network }} · {{ row.level }}
+                  </p>
+                </div>
+                <span
+                  class="text-sm font-semibold text-emerald-700 dark:text-emerald-300"
+                >
+                  {{ formatDuration(row.end_to_end_hours) }}
+                </span>
+              </button>
+            </div>
+            <div
+              v-else
+              class="grid min-h-40 place-items-center border-y border-outline-gray-2 text-sm text-ink-gray-4"
+            >
+              {{ __('No fully executed facilities yet') }}
+            </div>
+          </div>
+        </section>
+
         <section
           class="grid gap-8 py-8 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]"
         >
@@ -339,10 +550,14 @@
             <div class="mb-4 flex items-end justify-between gap-3">
               <div>
                 <h2 class="text-base font-semibold text-ink-gray-9">
-                  {{ __('Network performance') }}
+                  {{ __('Network adoption') }}
                 </h2>
                 <p class="mt-1 text-sm text-ink-gray-5">
-                  {{ __('Value and signing completion by network.') }}
+                  {{
+                    __(
+                      'Eligible facilities, Opt-Ins, and fully signed agreements.',
+                    )
+                  }}
                 </p>
               </div>
               <span class="text-xs text-ink-gray-4"
@@ -353,6 +568,17 @@
               v-if="dashboard.networks.length"
               class="divide-y divide-outline-elevation-2 border-y border-outline-gray-2"
             >
+              <div class="px-1 py-4 sm:px-2">
+                <p class="mb-2 text-xs font-medium text-ink-gray-5">
+                  {{ __('Opted-in facility distribution') }}
+                </p>
+                <G2Chart
+                  :options="networkDistributionOptions"
+                  :has-data="networkDistribution.length > 0"
+                  :height="networkDistributionHeight"
+                  :empty-label="__('No opted-in facilities in this period')"
+                />
+              </div>
               <div
                 v-for="row in dashboard.networks"
                 :key="row.network"
@@ -362,9 +588,9 @@
                   <span class="font-medium text-ink-gray-8">{{
                     row.network
                   }}</span>
-                  <span class="font-medium text-ink-gray-8">{{
-                    formatKes(row.annual_value)
-                  }}</span>
+                  <span class="text-xs font-medium text-ink-gray-6">
+                    {{ formatPercent(row.opt_in_rate) }} {{ __('opted in') }}
+                  </span>
                 </div>
                 <div class="mt-2 flex items-center gap-3">
                   <div
@@ -372,17 +598,20 @@
                   >
                     <div
                       class="h-full rounded-full bg-emerald-500 transition-all duration-500"
-                      :style="{ width: `${row.signature_rate}%` }"
+                      :style="{ width: `${progressWidth(row.opt_in_rate)}%` }"
                     />
                   </div>
                   <span
                     class="w-10 text-right text-xs font-medium text-ink-gray-6"
-                    >{{ row.signature_rate }}%</span
+                    >{{ row.opted_in_facilities }} /
+                    {{ row.eligible_facilities }}</span
                   >
                 </div>
                 <p class="mt-1.5 text-xs text-ink-gray-5">
-                  {{ row.processed }} {{ __('clients') }} · {{ row.facilities }}
-                  {{ __('facilities') }}
+                  {{ row.submitted_facilities }} {{ __('submitted') }} ·
+                  {{ row.fully_executed_facilities }}
+                  {{ __('fully executed') }} ·
+                  {{ formatKes(row.annual_value) }}
                 </p>
               </div>
             </div>
@@ -514,6 +743,11 @@ const emptyDashboard = {
   facility_levels: [],
   networks: [],
   attention: [],
+  facility_progress: [],
+  facility_progress_total: 0,
+  signatory_leaderboard: [],
+  tat: [],
+  facility_leaderboard: [],
 }
 const dashboard = computed(() => dashboardResource.data ?? emptyDashboard)
 const networkOptions = computed(
@@ -620,6 +854,45 @@ const facilityChartOptions = computed(() => ({
   tooltip: { title: 'level', items: [{ channel: 'y', name: 'Facilities' }] },
 }))
 
+const networkDistribution = computed(() =>
+  dashboard.value.networks.filter((row) => row.opted_in_facilities > 0),
+)
+
+const networkDistributionHeight = computed(() =>
+  Math.max(180, Math.min(360, networkDistribution.value.length * 34 + 44)),
+)
+
+const networkDistributionOptions = computed(() => ({
+  type: 'interval',
+  data: networkDistribution.value,
+  padding: [8, 18, 26, 92],
+  coordinate: { transform: [{ type: 'transpose' }] },
+  encode: { x: 'network', y: 'opted_in_facilities', color: 'network' },
+  scale: {
+    y: { nice: true },
+    color: {
+      range: [
+        '#d92d20',
+        '#f04438',
+        '#175cd3',
+        '#1570ef',
+        '#039855',
+        '#12b76a',
+        '#f79009',
+        '#7a5af8',
+      ],
+    },
+  },
+  legend: false,
+  axis: { x: { title: false }, y: { title: false, grid: true } },
+  style: { radiusTopRight: 5, radiusBottomRight: 5 },
+  animate: { enter: { type: 'growInX', duration: 500 } },
+  tooltip: {
+    title: 'network',
+    items: [{ channel: 'y', name: 'Opted-in facilities' }],
+  },
+}))
+
 function lineMark(key, color) {
   return {
     type: 'line',
@@ -654,7 +927,58 @@ function attentionPill(state) {
   return `${base} bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300`
 }
 
+function roleProgress(progress) {
+  if (!progress?.total) return __('Not configured')
+  return `${progress.signed}/${progress.total} ${__('signed')}`
+}
+
+function roleProgressClass(progress) {
+  const base = 'mt-1 inline-block text-xs font-medium'
+  if (!progress?.total) return `${base} text-ink-gray-4`
+  if (progress.complete) return `${base} text-emerald-700 dark:text-emerald-300`
+  if (progress.declined) return `${base} text-red-700 dark:text-red-300`
+  return `${base} text-amber-700 dark:text-amber-300`
+}
+
+function signoffPill(row) {
+  const base = 'w-fit rounded-full px-2.5 py-1 text-xs font-medium'
+  if (row.fully_executed)
+    return `${base} bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300`
+  if (row.state?.includes('Awaiting'))
+    return `${base} bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300`
+  return `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-3 dark:text-ink-gray-4`
+}
+
+function progressWidth(value) {
+  if (value == null) return 0
+  return Math.max(0, Math.min(100, Number(value)))
+}
+
+function formatPercent(value) {
+  return value == null ? __('No roster') : `${value}%`
+}
+
+function formatDuration(hours) {
+  if (hours == null || Number.isNaN(Number(hours))) return '—'
+  const value = Number(hours)
+  if (value >= 48) return `${(value / 24).toFixed(value >= 240 ? 0 : 1)}d`
+  if (value >= 1) return `${value.toFixed(value >= 10 ? 0 : 1)}h`
+  return `${Math.max(1, Math.round(value * 60))}m`
+}
+
 function openAttention(row) {
+  if (row.deal) {
+    router.push({
+      name: 'Deal',
+      params: { dealId: row.deal },
+      hash: '#activity',
+    })
+    return
+  }
+  router.push({ name: 'OptInSubmissions' })
+}
+
+function openFacility(row) {
   if (row.deal) {
     router.push({
       name: 'Deal',
