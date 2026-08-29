@@ -72,6 +72,9 @@
               {{ __('Status') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Facility signing') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Email delivery') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">
@@ -130,16 +133,50 @@
             </td>
             <td class="px-4 py-3">
               <div class="flex flex-col items-start gap-1">
+                <span :class="contractSigningPill(row.facility_signing_status)">
+                  {{ __(row.facility_signing_status) }}
+                </span>
+                <span
+                  v-if="row.facility_signatory_signed_at"
+                  class="text-xs text-ink-gray-5"
+                  >{{ formatDate(row.facility_signatory_signed_at) }}</span
+                >
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex flex-col items-start gap-1">
                 <span
                   :class="emailStatusPill(row.confirmation_email_status)"
                   :title="emailStatusHint(row.confirmation_email_status)"
-                  >{{ emailStatusLabel(row.confirmation_email_status) }}</span
+                  >{{ __('Summary') }}:
+                  {{ emailStatusLabel(row.confirmation_email_status) }}</span
                 >
                 <span
                   v-if="row.confirmation_email_queued_at"
                   class="text-xs text-ink-gray-5"
                   >{{ formatDate(row.confirmation_email_queued_at) }}</span
                 >
+                <template
+                  v-if="row.contract || row.contract_invitation_email_queue"
+                >
+                  <span
+                    :class="
+                      emailStatusPill(row.contract_invitation_email_status)
+                    "
+                    :title="
+                      emailStatusHint(row.contract_invitation_email_status)
+                    "
+                    >{{ __('Contract') }}:
+                    {{
+                      emailStatusLabel(row.contract_invitation_email_status)
+                    }}</span
+                  >
+                  <span
+                    v-if="row.contract_invitation_queued_at"
+                    class="text-xs text-ink-gray-5"
+                    >{{ formatDate(row.contract_invitation_queued_at) }}</span
+                  >
+                </template>
               </div>
             </td>
             <td class="px-4 py-3" @click.stop>
@@ -266,6 +303,7 @@ function statusPill(status) {
 function emailStatusLabel(status) {
   const map = {
     'Not queued': __('Not queued'),
+    'Not tracked': __('Not tracked'),
     'Not Sent': __('Queued'),
     Sending: __('Sending'),
     Sent: __('Accepted'),
@@ -277,13 +315,16 @@ function emailStatusLabel(status) {
 
 function emailStatusHint(status) {
   const map = {
-    'Not queued': __('No confirmation email was queued.'),
-    'Not Sent': __('The confirmation email is queued for delivery.'),
-    Sending: __('The confirmation email is being sent.'),
+    'Not queued': __('No email was queued.'),
+    'Not tracked': __(
+      'This existing contract was created before email delivery tracking was available.',
+    ),
+    'Not Sent': __('The email is queued for delivery.'),
+    Sending: __('The email is being sent.'),
     Sent: __(
       'The email provider accepted this message. This does not confirm that the recipient opened it.',
     ),
-    'Partially Sent': __('The confirmation email is being retried.'),
+    'Partially Sent': __('The email is being retried.'),
     Error: __(
       'The email provider could not send this message after its retries.',
     ),
@@ -295,6 +336,7 @@ function emailStatusPill(status) {
   const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
   const map = {
     'Not queued': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
+    'Not tracked': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
     'Not Sent': `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400`,
     Sending: `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400`,
     Sent: `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`,
@@ -302,5 +344,18 @@ function emailStatusPill(status) {
     Error: `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400`,
   }
   return map[status] ?? map['Not queued']
+}
+
+function contractSigningPill(status) {
+  const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
+  const map = {
+    'Not generated': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
+    'Preparing invitation': `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400`,
+    'Awaiting signature': `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400`,
+    Signed: `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`,
+    Declined: `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400`,
+    'Signing link expired': `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400`,
+  }
+  return map[status] ?? map['Not generated']
 }
 </script>

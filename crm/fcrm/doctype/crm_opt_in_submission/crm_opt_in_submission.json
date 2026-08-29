@@ -17,6 +17,10 @@
   "section_break_confirmation",
   "confirmation_email_queue",
   "confirmation_email_queued_at",
+  "section_break_contract_delivery",
+  "contract",
+  "contract_invitation_email_queue",
+  "contract_invitation_queued_at",
   "col_break_1",
   "lead",
   "deal",
@@ -95,6 +99,31 @@
    "fieldname": "confirmation_email_queued_at",
    "fieldtype": "Datetime",
    "label": "Confirmation Email Queued At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_contract_delivery",
+   "fieldtype": "Section Break",
+   "label": "Contract Delivery"
+  },
+  {
+   "fieldname": "contract",
+   "fieldtype": "Link",
+   "label": "CRM Contract",
+   "options": "CRM Contract",
+   "read_only": 1
+  },
+  {
+   "fieldname": "contract_invitation_email_queue",
+   "fieldtype": "Link",
+   "label": "Contract Invitation Email Queue",
+   "options": "Email Queue",
+   "read_only": 1
+  },
+  {
+   "fieldname": "contract_invitation_queued_at",
+   "fieldtype": "Datetime",
+   "label": "Contract Invitation Queued At",
    "read_only": 1
   },
   {

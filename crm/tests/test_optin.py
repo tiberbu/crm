@@ -6,8 +6,11 @@ import frappe
 from frappe.tests import UnitTestCase
 from frappe.utils import add_days, random_string, today
 
+from crm.api.contracts import _issue_and_send_invitation, generate
 from crm.api.optin import (
 	_KEPH_MAP,
+	_facility_signing_state,
+	_generate_contract_for_submission,
 	_get_optin_deal_forecast_fields,
 	_process_submission,
 	_queue_confirmation_email,
@@ -75,6 +78,8 @@ class TestOptInSynchronousProcessor(UnitTestCase):
 		).insert(ignore_permissions=True)
 		frappe.db.commit()
 		original_user = frappe.session.user
+		callback_fired = []
+		frappe.db.after_commit.add(lambda: callback_fired.append(True))
 
 		try:
 			# Empty canonical pricing fails after the Lead, Contact, and Organisation
@@ -90,6 +95,7 @@ class TestOptInSynchronousProcessor(UnitTestCase):
 				frappe.db.exists("CRM Organization", {"organization_name": organization})
 			)
 			self.assertFalse(frappe.db.exists("Contact Email", {"email_id": email}))
+			self.assertEqual(callback_fired, [])
 		finally:
 			frappe.db.delete("CRM Opt-In Submission", {"name": submission.name})
 			frappe.db.commit()
@@ -124,7 +130,107 @@ class TestOptInConfirmationEmail(UnitTestCase):
 		)
 		self.assertEqual(sendmail.call_args.kwargs["reference_doctype"], "CRM Opt-In Submission")
 		self.assertEqual(sendmail.call_args.kwargs["reference_name"], submission.name)
-		self.assertFalse(sendmail.call_args.kwargs["now"])
+		self.assertTrue(sendmail.call_args.kwargs["now"])
+
+
+class TestOptInContractAutomation(UnitTestCase):
+	def test_contract_generation_stays_in_submission_transaction_and_is_tracked(self):
+		submission = SimpleNamespace(
+			deal="DEAL-TEST-00001",
+			facility_signatory_name="Jane Signatory",
+			facility_signatory_email="jane@example.com",
+			facility_witness_name="John Witness",
+			facility_witness_email="john@example.com",
+			contract=None,
+			contract_invitation_email_queue=None,
+			contract_invitation_queued_at=None,
+			save=Mock(),
+		)
+		queued_at = frappe.utils.now_datetime()
+
+		with (
+			patch(
+				"crm.api.contracts._generate_contract",
+				return_value={
+					"contract": "CONT-TEST-00001",
+					"invitation_queue": "Email Queue-TEST-00002",
+				},
+			) as generate_contract,
+			patch("crm.api.optin.frappe.utils.now_datetime", return_value=queued_at),
+		):
+			result = _generate_contract_for_submission(submission, "QUO-TEST-00001")
+
+		self.assertEqual(result["contract"], "CONT-TEST-00001")
+		self.assertEqual(submission.contract, "CONT-TEST-00001")
+		self.assertEqual(
+			submission.contract_invitation_email_queue, "Email Queue-TEST-00002"
+		)
+		self.assertEqual(submission.contract_invitation_queued_at, queued_at)
+		submission.save.assert_called_once_with(ignore_permissions=True)
+		self.assertEqual(generate_contract.call_args.kwargs["commit"], False)
+
+	def test_invitation_can_save_without_committing_the_caller_transaction(self):
+		contract = SimpleNamespace(name="CONT-TEST-00001", network_slug="", save=Mock())
+		signatory = SimpleNamespace(
+			signatory_role="Facility Signatory",
+			signatory_name="Jane Signatory",
+			signatory_email="jane@example.com",
+		)
+		queue = SimpleNamespace(name="Email Queue-TEST-00002")
+
+		with (
+			patch("crm.api.contracts._gen_token", return_value="invitation-token"),
+			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch("crm.api.contracts.branded_email_html", return_value="email"),
+			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
+			patch("crm.api.contracts.frappe.db.commit") as commit,
+		):
+			result = _issue_and_send_invitation(contract, signatory, now=True, commit=False)
+
+		self.assertIs(result, queue)
+		contract.save.assert_called_once_with(ignore_permissions=True)
+		commit.assert_not_called()
+		self.assertTrue(signatory.invite_token)
+		self.assertTrue(sendmail.call_args.kwargs["now"])
+
+	def test_manual_contract_endpoint_keeps_its_existing_response_shape(self):
+		with (
+			patch("crm.api.contracts._check_crm_role") as check_role,
+			patch(
+				"crm.api.contracts._generate_contract",
+				return_value={
+					"contract": "CONT-TEST-00001",
+					"invitation_queue": "Email Queue-TEST-00002",
+				},
+			) as generate_contract,
+		):
+			result = generate(
+				deal="DEAL-TEST-00001",
+				quote="QUO-TEST-00001",
+				facility_signatory_name="Jane Signatory",
+				facility_signatory_email="jane@example.com",
+				facility_witness_name="John Witness",
+				facility_witness_email="john@example.com",
+			)
+
+		self.assertEqual(result, {"contract": "CONT-TEST-00001"})
+		check_role.assert_called_once()
+		self.assertTrue(generate_contract.call_args.kwargs["commit"])
+
+	def test_facility_signing_state_is_clear_about_pending_and_completed_signatures(self):
+		self.assertEqual(_facility_signing_state(None), ("Not generated", None))
+		self.assertEqual(
+			_facility_signing_state(
+				SimpleNamespace(status="Pending", invite_token="token", invite_expiry=None)
+			),
+			("Awaiting signature", None),
+		)
+		self.assertEqual(
+			_facility_signing_state(
+				SimpleNamespace(status="Signed", signed_at="2026-08-29 12:00:00")
+			),
+			("Signed", "2026-08-29 12:00:00"),
+		)
 
 
 class TestOptInSubmissionList(UnitTestCase):
@@ -142,15 +248,47 @@ class TestOptInSubmissionList(UnitTestCase):
 				"error_log": None,
 				"confirmation_email_queue": "Email Queue-TEST-00001",
 				"confirmation_email_queued_at": "2026-08-29 10:00:01",
+				"contract": "CONT-TEST-00001",
+				"contract_invitation_email_queue": "Email Queue-TEST-00002",
+				"contract_invitation_queued_at": "2026-08-29 10:00:02",
 			}
 		)
-		email_queue = frappe._dict({"name": "Email Queue-TEST-00001", "status": "Sent"})
+		email_queues = [
+			frappe._dict({"name": "Email Queue-TEST-00001", "status": "Sent"}),
+			frappe._dict({"name": "Email Queue-TEST-00002", "status": "Sending"}),
+		]
+		contract = frappe._dict(
+			{
+				"name": "CONT-TEST-00001",
+				"deal": submission.deal,
+				"workflow_state": "Awaiting Facility Signature",
+				"status": "Awaiting Signatures",
+				"creation": "2026-08-29 10:00:02",
+			}
+		)
+		facility_signatory = frappe._dict(
+			{
+				"parent": contract.name,
+				"status": "Pending",
+				"signed_at": None,
+				"invite_token": "token",
+				"invite_expiry": None,
+			}
+		)
 
 		with patch(
 			"crm.api.optin.frappe.get_list",
-			side_effect=[[submission], [email_queue], [frappe._dict({"name": submission.name})]],
+			side_effect=[
+				[submission],
+				email_queues,
+				[contract],
+				[facility_signatory],
+				[frappe._dict({"name": submission.name})],
+			],
 		):
 			result = list_submissions()
 
 		self.assertEqual(result["total"], 1)
 		self.assertEqual(result["rows"][0]["confirmation_email_status"], "Sent")
+		self.assertEqual(result["rows"][0]["contract_invitation_email_status"], "Sending")
+		self.assertEqual(result["rows"][0]["facility_signing_status"], "Awaiting signature")
