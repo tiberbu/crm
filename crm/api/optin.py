@@ -42,10 +42,12 @@ VAT_RATE = 0.16
 _KEPH_MAP = [
     {"keph_level": "Level 2",  "item_code": "CV-HIMS-KEPH-2"},
     {"keph_level": "Level 3",  "item_code": "CV-HIMS-KEPH-3"},
+    {"keph_level": "Level 3C", "item_code": "CV-HIMS-KEPH-3C"},
     {"keph_level": "Level 3A", "item_code": "CV-HIMS-KEPH-3A"},
     {"keph_level": "Level 3B", "item_code": "CV-HIMS-KEPH-3B"},
     {"keph_level": "Level 4",  "item_code": "CV-HIMS-KEPH-4"},
     {"keph_level": "Level 4B", "item_code": "CV-HIMS-KEPH-4B"},
+    {"keph_level": "Level 5A", "item_code": "CV-HIMS-KEPH-5A"},
     {"keph_level": "Level 5",  "item_code": "CV-HIMS-KEPH-5"},
 ]
 

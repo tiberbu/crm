@@ -7,11 +7,13 @@ from frappe.tests import UnitTestCase
 from frappe.utils import add_days, random_string, today
 
 from crm.api.optin import (
+	_KEPH_MAP,
 	_get_optin_deal_forecast_fields,
 	_process_submission,
 	_queue_confirmation_email,
 	list_submissions,
 )
+from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
 
 
 class TestOptInForecastFields(UnitTestCase):
@@ -25,6 +27,24 @@ class TestOptInForecastFields(UnitTestCase):
 
 		self.assertEqual(fields["expected_deal_value"], 48_000.5)
 		self.assertEqual(fields["expected_closure_date"], add_days(today(), 30))
+
+
+class TestOptInNegotiatedPricing(UnitTestCase):
+	def test_keph_map_and_price_tables_include_level_3c_and_5a(self):
+		item_codes = {row["keph_level"]: row["item_code"] for row in _KEPH_MAP}
+		self.assertEqual(item_codes["Level 3C"], "CV-HIMS-KEPH-3C")
+		self.assertEqual(item_codes["Level 5A"], "CV-HIMS-KEPH-5A")
+
+		expected_rates = {
+			"Negotiated Year 1": (28425.93, 201247.59),
+			"Negotiated Year 2": (28425.93, 201247.59),
+			"Negotiated Year 3": (22239.23, 166609.36),
+			"Negotiated Year 4": (23351.19, 174939.83),
+			"Negotiated Year 5": (24518.75, 183686.82),
+		}
+		for price_list, (level_3c_rate, level_5a_rate) in expected_rates.items():
+			self.assertEqual(PRICE_LISTS[price_list]["CV-HIMS-KEPH-3C"], level_3c_rate)
+			self.assertEqual(PRICE_LISTS[price_list]["CV-HIMS-KEPH-5A"], level_5a_rate)
 
 
 class TestOptInSynchronousProcessor(UnitTestCase):
