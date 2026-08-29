@@ -1881,6 +1881,26 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
     }
 
 
+def _queue_confirmation_email(submission, recipient, first_name, network, pricing):
+    """Queue the confirmation email and retain its queue record on the submission."""
+    brand_name = (network.get("display_name") if network else "") or "CareverseHIMS"
+    queue = frappe.sendmail(
+        recipients=[recipient],
+        subject="%s Opt-In Confirmed — Reference %s" % (brand_name, submission.name),
+        message=_confirmation_email_html(first_name, submission.name, network, pricing),
+        reference_doctype="CRM Opt-In Submission",
+        reference_name=submission.name,
+        now=False,
+    )
+    if not queue:
+        frappe.throw(_("The confirmation email could not be queued."))
+
+    submission.confirmation_email_queue = queue.name
+    submission.confirmation_email_queued_at = frappe.utils.now_datetime()
+    submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+    return queue
+
+
 # ---------------------------------------------------------------------------
 # Synchronous Opt-In pipeline — NOT whitelisted
 # ---------------------------------------------------------------------------
@@ -1985,22 +2005,17 @@ def _process_deal_invitation_submission(sub, payload):
     if recipient:
         try:
             network = _get_network_doc(sub.network_slug)
-            frappe.sendmail(
-                recipients=[recipient],
-                subject="%s Opt-In Confirmed - Reference %s"
-                % (((network or {}).get("display_name") or "CareverseHIMS"), sub.name),
-                message=_confirmation_email_html(
-                    contact.get("first_name") or "", sub.name, network, pricing
-                ),
+            _queue_confirmation_email(
+                sub, recipient, contact.get("first_name") or "", network, pricing
             )
-            _update_job_step(sub.name, "email", "done", "Confirmation email sent")
+            _update_job_step(sub.name, "email", "done", "Confirmation email queued")
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(),
                 "optin._process_deal_invitation_submission: confirmation email failed for %s"
                 % sub.name,
             )
-            _update_job_step(sub.name, "email", "done", "Confirmation email pending")
+            _update_job_step(sub.name, "email", "done", "Confirmation email could not be queued")
     else:
         _update_job_step(sub.name, "email", "done", "Email step complete")
     sub.status = "Processed"
@@ -2300,24 +2315,19 @@ def _process_submission(submission_ref):
         if recipient:
             try:
                 network = _get_network_doc(sub.network_slug)
-                brand_name = (network.get("display_name") if network else "") or "CareverseHIMS"
-                frappe.sendmail(
-                    recipients=[recipient],
-                    subject="%s Opt-In Confirmed — Reference %s" % (brand_name, submission_ref),
-                    message=_confirmation_email_html(
-                        lead.first_name, submission_ref, network, pricing
-                    ),
-                )
+                _queue_confirmation_email(sub, recipient, lead.first_name, network, pricing)
                 _update_job_step(
                     submission_ref, "email", "done",
-                    "Confirmation email sent",
+                    "Confirmation email queued",
                 )
             except Exception:
                 frappe.log_error(
                     frappe.get_traceback(),
                     "optin._process_submission: confirmation email failed for %s" % submission_ref,
                 )
-                _update_job_step(submission_ref, "email", "done", "Email step complete")
+                _update_job_step(
+                    submission_ref, "email", "done", "Confirmation email could not be queued"
+                )
         else:
             _update_job_step(submission_ref, "email", "done", "Email step complete")
 
@@ -2396,11 +2406,23 @@ def list_submissions(status=None, page=0, page_size=20):
         fields=[
             "name", "status", "network_slug", "submitter_email",
             "submitted_at", "lead", "deal", "has_duplicate_mfl", "error_log",
+            "confirmation_email_queue", "confirmation_email_queued_at",
         ],
         order_by="submitted_at desc",
         limit_start=page * page_size,
         limit_page_length=page_size,
     )
+
+    queue_names = [row.confirmation_email_queue for row in rows if row.confirmation_email_queue]
+    queue_statuses = {}
+    if queue_names:
+        email_queues = frappe.get_list(
+            "Email Queue",
+            filters={"name": ["in", queue_names]},
+            fields=["name", "status"],
+            ignore_permissions=True,  # SYSTEM-INTERNAL: expose only the linked status
+        )
+        queue_statuses = {queue.name: queue.status for queue in email_queues}
 
     # Total via a permission-scoped get_list (limit_page_length=0 => all rows) —
     # keeps the count on the same "get_list only" path as the page read.
@@ -2417,6 +2439,9 @@ def list_submissions(status=None, page=0, page_size=20):
         "rows": [
             {
                 **row,
+                "confirmation_email_status": queue_statuses.get(
+                    row.confirmation_email_queue, "Not queued"
+                ),
                 "failure_reason": row.error_log if row.status == "Failed" else "",
             }
             for row in rows

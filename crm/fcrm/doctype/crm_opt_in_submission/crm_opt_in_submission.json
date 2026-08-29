@@ -14,6 +14,9 @@
   "facility_witness_name",
   "facility_witness_email",
   "submitted_at",
+  "section_break_confirmation",
+  "confirmation_email_queue",
+  "confirmation_email_queued_at",
   "col_break_1",
   "lead",
   "deal",
@@ -75,6 +78,24 @@
    "fieldname": "submitted_at",
    "fieldtype": "Datetime",
    "label": "Submitted At"
+  },
+  {
+   "fieldname": "section_break_confirmation",
+   "fieldtype": "Section Break",
+   "label": "Confirmation Email"
+  },
+  {
+   "fieldname": "confirmation_email_queue",
+   "fieldtype": "Link",
+   "label": "Confirmation Email Queue",
+   "options": "Email Queue",
+   "read_only": 1
+  },
+  {
+   "fieldname": "confirmation_email_queued_at",
+   "fieldtype": "Datetime",
+   "label": "Confirmation Email Queued At",
+   "read_only": 1
   },
   {
    "fieldname": "col_break_1",
