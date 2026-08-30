@@ -24,7 +24,8 @@ import { createResource } from 'frappe-ui'
 
 export function readableError(err) {
   if (!err) return ''
-  if (Array.isArray(err.messages) && err.messages.length) return err.messages.join('\n')
+  if (Array.isArray(err.messages) && err.messages.length)
+    return err.messages.join('\n')
   if (typeof err === 'string') return err
   return err.message || 'Something went wrong. Please try again.'
 }
@@ -34,7 +35,10 @@ export function useCrud(doctype) {
   const error = ref('')
 
   function makeResource(method, httpMethod = 'POST') {
-    return createResource({ url: `frappe.client.${method}`, method: httpMethod })
+    return createResource({
+      url: `frappe.client.${method}`,
+      method: httpMethod,
+    })
   }
 
   async function run(resource, params) {
@@ -62,7 +66,10 @@ export function useCrud(doctype) {
   async function saveDoc(docObj) {
     const payload = { ...docObj, doctype }
     const isUpdate = !!docObj.name
-    const res = makeResource(isUpdate ? 'save' : 'insert', isUpdate ? 'PUT' : 'POST')
+    const res = makeResource(
+      isUpdate ? 'save' : 'insert',
+      isUpdate ? 'PUT' : 'POST',
+    )
     return run(res, { doc: JSON.stringify(payload) })
   }
 

@@ -1,5 +1,7 @@
 <template>
-  <div class="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-10 dark:bg-gray-950">
+  <div
+    class="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-10 dark:bg-gray-950"
+  >
     <div class="w-full max-w-lg text-center">
       <!-- Network logo or default Tiberbu logo -->
       <div class="mb-7 flex justify-center">
@@ -19,14 +21,16 @@
       </div>
 
       <!-- Headline -->
-      <h1 class="mb-3 text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+      <h1
+        class="mb-3 text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white"
+      >
         {{ networkConfig ? networkConfig.display_name : 'CareverseHIMS' }}
       </h1>
 
       <!-- Subheadline -->
       <p class="mb-8 text-base text-gray-500 dark:text-gray-400">
-        Register your facilities for CareverseHIMS and get set up online — start to
-        finish, without a single phone call.
+        Register your facilities for CareverseHIMS and get set up online — start
+        to finish, without a single phone call.
       </p>
 
       <!-- What you're starting: explained value props -->
@@ -40,13 +44,19 @@
             class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
             :style="{ backgroundColor: brandTint }"
           >
-            <span class="h-5 w-5" style="color: var(--brand-primary)" v-html="feature.icon" />
+            <span
+              class="h-5 w-5"
+              style="color: var(--brand-primary)"
+              v-html="feature.icon"
+            />
           </span>
           <div>
             <p class="text-sm font-semibold text-gray-900 dark:text-white">
               {{ feature.title }}
             </p>
-            <p class="mt-0.5 text-[13px] leading-snug text-gray-500 dark:text-gray-400">
+            <p
+              class="mt-0.5 text-[13px] leading-snug text-gray-500 dark:text-gray-400"
+            >
               {{ feature.body }}
             </p>
           </div>
@@ -56,7 +66,10 @@
       <!-- CTA button -->
       <button
         class="w-full rounded-xl px-6 py-3.5 text-base font-semibold text-white shadow-lg transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
-        style="background-color: var(--brand-primary); --tw-ring-color: var(--brand-primary)"
+        style="
+          background-color: var(--brand-primary);
+          --tw-ring-color: var(--brand-primary);
+        "
         @click="emit('next')"
       >
         Get Started
@@ -64,7 +77,9 @@
 
       <!-- Partner logos strip -->
       <div v-if="partnerLogos.length" class="mt-10">
-        <p class="mb-4 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+        <p
+          class="mb-4 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500"
+        >
           Trusted by our partners
         </p>
         <div class="flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
@@ -114,9 +129,18 @@ const partnerLogos = computed(() => props.networkConfig?.partner_logos || [])
 // tint when the network has no primary colour so it never reads as "off-brand".
 const brandTint = computed(() => {
   const hex = props.networkConfig?.primary_colour
-  if (typeof hex === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex.trim())) {
+  if (
+    typeof hex === 'string' &&
+    /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex.trim())
+  ) {
     const v = hex.trim().slice(1)
-    const full = v.length === 3 ? v.split('').map((c) => c + c).join('') : v
+    const full =
+      v.length === 3
+        ? v
+            .split('')
+            .map((c) => c + c)
+            .join('')
+        : v
     const r = parseInt(full.slice(0, 2), 16)
     const g = parseInt(full.slice(2, 4), 16)
     const b = parseInt(full.slice(4, 6), 16)

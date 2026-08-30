@@ -38,13 +38,13 @@ const statusFilter = ref('')
 const sectionRef = ref(null)
 
 const columns = [
-  { key: 'name',             label: 'Order' },
-  { key: 'customer',         label: 'Customer' },
-  { key: 'transaction_date', label: 'Date',    type: 'timeago' },
-  { key: 'delivery_date',    label: 'Delivery', type: 'date' },
-  { key: 'grand_total',      label: 'Total',   type: 'currency', align: 'right' },
-  { key: 'status',           label: 'Status',  type: 'status' },
-  { key: 'billing_status',   label: 'Billing', type: 'status' },
+  { key: 'name', label: 'Order' },
+  { key: 'customer', label: 'Customer' },
+  { key: 'transaction_date', label: 'Date', type: 'timeago' },
+  { key: 'delivery_date', label: 'Delivery', type: 'date' },
+  { key: 'grand_total', label: 'Total', type: 'currency', align: 'right' },
+  { key: 'status', label: 'Status', type: 'status' },
+  { key: 'billing_status', label: 'Billing', type: 'status' },
 ]
 
 // Create-From: submitted Quotation (docstatus=1) → Sales Order via native ERPNext mapper.

@@ -1,13 +1,23 @@
 <template>
   <div class="flex h-full flex-col overflow-hidden">
-
     <!-- Header -->
-    <div class="flex items-center justify-between border-b border-outline-gray-2 px-5 py-3">
-      <h1 class="text-xl font-semibold text-ink-gray-9">{{ __('Opt-In Networks') }}</h1>
-      <Button variant="solid" size="sm" @click="router.push({ name: 'NewNetwork' })">{{ __('Add Network') }}</Button>
+    <div
+      class="flex items-center justify-between border-b border-outline-gray-2 px-5 py-3"
+    >
+      <h1 class="text-xl font-semibold text-ink-gray-9">
+        {{ __('Opt-In Networks') }}
+      </h1>
+      <Button
+        variant="solid"
+        size="sm"
+        @click="router.push({ name: 'NewNetwork' })"
+        >{{ __('Add Network') }}</Button
+      >
     </div>
 
-    <div class="flex flex-wrap items-end gap-2 border-b border-outline-gray-2 px-5 py-3">
+    <div
+      class="flex flex-wrap items-end gap-2 border-b border-outline-gray-2 px-5 py-3"
+    >
       <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
         {{ __('Search') }}
         <input
@@ -37,7 +47,9 @@
           @change="applyFilters"
         >
           <option value="">{{ __('All levels') }}</option>
-          <option v-for="level in facilityLevels" :key="level" :value="level">{{ level }}</option>
+          <option v-for="level in facilityLevels" :key="level" :value="level">
+            {{ level }}
+          </option>
         </select>
       </label>
       <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
@@ -49,30 +61,62 @@
           @keyup.enter="applyFilters"
         />
       </label>
-      <Button size="sm" variant="subtle" @click="applyFilters">{{ __('Apply') }}</Button>
-      <Button size="sm" variant="ghost" @click="clearFilters">{{ __('Clear') }}</Button>
+      <Button size="sm" variant="subtle" @click="applyFilters">{{
+        __('Apply')
+      }}</Button>
+      <Button size="sm" variant="ghost" @click="clearFilters">{{
+        __('Clear')
+      }}</Button>
     </div>
 
     <!-- Table area -->
     <div class="flex-1 overflow-auto">
-      <div v-if="listResource.loading" class="flex items-center justify-center py-16">
-        <div class="h-6 w-6 animate-spin rounded-full border-2 border-red-600 border-t-transparent" />
+      <div
+        v-if="listResource.loading"
+        class="flex items-center justify-center py-16"
+      >
+        <div
+          class="h-6 w-6 animate-spin rounded-full border-2 border-red-600 border-t-transparent"
+        />
       </div>
 
-      <div v-else-if="!rows.length" class="flex flex-col items-center justify-center py-16 text-center">
-        <p class="text-sm font-medium text-ink-gray-5">{{ __('No networks found') }}</p>
-        <p class="mt-1 text-xs text-ink-gray-4">{{ __('Create a network to configure its portal, pricing, partners, coordinators, and signatories.') }}</p>
+      <div
+        v-else-if="!rows.length"
+        class="flex flex-col items-center justify-center py-16 text-center"
+      >
+        <p class="text-sm font-medium text-ink-gray-5">
+          {{ __('No networks found') }}
+        </p>
+        <p class="mt-1 text-xs text-ink-gray-4">
+          {{
+            __(
+              'Create a network to configure its portal, pricing, partners, coordinators, and signatories.',
+            )
+          }}
+        </p>
       </div>
 
       <table v-else class="w-full text-sm">
-        <thead class="sticky top-0 z-10 bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5">
+        <thead
+          class="sticky top-0 z-10 bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5"
+        >
           <tr>
-            <th class="px-5 py-2.5 text-left font-medium">{{ __('Display Name') }}</th>
+            <th class="px-5 py-2.5 text-left font-medium">
+              {{ __('Display Name') }}
+            </th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Slug') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">{{ __('Status') }}</th>
-            <th class="px-4 py-2.5 text-right font-medium">{{ __('Contacts') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">{{ __('Contact Email') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">{{ __('Footer Name') }}</th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Status') }}
+            </th>
+            <th class="px-4 py-2.5 text-right font-medium">
+              {{ __('Contacts') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Contact Email') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Footer Name') }}
+            </th>
             <th class="px-4 py-2.5 text-right font-medium"></th>
           </tr>
         </thead>
@@ -83,19 +127,38 @@
             class="cursor-pointer transition-colors hover:bg-surface-gray-1"
             @click="openNetwork(row)"
           >
-            <td class="px-5 py-3 font-medium text-ink-gray-9">{{ row.display_name }}</td>
-            <td class="px-4 py-3 font-mono text-xs text-ink-gray-6">{{ row.slug }}</td>
+            <td class="px-5 py-3 font-medium text-ink-gray-9">
+              {{ row.display_name }}
+            </td>
+            <td class="px-4 py-3 font-mono text-xs text-ink-gray-6">
+              {{ row.slug }}
+            </td>
             <td class="px-4 py-3">
               <span :class="statusPill(row.enabled)">
                 {{ row.enabled ? __('Enabled') : __('Disabled') }}
               </span>
             </td>
-            <td class="px-4 py-3 text-right font-medium text-ink-gray-7">{{ row.contact_count }}</td>
-            <td class="px-4 py-3 text-xs text-ink-gray-6">{{ row.contact_email || '—' }}</td>
-            <td class="px-4 py-3 text-xs text-ink-gray-6">{{ row.footer_legal_name || '—' }}</td>
+            <td class="px-4 py-3 text-right font-medium text-ink-gray-7">
+              {{ row.contact_count }}
+            </td>
+            <td class="px-4 py-3 text-xs text-ink-gray-6">
+              {{ row.contact_email || '—' }}
+            </td>
+            <td class="px-4 py-3 text-xs text-ink-gray-6">
+              {{ row.footer_legal_name || '—' }}
+            </td>
             <td class="px-4 py-3 text-right text-ink-gray-4">
-              <svg xmlns="http://www.w3.org/2000/svg" class="inline h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="inline h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="9 18 15 12 9 6" />
               </svg>
             </td>
           </tr>
@@ -103,13 +166,34 @@
       </table>
 
       <!-- Pagination -->
-      <div v-if="total > pageSize" class="flex items-center justify-between border-t border-outline-gray-2 px-5 py-3">
+      <div
+        v-if="total > pageSize"
+        class="flex items-center justify-between border-t border-outline-gray-2 px-5 py-3"
+      >
         <span class="text-xs text-ink-gray-5">
-          {{ __('Showing {0}–{1} of {2}', [page * pageSize + 1, Math.min((page + 1) * pageSize, total), total]) }}
+          {{
+            __('Showing {0}–{1} of {2}', [
+              page * pageSize + 1,
+              Math.min((page + 1) * pageSize, total),
+              total,
+            ])
+          }}
         </span>
         <div class="flex gap-2">
-          <Button size="sm" variant="subtle" :disabled="page === 0" @click="prevPage">{{ __('Prev') }}</Button>
-          <Button size="sm" variant="subtle" :disabled="(page + 1) * pageSize >= total" @click="nextPage">{{ __('Next') }}</Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            :disabled="page === 0"
+            @click="prevPage"
+            >{{ __('Prev') }}</Button
+          >
+          <Button
+            size="sm"
+            variant="subtle"
+            :disabled="(page + 1) * pageSize >= total"
+            @click="nextPage"
+            >{{ __('Next') }}</Button
+          >
         </div>
       </div>
     </div>

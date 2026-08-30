@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import UnitTestCase
 
-from crm.api.optin_admin import import_facilities_csv, list_networks
+from crm.api.optin_admin import import_facilities_csv, list_facilities, list_networks
 
 
 class TestOptInFacilityCsvImport(UnitTestCase):
@@ -107,3 +107,61 @@ class TestOptInNetworkList(UnitTestCase):
 
 		self.assertEqual(result["total"], 1)
 		self.assertEqual(result["rows"][0]["contact_count"], 2)
+
+
+class TestOptInFacilityList(UnitTestCase):
+	def test_network_contacts_can_be_filtered_by_facility_and_contact_details(self):
+		membership = frappe._dict(
+			{
+				"name": "MEM-0001",
+				"parent": "FAC-0001",
+				"network": "network-a",
+				"status": "Active",
+				"contact_name": "Jane Doe",
+				"contact_email": "jane@example.com",
+				"contact_phone": "0712000001",
+				"invite_email_queue": None,
+				"invite_sent_at": None,
+			}
+		)
+		facility = frappe._dict(
+			{
+				"name": "FAC-0001",
+				"mfl_code": "1001",
+				"facility_name": "First Clinic",
+				"organization": "Health Group",
+				"keph_level": "Level 3",
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch(
+				"crm.api.optin_admin.frappe.get_list",
+				side_effect=[
+					[membership],
+					[frappe._dict({"name": facility.name})],
+					[facility],
+				],
+			) as get_list,
+		):
+			result = list_facilities(
+				network="network-a",
+				status="Active",
+				facility="First",
+				facility_level="Level 3",
+				organization="Health",
+				contact="jane",
+			)
+
+		membership_call = get_list.call_args_list[0].kwargs
+		self.assertEqual(membership_call["filters"]["network"], ["in", ["network-a"]])
+		self.assertEqual(membership_call["filters"]["status"], "Active")
+		self.assertEqual(membership_call["or_filters"][1], ["contact_email", "like", "%jane%"])
+
+		facility_call = get_list.call_args_list[1].kwargs
+		self.assertEqual(facility_call["filters"]["keph_level"], "Level 3")
+		self.assertEqual(facility_call["filters"]["organization"], ["like", "%Health%"])
+		self.assertEqual(facility_call["or_filters"][0], ["facility_name", "like", "%First%"])
+		self.assertEqual(result["total"], 1)
+		self.assertEqual(result["rows"][0]["memberships"][0]["invite_status"], "Not Sent")

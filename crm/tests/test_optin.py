@@ -93,9 +93,7 @@ class TestOptInSynchronousProcessor(UnitTestCase):
 			self.assertEqual(submission.status, "Failed")
 			self.assertEqual(frappe.session.user, original_user)
 			self.assertFalse(frappe.db.exists("CRM Lead", {"email": email}))
-			self.assertFalse(
-				frappe.db.exists("CRM Organization", {"organization_name": organization})
-			)
+			self.assertFalse(frappe.db.exists("CRM Organization", {"organization_name": organization}))
 			self.assertFalse(frappe.db.exists("Contact Email", {"email_id": email}))
 			self.assertEqual(callback_fired, [])
 		finally:
@@ -164,9 +162,7 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		self.assertEqual(result["contract"], "CONT-TEST-00001")
 		self.assertEqual(submission.contract, "CONT-TEST-00001")
-		self.assertEqual(
-			submission.contract_invitation_email_queue, "Email Queue-TEST-00002"
-		)
+		self.assertEqual(submission.contract_invitation_email_queue, "Email Queue-TEST-00002")
 		self.assertEqual(submission.contract_invitation_queued_at, queued_at)
 		submission.save.assert_called_once_with(ignore_permissions=True)
 		self.assertEqual(generate_contract.call_args.kwargs["commit"], False)
@@ -250,9 +246,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			("Awaiting signature", None),
 		)
 		self.assertEqual(
-			_facility_signing_state(
-				SimpleNamespace(status="Signed", signed_at="2026-08-29 12:00:00")
-			),
+			_facility_signing_state(SimpleNamespace(status="Signed", signed_at="2026-08-29 12:00:00")),
 			("Signed", "2026-08-29 12:00:00"),
 		)
 		self.assertEqual(
@@ -320,6 +314,9 @@ class TestOptInSubmissionList(UnitTestCase):
 
 		self.assertEqual(result["total"], 1)
 		self.assertEqual([row["name"] for row in result["rows"]], ["OIS-TEST-00002"])
+		self.assertEqual(result["rows"][0]["facility_name"], "Beta Hospital")
+		self.assertEqual(result["rows"][0]["facility_level"], "Level 5")
+		self.assertEqual(result["rows"][0]["facility_mfl_code"], "OIS-TEST-00002")
 
 	def test_submission_list_includes_live_confirmation_email_status(self):
 		submission = frappe._dict(

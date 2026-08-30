@@ -10,6 +10,7 @@ or v2 `send_email` for large payloads), after rewriting the `From` header to the
 configured / dynamically-composed sender identity. When SES is disabled we fall
 back to the native SMTP / Frappe Mail path so non-SES installs are unaffected.
 """
+
 from __future__ import annotations
 
 from email.parser import BytesParser
@@ -71,6 +72,7 @@ def send(queue_doc, sender: str, recipient: str, message: bytes):
 # Validation & test guards
 # ---------------------------------------------------------------------------
 
+
 def _validate_runtime_config(config: AwsSesRuntimeConfig) -> None:
 	if not config.aws_region:
 		frappe.throw(
@@ -115,7 +117,7 @@ def _get_runtime_state(queue_doc) -> dict:
 	if isinstance(state, dict):
 		return state
 	state = {}
-	setattr(queue_doc, "_crm_ses_override_state", state)
+	queue_doc._crm_ses_override_state = state
 	return state
 
 
@@ -130,6 +132,7 @@ def _ensure_bytes(message) -> bytes:
 # ---------------------------------------------------------------------------
 # Native fallback (SES disabled)
 # ---------------------------------------------------------------------------
+
 
 def _send_via_native(queue_doc, sender: str, recipient: str, message: bytes, state: dict) -> None:
 	if "email_account_doc" not in state:
@@ -176,7 +179,10 @@ def _send_via_native(queue_doc, sender: str, recipient: str, message: bytes, sta
 # SES transports
 # ---------------------------------------------------------------------------
 
-def _send_via_ses_v1(queue_doc, recipient: str, message: bytes, config: AwsSesRuntimeConfig, state: dict) -> None:
+
+def _send_via_ses_v1(
+	queue_doc, recipient: str, message: bytes, config: AwsSesRuntimeConfig, state: dict
+) -> None:
 	payload = _apply_configured_sender(message, config)
 	client = _get_ses_client(config, state)
 	kwargs = {
@@ -192,7 +198,9 @@ def _send_via_ses_v1(queue_doc, recipient: str, message: bytes, config: AwsSesRu
 	_log_send_success(queue_doc, recipient, "sesv1", response.get("MessageId"))
 
 
-def _send_via_ses_v2(queue_doc, recipient: str, message: bytes, config: AwsSesRuntimeConfig, state: dict) -> None:
+def _send_via_ses_v2(
+	queue_doc, recipient: str, message: bytes, config: AwsSesRuntimeConfig, state: dict
+) -> None:
 	payload = _apply_configured_sender(message, config)
 	client = _get_sesv2_client(config, state)
 	kwargs = {
@@ -211,6 +219,7 @@ def _send_via_ses_v2(queue_doc, recipient: str, message: bytes, config: AwsSesRu
 # ---------------------------------------------------------------------------
 # Sender identity (E3-S1: dynamic sender name with graceful degradation)
 # ---------------------------------------------------------------------------
+
 
 def _clean_label(value) -> str:
 	"""Return a display-safe label, or "" if the value is junk (None/null/empty)."""
@@ -300,6 +309,7 @@ def _apply_configured_sender(message: bytes, config: AwsSesRuntimeConfig) -> byt
 # boto3 clients
 # ---------------------------------------------------------------------------
 
+
 def _get_ses_client(config: AwsSesRuntimeConfig, state: dict):
 	if "ses_client" not in state:
 		session = _get_boto3_session(config, state)
@@ -361,6 +371,7 @@ def _get_botocore_config(config: AwsSesRuntimeConfig):
 # Logging
 # ---------------------------------------------------------------------------
 
+
 def _log_send_success(queue_doc, recipient: str, transport: str, message_id) -> None:
 	frappe.logger("crm.ses").info(
 		"queue=%s recipient=%s transport=%s message_id=%s",
@@ -374,12 +385,14 @@ def _log_send_success(queue_doc, recipient: str, transport: str, message_id) -> 
 def _log_send_error(queue_doc, recipient: str, transport: str, exc: Exception) -> None:
 	frappe.log_error(
 		title="CRM SES Send Failure",
-		message="\n".join([
-			"CRM SES override send failed",
-			"queue=" + getattr(queue_doc, "name", ""),
-			"recipient=" + recipient,
-			"transport=" + transport,
-			"error_type=" + type(exc).__name__,
-			"error=" + str(exc),
-		]),
+		message="\n".join(
+			[
+				"CRM SES override send failed",
+				"queue=" + getattr(queue_doc, "name", ""),
+				"recipient=" + recipient,
+				"transport=" + transport,
+				"error_type=" + type(exc).__name__,
+				"error=" + str(exc),
+			]
+		),
 	)

@@ -434,7 +434,9 @@ function makeOutgoingCall(number) {
     onError(err) {
       // Until the E5 Avaya handler is deployed (gated on credentials), this fails
       // cleanly with a toast rather than crashing the UI.
-      toast.error(err?.messages?.[0] || __('Avaya calling is not yet connected'))
+      toast.error(
+        err?.messages?.[0] || __('Avaya calling is not yet connected'),
+      )
     },
   })
 }

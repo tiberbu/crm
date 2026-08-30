@@ -1,7 +1,10 @@
 <template>
   <div class="mx-auto w-full max-w-sm px-4 py-8 text-center">
     <!-- Animated spinner while in progress -->
-    <div v-if="overall !== 'complete' && overall !== 'failed'" class="mb-6 flex justify-center">
+    <div
+      v-if="overall !== 'complete' && overall !== 'failed'"
+      class="mb-6 flex justify-center"
+    >
       <div
         class="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-transparent"
         :style="{ borderTopColor: 'var(--brand-primary)' }"
@@ -13,18 +16,36 @@
         class="flex h-14 w-14 items-center justify-center rounded-full"
         style="background-color: var(--brand-primary)"
       >
-        <svg class="h-7 w-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <svg
+          class="h-7 w-7 text-white"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="3"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="20 6 9 17 4 12" />
         </svg>
       </div>
     </div>
     <!-- Error icon -->
     <div v-else-if="overall === 'failed'" class="mb-6 flex justify-center">
-      <div class="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-        <svg class="h-7 w-7 text-red-600 dark:text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <line x1="12" y1="8" x2="12" y2="12"/>
-          <line x1="12" y1="16" x2="12.01" y2="16"/>
+      <div
+        class="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30"
+      >
+        <svg
+          class="h-7 w-7 text-red-600 dark:text-red-400"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
       </div>
     </div>
@@ -60,21 +81,56 @@
       >
         <!-- Status icon -->
         <div class="flex-shrink-0">
-          <div v-if="step.status === 'done'" class="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-            <svg class="h-3.5 w-3.5 text-green-600 dark:text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <div
+            v-if="step.status === 'done'"
+            class="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30"
+          >
+            <svg
+              class="h-3.5 w-3.5 text-green-600 dark:text-green-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
-          <div v-else-if="step.status === 'failed'" class="flex h-6 w-6 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-            <svg class="h-3.5 w-3.5 text-red-600 dark:text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <div
+            v-else-if="step.status === 'failed'"
+            class="flex h-6 w-6 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30"
+          >
+            <svg
+              class="h-3.5 w-3.5 text-red-600 dark:text-red-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <line x1="7" y1="7" x2="17" y2="17" />
               <line x1="17" y1="7" x2="7" y2="17" />
             </svg>
           </div>
-          <div v-else-if="step.status === 'in_progress'" class="flex h-6 w-6 items-center justify-center rounded-full" :style="{ backgroundColor: 'color-mix(in srgb, var(--brand-primary) 15%, transparent)' }">
-            <div class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-200 border-t-transparent" :style="{ borderTopColor: 'var(--brand-primary)' }" />
+          <div
+            v-else-if="step.status === 'in_progress'"
+            class="flex h-6 w-6 items-center justify-center rounded-full"
+            :style="{
+              backgroundColor:
+                'color-mix(in srgb, var(--brand-primary) 15%, transparent)',
+            }"
+          >
+            <div
+              class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-200 border-t-transparent"
+              :style="{ borderTopColor: 'var(--brand-primary)' }"
+            />
           </div>
-          <div v-else class="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+          <div
+            v-else
+            class="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800"
+          >
             <div class="h-2 w-2 rounded-full bg-gray-300 dark:bg-gray-600" />
           </div>
         </div>
@@ -82,7 +138,9 @@
         <span
           :class="[
             'text-sm',
-            step.status === 'done' ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500',
+            step.status === 'done'
+              ? 'font-medium text-gray-900 dark:text-white'
+              : 'text-gray-400 dark:text-gray-500',
           ]"
         >
           {{ step.label }}
@@ -90,7 +148,10 @@
       </div>
     </div>
 
-    <p v-if="overall === 'failed' && submissionRef" class="text-center font-mono text-xs text-gray-400 dark:text-gray-500">
+    <p
+      v-if="overall === 'failed' && submissionRef"
+      class="text-center font-mono text-xs text-gray-400 dark:text-gray-500"
+    >
       Reference: {{ submissionRef }}
     </p>
   </div>
@@ -119,15 +180,15 @@ let consecutiveErrors = 0
 
 // Static step definitions (always show all 4, status from API)
 const STEP_DEFS = [
-  { name: 'lead',  defaultLabel: 'Your details saved' },
-  { name: 'deal',  defaultLabel: 'Creating your account...' },
+  { name: 'lead', defaultLabel: 'Your details saved' },
+  { name: 'deal', defaultLabel: 'Creating your account...' },
   { name: 'quote', defaultLabel: 'Generating your quote' },
   { name: 'email', defaultLabel: 'Sending confirmation' },
 ]
 
 const displaySteps = computed(() => {
-  return STEP_DEFS.map(def => {
-    const fromApi = steps.value.find(s => s.name === def.name)
+  return STEP_DEFS.map((def) => {
+    const fromApi = steps.value.find((s) => s.name === def.name)
     return {
       name: def.name,
       status: fromApi ? fromApi.status : 'pending',
@@ -137,7 +198,9 @@ const displaySteps = computed(() => {
 })
 
 const statusResource = createResource({ url: 'crm.api.optin.get_job_status' })
-const retryResource = createResource({ url: 'crm.api.optin.retry_public_submission' })
+const retryResource = createResource({
+  url: 'crm.api.optin.retry_public_submission',
+})
 
 function stopPolling() {
   if (pollInterval) clearInterval(pollInterval)
@@ -170,7 +233,8 @@ async function poll() {
     if (consecutiveErrors >= 5) {
       stopPolling()
       overall.value = 'failed'
-      failureMessage.value = 'We could not confirm the submission status. Please try again.'
+      failureMessage.value =
+        'We could not confirm the submission status. Please try again.'
     }
   }
 }
@@ -193,7 +257,9 @@ async function retrySubmission() {
     await poll()
   } catch (err) {
     overall.value = 'failed'
-    failureMessage.value = err?.message || 'We could not retry this submission. Please contact support.'
+    failureMessage.value =
+      err?.message ||
+      'We could not retry this submission. Please contact support.'
   } finally {
     retrying.value = false
   }

@@ -1,20 +1,33 @@
 <template>
   <div class="fc-line-items">
     <!-- Desktop grid -->
-    <div v-if="!isMobile" class="rounded-lg border border-outline-gray-1 overflow-hidden">
+    <div
+      v-if="!isMobile"
+      class="rounded-lg border border-outline-gray-1 overflow-hidden"
+    >
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-surface-gray-2 border-b border-outline-gray-1">
-            <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-ink-gray-5 uppercase tracking-wider w-8">#</th>
+            <th
+              class="px-3 py-2.5 text-left text-[11px] font-semibold text-ink-gray-5 uppercase tracking-wider w-8"
+            >
+              #
+            </th>
             <th
               v-for="col in columns"
               :key="col.fieldname"
               class="px-3 py-2.5 text-[11px] font-semibold text-ink-gray-5 uppercase tracking-wider whitespace-nowrap"
               :class="isNumericCol(col) ? 'text-right' : 'text-left'"
             >
-              {{ col.label }}<span v-if="col.required" class="text-red-500 ml-0.5">*</span>
+              {{ col.label
+              }}<span v-if="col.required" class="text-red-500 ml-0.5">*</span>
             </th>
-            <th v-if="showAmount" class="px-3 py-2.5 text-right text-[11px] font-semibold text-ink-gray-5 uppercase tracking-wider">Amount</th>
+            <th
+              v-if="showAmount"
+              class="px-3 py-2.5 text-right text-[11px] font-semibold text-ink-gray-5 uppercase tracking-wider"
+            >
+              Amount
+            </th>
             <th v-if="!readOnly" class="px-2 py-2.5 w-10" />
           </tr>
         </thead>
@@ -29,7 +42,9 @@
                   type="button"
                   class="mt-1 text-xs font-medium text-blue-600 hover:underline"
                   @click="addRow"
-                >+ Add your first line</button>
+                >
+                  + Add your first line
+                </button>
               </div>
             </td>
           </tr>
@@ -38,7 +53,9 @@
             :key="idx"
             class="group align-top hover:bg-surface-gray-1 transition-colors"
           >
-            <td class="px-3 py-2 text-xs text-ink-gray-4 tabular-nums">{{ idx + 1 }}</td>
+            <td class="px-3 py-2 text-xs text-ink-gray-4 tabular-nums">
+              {{ idx + 1 }}
+            </td>
             <td
               v-for="col in columns"
               :key="col.fieldname"
@@ -55,7 +72,10 @@
               />
             </td>
             <td v-if="showAmount" class="px-3 py-2 text-right">
-              <span class="text-sm font-semibold text-ink-gray-8 tabular-nums">{{ formatCurrency(rowAmount(row), currency) }}</span>
+              <span
+                class="text-sm font-semibold text-ink-gray-8 tabular-nums"
+                >{{ formatCurrency(rowAmount(row), currency) }}</span
+              >
             </td>
             <td v-if="!readOnly" class="px-2 py-2 text-right">
               <button
@@ -71,10 +91,18 @@
         </tbody>
         <tfoot v-if="rows.length && showAmount">
           <tr class="border-t border-outline-gray-1 bg-surface-gray-2">
-            <td :colspan="columns.length + 1" class="px-3 py-2.5 text-right text-xs font-medium text-ink-gray-5">
-              {{ rows.length }} {{ rows.length === 1 ? 'line' : 'lines' }} · Total
+            <td
+              :colspan="columns.length + 1"
+              class="px-3 py-2.5 text-right text-xs font-medium text-ink-gray-5"
+            >
+              {{ rows.length }} {{ rows.length === 1 ? 'line' : 'lines' }} ·
+              Total
             </td>
-            <td class="px-3 py-2.5 text-right text-sm font-bold text-ink-gray-9 tabular-nums">{{ formatCurrency(runningTotal, currency) }}</td>
+            <td
+              class="px-3 py-2.5 text-right text-sm font-bold text-ink-gray-9 tabular-nums"
+            >
+              {{ formatCurrency(runningTotal, currency) }}
+            </td>
             <td v-if="!readOnly" />
           </tr>
         </tfoot>
@@ -83,7 +111,10 @@
 
     <!-- Mobile stacked cards (wideOnly columns hidden) -->
     <div v-else class="space-y-3">
-      <div v-if="!rows.length" class="rounded-lg border border-dashed border-outline-gray-2 py-8 text-center text-sm text-ink-gray-4">
+      <div
+        v-if="!rows.length"
+        class="rounded-lg border border-dashed border-outline-gray-2 py-8 text-center text-sm text-ink-gray-4"
+      >
         No line items yet.
       </div>
       <div
@@ -92,9 +123,15 @@
         class="rounded-lg border border-outline-gray-1 bg-surface-white p-3"
       >
         <div class="flex items-center justify-between mb-2.5">
-          <span class="text-xs font-semibold text-ink-gray-5">Line {{ idx + 1 }}</span>
+          <span class="text-xs font-semibold text-ink-gray-5"
+            >Line {{ idx + 1 }}</span
+          >
           <div class="flex items-center gap-3">
-            <span v-if="showAmount" class="text-sm font-bold text-ink-gray-8 tabular-nums">{{ formatCurrency(rowAmount(row), currency) }}</span>
+            <span
+              v-if="showAmount"
+              class="text-sm font-bold text-ink-gray-8 tabular-nums"
+              >{{ formatCurrency(rowAmount(row), currency) }}</span
+            >
             <button
               v-if="!readOnly"
               type="button"
@@ -118,9 +155,14 @@
           />
         </div>
       </div>
-      <div v-if="rows.length && showAmount" class="flex items-center justify-between px-1 pt-1">
+      <div
+        v-if="rows.length && showAmount"
+        class="flex items-center justify-between px-1 pt-1"
+      >
         <span class="text-xs font-medium text-ink-gray-5">Total</span>
-        <span class="text-base font-bold text-ink-gray-9 tabular-nums">{{ formatCurrency(runningTotal, currency) }}</span>
+        <span class="text-base font-bold text-ink-gray-9 tabular-nums">{{
+          formatCurrency(runningTotal, currency)
+        }}</span>
       </div>
     </div>
 
@@ -140,7 +182,9 @@
       v-show="hint"
       :key="'hint-' + idx"
       class="mt-1 text-xs text-ink-gray-4 ml-1"
-    >Line {{ idx + 1 }}: {{ hint }}</p>
+    >
+      Line {{ idx + 1 }}: {{ hint }}
+    </p>
   </div>
 </template>
 
@@ -183,12 +227,14 @@ const columns = computed(() =>
 )
 
 // Mobile: additionally hide wideOnly columns.
-const mobileColumns = computed(() =>
-  columns.value.filter((f) => !f.wideOnly),
-)
+const mobileColumns = computed(() => columns.value.filter((f) => !f.wideOnly))
 
 const totalCols = computed(
-  () => columns.value.length + 1 + (showAmount.value ? 1 : 0) + (props.readOnly ? 0 : 1),
+  () =>
+    columns.value.length +
+    1 +
+    (showAmount.value ? 1 : 0) +
+    (props.readOnly ? 0 : 1),
 )
 
 function isNumericCol(col) {
@@ -202,11 +248,14 @@ function rowAmount(row) {
   return qty * rate
 }
 
-const runningTotal = computed(() => props.rows.reduce((sum, r) => sum + rowAmount(r), 0))
+const runningTotal = computed(() =>
+  props.rows.reduce((sum, r) => sum + rowAmount(r), 0),
+)
 
 function seedRow() {
   const row = {}
-  for (const f of props.columns || []) row[f.fieldname] = f.type === 'check' ? 0 : null
+  for (const f of props.columns || [])
+    row[f.fieldname] = f.type === 'check' ? 0 : null
   if (props.amountField) row[props.amountField] = 0
   return row
 }
@@ -226,7 +275,12 @@ function updateCell(idx, fieldname, value) {
   const updated = { ...next[idx], [fieldname]: value }
 
   // Mirror account_head → description when description is blank (ERPNext convention).
-  if (props.isTaxes && fieldname === 'account_head' && value && !updated['description']) {
+  if (
+    props.isTaxes &&
+    fieldname === 'account_head' &&
+    value &&
+    !updated['description']
+  ) {
     updated['description'] = value
   }
 
@@ -240,9 +294,16 @@ function updateCell(idx, fieldname, value) {
 
   // Line item amount: keep stored amount in sync so the saved doc carries a
   // value before server recompute.
-  if (props.amountField && (fieldname === props.qtyField || fieldname === props.rateField)) {
-    const qty = Number(fieldname === props.qtyField ? value : updated[props.qtyField] ?? 0)
-    const rate = Number(fieldname === props.rateField ? value : updated[props.rateField] ?? 0)
+  if (
+    props.amountField &&
+    (fieldname === props.qtyField || fieldname === props.rateField)
+  ) {
+    const qty = Number(
+      fieldname === props.qtyField ? value : updated[props.qtyField] ?? 0,
+    )
+    const rate = Number(
+      fieldname === props.rateField ? value : updated[props.rateField] ?? 0,
+    )
     updated[props.amountField] = qty * rate
   }
 
@@ -286,7 +347,8 @@ async function fetchItemPrice(idx, itemCode, rowSnapshot) {
       const next = props.rows.slice()
       const updated = { ...rowSnapshot }
       updated[props.rateField] = rows[0].price_list_rate
-      if ('item_name' in (rowSnapshot || {})) updated['item_name'] = rows[0].item_name || ''
+      if ('item_name' in (rowSnapshot || {}))
+        updated['item_name'] = rows[0].item_name || ''
       if (props.amountField) {
         const qty = Number(updated[props.qtyField] ?? 0)
         updated[props.amountField] = qty * rows[0].price_list_rate
@@ -304,24 +366,33 @@ async function fetchItemPrice(idx, itemCode, rowSnapshot) {
 }
 
 // FC-05: when priceList changes, re-fetch all rows that have an item_code.
-watch(() => props.priceList, debounce((newList) => {
-  if (!newList) return
-  props.rows.forEach((row, idx) => {
-    if (row['item_code']) fetchItemPrice(idx, row['item_code'], row)
-  })
-}, 300))
+watch(
+  () => props.priceList,
+  debounce((newList) => {
+    if (!newList) return
+    props.rows.forEach((row, idx) => {
+      if (row['item_code']) fetchItemPrice(idx, row['item_code'], row)
+    })
+  }, 300),
+)
 
 // FC-01: when netTotal changes, recompute On Net Total tax rows.
-watch(() => props.netTotal, (newNet) => {
-  if (!props.isTaxes || !newNet) return
-  const next = props.rows.map((row) => {
-    if ((row['charge_type'] || 'On Net Total') === 'On Net Total' && row['rate'] != null) {
-      return { ...row, tax_amount: (Number(row['rate']) / 100) * newNet }
-    }
-    return row
-  })
-  emit('update:rows', next)
-})
+watch(
+  () => props.netTotal,
+  (newNet) => {
+    if (!props.isTaxes || !newNet) return
+    const next = props.rows.map((row) => {
+      if (
+        (row['charge_type'] || 'On Net Total') === 'On Net Total' &&
+        row['rate'] != null
+      ) {
+        return { ...row, tax_amount: (Number(row['rate']) / 100) * newNet }
+      }
+      return row
+    })
+    emit('update:rows', next)
+  },
+)
 
 defineExpose({ runningTotal })
 </script>

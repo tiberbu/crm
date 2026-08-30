@@ -131,20 +131,20 @@
 :root {
   /* brand tints */
   --brand-tint-07: rgba(188, 24, 35, 0.07);
-  --brand-tint-10: rgba(188, 24, 35, 0.10);
-  --brand-ring:    rgba(188, 24, 35, 0.22);
-  --brand-shadow:  rgba(188, 24, 35, 0.24);
+  --brand-tint-10: rgba(188, 24, 35, 0.1);
+  --brand-ring: rgba(188, 24, 35, 0.22);
+  --brand-shadow: rgba(188, 24, 35, 0.24);
 
   /* glass */
-  --glass-bg:      rgba(255, 255, 255, 0.62);
-  --glass-strong:  rgba(255, 255, 255, 0.86);
-  --glass-border:  1px solid rgba(255, 255, 255, 0.60);
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-strong: rgba(255, 255, 255, 0.86);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.6);
   --glass-border-color: rgba(0, 0, 0, 0.08);
-  --glass-shadow:  0 20px 60px rgba(23, 23, 23, 0.12);
-  --glass-inset:   inset 0 1px 0 rgba(255, 255, 255, 0.70);
+  --glass-shadow: 0 20px 60px rgba(23, 23, 23, 0.12);
+  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 
   /* shape */
-  --radius:    18px;
+  --radius: 18px;
   --radius-sm: 11px;
 
   /* focus ring */
@@ -154,20 +154,20 @@
 [data-theme='dark'] {
   /* brand tints (use brightened dark-mode red) */
   --brand-tint-07: rgba(210, 58, 65, 0.08);
-  --brand-tint-10: rgba(210, 58, 65, 0.10);
-  --brand-ring:    rgba(232, 106, 112, 0.28);
-  --brand-shadow:  rgba(232, 106, 112, 0.20);
+  --brand-tint-10: rgba(210, 58, 65, 0.1);
+  --brand-ring: rgba(232, 106, 112, 0.28);
+  --brand-shadow: rgba(232, 106, 112, 0.2);
 
   /* glass (dark surfaces) */
-  --glass-bg:      rgba(30, 30, 30, 0.55);
-  --glass-strong:  rgba(24, 24, 24, 0.82);
-  --glass-border:  1px solid rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(30, 30, 30, 0.55);
+  --glass-strong: rgba(24, 24, 24, 0.82);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.08);
   --glass-border-color: rgba(255, 255, 255, 0.07);
-  --glass-shadow:  0 20px 60px rgba(0, 0, 0, 0.35);
-  --glass-inset:   inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --glass-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
   /* shape stays the same */
-  --radius:    18px;
+  --radius: 18px;
   --radius-sm: 11px;
 
   /* focus ring */
@@ -194,13 +194,20 @@ html {
   scrollbar-width: thin;
   scrollbar-color: var(--outline-gray-3) transparent;
 }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb {
   background: var(--outline-gray-3);
   border-radius: 3px;
 }
-::-webkit-scrollbar-thumb:hover { background: var(--outline-gray-4); }
+::-webkit-scrollbar-thumb:hover {
+  background: var(--outline-gray-4);
+}
 
 @layer components {
   .prose-f {
@@ -235,22 +242,25 @@ html {
 /* Finance Cockpit — flat glass card surface */
 .fc-glass-card {
   @apply rounded-xl border border-outline-gray-1 p-5;
-  background: var(--glass-bg, rgba(255, 255, 255, 0.80));
+  background: var(--glass-bg, rgba(255, 255, 255, 0.8));
   -webkit-backdrop-filter: blur(10px) saturate(130%);
   backdrop-filter: blur(10px) saturate(130%);
-  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
-  transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.15s ease,
+    border-color 0.15s ease;
 }
 .fc-glass-card:hover {
-  box-shadow: 0 4px 16px 0 rgba(0,0,0,0.08);
+  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
-  border-color: rgba(0,0,0,0.10);
+  border-color: rgba(0, 0, 0, 0.1);
 }
 [data-theme='dark'] .fc-glass-card {
   background: var(--glass-bg, rgba(28, 28, 34, 0.82));
-  box-shadow: 0 1px 3px 0 rgba(0,0,0,0.35);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.35);
 }
 [data-theme='dark'] .fc-glass-card:hover {
-  box-shadow: 0 4px 16px 0 rgba(0,0,0,0.45);
-  border-color: rgba(255,255,255,0.10);
+  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.45);
+  border-color: rgba(255, 255, 255, 0.1);
 }

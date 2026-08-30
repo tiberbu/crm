@@ -17,9 +17,7 @@ class TestQuoteLoadBatching(UnitTestCase):
 			frappe._dict({"name": "SINV-0001", "crm_quotation": "QUO-0001"}),
 		]
 
-		with patch(
-			"crm.api.quotes.frappe.get_list", side_effect=[quotes, invoices]
-		) as get_list:
+		with patch("crm.api.quotes.frappe.get_list", side_effect=[quotes, invoices]) as get_list:
 			result = list_quotes("DEAL-0001")
 
 		self.assertEqual(get_list.call_count, 2)

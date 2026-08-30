@@ -2,18 +2,38 @@
   <div class="mx-auto w-full max-w-sm px-4 py-8 text-center">
     <div
       class="mb-5 flex h-14 w-14 items-center justify-center rounded-full mx-auto"
-      style="background-color: color-mix(in srgb, var(--brand-primary) 15%, transparent)"
+      style="
+        background-color: color-mix(
+          in srgb,
+          var(--brand-primary) 15%,
+          transparent
+        );
+      "
     >
-      <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :style="{ color: 'var(--brand-primary)' }">
-        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-        <path d="M12 6v6l4 2"/>
+      <svg
+        class="h-6 w-6"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        :style="{ color: 'var(--brand-primary)' }"
+      >
+        <path
+          d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"
+        />
+        <path d="M12 6v6l4 2" />
       </svg>
     </div>
 
-    <h2 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">Verify your identity</h2>
+    <h2 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">
+      Verify your identity
+    </h2>
     <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
       Enter the 6-digit code sent to your
-      <span class="font-medium text-gray-700 dark:text-gray-300">{{ channelNoun }}</span>.
+      <span class="font-medium text-gray-700 dark:text-gray-300">{{
+        channelNoun
+      }}</span
+      >.
     </p>
 
     <!-- OTP input -->
@@ -21,14 +41,20 @@
       <input
         v-for="(_, i) in 6"
         :key="i"
-        :ref="el => { if (el) inputRefs[i] = el }"
+        :ref="
+          (el) => {
+            if (el) inputRefs[i] = el
+          }
+        "
         v-model="digits[i]"
         type="text"
         inputmode="numeric"
         maxlength="1"
         :class="[
           'h-12 w-10 rounded-lg border-2 bg-white text-center text-lg font-bold text-gray-900 transition focus:outline-none dark:bg-gray-800 dark:text-white',
-          errorMsg ? 'border-red-400 dark:border-red-600' : 'border-gray-200 focus:border-[color:var(--brand-primary)] dark:border-gray-700',
+          errorMsg
+            ? 'border-red-400 dark:border-red-600'
+            : 'border-gray-200 focus:border-[color:var(--brand-primary)] dark:border-gray-700',
         ]"
         @input="onInput(i, $event)"
         @keydown="onKeydown(i, $event)"
@@ -38,7 +64,9 @@
 
     <!-- Countdown -->
     <p class="mb-4 text-xs text-gray-400 dark:text-gray-500">
-      <span v-if="countdown > 0">Code expires in {{ formatCountdown(countdown) }}</span>
+      <span v-if="countdown > 0"
+        >Code expires in {{ formatCountdown(countdown) }}</span
+      >
       <span v-else class="text-red-500">Code expired.</span>
     </p>
 
@@ -59,7 +87,9 @@
     </button>
 
     <!-- Resend + back -->
-    <div class="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
+    <div
+      class="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500"
+    >
       <button
         :disabled="loading || resendLoading || countdown > 540"
         class="underline hover:text-gray-600 disabled:opacity-40 dark:hover:text-gray-300"
@@ -94,7 +124,10 @@
       class="mt-6 text-xs text-gray-400 dark:text-gray-500"
     >
       Need help? Contact
-      <a :href="'mailto:' + networkContactEmail" class="underline hover:text-gray-600 dark:hover:text-gray-300">
+      <a
+        :href="'mailto:' + networkContactEmail"
+        class="underline hover:text-gray-600 dark:hover:text-gray-300"
+      >
         {{ networkContactEmail }}
       </a>
     </p>
@@ -115,7 +148,9 @@ const props = defineProps({
 const emit = defineEmits(['verified', 'back'])
 
 const store = useOptInStore()
-const networkContactEmail = computed(() => store.networkConfig?.contact_email || '')
+const networkContactEmail = computed(
+  () => store.networkConfig?.contact_email || '',
+)
 
 // Delivery-channel display + switch affordance
 const channelNoun = computed(() =>
@@ -220,7 +255,9 @@ async function handleVerify() {
   }
 }
 
-const resendResource = createResource({ url: 'crm.api.optin.verify_prequalified' })
+const resendResource = createResource({
+  url: 'crm.api.optin.verify_prequalified',
+})
 
 async function handleResend() {
   resendLoading.value = true

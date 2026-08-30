@@ -168,13 +168,20 @@
         />
 
         <!-- Facilities tab -->
-        <div v-if="tab.label === 'Facilities'" class="flex flex-col gap-3 p-4 overflow-y-auto">
+        <div
+          v-if="tab.label === 'Facilities'"
+          class="flex flex-col gap-3 p-4 overflow-y-auto"
+        >
           <!-- Header -->
           <div class="flex items-center justify-between">
             <span class="text-p-sm-medium text-ink-gray-6">
-              {{ organization.doc.facilities?.length
-                  ? __('Linked Facilities ({0})', [organization.doc.facilities.length])
-                  : __('No facilities linked') }}
+              {{
+                organization.doc.facilities?.length
+                  ? __('Linked Facilities ({0})', [
+                      organization.doc.facilities.length,
+                    ])
+                  : __('No facilities linked')
+              }}
             </span>
             <Button
               v-if="hfrEnabled && !showAddPanel"
@@ -187,14 +194,26 @@
           </div>
 
           <!-- Inline add panel -->
-          <div v-if="showAddPanel"
-               class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3">
+          <div
+            v-if="showAddPanel"
+            class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3"
+          >
             <div class="flex items-center justify-between mb-2">
-              <span class="text-p-sm-medium text-ink-gray-7">{{ __('Search Health Facility Registry') }}</span>
-              <button class="text-ink-gray-4 hover:text-ink-gray-7 transition-colors"
-                      @click="showAddPanel = false">
-                <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M4 4l8 8M12 4l-8 8"/>
+              <span class="text-p-sm-medium text-ink-gray-7">{{
+                __('Search Health Facility Registry')
+              }}</span>
+              <button
+                class="text-ink-gray-4 hover:text-ink-gray-7 transition-colors"
+                @click="showAddPanel = false"
+              >
+                <svg
+                  class="size-4"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path d="M4 4l8 8M12 4l-8 8" />
                 </svg>
               </button>
             </div>
@@ -202,44 +221,58 @@
               :doc="organization.doc"
               childDoctype="CRM Org Facility"
               @row-added="onFacilityAdded"
+              @update:facilities="updateOrganizationFacilities"
             />
           </div>
 
           <!-- Saved facility rows -->
           <div
-            v-for="row in (organization.doc.facilities || [])"
+            v-for="row in organization.doc.facilities || []"
             :key="row.name || row.hfr_facility_id"
             class="rounded-lg border border-outline-gray-2 bg-surface-white dark:bg-surface-gray-2 px-3 py-2.5"
           >
             <div class="flex items-start gap-2">
               <div class="flex flex-col flex-1 min-w-0 gap-1">
-                <span class="text-p-sm-medium text-ink-gray-8 truncate">{{ row.facility_name }}</span>
+                <span class="text-p-sm-medium text-ink-gray-8 truncate">{{
+                  row.facility_name
+                }}</span>
                 <div class="flex items-center gap-1.5 flex-wrap">
-                  <span v-if="row.mfl_code"
-                        class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3
-                               text-ink-gray-6 rounded px-1.5 py-0.5">
+                  <span
+                    v-if="row.mfl_code"
+                    class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6 rounded px-1.5 py-0.5"
+                  >
                     MFL {{ row.mfl_code }}
                   </span>
-                  <span v-if="row.facility_level"
-                        class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3
-                               text-ink-gray-6 rounded px-1.5 py-0.5">
+                  <span
+                    v-if="row.facility_level"
+                    class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6 rounded px-1.5 py-0.5"
+                  >
                     {{ row.facility_level }}
                   </span>
                   <span v-if="row.hfr_county" class="text-p-xs text-ink-gray-5">
                     {{ row.hfr_county }}
                   </span>
-                  <span v-if="row.facility_owner_type" class="text-p-xs text-ink-gray-4">
+                  <span
+                    v-if="row.facility_owner_type"
+                    class="text-p-xs text-ink-gray-4"
+                  >
                     · {{ row.facility_owner_type }}
                   </span>
                 </div>
                 <div class="flex items-center gap-2 mt-0.5">
                   <span
                     class="text-p-xs rounded px-1.5 py-0.5"
-                    :class="row.hfr_sync_status === 'HFR Verified'
-                      ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                      : 'bg-surface-gray-2 text-ink-gray-5'"
-                  >{{ row.hfr_sync_status || 'Manual' }}</span>
-                  <span v-if="row.hfr_last_synced" class="text-p-xs text-ink-gray-4">
+                    :class="
+                      row.hfr_sync_status === 'HFR Verified'
+                        ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                        : 'bg-surface-gray-2 text-ink-gray-5'
+                    "
+                    >{{ row.hfr_sync_status || 'Manual' }}</span
+                  >
+                  <span
+                    v-if="row.hfr_last_synced"
+                    class="text-p-xs text-ink-gray-4"
+                  >
                     {{ __('Synced') }} {{ row.hfr_last_synced }}
                   </span>
                 </div>
@@ -373,7 +406,9 @@ const resyncRowResource = createResource({
   },
   onError(err) {
     resyncingRow.value = null
-    toast.error((err && err.messages && err.messages[0]) || __('Re-sync failed'))
+    toast.error(
+      (err && err.messages && err.messages[0]) || __('Re-sync failed'),
+    )
   },
 })
 
@@ -388,7 +423,7 @@ function resyncRow(rowName) {
 
 function removeRow(rowName) {
   organization.doc.facilities = (organization.doc.facilities || []).filter(
-    r => r.name !== rowName
+    (r) => r.name !== rowName,
   )
   organization.save.submit()
 }
@@ -396,6 +431,10 @@ function removeRow(rowName) {
 function onFacilityAdded() {
   showAddPanel.value = false
   organization.save.submit()
+}
+
+function updateOrganizationFacilities(facilities) {
+  organization.doc.facilities = facilities
 }
 
 function onEnriched() {
@@ -545,7 +584,11 @@ const tabs = computed(() => {
     },
   ]
   if (hfrEnabled.value) {
-    base.push({ label: 'Facilities', icon: null, count: computed(() => organization.doc?.facilities?.length || null) })
+    base.push({
+      label: 'Facilities',
+      icon: null,
+      count: computed(() => organization.doc?.facilities?.length || null),
+    })
   }
   return base
 })

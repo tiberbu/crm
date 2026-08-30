@@ -5,8 +5,8 @@
       <p class="text-xs font-medium text-ink-gray-5">New Document</p>
       <h2 class="text-xl font-bold text-ink-gray-9">{{ flow.label }}</h2>
       <p class="text-sm text-ink-gray-5 mt-0.5">
-        Pick a submitted {{ flow.sourceLabel }} to pre-fill a new {{ targetLabel }}. You can
-        review and edit every field before saving.
+        Pick a submitted {{ flow.sourceLabel }} to pre-fill a new
+        {{ targetLabel }}. You can review and edit every field before saving.
       </p>
     </div>
 
@@ -33,21 +33,36 @@
           @update:query="onQuery"
         />
         <p class="text-xs text-ink-gray-4 mt-2">
-          Only submitted {{ flow.sourceLabel }} records for the current company are listed.
+          Only submitted {{ flow.sourceLabel }} records for the current company
+          are listed.
         </p>
 
         <!-- Mapping in progress -->
-        <div v-if="mapping" class="flex items-center gap-2 text-sm text-ink-gray-5 mt-4">
-          <span class="w-4 h-4 border-2 border-outline-gray-4 border-t-transparent rounded-full animate-spin" />
+        <div
+          v-if="mapping"
+          class="flex items-center gap-2 text-sm text-ink-gray-5 mt-4"
+        >
+          <span
+            class="w-4 h-4 border-2 border-outline-gray-4 border-t-transparent rounded-full animate-spin"
+          />
           Preparing {{ targetLabel }} from {{ source }}…
         </div>
       </div>
     </SectionCard>
 
     <!-- Sticky action bar (Cancel only — advancing happens on select) -->
-    <div class="fixed bottom-0 inset-x-0 z-30 bg-surface-white/95 backdrop-blur border-t border-outline-gray-2">
-      <div class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-end gap-2">
-        <Button variant="outline" theme="gray" label="Cancel" @click="$emit('close')" />
+    <div
+      class="fixed bottom-0 inset-x-0 z-30 bg-surface-white/95 backdrop-blur border-t border-outline-gray-2"
+    >
+      <div
+        class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-end gap-2"
+      >
+        <Button
+          variant="outline"
+          theme="gray"
+          label="Cancel"
+          @click="$emit('close')"
+        />
       </div>
     </div>
   </div>
@@ -153,7 +168,10 @@ async function onSelect(val) {
   } catch (err) {
     // readableError already normalized inside useMappedDoc; surface the message.
     errorMsg.value =
-      (err && (Array.isArray(err.messages) ? err.messages.join('\n') : err.message)) ||
+      (err &&
+        (Array.isArray(err.messages)
+          ? err.messages.join('\n')
+          : err.message)) ||
       `Could not prepare a ${targetLabel.value} from ${val}.`
     source.value = null
   } finally {

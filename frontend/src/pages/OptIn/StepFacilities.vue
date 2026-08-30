@@ -2,7 +2,9 @@
   <div class="mx-auto w-full max-w-2xl px-4 py-8">
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h2 class="text-xl font-bold text-gray-900 dark:text-white">Your Facilities</h2>
+        <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+          Your Facilities
+        </h2>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Select the facilities you want to register for CareverseHIMS.
         </p>
@@ -29,14 +31,24 @@
       v-if="lockedCount > 0"
       class="mb-4 flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800/50"
     >
-      <svg class="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <svg
+        class="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
         <path d="M7 11V7a5 5 0 0 1 10 0v4" />
       </svg>
       <p class="text-xs leading-snug text-gray-500 dark:text-gray-400">
-        {{ lockedCount }} {{ lockedCount === 1 ? 'facility is' : 'facilities are' }} already quoted on an existing deal, so
-        {{ lockedCount === 1 ? "it's" : "they're" }} locked here. Contact your network coordinator to make changes to an
-        existing quote.
+        {{ lockedCount }}
+        {{ lockedCount === 1 ? 'facility is' : 'facilities are' }} already
+        quoted on an existing deal, so
+        {{ lockedCount === 1 ? "it's" : "they're" }} locked here. Contact your
+        network coordinator to make changes to an existing quote.
       </p>
     </div>
 
@@ -53,9 +65,11 @@
               ? 'cursor-pointer bg-white shadow-sm dark:bg-gray-800'
               : 'cursor-pointer border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600',
         ]"
-        :style="!facility.already_quoted && isSelected(facility.mfl_code)
-          ? 'border-color: var(--brand-primary); background-color: color-mix(in srgb, var(--brand-primary) 5%, transparent)'
-          : ''"
+        :style="
+          !facility.already_quoted && isSelected(facility.mfl_code)
+            ? 'border-color: var(--brand-primary); background-color: color-mix(in srgb, var(--brand-primary) 5%, transparent)'
+            : ''
+        "
         :aria-disabled="facility.already_quoted ? 'true' : 'false'"
         @click="facility.already_quoted ? null : toggleFacility(facility)"
       >
@@ -67,7 +81,15 @@
             class="flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
             title="Already quoted on an existing deal"
           >
-            <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              class="h-3 w-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
@@ -76,32 +98,69 @@
             v-else
             :class="[
               'flex h-5 w-5 items-center justify-center rounded-full border-2 transition-all',
-              isSelected(facility.mfl_code) ? 'border-transparent text-white' : 'border-gray-300 dark:border-gray-600',
+              isSelected(facility.mfl_code)
+                ? 'border-transparent text-white'
+                : 'border-gray-300 dark:border-gray-600',
             ]"
-            :style="isSelected(facility.mfl_code) ? 'background-color: var(--brand-primary)' : ''"
+            :style="
+              isSelected(facility.mfl_code)
+                ? 'background-color: var(--brand-primary)'
+                : ''
+            "
           >
-            <svg v-if="isSelected(facility.mfl_code)" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              v-if="isSelected(facility.mfl_code)"
+              class="h-3 w-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
           <!-- KEPH badge -->
-          <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', kephBadgeClass(facility.keph_level)]">
+          <span
+            :class="[
+              'rounded-full px-2 py-0.5 text-xs font-semibold',
+              kephBadgeClass(facility.keph_level),
+            ]"
+          >
             {{ facility.keph_level }}
           </span>
         </div>
 
         <!-- Facility name -->
-        <p :class="['font-semibold', facility.already_quoted ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white']">
+        <p
+          :class="[
+            'font-semibold',
+            facility.already_quoted
+              ? 'text-gray-500 dark:text-gray-400'
+              : 'text-gray-900 dark:text-white',
+          ]"
+        >
           {{ facility.facility_name }}
         </p>
-        <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">MFL: {{ facility.mfl_code }}</p>
+        <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+          MFL: {{ facility.mfl_code }}
+        </p>
 
         <!-- Already-quoted note -->
-        <div v-if="facility.already_quoted" class="mt-2 flex flex-wrap items-center gap-1.5">
-          <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+        <div
+          v-if="facility.already_quoted"
+          class="mt-2 flex flex-wrap items-center gap-1.5"
+        >
+          <span
+            class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+          >
             Already quoted
           </span>
-          <span v-if="facility.quoted_deal" class="text-[11px] text-gray-400 dark:text-gray-500">
+          <span
+            v-if="facility.quoted_deal"
+            class="text-[11px] text-gray-400 dark:text-gray-500"
+          >
             on deal {{ facility.quoted_deal }}
           </span>
         </div>
@@ -113,11 +172,16 @@
       v-if="facilities.length === 0"
       class="rounded-xl border border-gray-200 py-12 text-center dark:border-gray-700"
     >
-      <p class="text-sm text-gray-500 dark:text-gray-400">No facilities found for your account.</p>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        No facilities found for your account.
+      </p>
     </div>
 
     <!-- Min selection hint -->
-    <p v-if="selected.length === 0 && facilities.length > 0" class="mt-3 text-xs text-amber-600 dark:text-amber-400">
+    <p
+      v-if="selected.length === 0 && facilities.length > 0"
+      class="mt-3 text-xs text-amber-600 dark:text-amber-400"
+    >
       Please select at least one facility to continue.
     </p>
 
@@ -156,14 +220,17 @@ const store = useOptInStore()
 // Initialise from store (support back navigation). Never carry over a facility
 // that has since been locked (already quoted on a deal).
 const lockedCodes = computed(
-  () => new Set(props.facilities.filter(f => f.already_quoted).map(f => f.mfl_code))
+  () =>
+    new Set(
+      props.facilities.filter((f) => f.already_quoted).map((f) => f.mfl_code),
+    ),
 )
 const lockedCount = computed(() => lockedCodes.value.size)
 
 const selected = ref(
   (store.selectedFacilities || [])
-    .map(f => f.mfl_code)
-    .filter(code => !lockedCodes.value.has(code))
+    .map((f) => f.mfl_code)
+    .filter((code) => !lockedCodes.value.has(code)),
 )
 
 function isSelected(mflCode) {
@@ -182,8 +249,8 @@ function toggleFacility(facility) {
 
 function selectAll() {
   selected.value = props.facilities
-    .filter(f => !f.already_quoted)
-    .map(f => f.mfl_code)
+    .filter((f) => !f.already_quoted)
+    .map((f) => f.mfl_code)
 }
 
 function clearAll() {
@@ -191,7 +258,10 @@ function clearAll() {
 }
 
 function kephBadgeClass(keph) {
-  const level = (keph || '').replace(/^Level\s+/i, '').trim().toUpperCase()
+  const level = (keph || '')
+    .replace(/^Level\s+/i, '')
+    .trim()
+    .toUpperCase()
   if (['5', '6'].includes(level)) {
     return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
   }
@@ -202,7 +272,9 @@ function kephBadgeClass(keph) {
 }
 
 function handleContinue() {
-  const selectedFacilities = props.facilities.filter(f => selected.value.includes(f.mfl_code))
+  const selectedFacilities = props.facilities.filter((f) =>
+    selected.value.includes(f.mfl_code),
+  )
   store.setSelectedFacilities(selectedFacilities)
   emit('continue', selectedFacilities)
 }

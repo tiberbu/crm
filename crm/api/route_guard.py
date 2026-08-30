@@ -30,6 +30,7 @@ Portability: zero frontend coupling — only the ``hooks.py`` wiring differs per
 Runs on every request but exits immediately for non-desk paths (a couple of string
 comparisons, no DB or role lookup), so the overhead is negligible.
 """
+
 import frappe
 from werkzeug.routing import RequestRedirect
 
@@ -41,10 +42,16 @@ DESK_ADMIN_USER = "Administrator"
 
 # Finance Cockpit page path — allow through for Finance roles without full desk access
 FINANCE_COCKPIT_PATH = "/app/finance-cockpit"
-FINANCE_COCKPIT_ROLES = frozenset([
-    "Finance Manager", "AR Accountant", "AP Accountant",
-    "Sales Manager", "Partner RM", "System Manager",
-])
+FINANCE_COCKPIT_ROLES = frozenset(
+	[
+		"Finance Manager",
+		"AR Accountant",
+		"AP Accountant",
+		"Sales Manager",
+		"Partner RM",
+		"System Manager",
+	]
+)
 
 # site_config.json key holding EXTRA usernames permitted to reach Desk, e.g.:
 #   "desk_access_users": ["ops@example.com", "sre@example.com"]
@@ -67,7 +74,7 @@ def _desk_allowed_users() -> set:
 	allowed = {DESK_ADMIN_USER}
 	try:
 		configured = frappe.conf.get(DESK_ACCESS_USERS_KEY)
-		if isinstance(configured, (list, tuple)):
+		if isinstance(configured, list | tuple):
 			allowed.update(u.strip() for u in configured if isinstance(u, str) and u.strip())
 	except Exception:
 		# Any failure resolving config -> Administrator-only (fail-safe, deny-first).

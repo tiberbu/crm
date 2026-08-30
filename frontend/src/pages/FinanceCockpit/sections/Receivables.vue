@@ -1,7 +1,9 @@
 <template>
   <div class="fc-receivables space-y-4">
     <div class="flex items-center gap-2">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Receivables</h2>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        Receivables
+      </h2>
     </div>
 
     <!-- Sub-tab nav -->
@@ -16,7 +18,9 @@
             : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
         ]"
         @click="activeTab = tab.key"
-      >{{ tab.label }}</button>
+      >
+        {{ tab.label }}
+      </button>
     </div>
 
     <!-- Tab panels -->

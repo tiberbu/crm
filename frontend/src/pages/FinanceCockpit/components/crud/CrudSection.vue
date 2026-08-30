@@ -47,17 +47,27 @@
 
       <!-- Loading -->
       <div v-if="listLoading" class="space-y-2">
-        <div v-for="n in 6" :key="n" class="h-11 bg-surface-gray-2 rounded-lg animate-pulse" />
+        <div
+          v-for="n in 6"
+          :key="n"
+          class="h-11 bg-surface-gray-2 rounded-lg animate-pulse"
+        />
       </div>
 
       <!-- Error -->
-      <div v-else-if="listError" class="text-sm text-red-600 dark:text-red-400 py-6 text-center">
+      <div
+        v-else-if="listError"
+        class="text-sm text-red-600 dark:text-red-400 py-6 text-center"
+      >
         Failed to load data.
         <button class="underline ml-1" @click="refetch">Retry</button>
       </div>
 
       <!-- Empty -->
-      <div v-else-if="!rows.length" class="text-center py-12 text-sm text-ink-gray-4">
+      <div
+        v-else-if="!rows.length"
+        class="text-center py-12 text-sm text-ink-gray-4"
+      >
         {{ emptyLabel }}
       </div>
 
@@ -76,17 +86,27 @@
             <span
               v-else-if="column.type === 'currency'"
               class="font-medium text-ink-gray-8 tabular-nums"
-            >{{ formatCurrency(item, row.currency) }}</span>
-            <span v-else-if="column.type === 'date'" class="text-ink-gray-6">{{ item || '—' }}</span>
-            <span v-else-if="column.type === 'timeago'" class="flex flex-col leading-tight">
-              <span class="font-medium text-ink-gray-8">{{ timeAgo(item) }}</span>
+              >{{ formatCurrency(item, row.currency) }}</span
+            >
+            <span v-else-if="column.type === 'date'" class="text-ink-gray-6">{{
+              item || '—'
+            }}</span>
+            <span
+              v-else-if="column.type === 'timeago'"
+              class="flex flex-col leading-tight"
+            >
+              <span class="font-medium text-ink-gray-8">{{
+                timeAgo(item)
+              }}</span>
               <span class="text-xs text-ink-gray-4">{{ item || '' }}</span>
             </span>
             <button
               v-else-if="column.type === 'print-action'"
               class="text-xs text-ink-gray-5 hover:text-ink-gray-8 px-2 py-0.5 rounded border border-outline-gray-2 hover:bg-surface-gray-2 transition-colors"
               @click.stop="printRow(row)"
-            >Print</button>
+            >
+              Print
+            </button>
             <span v-else class="text-ink-gray-7">{{ item ?? '—' }}</span>
           </template>
         </ListView>
@@ -102,11 +122,23 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
-                <p class="font-medium text-ink-gray-8 text-sm truncate">{{ row[primaryKey] || row.name }}</p>
-                <p v-if="secondaryKey" class="text-xs text-ink-gray-5 mt-0.5 truncate">{{ row[secondaryKey] }}</p>
+                <p class="font-medium text-ink-gray-8 text-sm truncate">
+                  {{ row[primaryKey] || row.name }}
+                </p>
+                <p
+                  v-if="secondaryKey"
+                  class="text-xs text-ink-gray-5 mt-0.5 truncate"
+                >
+                  {{ row[secondaryKey] }}
+                </p>
               </div>
               <div class="text-right flex-shrink-0 space-y-1">
-                <p v-if="amountKey" class="font-semibold text-ink-gray-8 text-sm tabular-nums">{{ formatCurrency(row[amountKey], row.currency) }}</p>
+                <p
+                  v-if="amountKey"
+                  class="font-semibold text-ink-gray-8 text-sm tabular-nums"
+                >
+                  {{ formatCurrency(row[amountKey], row.currency) }}
+                </p>
                 <StatusBadge v-if="statusKey" :status="row[statusKey]" />
               </div>
             </div>
@@ -114,10 +146,27 @@
         </div>
 
         <!-- Pagination -->
-        <div v-if="rows.length === pageSize || page > 0" class="flex items-center justify-end gap-2 mt-3">
-          <Button variant="outline" theme="gray" size="sm" :disabled="page <= 0" @click="onPage(page - 1)">Previous</Button>
+        <div
+          v-if="rows.length === pageSize || page > 0"
+          class="flex items-center justify-end gap-2 mt-3"
+        >
+          <Button
+            variant="outline"
+            theme="gray"
+            size="sm"
+            :disabled="page <= 0"
+            @click="onPage(page - 1)"
+            >Previous</Button
+          >
           <span class="text-xs text-ink-gray-5">Page {{ page + 1 }}</span>
-          <Button variant="outline" theme="gray" size="sm" :disabled="rows.length < pageSize" @click="onPage(page + 1)">Next</Button>
+          <Button
+            variant="outline"
+            theme="gray"
+            size="sm"
+            :disabled="rows.length < pageSize"
+            @click="onPage(page + 1)"
+            >Next</Button
+          >
         </div>
       </template>
     </template>
@@ -194,7 +243,15 @@ const props = defineProps({
   // create roles. Sections whose create goes through a custom endpoint (e.g.
   // Payments -> create_customer_payment, AR-gated) pass their own list so the
   // button's enabled state matches the backend and never shows a false-positive.
-  createRoles: { type: Array, default: () => ['System Manager', 'Finance Manager', 'Accounts Manager', 'Accounts User'] },
+  createRoles: {
+    type: Array,
+    default: () => [
+      'System Manager',
+      'Finance Manager',
+      'Accounts Manager',
+      'Accounts User',
+    ],
+  },
 })
 
 const { getRoles, isAdministrator } = useBoot()
@@ -213,7 +270,11 @@ const seedDoc = ref(null)
 const listResource = createResource({
   url: props.listResourceUrl,
   makeParams() {
-    return { ...props.listParams(), page: page.value, page_size: props.pageSize }
+    return {
+      ...props.listParams(),
+      page: page.value,
+      page_size: props.pageSize,
+    }
   },
   auto: true,
 })
@@ -251,12 +312,17 @@ const listOptions = computed(() => ({
 // Mobile card key hints derived from columns.
 const primaryKey = computed(() => props.columns[0]?.key || 'name')
 const secondaryKey = computed(() => props.columns[1]?.key || '')
-const amountKey = computed(() => props.columns.find((c) => c.type === 'currency')?.key || '')
-const statusKey = computed(() => props.columns.find((c) => c.type === 'status')?.key || '')
+const amountKey = computed(
+  () => props.columns.find((c) => c.type === 'currency')?.key || '',
+)
+const statusKey = computed(
+  () => props.columns.find((c) => c.type === 'status')?.key || '',
+)
 
 const roles = computed(() => getRoles())
 const canCreate = computed(
-  () => isAdministrator() || props.createRoles.some((r) => roles.value.includes(r)),
+  () =>
+    isAdministrator() || props.createRoles.some((r) => roles.value.includes(r)),
 )
 
 // Breadcrumb trail: Title / Record / Edit — routeless buttons (standalone page).
@@ -265,13 +331,19 @@ const breadcrumbs = computed(() => {
   if (mode.value === 'view' && activeName.value) {
     trail.push({ label: activeName.value, onClick: () => {} })
   } else if (mode.value === 'edit' && activeName.value) {
-    trail.push({ label: activeName.value, onClick: () => goView({ name: activeName.value }) })
+    trail.push({
+      label: activeName.value,
+      onClick: () => goView({ name: activeName.value }),
+    })
     trail.push({ label: 'Edit', onClick: () => {} })
   } else if (mode.value === 'createFrom' && activeFlow.value) {
     trail.push({ label: activeFlow.value.label, onClick: () => {} })
   } else if (mode.value === 'new') {
     // Seeded new docs (Create From) keep the flow label in the trail for context.
-    trail.push({ label: seedDoc.value && activeFlow.value ? activeFlow.value.label : 'New', onClick: () => {} })
+    trail.push({
+      label: seedDoc.value && activeFlow.value ? activeFlow.value.label : 'New',
+      onClick: () => {},
+    })
   }
   return trail
 })
@@ -279,11 +351,15 @@ const breadcrumbs = computed(() => {
 function timeAgo(dateStr) {
   if (!dateStr) return '—'
   const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
-  if (diff < 60)        return 'just now'
-  if (diff < 3600)      return Math.floor(diff / 60) + ' min ago'
-  if (diff < 86400)     return Math.floor(diff / 3600) + ' hr ago'
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return Math.floor(diff / 60) + ' min ago'
+  if (diff < 86400) return Math.floor(diff / 3600) + ' hr ago'
   if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' d ago'
-  return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(dateStr).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
 function refetch() {
@@ -394,7 +470,7 @@ function printAll() {
     </style></head><body>
     <h2>${title}</h2>
     <table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>
-    <script>window.onload=()=>{ window.print(); window.close() }<\/script>
+    <script>window.onload=()=>{ window.print(); window.close() }</scr${'ipt'}>
     </body></html>`
   const win = window.open('', '_blank')
   win.document.write(html)
@@ -412,5 +488,10 @@ function onMutated() {
   goList()
 }
 
-defineExpose({ refetch, resetPage: () => { page.value = 0 } })
+defineExpose({
+  refetch,
+  resetPage: () => {
+    page.value = 0
+  },
+})
 </script>

@@ -9,6 +9,7 @@ Reached from the login "Forgot password?" link and from an expired-password redi
 (``…/update-password?key=…&password_expired=true``) — the login redirect guard already
 whitelists ``/update-password`` so the key survives.
 """
+
 import frappe
 import frappe.sessions  # ensure frappe.sessions is resolvable for get_csrf_token()
 from frappe import _

@@ -11,9 +11,11 @@
                 ? 'text-white'
                 : 'border-gray-200 bg-white text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500',
           ]"
-          :style="isActive(idx)
-            ? 'border-color: var(--brand-primary); background-color: var(--brand-primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-primary) 16%, transparent)'
-            : ''"
+          :style="
+            isActive(idx)
+              ? 'border-color: var(--brand-primary); background-color: var(--brand-primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-primary) 16%, transparent)'
+              : ''
+          "
         >
           <svg
             class="h-4 w-4"
@@ -29,7 +31,9 @@
         <span
           :class="[
             'mt-1.5 hidden text-center text-xs sm:block',
-            isActive(idx) ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500',
+            isActive(idx)
+              ? 'font-semibold text-gray-900 dark:text-gray-100'
+              : 'text-gray-400 dark:text-gray-500',
           ]"
         >
           {{ label }}
@@ -39,7 +43,9 @@
         v-if="idx < steps.length - 1"
         :class="[
           'h-0.5 w-6 flex-shrink-0 transition-colors duration-300 sm:w-10',
-          isComplete(idx) ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-200 dark:bg-gray-700',
+          isComplete(idx)
+            ? 'bg-green-500 dark:bg-green-400'
+            : 'bg-gray-200 dark:bg-gray-700',
         ]"
       />
     </template>
@@ -51,7 +57,14 @@ const props = defineProps({
   activeStep: { type: Number, default: 1 },
 })
 
-const steps = ['Details', 'Verify', 'Facilities', 'Pricing', 'Review', 'Confirm']
+const steps = [
+  'Details',
+  'Verify',
+  'Facilities',
+  'Pricing',
+  'Review',
+  'Confirm',
+]
 
 // Premium per-step glyphs (Lucide-style). Rendered into the <svg> via v-html so each
 // step reads at a glance instead of a bare number; completed steps show a checkmark.

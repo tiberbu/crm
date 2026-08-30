@@ -1,8 +1,5 @@
 <template>
-  <div
-    class="min-h-screen bg-gray-50 dark:bg-gray-950"
-    :style="brandStyle"
-  >
+  <div class="min-h-screen bg-gray-50 dark:bg-gray-950" :style="brandStyle">
     <!-- Wrapper card (steps 1-6): a bounded, viewport-fitting column — fixed header,
          scrollable body — so the wizard never grows past one screen. -->
     <div
@@ -10,7 +7,10 @@
       class="mx-auto flex h-screen max-w-2xl flex-col overflow-hidden bg-white shadow-xl dark:bg-gray-900 md:my-[4vh] md:h-[92vh] md:rounded-2xl"
     >
       <!-- Card header: logo + progress bar -->
-      <div v-if="store.step > 0 && store.step < 7" class="shrink-0 border-b border-gray-100 px-4 py-5 dark:border-gray-800">
+      <div
+        v-if="store.step > 0 && store.step < 7"
+        class="shrink-0 border-b border-gray-100 px-4 py-5 dark:border-gray-800"
+      >
         <!-- Network logo + name, centered at the top of the wizard -->
         <div class="mb-4 flex flex-col items-center gap-2 text-center">
           <img
@@ -19,7 +19,9 @@
             class="h-10 w-auto object-contain"
             :alt="networkConfig.display_name || ''"
           />
-          <span class="text-base font-semibold text-gray-800 dark:text-gray-200">
+          <span
+            class="text-base font-semibold text-gray-800 dark:text-gray-200"
+          >
             {{ networkConfig ? networkConfig.display_name : 'CareverseHIMS' }}
           </span>
         </div>
@@ -105,8 +107,13 @@
     />
 
     <!-- Step 7: Progress (full page, centred) -->
-    <div v-if="store.step === 7" class="flex min-h-screen items-center justify-center px-4">
-      <div class="w-full max-w-sm bg-white rounded-xl shadow-lg py-6 dark:bg-gray-900">
+    <div
+      v-if="store.step === 7"
+      class="flex min-h-screen items-center justify-center px-4"
+    >
+      <div
+        class="w-full max-w-sm bg-white rounded-xl shadow-lg py-6 dark:bg-gray-900"
+      >
         <StepProgress
           :network-slug="networkSlug"
           :deal-invitation="dealInvitation"
@@ -116,29 +123,53 @@
     </div>
 
     <!-- Step 8: Success (full page, centred) -->
-    <div v-if="store.step === 8" class="flex min-h-screen items-center justify-center px-4">
-      <div class="w-full max-w-sm bg-white rounded-xl shadow-lg py-6 dark:bg-gray-900">
+    <div
+      v-if="store.step === 8"
+      class="flex min-h-screen items-center justify-center px-4"
+    >
+      <div
+        class="w-full max-w-sm bg-white rounded-xl shadow-lg py-6 dark:bg-gray-900"
+      >
         <StepSuccess />
       </div>
     </div>
 
     <!-- Partial saved interstitial -->
-    <div v-if="showPartialSaved" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-      <div class="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-xl dark:bg-gray-800">
+    <div
+      v-if="showPartialSaved"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+    >
+      <div
+        class="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-xl dark:bg-gray-800"
+      >
         <div
           class="mb-4 flex h-12 w-12 items-center justify-center rounded-full mx-auto"
           style="background-color: var(--brand-primary)"
         >
-          <svg class="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
+          <svg
+            class="h-6 w-6 text-white"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
           </svg>
         </div>
-        <h3 class="mb-2 font-bold text-gray-900 dark:text-white">Progress saved!</h3>
+        <h3 class="mb-2 font-bold text-gray-900 dark:text-white">
+          Progress saved!
+        </h3>
         <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">
-          We've sent a resume link to your email address. You can close this page and continue later.
+          We've sent a resume link to your email address. You can close this
+          page and continue later.
         </p>
-        <p v-if="partialRef" class="mb-4 font-mono text-xs text-gray-400 dark:text-gray-500">
+        <p
+          v-if="partialRef"
+          class="mb-4 font-mono text-xs text-gray-400 dark:text-gray-500"
+        >
           Reference: {{ partialRef }}
         </p>
         <button
@@ -152,7 +183,10 @@
     </div>
 
     <!-- Settings loading error -->
-    <div v-if="settingsError" class="fixed bottom-4 right-4 z-50 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 shadow-lg dark:bg-amber-900/20 dark:text-amber-400">
+    <div
+      v-if="settingsError"
+      class="fixed bottom-4 right-4 z-50 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 shadow-lg dark:bg-amber-900/20 dark:text-amber-400"
+    >
       Could not load network configuration. Default branding applied.
     </div>
   </div>
@@ -192,13 +226,14 @@ const DEFAULT_BRAND = '#C0101A'
 
 // Derive brand style from network config
 const brandStyle = computed(() => {
-  const color = (networkConfig.value && networkConfig.value.primary_colour) || DEFAULT_BRAND
+  const color =
+    (networkConfig.value && networkConfig.value.primary_colour) || DEFAULT_BRAND
   return { '--brand-primary': color }
 })
 
 // Show card wrapper for steps 1–6
-const showCard = computed(() =>
-  (store.step >= 1 && store.step <= 6) || store.showOtpGate
+const showCard = computed(
+  () => (store.step >= 1 && store.step <= 6) || store.showOtpGate,
 )
 
 // Map wizard step to progress bar step (1-6)

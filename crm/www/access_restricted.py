@@ -8,6 +8,7 @@ Route note: this ``.py`` file (underscore) pairs with ``access-restricted.html``
 URL is ``/access-restricted`` — matching ``UNAUTHORIZED_ROUTE`` in the guard, and sharing
 NO prefix with ``/app``/``/desk`` (redirect-loop safety).
 """
+
 import frappe
 
 no_cache = True

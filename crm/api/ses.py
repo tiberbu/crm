@@ -58,12 +58,8 @@ def get_settings() -> dict:
 		"use_explicit_credentials": bool(doc.get("use_explicit_credentials")),
 		"access_key_id": doc.get("access_key_id") or "",
 		# passwords: return a boolean so the UI knows whether they are set
-		"has_secret_access_key": bool(
-			doc.get_password("secret_access_key", raise_exception=False)
-		),
-		"has_session_token": bool(
-			doc.get_password("session_token", raise_exception=False)
-		),
+		"has_secret_access_key": bool(doc.get_password("secret_access_key", raise_exception=False)),
+		"has_session_token": bool(doc.get_password("session_token", raise_exception=False)),
 		# inbound (IMAP)
 		"inbound_email_account": doc.get("inbound_email_account") or "",
 		"enable_incoming": bool(doc.get("enable_incoming")),
@@ -106,6 +102,7 @@ def update_settings(settings) -> dict:
 
 	# Invalidate the per-request SES config cache so the next send uses new values
 	from crm.email.ses_runtime import clear_ses_runtime_config_cache
+
 	clear_ses_runtime_config_cache()
 
 	return get_settings()

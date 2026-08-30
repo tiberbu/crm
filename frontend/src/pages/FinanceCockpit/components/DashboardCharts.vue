@@ -2,12 +2,17 @@
   <div class="fc-dashboard-charts space-y-4 mt-6">
     <!-- Loading skeleton -->
     <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div v-for="n in 4" :key="n" class="fc-glass-card h-48 animate-pulse !p-0" />
+      <div
+        v-for="n in 4"
+        :key="n"
+        class="fc-glass-card h-48 animate-pulse !p-0"
+      />
     </div>
 
     <!-- Error -->
     <div v-else-if="error" class="text-sm text-ink-red-6 py-2">
-      Failed to load chart data. <button class="underline" @click="refetch">Retry</button>
+      Failed to load chart data.
+      <button class="underline" @click="refetch">Retry</button>
     </div>
 
     <!-- Charts grid -->
@@ -28,7 +33,9 @@
       </div>
 
       <!-- P&L Summary -->
-      <div :class="['fc-glass-card', !chartData.ap_aging ? 'md:col-span-1' : '']">
+      <div
+        :class="['fc-glass-card', !chartData.ap_aging ? 'md:col-span-1' : '']"
+      >
         <PlSummaryBar :data="chartData.pl" />
       </div>
     </div>
@@ -62,8 +69,13 @@ const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
 const chartData = computed(() => resource.data || null)
 
-function refetch() { resource.fetch() }
+function refetch() {
+  resource.fetch()
+}
 
 watch(company, () => resource.fetch())
-watch(() => props.period, () => resource.fetch())
+watch(
+  () => props.period,
+  () => resource.fetch(),
+)
 </script>

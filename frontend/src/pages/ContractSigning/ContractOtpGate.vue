@@ -2,9 +2,13 @@
   <div class="mx-auto w-full max-w-sm px-4 py-8 text-center">
     <!-- Loading state while requesting OTP -->
     <div v-if="requestingOtp" class="py-8 text-center">
-      <div class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-gray-200 dark:border-gray-700"
-        :style="{ borderTopColor: 'var(--brand-primary, #bc1823)' }"></div>
-      <p class="text-sm text-gray-500 dark:text-gray-400">Sending verification code…</p>
+      <div
+        class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-gray-200 dark:border-gray-700"
+        :style="{ borderTopColor: 'var(--brand-primary, #bc1823)' }"
+      ></div>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        Sending verification code…
+      </p>
     </div>
 
     <!-- Fatal error (expired / tampered invitation) -->
@@ -12,13 +16,21 @@
       <div
         class="mb-5 flex h-14 w-14 items-center justify-center rounded-full mx-auto bg-red-50 dark:bg-red-900/20"
       >
-        <svg class="h-6 w-6 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"/>
-          <line x1="12" y1="8" x2="12" y2="12"/>
-          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        <svg
+          class="h-6 w-6 text-red-500"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
       </div>
-      <h3 class="mb-2 text-lg font-semibold text-gray-900 dark:text-white">{{ fatalHeading }}</h3>
+      <h3 class="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
+        {{ fatalHeading }}
+      </h3>
       <p class="text-sm text-gray-500 dark:text-gray-400">{{ fatalError }}</p>
       <p class="mt-4 text-xs text-gray-400 dark:text-gray-500">
         {{ fatalHint }}
@@ -29,15 +41,32 @@
     <template v-else>
       <div
         class="mb-5 flex h-14 w-14 items-center justify-center rounded-full mx-auto"
-        style="background-color: color-mix(in srgb, var(--brand-primary, #bc1823) 15%, transparent)"
+        style="
+          background-color: color-mix(
+            in srgb,
+            var(--brand-primary, #bc1823) 15%,
+            transparent
+          );
+        "
       >
-        <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :style="{ color: 'var(--brand-primary, #bc1823)' }">
-          <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-          <path d="M12 6v6l4 2"/>
+        <svg
+          class="h-6 w-6"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          :style="{ color: 'var(--brand-primary, #bc1823)' }"
+        >
+          <path
+            d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"
+          />
+          <path d="M12 6v6l4 2" />
         </svg>
       </div>
 
-      <h2 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">Verify your identity</h2>
+      <h2 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">
+        Verify your identity
+      </h2>
       <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
         Enter the 6-digit code sent to your registered email address.
       </p>
@@ -47,7 +76,11 @@
         <input
           v-for="(_, i) in 6"
           :key="i"
-          :ref="el => { if (el) inputRefs[i] = el }"
+          :ref="
+            (el) => {
+              if (el) inputRefs[i] = el
+            }
+          "
           v-model="digits[i]"
           type="text"
           inputmode="numeric"
@@ -66,7 +99,9 @@
 
       <!-- Countdown -->
       <p class="mb-4 text-xs text-gray-400 dark:text-gray-500">
-        <span v-if="countdown > 0">Code expires in {{ formatCountdown(countdown) }}</span>
+        <span v-if="countdown > 0"
+          >Code expires in {{ formatCountdown(countdown) }}</span
+        >
         <span v-else class="text-red-500">Code expired.</span>
       </p>
 
@@ -87,7 +122,9 @@
       </button>
 
       <!-- Resend link -->
-      <div class="flex items-center justify-center text-xs text-gray-400 dark:text-gray-500">
+      <div
+        class="flex items-center justify-center text-xs text-gray-400 dark:text-gray-500"
+      >
         <button
           :disabled="loading || resendLoading || countdown > 540"
           class="underline hover:text-gray-600 disabled:opacity-40 dark:hover:text-gray-300"
@@ -122,7 +159,9 @@ const errorMsg = ref('')
 const requestingOtp = ref(true)
 const fatalError = ref('')
 const fatalHeading = ref('Link Invalid or Expired')
-const fatalHint = ref('Please request a new signing link from the contract issuer.')
+const fatalHint = ref(
+  'Please request a new signing link from the contract issuer.',
+)
 
 // 10-minute countdown
 const countdown = ref(600)
@@ -134,8 +173,12 @@ const otpValue = computed(() => digits.value.join(''))
 // Resources
 // ---------------------------------------------------------------------------
 
-const requestOtpResource = createResource({ url: 'crm.api.contracts.request_otp' })
-const verifyOtpResource = createResource({ url: 'crm.api.contracts.verify_otp' })
+const requestOtpResource = createResource({
+  url: 'crm.api.contracts.request_otp',
+})
+const verifyOtpResource = createResource({
+  url: 'crm.api.contracts.verify_otp',
+})
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -168,13 +211,16 @@ async function doRequestOtp() {
   } catch (err) {
     if (err?.exc_type === 'AuthenticationError') {
       fatalHeading.value = 'Link Invalid or Expired'
-      fatalHint.value = 'Please request a new signing link from the contract issuer.'
+      fatalHint.value =
+        'Please request a new signing link from the contract issuer.'
       fatalError.value = 'This signing link has expired or is invalid.'
     } else {
       // Network / CSRF / server error — NOT an expired link.
       fatalHeading.value = 'Something went wrong'
-      fatalHint.value = 'Please refresh the page and try again, or contact the contract issuer.'
-      fatalError.value = err?.message || 'Failed to send verification code. Please try again.'
+      fatalHint.value =
+        'Please refresh the page and try again, or contact the contract issuer.'
+      fatalError.value =
+        err?.message || 'Failed to send verification code. Please try again.'
     }
   } finally {
     requestingOtp.value = false

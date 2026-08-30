@@ -2,21 +2,33 @@
   <div class="fc-field">
     <!-- Read-only display -->
     <template v-if="isReadOnly">
-      <label v-if="showLabel" class="block text-xs font-medium text-ink-gray-6 mb-1">{{ field.label }}</label>
+      <label
+        v-if="showLabel"
+        class="block text-xs font-medium text-ink-gray-6 mb-1"
+        >{{ field.label }}</label
+      >
       <div
         class="text-sm text-ink-gray-8 px-3 py-2 rounded-lg bg-surface-gray-2 border border-outline-gray-1 min-h-[36px] flex items-center"
         :class="isNumeric ? 'justify-end tabular-nums' : ''"
       >
-        <template v-if="field.type === 'check'">{{ modelValue ? 'Yes' : 'No' }}</template>
-        <template v-else-if="field.type === 'currency'">{{ formatCurrency(modelValue, currency) }}</template>
+        <template v-if="field.type === 'check'">{{
+          modelValue ? 'Yes' : 'No'
+        }}</template>
+        <template v-else-if="field.type === 'currency'">{{
+          formatCurrency(modelValue, currency)
+        }}</template>
         <template v-else>{{ displayValue }}</template>
       </div>
     </template>
 
     <!-- Link -> Combobox (native server search) -->
     <div v-else-if="field.type === 'link'">
-      <label v-if="showLabel" class="block text-xs font-medium text-ink-gray-6 mb-1">
-        {{ field.label }}<span v-if="field.required" class="text-red-500 ml-0.5">*</span>
+      <label
+        v-if="showLabel"
+        class="block text-xs font-medium text-ink-gray-6 mb-1"
+      >
+        {{ field.label
+        }}<span v-if="field.required" class="text-red-500 ml-0.5">*</span>
       </label>
       <Combobox
         :model-value="modelValue"
@@ -30,8 +42,12 @@
 
     <!-- Date -> DatePicker -->
     <div v-else-if="field.type === 'date'">
-      <label v-if="showLabel" class="block text-xs font-medium text-ink-gray-6 mb-1">
-        {{ field.label }}<span v-if="field.required" class="text-red-500 ml-0.5">*</span>
+      <label
+        v-if="showLabel"
+        class="block text-xs font-medium text-ink-gray-6 mb-1"
+      >
+        {{ field.label
+        }}<span v-if="field.required" class="text-red-500 ml-0.5">*</span>
       </label>
       <DatePicker
         :model-value="modelValue || ''"
@@ -42,11 +58,19 @@
 
     <!-- Currency: symbol prefix badge in edit mode -->
     <div v-else-if="field.type === 'currency'" :class="showLabel ? '' : ''">
-      <label v-if="showLabel" class="block text-xs font-medium text-ink-gray-6 mb-1">
-        {{ field.label }}<span v-if="field.required" class="text-red-500 ml-0.5">*</span>
+      <label
+        v-if="showLabel"
+        class="block text-xs font-medium text-ink-gray-6 mb-1"
+      >
+        {{ field.label
+        }}<span v-if="field.required" class="text-red-500 ml-0.5">*</span>
       </label>
       <div class="flex items-center gap-1.5">
-        <span v-if="currency" class="text-xs font-medium text-ink-gray-5 w-8 text-right flex-shrink-0">{{ currency }}</span>
+        <span
+          v-if="currency"
+          class="text-xs font-medium text-ink-gray-5 w-8 text-right flex-shrink-0"
+          >{{ currency }}</span
+        >
         <FormControl
           type="number"
           :required="field.required"
@@ -87,7 +111,7 @@
       type="checkbox"
       :label="field.label"
       :model-value="!!modelValue"
-      @update:model-value="v => emitValue(v ? 1 : 0)"
+      @update:model-value="(v) => emitValue(v ? 1 : 0)"
     />
 
     <!-- Textarea -->
@@ -125,7 +149,13 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { FormControl, Combobox, DatePicker, createResource, debounce } from 'frappe-ui'
+import {
+  FormControl,
+  Combobox,
+  DatePicker,
+  createResource,
+  debounce,
+} from 'frappe-ui'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { isNumericType } from '../../constants/formLayouts.js'
 
@@ -186,14 +216,17 @@ const linkResource = createResource({ url: 'frappe.client.get_list' })
 
 // Effective target doctype: the parent-resolved linkDoctype (Dynamic Link)
 // takes precedence; otherwise the field's static `options`.
-const linkTarget = computed(() => props.linkDoctype || props.field.options || '')
+const linkTarget = computed(
+  () => props.linkDoctype || props.field.options || '',
+)
 
 // Keep the current value present as an option so its label renders even
 // before a search populates the list.
 const linkOptions = computed(() => {
   const opts = linkResults.value.slice()
   const v = props.modelValue
-  if (v && !opts.some((o) => o.value === v)) opts.unshift({ label: v, value: v })
+  if (v && !opts.some((o) => o.value === v))
+    opts.unshift({ label: v, value: v })
   return opts
 })
 
@@ -217,7 +250,10 @@ const onLinkQuery = debounce(async (query) => {
       order_by: 'modified desc',
     })
     if (req !== linkReq) return
-    linkResults.value = (rows || []).map((r) => ({ label: r.name, value: r.name }))
+    linkResults.value = (rows || []).map((r) => ({
+      label: r.name,
+      value: r.name,
+    }))
   } catch {
     if (req === linkReq) linkResults.value = []
   }

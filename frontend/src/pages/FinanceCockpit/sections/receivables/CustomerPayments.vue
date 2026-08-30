@@ -7,7 +7,12 @@
     empty-label="No payments found."
     :page="page"
     :page-size="20"
-    @update:page="p => { page = p; refetch() }"
+    @update:page="
+      (p) => {
+        page = p
+        refetch()
+      }
+    "
     @retry="refetch"
   />
 </template>
@@ -26,7 +31,12 @@ const columns = [
   { key: 'party', label: 'Customer' },
   { key: 'posting_date', label: 'Date', type: 'date' },
   { key: 'paid_amount', label: 'Paid', type: 'currency', align: 'right' },
-  { key: 'unallocated_amount', label: 'Unallocated', type: 'currency', align: 'right' },
+  {
+    key: 'unallocated_amount',
+    label: 'Unallocated',
+    type: 'currency',
+    align: 'right',
+  },
   { key: 'mode_of_payment', label: 'Mode' },
 ]
 
@@ -42,6 +52,11 @@ const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
 const payments = computed(() => resource.data || [])
 
-function refetch() { resource.fetch() }
-watch(company, () => { page.value = 0; resource.fetch() })
+function refetch() {
+  resource.fetch()
+}
+watch(company, () => {
+  page.value = 0
+  resource.fetch()
+})
 </script>

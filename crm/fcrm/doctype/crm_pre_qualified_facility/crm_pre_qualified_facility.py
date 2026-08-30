@@ -3,74 +3,70 @@ from frappe.model.document import Document
 
 
 class CRMPreQualifiedFacility(Document):
-    def before_validate(self):
-        # Ownership is independent of network membership. Most facilities own
-        # themselves, so retain that useful default unless an operator provides
-        # the group/organization that owns multiple facilities.
-        if not frappe.utils.cstr(self.organization).strip():
-            self.organization = frappe.utils.cstr(self.facility_name).strip()
+	def before_validate(self):
+		# Ownership is independent of network membership. Most facilities own
+		# themselves, so retain that useful default unless an operator provides
+		# the group/organization that owns multiple facilities.
+		if not frappe.utils.cstr(self.organization).strip():
+			self.organization = frappe.utils.cstr(self.facility_name).strip()
 
-    def after_insert(self):
-        if self.flags.get("skip_invitation"):
-            return
-        for membership in self.memberships or []:
-            if _can_invite(membership):
-                try:
-                    _send_membership_invitation(self, membership)
-                except Exception:
-                    frappe.log_error(
-                        frappe.get_traceback(),
-                        "CRMPreQualifiedFacility: invitation email failed",
-                    )
+	def after_insert(self):
+		if self.flags.get("skip_invitation"):
+			return
+		for membership in self.memberships or []:
+			if _can_invite(membership):
+				try:
+					_send_membership_invitation(self, membership)
+				except Exception:
+					frappe.log_error(
+						frappe.get_traceback(),
+						"CRMPreQualifiedFacility: invitation email failed",
+					)
 
 
 def _can_invite(membership):
-    return bool(
-        membership.network
-        and membership.contact_email
-        and (membership.status or "Active") == "Active"
-    )
+	return bool(
+		membership.network and membership.contact_email and (membership.status or "Active") == "Active"
+	)
 
 
 def _send_membership_invitation(doc, membership):
-    """Send and track a branded invitation for one active network membership."""
-    if not _can_invite(membership):
-        frappe.throw("Only active memberships with a contact email can be invited.")
+	"""Send and track a branded invitation for one active network membership."""
+	if not _can_invite(membership):
+		frappe.throw("Only active memberships with a contact email can be invited.")
 
-    network = frappe.get_doc("CRM Opt-In Network", membership.network)
-    slug = network.slug or membership.network
-    optin_url = "{}/opt-in?network={}".format(frappe.utils.get_url(), slug)
-    queue = frappe.sendmail(
-        recipients=[membership.contact_email],
-        subject="You've been pre-qualified: {} — CareverseHIMS".format(network.display_name),
-        message=_invite_html(
-            membership.contact_name, network.display_name, doc.facility_name, optin_url
-        ),
-        reference_doctype=doc.doctype,
-        reference_name=doc.name,
-        now=True,
-    )
+	network = frappe.get_doc("CRM Opt-In Network", membership.network)
+	slug = network.slug or membership.network
+	optin_url = "{}/opt-in?network={}".format(frappe.utils.get_url(), slug)
+	queue = frappe.sendmail(
+		recipients=[membership.contact_email],
+		subject="You've been pre-qualified: {} — CareverseHIMS".format(network.display_name),
+		message=_invite_html(membership.contact_name, network.display_name, doc.facility_name, optin_url),
+		reference_doctype=doc.doctype,
+		reference_name=doc.name,
+		now=True,
+	)
 
-    if not queue:
-        frappe.throw("The invitation email could not be queued.")
+	if not queue:
+		frappe.throw("The invitation email could not be queued.")
 
-    sent_at = frappe.utils.now_datetime()
-    frappe.db.set_value(
-        "CRM Facility Membership",
-        membership.name,
-        {
-            "invite_email_queue": queue.name,
-            "invite_sent_at": sent_at,
-        },
-        update_modified=False,
-    )
-    membership.invite_email_queue = queue.name
-    membership.invite_sent_at = sent_at
-    return queue
+	sent_at = frappe.utils.now_datetime()
+	frappe.db.set_value(
+		"CRM Facility Membership",
+		membership.name,
+		{
+			"invite_email_queue": queue.name,
+			"invite_sent_at": sent_at,
+		},
+		update_modified=False,
+	)
+	membership.invite_email_queue = queue.name
+	membership.invite_sent_at = sent_at
+	return queue
 
 
 def _invite_html(contact_name, network_name, facility_name, optin_url):
-    return """
+	return """
 <p>Dear {contact_name},</p>
 
 <p>You have been pre-qualified to join the <strong>{network_name}</strong> network on
@@ -101,8 +97,8 @@ takes about 5 minutes:</p>
 
 <p>Best regards,<br/>The Tiberbu Team</p>
 """.format(
-        contact_name=contact_name,
-        network_name=network_name,
-        facility_name=facility_name,
-        optin_url=optin_url,
-    )
+		contact_name=contact_name,
+		network_name=network_name,
+		facility_name=facility_name,
+		optin_url=optin_url,
+	)

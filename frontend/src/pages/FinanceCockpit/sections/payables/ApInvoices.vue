@@ -5,7 +5,7 @@
       <select
         v-model="statusFilter"
         class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-        @change="page = 0; refetch()"
+        @change="refetchFirstPage"
       >
         <option value="">Unpaid + Partly Paid</option>
         <option value="all">All</option>
@@ -23,7 +23,12 @@
       empty-label="No purchase invoices found."
       :page="page"
       :page-size="20"
-      @update:page="p => { page = p; refetch() }"
+      @update:page="
+        (p) => {
+          page = p
+          refetch()
+        }
+      "
       @retry="refetch"
     >
       <template #actions="{ row }">
@@ -33,13 +38,19 @@
           :disabled="!isFinanceManager || approvingRow === row.name"
           :title="!isFinanceManager ? 'Finance Manager only' : ''"
           @click.stop="isFinanceManager && approvePurchaseInvoice(row)"
-        >{{ approvingRow === row.name ? 'Approving...' : 'Approve' }}</button>
+        >
+          {{ approvingRow === row.name ? 'Approving...' : 'Approve' }}
+        </button>
         <a
-          :href="'/app/payment-entry/new-payment-entry-1?party_type=Supplier&party=' + encodeURIComponent(row.supplier)"
+          :href="
+            '/app/payment-entry/new-payment-entry-1?party_type=Supplier&party=' +
+            encodeURIComponent(row.supplier)
+          "
           target="_blank"
           class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors whitespace-nowrap"
           @click.stop
-        >Pay</a>
+          >Pay</a
+        >
       </template>
     </FinanceTable>
   </div>
@@ -67,7 +78,12 @@ const columns = [
   { key: 'supplier', label: 'Supplier' },
   { key: 'posting_date', label: 'Date', type: 'date' },
   { key: 'due_date', label: 'Due', type: 'date' },
-  { key: 'outstanding_amount', label: 'Outstanding', type: 'currency', align: 'right' },
+  {
+    key: 'outstanding_amount',
+    label: 'Outstanding',
+    type: 'currency',
+    align: 'right',
+  },
   { key: 'status', label: 'Status', type: 'status' },
 ]
 
@@ -98,8 +114,17 @@ const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
 const invoices = computed(() => resource.data || [])
 
-function refetch() { resource.fetch() }
-watch(company, () => { page.value = 0; resource.fetch() })
+function refetch() {
+  resource.fetch()
+}
+function refetchFirstPage() {
+  page.value = 0
+  refetch()
+}
+watch(company, () => {
+  page.value = 0
+  resource.fetch()
+})
 
 async function approvePurchaseInvoice(row) {
   approvingRow.value = row.name

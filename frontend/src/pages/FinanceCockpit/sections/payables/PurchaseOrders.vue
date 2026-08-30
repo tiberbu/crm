@@ -7,7 +7,12 @@
     empty-label="No purchase orders found."
     :page="page"
     :page-size="20"
-    @update:page="p => { page = p; refetch() }"
+    @update:page="
+      (p) => {
+        page = p
+        refetch()
+      }
+    "
     @retry="refetch"
   />
 </template>
@@ -42,6 +47,11 @@ const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
 const orders = computed(() => resource.data || [])
 
-function refetch() { resource.fetch() }
-watch(company, () => { page.value = 0; resource.fetch() })
+function refetch() {
+  resource.fetch()
+}
+watch(company, () => {
+  page.value = 0
+  resource.fetch()
+})
 </script>

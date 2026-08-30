@@ -4,11 +4,13 @@
     <template v-if="mode === 'list'">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap items-center gap-2">
-          <label class="text-xs text-gray-500 dark:text-gray-400">Status:</label>
+          <label class="text-xs text-gray-500 dark:text-gray-400"
+            >Status:</label
+          >
           <select
             v-model="statusFilter"
             class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-            @change="page = 0; refetch()"
+            @change="refetchFirstPage"
           >
             <option value="">All</option>
             <option value="Reported">Reported</option>
@@ -37,7 +39,12 @@
         empty-label="No commission records found."
         :page="page"
         :page-size="20"
-        @update:page="p => { page = p; refetch() }"
+        @update:page="
+          (p) => {
+            page = p
+            refetch()
+          }
+        "
         @row-click="goView"
         @retry="refetch"
       >
@@ -49,20 +56,26 @@
                 class="text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
                 :disabled="actionPending === row.name"
                 @click.stop="confirmCommission(row.name)"
-              >Confirm</button>
+              >
+                Confirm
+              </button>
               <button
                 v-if="row.status === 'Reported'"
                 class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors whitespace-nowrap"
                 :disabled="actionPending === row.name"
                 @click.stop="rejectCommission(row.name)"
-              >Reject</button>
+              >
+                Reject
+              </button>
             </template>
             <button
               v-if="canMarkPaid && row.status === 'Confirmed'"
               class="text-xs px-2.5 py-1 rounded bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
               :disabled="actionPending === row.name"
               @click.stop="markPaid(row.name)"
-            >Mark Paid</button>
+            >
+              Mark Paid
+            </button>
           </div>
         </template>
       </FinanceTable>
@@ -114,16 +127,34 @@ const activeName = ref(null)
 //  - DocType create perm       -> System Manager, Accounts Manager (+ Administrator)
 const userRoles = getRoles()
 const admin = isAdministrator()
-const canConfirmReject = admin || userRoles.some(r => ['Accounts User', 'Accounts Manager', 'Finance Manager', 'System Manager'].includes(r))
-const canMarkPaid = admin || userRoles.some(r => ['Finance Manager', 'System Manager'].includes(r))
-const canCreate = admin || userRoles.some(r => ['System Manager', 'Accounts Manager'].includes(r))
+const canConfirmReject =
+  admin ||
+  userRoles.some((r) =>
+    [
+      'Accounts User',
+      'Accounts Manager',
+      'Finance Manager',
+      'System Manager',
+    ].includes(r),
+  )
+const canMarkPaid =
+  admin ||
+  userRoles.some((r) => ['Finance Manager', 'System Manager'].includes(r))
+const canCreate =
+  admin ||
+  userRoles.some((r) => ['System Manager', 'Accounts Manager'].includes(r))
 
 const columns = [
   { key: 'name', label: 'Commission' },
   { key: 'sales_person', label: 'Sales Person' },
   { key: 'customer', label: 'Customer' },
   { key: 'commission_pct', label: 'Commission %', align: 'right' },
-  { key: 'commission_amount', label: 'Amount', type: 'currency', align: 'right' },
+  {
+    key: 'commission_amount',
+    label: 'Amount',
+    type: 'currency',
+    align: 'right',
+  },
   { key: 'status', label: 'Status', type: 'status' },
 ]
 
@@ -146,21 +177,47 @@ const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
 const commissions = computed(() => resource.data || [])
 
-function refetch() { resource.fetch() }
-watch(company, () => { page.value = 0; resource.fetch() })
+function refetch() {
+  resource.fetch()
+}
+function refetchFirstPage() {
+  page.value = 0
+  refetch()
+}
+watch(company, () => {
+  page.value = 0
+  resource.fetch()
+})
 
 /* ---- Mode navigation ---- */
-function goList() { mode.value = 'list'; activeName.value = null }
-function goView(row) { activeName.value = row.name; mode.value = 'view' }
-function goNew() { activeName.value = null; mode.value = 'new' }
-function goEdit() { mode.value = 'edit' }
-function goBackFromForm() { if (activeName.value) mode.value = 'view'; else goList() }
+function goList() {
+  mode.value = 'list'
+  activeName.value = null
+}
+function goView(row) {
+  activeName.value = row.name
+  mode.value = 'view'
+}
+function goNew() {
+  activeName.value = null
+  mode.value = 'new'
+}
+function goEdit() {
+  mode.value = 'edit'
+}
+function goBackFromForm() {
+  if (activeName.value) mode.value = 'view'
+  else goList()
+}
 function onSaved(doc) {
   activeName.value = doc?.name || activeName.value
   refetch()
   mode.value = activeName.value ? 'view' : 'list'
 }
-function onMutated() { refetch(); goList() }
+function onMutated() {
+  refetch()
+  goList()
+}
 
 /* ---- Workflow actions ---- */
 const confirmRes = createResource({ url: 'crm.finance.api.confirm_commission' })
@@ -169,17 +226,29 @@ const paidRes = createResource({ url: 'crm.finance.api.mark_commission_paid' })
 
 async function confirmCommission(name) {
   actionPending.value = name
-  try { await confirmRes.submit({ name, company: company.value }); resource.fetch() }
-  finally { actionPending.value = null }
+  try {
+    await confirmRes.submit({ name, company: company.value })
+    resource.fetch()
+  } finally {
+    actionPending.value = null
+  }
 }
 async function rejectCommission(name) {
   actionPending.value = name
-  try { await rejectRes.submit({ name, company: company.value }); resource.fetch() }
-  finally { actionPending.value = null }
+  try {
+    await rejectRes.submit({ name, company: company.value })
+    resource.fetch()
+  } finally {
+    actionPending.value = null
+  }
 }
 async function markPaid(name) {
   actionPending.value = name
-  try { await paidRes.submit({ name, company: company.value }); resource.fetch() }
-  finally { actionPending.value = null }
+  try {
+    await paidRes.submit({ name, company: company.value })
+    resource.fetch()
+  } finally {
+    actionPending.value = null
+  }
 }
 </script>

@@ -14,41 +14,71 @@
         <svg
           v-if="blockState === 'rate_limited'"
           class="h-8 w-8 text-amber-600 dark:text-amber-400"
-          viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         >
-          <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 6v6l4 2" />
         </svg>
         <svg
           v-else
           class="h-8 w-8 text-red-600 dark:text-red-400"
-          viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         >
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m15 9-6 6" /><path d="m9 9 6 6" />
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          <path d="m15 9-6 6" />
+          <path d="m9 9 6 6" />
         </svg>
       </div>
 
       <h2 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">
-        {{ blockState === 'rate_limited' ? 'Too many attempts' : "This email isn't registered" }}
+        {{
+          blockState === 'rate_limited'
+            ? 'Too many attempts'
+            : "This email isn't registered"
+        }}
       </h2>
 
       <p class="mb-2 max-w-sm text-sm text-gray-600 dark:text-gray-300">
         <template v-if="blockState === 'rate_limited'">
-          For your security we've paused new codes for a few minutes. Please wait, then try again.
+          For your security we've paused new codes for a few minutes. Please
+          wait, then try again.
         </template>
         <template v-else>
           We couldn't find
-          <span class="font-semibold text-gray-900 dark:text-white">{{ form.email }}</span>
+          <span class="font-semibold text-gray-900 dark:text-white">{{
+            form.email
+          }}</span>
           on the pre-qualified contact list for
-          <span class="font-semibold text-gray-900 dark:text-white">{{ networkName }}</span>.
+          <span class="font-semibold text-gray-900 dark:text-white">{{
+            networkName
+          }}</span
+          >.
         </template>
       </p>
 
-      <p v-if="blockState !== 'rate_limited'" class="mb-6 max-w-sm text-xs text-gray-400 dark:text-gray-500">
-        Only the contact your facility registered with can opt in. Check the spelling, or use that
-        email address.
+      <p
+        v-if="blockState !== 'rate_limited'"
+        class="mb-6 max-w-sm text-xs text-gray-400 dark:text-gray-500"
+      >
+        Only the contact your facility registered with can opt in. Check the
+        spelling, or use that email address.
         <template v-if="contactEmail">
           Still stuck? Email
-          <a :href="'mailto:' + contactEmail" class="underline hover:text-gray-600 dark:hover:text-gray-300">{{ contactEmail }}</a>.
+          <a
+            :href="'mailto:' + contactEmail"
+            class="underline hover:text-gray-600 dark:hover:text-gray-300"
+            >{{ contactEmail }}</a
+          >.
         </template>
       </p>
 
@@ -59,7 +89,11 @@
           style="background-color: var(--brand-primary)"
           @click="handleTryAgain"
         >
-          {{ blockState === 'rate_limited' ? 'Try Again' : 'Try a Different Email' }}
+          {{
+            blockState === 'rate_limited'
+              ? 'Try Again'
+              : 'Try a Different Email'
+          }}
         </button>
         <button
           type="button"
@@ -72,132 +106,221 @@
     </div>
 
     <template v-else>
-    <h2 class="mb-1 text-xl font-bold text-gray-900 dark:text-white">Your Details</h2>
-    <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
-      Enter the details for the registered contact at your facility.
-    </p>
+      <h2 class="mb-1 text-xl font-bold text-gray-900 dark:text-white">
+        Your Details
+      </h2>
+      <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
+        Enter the details for the registered contact at your facility.
+      </p>
 
-    <form class="space-y-4" @submit.prevent="handleContinue">
-      <div class="grid grid-cols-2 gap-3">
+      <form class="space-y-4" @submit.prevent="handleContinue">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label
+              class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300"
+              >First Name</label
+            >
+            <input
+              v-model="form.first_name"
+              type="text"
+              placeholder="Jane"
+              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+            />
+          </div>
+          <div>
+            <label
+              class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300"
+              >Last Name</label
+            >
+            <input
+              v-model="form.last_name"
+              type="text"
+              placeholder="Doe"
+              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+            />
+          </div>
+        </div>
+
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">First Name</label>
-          <input v-model="form.first_name" type="text" placeholder="Jane"
+          <label
+            class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300"
+          >
+            Email Address <span class="text-red-500">*</span>
+          </label>
+          <input
+            v-model="form.email"
+            type="email"
+            placeholder="jane.doe@hospital.or.ke"
+            required
+            :class="[
+              'w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500',
+              emailError
+                ? 'border-red-400 dark:border-red-600'
+                : 'border-gray-200 dark:border-gray-700',
+            ]"
+          />
+          <p v-if="emailError" class="mt-1 text-xs text-red-500">
+            {{ emailError }}
+          </p>
+        </div>
+
+        <div>
+          <label
+            class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300"
+            >Mobile Number</label
+          >
+          <input
+            v-model="form.mobile_no"
+            type="tel"
+            placeholder="0712 345 678"
+            :class="[
+              'w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500',
+              mobileError
+                ? 'border-red-400 dark:border-red-600'
+                : 'border-gray-200 dark:border-gray-700',
+            ]"
+          />
+          <p v-if="mobileError" class="mt-1 text-xs text-red-500">
+            {{ mobileError }}
+          </p>
+        </div>
+
+        <div>
+          <label
+            class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300"
+            >Organisation / Facility Name</label
+          >
+          <input
+            v-model="form.organisation"
+            type="text"
+            placeholder="Kenyatta National Hospital"
             class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
           />
         </div>
+
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Last Name</label>
-          <input v-model="form.last_name" type="text" placeholder="Doe"
+          <label
+            class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300"
+            >Your Role / Title</label
+          >
+          <input
+            v-model="form.role"
+            type="text"
+            placeholder="Chief Executive Officer"
             class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
           />
         </div>
-      </div>
 
-      <div>
-        <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
-          Email Address <span class="text-red-500">*</span>
-        </label>
-        <input v-model="form.email" type="email" placeholder="jane.doe@hospital.or.ke" required
-          :class="['w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500',
-            emailError ? 'border-red-400 dark:border-red-600' : 'border-gray-200 dark:border-gray-700']"
-        />
-        <p v-if="emailError" class="mt-1 text-xs text-red-500">{{ emailError }}</p>
-      </div>
-
-      <div>
-        <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Mobile Number</label>
-        <input v-model="form.mobile_no" type="tel" placeholder="0712 345 678"
-          :class="['w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500',
-            mobileError ? 'border-red-400 dark:border-red-600' : 'border-gray-200 dark:border-gray-700']"
-        />
-        <p v-if="mobileError" class="mt-1 text-xs text-red-500">{{ mobileError }}</p>
-      </div>
-
-      <div>
-        <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Organisation / Facility Name</label>
-        <input v-model="form.organisation" type="text" placeholder="Kenyatta National Hospital"
-          class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-        />
-      </div>
-
-      <div>
-        <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Your Role / Title</label>
-        <input v-model="form.role" type="text" placeholder="Chief Executive Officer"
-          class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
-        />
-      </div>
-
-      <!-- OTP delivery channel -->
-      <div>
-        <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
-          Send my verification code by
-        </label>
-        <div class="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            :aria-pressed="channel === 'email'"
-            :class="channelBtnClass(channel === 'email')"
-            :style="channel === 'email' ? { backgroundColor: 'var(--brand-primary)', borderColor: 'var(--brand-primary)' } : {}"
-            @click="channel = 'email'"
+        <!-- OTP delivery channel -->
+        <div>
+          <label
+            class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/>
-            </svg>
-            Email
+            Send my verification code by
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              :aria-pressed="channel === 'email'"
+              :class="channelBtnClass(channel === 'email')"
+              :style="
+                channel === 'email'
+                  ? {
+                      backgroundColor: 'var(--brand-primary)',
+                      borderColor: 'var(--brand-primary)',
+                    }
+                  : {}
+              "
+              @click="channel = 'email'"
+            >
+              <svg
+                class="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="m22 7-10 5L2 7" />
+              </svg>
+              Email
+            </button>
+            <button
+              type="button"
+              :aria-pressed="channel === 'sms'"
+              :class="channelBtnClass(channel === 'sms')"
+              :style="
+                channel === 'sms'
+                  ? {
+                      backgroundColor: 'var(--brand-primary)',
+                      borderColor: 'var(--brand-primary)',
+                    }
+                  : {}
+              "
+              @click="channel = 'sms'"
+            >
+              <svg
+                class="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                />
+              </svg>
+              SMS
+            </button>
+          </div>
+          <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            The code is sent to the registered contact on file for your
+            facility.
+          </p>
+        </div>
+
+        <div
+          v-if="generalError"
+          class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400"
+        >
+          {{ generalError }}
+        </div>
+
+        <div class="flex flex-col gap-2 pt-2">
+          <button
+            type="submit"
+            :disabled="loading || !form.email"
+            class="w-full rounded-xl px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus:outline-none disabled:opacity-50"
+            style="background-color: var(--brand-primary)"
+          >
+            <span v-if="loading">Sending code...</span>
+            <span v-else>Continue</span>
           </button>
+
           <button
             type="button"
-            :aria-pressed="channel === 'sms'"
-            :class="channelBtnClass(channel === 'sms')"
-            :style="channel === 'sms' ? { backgroundColor: 'var(--brand-primary)', borderColor: 'var(--brand-primary)' } : {}"
-            @click="channel = 'sms'"
+            :disabled="loading"
+            class="w-full rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-600 transition hover:bg-gray-50 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            @click="emit('back')"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-            SMS
+            Back
+          </button>
+
+          <button
+            v-if="hasSigningToken && !dealInvitation"
+            type="button"
+            :disabled="loading"
+            class="w-full rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-600 transition hover:bg-gray-50 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            @click="handleSavePartial"
+          >
+            Save &amp; Come Back Later
           </button>
         </div>
-        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-          The code is sent to the registered contact on file for your facility.
-        </p>
-      </div>
-
-      <div v-if="generalError" class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
-        {{ generalError }}
-      </div>
-
-      <div class="flex flex-col gap-2 pt-2">
-        <button
-          type="submit"
-          :disabled="loading || !form.email"
-          class="w-full rounded-xl px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus:outline-none disabled:opacity-50"
-          style="background-color: var(--brand-primary)"
-        >
-          <span v-if="loading">Sending code...</span>
-          <span v-else>Continue</span>
-        </button>
-
-        <button
-          type="button"
-          :disabled="loading"
-          class="w-full rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-600 transition hover:bg-gray-50 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-          @click="emit('back')"
-        >
-          Back
-        </button>
-
-        <button
-          v-if="hasSigningToken && !dealInvitation"
-          type="button"
-          :disabled="loading"
-          class="w-full rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-600 transition hover:bg-gray-50 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-          @click="handleSavePartial"
-        >
-          Save &amp; Come Back Later
-        </button>
-      </div>
-    </form>
+      </form>
     </template>
   </div>
 </template>
@@ -233,7 +356,9 @@ const generalError = ref('')
 const blockState = ref('')
 
 const hasSigningToken = computed(() => !!store.signingToken)
-const networkName = computed(() => store.networkConfig?.display_name || 'this network')
+const networkName = computed(
+  () => store.networkConfig?.display_name || 'this network',
+)
 const contactEmail = computed(() => store.networkConfig?.contact_email || '')
 
 watch(
@@ -282,7 +407,9 @@ function validate() {
   return valid
 }
 
-const verifyResource = createResource({ url: 'crm.api.optin.verify_prequalified' })
+const verifyResource = createResource({
+  url: 'crm.api.optin.verify_prequalified',
+})
 
 async function handleContinue() {
   if (!validate()) return
@@ -302,7 +429,8 @@ async function handleContinue() {
   } catch {
     // Real network/server error — let them retry rather than mislabel them as
     // unregistered (no code was sent, so proceeding to the gate is pointless).
-    generalError.value = 'Something went wrong sending your code. Please try again.'
+    generalError.value =
+      'Something went wrong sending your code. Please try again.'
     loading.value = false
     return
   }
@@ -314,14 +442,17 @@ async function handleContinue() {
     emit('otp-requested')
     return
   }
-  blockState.value = data && data.rate_limited ? 'rate_limited' : 'not_registered'
+  blockState.value =
+    data && data.rate_limited ? 'rate_limited' : 'not_registered'
 }
 
 function handleTryAgain() {
   blockState.value = ''
 }
 
-const savePartialResource = createResource({ url: 'crm.api.optin.save_partial' })
+const savePartialResource = createResource({
+  url: 'crm.api.optin.save_partial',
+})
 
 async function handleSavePartial() {
   if (!validate()) return
@@ -338,7 +469,8 @@ async function handleSavePartial() {
     })
     emit('partial-saved', data?.submission_ref || '')
   } catch (err) {
-    generalError.value = (err && err.message) ? err.message : 'Could not save. Please try again.'
+    generalError.value =
+      err && err.message ? err.message : 'Could not save. Please try again.'
   } finally {
     loading.value = false
   }

@@ -1,25 +1,32 @@
 <template>
   <div class="flex h-full flex-col overflow-hidden">
-
     <!-- Page header -->
-    <div class="flex items-center justify-between border-b border-outline-gray-2 px-5 py-3">
+    <div
+      class="flex items-center justify-between border-b border-outline-gray-2 px-5 py-3"
+    >
       <h1 class="text-xl font-semibold text-ink-gray-9">{{ __('Quotes') }}</h1>
     </div>
 
     <!-- KPI bar -->
-    <div class="grid grid-cols-2 gap-3 border-b border-outline-gray-2 px-5 py-3 sm:grid-cols-4">
+    <div
+      class="grid grid-cols-2 gap-3 border-b border-outline-gray-2 px-5 py-3 sm:grid-cols-4"
+    >
       <div
         v-for="kpi in kpiTiles"
         :key="kpi.key"
         class="rounded-lg border border-outline-gray-2 bg-surface-white px-4 py-3"
       >
-        <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-4">{{ __(kpi.label) }}</p>
+        <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-4">
+          {{ __(kpi.label) }}
+        </p>
         <p class="mt-1 text-xl font-bold text-ink-gray-9">{{ kpi.value }}</p>
       </div>
     </div>
 
     <!-- Filters row -->
-    <div class="flex flex-wrap items-center gap-2 border-b border-outline-gray-2 px-5 py-2.5">
+    <div
+      class="flex flex-wrap items-center gap-2 border-b border-outline-gray-2 px-5 py-2.5"
+    >
       <!-- Status pills -->
       <button
         v-for="s in statuses"
@@ -31,7 +38,9 @@
             : 'bg-surface-gray-2 text-ink-gray-6 hover:bg-surface-gray-3',
         ]"
         @click="selectedStatus = s"
-      >{{ __(s) }}</button>
+      >
+        {{ __(s) }}
+      </button>
 
       <div class="ml-auto flex items-center gap-2">
         <!-- Search -->
@@ -42,32 +51,60 @@
           class="rounded-md border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:border-blue-500 focus:outline-none dark:bg-surface-gray-1"
         />
         <!-- Export CSV -->
-        <Button size="sm" variant="subtle" @click="exportCsv">{{ __('Export CSV') }}</Button>
+        <Button size="sm" variant="subtle" @click="exportCsv">{{
+          __('Export CSV')
+        }}</Button>
       </div>
     </div>
 
     <!-- Table -->
     <div class="flex-1 overflow-auto">
-      <div v-if="listResource.loading" class="flex items-center justify-center py-16">
-        <div class="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+      <div
+        v-if="listResource.loading"
+        class="flex items-center justify-center py-16"
+      >
+        <div
+          class="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"
+        />
       </div>
 
-      <div v-else-if="!rows.length" class="flex flex-col items-center justify-center py-16 text-center">
-        <p class="text-sm font-medium text-ink-gray-5">{{ __('No quotes found') }}</p>
-        <p class="mt-1 text-xs text-ink-gray-4">{{ __('Try adjusting your filters.') }}</p>
+      <div
+        v-else-if="!rows.length"
+        class="flex flex-col items-center justify-center py-16 text-center"
+      >
+        <p class="text-sm font-medium text-ink-gray-5">
+          {{ __('No quotes found') }}
+        </p>
+        <p class="mt-1 text-xs text-ink-gray-4">
+          {{ __('Try adjusting your filters.') }}
+        </p>
       </div>
 
       <table v-else class="w-full text-sm">
-        <thead class="sticky top-0 z-10 bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5">
+        <thead
+          class="sticky top-0 z-10 bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5"
+        >
           <tr>
-            <th class="px-5 py-2.5 text-left font-medium">{{ __('Quote #') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">{{ __('Customer') }}</th>
+            <th class="px-5 py-2.5 text-left font-medium">
+              {{ __('Quote #') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Customer') }}
+            </th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Deal') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Rep') }}</th>
-            <th class="px-4 py-2.5 text-right font-medium">{{ __('Grand Total') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">{{ __('Status') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">{{ __('Created') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">{{ __('Valid Until') }}</th>
+            <th class="px-4 py-2.5 text-right font-medium">
+              {{ __('Grand Total') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Status') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Created') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Valid Until') }}
+            </th>
           </tr>
         </thead>
         <tbody class="divide-y divide-outline-elevation-2">
@@ -77,36 +114,71 @@
             class="cursor-pointer hover:bg-surface-gray-1 transition-colors"
             @click="openDeal(row)"
           >
-            <td class="px-5 py-3 font-medium text-ink-blue-6">{{ row.name }}</td>
+            <td class="px-5 py-3 font-medium text-ink-blue-6">
+              {{ row.name }}
+            </td>
             <td class="px-4 py-3 text-ink-gray-7">{{ row.customer || '—' }}</td>
             <td class="px-4 py-3 text-ink-gray-6 text-xs">{{ row.deal }}</td>
             <td class="px-4 py-3 text-ink-gray-6 text-xs">{{ row.owner }}</td>
-            <td class="px-4 py-3 text-right font-semibold text-ink-gray-9">{{ fmtKes(row.grand_total) }}</td>
+            <td class="px-4 py-3 text-right font-semibold text-ink-gray-9">
+              {{ fmtKes(row.grand_total) }}
+            </td>
             <td class="px-4 py-3">
               <span :class="pillClass(row)">
                 {{ isExpired(row) ? __('Expired') : __(row.status) }}
               </span>
             </td>
             <td class="px-4 py-3">
-              <span class="text-sm font-medium text-ink-gray-8">{{ timeAgo(row.creation || row.quote_date) }}</span>
-              <div class="text-xs text-ink-gray-4">{{ formatDate(row.quote_date) }}</div>
+              <span class="text-sm font-medium text-ink-gray-8">{{
+                timeAgo(row.creation || row.quote_date)
+              }}</span>
+              <div class="text-xs text-ink-gray-4">
+                {{ formatDate(row.quote_date) }}
+              </div>
             </td>
             <td
               class="px-4 py-3 text-xs"
-              :class="isExpired(row) ? 'font-medium text-red-500 dark:text-red-400' : 'text-ink-gray-6'"
-            >{{ formatDate(row.valid_until) }}</td>
+              :class="
+                isExpired(row)
+                  ? 'font-medium text-red-500 dark:text-red-400'
+                  : 'text-ink-gray-6'
+              "
+            >
+              {{ formatDate(row.valid_until) }}
+            </td>
           </tr>
         </tbody>
       </table>
 
       <!-- Pagination -->
-      <div v-if="total > pageSize" class="flex items-center justify-between border-t border-outline-gray-2 px-5 py-3">
+      <div
+        v-if="total > pageSize"
+        class="flex items-center justify-between border-t border-outline-gray-2 px-5 py-3"
+      >
         <span class="text-xs text-ink-gray-5">
-          {{ __('Showing {0}–{1} of {2}', [page * pageSize + 1, Math.min((page + 1) * pageSize, total), total]) }}
+          {{
+            __('Showing {0}–{1} of {2}', [
+              page * pageSize + 1,
+              Math.min((page + 1) * pageSize, total),
+              total,
+            ])
+          }}
         </span>
         <div class="flex gap-2">
-          <Button size="sm" variant="subtle" :disabled="page === 0" @click="page--">{{ __('Prev') }}</Button>
-          <Button size="sm" variant="subtle" :disabled="(page + 1) * pageSize >= total" @click="page++">{{ __('Next') }}</Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            :disabled="page === 0"
+            @click="page--"
+            >{{ __('Prev') }}</Button
+          >
+          <Button
+            size="sm"
+            variant="subtle"
+            :disabled="(page + 1) * pageSize >= total"
+            @click="page++"
+            >{{ __('Next') }}</Button
+          >
         </div>
       </div>
     </div>
@@ -128,7 +200,9 @@ const page = ref(0)
 const pageSize = 20
 
 // Reset to page 0 on filter change
-watch([selectedStatus, search], () => { page.value = 0 })
+watch([selectedStatus, search], () => {
+  page.value = 0
+})
 
 const listResource = createResource({
   url: 'crm.api.quotes.list_all_quotes',
@@ -148,14 +222,26 @@ const total = computed(() => listResource.data?.total || 0)
 const kpis = computed(() => listResource.data?.kpis || {})
 
 const kpiTiles = computed(() => [
-  { key: 'draft',     label: 'Draft',               value: kpis.value.draft_count ?? 0 },
-  { key: 'sent',      label: 'Sent (Pending)',        value: kpis.value.sent_count ?? 0 },
-  { key: 'accepted',  label: 'Accepted This Month',   value: fmtKes(kpis.value.accepted_this_month) },
-  { key: 'pipeline',  label: 'Pipeline Value',        value: fmtKes(kpis.value.pipeline_value) },
+  { key: 'draft', label: 'Draft', value: kpis.value.draft_count ?? 0 },
+  { key: 'sent', label: 'Sent (Pending)', value: kpis.value.sent_count ?? 0 },
+  {
+    key: 'accepted',
+    label: 'Accepted This Month',
+    value: fmtKes(kpis.value.accepted_this_month),
+  },
+  {
+    key: 'pipeline',
+    label: 'Pipeline Value',
+    value: fmtKes(kpis.value.pipeline_value),
+  },
 ])
 
 function openDeal(row) {
-  router.push({ name: 'Deal', params: { dealId: row.deal }, query: { tab: 'quoting', quote: row.name } })
+  router.push({
+    name: 'Deal',
+    params: { dealId: row.deal },
+    query: { tab: 'quoting', quote: row.name },
+  })
 }
 
 function exportCsv() {
@@ -172,7 +258,12 @@ function exportCsv() {
     const data = exportResource.data?.rows || []
     if (!data.length) return
     const headers = Object.keys(data[0])
-    const csv = [headers.join(','), ...data.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(','))].join('\n')
+    const csv = [
+      headers.join(','),
+      ...data.map((r) =>
+        headers.map((h) => JSON.stringify(r[h] ?? '')).join(','),
+      ),
+    ].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -185,14 +276,18 @@ function exportCsv() {
 
 function formatDate(d) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(d).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
   const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
-  if (diff < 60)   return __('just now')
-  if (diff < 3600)  return Math.floor(diff / 60) + ' ' + __('min ago')
+  if (diff < 60) return __('just now')
+  if (diff < 3600) return Math.floor(diff / 60) + ' ' + __('min ago')
   if (diff < 86400) return Math.floor(diff / 3600) + ' ' + __('hr ago')
   if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' ' + __('d ago')
   return formatDate(dateStr)
@@ -202,21 +297,27 @@ function fmtKes(v) {
   if (!v && v !== 0) return '—'
   const n = parseFloat(v)
   if (n >= 1_000_000) return 'KES ' + (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000)     return 'KES ' + (n / 1_000).toFixed(1) + 'K'
+  if (n >= 1_000) return 'KES ' + (n / 1_000).toFixed(1) + 'K'
   return 'KES ' + n.toLocaleString()
 }
 
 function isExpired(row) {
-  if (!row.valid_until || row.status === 'Accepted' || row.status === 'Rejected') return false
+  if (
+    !row.valid_until ||
+    row.status === 'Accepted' ||
+    row.status === 'Rejected'
+  )
+    return false
   return new Date(row.valid_until) < new Date()
 }
 
 function pillClass(row) {
   const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
-  if (isExpired(row)) return `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400`
+  if (isExpired(row))
+    return `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400`
   const map = {
-    Draft:    `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
-    Sent:     `${base} bg-surface-gray-3 text-ink-gray-8 dark:bg-surface-gray-5 dark:text-ink-gray-3`,
+    Draft: `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
+    Sent: `${base} bg-surface-gray-3 text-ink-gray-8 dark:bg-surface-gray-5 dark:text-ink-gray-3`,
     Accepted: `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`,
     Rejected: `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400`,
   }

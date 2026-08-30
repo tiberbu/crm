@@ -28,7 +28,9 @@
       </button>
     </div>
 
-    <div class="flex flex-wrap items-end gap-2 border-b border-outline-gray-2 px-5 py-3">
+    <div
+      class="flex flex-wrap items-end gap-2 border-b border-outline-gray-2 px-5 py-3"
+    >
       <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
         {{ __('Network') }}
         <select
@@ -37,7 +39,11 @@
           @change="applyFilters"
         >
           <option value="">{{ __('All networks') }}</option>
-          <option v-for="network in filterNetworks" :key="network" :value="network">
+          <option
+            v-for="network in filterNetworks"
+            :key="network"
+            :value="network"
+          >
             {{ network }}
           </option>
         </select>
@@ -50,7 +56,11 @@
           @change="applyFilters"
         >
           <option value="">{{ __('All levels') }}</option>
-          <option v-for="level in filterFacilityLevels" :key="level" :value="level">
+          <option
+            v-for="level in filterFacilityLevels"
+            :key="level"
+            :value="level"
+          >
             {{ level }}
           </option>
         </select>
@@ -64,8 +74,12 @@
           @keyup.enter="applyFilters"
         />
       </label>
-      <Button size="sm" variant="subtle" @click="applyFilters">{{ __('Apply') }}</Button>
-      <Button size="sm" variant="ghost" @click="clearFilters">{{ __('Clear') }}</Button>
+      <Button size="sm" variant="subtle" @click="applyFilters">{{
+        __('Apply')
+      }}</Button>
+      <Button size="sm" variant="ghost" @click="clearFilters">{{
+        __('Clear')
+      }}</Button>
     </div>
 
     <!-- Table -->
@@ -96,26 +110,17 @@
           class="sticky top-0 z-10 bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5"
         >
           <tr>
-            <th class="px-5 py-2.5 text-left font-medium">{{ __('Ref #') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">
-              {{ __('Network') }}
-            </th>
-            <th class="px-4 py-2.5 text-left font-medium">
-              {{ __('Submitter') }}
-            </th>
-            <th class="px-4 py-2.5 text-left font-medium">
-              {{ __('Submitted') }}
-            </th>
-            <th class="px-4 py-2.5 text-left font-medium">{{ __('Lead') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">{{ __('Deal') }}</th>
-            <th class="px-4 py-2.5 text-left font-medium">
-              {{ __('Status') }}
+            <th class="px-5 py-2.5 text-left font-medium">
+              {{ __('Facility') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Facility signing') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Email delivery') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Submission') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Actions') }}
@@ -134,48 +139,42 @@
             ]"
             @click="openDeal(row)"
           >
-            <td class="px-5 py-3 font-medium text-ink-gray-9">
-              {{ row.name }}
-            </td>
-            <td class="px-4 py-3 text-ink-gray-7">
-              {{ row.network_slug || '—' }}
-            </td>
-            <td class="px-4 py-3 text-ink-gray-6 text-xs">
-              {{ row.submitter_email || '—' }}
-            </td>
-            <td class="px-4 py-3 text-xs text-ink-gray-6">
-              {{ formatDate(row.submitted_at) }}
-            </td>
-            <td class="px-4 py-3 text-xs text-ink-gray-6">
-              {{ row.lead || '—' }}
-            </td>
-            <td class="px-4 py-3 text-xs text-ink-gray-6">
-              {{ row.deal || '—' }}
-            </td>
-            <td class="px-4 py-3">
-              <div class="flex flex-wrap items-center gap-1.5">
-                <span :class="statusPill(row.status)">{{
-                  __(row.status)
-                }}</span>
+            <td class="px-5 py-3">
+              <p class="font-medium text-ink-gray-9">
+                {{ row.facility_name }}
+              </p>
+              <div class="mt-1 flex flex-wrap items-center gap-1.5">
                 <span
-                  v-if="row.has_duplicate_mfl"
-                  class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                  >{{ __('Duplicate MFL') }}</span
+                  v-if="row.facility_level"
+                  class="rounded-full bg-surface-gray-2 px-2 py-0.5 text-xs font-medium text-ink-gray-7 dark:bg-surface-gray-4 dark:text-ink-gray-4"
+                  >{{ row.facility_level }}</span
                 >
-                <p
-                  v-if="row.failure_reason"
-                  class="w-full text-xs text-ink-red-6"
-                  :title="row.failure_reason"
+                <span
+                  v-if="row.facility_mfl_code"
+                  class="text-xs text-ink-gray-5"
                 >
-                  {{ row.failure_reason }}
-                </p>
+                  {{ row.facility_mfl_code }}
+                </span>
+                <span
+                  v-if="row.facility_count > 1"
+                  class="text-xs text-ink-gray-5"
+                >
+                  {{ __('+{0} more', [row.facility_count - 1]) }}
+                </span>
               </div>
+              <p class="mt-1 text-xs text-ink-gray-5">
+                {{ row.network_slug || '—' }}
+              </p>
             </td>
             <td class="px-4 py-3">
               <div class="flex flex-col items-start gap-1">
                 <div class="flex items-center gap-1.5">
-                  <span class="text-xs text-ink-gray-5">{{ __('Signatory') }}</span>
-                  <span :class="contractSigningPill(row.facility_signing_status)">
+                  <span class="text-xs text-ink-gray-5">{{
+                    __('Signatory')
+                  }}</span>
+                  <span
+                    :class="contractSigningPill(row.facility_signing_status)"
+                  >
                     {{ __(row.facility_signing_status) }}
                   </span>
                 </div>
@@ -185,8 +184,14 @@
                   >{{ formatDate(row.facility_signatory_signed_at) }}</span
                 >
                 <div class="flex items-center gap-1.5">
-                  <span class="text-xs text-ink-gray-5">{{ __('Witness') }}</span>
-                  <span :class="contractSigningPill(row.facility_witness_signing_status)">
+                  <span class="text-xs text-ink-gray-5">{{
+                    __('Witness')
+                  }}</span>
+                  <span
+                    :class="
+                      contractSigningPill(row.facility_witness_signing_status)
+                    "
+                  >
                     {{ __(row.facility_witness_signing_status) }}
                   </span>
                 </div>
@@ -214,13 +219,39 @@
                   :class="emailStatusPill(row.contract_invitation_email_status)"
                   :title="emailStatusHint(row.contract_invitation_email_status)"
                   >{{ __('Contract') }}:
-                  {{ emailStatusLabel(row.contract_invitation_email_status) }}</span
+                  {{
+                    emailStatusLabel(row.contract_invitation_email_status)
+                  }}</span
                 >
                 <span
                   v-if="row.contract_invitation_queued_at"
                   class="text-xs text-ink-gray-5"
                   >{{ formatDate(row.contract_invitation_queued_at) }}</span
                 >
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex flex-col items-start gap-1.5">
+                <span :class="statusPill(row.status)">{{
+                  __(row.status)
+                }}</span>
+                <span
+                  v-if="row.has_duplicate_mfl"
+                  class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                  >{{ __('Duplicate MFL') }}</span
+                >
+                <p
+                  v-if="row.failure_reason"
+                  class="w-full text-xs text-ink-red-6"
+                  :title="row.failure_reason"
+                >
+                  {{ row.failure_reason }}
+                </p>
+                <p v-else class="text-xs text-ink-gray-5">
+                  {{ formatDate(row.submitted_at) }} ·
+                  {{ row.submitter_email || '—' }}
+                </p>
+                <p class="font-mono text-xs text-ink-gray-4">{{ row.name }}</p>
               </div>
             </td>
             <td class="px-4 py-3" @click.stop>

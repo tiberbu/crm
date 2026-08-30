@@ -78,16 +78,19 @@ onUnmounted(() => {
 
 // Reinitialise when disabled switches to false (canvas may be zero-sized before reveal).
 // IMPORTANT: initCanvas clears the bitmap — reset signature state to match.
-watch(() => props.disabled, (val) => {
-  if (!val) {
-    setTimeout(() => {
-      initCanvas()
-      // Canvas was cleared by initCanvas; reflect that in state so a blank PNG is never submitted
-      hasStrokes.value = false
-      emit('has-signature', false)
-    }, 0)
-  }
-})
+watch(
+  () => props.disabled,
+  (val) => {
+    if (!val) {
+      setTimeout(() => {
+        initCanvas()
+        // Canvas was cleared by initCanvas; reflect that in state so a blank PNG is never submitted
+        hasStrokes.value = false
+        emit('has-signature', false)
+      }, 0)
+    }
+  },
+)
 
 function initCanvas() {
   const el = canvasEl.value

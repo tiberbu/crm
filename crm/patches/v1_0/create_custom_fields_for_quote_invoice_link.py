@@ -3,6 +3,11 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
 def execute():
+	# Sales Invoice belongs to ERPNext. CRM-only sites do not install that
+	# DocType, so there is nothing to extend there.
+	if not frappe.db.exists("DocType", "Sales Invoice"):
+		return
+
 	create_custom_fields(
 		{
 			"Sales Invoice": [

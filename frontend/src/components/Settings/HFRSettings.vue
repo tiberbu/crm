@@ -6,7 +6,11 @@
           {{ __('HFR Integration') }}
         </h2>
         <p class="text-p-base text-ink-gray-6">
-          {{ __('Connect to the Kenya Health Facility Registry (HFR) via the HIE to pre-fill Organisation and Lead records from verified registry data.') }}
+          {{
+            __(
+              'Connect to the Kenya Health Facility Registry (HFR) via the HIE to pre-fill Organisation and Lead records from verified registry data.',
+            )
+          }}
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -26,32 +30,48 @@
       </div>
     </div>
 
-    <div v-if="settings.loading" class="flex flex-1 items-center justify-center">
+    <div
+      v-if="settings.loading"
+      class="flex flex-1 items-center justify-center"
+    >
       <LoadingIndicator class="size-8" />
     </div>
 
     <div v-else class="flex-1 overflow-y-auto flex flex-col">
-
       <!-- Enable toggle -->
       <div class="flex items-center justify-between py-3 px-2">
         <div class="flex flex-col">
-          <div class="text-p-base-medium text-ink-gray-7">{{ __('Enable HFR Integration') }}</div>
+          <div class="text-p-base-medium text-ink-gray-7">
+            {{ __('Enable HFR Integration') }}
+          </div>
           <div class="text-p-sm text-ink-gray-5">
-            {{ __('Allow Sales Agents to search the Health Facility Registry when creating Organisations and Leads.') }}
+            {{
+              __(
+                'Allow Sales Agents to search the Health Facility Registry when creating Organisations and Leads.',
+              )
+            }}
           </div>
         </div>
-        <Switch v-model="form.hfr_enabled" size="sm" @update:modelValue="markDirty" />
+        <Switch
+          v-model="form.hfr_enabled"
+          size="sm"
+          @update:modelValue="markDirty"
+        />
       </div>
 
       <template v-if="form.hfr_enabled">
         <div class="h-px border-t mx-2 border-outline-elevation-2" />
         <div class="px-2 pt-4 pb-2">
-          <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3">
+          <div
+            class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3"
+          >
             {{ __('HIE Credentials') }}
           </div>
           <div class="flex flex-col gap-3">
             <div class="flex items-center gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('HIE Base URL') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                __('HIE Base URL')
+              }}</label>
               <FormControl
                 v-model="form.hfr_url"
                 type="text"
@@ -61,7 +81,9 @@
               />
             </div>
             <div class="flex items-center gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('HFR Fetch Path') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                __('HFR Fetch Path')
+              }}</label>
               <FormControl
                 v-model="form.hfr_fetch_path"
                 type="text"
@@ -71,7 +93,9 @@
               />
             </div>
             <div class="flex items-center gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('HIE Username') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                __('HIE Username')
+              }}</label>
               <FormControl
                 v-model="form.hfr_username"
                 type="text"
@@ -80,7 +104,9 @@
               />
             </div>
             <div class="flex items-center gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('HIE Password') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                __('HIE Password')
+              }}</label>
               <FormControl
                 v-model="form.hfr_password"
                 type="password"

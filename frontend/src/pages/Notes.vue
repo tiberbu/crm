@@ -102,7 +102,14 @@ import EmptyState from '@/components/ListViews/EmptyState.vue'
 import { usersStore } from '@/stores/users'
 import { timeAgo, formatDate } from '@/utils'
 import { useOnboarding, useTelemetry } from 'frappe-ui/frappe'
-import { TextEditor, call, Dropdown, Tooltip, ListFooter, toast } from 'frappe-ui'
+import {
+  TextEditor,
+  call,
+  Dropdown,
+  Tooltip,
+  ListFooter,
+  toast,
+} from 'frappe-ui'
 import { ref, watch } from 'vue'
 
 const { getUser } = usersStore()

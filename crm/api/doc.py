@@ -682,9 +682,7 @@ def get_linked_docs_of_document(doctype: str, docname: str):
 	except frappe.DoesNotExistError:
 		return []
 
-	linked_docs_by_doctype = get_linked_docs(
-		doctype, docname, get_linked_doctypes(doctype)
-	)
+	linked_docs_by_doctype = get_linked_docs(doctype, docname, get_linked_doctypes(doctype))
 	linked_docs = [
 		{
 			"reference_doctype": linked_doctype,

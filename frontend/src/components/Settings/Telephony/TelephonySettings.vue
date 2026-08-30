@@ -229,9 +229,7 @@
             {{ __('Avaya') }}
           </span>
           <span class="text-p-sm text-ink-gray-6">
-            {{
-              __('Configure your Avaya Telephony Integration Settings here')
-            }}
+            {{ __('Configure your Avaya Telephony Integration Settings here') }}
           </span>
         </div>
         <Button

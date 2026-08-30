@@ -23,12 +23,17 @@ const { company } = useCompanyContext()
 const sectionRef = ref(null)
 
 const columns = [
-  { key: 'name',               label: 'Payment' },
-  { key: 'party',              label: 'Customer' },
-  { key: 'posting_date',       label: 'Date',        type: 'timeago' },
-  { key: 'paid_amount',        label: 'Paid',        type: 'currency', align: 'right' },
-  { key: 'unallocated_amount', label: 'Unallocated', type: 'currency', align: 'right' },
-  { key: 'mode_of_payment',    label: 'Mode' },
+  { key: 'name', label: 'Payment' },
+  { key: 'party', label: 'Customer' },
+  { key: 'posting_date', label: 'Date', type: 'timeago' },
+  { key: 'paid_amount', label: 'Paid', type: 'currency', align: 'right' },
+  {
+    key: 'unallocated_amount',
+    label: 'Unallocated',
+    type: 'currency',
+    align: 'right',
+  },
+  { key: 'mode_of_payment', label: 'Mode' },
 ]
 
 function listParams() {

@@ -17,6 +17,7 @@ Design (per project rules):
   `ignore_permissions` on a legitimate (non-request) path and adds no latency to the
   Deal/Call-Log write.
 """
+
 import frappe
 from frappe.utils import cstr, nowdate
 
@@ -82,13 +83,15 @@ def run_onboarding_journey(deal_name: str, triggered_by: str | None = None):
 	submitted_role = "Partner RM" if lead_partner else "Sales Manager"
 
 	if not frappe.db.exists("CRM Onboarding Request", {"deal": deal.name}):
-		frappe.get_doc({
-			"doctype": "CRM Onboarding Request",
-			"deal": deal.name,
-			"submitted_by_role": submitted_role,
-			"submitted_by": triggered_by or owner or "Administrator",
-			"status": "Submitted",
-		}).insert(ignore_permissions=True)  # SYSTEM-INTERNAL: background job
+		frappe.get_doc(
+			{
+				"doctype": "CRM Onboarding Request",
+				"deal": deal.name,
+				"submitted_by_role": submitted_role,
+				"submitted_by": triggered_by or owner or "Administrator",
+				"status": "Submitted",
+			}
+		).insert(ignore_permissions=True)  # SYSTEM-INTERNAL: background job
 		frappe.db.commit()  # SYSTEM-INTERNAL: background job, persist before notify
 
 	if owner:

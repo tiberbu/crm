@@ -7,16 +7,25 @@
     empty-label="No suppliers found."
     :page="page"
     :page-size="20"
-    @update:page="p => { page = p; refetch() }"
+    @update:page="
+      (p) => {
+        page = p
+        refetch()
+      }
+    "
     @retry="refetch"
   >
     <template #actions="{ row }">
       <a
-        :href="'/app/query-report/Accounts Payable?supplier=' + encodeURIComponent(row.name)"
+        :href="
+          '/app/query-report/Accounts Payable?supplier=' +
+          encodeURIComponent(row.name)
+        "
         target="_blank"
         class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors whitespace-nowrap"
         @click.stop
-      >View Statement</a>
+        >View Statement</a
+      >
     </template>
   </FinanceTable>
 </template>
@@ -49,6 +58,11 @@ const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
 const suppliers = computed(() => resource.data || [])
 
-function refetch() { resource.fetch() }
-watch(company, () => { page.value = 0; resource.fetch() })
+function refetch() {
+  resource.fetch()
+}
+watch(company, () => {
+  page.value = 0
+  resource.fetch()
+})
 </script>

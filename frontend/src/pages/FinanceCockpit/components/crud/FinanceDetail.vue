@@ -17,25 +17,40 @@
       </div>
 
       <!-- Document header -->
-      <div class="rounded-xl border border-outline-gray-1 bg-surface-white shadow-sm overflow-hidden">
+      <div
+        class="rounded-xl border border-outline-gray-1 bg-surface-white shadow-sm overflow-hidden"
+      >
         <div class="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center gap-5">
           <div class="flex items-start gap-3 min-w-0 flex-1">
-            <span class="flex items-center justify-center w-11 h-11 rounded-xl bg-surface-gray-3 text-ink-gray-7 flex-shrink-0">
+            <span
+              class="flex items-center justify-center w-11 h-11 rounded-xl bg-surface-gray-3 text-ink-gray-7 flex-shrink-0"
+            >
               <FcIcon name="receipt" :size="22" />
             </span>
             <div class="min-w-0">
               <div class="flex items-center gap-2.5 flex-wrap">
-                <h2 class="text-xl font-bold text-ink-gray-9 truncate">{{ name }}</h2>
+                <h2 class="text-xl font-bold text-ink-gray-9 truncate">
+                  {{ name }}
+                </h2>
                 <StatusBadge v-if="statusValue" :status="statusValue" />
               </div>
-              <p v-if="subtitle" class="text-sm text-ink-gray-5 mt-0.5 truncate">{{ subtitle }}</p>
+              <p
+                v-if="subtitle"
+                class="text-sm text-ink-gray-5 mt-0.5 truncate"
+              >
+                {{ subtitle }}
+              </p>
             </div>
           </div>
 
           <!-- Key amount -->
           <div v-if="keyAmount !== null" class="lg:text-right">
-            <p class="text-xs font-medium text-ink-gray-5">{{ keyAmountLabel }}</p>
-            <p class="text-2xl font-bold text-ink-gray-9 tabular-nums">{{ formatCurrency(keyAmount, doc.currency) }}</p>
+            <p class="text-xs font-medium text-ink-gray-5">
+              {{ keyAmountLabel }}
+            </p>
+            <p class="text-2xl font-bold text-ink-gray-9 tabular-nums">
+              {{ formatCurrency(keyAmount, doc.currency) }}
+            </p>
           </div>
 
           <!-- Actions (RBAC-gated, visible-but-disabled) -->
@@ -74,11 +89,7 @@
               <template #prefix><FcIcon name="x" :size="14" /></template>
               Cancel
             </Button>
-            <Button
-              variant="outline"
-              theme="gray"
-              @click="printDoc"
-            >
+            <Button variant="outline" theme="gray" @click="printDoc">
               <template #prefix><FcIcon name="printer" :size="14" /></template>
               Print
             </Button>
@@ -97,14 +108,35 @@
         </div>
 
         <!-- FC-13: Explicit summary strip -->
-        <div class="border-t border-outline-gray-1 bg-surface-gray-1 px-5 sm:px-6 py-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          <div v-for="fact in summaryFacts" :key="fact.fieldname" class="min-w-0">
-            <dt class="text-[11px] font-medium text-ink-gray-5 uppercase tracking-wide">{{ fact.label }}</dt>
+        <div
+          class="border-t border-outline-gray-1 bg-surface-gray-1 px-5 sm:px-6 py-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4"
+        >
+          <div
+            v-for="fact in summaryFacts"
+            :key="fact.fieldname"
+            class="min-w-0"
+          >
+            <dt
+              class="text-[11px] font-medium text-ink-gray-5 uppercase tracking-wide"
+            >
+              {{ fact.label }}
+            </dt>
             <dd
               class="text-sm font-medium mt-0.5 truncate"
-              :class="[fact.numeric ? 'tabular-nums' : '', fact.color || 'text-ink-gray-8']"
-            >{{ fact.display }}</dd>
-            <dd v-if="fact.subLabel" class="text-xs mt-0.5" :class="fact.subColor || 'text-ink-gray-4'">{{ fact.subLabel }}</dd>
+              :class="[
+                fact.numeric ? 'tabular-nums' : '',
+                fact.color || 'text-ink-gray-8',
+              ]"
+            >
+              {{ fact.display }}
+            </dd>
+            <dd
+              v-if="fact.subLabel"
+              class="text-xs mt-0.5"
+              :class="fact.subColor || 'text-ink-gray-4'"
+            >
+              {{ fact.subLabel }}
+            </dd>
           </div>
         </div>
       </div>
@@ -132,7 +164,12 @@
           </SectionCard>
 
           <!-- Summary -->
-          <SectionCard v-else-if="sec.kind === 'summary'" :title="sec.title" :icon="sec.icon" tone="positive">
+          <SectionCard
+            v-else-if="sec.kind === 'summary'"
+            :title="sec.title"
+            :icon="sec.icon"
+            tone="positive"
+          >
             <SummaryBar
               :subtotal="subtotal"
               :tax="taxTotal"
@@ -148,13 +185,31 @@
         </template>
 
         <!-- Configured scalar details -->
-        <SectionCard v-if="detailFields.length" title="Details" icon="file-text" tone="neutral">
-          <dl class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
-            <div v-for="f in detailFields" :key="f.fieldname" class="flex flex-col min-w-0">
+        <SectionCard
+          v-if="detailFields.length"
+          title="Details"
+          icon="file-text"
+          tone="neutral"
+        >
+          <dl
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4"
+          >
+            <div
+              v-for="f in detailFields"
+              :key="f.fieldname"
+              class="flex flex-col min-w-0"
+            >
               <dt class="text-xs font-medium text-ink-gray-5">{{ f.label }}</dt>
-              <dd class="text-sm text-ink-gray-8 mt-0.5 truncate" :class="isNum(f) ? 'tabular-nums' : ''">
-                <template v-if="f.type === 'check'">{{ doc[f.fieldname] ? 'Yes' : 'No' }}</template>
-                <template v-else-if="f.type === 'currency'">{{ formatCurrency(doc[f.fieldname], doc.currency) }}</template>
+              <dd
+                class="text-sm text-ink-gray-8 mt-0.5 truncate"
+                :class="isNum(f) ? 'tabular-nums' : ''"
+              >
+                <template v-if="f.type === 'check'">{{
+                  doc[f.fieldname] ? 'Yes' : 'No'
+                }}</template>
+                <template v-else-if="f.type === 'currency'">{{
+                  formatCurrency(doc[f.fieldname], doc.currency)
+                }}</template>
                 <template v-else>{{ displayVal(doc[f.fieldname]) }}</template>
               </dd>
             </div>
@@ -162,7 +217,12 @@
         </SectionCard>
 
         <!-- FC-14: Related documents panel -->
-        <SectionCard v-if="relatedItems.length" title="Related" icon="link" tone="neutral">
+        <SectionCard
+          v-if="relatedItems.length"
+          title="Related"
+          icon="link"
+          tone="neutral"
+        >
           <div class="flex flex-wrap gap-2">
             <a
               v-for="item in relatedItems"
@@ -190,8 +250,12 @@
               :key="ref.reference_name"
               class="flex items-center justify-between py-2"
             >
-              <span class="text-sm font-medium text-ink-gray-8">{{ ref.reference_name }}</span>
-              <span class="text-sm tabular-nums text-ink-gray-6">{{ formatCurrency(ref.allocated_amount, doc.currency) }}</span>
+              <span class="text-sm font-medium text-ink-gray-8">{{
+                ref.reference_name
+              }}</span>
+              <span class="text-sm tabular-nums text-ink-gray-6">{{
+                formatCurrency(ref.allocated_amount, doc.currency)
+              }}</span>
             </div>
           </div>
         </SectionCard>
@@ -242,7 +306,9 @@ const subtitle = computed(() => {
 })
 
 const totalsCfg = computed(() => layout.totals)
-const keyAmountLabel = computed(() => (isSubmittable.value ? 'Grand Total' : 'Amount'))
+const keyAmountLabel = computed(() =>
+  isSubmittable.value ? 'Grand Total' : 'Amount',
+)
 const keyAmount = computed(() => {
   const d = doc.value
   if (!d) return null
@@ -258,7 +324,10 @@ const subtotal = computed(() => {
   if (!cfg || !d) return 0
   if (d[cfg.subtotalField] != null) return Number(d[cfg.subtotalField])
   const rows = d[cfg.lineItemsField] || []
-  return rows.reduce((s, r) => s + Number(r[cfg.qtyField] ?? 0) * Number(r[cfg.rateField] ?? 0), 0)
+  return rows.reduce(
+    (s, r) => s + Number(r[cfg.qtyField] ?? 0) * Number(r[cfg.rateField] ?? 0),
+    0,
+  )
 })
 const taxTotal = computed(() => {
   const cfg = totalsCfg.value
@@ -271,7 +340,8 @@ const taxTotal = computed(() => {
 const grandTotal = computed(() => {
   const cfg = totalsCfg.value
   const d = doc.value
-  if (cfg && d && d[cfg.grandTotalField] != null) return Number(d[cfg.grandTotalField])
+  if (cfg && d && d[cfg.grandTotalField] != null)
+    return Number(d[cfg.grandTotalField])
   return subtotal.value + taxTotal.value
 })
 
@@ -333,7 +403,15 @@ function buildFact(fieldname, d) {
     subColor = 'text-red-500 dark:text-red-400'
   }
 
-  return { fieldname, label, numeric: isNumericType(type), display, color, subLabel, subColor }
+  return {
+    fieldname,
+    label,
+    numeric: isNumericType(type),
+    display,
+    color,
+    subLabel,
+    subColor,
+  }
 }
 
 // Configured scalar fields not already shown in the summary strip.
@@ -364,10 +442,18 @@ const relatedItems = computed(() => {
 
   if (props.doctype === 'Sales Invoice') {
     if (d.crm_deal) {
-      items.push({ label: 'View Deal →', icon: 'briefcase', href: '/crm/deals/' + d.crm_deal })
+      items.push({
+        label: 'View Deal →',
+        icon: 'briefcase',
+        href: '/crm/deals/' + d.crm_deal,
+      })
     }
     if (d.crm_quotation) {
-      items.push({ label: 'View Quote →', icon: 'file-text', href: '/crm/quotes/' + d.crm_quotation })
+      items.push({
+        label: 'View Quote →',
+        icon: 'file-text',
+        href: '/crm/quotes/' + d.crm_quotation,
+      })
     }
   }
 
@@ -398,7 +484,9 @@ const isElevated = computed(
     roles.value.includes('Finance Manager') ||
     roles.value.includes('Accounts Manager'),
 )
-const canWrite = computed(() => isElevated.value || roles.value.includes('Accounts User'))
+const canWrite = computed(
+  () => isElevated.value || roles.value.includes('Accounts User'),
+)
 const canSubmit = computed(() => isElevated.value)
 const canCancel = computed(() => isElevated.value)
 const canDelete = computed(() => isElevated.value)

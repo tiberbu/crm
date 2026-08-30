@@ -1,20 +1,27 @@
 <template>
   <div class="mt-6 space-y-5 px-3 pb-6 sm:px-0">
-
     <!-- ── DEAL PROGRESS (prominent hero) ─────────────────────────────────── -->
-    <div class="rounded-xl border border-outline-gray-2 bg-surface-white p-5 shadow-sm dark:bg-surface-gray-1">
+    <div
+      class="rounded-xl border border-outline-gray-2 bg-surface-white p-5 shadow-sm dark:bg-surface-gray-1"
+    >
       <div class="mb-4 flex items-end justify-between gap-3">
         <div>
-          <h3 class="text-base font-semibold text-ink-gray-9">{{ __('Deal Progress') }}</h3>
+          <h3 class="text-base font-semibold text-ink-gray-9">
+            {{ __('Deal Progress') }}
+          </h3>
           <p class="mt-0.5 text-xs text-ink-gray-5">
             {{ __('{0} of {1} stages complete', [doneCount, stages.length]) }}
           </p>
         </div>
-        <span class="text-2xl font-bold leading-none text-ink-gray-9">{{ progressPct }}%</span>
+        <span class="text-2xl font-bold leading-none text-ink-gray-9"
+          >{{ progressPct }}%</span
+        >
       </div>
 
       <!-- Overall progress bar -->
-      <div class="mb-6 h-2 w-full overflow-hidden rounded-full bg-surface-gray-3">
+      <div
+        class="mb-6 h-2 w-full overflow-hidden rounded-full bg-surface-gray-3"
+      >
         <div
           class="h-full rounded-full bg-green-500 transition-all duration-500 dark:bg-green-400"
           :style="{ width: progressPct + '%' }"
@@ -23,7 +30,11 @@
 
       <!-- Loading skeleton when lifecycle prop not yet available -->
       <div v-if="!props.lifecycle" class="flex gap-2">
-        <div v-for="n in 6" :key="n" class="h-16 flex-1 animate-pulse rounded-lg bg-surface-gray-2" />
+        <div
+          v-for="n in 6"
+          :key="n"
+          class="h-16 flex-1 animate-pulse rounded-lg bg-surface-gray-2"
+        />
       </div>
 
       <!-- Stepper: vertical timeline on mobile, horizontal on lg -->
@@ -37,7 +48,11 @@
           <span
             v-if="i > 0"
             class="absolute left-4 top-[-24px] h-6 w-0.5 lg:left-auto lg:right-1/2 lg:top-4 lg:h-0.5 lg:w-full"
-            :class="stages[i - 1].state === 'done' ? 'bg-green-500 dark:bg-green-400' : 'bg-surface-gray-3'"
+            :class="
+              stages[i - 1].state === 'done'
+                ? 'bg-green-500 dark:bg-green-400'
+                : 'bg-surface-gray-3'
+            "
           />
 
           <!-- Node circle -->
@@ -47,30 +62,52 @@
           >
             <svg
               v-if="st.state === 'done'"
-              class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
             >
               <polyline points="20 6 9 17 4 12" />
             </svg>
             <svg
               v-else-if="st.state === 'blocked'"
-              class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
             >
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
             <span v-else>{{ i + 1 }}</span>
           </div>
 
           <!-- Label + reference + status pill -->
           <div class="min-w-0 lg:mt-2 lg:w-full lg:px-1">
-            <p class="text-xs font-semibold text-ink-gray-8">{{ __(st.label) }}</p>
-            <p class="truncate text-xs text-ink-gray-5" :title="st.ref || ''">{{ st.ref || '—' }}</p>
+            <p class="text-xs font-semibold text-ink-gray-8">
+              {{ __(st.label) }}
+            </p>
+            <p class="truncate text-xs text-ink-gray-5" :title="st.ref || ''">
+              {{ st.ref || '—' }}
+            </p>
             <span
               class="mt-1 inline-flex items-center gap-1 rounded-full bg-surface-gray-2 px-2 py-0.5 dark:bg-surface-gray-3"
             >
-              <span :class="statusDot(st.status)" class="h-1.5 w-1.5 flex-shrink-0 rounded-full" />
-              <span class="text-xs font-medium" :class="statusText(st.status)">{{ __(st.statusLabel) }}</span>
+              <span
+                :class="statusDot(st.status)"
+                class="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+              />
+              <span
+                class="text-xs font-medium"
+                :class="statusText(st.status)"
+                >{{ __(st.statusLabel) }}</span
+              >
             </span>
           </div>
         </li>
@@ -81,7 +118,9 @@
         v-if="contractExists && facilitySignatories.length"
         class="mt-6 border-t border-outline-gray-2 pt-4"
       >
-        <p class="mb-2 text-xs font-medium uppercase tracking-wide text-ink-gray-4">
+        <p
+          class="mb-2 text-xs font-medium uppercase tracking-wide text-ink-gray-4"
+        >
           {{ __('Facility Signatories') }}
         </p>
         <div class="space-y-2">
@@ -91,15 +130,28 @@
             class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
           >
             <!-- Display row -->
-            <div v-if="editingRole !== s.role" class="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span :class="statusDot(s.status)" class="h-2 w-2 flex-shrink-0 rounded-full" />
+            <div
+              v-if="editingRole !== s.role"
+              class="flex flex-wrap items-center gap-x-3 gap-y-1"
+            >
+              <span
+                :class="statusDot(s.status)"
+                class="h-2 w-2 flex-shrink-0 rounded-full"
+              />
               <div class="min-w-0">
-                <p class="truncate text-sm font-medium text-ink-gray-8">{{ s.name || __(s.role) }}</p>
+                <p class="truncate text-sm font-medium text-ink-gray-8">
+                  {{ s.name || __(s.role) }}
+                </p>
                 <p class="truncate text-xs text-ink-gray-5">
-                  {{ __(s.role) }}<template v-if="s.email"> · {{ s.email }}</template>
+                  {{ __(s.role)
+                  }}<template v-if="s.email"> · {{ s.email }}</template>
                 </p>
               </div>
-              <span class="ml-auto text-xs font-medium" :class="statusText(s.status)">{{ __(s.status) }}</span>
+              <span
+                class="ml-auto text-xs font-medium"
+                :class="statusText(s.status)"
+                >{{ __(s.status) }}</span
+              >
 
               <!-- Actions for signatories who have not yet signed -->
               <div
@@ -110,7 +162,11 @@
                   type="button"
                   class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
                   :disabled="!canGenerate || resendingKey === rowKey(s)"
-                  :title="canGenerate ? __('Edit this signatory') : __('Sales Manager role required')"
+                  :title="
+                    canGenerate
+                      ? __('Edit this signatory')
+                      : __('Sales Manager role required')
+                  "
                   @click="startEdit(s)"
                 >
                   {{ __('Edit') }}
@@ -120,10 +176,18 @@
                   type="button"
                   class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
                   :disabled="!canGenerate || resendingKey === rowKey(s)"
-                  :title="canGenerate ? __('Regenerate and re-send the signing link') : __('Sales Manager role required')"
+                  :title="
+                    canGenerate
+                      ? __('Regenerate and re-send the signing link')
+                      : __('Sales Manager role required')
+                  "
                   @click="doResend(s.role, s.row_name)"
                 >
-                  {{ resendingKey === rowKey(s) ? __('Sending…') : __('Resend link') }}
+                  {{
+                    resendingKey === rowKey(s)
+                      ? __('Sending…')
+                      : __('Resend link')
+                  }}
                 </button>
               </div>
             </div>
@@ -148,13 +212,23 @@
                 v-if="isSignedStatus(s.status)"
                 class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
               >
-                {{ __('This signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.') }}
+                {{
+                  __(
+                    'This signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.',
+                  )
+                }}
               </p>
               <p v-else class="text-xs text-ink-gray-4">
-                {{ __('Changing the email invalidates the old link and re-sends a fresh one to the new address.') }}
+                {{
+                  __(
+                    'Changing the email invalidates the old link and re-sends a fresh one to the new address.',
+                  )
+                }}
               </p>
               <div class="flex items-center justify-end gap-2">
-                <Button variant="subtle" @click="cancelEdit">{{ __('Cancel') }}</Button>
+                <Button variant="subtle" @click="cancelEdit">{{
+                  __('Cancel')
+                }}</Button>
                 <Button
                   variant="solid"
                   :loading="savingEdit"
@@ -171,7 +245,9 @@
     </div>
 
     <!-- ── EXEC NOTES ────────────────────────────────────────────────────── -->
-    <div class="rounded-lg border border-outline-gray-2 bg-surface-white p-4 dark:bg-surface-gray-1">
+    <div
+      class="rounded-lg border border-outline-gray-2 bg-surface-white p-4 dark:bg-surface-gray-1"
+    >
       <label
         class="mb-1 block text-xs font-medium uppercase tracking-wide text-ink-gray-4"
         for="exec-notes"
@@ -189,7 +265,9 @@
     </div>
 
     <!-- ── GENERATE CONTRACT FORM ─────────────────────────────────────────── -->
-    <div class="flex items-center justify-between border-b border-outline-gray-2 pb-3">
+    <div
+      class="flex items-center justify-between border-b border-outline-gray-2 pb-3"
+    >
       <h3 class="text-base font-semibold text-ink-gray-9">
         {{ __('Send Contract for Signing') }}
       </h3>
@@ -210,7 +288,7 @@
         stroke-linecap="round"
         stroke-linejoin="round"
       >
-        <polyline points="20 6 9 17 4 12"/>
+        <polyline points="20 6 9 17 4 12" />
       </svg>
       <p class="text-sm text-green-800 dark:text-green-300">{{ successMsg }}</p>
     </div>
@@ -230,9 +308,9 @@
         stroke-linecap="round"
         stroke-linejoin="round"
       >
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="15" y1="9" x2="9" y2="15"/>
-        <line x1="9" y1="9" x2="15" y2="15"/>
+        <circle cx="12" cy="12" r="10" />
+        <line x1="15" y1="9" x2="9" y2="15" />
+        <line x1="9" y1="9" x2="15" y2="15" />
       </svg>
       <p class="text-sm text-red-800 dark:text-red-300">{{ errorMsg }}</p>
     </div>
@@ -248,8 +326,12 @@
     </div>
 
     <!-- Nomination form -->
-    <div class="rounded-lg border border-outline-gray-2 bg-surface-white p-4 dark:bg-surface-gray-1">
-      <p class="mb-4 text-xs font-medium uppercase tracking-wide text-ink-gray-4">
+    <div
+      class="rounded-lg border border-outline-gray-2 bg-surface-white p-4 dark:bg-surface-gray-1"
+    >
+      <p
+        class="mb-4 text-xs font-medium uppercase tracking-wide text-ink-gray-4"
+      >
         {{ __('Nominate Facility Signatory & Witness') }}
       </p>
 
@@ -257,7 +339,8 @@
       <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label class="mb-1 block text-xs font-medium text-ink-gray-6">
-            {{ __('Facility Signatory Name') }}<span class="text-red-500">*</span>
+            {{ __('Facility Signatory Name')
+            }}<span class="text-red-500">*</span>
           </label>
           <input
             v-model="facilitySignatoryName"
@@ -269,7 +352,8 @@
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-ink-gray-6">
-            {{ __('Facility Signatory Email') }}<span class="text-red-500">*</span>
+            {{ __('Facility Signatory Email')
+            }}<span class="text-red-500">*</span>
           </label>
           <input
             v-model="facilitySignatoryEmail"
@@ -297,7 +381,8 @@
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-ink-gray-6">
-            {{ __('Facility Witness Email') }}<span class="text-red-500">*</span>
+            {{ __('Facility Witness Email')
+            }}<span class="text-red-500">*</span>
           </label>
           <input
             v-model="facilityWitnessEmail"
@@ -319,7 +404,9 @@
           <label class="block text-xs font-medium text-ink-gray-6">
             {{ __('Network & Tiberbu Co-Signatories') }}
           </label>
-          <span v-if="coSignersLoading" class="text-xs text-ink-gray-4">{{ __('Loading…') }}</span>
+          <span v-if="coSignersLoading" class="text-xs text-ink-gray-4">{{
+            __('Loading…')
+          }}</span>
         </div>
 
         <!-- Post-generate: editable rows (on-contract rows + configured-but-missing) -->
@@ -330,25 +417,35 @@
             class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
           >
             <!-- Display row -->
-            <div v-if="coEditKey !== item.key" class="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-xs font-semibold text-ink-gray-7 dark:bg-surface-gray-4">
+            <div
+              v-if="coEditKey !== item.key"
+              class="flex flex-wrap items-center gap-x-3 gap-y-1"
+            >
+              <span
+                class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-xs font-semibold text-ink-gray-7 dark:bg-surface-gray-4"
+              >
                 {{ initials(item.name || item.email) }}
               </span>
               <div class="min-w-0">
-                <p class="truncate text-sm font-medium text-ink-gray-8">{{ item.name || __(item.role) }}</p>
+                <p class="truncate text-sm font-medium text-ink-gray-8">
+                  {{ item.name || __(item.role) }}
+                </p>
                 <p class="truncate text-xs text-ink-gray-5">
-                  {{ __(item.role) }}<template v-if="item.email"> · {{ item.email }}</template>
+                  {{ __(item.role)
+                  }}<template v-if="item.email"> · {{ item.email }}</template>
                 </p>
               </div>
               <span
                 v-if="item.onContract"
                 class="ml-auto text-xs font-medium"
                 :class="statusText(item.status)"
-              >{{ __(item.status) }}</span>
+                >{{ __(item.status) }}</span
+              >
               <span
                 v-else
                 class="ml-auto rounded-full bg-surface-gray-3 px-2 py-0.5 text-xs font-medium text-ink-gray-6 dark:bg-surface-gray-4"
-              >{{ __('Not on contract') }}</span>
+                >{{ __('Not on contract') }}</span
+              >
 
               <!-- Actions: Edit an unsigned on-contract row, or Add a missing one -->
               <div
@@ -358,10 +455,16 @@
                 <button
                   type="button"
                   class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
-                  :disabled="!canGenerate || savingCo || resendingKey === rowKey(item)"
-                  :title="canGenerate
-                    ? (item.onContract ? __('Edit this co-signatory') : __('Add this co-signatory to the contract'))
-                    : __('Sales Manager role required')"
+                  :disabled="
+                    !canGenerate || savingCo || resendingKey === rowKey(item)
+                  "
+                  :title="
+                    canGenerate
+                      ? item.onContract
+                        ? __('Edit this co-signatory')
+                        : __('Add this co-signatory to the contract')
+                      : __('Sales Manager role required')
+                  "
                   @click="startCoEdit(item)"
                 >
                   {{ item.onContract ? __('Edit') : __('Add to contract') }}
@@ -371,10 +474,18 @@
                   type="button"
                   class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
                   :disabled="!canGenerate || resendingKey === rowKey(item)"
-                  :title="canGenerate ? __('Regenerate and re-send the signing link') : __('Sales Manager role required')"
+                  :title="
+                    canGenerate
+                      ? __('Regenerate and re-send the signing link')
+                      : __('Sales Manager role required')
+                  "
                   @click="doResend(item.role, item.row_name)"
                 >
-                  {{ resendingKey === rowKey(item) ? __('Sending…') : __('Resend link') }}
+                  {{
+                    resendingKey === rowKey(item)
+                      ? __('Sending…')
+                      : __('Resend link')
+                  }}
                 </button>
               </div>
             </div>
@@ -382,7 +493,11 @@
             <!-- Inline edit / add form — free-text name + email for every co-signatory -->
             <div v-else class="space-y-2">
               <label class="block text-xs font-medium text-ink-gray-6">
-                {{ isTiberbuRole(item.role) ? __('Tiberbu Signatory') : __('Network Signatory') }}
+                {{
+                  isTiberbuRole(item.role)
+                    ? __('Tiberbu Signatory')
+                    : __('Network Signatory')
+                }}
               </label>
               <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input
@@ -394,7 +509,11 @@
                 <input
                   v-model="coEditEmail"
                   type="email"
-                  :placeholder="isTiberbuRole(item.role) ? __('signatory@tiberbu.com') : __('signatory@network.org')"
+                  :placeholder="
+                    isTiberbuRole(item.role)
+                      ? __('signatory@tiberbu.com')
+                      : __('signatory@network.org')
+                  "
                   class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
                 />
               </div>
@@ -402,20 +521,36 @@
                 v-if="!coEditIsAdd && isSignedStatus(item.status)"
                 class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
               >
-                {{ __('This co-signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.') }}
+                {{
+                  __(
+                    'This co-signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.',
+                  )
+                }}
               </p>
               <p v-else class="text-xs text-ink-gray-4">
                 <template v-if="isTiberbuRole(item.role)">
-                  {{ coEditIsAdd
-                      ? __('Adds a Tiberbu co-signatory to this contract only. Opt-In Settings is not changed.')
-                      : __('Changing the email invalidates the old link and re-sends a fresh one. This contract only — Opt-In Settings is not changed.') }}
+                  {{
+                    coEditIsAdd
+                      ? __(
+                          'Adds a Tiberbu co-signatory to this contract only. Opt-In Settings is not changed.',
+                        )
+                      : __(
+                          'Changing the email invalidates the old link and re-sends a fresh one. This contract only — Opt-In Settings is not changed.',
+                        )
+                  }}
                 </template>
                 <template v-else>
-                  {{ __('Saves this signatory to the network configuration (used by future contracts) and updates them on this contract. Changing the email re-sends a fresh signing link.') }}
+                  {{
+                    __(
+                      'Saves this signatory to the network configuration (used by future contracts) and updates them on this contract. Changing the email re-sends a fresh signing link.',
+                    )
+                  }}
                 </template>
               </p>
               <div class="flex items-center justify-end gap-2">
-                <Button variant="subtle" @click="cancelCoEdit">{{ __('Cancel') }}</Button>
+                <Button variant="subtle" @click="cancelCoEdit">{{
+                  __('Cancel')
+                }}</Button>
                 <Button
                   variant="solid"
                   :loading="savingCo"
@@ -434,7 +569,11 @@
             class="space-y-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
           >
             <label class="block text-xs font-medium text-ink-gray-6">
-              {{ isTiberbuRole(coEditRole) ? __('Add Tiberbu Signatory') : __('Add Network Signatory') }}
+              {{
+                isTiberbuRole(coEditRole)
+                  ? __('Add Tiberbu Signatory')
+                  : __('Add Network Signatory')
+              }}
             </label>
 
             <!-- Free-text name + email for both roles -->
@@ -448,18 +587,30 @@
               <input
                 v-model="coEditEmail"
                 type="email"
-                :placeholder="isTiberbuRole(coEditRole) ? __('signatory@tiberbu.com') : __('signatory@network.org')"
+                :placeholder="
+                  isTiberbuRole(coEditRole)
+                    ? __('signatory@tiberbu.com')
+                    : __('signatory@network.org')
+                "
                 class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
               />
             </div>
 
             <p class="text-xs text-ink-gray-4">
-              {{ isTiberbuRole(coEditRole)
-                  ? __('Adds a Tiberbu co-signatory to this contract only. Opt-In Settings is not changed.')
-                  : __('Saves this signatory to the network configuration (used by future contracts) and adds them to this contract.') }}
+              {{
+                isTiberbuRole(coEditRole)
+                  ? __(
+                      'Adds a Tiberbu co-signatory to this contract only. Opt-In Settings is not changed.',
+                    )
+                  : __(
+                      'Saves this signatory to the network configuration (used by future contracts) and adds them to this contract.',
+                    )
+              }}
             </p>
             <div class="flex items-center justify-end gap-2">
-              <Button variant="subtle" @click="cancelCoEdit">{{ __('Cancel') }}</Button>
+              <Button variant="subtle" @click="cancelCoEdit">{{
+                __('Cancel')
+              }}</Button>
               <Button
                 variant="solid"
                 :loading="savingCo"
@@ -472,16 +623,25 @@
           </div>
 
           <!-- Add actions (hidden while an edit/add form is open) -->
-          <div v-else-if="!coEditKey" class="flex flex-wrap items-center gap-4 pt-1">
+          <div
+            v-else-if="!coEditKey"
+            class="flex flex-wrap items-center gap-4 pt-1"
+          >
             <button
               type="button"
               class="text-xs font-medium underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
               :disabled="!canGenerate || !networkSlug"
-              :title="!canGenerate
-                ? __('Sales Manager role required')
-                : (!networkSlug
-                    ? __('No opt-in network is linked to this deal, so a network signatory cannot be saved.')
-                    : __('Add a network signatory (saved to the network configuration)'))"
+              :title="
+                !canGenerate
+                  ? __('Sales Manager role required')
+                  : !networkSlug
+                    ? __(
+                        'No opt-in network is linked to this deal, so a network signatory cannot be saved.',
+                      )
+                    : __(
+                        'Add a network signatory (saved to the network configuration)',
+                      )
+              "
               @click="startAddNetwork"
             >
               + {{ __('Add Network Signatory') }}
@@ -491,7 +651,11 @@
               type="button"
               class="text-xs font-medium underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
               :disabled="!canGenerate"
-              :title="canGenerate ? __('Add the Tiberbu signatory to this contract') : __('Sales Manager role required')"
+              :title="
+                canGenerate
+                  ? __('Add the Tiberbu signatory to this contract')
+                  : __('Sales Manager role required')
+              "
               @click="startAddTiberbu"
             >
               + {{ __('Add Tiberbu Signatory') }}
@@ -499,10 +663,18 @@
           </div>
 
           <p v-if="coSignatoryItems.length" class="text-xs text-ink-gray-4">
-            {{ __('Co-signatories are invited automatically once the facility signatory and witness have both signed.') }}
+            {{
+              __(
+                'Co-signatories are invited automatically once the facility signatory and witness have both signed.',
+              )
+            }}
           </p>
           <p v-else class="text-xs text-ink-gray-4">
-            {{ __('No co-signatories yet. Add a Network or Tiberbu signatory so the contract can be co-signed.') }}
+            {{
+              __(
+                'No co-signatories yet. Add a Network or Tiberbu signatory so the contract can be co-signed.',
+              )
+            }}
           </p>
         </div>
 
@@ -513,18 +685,27 @@
             :key="`${cs.signer_role}:${cs.email}:${i}`"
             class="flex items-center gap-3 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 dark:bg-surface-gray-2"
           >
-            <span class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-xs font-semibold text-ink-gray-7 dark:bg-surface-gray-4">
+            <span
+              class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-xs font-semibold text-ink-gray-7 dark:bg-surface-gray-4"
+            >
               {{ initials(cs.full_name || cs.email) }}
             </span>
             <div class="min-w-0">
-              <p class="truncate text-sm font-medium text-ink-gray-8">{{ cs.full_name || cs.email }}</p>
+              <p class="truncate text-sm font-medium text-ink-gray-8">
+                {{ cs.full_name || cs.email }}
+              </p>
               <p class="truncate text-xs text-ink-gray-5">
-                {{ __(cs.signer_role) }}<template v-if="cs.email"> · {{ cs.email }}</template>
+                {{ __(cs.signer_role)
+                }}<template v-if="cs.email"> · {{ cs.email }}</template>
               </p>
             </div>
           </div>
           <p class="text-xs text-ink-gray-4">
-            {{ __('These co-signatories are seeded onto the contract at generation and invited automatically once the facility signatory and witness have both signed.') }}
+            {{
+              __(
+                'These co-signatories are seeded onto the contract at generation and invited automatically once the facility signatory and witness have both signed.',
+              )
+            }}
           </p>
         </div>
 
@@ -535,14 +716,21 @@
           class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-800 dark:bg-amber-900/20"
         >
           <p class="text-xs text-amber-700 dark:text-amber-400">
-            {{ __('No Network or Tiberbu co-signatories are configured for this network. You can add them on the contract once it is generated.') }}
+            {{
+              __(
+                'No Network or Tiberbu co-signatories are configured for this network. You can add them on the contract once it is generated.',
+              )
+            }}
           </p>
         </div>
       </div>
 
       <!-- Action row -->
       <div class="flex flex-wrap items-center justify-end gap-3">
-        <span v-if="contractExists && !successMsg" class="text-xs text-ink-gray-5">
+        <span
+          v-if="contractExists && !successMsg"
+          class="text-xs text-ink-gray-5"
+        >
           {{ __('Contract already generated — see Deal Progress above.') }}
         </span>
         <Button
@@ -562,9 +750,9 @@
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
           </template>
           {{ __('Download PDF') }}
@@ -579,7 +767,6 @@
         </Button>
       </div>
     </div>
-
   </div>
 </template>
 
@@ -593,8 +780,8 @@ import { sessionStore } from '@/stores/session'
 // Props / Emits
 // ---------------------------------------------------------------------------
 const props = defineProps({
-  dealId:   { type: String, required: true },
-  oisDoc:   { type: Object, default: null },
+  dealId: { type: String, required: true },
+  oisDoc: { type: Object, default: null },
   lifecycle: { type: Object, default: null },
 })
 
@@ -627,8 +814,10 @@ const dealDoc = computed(() => dealDocResource.data ?? null)
 // Co-signatories — Network Signatories (per network) + Tiberbu Signatory,
 // auto-resolved from configuration. Displayed read-only; not nominated here.
 // ---------------------------------------------------------------------------
-const coSignersResource = createResource({ url: 'crm.api.contracts.get_network_signatories' })
-const coSignersLoading  = ref(true)
+const coSignersResource = createResource({
+  url: 'crm.api.contracts.get_network_signatories',
+})
+const coSignersLoading = ref(true)
 
 const coSigners = computed(() => coSignersResource.data?.signers ?? [])
 const networkSlug = computed(() => coSignersResource.data?.network_slug ?? '')
@@ -636,7 +825,7 @@ const networkSlug = computed(() => coSignersResource.data?.network_slug ?? '')
 // The top "Signatories" block owns only the facility parties; the Network /
 // Tiberbu counterparties are edited in their own block below (coSignatoryItems).
 const facilitySignatories = computed(() =>
-  (lc.value.signatories ?? []).filter((s) => !isCoRole(s.role))
+  (lc.value.signatories ?? []).filter((s) => !isCoRole(s.role)),
 )
 
 onMounted(async () => {
@@ -654,7 +843,7 @@ function initials(nameOrEmail) {
   if (!s) return '?'
   const parts = s.split(/[\s@.]+/).filter(Boolean)
   const first = parts[0]?.[0] ?? ''
-  const second = parts.length > 1 ? (parts[1]?.[0] ?? '') : ''
+  const second = parts.length > 1 ? parts[1]?.[0] ?? '' : ''
   return (first + second).toUpperCase() || '?'
 }
 
@@ -664,24 +853,28 @@ function initials(nameOrEmail) {
 const oisRawJson = computed(() => {
   const raw = props.oisDoc?.raw_json
   if (!raw) return {}
-  try { return JSON.parse(raw) } catch { return {} }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
 })
 
 // ---------------------------------------------------------------------------
 // Exec Notes
 // ---------------------------------------------------------------------------
-const execNotes      = ref('')
+const execNotes = ref('')
 const execNotesReady = ref(false)
 
 watch(
   () => dealDoc.value?.exec_notes,
   (notes) => {
     if (!execNotesReady.value && notes !== undefined) {
-      execNotes.value      = notes ?? ''
+      execNotes.value = notes ?? ''
       execNotesReady.value = true
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 const saveNotesResource = createResource({ url: 'frappe.client.set_value' })
@@ -702,10 +895,10 @@ async function saveNotes() {
 // ---------------------------------------------------------------------------
 // Form state
 // ---------------------------------------------------------------------------
-const facilitySignatoryName  = ref('')
+const facilitySignatoryName = ref('')
 const facilitySignatoryEmail = ref('')
-const facilityWitnessName    = ref('')
-const facilityWitnessEmail   = ref('')
+const facilityWitnessName = ref('')
+const facilityWitnessEmail = ref('')
 
 // Pre-fill signatory + witness fields from oisDoc prop
 // Priority: explicit fields > raw_json contact > empty
@@ -713,13 +906,16 @@ watch(
   () => props.oisDoc,
   (doc) => {
     if (!doc) return
-    const explicitName  = (doc.facility_signatory_name  ?? '').trim()
+    const explicitName = (doc.facility_signatory_name ?? '').trim()
     const explicitEmail = (doc.facility_signatory_email ?? '').trim()
-    const rawContact    = oisRawJson.value?.contact
+    const rawContact = oisRawJson.value?.contact
 
     if (!facilitySignatoryName.value) {
-      facilitySignatoryName.value = explicitName
-        || [rawContact?.first_name, rawContact?.last_name].filter(Boolean).join(' ')
+      facilitySignatoryName.value =
+        explicitName ||
+        [rawContact?.first_name, rawContact?.last_name]
+          .filter(Boolean)
+          .join(' ')
     }
     if (!facilitySignatoryEmail.value) {
       facilitySignatoryEmail.value = explicitEmail || (rawContact?.email ?? '')
@@ -734,7 +930,7 @@ watch(
       facilityWitnessEmail.value = (doc.facility_witness_email ?? '').trim()
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 // ---------------------------------------------------------------------------
@@ -749,26 +945,27 @@ const isGenerating = ref(false)
 
 // Locked: no permission, OR contract exists, OR currently generating
 const formLocked = computed(
-  () => !canGenerate.value || contractExists.value || isGenerating.value
+  () => !canGenerate.value || contractExists.value || isGenerating.value,
 )
 
-const formValid = computed(() =>
-  facilitySignatoryName.value.trim()  !== '' &&
-  facilitySignatoryEmail.value.trim() !== '' &&
-  facilityWitnessName.value.trim()    !== '' &&
-  facilityWitnessEmail.value.trim()   !== ''
+const formValid = computed(
+  () =>
+    facilitySignatoryName.value.trim() !== '' &&
+    facilitySignatoryEmail.value.trim() !== '' &&
+    facilityWitnessName.value.trim() !== '' &&
+    facilityWitnessEmail.value.trim() !== '',
 )
 
 // Disabled: locked, form incomplete, or no quote yet
 const generateDisabled = computed(
-  () => formLocked.value || !formValid.value || !lc.value.quotation
+  () => formLocked.value || !formValid.value || !lc.value.quotation,
 )
 
 // ---------------------------------------------------------------------------
 // Banners
 // ---------------------------------------------------------------------------
 const successMsg = ref(null)
-const errorMsg   = ref(null)
+const errorMsg = ref(null)
 
 // ---------------------------------------------------------------------------
 // Generate contract
@@ -778,25 +975,25 @@ const generateResource = createResource({ url: 'crm.api.contracts.generate' })
 async function doGenerate() {
   if (generateDisabled.value) return
   isGenerating.value = true
-  successMsg.value   = null
-  errorMsg.value     = null
+  successMsg.value = null
+  errorMsg.value = null
   try {
     await generateResource.submit({
-      deal:                     props.dealId,
-      quote:                    lc.value.quotation?.name ?? '',
-      facility_signatory_name:  facilitySignatoryName.value.trim(),
+      deal: props.dealId,
+      quote: lc.value.quotation?.name ?? '',
+      facility_signatory_name: facilitySignatoryName.value.trim(),
       facility_signatory_email: facilitySignatoryEmail.value.trim(),
-      facility_witness_name:    facilityWitnessName.value.trim(),
-      facility_witness_email:   facilityWitnessEmail.value.trim(),
+      facility_witness_name: facilityWitnessName.value.trim(),
+      facility_witness_email: facilityWitnessEmail.value.trim(),
     })
-    successMsg.value = __(
-      'Contract sent — signing invitation emailed to {0}',
-      [facilitySignatoryEmail.value.trim()]
-    )
+    successMsg.value = __('Contract sent — signing invitation emailed to {0}', [
+      facilitySignatoryEmail.value.trim(),
+    ])
     toast.success(successMsg.value)
     emit('lifecycle-reload')
   } catch (err) {
-    const msg = err?.messages?.[0] ?? err?.message ?? __('Contract generation failed.')
+    const msg =
+      err?.messages?.[0] ?? err?.message ?? __('Contract generation failed.')
     errorMsg.value = msg
     toast.error(msg)
   } finally {
@@ -807,10 +1004,12 @@ async function doGenerate() {
 // ---------------------------------------------------------------------------
 // Resend / regenerate signing invitation
 // ---------------------------------------------------------------------------
-const resendResource = createResource({ url: 'crm.api.contracts.resend_invitation' })
+const resendResource = createResource({
+  url: 'crm.api.contracts.resend_invitation',
+})
 // Tracked by a per-row key (row_name when present, else role) so resending on one
 // Network Signatory doesn't spin the button on its sibling row sharing the role.
-const resendingKey   = ref('')
+const resendingKey = ref('')
 
 function rowKey(row) {
   return row?.row_name || row?.role || ''
@@ -828,7 +1027,10 @@ async function doResend(role, rowName) {
     toast.success(__('Signing link re-sent to {0}', [res?.email ?? role]))
     emit('lifecycle-reload')
   } catch (err) {
-    const msg = err?.messages?.[0] ?? err?.message ?? __('Could not resend the signing link.')
+    const msg =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('Could not resend the signing link.')
     toast.error(msg)
   } finally {
     resendingKey.value = ''
@@ -838,12 +1040,14 @@ async function doResend(role, rowName) {
 // ---------------------------------------------------------------------------
 // Edit an unsigned signatory
 // ---------------------------------------------------------------------------
-const updateSignatoryResource = createResource({ url: 'crm.api.contracts.update_signatory' })
+const updateSignatoryResource = createResource({
+  url: 'crm.api.contracts.update_signatory',
+})
 const editingRole = ref('')
 const editRowName = ref('')
-const editName    = ref('')
-const editEmail   = ref('')
-const savingEdit  = ref(false)
+const editName = ref('')
+const editEmail = ref('')
+const savingEdit = ref(false)
 
 // Every signatory row is editable — Pending, Declined, or Signed. Editing a
 // Signed row invalidates its signature server-side (update_signatory clears the
@@ -875,19 +1079,20 @@ function startEdit(s) {
   if (!canGenerate.value) return
   editingRole.value = s.role
   editRowName.value = s.row_name ?? ''
-  editName.value    = s.name ?? ''
-  editEmail.value   = s.email ?? ''
+  editName.value = s.name ?? ''
+  editEmail.value = s.email ?? ''
 }
 
 function cancelEdit() {
   editingRole.value = ''
   editRowName.value = ''
-  editName.value    = ''
-  editEmail.value   = ''
+  editName.value = ''
+  editEmail.value = ''
 }
 
 async function saveEdit(role) {
-  if (!editName.value.trim() || !editEmail.value.trim() || savingEdit.value) return
+  if (!editName.value.trim() || !editEmail.value.trim() || savingEdit.value)
+    return
   savingEdit.value = true
   try {
     const email = editEmail.value.trim()
@@ -902,12 +1107,15 @@ async function saveEdit(role) {
     toast.success(
       res?.resent
         ? __('Signatory updated — new signing link sent to {0}', [res.email])
-        : __('Signatory updated.')
+        : __('Signatory updated.'),
     )
     cancelEdit()
     emit('lifecycle-reload')
   } catch (err) {
-    const msg = err?.messages?.[0] ?? err?.message ?? __('Could not update the signatory.')
+    const msg =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('Could not update the signatory.')
     toast.error(msg)
   } finally {
     savingEdit.value = false
@@ -929,19 +1137,23 @@ async function saveEdit(role) {
 //   • Tiberbu Signatory — per-contract only; never overwrites the Opt-In Settings
 //     singleton (shared across all networks).
 // ---------------------------------------------------------------------------
-const addSignatoryResource = createResource({ url: 'crm.api.contracts.add_signatory' })
-const saveNetworkSignerResource = createResource({ url: 'crm.api.contracts.save_network_signer' })
+const addSignatoryResource = createResource({
+  url: 'crm.api.contracts.add_signatory',
+})
+const saveNetworkSignerResource = createResource({
+  url: 'crm.api.contracts.save_network_signer',
+})
 
-const ADD_KEY = '__add__'         // sentinel: the standalone "add from scratch" form is open
+const ADD_KEY = '__add__' // sentinel: the standalone "add from scratch" form is open
 
-const coEditKey     = ref('')     // unique key of the row being edited (role + email)
-const coEditRole    = ref('')
-const coEditRowName = ref('')     // child docname — targets the exact row when a role repeats
-const coEditName    = ref('')
-const coEditEmail   = ref('')
-const coEditOrigEmail = ref('')   // network write-back: the config row to update (blank → append)
-const coEditIsAdd   = ref(false)  // true → row is configured but not yet on the contract
-const savingCo    = ref(false)
+const coEditKey = ref('') // unique key of the row being edited (role + email)
+const coEditRole = ref('')
+const coEditRowName = ref('') // child docname — targets the exact row when a role repeats
+const coEditName = ref('')
+const coEditEmail = ref('')
+const coEditOrigEmail = ref('') // network write-back: the config row to update (blank → append)
+const coEditIsAdd = ref(false) // true → row is configured but not yet on the contract
+const savingCo = ref(false)
 
 // Counterparty roles this surface owns — matches contracts.py _COUNTERPARTY_ROLES.
 function isCoRole(role) {
@@ -959,7 +1171,7 @@ function coKey(role, email) {
 const coSignatoryItems = computed(() => {
   const rows = (lc.value.signatories ?? []).filter((s) => isCoRole(s.role))
   const onContractEmails = new Set(
-    rows.map((r) => (r.email ?? '').trim().toLowerCase()).filter(Boolean)
+    rows.map((r) => (r.email ?? '').trim().toLowerCase()).filter(Boolean),
   )
   // Tiberbu is singular per contract; its config email may have changed after
   // generation, so it is deduped by role (not email) — else a reconfigured
@@ -998,25 +1210,25 @@ const coSignatoryItems = computed(() => {
 
 // A Tiberbu Signatory is singular per contract — hide "Add Tiberbu" once present.
 const tiberbuOnContract = computed(() =>
-  coSignatoryItems.value.some((i) => isTiberbuRole(i.role) && i.onContract)
+  coSignatoryItems.value.some((i) => isTiberbuRole(i.role) && i.onContract),
 )
 
 function startCoEdit(item) {
   if (!canGenerate.value) return
-  coEditKey.value     = item.key
-  coEditRole.value    = item.role
+  coEditKey.value = item.key
+  coEditRole.value = item.role
   coEditRowName.value = item.row_name ?? ''
-  coEditName.value    = item.name ?? ''
-  coEditEmail.value   = item.email ?? ''
+  coEditName.value = item.name ?? ''
+  coEditEmail.value = item.email ?? ''
   coEditOrigEmail.value = item.email ?? ''
-  coEditIsAdd.value   = !item.onContract
+  coEditIsAdd.value = !item.onContract
 }
 
 // Open the standalone "add from scratch" form for a given counterparty role.
 function startAddNetwork() {
   if (!canGenerate.value) return
   cancelCoEdit()
-  coEditKey.value  = ADD_KEY
+  coEditKey.value = ADD_KEY
   coEditRole.value = 'Network Signatory'
   coEditIsAdd.value = true
 }
@@ -1024,28 +1236,29 @@ function startAddNetwork() {
 function startAddTiberbu() {
   if (!canGenerate.value) return
   cancelCoEdit()
-  coEditKey.value  = ADD_KEY
+  coEditKey.value = ADD_KEY
   coEditRole.value = 'Tiberbu Signatory'
   coEditIsAdd.value = true
 }
 
 function cancelCoEdit() {
-  coEditKey.value     = ''
-  coEditRole.value    = ''
+  coEditKey.value = ''
+  coEditRole.value = ''
   coEditRowName.value = ''
-  coEditName.value    = ''
-  coEditEmail.value   = ''
+  coEditName.value = ''
+  coEditEmail.value = ''
   coEditOrigEmail.value = ''
-  coEditIsAdd.value   = false
+  coEditIsAdd.value = false
 }
 
 async function saveCoEdit() {
-  if (!coEditName.value.trim() || !coEditEmail.value.trim() || savingCo.value) return
+  if (!coEditName.value.trim() || !coEditEmail.value.trim() || savingCo.value)
+    return
   savingCo.value = true
   try {
-    const role  = coEditRole.value
+    const role = coEditRole.value
     const email = coEditEmail.value.trim()
-    const name  = coEditName.value.trim()
+    const name = coEditName.value.trim()
     const contract = lc.value.contract?.name ?? ''
 
     if (isTiberbuRole(role)) {
@@ -1055,19 +1268,29 @@ async function saveCoEdit() {
         toast.success(__('Tiberbu signatory added to the contract.'))
       } else {
         const res = await updateSignatoryResource.submit({
-          contract, role, name, email, row_name: coEditRowName.value ?? '',
+          contract,
+          role,
+          name,
+          email,
+          row_name: coEditRowName.value ?? '',
         })
         toast.success(
           res?.resent
-            ? __('Tiberbu signatory updated — new signing link sent to {0}', [res.email])
-            : __('Tiberbu signatory updated.')
+            ? __('Tiberbu signatory updated — new signing link sent to {0}', [
+                res.email,
+              ])
+            : __('Tiberbu signatory updated.'),
         )
       }
     } else {
       // Network Signatory writes back to the network config (source of truth) and
       // syncs onto this contract in one call.
       if (!networkSlug.value) {
-        throw new Error(__('No network is resolved for this deal, so the signer cannot be saved.'))
+        throw new Error(
+          __(
+            'No network is resolved for this deal, so the signer cannot be saved.',
+          ),
+        )
       }
       const res = await saveNetworkSignerResource.submit({
         network_slug: networkSlug.value,
@@ -1078,8 +1301,12 @@ async function saveCoEdit() {
       })
       toast.success(
         res?.contract_synced === 'updated'
-          ? __('Network signatory saved to the network and updated on this contract.')
-          : __('Network signatory saved to the network and added to this contract.')
+          ? __(
+              'Network signatory saved to the network and updated on this contract.',
+            )
+          : __(
+              'Network signatory saved to the network and added to this contract.',
+            ),
       )
       // Refresh the resolved config so the list reflects the write-back.
       await coSignersResource.submit({ deal: props.dealId })
@@ -1088,7 +1315,10 @@ async function saveCoEdit() {
     cancelCoEdit()
     emit('lifecycle-reload')
   } catch (err) {
-    const msg = err?.messages?.[0] ?? err?.message ?? __('Could not save the co-signatory.')
+    const msg =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('Could not save the co-signatory.')
     toast.error(msg)
   } finally {
     savingCo.value = false
@@ -1098,8 +1328,10 @@ async function saveCoEdit() {
 // ---------------------------------------------------------------------------
 // Download PDF
 // ---------------------------------------------------------------------------
-const downloadPdfResource = createResource({ url: 'crm.api.contracts.download_pdf' })
-const downloadLoading     = ref(false)
+const downloadPdfResource = createResource({
+  url: 'crm.api.contracts.download_pdf',
+})
+const downloadLoading = ref(false)
 
 async function doDownloadPdf() {
   if (!contractExists.value) return
@@ -1114,12 +1346,12 @@ async function doDownloadPdf() {
       return
     }
     const bytes = atob(b64)
-    const arr   = new Uint8Array(bytes.length)
+    const arr = new Uint8Array(bytes.length)
     for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
     const blob = new Blob([arr], { type: 'application/pdf' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
     a.download = `contract-${lc.value.contract.name ?? 'document'}.pdf`
     a.click()
     URL.revokeObjectURL(url)
@@ -1135,13 +1367,16 @@ async function doDownloadPdf() {
 // Lifecycle status derived from prop
 // ---------------------------------------------------------------------------
 
-const submissionStatus = computed(() => lc.value.submission?.status  ?? 'None')
-const quotationStatus  = computed(() => lc.value.quotation?.status   ?? 'None')
-const contractStatus   = computed(() =>
-  lc.value.contract?.workflow_state ?? lc.value.contract?.status ?? 'None'
+const submissionStatus = computed(() => lc.value.submission?.status ?? 'None')
+const quotationStatus = computed(() => lc.value.quotation?.status ?? 'None')
+const contractStatus = computed(
+  () =>
+    lc.value.contract?.workflow_state ?? lc.value.contract?.status ?? 'None',
 )
-const approvalStatus   = computed(() => lc.value.onboarding?.approval_status ?? 'None')
-const invoiceStatus    = computed(() => {
+const approvalStatus = computed(
+  () => lc.value.onboarding?.approval_status ?? 'None',
+)
+const invoiceStatus = computed(() => {
   const inv = lc.value.sales_invoice
   if (!inv) return 'None'
   const ds = inv.docstatus ?? 0
@@ -1154,7 +1389,9 @@ const invoiceStatus    = computed(() => {
 const signatoriesStatus = computed(() => {
   const list = lc.value.signatories ?? []
   if (!list.length) return 'None'
-  const signed = list.filter((s) => (s.status ?? '').toLowerCase() === 'signed').length
+  const signed = list.filter(
+    (s) => (s.status ?? '').toLowerCase() === 'signed',
+  ).length
   if (signed === list.length) return 'Signed'
   if (signed > 0) return 'Awaiting Signatures'
   return 'Pending'
@@ -1163,7 +1400,9 @@ const signatoriesStatus = computed(() => {
 const signatoriesSummary = computed(() => {
   const list = lc.value.signatories ?? []
   if (!list.length) return ''
-  const signed = list.filter((s) => (s.status ?? '').toLowerCase() === 'signed').length
+  const signed = list.filter(
+    (s) => (s.status ?? '').toLowerCase() === 'signed',
+  ).length
   return __('{0} of {1} signed', [signed, list.length])
 })
 
@@ -1172,25 +1411,67 @@ const signatoriesSummary = computed(() => {
 // ---------------------------------------------------------------------------
 const stages = computed(() =>
   [
-    { key: 'optin',       label: 'Opt-In',      ref: lc.value.submission?.ref,     status: submissionStatus.value },
-    { key: 'quote',       label: 'Quote',       ref: lc.value.quotation?.name,     status: quotationStatus.value },
-    { key: 'contract',    label: 'Contract',    ref: lc.value.contract?.name,      status: contractStatus.value },
-    { key: 'signatories', label: 'Signatories', ref: signatoriesSummary.value,     status: signatoriesStatus.value },
-    { key: 'approval',    label: 'Approval',    ref: lc.value.onboarding?.name,    status: approvalStatus.value },
-    { key: 'invoice',     label: 'Invoice',     ref: lc.value.sales_invoice?.name, status: invoiceStatus.value },
-  ].map((s) => ({ ...s, state: stageState(s.status), statusLabel: s.status }))
+    {
+      key: 'optin',
+      label: 'Opt-In',
+      ref: lc.value.submission?.ref,
+      status: submissionStatus.value,
+    },
+    {
+      key: 'quote',
+      label: 'Quote',
+      ref: lc.value.quotation?.name,
+      status: quotationStatus.value,
+    },
+    {
+      key: 'contract',
+      label: 'Contract',
+      ref: lc.value.contract?.name,
+      status: contractStatus.value,
+    },
+    {
+      key: 'signatories',
+      label: 'Signatories',
+      ref: signatoriesSummary.value,
+      status: signatoriesStatus.value,
+    },
+    {
+      key: 'approval',
+      label: 'Approval',
+      ref: lc.value.onboarding?.name,
+      status: approvalStatus.value,
+    },
+    {
+      key: 'invoice',
+      label: 'Invoice',
+      ref: lc.value.sales_invoice?.name,
+      status: invoiceStatus.value,
+    },
+  ].map((s) => ({ ...s, state: stageState(s.status), statusLabel: s.status })),
 )
 
-const doneCount   = computed(() => stages.value.filter((s) => s.state === 'done').length)
+const doneCount = computed(
+  () => stages.value.filter((s) => s.state === 'done').length,
+)
 const progressPct = computed(() =>
-  stages.value.length ? Math.round((doneCount.value / stages.value.length) * 100) : 0
+  stages.value.length
+    ? Math.round((doneCount.value / stages.value.length) * 100)
+    : 0,
 )
 
 // ---------------------------------------------------------------------------
 // Status colour helpers — tokens only, never hex
 // ---------------------------------------------------------------------------
 
-const DONE_KEYS    = ['processed', 'accepted', 'signed', 'approved', 'submitted', 'fully executed', 'paid']
+const DONE_KEYS = [
+  'processed',
+  'accepted',
+  'signed',
+  'approved',
+  'submitted',
+  'fully executed',
+  'paid',
+]
 const BLOCKED_KEYS = ['failed', 'rejected', 'cancelled']
 
 function isDone(status) {
@@ -1221,12 +1502,16 @@ function stageState(status) {
 }
 
 function nodeClass(state) {
-  return {
-    done:    'border-green-500 bg-green-500 text-white dark:border-green-400 dark:bg-green-400',
-    active:  'border-amber-400 bg-amber-50 text-amber-600 dark:border-amber-500 dark:bg-amber-900/20 dark:text-amber-400',
-    blocked: 'border-red-400 bg-red-50 text-red-600 dark:border-red-500 dark:bg-red-900/20 dark:text-red-400',
-    idle:    'border-outline-gray-2 bg-surface-gray-2 text-ink-gray-4',
-  }[state] ?? 'border-outline-gray-2 bg-surface-gray-2 text-ink-gray-4'
+  return (
+    {
+      done: 'border-green-500 bg-green-500 text-white dark:border-green-400 dark:bg-green-400',
+      active:
+        'border-amber-400 bg-amber-50 text-amber-600 dark:border-amber-500 dark:bg-amber-900/20 dark:text-amber-400',
+      blocked:
+        'border-red-400 bg-red-50 text-red-600 dark:border-red-500 dark:bg-red-900/20 dark:text-red-400',
+      idle: 'border-outline-gray-2 bg-surface-gray-2 text-ink-gray-4',
+    }[state] ?? 'border-outline-gray-2 bg-surface-gray-2 text-ink-gray-4'
+  )
 }
 
 /**
@@ -1238,20 +1523,20 @@ function nodeClass(state) {
 function statusDot(status) {
   const state = stageState(status)
   return {
-    done:    'bg-green-500 dark:bg-green-400',
+    done: 'bg-green-500 dark:bg-green-400',
     blocked: 'bg-red-500 dark:bg-red-400',
-    idle:    'bg-surface-gray-4 dark:bg-surface-gray-5',
-    active:  'bg-amber-500 dark:bg-amber-400',
+    idle: 'bg-surface-gray-4 dark:bg-surface-gray-5',
+    active: 'bg-amber-500 dark:bg-amber-400',
   }[state]
 }
 
 function statusText(status) {
   const state = stageState(status)
   return {
-    done:    'text-green-700 dark:text-green-400',
+    done: 'text-green-700 dark:text-green-400',
     blocked: 'text-red-600 dark:text-red-400',
-    idle:    'text-ink-gray-4',
-    active:  'text-amber-700 dark:text-amber-400',
+    idle: 'text-ink-gray-4',
+    active: 'text-amber-700 dark:text-amber-400',
   }[state]
 }
 </script>
