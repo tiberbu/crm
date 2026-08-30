@@ -94,7 +94,7 @@
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Deal') }}</th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Rep') }}</th>
             <th class="px-4 py-2.5 text-right font-medium">
-              {{ __('Grand Total') }}
+              {{ __('Grand Total (incl. VAT)') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Status') }}

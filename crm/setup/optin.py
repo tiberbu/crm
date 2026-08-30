@@ -695,8 +695,9 @@ CareverseHIMS health information management service.</p>
 
 <h4>1. Facilities and Fees</h4>
 <p>The Customer subscribes the following facilities. Fees are computed from each
-facility's KEPH level and are exclusive of VAT (16%), which is applied at
-checkout.</p>
+	facility's KEPH level and are exclusive of VAT. {{ vat_label }} is applied
+	to the net rates in accordance with the configured Taxes and Charges template
+	and added to the invoice.</p>
 <div>{{ pricing_table }}</div>
 <p><strong>Total monthly commitment (incl. VAT): KES
 {{ grand_total_monthly_display }}</strong><br/>

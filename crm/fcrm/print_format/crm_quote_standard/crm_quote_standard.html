@@ -218,8 +218,8 @@
       <th style="width:30%">Item / Description</th>
       <th style="width:12%">Package</th>
       <th class="right" style="width:6%">Qty</th>
-      <th class="right" style="width:13%">Unit Price (KES)</th>
-      <th class="right" style="width:13%">Total Price (KES)</th>
+      <th class="right" style="width:13%">Unit Price (KES, Excl. VAT)</th>
+      <th class="right" style="width:13%">Total Price (KES, Excl. VAT)</th>
     </tr>
   </thead>
   <tbody>
@@ -336,7 +336,7 @@
     </tr>
     {% endif %}
     <tr>
-      <td class="label">VAT 16%</td>
+      <td class="label">VAT</td>
       <td class="value">{{ "{:,.0f}".format(doc.vat_amount or 0) }}</td>
     </tr>
     <tr class="grand">

@@ -7,6 +7,7 @@
   "optin_signing_key",
   "col_break_1",
   "default_price_list",
+  "sales_tax_template",
   "section_break_tc",
   "active_tc_document",
   "section_break_contract_automation",
@@ -31,6 +32,13 @@
    "fieldtype": "Data",
    "label": "Default Price List",
    "default": "Negotiated Year 1"
+  },
+  {
+   "fieldname": "sales_tax_template",
+   "fieldtype": "Link",
+   "label": "VAT Taxes and Charges Template",
+   "options": "Sales Taxes and Charges Template",
+   "description": "Exclusive VAT template applied to all Opt-In quotations, totals, emails, and contracts."
   },
   {
    "fieldname": "section_break_tc",

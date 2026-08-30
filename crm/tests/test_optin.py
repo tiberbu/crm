@@ -6,7 +6,7 @@ import frappe
 from frappe.tests import UnitTestCase
 from frappe.utils import add_days, random_string, today
 
-from crm.api.contracts import _issue_and_send_invitation, generate
+from crm.api.contracts import _build_contract_document_html, _issue_and_send_invitation, generate
 from crm.api.optin import (
 	_KEPH_MAP,
 	_facility_signing_state,
@@ -131,6 +131,33 @@ class TestOptInConfirmationEmail(UnitTestCase):
 		self.assertEqual(sendmail.call_args.kwargs["reference_doctype"], "CRM Opt-In Submission")
 		self.assertEqual(sendmail.call_args.kwargs["reference_name"], submission.name)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
+
+
+class TestOptInTermsPrinting(UnitTestCase):
+	def test_contract_pdf_renders_current_terms_instead_of_stale_snapshot(self):
+		contract = SimpleNamespace(
+			contract_html="<p>Old terms</p>",
+			contract_date="2026-08-30",
+			name="CONT-TEST-00001",
+		)
+		brand = {
+			"accent": "#bc1823",
+			"display_name": "Test Network",
+			"logo": "",
+			"contact_email": "",
+			"footer_legal_name": "",
+		}
+
+		with (
+			patch("crm.api.contracts._network_branding", return_value=brand),
+			patch("crm.api.contracts._regenerate_contract_body", return_value="<p>Updated terms</p>"),
+			patch("crm.api.contracts._render_signature_block", return_value=""),
+			patch("crm.api.contracts._render_certificate_page", return_value=""),
+		):
+			html = _build_contract_document_html(contract)
+
+		self.assertIn("Updated terms", html)
+		self.assertNotIn("Old terms", html)
 
 
 class TestOptInContractAutomation(UnitTestCase):

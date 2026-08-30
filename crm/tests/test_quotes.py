@@ -1,9 +1,12 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import UnitTestCase
 
-from crm.api.quotes import list_catalogue_items, list_quotes
+from crm.api.quotes import get_quote_lines, list_catalogue_items, list_quotes
+from crm.utils.jinja import get_quotation_tax_summary
+from crm.utils.quotation_tax import calculate_vat_totals, quotation_tax_summary
 
 
 class TestQuoteLoadBatching(UnitTestCase):
@@ -66,3 +69,115 @@ class TestQuoteLoadBatching(UnitTestCase):
 				{"item_code": "ITEM-002", "label": "Item Two", "uom": "Nos", "rate": 900},
 			],
 		)
+
+
+class TestConfiguredQuotationVAT(UnitTestCase):
+	def setUp(self):
+		self.tax_configuration = frappe._dict(
+			{
+				"template": "Kenya Tax - TB",
+				"vat_rate": 16,
+				"vat_fraction": 0.16,
+				"vat_label": "VAT (16%)",
+			}
+		)
+
+	def test_preview_totals_use_the_configured_tax_rate(self):
+		with patch("crm.utils.quotation_tax.get_vat_tax_configuration", return_value=self.tax_configuration):
+			result = calculate_vat_totals(28_425.93)
+
+		self.assertEqual(result.template, "Kenya Tax - TB")
+		self.assertEqual(result.vat_amount, 4_548.15)
+		self.assertEqual(result.grand_total, 32_974.08)
+
+	def test_legacy_quote_summary_repairs_a_missing_native_grand_total(self):
+		quote = frappe._dict(
+			{
+				"company": "Tiberbu",
+				"taxes_and_charges": "",
+				"net_total": 100_000,
+				"vat_amount": 16_000,
+				"grand_total": 100_000,
+				"total_taxes_and_charges": 0,
+				"taxes": [],
+			}
+		)
+		with patch("crm.utils.quotation_tax.get_vat_tax_configuration", return_value=self.tax_configuration):
+			result = quotation_tax_summary(quote)
+
+		self.assertEqual(result.vat_amount, 16_000)
+		self.assertEqual(result.grand_total, 116_000)
+
+	def test_quote_lines_expose_the_server_tax_label_and_rate(self):
+		quote = SimpleNamespace(
+			name="QUO-TEST-0001",
+			docstatus=0,
+			crm_sent=0,
+			crm_deal="DEAL-TEST-0001",
+			currency="KES",
+			selling_price_list="Negotiated Year 1",
+			crm_payment_terms="Annual Upfront",
+			valid_till="2026-09-30",
+			net_total=100_000,
+			items=[
+				frappe._dict(
+					{
+						"item_code": "CV-HIMS-KEPH-3",
+						"item_name": "CareverseHIMS - Alpha Clinic",
+						"description": "Annual Subscription",
+						"qty": 1,
+						"rate": 100_000,
+						"amount": 100_000,
+					}
+				),
+			],
+		)
+		quote.get = lambda fieldname, default=None: getattr(quote, fieldname, default)
+		tax_summary = frappe._dict(
+			{
+				"net_total": 100_000,
+				"vat_amount": 16_000,
+				"grand_total": 116_000,
+				"vat_rate": 16,
+				"vat_label": "VAT (16%)",
+			}
+		)
+		with (
+			patch("crm.api.quotes.frappe.get_doc", return_value=quote),
+			patch("crm.api.quotes.frappe.db.get_value", return_value=None),
+			patch("crm.api.quotes.quotation_tax_summary", return_value=tax_summary),
+		):
+			result = get_quote_lines(quote.name)
+
+		self.assertEqual(result["vat_label"], "VAT (16%)")
+		self.assertEqual(result["vat_rate"], 16)
+		self.assertEqual(result["grand_total"], 116_000)
+
+
+class TestQuotationPrintTaxSummary(UnitTestCase):
+	def test_print_summary_uses_a_friendly_native_vat_label_when_configuration_is_unavailable(self):
+		quote = frappe._dict(
+			{
+				"net_total": 100_000,
+				"vat_amount": 0,
+				"total_taxes_and_charges": 16_000,
+				"grand_total": 100_000,
+				"taxes": [
+					frappe._dict(
+						{
+							"description": "VAT @ 16%",
+							"account_head": "VAT - TB",
+							"rate": 16,
+						}
+					)
+				],
+			}
+		)
+		with patch(
+			"crm.utils.quotation_tax.quotation_tax_summary", side_effect=Exception("missing template")
+		):
+			result = get_quotation_tax_summary(quote)
+
+		self.assertEqual(result.vat_label, "VAT (16%)")
+		self.assertEqual(result.vat_amount, 16_000)
+		self.assertEqual(result.grand_total, 116_000)

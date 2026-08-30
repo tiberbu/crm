@@ -116,7 +116,7 @@ def execute():
 				{
 					"fieldname": "vat_amount",
 					"fieldtype": "Currency",
-					"label": "VAT Amount (16%)",
+					"label": "VAT Amount",
 					"options": "currency",
 					"insert_after": "discount_applied",
 					"read_only": 1,

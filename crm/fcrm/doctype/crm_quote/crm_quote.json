@@ -212,7 +212,7 @@
   {
    "fieldname": "vat_amount",
    "fieldtype": "Currency",
-   "label": "VAT Amount (16%)",
+   "label": "VAT Amount",
    "read_only": 1,
    "options": "currency"
   },

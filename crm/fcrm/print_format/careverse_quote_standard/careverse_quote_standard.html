@@ -57,10 +57,13 @@
   {%- endif -%}
 {%- endfor -%}
 
-{%- set subtotal_excl_vat = doc.net_total or 0 -%}
-{%- set vat_amount = doc.vat_amount or (doc.total_taxes_and_charges or 0) -%}
-{%- set grand_total_val = doc.grand_total or 0 -%}
+{%- set tax_summary = get_quotation_tax_summary(doc) -%}
+{%- set subtotal_excl_vat = tax_summary.net_total or 0 -%}
+{%- set vat_amount = tax_summary.vat_amount or 0 -%}
+{%- set grand_total_val = tax_summary.grand_total or 0 -%}
 {%- set discount_applied = doc.discount_applied or 0 -%}
+{%- set vat_label = tax_summary.vat_label or "VAT" -%}
+{%- set current_terms = render_current_terms_for_quote(doc) -%}
 
 <div class="page-break qt-wrap">
 
@@ -80,6 +83,19 @@
   .qt-to-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; }
   .qt-to-customer { font-size: 15px; font-weight: 700; color: #1e3a5f; }
   .qt-to-sub { font-size: 11px; color: #374151; }
+  .qt-overview { display: flex; gap: 14px; align-items: stretch; margin-bottom: 14px; }
+  .qt-overview .qt-to-block { flex: 1; margin: 0; padding: 8px 0; }
+  .qt-payable-card {
+    min-width: 235px; padding: 10px 12px; border-radius: 4px;
+    background: #1e3a5f; color: #ffffff;
+  }
+  .qt-payable-label {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #cbd5e1;
+  }
+  .qt-payable-amount { margin-top: 2px; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+  .qt-payable-detail { margin-top: 1px; font-size: 10px; color: #e2e8f0; }
+  .qt-pricing-note { margin: -2px 0 8px; color: #475569; font-size: 10px; }
   .qt-pricing-title {
     background: #f0f4ff; border-left: 4px solid #1e3a5f;
     padding: 6px 10px; font-size: 11px; font-weight: 700; color: #1e3a5f;
@@ -95,6 +111,8 @@
   .qt-table th.center, .qt-table td.center { text-align: center; }
   .qt-table td { padding: 5px 8px; border: 1px solid #e2e8f0; vertical-align: top; }
   .qt-table tbody tr:nth-child(even) td { background: #f8fafc; }
+  .qt-row-primary { font-weight: 700; color: #1e3a5f; }
+  .qt-row-secondary { margin-top: 1px; color: #64748b; font-size: 10px; }
   .qt-table .section-row td {
     background: #1e3a5f; color: #ffffff;
     font-weight: 700; font-size: 10px;
@@ -200,18 +218,28 @@
 
 <hr class="qt-rule">
 
-{# ── QUOTE TO ── #}
-<div class="qt-to-block">
-  <div class="qt-to-label">Quote To</div>
-  <div class="qt-to-customer">{{ doc.customer_name or doc.party_name or "—" }}</div>
-  {% if doc.crm_partner %}
-  <div class="qt-to-sub">Partner: {{ doc.crm_partner }}</div>
-  {% endif %}
+{# ── CUSTOMER AND PAYABLE SUMMARY ── #}
+<div class="qt-overview">
+  <div class="qt-to-block">
+    <div class="qt-to-label">Quote To</div>
+    <div class="qt-to-customer">{{ doc.customer_name or doc.party_name or "—" }}</div>
+    {% if doc.crm_partner %}
+    <div class="qt-to-sub">Partner: {{ doc.crm_partner }}</div>
+    {% endif %}
+  </div>
+  <div class="qt-payable-card">
+    <div class="qt-payable-label">Year 1 payable</div>
+    <div class="qt-payable-amount">{{ fmt_kes(grand_total_val) }}</div>
+    <div class="qt-payable-detail">Includes {{ vat_label }} · {{ payment_label }}</div>
+  </div>
 </div>
 
 {# ── PRICING TITLE ── #}
 <div class="qt-pricing-title">
   PRICING FOR TIBERBU CAREVERSE HMIS SOLUTION — {{ payment_label | upper }}
+</div>
+<div class="qt-pricing-note">
+  All line-item rates are exclusive of VAT. {{ vat_label }} is calculated on the net total.
 </div>
 
 {# ── MAIN ITEMS TABLE ── #}
@@ -219,12 +247,12 @@
   <thead>
     <tr>
       <th class="center" style="width:4%">No.</th>
-      <th style="width:22%">Category</th>
-      <th style="width:30%">Item / Description</th>
+      <th style="width:30%">Facility / Item</th>
+      <th style="width:22%">Service</th>
       <th style="width:12%">Package</th>
       <th class="right" style="width:6%">Qty</th>
-      <th class="right" style="width:13%">Unit Price (KES)</th>
-      <th class="right" style="width:13%">Total Price (KES)</th>
+      <th class="right" style="width:13%">Unit Price (KES, Excl. VAT)</th>
+      <th class="right" style="width:13%">Total Price (KES, Excl. VAT)</th>
     </tr>
   </thead>
   <tbody>
@@ -235,8 +263,11 @@
     {% for fac in facilities %}
     <tr>
       <td class="center">{{ ns.idx }}</td>
+      <td>
+        <div class="qt-row-primary">{{ fac.facility_name }}</div>
+        <div class="qt-row-secondary">CareVerse HMIS subscription</div>
+      </td>
       <td>Hosted HMIS Software Solution</td>
-      <td>Careverse HMIS Subscription — {{ fac.facility_name }}</td>
       <td>
         <span class="qt-table pkg-pill
           {% if fac.package_tier == 'Core' %}pkg-core
@@ -252,8 +283,11 @@
     {% set ns.idx = ns.idx + 1 %}
     <tr>
       <td class="center">{{ ns.idx }}</td>
+      <td>
+        <div class="qt-row-primary">{{ fac.facility_name }}</div>
+        <div class="qt-row-secondary">Implementation &amp; training · One-time</div>
+      </td>
       <td>Professional Services</td>
-      <td>Implementation &amp; Training (One-time) — {{ fac.facility_name }}</td>
       <td>
         <span class="qt-table pkg-pill
           {% if fac.package_tier == 'Core' %}pkg-core
@@ -279,8 +313,8 @@
     {% for row in hw_addons %}
     <tr>
       <td class="center">{{ ns.idx }}</td>
+      <td><div class="qt-row-primary">{{ row.description }}</div></td>
       <td>Hardware Products</td>
-      <td>{{ row.description }}</td>
       <td><span class="qt-table pkg-pill pkg-hardware">Hardware</span></td>
       <td class="right">{{ "{:,.0f}".format(row.qty or 0) }}</td>
       <td class="right">{{ "{:,.0f}".format(row.unit_price or 0) }}</td>
@@ -295,8 +329,8 @@
     {% for row in sw_addons %}
     <tr>
       <td class="center">{{ ns.idx }}</td>
+      <td><div class="qt-row-primary">{{ row.description }}</div></td>
       <td>Software Subscriptions</td>
-      <td>{{ row.description }}</td>
       <td><span class="qt-table pkg-pill pkg-software">Software</span></td>
       <td class="right">{{ "{:,.0f}".format(row.qty or 0) }}</td>
       <td class="right">{{ "{:,.0f}".format(row.unit_price or 0) }}</td>
@@ -311,8 +345,8 @@
     {% for row in svc_addons %}
     <tr>
       <td class="center">{{ ns.idx }}</td>
-      <td>{{ row.description }}</td>
-      <td>{{ row.description }}</td>
+      <td><div class="qt-row-primary">{{ row.description }}</div></td>
+      <td>Professional Services</td>
       <td><span class="qt-table pkg-pill pkg-services">Services</span></td>
       <td class="right">{{ "{:,.0f}".format(row.qty or 0) }}</td>
       <td class="right">{{ "{:,.0f}".format(row.unit_price or 0) }}</td>
@@ -339,11 +373,11 @@
     </tr>
     {% endif %}
     <tr>
-      <td class="label">VAT 16%</td>
+      <td class="label">{{ vat_label }} on net total</td>
       <td class="value">{{ "{:,.0f}".format(vat_amount) }}</td>
     </tr>
     <tr class="grand">
-      <td class="label" style="color:#fff;font-weight:700;">Grand Total in KES (Incl. VAT) — Year 1</td>
+      <td class="label" style="color:#fff;font-weight:700;">Year 1 payable (incl. VAT)</td>
       <td class="value" style="color:#fff;font-weight:700;">{{ "{:,.0f}".format(grand_total_val) }}</td>
     </tr>
   </table>
@@ -359,7 +393,7 @@
       <th>Year</th>
       <th>Description</th>
       <th>Excl. VAT (KES)</th>
-      <th>Incl. VAT (KES)</th>
+      <th>Including {{ vat_label }} (KES)</th>
       {% if payment_label == "Monthly" %}<th>Monthly Option (KES)</th>{% endif %}
     </tr>
   </thead>
@@ -399,7 +433,7 @@
   <thead>
     <tr>
       <th>Year</th><th>Description</th><th>No. of Payments</th>
-      <th>Payment Excl. VAT (KES)</th><th>Payment Incl. VAT (KES)</th>
+      <th>Payment Excl. VAT (KES)</th><th>Payment Including {{ vat_label }} (KES)</th>
     </tr>
   </thead>
   <tbody>
@@ -433,6 +467,9 @@
 
 {# ── TERMS & CONDITIONS ── #}
 <div class="qt-section-title">Terms and Conditions</div>
+{% if current_terms %}
+  <div style="font-size:11px;color:#374151;">{{ current_terms }}</div>
+{% else %}
 <ol class="qt-terms-list">
   <li>Local Purchase Orders must be signed and stamped to allow processing.</li>
   <li>Tiberbu Healthnet Solutions will invoice the Total Price in accordance with the above. All pricing is in KES.</li>
@@ -442,6 +479,7 @@
   <li>Tiberbu Healthnet Solutions Limited reserves the right to adjust pricing due to OEM pricing changes, foreign exchange movements, regulatory changes, or other market-driven cost adjustments.</li>
   <li>All invoicing and payment-related matters should be addressed to: <strong>accounts@tiberbu.co.ke</strong></li>
 </ol>
+{% endif %}
 
 {# ── CUSTOMER APPROVAL ── #}
 <div class="qt-section-title">Customer Quotation Approval</div>

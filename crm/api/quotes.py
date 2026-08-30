@@ -31,7 +31,8 @@ import json
 import frappe
 from frappe.utils import add_days, date_diff, getdate, nowdate
 
-VAT_RATE = 0.16
+from crm.utils.quotation_tax import apply_quotation_taxes, quotation_tax_summary
+
 DEFAULT_PRICE_LIST = "Standard Selling"
 
 # Frontend-facing status values derived from docstatus + crm_sent
@@ -267,6 +268,7 @@ def create_quote(deal, price_list=None):
 	doc.flags.ignore_validate = True
 	doc.flags.ignore_mandatory = True
 	doc.set_missing_values()
+	apply_quotation_taxes(doc)
 	doc.insert(ignore_mandatory=True, ignore_permissions=True)
 	frappe.db.commit()
 	return {"name": doc.name, "status": _derive_status(doc), "price_list": price_list}
@@ -558,8 +560,7 @@ def set_quote_price_list(quote, price_list):
 	doc.flags.ignore_mandatory = True
 	doc.set_missing_values()
 	_apply_manual_rates(doc, baseline_rates)
-	doc.calculate_taxes_and_totals()
-	doc.vat_amount = round((doc.net_total or 0) * VAT_RATE, 2)
+	apply_quotation_taxes(doc)
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
 
@@ -597,9 +598,9 @@ def get_quote_lines(quote):
 			}
 		)
 
-	net_total = float(doc.net_total or sum(l["amount"] for l in lines))
-	vat_amount = float(doc.get("vat_amount") or round(net_total * VAT_RATE, 2))
-	grand_total = float(doc.grand_total or round(net_total + vat_amount, 2))
+	if not doc.net_total:
+		doc.net_total = sum(line["amount"] for line in lines)
+	tax_summary = quotation_tax_summary(doc)
 
 	return {
 		"name": doc.name,
@@ -611,9 +612,11 @@ def get_quote_lines(quote):
 		"payment_terms": doc.get("crm_payment_terms") or "Annual Upfront",
 		"valid_until": str(doc.valid_till or ""),
 		"lines": lines,
-		"net_total": round(net_total, 2),
-		"vat_amount": round(vat_amount, 2),
-		"grand_total": round(grand_total, 2),
+		"net_total": tax_summary.net_total,
+		"vat_amount": tax_summary.vat_amount,
+		"grand_total": tax_summary.grand_total,
+		"vat_rate": tax_summary.vat_rate,
+		"vat_label": tax_summary.vat_label,
 	}
 
 
@@ -680,8 +683,7 @@ def save_quote_lines(quote, lines):
 	# Manual rates are authoritative — re-apply after set_missing_values so ERPNext
 	# does not re-fetch price_list_rate over a negotiated (incl. waived 0) rate.
 	_apply_manual_rates(doc, [it["rate"] for it in new_items])
-	doc.calculate_taxes_and_totals()
-	doc.vat_amount = round((doc.net_total or 0) * VAT_RATE, 2)
+	apply_quotation_taxes(doc)
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
 

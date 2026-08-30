@@ -50,8 +50,8 @@
 
       <p class="mb-2 max-w-sm text-sm text-gray-600 dark:text-gray-300">
         <template v-if="blockState === 'rate_limited'">
-          For your security we've paused new codes for a few minutes. Please
-          wait, then try again.
+          Too many code requests have come from this network. Please wait up to
+          10 minutes before trying again.
         </template>
         <template v-else>
           We couldn't find
