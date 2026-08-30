@@ -290,33 +290,47 @@
           </template>
         </SidePanelLayout>
         <!-- Facilities section -->
-        <div v-if="hfrEnabled && document.doc?.facilities?.length" class="border-t px-4 py-3 shrink-0">
-          <div class="text-p-xs-medium uppercase tracking-wider text-ink-gray-4 mb-2">
+        <div
+          v-if="hfrEnabled && document.doc?.facilities?.length"
+          class="border-t px-4 py-3 shrink-0"
+        >
+          <div
+            class="text-p-xs-medium uppercase tracking-wider text-ink-gray-4 mb-2"
+          >
             {{ __('Facilities ({0})', [document.doc.facilities.length]) }}
           </div>
           <div class="flex flex-col gap-1.5">
             <div
               v-for="row in document.doc.facilities"
               :key="row.name || row.hfr_facility_id"
-              class="rounded-lg border border-outline-gray-2 bg-surface-white
-                     dark:bg-surface-gray-2 px-3 py-2"
+              class="rounded-lg border border-outline-gray-2 bg-surface-white dark:bg-surface-gray-2 px-3 py-2"
             >
               <div class="flex items-start gap-2">
                 <div class="flex flex-col flex-1 min-w-0">
-                  <span class="text-p-sm-medium text-ink-gray-8 truncate">{{ row.facility_name }}</span>
+                  <span class="text-p-sm-medium text-ink-gray-8 truncate">{{
+                    row.facility_name
+                  }}</span>
                   <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    <span v-if="row.mfl_code"
-                          class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3
-                                 text-ink-gray-6 rounded px-1.5 py-0.5">
+                    <span
+                      v-if="row.mfl_code"
+                      class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6 rounded px-1.5 py-0.5"
+                    >
                       MFL {{ row.mfl_code }}
                     </span>
-                    <span v-if="row.hfr_county" class="text-p-xs text-ink-gray-5">{{ row.hfr_county }}</span>
+                    <span
+                      v-if="row.hfr_county"
+                      class="text-p-xs text-ink-gray-5"
+                      >{{ row.hfr_county }}</span
+                    >
                     <span
                       class="text-p-xs rounded px-1.5 py-0.5"
-                      :class="row.hfr_sync_status === 'HFR Verified'
-                        ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                        : 'bg-surface-gray-2 text-ink-gray-5'"
-                    >{{ row.hfr_sync_status || 'Manual' }}</span>
+                      :class="
+                        row.hfr_sync_status === 'HFR Verified'
+                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                          : 'bg-surface-gray-2 text-ink-gray-5'
+                      "
+                      >{{ row.hfr_sync_status || 'Manual' }}</span
+                    >
                   </div>
                 </div>
                 <Button
@@ -499,7 +513,9 @@ const resyncDealRowResource = createResource({
   },
   onError(err) {
     resyncingRow.value = null
-    toast.error((err && err.messages && err.messages[0]) || __('Re-sync failed'))
+    toast.error(
+      (err && err.messages && err.messages[0]) || __('Re-sync failed'),
+    )
   },
 })
 

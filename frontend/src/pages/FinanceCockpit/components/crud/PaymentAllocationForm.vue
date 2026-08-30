@@ -23,14 +23,21 @@
           </div>
           <div class="flex items-center justify-between py-2.5">
             <dt class="text-xs font-medium text-ink-gray-5">Amount</dt>
-            <dd class="text-sm font-bold text-ink-gray-9 tabular-nums">{{ formatCurrency(totalAllocated, activeCurrency) }}</dd>
+            <dd class="text-sm font-bold text-ink-gray-9 tabular-nums">
+              {{ formatCurrency(totalAllocated, activeCurrency) }}
+            </dd>
           </div>
           <div class="flex items-center justify-between py-2.5">
             <dt class="text-xs font-medium text-ink-gray-5">Mode</dt>
             <dd class="text-sm text-ink-gray-8">{{ modeOfPayment || '—' }}</dd>
           </div>
-          <div v-if="refFields.refNo" class="flex items-center justify-between py-2.5">
-            <dt class="text-xs font-medium text-ink-gray-5">{{ refFields.refNo }}</dt>
+          <div
+            v-if="refFields.refNo"
+            class="flex items-center justify-between py-2.5"
+          >
+            <dt class="text-xs font-medium text-ink-gray-5">
+              {{ refFields.refNo }}
+            </dt>
             <dd class="text-sm text-ink-gray-8">{{ referenceNo || '—' }}</dd>
           </div>
           <div class="flex items-center justify-between py-2.5">
@@ -40,20 +47,39 @@
         </dl>
       </SectionCard>
 
-      <SectionCard title="Allocations" icon="receipt" class="mt-4" tone="positive" :badge="selectedRows.length">
+      <SectionCard
+        title="Allocations"
+        icon="receipt"
+        class="mt-4"
+        tone="positive"
+        :badge="selectedRows.length"
+      >
         <div class="divide-y divide-outline-gray-1">
           <div
             v-for="row in selectedRows"
             :key="row.name"
             class="flex items-center justify-between py-2.5"
           >
-            <span class="text-sm font-medium text-ink-gray-8">{{ row.name }}</span>
-            <span class="text-sm tabular-nums text-ink-gray-7">{{ formatCurrency(row._allocated, activeCurrency) }}</span>
+            <span class="text-sm font-medium text-ink-gray-8">{{
+              row.name
+            }}</span>
+            <span class="text-sm tabular-nums text-ink-gray-7">{{
+              formatCurrency(row._allocated, activeCurrency)
+            }}</span>
           </div>
         </div>
-        <div class="mt-3 pt-3 border-t border-outline-gray-1 flex items-center justify-between text-sm">
+        <div
+          class="mt-3 pt-3 border-t border-outline-gray-1 flex items-center justify-between text-sm"
+        >
           <span class="text-ink-gray-5">Unallocated</span>
-          <span class="tabular-nums" :class="unallocated > 0.005 ? 'text-amber-600 font-medium' : 'text-ink-gray-7'">
+          <span
+            class="tabular-nums"
+            :class="
+              unallocated > 0.005
+                ? 'text-amber-600 font-medium'
+                : 'text-ink-gray-7'
+            "
+          >
             {{ formatCurrency(unallocated, activeCurrency) }}
           </span>
         </div>
@@ -64,12 +90,15 @@
         v-if="successPe"
         class="mt-4 rounded-lg border border-outline-green-1 bg-surface-green-1 px-4 py-3 flex items-center justify-between"
       >
-        <span class="text-sm font-medium text-ink-green-7">{{ successPe }} posted</span>
+        <span class="text-sm font-medium text-ink-green-7"
+          >{{ successPe }} posted</span
+        >
         <a
           :href="'/app/payment-entry/' + successPe"
           target="_blank"
           class="text-xs text-ink-green-6 hover:underline font-medium"
-        >View in Accounts →</a>
+          >View in Accounts →</a
+        >
       </div>
     </template>
 
@@ -110,21 +139,37 @@
                 @update:query="onCustomerQuery"
               />
               <!-- FC-08: Balance chip -->
-              <div v-if="customer && customerBalance !== null" class="mt-1.5 text-xs text-ink-gray-5">
+              <div
+                v-if="customer && customerBalance !== null"
+                class="mt-1.5 text-xs text-ink-gray-5"
+              >
                 <span class="inline-flex items-center gap-1">
-                  <span class="font-medium text-ink-gray-7">{{ formatCurrency(customerBalance, activeCurrency) }}</span>
+                  <span class="font-medium text-ink-gray-7">{{
+                    formatCurrency(customerBalance, activeCurrency)
+                  }}</span>
                   outstanding
-                  <span v-if="customerInvoiceCount > 0">({{ customerInvoiceCount }} {{ customerInvoiceCount === 1 ? 'invoice' : 'invoices' }})</span>
+                  <span v-if="customerInvoiceCount > 0"
+                    >({{ customerInvoiceCount }}
+                    {{
+                      customerInvoiceCount === 1 ? 'invoice' : 'invoices'
+                    }})</span
+                  >
                 </span>
               </div>
             </div>
 
             <!-- FC-09: Amount received input -->
             <div class="md:col-span-2">
-              <label class="block text-xs font-medium text-ink-gray-6 mb-1">Amount Received</label>
+              <label class="block text-xs font-medium text-ink-gray-6 mb-1"
+                >Amount Received</label
+              >
               <div class="flex items-center gap-2">
                 <div class="flex items-center gap-1.5 flex-1">
-                  <span v-if="activeCurrency" class="text-xs font-medium text-ink-gray-5 w-8 text-right flex-shrink-0">{{ activeCurrency }}</span>
+                  <span
+                    v-if="activeCurrency"
+                    class="text-xs font-medium text-ink-gray-5 w-8 text-right flex-shrink-0"
+                    >{{ activeCurrency }}</span
+                  >
                   <input
                     type="number"
                     min="0"
@@ -132,7 +177,9 @@
                     class="flex-1 text-sm rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-ink-gray-8 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     :value="paidAmount"
                     placeholder="0.00"
-                    @input="paidAmount = parseFloat($event.target.value) || null"
+                    @input="
+                      paidAmount = parseFloat($event.target.value) || null
+                    "
                   />
                 </div>
                 <button
@@ -147,31 +194,44 @@
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-ink-gray-6 mb-1">Posting Date</label>
-              <DatePicker :model-value="postingDate" @update:model-value="postingDate = $event" />
+              <label class="block text-xs font-medium text-ink-gray-6 mb-1"
+                >Posting Date</label
+              >
+              <DatePicker
+                :model-value="postingDate"
+                @update:model-value="postingDate = $event"
+              />
             </div>
 
             <!-- FC-07: Mode of Payment pill group -->
             <div>
-              <label class="block text-xs font-medium text-ink-gray-6 mb-1">Mode of Payment</label>
+              <label class="block text-xs font-medium text-ink-gray-6 mb-1"
+                >Mode of Payment</label
+              >
               <div class="flex flex-wrap gap-1.5">
                 <button
                   v-for="mode in visibleModes"
                   :key="mode"
                   type="button"
                   class="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors"
-                  :class="modeOfPayment === mode
-                    ? 'bg-surface-gray-4 border-outline-gray-3 text-ink-gray-9'
-                    : 'bg-surface-white border-outline-gray-2 text-ink-gray-6 hover:bg-surface-gray-1'"
+                  :class="
+                    modeOfPayment === mode
+                      ? 'bg-surface-gray-4 border-outline-gray-3 text-ink-gray-9'
+                      : 'bg-surface-white border-outline-gray-2 text-ink-gray-6 hover:bg-surface-gray-1'
+                  "
                   @click="selectMode(mode)"
-                >{{ mode }}</button>
+                >
+                  {{ mode }}
+                </button>
                 <div class="relative">
                   <button
                     type="button"
                     class="text-xs font-medium px-3 py-1.5 rounded-full border border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:bg-surface-gray-1 transition-colors"
                     :class="moreOpen ? 'bg-surface-gray-1' : ''"
                     @click="moreOpen = !moreOpen"
-                  >+ More ▾</button>
+                  >
+                    + More ▾
+                  </button>
                   <div
                     v-if="moreOpen"
                     class="absolute left-0 mt-1 z-20 bg-surface-white border border-outline-gray-2 rounded-xl shadow-lg min-w-[160px] py-1"
@@ -182,7 +242,7 @@
                       :filterable="false"
                       placeholder="Search mode..."
                       class="p-2"
-                      @update:model-value="selectMode($event); moreOpen = false"
+                      @update:model-value="selectMode"
                       @update:query="onModeQuery"
                     />
                   </div>
@@ -200,40 +260,80 @@
               />
             </template>
             <div v-if="refFields.refDate">
-              <label class="block text-xs font-medium text-ink-gray-6 mb-1">{{ refFields.refDate }}</label>
-              <DatePicker :model-value="referenceDate" @update:model-value="referenceDate = $event" />
+              <label class="block text-xs font-medium text-ink-gray-6 mb-1">{{
+                refFields.refDate
+              }}</label>
+              <DatePicker
+                :model-value="referenceDate"
+                @update:model-value="referenceDate = $event"
+              />
             </div>
           </div>
         </SectionCard>
 
         <!-- Outstanding invoices — FC-10: sort, Select All, overdue -->
-        <SectionCard title="Allocate to Invoices" icon="receipt" hero :badge="selectedCount || ''">
-          <div v-if="!customer" class="text-sm text-ink-gray-5 py-6 text-center">
+        <SectionCard
+          title="Allocate to Invoices"
+          icon="receipt"
+          hero
+          :badge="selectedCount || ''"
+        >
+          <div
+            v-if="!customer"
+            class="text-sm text-ink-gray-5 py-6 text-center"
+          >
             Select a customer to load their outstanding invoices.
           </div>
 
           <div v-else-if="invoicesLoading" class="space-y-2">
-            <div v-for="n in 4" :key="n" class="h-11 bg-surface-gray-2 rounded-lg animate-pulse" />
+            <div
+              v-for="n in 4"
+              :key="n"
+              class="h-11 bg-surface-gray-2 rounded-lg animate-pulse"
+            />
           </div>
 
-          <div v-else-if="!invoices.length" class="text-sm text-ink-gray-5 py-6 text-center">
+          <div
+            v-else-if="!invoices.length"
+            class="text-sm text-ink-gray-5 py-6 text-center"
+          >
             No outstanding invoices for this customer.
           </div>
 
           <div v-else class="overflow-x-auto -mx-1">
             <!-- FC-09: Footer bar above table -->
-            <div v-if="paidAmount" class="mb-2 flex items-center gap-4 text-xs text-ink-gray-5 px-1">
-              <span>Allocated <span class="font-semibold text-ink-gray-8 tabular-nums">{{ formatCurrency(totalAllocated, activeCurrency) }}</span></span>
+            <div
+              v-if="paidAmount"
+              class="mb-2 flex items-center gap-4 text-xs text-ink-gray-5 px-1"
+            >
+              <span
+                >Allocated
+                <span class="font-semibold text-ink-gray-8 tabular-nums">{{
+                  formatCurrency(totalAllocated, activeCurrency)
+                }}</span></span
+              >
               <span class="text-outline-gray-3">|</span>
-              <span :class="unallocated > 0.005 ? 'text-amber-600 font-medium' : ''">
-                Unallocated <span class="font-semibold tabular-nums">{{ formatCurrency(unallocated, activeCurrency) }}</span>
+              <span
+                :class="unallocated > 0.005 ? 'text-amber-600 font-medium' : ''"
+              >
+                Unallocated
+                <span class="font-semibold tabular-nums">{{
+                  formatCurrency(unallocated, activeCurrency)
+                }}</span>
               </span>
               <span class="text-outline-gray-3">|</span>
-              <span>Total <span class="font-semibold text-ink-gray-8 tabular-nums">{{ formatCurrency(paidAmount || 0, activeCurrency) }}</span></span>
+              <span
+                >Total
+                <span class="font-semibold text-ink-gray-8 tabular-nums">{{
+                  formatCurrency(paidAmount || 0, activeCurrency)
+                }}</span></span
+              >
             </div>
             <table class="w-full text-sm">
               <thead>
-                <tr class="text-left text-xs font-semibold text-ink-gray-5 uppercase tracking-wide border-b border-outline-gray-1">
+                <tr
+                  class="text-left text-xs font-semibold text-ink-gray-5 uppercase tracking-wide border-b border-outline-gray-1"
+                >
                   <!-- FC-10: Select All checkbox -->
                   <th class="px-2 py-2 w-8">
                     <input
@@ -249,19 +349,24 @@
                     class="px-2 py-2 cursor-pointer hover:text-ink-gray-8 select-none"
                     @click="setSort('name')"
                   >
-                    Invoice <span class="ml-0.5">{{ sortIndicator('name') }}</span>
+                    Invoice
+                    <span class="ml-0.5">{{ sortIndicator('name') }}</span>
                   </th>
                   <th
                     class="px-2 py-2 cursor-pointer hover:text-ink-gray-8 select-none"
                     @click="setSort('due_date')"
                   >
-                    Due <span class="ml-0.5">{{ sortIndicator('due_date') }}</span>
+                    Due
+                    <span class="ml-0.5">{{ sortIndicator('due_date') }}</span>
                   </th>
                   <th
                     class="px-2 py-2 text-right cursor-pointer hover:text-ink-gray-8 select-none"
                     @click="setSort('outstanding_amount')"
                   >
-                    Outstanding <span class="ml-0.5">{{ sortIndicator('outstanding_amount') }}</span>
+                    Outstanding
+                    <span class="ml-0.5">{{
+                      sortIndicator('outstanding_amount')
+                    }}</span>
                   </th>
                   <th class="px-2 py-2 text-right w-40">Allocate</th>
                 </tr>
@@ -271,7 +376,9 @@
                   v-for="row in sortedInvoices"
                   :key="row.name"
                   class="border-b border-outline-gray-1 last:border-0"
-                  :class="row._selected ? 'bg-blue-50/50 dark:bg-blue-500/5' : ''"
+                  :class="
+                    row._selected ? 'bg-blue-50/50 dark:bg-blue-500/5' : ''
+                  "
                 >
                   <td class="px-2 py-2">
                     <input
@@ -282,17 +389,26 @@
                     />
                   </td>
                   <td class="px-2 py-2">
-                    <span class="font-medium text-ink-gray-8">{{ row.name }}</span>
+                    <span class="font-medium text-ink-gray-8">{{
+                      row.name
+                    }}</span>
                     <span
                       v-if="row.days_overdue > 0"
                       class="ml-1.5 text-xs text-red-500 dark:text-red-400"
-                    >{{ row.days_overdue }}d overdue</span>
+                      >{{ row.days_overdue }}d overdue</span
+                    >
                   </td>
                   <!-- FC-10: overdue date cell in red -->
                   <td
                     class="px-2 py-2"
-                    :class="row.days_overdue > 0 ? 'text-red-500 dark:text-red-400' : 'text-ink-gray-6'"
-                  >{{ row.due_date || '—' }}</td>
+                    :class="
+                      row.days_overdue > 0
+                        ? 'text-red-500 dark:text-red-400'
+                        : 'text-ink-gray-6'
+                    "
+                  >
+                    {{ row.due_date || '—' }}
+                  </td>
                   <td class="px-2 py-2 text-right tabular-nums text-ink-gray-7">
                     {{ formatCurrency(row.outstanding_amount, row.currency) }}
                   </td>
@@ -317,14 +433,25 @@
     </template>
 
     <!-- Sticky action bar -->
-    <div class="fixed bottom-0 inset-x-0 z-30 bg-surface-white/95 backdrop-blur border-t border-outline-gray-2">
-      <div class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
+    <div
+      class="fixed bottom-0 inset-x-0 z-30 bg-surface-white/95 backdrop-blur border-t border-outline-gray-2"
+    >
+      <div
+        class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between gap-3"
+      >
         <div class="hidden sm:flex items-center gap-2 text-sm text-ink-gray-5">
           <span>Total Allocated</span>
-          <span class="text-base font-bold text-ink-gray-9 tabular-nums">{{ formatCurrency(totalAllocated, activeCurrency) }}</span>
+          <span class="text-base font-bold text-ink-gray-9 tabular-nums">{{
+            formatCurrency(totalAllocated, activeCurrency)
+          }}</span>
         </div>
         <div class="flex items-center gap-2 ml-auto">
-          <Button variant="outline" theme="gray" :label="reviewing ? '← Back to Edit' : 'Cancel'" @click="onBack" />
+          <Button
+            variant="outline"
+            theme="gray"
+            :label="reviewing ? '← Back to Edit' : 'Cancel'"
+            @click="onBack"
+          />
           <Button
             v-if="reviewing"
             variant="solid"
@@ -353,7 +480,15 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Button, FormControl, Combobox, DatePicker, createResource, debounce, toast } from 'frappe-ui'
+import {
+  Button,
+  FormControl,
+  Combobox,
+  DatePicker,
+  createResource,
+  debounce,
+  toast,
+} from 'frappe-ui'
 import SectionCard from './SectionCard.vue'
 import FcIcon from './FcIcon.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
@@ -369,10 +504,13 @@ const DEFAULT_MODES = ['Cash', 'Bank Transfer']
 
 // FC-12: Reference field labels per mode.
 const REF_LABELS = {
-  'Bank Transfer': { refNo: 'Bank Reference / RTGS Ref', refDate: 'Value Date' },
-  'M-Pesa':        { refNo: 'M-Pesa Transaction ID',     refDate: 'Transaction Date' },
-  Cheque:          { refNo: 'Cheque Number',              refDate: 'Cheque Date' },
-  Cash:            { refNo: null,                         refDate: null },
+  'Bank Transfer': {
+    refNo: 'Bank Reference / RTGS Ref',
+    refDate: 'Value Date',
+  },
+  'M-Pesa': { refNo: 'M-Pesa Transaction ID', refDate: 'Transaction Date' },
+  Cheque: { refNo: 'Cheque Number', refDate: 'Cheque Date' },
+  Cash: { refNo: null, refDate: null },
 }
 
 function localToday() {
@@ -423,7 +561,9 @@ const sortedInvoices = computed(() => {
   })
 })
 
-const allSelected = computed(() => invoices.value.length > 0 && invoices.value.every((r) => r._selected))
+const allSelected = computed(
+  () => invoices.value.length > 0 && invoices.value.every((r) => r._selected),
+)
 const someSelected = computed(() => invoices.value.some((r) => r._selected))
 
 function toggleAll(checked) {
@@ -434,9 +574,15 @@ function toggleAll(checked) {
 }
 
 /* ---- FC-07: Mode of Payment pill group ---- */
-const recentModes = ref((() => {
-  try { return JSON.parse(localStorage.getItem(MOP_STORAGE_KEY) || '[]') } catch { return [] }
-})())
+const recentModes = ref(
+  (() => {
+    try {
+      return JSON.parse(localStorage.getItem(MOP_STORAGE_KEY) || '[]')
+    } catch {
+      return []
+    }
+  })(),
+)
 const allLoadedModes = ref([])
 const moreOpen = ref(false)
 const modeSearchResults = ref([])
@@ -448,8 +594,12 @@ const visibleModes = computed(() => {
 })
 
 const extraModeOptions = computed(() => {
-  const base = modeSearchResults.value.length ? modeSearchResults.value : allLoadedModes.value
-  return base.filter((m) => !visibleModes.value.includes(m)).map((m) => ({ label: m, value: m }))
+  const base = modeSearchResults.value.length
+    ? modeSearchResults.value
+    : allLoadedModes.value
+  return base
+    .filter((m) => !visibleModes.value.includes(m))
+    .map((m) => ({ label: m, value: m }))
 })
 
 const onModeQuery = debounce(async (q) => {
@@ -466,17 +616,32 @@ const onModeQuery = debounce(async (q) => {
 function selectMode(mode) {
   if (!mode) return
   modeOfPayment.value = mode
-  const updated = [mode, ...recentModes.value.filter((m) => m !== mode)].slice(0, 4)
+  const updated = [mode, ...recentModes.value.filter((m) => m !== mode)].slice(
+    0,
+    4,
+  )
   recentModes.value = updated
-  try { localStorage.setItem(MOP_STORAGE_KEY, JSON.stringify(updated)) } catch { /* ignore */ }
+  try {
+    localStorage.setItem(MOP_STORAGE_KEY, JSON.stringify(updated))
+  } catch {
+    /* ignore */
+  }
   moreOpen.value = false
   // Clear ref fields when switching to Cash (FC-12).
-  if (mode === 'Cash') { referenceNo.value = ''; referenceDate.value = '' }
+  if (mode === 'Cash') {
+    referenceNo.value = ''
+    referenceDate.value = ''
+  }
 }
 
 // FC-12: computed ref field labels.
 const refFields = computed(() => {
-  return REF_LABELS[modeOfPayment.value] || { refNo: 'Reference No.', refDate: 'Reference Date' }
+  return (
+    REF_LABELS[modeOfPayment.value] || {
+      refNo: 'Reference No.',
+      refDate: 'Reference Date',
+    }
+  )
 })
 
 /* ---- FC-08: Customer smart search ---- */
@@ -494,10 +659,12 @@ const onCustomerQuery = debounce(async (query) => {
     const rows = await customerListRes.submit({
       doctype: 'Customer',
       // Search both name (code) and customer_name (display name).
-      or_filters: query ? JSON.stringify([
-        ['name', 'like', `%${query}%`],
-        ['customer_name', 'like', `%${query}%`],
-      ]) : '[]',
+      or_filters: query
+        ? JSON.stringify([
+            ['name', 'like', `%${query}%`],
+            ['customer_name', 'like', `%${query}%`],
+          ])
+        : '[]',
       filters: '[]',
       fields: JSON.stringify(['name', 'customer_name']),
       limit_page_length: 10,
@@ -517,7 +684,9 @@ const customerBalance = ref(null)
 const customerInvoiceCount = ref(0)
 
 /* ---- Outstanding invoices ---- */
-const invoicesRes = createResource({ url: 'crm.finance.api.get_customer_outstanding_invoices' })
+const invoicesRes = createResource({
+  url: 'crm.finance.api.get_customer_outstanding_invoices',
+})
 const invoicesLoading = ref(false)
 
 async function onCustomerChange(val) {
@@ -533,11 +702,21 @@ async function onCustomerChange(val) {
   invoicesLoading.value = true
   errorMsg.value = ''
   try {
-    const rows = await invoicesRes.submit({ company: company.value, customer: val })
-    invoices.value = (rows || []).map((r) => ({ ...r, _selected: false, _allocated: 0 }))
+    const rows = await invoicesRes.submit({
+      company: company.value,
+      customer: val,
+    })
+    invoices.value = (rows || []).map((r) => ({
+      ...r,
+      _selected: false,
+      _allocated: 0,
+    }))
     // Compute balance chip values.
     customerInvoiceCount.value = invoices.value.length
-    customerBalance.value = invoices.value.reduce((s, r) => s + Number(r.outstanding_amount || 0), 0)
+    customerBalance.value = invoices.value.reduce(
+      (s, r) => s + Number(r.outstanding_amount || 0),
+      0,
+    )
   } catch (err) {
     errorMsg.value = readable(err)
   } finally {
@@ -551,17 +730,23 @@ function toggleRow(row, checked) {
 }
 function onAllocInput(row, raw) {
   const n = parseFloat(raw)
-  const capped = Number.isNaN(n) ? 0 : Math.min(Math.max(n, 0), Number(row.outstanding_amount))
+  const capped = Number.isNaN(n)
+    ? 0
+    : Math.min(Math.max(n, 0), Number(row.outstanding_amount))
   row._allocated = capped
 }
 
 /* ---- FC-09: Auto-allocate ---- */
-const canAutoAllocate = computed(() => !!customer.value && paidAmount.value > 0 && invoices.value.length > 0)
+const canAutoAllocate = computed(
+  () => !!customer.value && paidAmount.value > 0 && invoices.value.length > 0,
+)
 
 function autoAllocate() {
   let remaining = Number(paidAmount.value) || 0
   // Sort by due_date asc to fill oldest first.
-  const byDue = invoices.value.slice().sort((a, b) => (a.due_date || '') < (b.due_date || '') ? -1 : 1)
+  const byDue = invoices.value
+    .slice()
+    .sort((a, b) => ((a.due_date || '') < (b.due_date || '') ? -1 : 1))
   byDue.forEach((row) => {
     if (remaining <= 0) {
       row._selected = false
@@ -576,16 +761,25 @@ function autoAllocate() {
   })
 }
 
-const selectedRows = computed(() => invoices.value.filter((r) => r._selected && Number(r._allocated) > 0))
+const selectedRows = computed(() =>
+  invoices.value.filter((r) => r._selected && Number(r._allocated) > 0),
+)
 const selectedCount = computed(() => selectedRows.value.length)
-const totalAllocated = computed(() => selectedRows.value.reduce((s, r) => s + Number(r._allocated || 0), 0))
+const totalAllocated = computed(() =>
+  selectedRows.value.reduce((s, r) => s + Number(r._allocated || 0), 0),
+)
 const activeCurrency = computed(() => invoices.value[0]?.currency || '')
-const unallocated = computed(() => Math.max(0, (paidAmount.value || 0) - totalAllocated.value))
-const canReview = computed(() => !!customer.value && totalAllocated.value > 0 && !saving.value)
+const unallocated = computed(() =>
+  Math.max(0, (paidAmount.value || 0) - totalAllocated.value),
+)
+const canReview = computed(
+  () => !!customer.value && totalAllocated.value > 0 && !saving.value,
+)
 
 function readable(err) {
   if (!err) return 'Something went wrong.'
-  if (Array.isArray(err.messages) && err.messages.length) return err.messages.join('\n')
+  if (Array.isArray(err.messages) && err.messages.length)
+    return err.messages.join('\n')
   return err.message || String(err)
 }
 
@@ -598,14 +792,19 @@ function onBack() {
   }
 }
 
-const createRes = createResource({ url: 'crm.finance.api.create_customer_payment' })
+const createRes = createResource({
+  url: 'crm.finance.api.create_customer_payment',
+})
 
 async function onConfirmPost() {
   if (!canReview.value) return
   saving.value = true
   reviewError.value = ''
   try {
-    const allocations = selectedRows.value.map((r) => ({ invoice: r.name, amount: Number(r._allocated) }))
+    const allocations = selectedRows.value.map((r) => ({
+      invoice: r.name,
+      amount: Number(r._allocated),
+    }))
     const res = await createRes.submit({
       company: company.value,
       customer: customer.value,

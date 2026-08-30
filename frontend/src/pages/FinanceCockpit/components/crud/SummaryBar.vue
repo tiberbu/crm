@@ -2,7 +2,10 @@
   <div class="fc-summary grid grid-cols-1 lg:grid-cols-3 gap-4">
     <!-- Notes (left) -->
     <div class="lg:col-span-2">
-      <label v-if="showNotes" class="block text-xs font-medium text-ink-gray-5 mb-1.5">
+      <label
+        v-if="showNotes"
+        class="block text-xs font-medium text-ink-gray-5 mb-1.5"
+      >
         {{ notesLabel }}
       </label>
       <textarea
@@ -16,14 +19,20 @@
       <p
         v-else-if="showNotes"
         class="text-sm text-ink-gray-7 whitespace-pre-line min-h-[40px]"
-      >{{ notes || '—' }}</p>
+      >
+        {{ notes || '—' }}
+      </p>
     </div>
 
     <!-- Totals (right) -->
-    <div class="rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 space-y-2.5">
+    <div
+      class="rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 space-y-2.5"
+    >
       <div class="flex items-center justify-between text-sm">
         <span class="text-ink-gray-5">Subtotal</span>
-        <span class="font-medium text-ink-gray-7 tabular-nums">{{ fmt(subtotal) }}</span>
+        <span class="font-medium text-ink-gray-7 tabular-nums">{{
+          fmt(subtotal)
+        }}</span>
       </div>
 
       <!-- Single tax row (collapsed) or per-row breakdown -->
@@ -34,17 +43,25 @@
           class="flex items-center justify-between text-sm"
         >
           <span class="text-ink-gray-5 truncate mr-2">{{ row.label }}</span>
-          <span class="font-medium text-ink-gray-7 tabular-nums">{{ fmt(row.amount) }}</span>
+          <span class="font-medium text-ink-gray-7 tabular-nums">{{
+            fmt(row.amount)
+          }}</span>
         </div>
       </template>
       <div v-else class="flex items-center justify-between text-sm">
         <span class="text-ink-gray-5">Tax</span>
-        <span class="font-medium text-ink-gray-7 tabular-nums">{{ fmt(tax) }}</span>
+        <span class="font-medium text-ink-gray-7 tabular-nums">{{
+          fmt(tax)
+        }}</span>
       </div>
 
-      <div class="pt-2.5 border-t border-outline-gray-2 flex items-center justify-between bg-surface-blue-6 -mx-4 -mb-4 px-4 pb-4 rounded-b-xl">
+      <div
+        class="pt-2.5 border-t border-outline-gray-2 flex items-center justify-between bg-surface-blue-6 -mx-4 -mb-4 px-4 pb-4 rounded-b-xl"
+      >
         <span class="text-sm font-semibold text-ink-gray-7">Grand Total</span>
-        <span class="text-xl font-bold text-ink-gray-9 tabular-nums">{{ fmt(grandTotal) }}</span>
+        <span class="text-xl font-bold text-ink-gray-9 tabular-nums">{{
+          fmt(grandTotal)
+        }}</span>
       </div>
     </div>
   </div>

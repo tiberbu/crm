@@ -15,8 +15,12 @@
         >
           <FcIcon :name="icon" :size="16" />
         </span>
-        <h3 class="text-sm font-semibold text-ink-gray-8 truncate">{{ title }}</h3>
-        <span v-if="badge" class="text-xs font-medium text-ink-gray-4">{{ badge }}</span>
+        <h3 class="text-sm font-semibold text-ink-gray-8 truncate">
+          {{ title }}
+        </h3>
+        <span v-if="badge" class="text-xs font-medium text-ink-gray-4">{{
+          badge
+        }}</span>
       </div>
       <div class="flex items-center gap-2">
         <slot name="header-action" />
@@ -59,13 +63,27 @@ const props = defineProps({
 })
 
 const TONES = {
-  neutral:   { chip: 'bg-surface-gray-3 text-ink-gray-7',    heroBorder: 'border-outline-gray-3' },
-  positive:  { chip: 'bg-surface-green-2 text-ink-green-6',  heroBorder: 'border-outline-green-1' },
-  attention: { chip: 'bg-surface-red-2 text-ink-red-6',      heroBorder: 'border-outline-red-1' },
-  pending:   { chip: 'bg-surface-amber-2 text-ink-amber-6',  heroBorder: 'border-outline-amber-1' },
+  neutral: {
+    chip: 'bg-surface-gray-3 text-ink-gray-7',
+    heroBorder: 'border-outline-gray-3',
+  },
+  positive: {
+    chip: 'bg-surface-green-2 text-ink-green-6',
+    heroBorder: 'border-outline-green-1',
+  },
+  attention: {
+    chip: 'bg-surface-red-2 text-ink-red-6',
+    heroBorder: 'border-outline-red-1',
+  },
+  pending: {
+    chip: 'bg-surface-amber-2 text-ink-amber-6',
+    heroBorder: 'border-outline-amber-1',
+  },
 }
 const toneCls = computed(() => TONES[props.tone] || TONES.neutral)
 
 const isOpen = ref(!(props.collapsible && props.collapsed))
-function toggle() { isOpen.value = !isOpen.value }
+function toggle() {
+  isOpen.value = !isOpen.value
+}
 </script>

@@ -21,27 +21,28 @@ Rules enforced:
   which already persists with ignore_permissions=True in crm/api/contracts.py.
 - Best-effort: a logging failure must never abort the business transition.
 """
+
 from __future__ import annotations
 
 import frappe
 
 
 def log_deal_event(deal: str, text: str) -> None:
-    """Write an Info Comment on a CRM Deal. Never raises — logging is best-effort."""
-    if not deal or not text:
-        return
-    try:
-        frappe.get_doc(
-            {
-                "doctype": "Comment",
-                "comment_type": "Comment",
-                "reference_doctype": "CRM Deal",
-                "reference_name": deal,
-                "content": text,
-            }
-        ).insert(ignore_permissions=True)  # SYSTEM-INTERNAL: system-authored transition audit log
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "log_deal_event: failed to write timeline comment for deal %s" % deal,
-        )
+	"""Write an Info Comment on a CRM Deal. Never raises — logging is best-effort."""
+	if not deal or not text:
+		return
+	try:
+		frappe.get_doc(
+			{
+				"doctype": "Comment",
+				"comment_type": "Comment",
+				"reference_doctype": "CRM Deal",
+				"reference_name": deal,
+				"content": text,
+			}
+		).insert(ignore_permissions=True)  # SYSTEM-INTERNAL: system-authored transition audit log
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"log_deal_event: failed to write timeline comment for deal %s" % deal,
+		)

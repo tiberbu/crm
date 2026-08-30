@@ -3,4 +3,4 @@ from frappe.model.document import Document
 
 
 class CRMOptInSubmission(Document):
-    pass
+	pass

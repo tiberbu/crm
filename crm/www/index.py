@@ -8,6 +8,7 @@ Root-resolution note: `home_page = "index"` alone is NOT enough — Frappe's
 `before_request` hook (crm/api/route_guard.py) forces '/' -> index on every request so
 this redirect actually runs for workspace-having users, closing a desk-fence bypass.
 """
+
 import frappe
 from frappe import _
 

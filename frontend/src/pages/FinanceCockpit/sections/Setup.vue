@@ -1,11 +1,17 @@
 <template>
   <div class="fc-setup space-y-6">
     <div>
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Setup</h2>
-      <p class="mt-1 text-xs text-gray-400">Finance Manager configuration links. Opens ERPNext in a new tab.</p>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        Setup
+      </h2>
+      <p class="mt-1 text-xs text-gray-400">
+        Finance Manager configuration links. Opens ERPNext in a new tab.
+      </p>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <div
+      class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+    >
       <a
         v-for="link in setupLinks"
         :key="link.label"
@@ -19,10 +25,16 @@
           class="w-5 h-5 mt-0.5 text-gray-400 group-hover:text-blue-500 shrink-0 transition-colors"
         />
         <div class="min-w-0">
-          <div class="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">
+          <div
+            class="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate"
+          >
             {{ link.label }}
           </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{{ link.description }}</div>
+          <div
+            class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2"
+          >
+            {{ link.description }}
+          </div>
         </div>
       </a>
     </div>

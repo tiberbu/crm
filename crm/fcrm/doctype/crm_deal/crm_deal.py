@@ -3,6 +3,7 @@
 
 import frappe
 from frappe import _
+
 try:
 	# v15: public add() has no ignore_permissions; _add() is the internal impl that does
 	from frappe.desk.form.assign_to import _add as _assign
@@ -11,12 +12,11 @@ except ImportError:
 	from frappe.desk.form.assign_to import add as _assign
 from frappe.model.document import Document
 
-from crm.fcrm.naming import generate_random5_numeric
-
 from crm.api.exchange_rate import get_exchange_rate
 from crm.fcrm.doctype.crm_service_level_agreement.utils import get_sla
 from crm.fcrm.doctype.crm_status_change_log.crm_status_change_log import add_status_change_log
 from crm.fcrm.doctype.utils import add_or_remove_lost_reason_section_in_sidepanel
+from crm.fcrm.naming import generate_random5_numeric
 
 
 class CRMDeal(Document):

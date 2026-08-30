@@ -24,7 +24,10 @@ export function useHfrSearch() {
   function search() {
     if ((query.value || '').length < 3) return
     results.value = []
-    searchResource.submit({ query: query.value, search_by: searchBy.value || 'mfl_code' })
+    searchResource.submit({
+      query: query.value,
+      search_by: searchBy.value || 'mfl_code',
+    })
   }
 
   function selectFacility(fid, doc) {
@@ -70,7 +73,12 @@ export function applyHfrPreview(doc, hfrFields) {
   for (const [field, value] of Object.entries(hfrFields)) {
     if (value === null || value === undefined) continue
     const current = target[field]
-    if (current === null || current === undefined || current === '' || current === 0) {
+    if (
+      current === null ||
+      current === undefined ||
+      current === '' ||
+      current === 0
+    ) {
       target[field] = value
     }
   }

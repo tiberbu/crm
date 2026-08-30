@@ -39,12 +39,12 @@ const statusFilter = ref('')
 const sectionRef = ref(null)
 
 const columns = [
-  { key: 'name',             label: 'Quote' },
-  { key: 'party_name',       label: 'Party' },
-  { key: 'transaction_date', label: 'Date',  type: 'date' },
-  { key: 'valid_till',       label: 'Valid',  type: 'date' },
-  { key: 'grand_total',      label: 'Total',  type: 'currency', align: 'right' },
-  { key: 'status',           label: 'Status', type: 'status' },
+  { key: 'name', label: 'Quote' },
+  { key: 'party_name', label: 'Party' },
+  { key: 'transaction_date', label: 'Date', type: 'date' },
+  { key: 'valid_till', label: 'Valid', type: 'date' },
+  { key: 'grand_total', label: 'Total', type: 'currency', align: 'right' },
+  { key: 'status', label: 'Status', type: 'status' },
 ]
 
 // Default ("Active") = quotes still in play. A submitted Quotation's status is

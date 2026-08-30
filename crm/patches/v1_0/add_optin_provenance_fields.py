@@ -25,84 +25,84 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
 def execute():
-    # SYSTEM-INTERNAL: patch path — schema provisioning for opt-in provenance.
-    create_custom_fields(
-        {
-            "CRM Lead": [
-                {
-                    "fieldname": "optin_provenance_section",
-                    "fieldtype": "Section Break",
-                    "label": "Opt-In Provenance",
-                    "insert_after": "source",
-                    "collapsible": 1,
-                },
-                {
-                    "fieldname": "optin_network_slug",
-                    "fieldtype": "Data",
-                    "label": "Opt-In Network Slug",
-                    "insert_after": "optin_provenance_section",
-                    "read_only": 1,
-                    "no_copy": 1,
-                },
-                {
-                    "fieldname": "tc_accepted",
-                    "fieldtype": "Check",
-                    "label": "T&C Accepted",
-                    "insert_after": "optin_network_slug",
-                    "read_only": 1,
-                    "no_copy": 1,
-                },
-                {
-                    "fieldname": "tc_document",
-                    "fieldtype": "Data",
-                    "label": "T&C Document",
-                    "insert_after": "tc_accepted",
-                    "read_only": 1,
-                    "no_copy": 1,
-                },
-                {
-                    "fieldname": "tc_document_hash",
-                    "fieldtype": "Data",
-                    "label": "T&C Document Hash (SHA-256)",
-                    "insert_after": "tc_document",
-                    "read_only": 1,
-                    "no_copy": 1,
-                    "length": 64,
-                },
-                {
-                    "fieldname": "tc_accepted_at",
-                    "fieldtype": "Datetime",
-                    "label": "T&C Accepted At",
-                    "insert_after": "tc_document_hash",
-                    "read_only": 1,
-                    "no_copy": 1,
-                },
-                {
-                    "fieldname": "tc_ip_address",
-                    "fieldtype": "Data",
-                    "label": "T&C Acceptance IP",
-                    "insert_after": "tc_accepted_at",
-                    "read_only": 1,
-                    "no_copy": 1,
-                    "length": 45,
-                },
-            ],
-            "CRM Deal": [
-                {
-                    "fieldname": "optin_submission",
-                    "fieldtype": "Link",
-                    "label": "Opt-In Submission",
-                    "options": "CRM Opt-In Submission",
-                    "insert_after": "status",
-                    "read_only": 1,
-                    "no_copy": 1,
-                },
-                {
-                    "fieldname": "exec_notes",
-                    "fieldtype": "Text",
-                    "label": "Exec Notes",
-                    "insert_after": "optin_submission",
-                },
-            ],
-        }
-    )
+	# SYSTEM-INTERNAL: patch path — schema provisioning for opt-in provenance.
+	create_custom_fields(
+		{
+			"CRM Lead": [
+				{
+					"fieldname": "optin_provenance_section",
+					"fieldtype": "Section Break",
+					"label": "Opt-In Provenance",
+					"insert_after": "source",
+					"collapsible": 1,
+				},
+				{
+					"fieldname": "optin_network_slug",
+					"fieldtype": "Data",
+					"label": "Opt-In Network Slug",
+					"insert_after": "optin_provenance_section",
+					"read_only": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "tc_accepted",
+					"fieldtype": "Check",
+					"label": "T&C Accepted",
+					"insert_after": "optin_network_slug",
+					"read_only": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "tc_document",
+					"fieldtype": "Data",
+					"label": "T&C Document",
+					"insert_after": "tc_accepted",
+					"read_only": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "tc_document_hash",
+					"fieldtype": "Data",
+					"label": "T&C Document Hash (SHA-256)",
+					"insert_after": "tc_document",
+					"read_only": 1,
+					"no_copy": 1,
+					"length": 64,
+				},
+				{
+					"fieldname": "tc_accepted_at",
+					"fieldtype": "Datetime",
+					"label": "T&C Accepted At",
+					"insert_after": "tc_document_hash",
+					"read_only": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "tc_ip_address",
+					"fieldtype": "Data",
+					"label": "T&C Acceptance IP",
+					"insert_after": "tc_accepted_at",
+					"read_only": 1,
+					"no_copy": 1,
+					"length": 45,
+				},
+			],
+			"CRM Deal": [
+				{
+					"fieldname": "optin_submission",
+					"fieldtype": "Link",
+					"label": "Opt-In Submission",
+					"options": "CRM Opt-In Submission",
+					"insert_after": "status",
+					"read_only": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "exec_notes",
+					"fieldtype": "Text",
+					"label": "Exec Notes",
+					"insert_after": "optin_submission",
+				},
+			],
+		}
+	)

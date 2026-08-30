@@ -1,7 +1,9 @@
 <template>
   <div class="fc-assets space-y-4">
     <div class="flex items-center gap-2">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Assets</h2>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        Assets
+      </h2>
     </div>
 
     <div class="flex gap-1 border-b border-gray-200 dark:border-gray-700">
@@ -15,7 +17,9 @@
             : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
         ]"
         @click="activeTab = tab.key"
-      >{{ tab.label }}</button>
+      >
+        {{ tab.label }}
+      </button>
     </div>
 
     <!-- Fixed Asset Register -->
@@ -28,7 +32,12 @@
         empty-label="No assets found."
         :page="assetPage"
         :page-size="20"
-        @update:page="p => { assetPage = p; assetRes.fetch() }"
+        @update:page="
+          (p) => {
+            assetPage = p
+            assetRes.fetch()
+          }
+        "
         @retry="assetRes.fetch()"
       />
     </div>
@@ -43,7 +52,12 @@
         empty-label="No depreciation schedules found."
         :page="deprPage"
         :page-size="20"
-        @update:page="p => { deprPage = p; deprRes.fetch() }"
+        @update:page="
+          (p) => {
+            deprPage = p
+            deprRes.fetch()
+          }
+        "
         @retry="deprRes.fetch()"
       />
     </div>
@@ -58,7 +72,12 @@
         empty-label="No asset movements found."
         :page="movePage"
         :page-size="20"
-        @update:page="p => { movePage = p; moveRes.fetch() }"
+        @update:page="
+          (p) => {
+            movePage = p
+            moveRes.fetch()
+          }
+        "
         @retry="moveRes.fetch()"
       />
     </div>
@@ -87,14 +106,31 @@ const assetCols = [
   { key: 'asset_name', label: 'Name' },
   { key: 'asset_category', label: 'Category' },
   { key: 'purchase_date', label: 'Purchase Date', type: 'date' },
-  { key: 'gross_purchase_amount', label: 'Cost', type: 'currency', align: 'right' },
-  { key: 'accumulated_depreciation_amount', label: 'Accum. Depr.', type: 'currency', align: 'right' },
-  { key: 'value_after_depreciation', label: 'Net Book Value', type: 'currency', align: 'right' },
+  {
+    key: 'gross_purchase_amount',
+    label: 'Cost',
+    type: 'currency',
+    align: 'right',
+  },
+  {
+    key: 'accumulated_depreciation_amount',
+    label: 'Accum. Depr.',
+    type: 'currency',
+    align: 'right',
+  },
+  {
+    key: 'value_after_depreciation',
+    label: 'Net Book Value',
+    type: 'currency',
+    align: 'right',
+  },
   { key: 'status', label: 'Status', type: 'status' },
 ]
 const assetRes = createResource({
   url: 'crm.finance.api.get_assets',
-  makeParams() { return { company: company.value, page: assetPage.value, page_size: 20 } },
+  makeParams() {
+    return { company: company.value, page: assetPage.value, page_size: 20 }
+  },
   auto: true,
 })
 const assetRows = computed(() => assetRes.data || [])
@@ -106,13 +142,20 @@ const deprPage = ref(0)
 const deprCols = [
   { key: 'asset', label: 'Asset' },
   { key: 'schedule_date', label: 'Schedule Date', type: 'date' },
-  { key: 'depreciation_amount', label: 'Amount', type: 'currency', align: 'right' },
+  {
+    key: 'depreciation_amount',
+    label: 'Amount',
+    type: 'currency',
+    align: 'right',
+  },
   { key: 'depreciation_method', label: 'Method' },
   { key: 'fiscal_year', label: 'Fiscal Year' },
 ]
 const deprRes = createResource({
   url: 'crm.finance.api.get_depreciation_schedule',
-  makeParams() { return { company: company.value, page: deprPage.value, page_size: 20 } },
+  makeParams() {
+    return { company: company.value, page: deprPage.value, page_size: 20 }
+  },
   auto: false,
 })
 const deprRows = computed(() => deprRes.data || [])
@@ -128,7 +171,9 @@ const moveCols = [
 ]
 const moveRes = createResource({
   url: 'crm.finance.api.get_asset_movements',
-  makeParams() { return { company: company.value, page: movePage.value, page_size: 20 } },
+  makeParams() {
+    return { company: company.value, page: movePage.value, page_size: 20 }
+  },
   auto: false,
 })
 const moveRows = computed(() => moveRes.data || [])
@@ -141,8 +186,15 @@ watch(activeTab, (t) => {
 })
 
 watch(company, () => {
-  assetPage.value = 0; assetRes.fetch()
-  if (activeTab.value === 'depreciation') { deprPage.value = 0; deprRes.fetch() }
-  if (activeTab.value === 'movements') { movePage.value = 0; moveRes.fetch() }
+  assetPage.value = 0
+  assetRes.fetch()
+  if (activeTab.value === 'depreciation') {
+    deprPage.value = 0
+    deprRes.fetch()
+  }
+  if (activeTab.value === 'movements') {
+    movePage.value = 0
+    moveRes.fetch()
+  }
 })
 </script>

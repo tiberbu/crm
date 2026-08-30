@@ -1,11 +1,10 @@
 <template>
-  <div
-    class="group fc-glass-card cursor-pointer"
-    @click="$emit('click')"
-  >
+  <div class="group fc-glass-card cursor-pointer" @click="$emit('click')">
     <div class="flex flex-col gap-2">
       <div class="flex items-start justify-between gap-2">
-        <span class="text-xs font-medium text-ink-gray-5 leading-tight">{{ label }}</span>
+        <span class="text-xs font-medium text-ink-gray-5 leading-tight">{{
+          label
+        }}</span>
         <span
           class="w-7 h-7 flex-shrink-0 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105"
           :class="tone.chip"
@@ -17,13 +16,14 @@
       </div>
       <div class="flex items-center gap-1 text-xs" v-if="deltaPct !== 0">
         <span :class="deltaClass" v-html="deltaIcon" />
-        <span :class="deltaClass">{{ Math.abs(deltaPct) }}% vs last period</span>
+        <span :class="deltaClass"
+          >{{ Math.abs(deltaPct) }}% vs last period</span
+        >
       </div>
       <div v-else class="text-xs text-ink-gray-4">—</div>
     </div>
   </div>
 </template>
-
 
 <script setup>
 import { computed } from 'vue'
@@ -47,10 +47,10 @@ defineEmits(['click'])
 // at-risk · pending (amber) awaiting. Chip = pale surface-*-2 fill + dark ink-*-6
 // glyph (contrast-verified light & dark); rail = saturated surface-*-6.
 const TONES = {
-  neutral:   { chip: 'bg-surface-gray-3 text-ink-gray-7' },
-  positive:  { chip: 'bg-surface-green-2 text-ink-green-6' },
+  neutral: { chip: 'bg-surface-gray-3 text-ink-gray-7' },
+  positive: { chip: 'bg-surface-green-2 text-ink-green-6' },
   attention: { chip: 'bg-surface-red-2 text-ink-red-6' },
-  pending:   { chip: 'bg-surface-amber-2 text-ink-amber-6' },
+  pending: { chip: 'bg-surface-amber-2 text-ink-amber-6' },
 }
 const tone = computed(() => TONES[props.tone] || TONES.neutral)
 
@@ -66,7 +66,7 @@ const formattedValue = computed(() => {
   const v = props.value ?? 0
   const prefix = props.currency ? props.currency + ' ' : ''
   if (v >= 1_000_000) return prefix + (v / 1_000_000).toFixed(1) + 'M'
-  if (v >= 1_000)     return prefix + (v / 1_000).toFixed(0) + 'K'
+  if (v >= 1_000) return prefix + (v / 1_000).toFixed(0) + 'K'
   return prefix + v.toLocaleString(undefined, { maximumFractionDigits: 0 })
 })
 

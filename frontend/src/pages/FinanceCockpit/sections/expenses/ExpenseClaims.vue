@@ -6,8 +6,12 @@
       class="flex flex-col items-center justify-center py-12 gap-3 text-gray-400 dark:text-gray-500"
     >
       <LucideAlertCircle class="w-10 h-10" />
-      <p class="text-base font-semibold text-gray-600 dark:text-gray-300">HRMS Not Installed</p>
-      <p class="text-sm">Expense Claims and Employee Advances require the HRMS app.</p>
+      <p class="text-base font-semibold text-gray-600 dark:text-gray-300">
+        HRMS Not Installed
+      </p>
+      <p class="text-sm">
+        Expense Claims and Employee Advances require the HRMS app.
+      </p>
     </div>
 
     <template v-else>
@@ -16,7 +20,7 @@
         <select
           v-model="statusFilter"
           class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-          @change="page = 0; refetch()"
+          @change="refetchFirstPage"
         >
           <option value="">Approved (unpaid)</option>
           <option value="all">All</option>
@@ -34,7 +38,12 @@
         empty-label="No expense claims found."
         :page="page"
         :page-size="20"
-        @update:page="p => { page = p; refetch() }"
+        @update:page="
+          (p) => {
+            page = p
+            refetch()
+          }
+        "
         @retry="refetch"
       >
         <template #actions="{ row }">
@@ -43,11 +52,14 @@
             class="text-xs px-2.5 py-1 rounded bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
             :disabled="markingPaid === row.name"
             @click.stop="markAsPaid(row.name)"
-          >{{ markingPaid === row.name ? 'Saving…' : 'Mark Paid' }}</button>
+          >
+            {{ markingPaid === row.name ? 'Saving…' : 'Mark Paid' }}
+          </button>
           <span
             v-else
             class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-          >Paid</span>
+            >Paid</span
+          >
         </template>
       </FinanceTable>
     </template>
@@ -71,7 +83,12 @@ const columns = [
   { key: 'employee_name', label: 'Employee' },
   { key: 'department', label: 'Department' },
   { key: 'posting_date', label: 'Date', type: 'date' },
-  { key: 'total_sanctioned_amount', label: 'Amount', type: 'currency', align: 'right' },
+  {
+    key: 'total_sanctioned_amount',
+    label: 'Amount',
+    type: 'currency',
+    align: 'right',
+  },
   { key: 'status', label: 'Status', type: 'status' },
 ]
 
@@ -97,14 +114,27 @@ const resource = createResource({
 
 const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
-const rawData = computed(() => resource.data || { items: [], hrms_not_installed: false })
+const rawData = computed(
+  () => resource.data || { items: [], hrms_not_installed: false },
+)
 const hrmsNotInstalled = computed(() => !!rawData.value.hrms_not_installed)
 const claims = computed(() => rawData.value.items || [])
 
-function refetch() { resource.fetch() }
-watch(company, () => { page.value = 0; resource.fetch() })
+function refetch() {
+  resource.fetch()
+}
+function refetchFirstPage() {
+  page.value = 0
+  refetch()
+}
+watch(company, () => {
+  page.value = 0
+  resource.fetch()
+})
 
-const markPaidResource = createResource({ url: 'crm.finance.api.mark_expense_claim_paid' })
+const markPaidResource = createResource({
+  url: 'crm.finance.api.mark_expense_claim_paid',
+})
 
 async function markAsPaid(name) {
   markingPaid.value = name

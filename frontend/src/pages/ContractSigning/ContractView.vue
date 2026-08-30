@@ -2,15 +2,28 @@
   <div>
     <!-- Loading skeleton -->
     <div v-if="loading" class="space-y-3">
-      <div class="h-4 w-3/4 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-      <div class="h-4 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-      <div class="h-4 w-5/6 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-      <div class="h-4 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-      <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+      <div
+        class="h-4 w-3/4 animate-pulse rounded bg-gray-200 dark:bg-gray-700"
+      ></div>
+      <div
+        class="h-4 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700"
+      ></div>
+      <div
+        class="h-4 w-5/6 animate-pulse rounded bg-gray-200 dark:bg-gray-700"
+      ></div>
+      <div
+        class="h-4 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700"
+      ></div>
+      <div
+        class="h-4 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-700"
+      ></div>
     </div>
 
     <!-- Error state -->
-    <div v-else-if="loadError" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+    <div
+      v-else-if="loadError"
+      class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400"
+    >
       {{ loadError }}
     </div>
 
@@ -45,16 +58,30 @@
           stroke-width="2"
           :style="{ color: 'var(--brand-primary, #bc1823)' }"
         >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M19 14l-7 7m0 0l-7-7m7 7V3"
+          />
         </svg>
         Scroll to the bottom to continue
       </p>
 
       <!-- Signatory info -->
-      <div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-        <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Signing as</p>
-        <p class="mt-0.5 text-base font-semibold text-gray-900 dark:text-white">{{ signatoryName }}</p>
-        <p class="text-sm text-gray-600 dark:text-gray-300">{{ signatoryRole }}</p>
+      <div
+        class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800"
+      >
+        <p
+          class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+        >
+          Signing as
+        </p>
+        <p class="mt-0.5 text-base font-semibold text-gray-900 dark:text-white">
+          {{ signatoryName }}
+        </p>
+        <p class="text-sm text-gray-600 dark:text-gray-300">
+          {{ signatoryRole }}
+        </p>
       </div>
     </template>
   </div>
@@ -81,7 +108,9 @@ const contractDate = ref('')
 const scrollPanel = ref(null)
 const reachedBottom = ref(false)
 
-const getContractResource = createResource({ url: 'crm.api.contracts.get_contract' })
+const getContractResource = createResource({
+  url: 'crm.api.contracts.get_contract',
+})
 
 /**
  * Strip document-level tags whose CSS/JS would escape this panel and restyle the
@@ -115,7 +144,8 @@ onMounted(async () => {
       contractDate: contractDate.value,
     })
   } catch (err) {
-    loadError.value = err?.message || 'Failed to load contract. Your session may have expired.'
+    loadError.value =
+      err?.message || 'Failed to load contract. Your session may have expired.'
   } finally {
     loading.value = false
     // SF-1: if the contract is shorter than the panel, the scroll event never fires.

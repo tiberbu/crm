@@ -16,7 +16,7 @@ export function provideCompanyContext() {
     url: 'crm.finance.api.get_accessible_companies',
     auto: true,
     onSuccess(data) {
-      const names = (data || []).map(c => c.name)
+      const names = (data || []).map((c) => c.name)
       if (company.value && !names.includes(company.value)) {
         company.value = ''
         localStorage.removeItem(LS_KEY)

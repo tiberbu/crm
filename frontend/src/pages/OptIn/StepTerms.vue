@@ -3,16 +3,34 @@
     <div class="mb-1 flex items-center gap-2.5">
       <span
         class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-        style="background-color: color-mix(in srgb, var(--brand-primary) 12%, transparent)"
+        style="
+          background-color: color-mix(
+            in srgb,
+            var(--brand-primary) 12%,
+            transparent
+          );
+        "
       >
         <svg
-          class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          class="h-5 w-5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
           :style="{ color: 'var(--brand-primary)' }"
         >
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M9 13h6M9 17h4" />
+          <path
+            d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+          />
+          <path d="M14 2v6h6" />
+          <path d="M9 13h6M9 17h4" />
         </svg>
       </span>
-      <h2 class="text-xl font-bold text-gray-900 dark:text-white">Terms &amp; Conditions</h2>
+      <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+        Terms &amp; Conditions
+      </h2>
     </div>
     <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">
       Please read the full Terms &amp; Conditions carefully before accepting.
@@ -20,13 +38,24 @@
 
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-16">
-      <div class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-transparent" :style="{ borderTopColor: 'var(--brand-primary)' }" />
+      <div
+        class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-transparent"
+        :style="{ borderTopColor: 'var(--brand-primary)' }"
+      />
     </div>
 
     <!-- Error -->
-    <div v-else-if="errorMsg" class="rounded-xl bg-red-50 px-6 py-8 text-center dark:bg-red-900/10">
+    <div
+      v-else-if="errorMsg"
+      class="rounded-xl bg-red-50 px-6 py-8 text-center dark:bg-red-900/10"
+    >
       <p class="text-sm text-red-600 dark:text-red-400">{{ errorMsg }}</p>
-      <button class="mt-3 text-xs underline text-red-600 hover:text-red-800 dark:text-red-400" @click="loadTerms">Retry</button>
+      <button
+        class="mt-3 text-xs underline text-red-600 hover:text-red-800 dark:text-red-400"
+        @click="loadTerms"
+      >
+        Retry
+      </button>
     </div>
 
     <template v-else-if="termsLoaded">
@@ -39,7 +68,10 @@
       />
 
       <!-- Scroll hint -->
-      <p v-if="!scrolledToBottom" class="mb-3 text-xs text-amber-600 dark:text-amber-400">
+      <p
+        v-if="!scrolledToBottom"
+        class="mb-3 text-xs text-amber-600 dark:text-amber-400"
+      >
         Please scroll to the bottom to enable acceptance.
       </p>
 
@@ -54,7 +86,9 @@
         <span
           :class="[
             'text-sm',
-            scrolledToBottom ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600',
+            scrolledToBottom
+              ? 'text-gray-700 dark:text-gray-300'
+              : 'text-gray-400 dark:text-gray-600',
           ]"
         >
           I have read and accept the Terms &amp; Conditions
@@ -119,7 +153,7 @@ async function loadTerms() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const mflCodes = (store.selectedFacilities || []).map(f => f.mfl_code)
+    const mflCodes = (store.selectedFacilities || []).map((f) => f.mfl_code)
     const data = await termsResource.fetch({
       signing_token: store.signingToken,
       email: store.contact.email,
@@ -131,7 +165,10 @@ async function loadTerms() {
     store.setTerms(data.html, data.doc_name, data.doc_hash)
     termsLoaded.value = true
   } catch (err) {
-    errorMsg.value = (err && err.message) ? err.message : 'Failed to load Terms & Conditions. Please try again.'
+    errorMsg.value =
+      err && err.message
+        ? err.message
+        : 'Failed to load Terms & Conditions. Please try again.'
   } finally {
     loading.value = false
   }
@@ -172,15 +209,32 @@ function handleContinue() {
    text colour (light + dark), so these rules only set spacing, weight and structure.
    The injected pricing table keeps its own theme-neutral inline styles; here we only
    round its corners and add a hover cue. */
-.tc-panel :deep(h3) { font-size: 1.05rem; font-weight: 700; margin: 0 0 0.5rem; }
-.tc-panel :deep(h4) { font-size: 0.9rem; font-weight: 700; margin: 1.25rem 0 0.35rem; }
-.tc-panel :deep(p) { margin: 0 0 0.75rem; }
-.tc-panel :deep(em) { opacity: 0.7; }
-.tc-panel :deep(a) { color: var(--brand-primary); text-decoration: underline; }
+.tc-panel :deep(h3) {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+.tc-panel :deep(h4) {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin: 1.25rem 0 0.35rem;
+}
+.tc-panel :deep(p) {
+  margin: 0 0 0.75rem;
+}
+.tc-panel :deep(em) {
+  opacity: 0.7;
+}
+.tc-panel :deep(a) {
+  color: var(--brand-primary);
+  text-decoration: underline;
+}
 .tc-panel :deep(table) {
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.18);
 }
-.tc-panel :deep(tbody tr:hover) { background: rgba(128, 128, 128, 0.05); }
+.tc-panel :deep(tbody tr:hover) {
+  background: rgba(128, 128, 128, 0.05);
+}
 </style>

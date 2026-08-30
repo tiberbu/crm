@@ -2,8 +2,12 @@
   <div class="fc-finance-form pb-24">
     <!-- Page header -->
     <div class="mb-5">
-      <p class="text-xs font-medium text-ink-gray-5">{{ name ? 'Editing' : 'New Document' }}</p>
-      <h2 class="text-xl font-bold text-ink-gray-9 truncate">{{ name || 'New ' + doctype }}</h2>
+      <p class="text-xs font-medium text-ink-gray-5">
+        {{ name ? 'Editing' : 'New Document' }}
+      </p>
+      <h2 class="text-xl font-bold text-ink-gray-9 truncate">
+        {{ name || 'New ' + doctype }}
+      </h2>
     </div>
 
     <!-- Error banner -->
@@ -17,7 +21,11 @@
 
     <!-- Loading -->
     <div v-if="loadingDoc" class="space-y-4">
-      <div v-for="n in 3" :key="n" class="h-40 bg-surface-gray-2 rounded-xl animate-pulse" />
+      <div
+        v-for="n in 3"
+        :key="n"
+        class="h-40 bg-surface-gray-2 rounded-xl animate-pulse"
+      />
     </div>
 
     <template v-else>
@@ -46,7 +54,10 @@
           </template>
 
           <!-- Fields section -->
-          <div v-if="sec.kind === 'fields'" class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+          <div
+            v-if="sec.kind === 'fields'"
+            class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4"
+          >
             <div
               v-for="f in sec.fields"
               :key="f.fieldname"
@@ -109,10 +120,18 @@
       class="fixed inset-0 z-40 flex items-center justify-center bg-black/20"
       @click.self="openTaxTemplateFor = null"
     >
-      <div class="bg-surface-white rounded-xl border border-outline-gray-2 shadow-xl p-5 w-80 space-y-3">
+      <div
+        class="bg-surface-white rounded-xl border border-outline-gray-2 shadow-xl p-5 w-80 space-y-3"
+      >
         <div class="flex items-center justify-between">
-          <h4 class="text-sm font-semibold text-ink-gray-8">Apply Tax Template</h4>
-          <button type="button" class="text-ink-gray-4 hover:text-ink-gray-7" @click="openTaxTemplateFor = null">
+          <h4 class="text-sm font-semibold text-ink-gray-8">
+            Apply Tax Template
+          </h4>
+          <button
+            type="button"
+            class="text-ink-gray-4 hover:text-ink-gray-7"
+            @click="openTaxTemplateFor = null"
+          >
             <FcIcon name="x" :size="16" />
           </button>
         </div>
@@ -124,7 +143,9 @@
           @update:model-value="applyTaxTemplate"
           @update:query="onTaxTemplateQuery"
         />
-        <p v-if="taxTemplateHint" class="text-xs text-ink-gray-4">{{ taxTemplateHint }}</p>
+        <p v-if="taxTemplateHint" class="text-xs text-ink-gray-4">
+          {{ taxTemplateHint }}
+        </p>
       </div>
     </div>
 
@@ -133,15 +154,24 @@
       v-if="!loadingDoc"
       class="fixed bottom-0 inset-x-0 z-30 bg-surface-white/95 backdrop-blur border-t border-outline-gray-2"
     >
-      <div class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
+      <div
+        class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between gap-3"
+      >
         <div class="hidden sm:flex items-center gap-2 text-sm text-ink-gray-5">
           <template v-if="layout.totals">
             <span>Grand Total</span>
-            <span class="text-base font-bold text-ink-gray-9 tabular-nums">{{ fmt(grandTotal) }}</span>
+            <span class="text-base font-bold text-ink-gray-9 tabular-nums">{{
+              fmt(grandTotal)
+            }}</span>
           </template>
         </div>
         <div class="flex items-center gap-2 ml-auto">
-          <Button variant="outline" theme="gray" label="Cancel" @click="$emit('close')" />
+          <Button
+            variant="outline"
+            theme="gray"
+            label="Cancel"
+            @click="$emit('close')"
+          />
           <Button
             v-if="canSubmit"
             theme="green"
@@ -152,7 +182,12 @@
             <template #prefix><FcIcon name="send" :size="15" /></template>
             Submit
           </Button>
-          <Button variant="solid" theme="blue" :loading="crud.loading.value" @click="onSave">
+          <Button
+            variant="solid"
+            theme="blue"
+            :loading="crud.loading.value"
+            @click="onSave"
+          >
             <template #prefix><FcIcon name="save" :size="15" /></template>
             Save
           </Button>
@@ -212,7 +247,10 @@ const subtotal = computed(() => {
   const cfg = totalsCfg.value
   if (!cfg) return 0
   const rows = doc[cfg.lineItemsField] || []
-  return rows.reduce((s, r) => s + Number(r[cfg.qtyField] ?? 0) * Number(r[cfg.rateField] ?? 0), 0)
+  return rows.reduce(
+    (s, r) => s + Number(r[cfg.qtyField] ?? 0) * Number(r[cfg.rateField] ?? 0),
+    0,
+  )
 })
 const taxTotal = computed(() => {
   const cfg = totalsCfg.value
@@ -264,9 +302,9 @@ function sectionBadge(sec) {
 // (No `info`/blue tone — this fork rebrands blue to red; neutral is the calm default.)
 const SECTION_TONE = {
   lineItems: 'positive', // the value the doc is built from
-  taxes: 'pending',      // adjustments / charges
-  summary: 'positive',   // the resulting totals — a settled figure
-  fields: 'neutral',     // header/meta fields
+  taxes: 'pending', // adjustments / charges
+  summary: 'positive', // the resulting totals — a settled figure
+  fields: 'neutral', // header/meta fields
 }
 function sectionTone(sec) {
   if (sec.tone) return sec.tone
@@ -285,13 +323,20 @@ const onTaxTemplateQuery = debounce(async (query) => {
   try {
     const rows = await taxTemplateRes.submit({
       doctype: 'Sales Taxes and Charges Template',
-      filters: JSON.stringify(doc.company ? [['company', '=', doc.company]] : []),
+      filters: JSON.stringify(
+        doc.company ? [['company', '=', doc.company]] : [],
+      ),
       fields: JSON.stringify(['name']),
       limit_page_length: 15,
       order_by: 'name asc',
     })
-    const filtered = (rows || []).filter((r) => !query || r.name.toLowerCase().includes(query.toLowerCase()))
-    taxTemplateOptions.value = filtered.map((r) => ({ label: r.name, value: r.name }))
+    const filtered = (rows || []).filter(
+      (r) => !query || r.name.toLowerCase().includes(query.toLowerCase()),
+    )
+    taxTemplateOptions.value = filtered.map((r) => ({
+      label: r.name,
+      value: r.name,
+    }))
   } catch {
     taxTemplateOptions.value = []
   }
@@ -313,7 +358,10 @@ async function applyTaxTemplate(templateName) {
         account_head: r.account_head || null,
         description: r.description || r.account_head || '',
         rate,
-        tax_amount: r.charge_type === 'On Net Total' && netT > 0 ? (rate / 100) * netT : Number(r.tax_amount ?? 0),
+        tax_amount:
+          r.charge_type === 'On Net Total' && netT > 0
+            ? (rate / 100) * netT
+            : Number(r.tax_amount ?? 0),
       }
     })
     // Write to the first taxes-kind section found.
@@ -337,7 +385,8 @@ function seedDefaults() {
     else out[f.fieldname] = f.type === 'check' ? 0 : null
   }
   for (const t of layout.childTables) out[t.tableField] = []
-  if ('company' in out && !out.company && company.value) out.company = company.value
+  if ('company' in out && !out.company && company.value)
+    out.company = company.value
   return out
 }
 

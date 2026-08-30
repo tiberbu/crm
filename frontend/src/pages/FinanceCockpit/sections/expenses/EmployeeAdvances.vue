@@ -5,7 +5,9 @@
       class="flex flex-col items-center justify-center py-12 gap-3 text-gray-400 dark:text-gray-500"
     >
       <LucideAlertCircle class="w-10 h-10" />
-      <p class="text-base font-semibold text-gray-600 dark:text-gray-300">HRMS Not Installed</p>
+      <p class="text-base font-semibold text-gray-600 dark:text-gray-300">
+        HRMS Not Installed
+      </p>
       <p class="text-sm">Employee Advances require the HRMS app.</p>
     </div>
 
@@ -18,7 +20,12 @@
       empty-label="No pending employee advances."
       :page="page"
       :page-size="20"
-      @update:page="p => { page = p; refetch() }"
+      @update:page="
+        (p) => {
+          page = p
+          refetch()
+        }
+      "
       @retry="refetch"
     >
       <template #actions="{ row }">
@@ -27,7 +34,8 @@
           target="_blank"
           class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           @click.stop
-        >View</a>
+          >View</a
+        >
       </template>
     </FinanceTable>
   </div>
@@ -48,7 +56,12 @@ const columns = [
   { key: 'employee_name', label: 'Employee' },
   { key: 'department', label: 'Department' },
   { key: 'posting_date', label: 'Date', type: 'date' },
-  { key: 'advance_amount', label: 'Advanced', type: 'currency', align: 'right' },
+  {
+    key: 'advance_amount',
+    label: 'Advanced',
+    type: 'currency',
+    align: 'right',
+  },
   { key: 'pending_amount', label: 'Pending', type: 'currency', align: 'right' },
   { key: 'status', label: 'Status', type: 'status' },
 ]
@@ -67,10 +80,17 @@ const resource = createResource({
 
 const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
-const rawData = computed(() => resource.data || { items: [], hrms_not_installed: false })
+const rawData = computed(
+  () => resource.data || { items: [], hrms_not_installed: false },
+)
 const hrmsNotInstalled = computed(() => !!rawData.value.hrms_not_installed)
 const advances = computed(() => rawData.value.items || [])
 
-function refetch() { resource.fetch() }
-watch(company, () => { page.value = 0; resource.fetch() })
+function refetch() {
+  resource.fetch()
+}
+watch(company, () => {
+  page.value = 0
+  resource.fetch()
+})
 </script>

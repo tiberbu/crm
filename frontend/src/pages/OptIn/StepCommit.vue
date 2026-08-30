@@ -1,25 +1,38 @@
 <template>
   <div class="mx-auto w-full max-w-lg px-4 py-8">
-    <h2 class="mb-1 text-xl font-bold text-gray-900 dark:text-white">Ready to Commit?</h2>
+    <h2 class="mb-1 text-xl font-bold text-gray-900 dark:text-white">
+      Ready to Commit?
+    </h2>
     <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
       Review your commitment summary before submitting.
     </p>
 
     <!-- Summary card -->
-    <div class="mb-6 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+    <div
+      class="mb-6 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800"
+    >
       <div class="mb-4 flex items-center gap-3">
         <div
           class="flex h-10 w-10 items-center justify-center rounded-full text-white"
           style="background-color: var(--brand-primary)"
         >
-          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-            <polyline points="22 4 12 14.01 9 11.01"/>
+          <svg
+            class="h-5 w-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
           </svg>
         </div>
         <div>
           <p class="font-semibold text-gray-900 dark:text-white">
-            {{ facilityCount }} {{ facilityCount === 1 ? 'facility' : 'facilities' }}
+            {{ facilityCount }}
+            {{ facilityCount === 1 ? 'facility' : 'facilities' }}
           </p>
           <p class="text-sm text-gray-500 dark:text-gray-400">
             {{ facilityList }}
@@ -29,17 +42,27 @@
 
       <div class="rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-900">
         <div class="flex items-baseline justify-between">
-          <span class="text-sm text-gray-500 dark:text-gray-400">Monthly commitment (incl. VAT)</span>
-          <span class="text-xl font-black" :style="{ color: 'var(--brand-primary)' }">
+          <span class="text-sm text-gray-500 dark:text-gray-400"
+            >Monthly commitment (incl. VAT)</span
+          >
+          <span
+            class="text-xl font-black"
+            :style="{ color: 'var(--brand-primary)' }"
+          >
             {{ fmtKes(grandTotalMonthly) }}
           </span>
         </div>
-        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Rates are locked as agreed at sign-up.</p>
+        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          Rates are locked as agreed at sign-up.
+        </p>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-if="errorMsg" class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
+    <div
+      v-if="errorMsg"
+      class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400"
+    >
       {{ errorMsg }}
     </div>
 
@@ -98,11 +121,11 @@ const errorMsg = ref('')
 
 const facilityCount = computed(() => (store.selectedFacilities || []).length)
 const facilityList = computed(() =>
-  (store.selectedFacilities || [])
-    .map(f => f.facility_name)
-    .join(', ')
+  (store.selectedFacilities || []).map((f) => f.facility_name).join(', '),
 )
-const grandTotalMonthly = computed(() => store.pricing?.grand_total_monthly || 0)
+const grandTotalMonthly = computed(
+  () => store.pricing?.grand_total_monthly || 0,
+)
 
 function fmtKes(v) {
   const n = parseFloat(v || 0)
@@ -115,7 +138,9 @@ function fmtKes(v) {
 }
 
 const submitResource = createResource({ url: 'crm.api.optin.submit_async' })
-const savePartialResource = createResource({ url: 'crm.api.optin.save_partial' })
+const savePartialResource = createResource({
+  url: 'crm.api.optin.save_partial',
+})
 
 async function handleCommit(committed) {
   loading.value = true
@@ -160,7 +185,8 @@ async function handleCommit(committed) {
       emit('submitted', data.submission_ref)
     }
   } catch (err) {
-    errorMsg.value = (err && err.message) ? err.message : 'Submission failed. Please try again.'
+    errorMsg.value =
+      err && err.message ? err.message : 'Submission failed. Please try again.'
   } finally {
     loading.value = false
     commitMode.value = ''

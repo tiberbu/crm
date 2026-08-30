@@ -61,15 +61,11 @@ class TestCRMPreQualifiedFacility(UnitTestCase):
 
 	def test_organization_backfill_only_updates_blank_organizations(self):
 		facilities = [
-			frappe._dict(
-				{"name": "FAC-EMPTY", "facility_name": "Default Hospital", "organization": ""}
-			),
+			frappe._dict({"name": "FAC-EMPTY", "facility_name": "Default Hospital", "organization": ""}),
 			frappe._dict(
 				{"name": "FAC-GROUP", "facility_name": "Branch Clinic", "organization": "Health Group"}
 			),
-			frappe._dict(
-				{"name": "FAC-NAMELESS", "facility_name": "", "organization": ""}
-			),
+			frappe._dict({"name": "FAC-NAMELESS", "facility_name": "", "organization": ""}),
 		]
 		with (
 			patch.object(frappe.db, "table_exists", return_value=True),

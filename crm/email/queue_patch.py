@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from email.utils import formataddr
 import logging
+from email.utils import formataddr
 
 import frappe
 
@@ -104,7 +104,8 @@ def _resolve_email_queue_components():
 	if EmailQueue is not None and QueueBuilder is not None:
 		return EmailQueue, QueueBuilder
 
-	from frappe.email.doctype.email_queue.email_queue import EmailQueue as _EmailQueue, QueueBuilder as _QueueBuilder
+	from frappe.email.doctype.email_queue.email_queue import EmailQueue as _EmailQueue
+	from frappe.email.doctype.email_queue.email_queue import QueueBuilder as _QueueBuilder
 
 	EmailQueue, QueueBuilder = _EmailQueue, _QueueBuilder
 	return EmailQueue, QueueBuilder

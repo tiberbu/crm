@@ -23,7 +23,10 @@
             <!-- Search input -->
             <div class="relative border-b border-outline-gray-1">
               <span class="absolute inset-y-0 left-0 flex items-center pl-4">
-                <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
+                <span
+                  class="lucide-search size-4 text-ink-gray-5"
+                  aria-hidden="true"
+                />
               </span>
               <ComboboxInput
                 ref="inputRef"
@@ -39,11 +42,16 @@
               static
               :hold="true"
             >
-              <div v-if="!allItems.length" class="px-4 py-8 text-center text-sm text-ink-gray-4">
+              <div
+                v-if="!allItems.length"
+                class="px-4 py-8 text-center text-sm text-ink-gray-4"
+              >
                 Type to search…
               </div>
               <template v-for="group in groups" :key="group.title">
-                <div class="px-4 pt-3 pb-1 text-xs font-semibold text-ink-gray-5 uppercase tracking-wide">
+                <div
+                  class="px-4 pt-3 pb-1 text-xs font-semibold text-ink-gray-5 uppercase tracking-wide"
+                >
                   {{ group.title }}
                 </div>
                 <ComboboxOption
@@ -55,11 +63,16 @@
                 >
                   <div
                     class="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer transition-colors"
-                    :class="active ? 'bg-surface-gray-2 dark:bg-surface-gray-3' : ''"
+                    :class="
+                      active ? 'bg-surface-gray-2 dark:bg-surface-gray-3' : ''
+                    "
                   >
                     <span
                       v-if="typeof item.icon === 'string'"
-                      :class="[item.icon, 'size-4 text-ink-gray-5 flex-shrink-0']"
+                      :class="[
+                        item.icon,
+                        'size-4 text-ink-gray-5 flex-shrink-0',
+                      ]"
                       aria-hidden="true"
                     />
                     <component
@@ -68,8 +81,15 @@
                       class="size-4 text-ink-gray-5 flex-shrink-0"
                     />
                     <div class="min-w-0 flex-1">
-                      <p class="text-sm font-medium text-ink-gray-8 truncate">{{ item.title }}</p>
-                      <p v-if="item.description" class="text-xs text-ink-gray-5 truncate">{{ item.description }}</p>
+                      <p class="text-sm font-medium text-ink-gray-8 truncate">
+                        {{ item.title }}
+                      </p>
+                      <p
+                        v-if="item.description"
+                        class="text-xs text-ink-gray-5 truncate"
+                      >
+                        {{ item.description }}
+                      </p>
                     </div>
                   </div>
                 </ComboboxOption>
@@ -108,7 +128,12 @@ const { company } = useCompanyContext()
 const localShow = ref(props.show)
 const inputRef = ref(null)
 
-watch(() => props.show, (v) => { localShow.value = v })
+watch(
+  () => props.show,
+  (v) => {
+    localShow.value = v
+  },
+)
 watch(localShow, (v) => {
   emit('update:show', v)
   if (v) nextTick(() => inputRef.value?.$el?.focus())
@@ -119,7 +144,9 @@ useShortcut({
   ctrl: true,
   description: 'Open command palette',
   group: 'Navigation',
-  handler: () => { localShow.value = true },
+  handler: () => {
+    localShow.value = true
+  },
 })
 
 const query = ref('')
@@ -128,8 +155,14 @@ const debouncedQuery = ref('')
 let debounceTimer = null
 watch(query, (val) => {
   clearTimeout(debounceTimer)
-  if (!val || val.length < 2) { debouncedQuery.value = ''; return }
-  debounceTimer = setTimeout(() => { debouncedQuery.value = val; searchResource.fetch() }, 250)
+  if (!val || val.length < 2) {
+    debouncedQuery.value = ''
+    return
+  }
+  debounceTimer = setTimeout(() => {
+    debouncedQuery.value = val
+    searchResource.fetch()
+  }, 250)
 })
 
 const searchResource = createResource({
@@ -140,7 +173,13 @@ const searchResource = createResource({
 })
 
 const apiData = computed(
-  () => searchResource.data || { records: [], navigate: [], reports: [], create: [] },
+  () =>
+    searchResource.data || {
+      records: [],
+      navigate: [],
+      reports: [],
+      create: [],
+    },
 )
 
 const navigateItems = computed(() =>
@@ -158,7 +197,9 @@ const reportItems = computed(() => {
   if (!query.value || query.value.length < 2) return []
   const q = query.value.toLowerCase()
   return REPORTS.filter(
-    (r) => r.roles.some((role) => props.userRoles.includes(role)) && r.label.toLowerCase().includes(q),
+    (r) =>
+      r.roles.some((role) => props.userRoles.includes(role)) &&
+      r.label.toLowerCase().includes(q),
   )
     .slice(0, 5)
     .map((r) => ({
@@ -184,15 +225,20 @@ const recordItems = computed(() =>
 
 const groups = computed(() => {
   const out = []
-  if (navigateItems.value.length) out.push({ title: 'Navigate', items: navigateItems.value })
-  if (reportItems.value.length) out.push({ title: 'Reports', items: reportItems.value })
-  if (recordItems.value.length) out.push({ title: 'Records', items: recordItems.value })
+  if (navigateItems.value.length)
+    out.push({ title: 'Navigate', items: navigateItems.value })
+  if (reportItems.value.length)
+    out.push({ title: 'Reports', items: reportItems.value })
+  if (recordItems.value.length)
+    out.push({ title: 'Records', items: recordItems.value })
   return out
 })
 
 const allItems = computed(() => groups.value.flatMap((g) => g.items))
 
-function slug(dt) { return (dt || '').toLowerCase().replace(/\s+/g, '-') }
+function slug(dt) {
+  return (dt || '').toLowerCase().replace(/\s+/g, '-')
+}
 
 function buildReportUrl(r) {
   const base = '/app/query-report/' + encodeURIComponent(r.report)

@@ -13,6 +13,7 @@ context7-validated against /frappe/frappe version-16 ``auth.py`` + ``twofactor.p
 login responses are "Logged In" (System User), "No App" (Website User), "Password Reset",
 or ``{verification, tmp_id}`` when 2FA runs.
 """
+
 from urllib.parse import urlparse
 
 import frappe

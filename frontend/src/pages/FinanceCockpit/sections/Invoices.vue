@@ -37,13 +37,18 @@ const statusFilter = ref('')
 const sectionRef = ref(null)
 
 const columns = [
-  { key: 'name',             label: 'Invoice' },
-  { key: 'customer',         label: 'Customer' },
-  { key: 'posting_date',     label: 'Date',        type: 'timeago' },
-  { key: 'due_date',         label: 'Due',         type: 'date' },
-  { key: 'grand_total',      label: 'Total',       type: 'currency', align: 'right' },
-  { key: 'outstanding_amount', label: 'Outstanding', type: 'currency', align: 'right' },
-  { key: 'status',           label: 'Status',      type: 'status' },
+  { key: 'name', label: 'Invoice' },
+  { key: 'customer', label: 'Customer' },
+  { key: 'posting_date', label: 'Date', type: 'timeago' },
+  { key: 'due_date', label: 'Due', type: 'date' },
+  { key: 'grand_total', label: 'Total', type: 'currency', align: 'right' },
+  {
+    key: 'outstanding_amount',
+    label: 'Outstanding',
+    type: 'currency',
+    align: 'right',
+  },
+  { key: 'status', label: 'Status', type: 'status' },
 ]
 
 // Create-From flows for Sales Invoices:
@@ -56,7 +61,8 @@ const createFrom = [
     sourceDoctype: 'Sales Order',
     sourceLabel: 'Sales Order',
     subtitleField: 'customer',
-    mapMethod: 'erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice',
+    mapMethod:
+      'erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice',
     targetDoctype: 'Sales Invoice',
   },
   {
@@ -66,7 +72,10 @@ const createFrom = [
     sourceLabel: 'Sales Invoice',
     subtitleField: 'customer',
     // Only submitted (docstatus=1) invoices with outstanding balance are valid sources.
-    sourceFilters: [['docstatus', '=', 1], ['outstanding_amount', '>', 0]],
+    sourceFilters: [
+      ['docstatus', '=', 1],
+      ['outstanding_amount', '>', 0],
+    ],
     mapMethod: 'crm.finance.api.make_payment_entry_from_invoice',
     targetDoctype: 'Payment Entry',
   },

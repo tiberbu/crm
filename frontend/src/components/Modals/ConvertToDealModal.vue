@@ -159,14 +159,21 @@ async function convertToDeal() {
 
   converting.value = true
   try {
-    await triggerConvertToDeal?.(props.lead, deal.doc, () => (show.value = false))
+    await triggerConvertToDeal?.(
+      props.lead,
+      deal.doc,
+      () => (show.value = false),
+    )
 
-    let _deal = await call('crm.fcrm.doctype.crm_lead.crm_lead.convert_to_deal', {
-      lead: props.lead.name,
-      deal: deal.doc,
-      existing_contact: existingContact.value,
-      existing_organization: existingOrganization.value,
-    }).catch((err) => {
+    let _deal = await call(
+      'crm.fcrm.doctype.crm_lead.crm_lead.convert_to_deal',
+      {
+        lead: props.lead.name,
+        deal: deal.doc,
+        existing_contact: existingContact.value,
+        existing_organization: existingOrganization.value,
+      },
+    ).catch((err) => {
       if (err.exc_type == 'MandatoryError') {
         const errorMessage = err.messages
           .map((msg) => {
