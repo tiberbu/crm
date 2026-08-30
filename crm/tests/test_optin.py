@@ -6,7 +6,13 @@ import frappe
 from frappe.tests import UnitTestCase
 from frappe.utils import add_days, random_string, today
 
-from crm.api.contracts import _build_contract_document_html, _issue_and_send_invitation, generate
+from crm.api.contracts import (
+	_build_contract_document_html,
+	_issue_and_send_invitation,
+	_transition,
+	generate,
+	get_contract,
+)
 from crm.api.optin import (
 	_KEPH_MAP,
 	_facility_signing_state,
@@ -239,6 +245,80 @@ class TestOptInContractAutomation(UnitTestCase):
 		commit.assert_not_called()
 		self.assertTrue(signatory.invite_token)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
+
+	def test_first_facility_signature_invites_every_remaining_signatory_together(self):
+		facility = SimpleNamespace(
+			signatory_role="Facility Signatory", status="Signed", invite_token="original"
+		)
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Pending", invite_token=None)
+		network = SimpleNamespace(signatory_role="Network Signatory", status="Pending", invite_token=None)
+		tiberbu = SimpleNamespace(signatory_role="Tiberbu Signatory", status="Pending", invite_token=None)
+		contract = SimpleNamespace(
+			name="CONT-TEST-00001",
+			deal="DEAL-TEST-00001",
+			signatories=[facility, witness, network, tiberbu],
+		)
+
+		def issue_invitation(_contract, row, commit):
+			self.assertFalse(commit)
+			row.invite_token = "issued-%s" % row.signatory_role
+
+		with (
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts._issue_and_send_invitation", side_effect=issue_invitation) as issue,
+			patch("crm.api.contracts._set_contract_state") as set_state,
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_transition(contract.name)
+			_transition(contract.name)
+
+		self.assertEqual(issue.call_count, 3)
+		self.assertEqual([call.args[1] for call in issue.call_args_list], [witness, network, tiberbu])
+		set_state.assert_called_once_with(contract, "Awaiting Remaining Signatures")
+		log_event.assert_called_once()
+
+	def test_signing_portal_returns_non_sensitive_progress_for_every_signatory(self):
+		current = SimpleNamespace(signatory_name="Facility Signatory")
+		contract = SimpleNamespace(
+			contract_html="<p>Terms</p>",
+			contract_date="2026-08-30",
+			signatories=[
+				SimpleNamespace(
+					signatory_name="Facility Signatory",
+					signatory_role="Facility Signatory",
+					status="Signed",
+				),
+				SimpleNamespace(
+					signatory_name="Tiberbu Signatory",
+					signatory_role="Tiberbu Signatory",
+					status="Pending",
+				),
+			],
+		)
+
+		with (
+			patch("crm.api.contracts._check_contract_rate_limit"),
+			patch("crm.api.contracts._load_signatory_by_token", return_value=(contract, current)),
+			patch("crm.api.contracts._validate_signing"),
+		):
+			result = get_contract("session-token", "CONT-TEST-00001", "Tiberbu Signatory")
+
+		self.assertEqual(
+			result["signing_progress"],
+			[
+				{
+					"name": "Facility Signatory",
+					"role": "Facility Signatory",
+					"status": "Signed",
+				},
+				{
+					"name": "Tiberbu Signatory",
+					"role": "Tiberbu Signatory",
+					"status": "Awaiting signature",
+				},
+			],
+		)
+		self.assertNotIn("email", result["signing_progress"][0])
 
 	def test_manual_contract_endpoint_keeps_its_existing_response_shape(self):
 		with (

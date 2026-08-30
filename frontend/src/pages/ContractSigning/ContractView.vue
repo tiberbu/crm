@@ -142,6 +142,7 @@ onMounted(async () => {
     emit('loaded', {
       signatoryName: signatoryName.value,
       contractDate: contractDate.value,
+      signingProgress: data.signing_progress || [],
     })
   } catch (err) {
     loadError.value =

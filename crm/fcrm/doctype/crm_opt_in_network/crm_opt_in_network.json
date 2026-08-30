@@ -124,7 +124,7 @@
    "fieldtype": "Table",
    "label": "Network Signatories",
    "options": "CRM Network Signer",
-   "description": "Users who co-sign every contract for this network. Invited (with a 7-day link) once both facility parties have signed; they sign via the same OTP + signature-pad portal — no CRM login required."
+   "description": "Users who co-sign every contract for this network. Invited (with a 7-day link) together with every remaining signatory as soon as the facility signatory has signed; they sign via the same OTP + signature-pad portal — no CRM login required."
   }
  ],
  "is_submittable": 0,

@@ -125,6 +125,59 @@
           </label>
         </div>
 
+        <!-- Contract-wide status is deliberately adjacent to the signing pad so
+             each signer can see completed signatures before acting. -->
+        <section
+          v-if="signingProgress.length"
+          class="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50"
+          aria-label="Contract signing progress"
+        >
+          <div class="flex items-baseline justify-between gap-3">
+            <div>
+              <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
+                Signing progress
+              </h2>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                {{ signedProgressCount }} of
+                {{ signingProgress.length }} signatures complete
+              </p>
+            </div>
+            <span
+              class="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300"
+            >
+              Any order
+            </span>
+          </div>
+          <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-700">
+            <li
+              v-for="(signatory, index) in signingProgress"
+              :key="`${signatory.role}-${signatory.name}-${index}`"
+              class="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0"
+            >
+              <div class="min-w-0">
+                <p
+                  class="truncate text-sm font-medium text-gray-800 dark:text-gray-200"
+                >
+                  {{ signatory.name }}
+                </p>
+                <p class="truncate text-xs text-gray-500 dark:text-gray-400">
+                  {{ signatory.role }}
+                </p>
+              </div>
+              <span
+                :class="[
+                  'shrink-0 rounded-full px-2 py-1 text-xs font-medium',
+                  signatory.status === 'Signed'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+                ]"
+              >
+                {{ signatory.status }}
+              </span>
+            </li>
+          </ul>
+        </section>
+
         <!-- Signature canvas -->
         <div class="mt-6">
           <p
@@ -177,7 +230,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { createResource } from 'frappe-ui'
 
 import ContractOtpGate from './ContractOtpGate.vue'
@@ -204,6 +257,12 @@ const signatoryName = ref('')
 
 // Data carried from ContractView to success screen
 const contractDate = ref('')
+const signingProgress = ref([])
+const signedProgressCount = computed(
+  () =>
+    signingProgress.value.filter((signatory) => signatory.status === 'Signed')
+      .length,
+)
 
 // Sign screen local state
 const scrolledToBottom = ref(false)
@@ -228,10 +287,15 @@ function onOtpVerified({ signingToken: st, signatoryName: sn }) {
   screen.value = 'sign'
 }
 
-function onContractLoaded({ signatoryName: sn, contractDate: cd }) {
+function onContractLoaded({
+  signatoryName: sn,
+  contractDate: cd,
+  signingProgress: progress,
+}) {
   // ContractView may provide richer name/date than OTP verify
   if (sn) signatoryName.value = sn
   if (cd) contractDate.value = cd
+  signingProgress.value = Array.isArray(progress) ? progress : []
 }
 
 async function handleSign() {

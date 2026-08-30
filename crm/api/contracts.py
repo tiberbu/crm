@@ -300,6 +300,26 @@ def _validate_signing(signatory_row, token):
 		frappe.throw(_("Verification failed."), frappe.AuthenticationError)
 
 
+def _signing_progress(contract_doc):
+	"""Return the minimal, recipient-safe contract signing progress.
+
+	Every authenticated signatory may see who is required to execute the same
+	contract and which signatures are complete. Email addresses, invitation
+	tokens, OTPs, IPs and signature images remain private.
+	"""
+	progress = []
+	for row in contract_doc.signatories or []:
+		status = frappe.utils.cstr(row.status or "Pending")
+		progress.append(
+			{
+				"name": frappe.utils.cstr(row.signatory_name or ""),
+				"role": frappe.utils.cstr(row.signatory_role or ""),
+				"status": "Signed" if status == "Signed" else "Awaiting signature",
+			}
+		)
+	return progress
+
+
 def _attempts_cache_key(contract, role, row_name=""):
 	# row_name disambiguates repeated roles (multiple Network Signatory rows) so
 	# each signatory has its own brute-force counter rather than a shared one.
@@ -375,21 +395,18 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 
 
 _COUNTERPARTY_ROLES = ("Network Signatory", "Tiberbu Signatory")
+_POST_FACILITY_SIGNATORY_ROLES = ("Facility Witness", *_COUNTERPARTY_ROLES)
 
 
 def _transition(contract_name):
 	"""
-	Advance the contract workflow after a signatory signs. Ordered, idempotent —
-	safe to call after every signature; each stage guards on invite_token so a
-	party is invited exactly once.
+	Advance the contract workflow after a signatory signs. The Facility Signatory
+	is the sole prerequisite. Once that person has signed, every remaining party
+	(the Facility Witness, all Network Signatories, and the Tiberbu Signatory)
+	receives an independent invitation in one transaction and may sign in any
+	order. Each invite_token guard makes the operation idempotent.
 
-	Stages:
-	  A. Facility Signatory signs        → invite Facility Witness.
-	  B. Facility side complete (both     → invite EVERY Network Signatory and the
-	     facility parties signed)           Tiberbu Signatory IN PARALLEL, each with
-	                                        a 7-day link; they sign whenever they like
-	                                        within the window (same OTP + pad portal).
-	  C. All signatories signed          → status/workflow_state = "Fully Executed".
+	All signatories must still sign before the contract becomes Fully Executed.
 	"""
 	contract = frappe.get_doc("CRM Contract", contract_name)
 	sigs = list(contract.signatories or [])
@@ -397,30 +414,28 @@ def _transition(contract_name):
 		return
 
 	fac_sig = _get_signatory_row(contract, "Facility Signatory")
-	fac_wit = _get_signatory_row(contract, "Facility Witness")
 	fac_sig_signed = bool(fac_sig) and fac_sig.status == "Signed"
-	# A missing witness row (defensive) counts as "not blocking".
-	fac_wit_signed = (fac_wit is None) or (fac_wit.status == "Signed")
-	facility_complete = fac_sig_signed and fac_wit_signed
 
-	# Stage A → B: facility witness is invited only once the facility signatory signs.
-	if fac_sig_signed and fac_wit and fac_wit.status == "Pending" and not fac_wit.invite_token:
-		_issue_and_send_invitation(contract, fac_wit)
-
-	# Stage B → C: once both facility parties have signed, invite the network +
-	# tiberbu co-signatories in parallel. Guarded on invite_token so re-entry is safe.
-	if facility_complete:
+	# The first facility signature unlocks all remaining signatories at once.
+	# commit=False keeps every token write and every now=True mail callback in a
+	# single invitation wave. _set_contract_state commits it once below, so a
+	# partially-issued wave cannot be delivered ahead of the rest.
+	if fac_sig_signed:
 		invited_any = False
 		for row in sigs:
-			if row.signatory_role in _COUNTERPARTY_ROLES and row.status == "Pending" and not row.invite_token:
-				_issue_and_send_invitation(contract, row)
+			if (
+				row.signatory_role in _POST_FACILITY_SIGNATORY_ROLES
+				and row.status == "Pending"
+				and not row.invite_token
+			):
+				_issue_and_send_invitation(contract, row, commit=False)
 				invited_any = True
 		if invited_any:
-			_set_contract_state(contract, "Awaiting Counterparty Signatures")
+			_set_contract_state(contract, "Awaiting Remaining Signatures")
 			log_deal_event(
 				contract.deal,
-				"Both facility parties signed contract %s — network & Tiberbu "
-				"co-signatories invited (7-day link)" % contract.name,
+				"Facility signatory signed contract %s — all remaining signatories "
+				"invited together (7-day links)" % contract.name,
 			)
 
 	# Done: every signatory has signed.
@@ -650,7 +665,8 @@ def _generate_contract(
 		},
 	)
 
-	# Row 2: Facility Witness (invited once the facility signatory signs).
+	# Row 2: Facility Witness (invited with every remaining party once the
+	# facility signatory has signed).
 	contract.append(
 		"signatories",
 		{
@@ -663,8 +679,8 @@ def _generate_contract(
 		},
 	)
 
-	# Rows 3..N: network co-signatories from the network configuration, invited in
-	# parallel with the Tiberbu signatory once the facility side completes.
+	# Rows 3..N: network co-signatories from the network configuration. They are
+	# invited with every other remaining party after the facility signatory signs.
 	for signer in _network_signers(network_slug):
 		contract.append(
 			"signatories",
@@ -770,14 +786,13 @@ def resend_invitation(contract: Any, role: Any, row_name: Any = None):
 			frappe.ValidationError,
 		)
 
-	# Signatories are invited in order (facility signatory → witness → network +
-	# tiberbu in parallel). A row with no invite_token hasn't reached its turn yet,
-	# so there is nothing to resend — block the premature resend for every role.
+	# Before the facility signatory completes, remaining signatories have no invite
+	# token and cannot be resent. After that point they are invited together.
 	if not signatory_row.invite_token:
 		frappe.throw(
 			_(
-				"This signatory hasn't been invited yet — they are invited "
-				"automatically once it is their turn to sign."
+				"This signatory hasn't been invited yet — all remaining signatories "
+				"are invited automatically after the facility signatory signs."
 			),
 			frappe.ValidationError,
 		)
@@ -863,9 +878,7 @@ def update_signatory(contract: Any, role: Any, name: Any, email: Any, row_name: 
 	if was_signed:
 		contract_doc.status = "Awaiting Signatures"
 		contract_doc.workflow_state = (
-			"Awaiting Counterparty Signatures"
-			if role in _COUNTERPARTY_ROLES
-			else "Awaiting Facility Signature"
+			"Awaiting Facility Signature" if role == "Facility Signatory" else "Awaiting Remaining Signatures"
 		)
 
 	# Re-issue a fresh link when the address changed on an already-invited row,
@@ -897,7 +910,7 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any):
 	Requires: Sales Manager or System Manager role.
 
 	The new row is Pending and un-invited: it is invited automatically once the
-	facility side has signed (see _transition), or the exec can Resend. A
+	facility signatory has signed (see _transition), or the exec can Resend. A
 	Tiberbu Signatory is unique per contract; a Network Signatory is deduped on
 	email so the same person is not added twice.
 
@@ -944,7 +957,7 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any):
 		"Co-signatory %s (%s) added to contract %s" % (role, email, contract),
 	)
 
-	# If the facility side has already signed (the common legacy case — the
+	# If the facility signatory has already signed (the common legacy case — the
 	# contract predates co-signing), the new counterparty would otherwise sit
 	# Pending and un-invited forever, because invitations are only issued from
 	# _transition on a signature event. _transition is ordered + idempotent
@@ -1533,7 +1546,9 @@ def get_contract(signing_token: Any, contract: Any, role: Any):
 	Return contract HTML and signatory metadata for the signing portal.
 	Validates the signing-session token before returning any data.
 
-	Returns: {contract_html, signatory_name, signatory_role, contract_date}
+	Returns: {contract_html, signatory_name, signatory_role, contract_date,
+	signing_progress}. The progress list intentionally excludes private delivery
+	and authentication data.
 	"""
 	_check_contract_rate_limit()
 	contract = frappe.utils.cstr(contract).strip()
@@ -1547,6 +1562,7 @@ def get_contract(signing_token: Any, contract: Any, role: Any):
 		"signatory_name": frappe.utils.cstr(signatory_row.signatory_name or ""),
 		"signatory_role": role,
 		"contract_date": frappe.utils.cstr(contract_doc.contract_date or ""),
+		"signing_progress": _signing_progress(contract_doc),
 	}
 
 
