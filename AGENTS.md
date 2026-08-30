@@ -90,6 +90,20 @@ Pre-commit hooks run prettier + eslint + oxlint automatically. If they modify a 
 
 ---
 
+## Pull requests
+
+- Use the existing `feature_branch`; do not create another feature branch unless the
+  maintainer explicitly asks.
+- Open or update the pull request from `feature_branch` **against `develop`**. Do
+  not push feature work directly to `develop`.
+- When asked to commit or push, also update the pull request description. It must
+  state the user-visible changes, API/data or migration impact, configuration
+  requirements, and the verification commands/results.
+- Keep the PR review-ready: summarize follow-up or deployment work explicitly
+  rather than leaving reviewers to infer it from commits.
+
+---
+
 ## Docs structure
 
 ```
