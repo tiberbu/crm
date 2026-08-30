@@ -14,6 +14,11 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
 def execute():
+	# Quotation and Quotation Item belong to ERPNext. A CRM-only site has
+	# neither schema to extend nor an invoice migration to run.
+	if not all(frappe.db.exists("DocType", doctype) for doctype in ("Quotation", "Quotation Item")):
+		return
+
 	# ── Quotation header fields ───────────────────────────────────────────────
 	create_custom_fields(
 		{
@@ -158,8 +163,8 @@ def execute():
 		ignore_validate=True,
 	)
 
-	# Sales Invoice belongs to ERPNext. Keep the Quotation enhancements above
-	# available to CRM-only sites, but do not reference an absent ERPNext table.
+	# Sales Invoice is optional even when Quotation is present. Do not reference
+	# its table on installations that do not include it.
 	if not frappe.db.exists("DocType", "Sales Invoice"):
 		frappe.clear_cache()
 		return
