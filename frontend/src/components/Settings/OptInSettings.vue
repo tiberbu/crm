@@ -53,6 +53,19 @@
             type="select"
             @update:modelValue="markDirty"
           />
+          <FormControl
+            v-model="form.sales_tax_template"
+            class="mt-4"
+            :label="__('VAT taxes and charges template')"
+            :options="taxTemplateOptions"
+            type="select"
+            :description="
+              __(
+                'Rates stay exclusive of VAT. This ERPNext template supplies the VAT shown on quotations, emails, and contracts.',
+              )
+            "
+            @update:modelValue="markDirty"
+          />
         </div>
       </section>
 
@@ -141,6 +154,7 @@ const saving = ref(false)
 const saveError = ref('')
 const form = reactive({
   default_price_list: '',
+  sales_tax_template: '',
   active_tc_document: '',
   default_lead_owner: '',
   tiberbu_signatory: '',
@@ -160,6 +174,10 @@ const priceListsResource = createResource({
 })
 const termsResource = createResource({
   url: 'crm.api.optin_admin.list_optin_terms',
+  auto: true,
+})
+const taxTemplatesResource = createResource({
+  url: 'crm.api.optin_admin.list_optin_tax_templates',
   auto: true,
 })
 const usersResource = createResource({
@@ -188,6 +206,10 @@ const termsOptions = computed(() => [
     label: document.title,
     value: document.name,
   })),
+])
+const taxTemplateOptions = computed(() => [
+  { label: __('Select VAT taxes and charges template'), value: '' },
+  ...(taxTemplatesResource.data ?? []),
 ])
 const userOptions = computed(() => [
   { label: __('Not set'), value: '' },

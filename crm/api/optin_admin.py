@@ -408,6 +408,7 @@ def get_optin_settings():
 	settings = frappe.get_single("CRM Opt-In Settings")
 	return {
 		"default_price_list": settings.default_price_list or "",
+		"sales_tax_template": settings.sales_tax_template or "",
 		"active_tc_document": settings.active_tc_document or "",
 		"default_lead_owner": settings.default_lead_owner or "",
 		"tiberbu_signatory": settings.tiberbu_signatory or "",
@@ -422,6 +423,7 @@ def update_optin_settings(settings: Any):
 		settings = json.loads(settings)
 
 	default_price_list = frappe.utils.cstr(settings.get("default_price_list")).strip()
+	sales_tax_template = frappe.utils.cstr(settings.get("sales_tax_template")).strip()
 	active_tc_document = frappe.utils.cstr(settings.get("active_tc_document")).strip()
 	default_lead_owner = frappe.utils.cstr(settings.get("default_lead_owner")).strip()
 	tiberbu_signatory = frappe.utils.cstr(settings.get("tiberbu_signatory")).strip()
@@ -430,6 +432,10 @@ def update_optin_settings(settings: Any):
 		"Price List", {"name": default_price_list, "selling": 1, "enabled": 1}
 	):
 		frappe.throw(_("Select an enabled selling price list."))
+	if sales_tax_template:
+		from crm.utils.quotation_tax import get_vat_tax_configuration
+
+		get_vat_tax_configuration(tax_template=sales_tax_template)
 	if active_tc_document and not frappe.db.exists("Terms and Conditions", active_tc_document):
 		frappe.throw(_("Terms and Conditions document not found."))
 	for field, user in (("Default Lead Owner", default_lead_owner), ("Tiberbu Signatory", tiberbu_signatory)):
@@ -438,11 +444,21 @@ def update_optin_settings(settings: Any):
 
 	doc = frappe.get_single("CRM Opt-In Settings")
 	doc.default_price_list = default_price_list
+	doc.sales_tax_template = sales_tax_template
 	doc.active_tc_document = active_tc_document
 	doc.default_lead_owner = default_lead_owner
 	doc.tiberbu_signatory = tiberbu_signatory
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
+
+
+@frappe.whitelist()
+def list_optin_tax_templates():
+	"""List the enabled company VAT templates available to Opt-In Settings."""
+	_require_optin_settings_manager()
+	from crm.utils.quotation_tax import list_company_tax_templates
+
+	return [{"value": row.name, "label": row.name} for row in list_company_tax_templates()]
 
 
 # ---------------------------------------------------------------------------

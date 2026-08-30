@@ -72,10 +72,10 @@
                   {{ __('Qty') }}
                 </th>
                 <th class="px-3 py-2.5 text-right font-medium w-48">
-                  {{ __('Negotiated Unit Price (KES)') }}
+                  {{ __('Negotiated Unit Price (KES, excl. VAT)') }}
                 </th>
                 <th class="px-3 py-2.5 text-right font-medium w-40">
-                  {{ __('Amount (KES)') }}
+                  {{ __('Amount (KES, excl. VAT)') }}
                 </th>
                 <th class="px-3 py-2.5 w-10" />
               </tr>
@@ -209,7 +209,9 @@
               <span class="text-ink-gray-9">{{ fmt(subtotal) }}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-ink-gray-6">{{ __('VAT 16%') }}</span>
+              <span class="text-ink-gray-6">{{
+                data?.vat_label || __('VAT')
+              }}</span>
               <span class="text-ink-gray-9">{{ fmt(vat) }}</span>
             </div>
             <div class="my-1.5 border-t border-outline-gray-2" />
@@ -369,7 +371,7 @@ function removeLine(i) {
 const subtotal = computed(() =>
   lines.value.reduce((s, l) => s + (l.qty || 0) * (l.rate || 0), 0),
 )
-const vat = computed(() => subtotal.value * 0.16)
+const vat = computed(() => subtotal.value * ((data.value?.vat_rate ?? 0) / 100))
 const grandTotal = computed(() => subtotal.value + vat.value)
 
 // ── Catalogue picker ─────────────────────────────────────────────────────────

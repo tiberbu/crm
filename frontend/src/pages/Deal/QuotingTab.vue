@@ -308,7 +308,7 @@
                 {{ __('Valid Until') }}
               </th>
               <th class="px-4 py-2.5 text-right font-medium">
-                {{ __('Grand Total') }}
+                {{ __('Grand Total (incl. VAT)') }}
               </th>
               <th class="px-4 py-2.5 text-left font-medium">
                 {{ __('Payment') }}
@@ -564,7 +564,9 @@
               }}</span>
             </div>
             <div class="mt-2 flex justify-between gap-4">
-              <span class="text-ink-gray-6">{{ __('Quote total') }}</span
+              <span class="text-ink-gray-6">{{
+                __('Quote total (incl. VAT)')
+              }}</span
               ><span class="font-medium text-ink-gray-9">{{
                 fmtKes(selectedQuoteData?.grand_total)
               }}</span>

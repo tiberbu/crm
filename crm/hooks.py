@@ -106,10 +106,9 @@ website_route_rules = [
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# "methods": "crm.utils.jinja_methods",
-# "filters": "crm.utils.jinja_filters"
-# }
+jinja = {
+	"methods": "crm.utils.jinja",
+}
 
 # Setup wizard
 # setup_wizard_requires = "assets/crm/js/setup_wizard.js"

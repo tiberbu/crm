@@ -39,7 +39,11 @@ from typing import Any
 import frappe
 from frappe import _
 
-VAT_RATE = 0.16
+from crm.utils.quotation_tax import (
+	apply_quotation_taxes,
+	calculate_vat_totals,
+	quotation_tax_summary,
+)
 
 # Static KEPH level → ERPNext item code mapping.
 # Matches seed data in patch crm/patches/v1_0/seed_negotiated_price_lists.py (optin-s0-3).
@@ -1078,7 +1082,8 @@ def get_pricing(
 	"""
 	Compute KEPH-based pricing for selected MFL codes.
 	Validates signing_token before any data access.
-	Returns per-facility pricing + monthly and annual totals incl. 16% VAT.
+	Returns exclusive per-facility rates plus VAT and inclusive totals from the
+	configured Sales Taxes and Charges Template.
 	"""
 	signing_token = frappe.utils.cstr(signing_token)
 	email = frappe.utils.cstr(email).strip().lower()
@@ -1165,19 +1170,20 @@ def get_pricing(
 
 	subtotal_monthly = round(subtotal_monthly, 2)
 	subtotal_annual = round(subtotal_annual, 2)
-	vat_monthly = round(subtotal_monthly * VAT_RATE, 2)
-	vat_annual = round(subtotal_annual * VAT_RATE, 2)
-	grand_total_monthly = round(subtotal_monthly + vat_monthly, 2)
-	grand_total_annual = round(subtotal_annual + vat_annual, 2)
+	monthly_tax = calculate_vat_totals(subtotal_monthly)
+	annual_tax = calculate_vat_totals(subtotal_annual, tax_template=monthly_tax.template)
 
 	return {
 		"facilities": result_facilities,
-		"subtotal_monthly": subtotal_monthly,
-		"vat_monthly": vat_monthly,
-		"grand_total_monthly": grand_total_monthly,
-		"subtotal_annual": subtotal_annual,
-		"vat_annual": vat_annual,
-		"grand_total_annual": grand_total_annual,
+		"subtotal_monthly": monthly_tax.net_total,
+		"vat_monthly": monthly_tax.vat_amount,
+		"grand_total_monthly": monthly_tax.grand_total,
+		"subtotal_annual": annual_tax.net_total,
+		"vat_annual": annual_tax.vat_amount,
+		"grand_total_annual": annual_tax.grand_total,
+		"tax_template": monthly_tax.template,
+		"vat_rate": monthly_tax.vat_rate,
+		"vat_label": monthly_tax.vat_label,
 	}
 
 
@@ -1241,12 +1247,47 @@ def _build_pricing_table(facilities):
 		'<th align="left" style="' + th + '">Facility</th>'
 		'<th align="left" style="' + th + '">MFL Code</th>'
 		'<th align="left" style="' + th + '">KEPH Level</th>'
-		'<th align="right" style="' + th + '">Monthly (KES)</th>'
-		'<th align="right" style="' + th + '">Annual (KES)</th>'
+		'<th align="right" style="' + th + '">Monthly (KES, excl. VAT)</th>'
+		'<th align="right" style="' + th + '">Annual (KES, excl. VAT)</th>'
 		"</tr></thead>"
 		"<tbody>" + body + "</tbody>"
 		"</table>"
 	)
+
+
+def _pricing_tax_context(pricing, deal=None):
+	"""Return consistent VAT totals for stored pricing, preferring the real quote."""
+	monthly = round(sum(frappe.utils.flt(row.get("monthly_kes")) for row in pricing), 2)
+	annual = round(sum(frappe.utils.flt(row.get("annual_kes")) for row in pricing), 2)
+	stored_annual = annual
+	quote = None
+	if deal and frappe.db.exists("DocType", "Quotation"):
+		quote_name = frappe.db.get_value("Quotation", {"crm_deal": deal}, "name", order_by="creation desc")
+		if quote_name:
+			quote = frappe.get_doc("Quotation", quote_name)
+
+	if quote:
+		annual_tax = quotation_tax_summary(quote)
+		if annual_tax.net_total or not stored_annual:
+			annual = annual_tax.net_total
+		else:
+			annual_tax = calculate_vat_totals(annual, quote.company, annual_tax.template)
+		monthly_tax = calculate_vat_totals(monthly, quote.company, annual_tax.template)
+	else:
+		monthly_tax = calculate_vat_totals(monthly)
+		annual_tax = calculate_vat_totals(annual, tax_template=monthly_tax.template)
+
+	return {
+		"subtotal_monthly": monthly_tax.net_total,
+		"vat_monthly": monthly_tax.vat_amount,
+		"grand_total_monthly": monthly_tax.grand_total,
+		"subtotal_annual": annual_tax.net_total,
+		"vat_annual": annual_tax.vat_amount,
+		"grand_total_annual": annual_tax.grand_total,
+		"tax_template": monthly_tax.template,
+		"vat_rate": monthly_tax.vat_rate,
+		"vat_label": monthly_tax.vat_label,
+	}
 
 
 def build_tc_context_for_deal(deal):
@@ -1284,8 +1325,7 @@ def build_tc_context_for_deal(deal):
 	# expects. Fall back to "facilities" for older payloads.
 	pricing = data.get("pricing") or data.get("facilities") or []
 	contact = data.get("contact") or {}
-	monthly = sum(frappe.utils.flt(f.get("monthly_kes")) for f in pricing)
-	annual = sum(frappe.utils.flt(f.get("annual_kes")) for f in pricing)
+	tax_totals = _pricing_tax_context(pricing, deal)
 
 	network_doc = _get_network_doc(subs[0].network_slug)
 	network_display = (network_doc.get("display_name") if network_doc else "CareverseHIMS") or "CareverseHIMS"
@@ -1295,10 +1335,9 @@ def build_tc_context_for_deal(deal):
 		"facilities": pricing,
 		"pricing": pricing,
 		"pricing_table": _build_pricing_table(pricing),
-		"grand_total_monthly": monthly,
-		"grand_total_annual": annual,
-		"grand_total_monthly_display": _fmt_kes(monthly),
-		"grand_total_annual_display": _fmt_kes(annual),
+		**tax_totals,
+		"grand_total_monthly_display": _fmt_kes(tax_totals["grand_total_monthly"]),
+		"grand_total_annual_display": _fmt_kes(tax_totals["grand_total_annual"]),
 		"date": frappe.utils.format_date(frappe.utils.today()),
 		"network": {"display_name": network_display},
 	}
@@ -1356,6 +1395,13 @@ def get_terms_text(
 		"pricing_table": _build_pricing_table(facilities),
 		"grand_total_monthly": pricing_result.get("grand_total_monthly", 0),
 		"grand_total_annual": pricing_result.get("grand_total_annual", 0),
+		"subtotal_monthly": pricing_result.get("subtotal_monthly", 0),
+		"subtotal_annual": pricing_result.get("subtotal_annual", 0),
+		"vat_monthly": pricing_result.get("vat_monthly", 0),
+		"vat_annual": pricing_result.get("vat_annual", 0),
+		"tax_template": pricing_result.get("tax_template", ""),
+		"vat_rate": pricing_result.get("vat_rate", 0),
+		"vat_label": pricing_result.get("vat_label", _("VAT")),
 		"grand_total_monthly_display": _fmt_kes(pricing_result.get("grand_total_monthly", 0)),
 		"grand_total_annual_display": _fmt_kes(pricing_result.get("grand_total_annual", 0)),
 		"date": frappe.utils.format_date(frappe.utils.today()),
@@ -1778,7 +1824,7 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 	"""
 	Build the branded opt-in confirmation email (table-based layout for broad
 	email-client support). Mirrors the OTP email's brand treatment and adds the
-	facilities registered, a pricing summary (incl. 16% VAT), and next steps.
+	facilities registered, configured VAT, and the payable totals.
 	"""
 	display_name = (network.get("display_name") if network else "") or "CareverseHIMS"
 	logo_url = (network.get("logo_url") if network else "") or ""
@@ -1801,12 +1847,12 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 			% (brand, frappe.utils.escape_html(display_name))
 		)
 
-	# Pricing summary (subtotal + VAT + totals) computed from the pricing rows.
+	# Rates are exclusive; use the same configured template as the portal and
+	# quotation rather than a second hard-coded tax calculation.
 	subtotal_monthly = sum(float(p.get("monthly_kes") or 0) for p in (pricing or []))
 	subtotal_annual = sum(float(p.get("annual_kes") or 0) for p in (pricing or []))
-	vat_annual = round(subtotal_annual * VAT_RATE, 2)
-	grand_annual = round(subtotal_annual + vat_annual, 2)
-	grand_monthly = round(subtotal_monthly * (1 + VAT_RATE), 2)
+	monthly_tax = calculate_vat_totals(subtotal_monthly)
+	annual_tax = calculate_vat_totals(subtotal_annual, tax_template=monthly_tax.template)
 
 	facilities_table = _build_pricing_table(pricing) if pricing else ""
 
@@ -1818,7 +1864,7 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 			'style="border-collapse:collapse;font-size:13px;color:#4b5563">'
 			'<tr><td style="padding:3px 0">Subtotal (annual)</td>'
 			'<td align="right" style="padding:3px 0">KES %(sub_annual)s</td></tr>'
-			'<tr><td style="padding:3px 0">VAT (16%%)</td>'
+			'<tr><td style="padding:3px 0">%(vat_label)s</td>'
 			'<td align="right" style="padding:3px 0">KES %(vat_annual)s</td></tr>'
 			'<tr><td style="padding:8px 0 0;font-weight:700;color:#111827;'
 			'border-top:1px solid #eceef0">Total payable (annual)</td>'
@@ -1828,10 +1874,11 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 			"Approx. KES %(grand_monthly)s / month incl. VAT</td></tr>"
 			"</table></td></tr>"
 		) % {
-			"sub_annual": _fmt_kes(subtotal_annual),
-			"vat_annual": _fmt_kes(vat_annual),
-			"grand_annual": _fmt_kes(grand_annual),
-			"grand_monthly": _fmt_kes(grand_monthly),
+			"sub_annual": _fmt_kes(annual_tax.net_total),
+			"vat_label": frappe.utils.escape_html(annual_tax.vat_label),
+			"vat_annual": _fmt_kes(annual_tax.vat_amount),
+			"grand_annual": _fmt_kes(annual_tax.grand_total),
+			"grand_monthly": _fmt_kes(monthly_tax.grand_total),
 			"brand": brand,
 		}
 
@@ -2074,8 +2121,7 @@ def _process_deal_invitation_submission(sub, payload):
 			row.price_list_rate = annual_rate
 			row.rate = annual_rate
 			row.discount_percentage = 0
-		quote.calculate_taxes_and_totals()
-		quote.vat_amount = round((quote.net_total or 0) * VAT_RATE, 2)
+		apply_quotation_taxes(quote)
 		quote.insert(ignore_mandatory=True)
 	_update_job_step(sub.name, "quote", "done", "Quote ready")
 
@@ -2366,8 +2412,7 @@ def _process_submission(submission_ref):
 				row.price_list_rate = annual_rate
 				row.rate = annual_rate
 				row.discount_percentage = 0
-			q.calculate_taxes_and_totals()
-			q.vat_amount = round((q.net_total or 0) * VAT_RATE, 2)
+			apply_quotation_taxes(q)
 			if q.is_new():
 				q.insert(ignore_mandatory=True)
 			else:
@@ -3604,10 +3649,9 @@ def build_ois_quote(deal: Any):
 	q.flags.ignore_validate = True
 	q.flags.ignore_mandatory = True
 	q.set_missing_values()
-	# ignore_validate skips the normal validate→calculate chain, so compute
-	# item amounts + net/grand totals explicitly (else grand_total stays 0).
-	q.calculate_taxes_and_totals()
-	q.vat_amount = round((q.net_total or 0) * 0.16, 2)  # 16% VAT, tracked as custom field
+	# ignore_validate skips the normal validate→calculate chain, so hydrate the
+	# configured ERPNext template and compute item, tax, and grand totals here.
+	apply_quotation_taxes(q)
 	q.insert(ignore_mandatory=True)
 	frappe.db.commit()
 

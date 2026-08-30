@@ -111,12 +111,12 @@
               <th
                 class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
               >
-                Monthly (KES)
+                Monthly (KES, excl. VAT)
               </th>
               <th
                 class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
               >
-                Annual (KES)
+                Annual (KES, excl. VAT)
               </th>
             </tr>
           </thead>
@@ -181,7 +181,7 @@
                 colspan="2"
                 class="px-4 py-2 text-right text-xs text-gray-500 dark:text-gray-400"
               >
-                VAT (16%)
+                {{ pricing.vat_label || 'VAT' }}
               </td>
               <td
                 class="px-4 py-2 text-right text-sm text-gray-700 dark:text-gray-300"

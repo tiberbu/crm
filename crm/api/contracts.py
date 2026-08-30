@@ -1116,11 +1116,12 @@ def _build_contract_document_html(contract_doc):
 	brand = _network_branding(contract_doc)
 	accent = brand["accent"]
 
-	# 1. Contract body. Prefer the stored (signed) HTML; regenerate from the linked
-	#    T&C for legacy contracts whose contract_html was never populated.
-	body = frappe.utils.cstr(contract_doc.contract_html or "").strip()
+	# 1. Contract body. Always render the selected Terms document at print time so
+	#    an authorised Terms & Conditions edit is visible in the next PDF. The saved
+	#    snapshot and hash remain the immutable acceptance evidence in the audit page.
+	body = _regenerate_contract_body(contract_doc)
 	if not body:
-		body = _regenerate_contract_body(contract_doc)
+		body = frappe.utils.cstr(contract_doc.contract_html or "").strip()
 	if not body:
 		body = (
 			"<p style='color:#991b1b'>The terms for this contract are unavailable. "
@@ -1218,7 +1219,7 @@ def _build_contract_document_html(contract_doc):
 
 
 def _regenerate_contract_body(contract_doc):
-	"""Re-render the T&C body for legacy contracts with an empty contract_html."""
+	"""Render the contract's current selected Terms document for a print/PDF."""
 	tc_name = contract_doc.tc_document
 	if not tc_name and frappe.db.exists("CRM Opt-In Settings", "CRM Opt-In Settings"):
 		tc_name = frappe.get_single("CRM Opt-In Settings").active_tc_document
@@ -1242,7 +1243,7 @@ def _regenerate_contract_body(contract_doc):
 	except Exception:
 		frappe.log_error(
 			frappe.get_traceback(),
-			"contracts.download_pdf: legacy T&C re-render failed for %s" % contract_doc.name,
+			"contracts.download_pdf: T&C re-render failed for %s" % contract_doc.name,
 		)
 		return ""
 
@@ -1317,7 +1318,7 @@ def _render_certificate_page(contract_doc, accent, date_str, brand=None):
     <table class="cert"><thead><tr>
       <th>Signatory</th><th>Role</th><th>Status</th><th>Signed At</th><th>IP Address</th>
     </tr></thead><tbody>{rows}</tbody></table>
-    <div class="cert-kv" style="margin-top:18px"><b>T&amp;C Integrity</b></div>
+	<div class="cert-kv" style="margin-top:18px"><b>Accepted T&amp;C Snapshot Integrity</b></div>
     <div class="hash">{hash}</div>
   </div>""".format(
 		network=frappe.utils.escape_html(brand["display_name"]),
