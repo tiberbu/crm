@@ -26,6 +26,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import secrets
 import time
 from typing import Any
@@ -73,15 +74,60 @@ def _gen_token():
 	return frappe.generate_hash(length=_TOKEN_LENGTH)
 
 
-def _invitation_email_reference(token):
+def _generate_invitation_email_reference():
 	"""Return a non-secret identifier for one invitation email issuance.
 
-	The reference is derived from the already-random invitation token, but does
-	not expose any token material that could be used to open the signing portal.
-	It changes whenever an invitation is resent, keeping inbox subjects distinct.
+	This is deliberately independent from the signing token. It changes whenever
+	an invitation is resent and cannot be used to open the signing portal.
 	"""
-	material = "crm-contract-invitation:%s" % frappe.utils.cstr(token)
-	return hashlib.sha256(material.encode("utf-8")).hexdigest()[:12].upper()
+	return frappe.generate_hash(length=12).upper()
+
+
+def _facility_name_for_contract(contract_doc):
+	"""Return a concise facility label for a contract email subject.
+
+	Opt-In submissions keep their canonical facility list in ``raw_json``. Read
+	the latest submission for the contract's deal so this remains backward
+	compatible with contracts created before a dedicated facility field existed.
+	"""
+	deal = frappe.utils.cstr(getattr(contract_doc, "deal", "") or "").strip()
+	if not deal:
+		return ""
+	try:
+		rows = frappe.get_list(
+			"CRM Opt-In Submission",
+			filters={"deal": deal},
+			fields=["raw_json"],
+			order_by="creation desc",
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+		if not rows:
+			return ""
+		payload = json.loads(rows[0].get("raw_json") or "{}")
+		facilities = payload.get("pricing") or payload.get("facilities") or []
+		names = []
+		for facility in facilities:
+			if not isinstance(facility, dict):
+				continue
+			name = frappe.utils.cstr(facility.get("facility_name") or "").strip()
+			if name and name not in names:
+				names.append(name)
+		if len(names) == 1:
+			return names[0]
+		if names:
+			return "%s + %s more facilities" % (names[0], len(names) - 1)
+	except Exception:
+		pass
+	return ""
+
+
+def _contract_email_subject_label(contract_doc):
+	"""Return a safe, human-readable label for contract email subjects."""
+	label = _facility_name_for_contract(contract_doc) or getattr(contract_doc, "name", "") or ""
+	# Subject values are plain text; line breaks from user-supplied facility names
+	# must not be allowed to alter MIME headers.
+	return frappe.utils.cstr(label).replace("\r", " ").replace("\n", " ").strip()
 
 
 def _network_for_contract(contract_doc):
@@ -559,7 +605,8 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 	link = _signing_link(contract_doc.name, role, token)
 	network = _network_for_contract(contract_doc)
 	name = frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
-	invitation_reference = _invitation_email_reference(token)
+	invitation_reference = _generate_invitation_email_reference()
+	facility_subject = _contract_email_subject_label(contract_doc)
 
 	queue = None
 	try:
@@ -567,7 +614,7 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 			recipients=[signatory_row.signatory_email],
 			subject=(
 				"Action Required: Sign Your CareverseHIMS Contract — %s — Invitation ID %s"
-				% (contract_doc.name, invitation_reference)
+				% (facility_subject, invitation_reference)
 			),
 			message=branded_email_html(
 				network,
@@ -1833,12 +1880,18 @@ def request_otp(contract: Any, role: Any, token: Any):
 		expires_in_sec=_OTP_EXPIRY_SECONDS + 120,
 	)
 
-	# Send branded OTP email
+	# Send branded OTP email. Keep the facility and a fresh, non-secret reference
+	# in the subject so repeated code requests are easy to distinguish in an inbox.
 	network = _network_for_contract(contract_doc)
+	otp_reference = _generate_invitation_email_reference()
+	facility_subject = _contract_email_subject_label(contract_doc)
 	try:
 		frappe.sendmail(
 			recipients=[signatory_row.signatory_email],
-			subject="Your CareverseHIMS Contract Signing Code",
+			subject=(
+				"Your CareverseHIMS Contract Signing Code — %s — OTP ID %s"
+				% (facility_subject, otp_reference)
+			),
 			message=branded_email_html(
 				network,
 				heading="Verify your identity",
@@ -1849,7 +1902,10 @@ def request_otp(contract: Any, role: Any, token: Any):
 					% frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
 				),
 				highlight_html=otp_code_block(otp, network),
-				note_html=("This code expires in 10 minutes. Do not share it with anyone."),
+				note_html=(
+					"This code expires in 10 minutes. Do not share it with anyone. "
+					"OTP reference: <strong>%s</strong>." % otp_reference
+				),
 			),
 			now=True,
 		)

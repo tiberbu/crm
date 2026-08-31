@@ -8,13 +8,15 @@ from frappe.utils import add_days, random_string, today
 
 from crm.api.contracts import (
 	_build_contract_document_html,
-	_invitation_email_reference,
+	_facility_name_for_contract,
+	_generate_invitation_email_reference,
 	_issue_and_send_invitation,
 	_notify_internal_approvers,
 	_send_contract_sms,
 	_transition,
 	generate,
 	get_contract,
+	request_otp,
 )
 from crm.api.optin import (
 	_KEPH_MAP,
@@ -170,6 +172,49 @@ class TestOptInTermsPrinting(UnitTestCase):
 
 
 class TestOptInContractAutomation(UnitTestCase):
+	def test_otp_email_identifies_facility_and_request(self):
+		contract = SimpleNamespace(name="CONT-TEST-00003", deal="DEAL-TEST-00003", save=Mock())
+		signatory = SimpleNamespace(
+			name="ROW-TEST-00003",
+			signatory_name="Jane Signatory",
+			signatory_email="jane@example.com",
+			signatory_role="Facility Signatory",
+			status="Pending",
+			invite_token="invitation-token",
+			invite_expiry=frappe.utils.add_days(frappe.utils.now_datetime(), 1),
+		)
+		cache = Mock()
+
+		with (
+			patch("crm.api.contracts._check_contract_rate_limit"),
+			patch("crm.api.contracts._load_signatory_by_token", return_value=(contract, signatory)),
+			patch("crm.api.contracts._validate_invite"),
+			patch("crm.api.contracts.secrets.randbelow", return_value=234567),
+			patch("crm.api.contracts._get_signing_key", return_value="test-key"),
+			patch("crm.api.contracts._hmac_hex", return_value="otp-hash"),
+			patch("crm.api.contracts.frappe.cache", return_value=cache),
+			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch("crm.api.contracts._contract_email_subject_label", return_value="MediCare Hospital"),
+			patch("crm.api.contracts._generate_invitation_email_reference", return_value="OTP-ONE"),
+			patch("crm.api.contracts.branded_email_html", return_value="otp-email") as render_email,
+			patch("crm.api.contracts.otp_code_block", return_value="otp-block"),
+			patch("crm.api.contracts.frappe.sendmail") as sendmail,
+			patch("crm.api.contracts._send_contract_sms", return_value="Not Available"),
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			result = request_otp("CONT-TEST-00003", "Facility Signatory", "invitation-token")
+
+		self.assertEqual(result, {"status": "sent", "sms_status": "Not Available"})
+		subject = sendmail.call_args.kwargs["subject"]
+		self.assertEqual(
+			subject,
+			"Your CareverseHIMS Contract Signing Code — MediCare Hospital — OTP ID OTP-ONE",
+		)
+		self.assertNotIn("234567", subject)
+		self.assertTrue(sendmail.call_args.kwargs["now"])
+		note_html = render_email.call_args.kwargs["note_html"]
+		self.assertIn("OTP reference: <strong>OTP-ONE</strong>", note_html)
+
 	def test_contract_generation_stays_in_submission_transaction_and_is_tracked(self):
 		submission = SimpleNamespace(
 			deal="DEAL-TEST-00001",
@@ -226,7 +271,9 @@ class TestOptInContractAutomation(UnitTestCase):
 		submission.save.assert_not_called()
 
 	def test_invitation_can_save_without_committing_the_caller_transaction(self):
-		contract = SimpleNamespace(name="CONT-TEST-00001", network_slug="", save=Mock())
+		contract = SimpleNamespace(
+			name="CONT-TEST-00001", deal="DEAL-TEST-00001", network_slug="", save=Mock()
+		)
 		signatory = SimpleNamespace(
 			signatory_role="Facility Signatory",
 			signatory_name="Jane Signatory",
@@ -236,7 +283,9 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._gen_token", return_value="invitation-token"),
+			patch("crm.api.contracts._generate_invitation_email_reference", return_value="REF-ONE"),
 			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch("crm.api.contracts._facility_name_for_contract", return_value="MediCare Hospital"),
 			patch("crm.api.contracts.branded_email_html", return_value="email"),
 			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
 			patch("crm.api.contracts.frappe.db.commit") as commit,
@@ -248,15 +297,15 @@ class TestOptInContractAutomation(UnitTestCase):
 		commit.assert_not_called()
 		self.assertTrue(signatory.invite_token)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
-		invitation_reference = _invitation_email_reference("invitation-token")
 		self.assertEqual(
 			sendmail.call_args.kwargs["subject"],
-			"Action Required: Sign Your CareverseHIMS Contract — CONT-TEST-00001 — Invitation ID %s"
-			% invitation_reference,
+			"Action Required: Sign Your CareverseHIMS Contract — MediCare Hospital — Invitation ID REF-ONE",
 		)
 
 	def test_resending_invitation_changes_inbox_identifier(self):
-		contract = SimpleNamespace(name="CONT-TEST-00001", network_slug="", save=Mock())
+		contract = SimpleNamespace(
+			name="CONT-TEST-00001", deal="DEAL-TEST-00001", network_slug="", save=Mock()
+		)
 		signatory = SimpleNamespace(
 			signatory_role="Facility Signatory",
 			signatory_name="Jane Signatory",
@@ -266,7 +315,11 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._gen_token", side_effect=["invitation-token-1", "invitation-token-2"]),
+			patch(
+				"crm.api.contracts._generate_invitation_email_reference", side_effect=["REF-ONE", "REF-TWO"]
+			),
 			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch("crm.api.contracts._facility_name_for_contract", return_value="MediCare Hospital"),
 			patch("crm.api.contracts.branded_email_html", return_value="email"),
 			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
 			patch("crm.api.contracts.frappe.db.commit"),
@@ -277,8 +330,35 @@ class TestOptInContractAutomation(UnitTestCase):
 		subjects = [call.kwargs["subject"] for call in sendmail.call_args_list]
 		self.assertEqual(len(subjects), 2)
 		self.assertEqual(len(set(subjects)), 2)
-		self.assertIn(_invitation_email_reference("invitation-token-1"), subjects[0])
-		self.assertIn(_invitation_email_reference("invitation-token-2"), subjects[1])
+		self.assertIn("Invitation ID REF-ONE", subjects[0])
+		self.assertIn("Invitation ID REF-TWO", subjects[1])
+		self.assertTrue(all("MediCare Hospital" in subject for subject in subjects))
+
+	def test_invitation_email_reference_is_random_and_nonempty(self):
+		first = _generate_invitation_email_reference()
+		second = _generate_invitation_email_reference()
+		self.assertEqual(len(first), 12)
+		self.assertTrue(first.isalnum())
+		self.assertNotEqual(first, second)
+
+	def test_facility_subject_label_uses_latest_optin_payload(self):
+		contract = SimpleNamespace(name="CONT-TEST-00001", deal="DEAL-TEST-00001")
+		submission = {
+			"raw_json": json.dumps(
+				{
+					"pricing": [
+						{"facility_name": "MediCare Hospital"},
+						{"facility_name": "Riverside Clinic"},
+						{"facility_name": "MediCare Hospital"},
+					]
+				}
+			)
+		}
+		with patch("crm.api.contracts.frappe.get_list", return_value=[submission]):
+			self.assertEqual(
+				_facility_name_for_contract(contract),
+				"MediCare Hospital + 1 more facilities",
+			)
 
 	def test_contract_sms_delivery_is_logged_and_does_not_commit_caller_transaction(self):
 		from frappe.core.doctype.sms_settings import sms_settings
