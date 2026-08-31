@@ -117,6 +117,12 @@
               {{ __('Facility signing') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Network signatories') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Tiberbu signatory') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Email delivery') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">
@@ -201,6 +207,61 @@
                   >{{ formatDate(row.facility_witness_signed_at) }}</span
                 >
               </div>
+            </td>
+            <td class="px-4 py-3 align-top">
+              <div
+                v-if="row.network_signatories?.length"
+                class="flex min-w-52 flex-col gap-1.5"
+              >
+                <div
+                  v-for="(signatory, index) in row.network_signatories"
+                  :key="`${row.name}-network-${index}`"
+                  class="flex flex-wrap items-center gap-1.5"
+                >
+                  <span class="text-xs font-medium text-ink-gray-8">
+                    {{ signatory.name }}
+                  </span>
+                  <span :class="contractSigningPill(signatory.status)">
+                    {{ __(signatory.status) }}
+                  </span>
+                  <span
+                    v-if="signatory.signed_at"
+                    class="w-full text-xs text-ink-gray-5"
+                  >
+                    {{ formatDate(signatory.signed_at) }}
+                  </span>
+                </div>
+                <span class="text-xs font-medium text-ink-gray-6">
+                  {{ signatorySummary(row.network_signatories) }}
+                </span>
+              </div>
+              <span v-else class="text-xs text-ink-gray-5">
+                {{ noSignatoryLabel(row) }}
+              </span>
+            </td>
+            <td class="px-4 py-3 align-top">
+              <div
+                v-if="row.tiberbu_signatory"
+                class="flex min-w-44 flex-col items-start gap-1"
+              >
+                <span class="text-xs font-medium text-ink-gray-8">
+                  {{ row.tiberbu_signatory.name }}
+                </span>
+                <span
+                  :class="contractSigningPill(row.tiberbu_signatory.status)"
+                >
+                  {{ __(row.tiberbu_signatory.status) }}
+                </span>
+                <span
+                  v-if="row.tiberbu_signatory.signed_at"
+                  class="text-xs text-ink-gray-5"
+                >
+                  {{ formatDate(row.tiberbu_signatory.signed_at) }}
+                </span>
+              </div>
+              <span v-else class="text-xs text-ink-gray-5">
+                {{ noSignatoryLabel(row) }}
+              </span>
             </td>
             <td class="px-4 py-3">
               <div class="flex flex-col items-start gap-1">
@@ -365,6 +426,18 @@ function clearFilters() {
   applyFilters()
 }
 
+function signatorySummary(signatories) {
+  const total = signatories?.length ?? 0
+  const signed =
+    signatories?.filter((signatory) => signatory.status === 'Signed').length ??
+    0
+  return __('{0} of {1} signed', [signed, total])
+}
+
+function noSignatoryLabel(row) {
+  return row.contract ? __('Not configured') : __('Not generated')
+}
+
 const retryResource = createResource({ url: 'crm.api.optin.retry_submission' })
 
 async function retry(row) {
@@ -456,11 +529,13 @@ function contractSigningPill(status) {
   const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
   const map = {
     'Not generated': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
+    'Not configured': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
     'Preparing invitation': `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400`,
     'Awaiting signature': `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400`,
     Signed: `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`,
     Declined: `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400`,
     'Signing link expired': `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400`,
+    'Review required': `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400`,
     'Waiting for facility signatory': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
     'Blocked by declined signatory': `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400`,
     'Not required': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,

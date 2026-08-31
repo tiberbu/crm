@@ -124,10 +124,10 @@ def _facility_name_for_contract(contract_doc):
 
 def _contract_email_subject_label(contract_doc):
 	"""Return a safe, human-readable label for contract email subjects."""
-	label = _facility_name_for_contract(contract_doc) or getattr(contract_doc, "name", "") or ""
+	label = _facility_name_for_contract(contract_doc) or "CareverseHIMS"
 	# Subject values are plain text; line breaks from user-supplied facility names
 	# must not be allowed to alter MIME headers.
-	return frappe.utils.cstr(label).replace("\r", " ").replace("\n", " ").strip()
+	return frappe.utils.cstr(label).replace("\r", " ").replace("\n", " ").strip() or "CareverseHIMS"
 
 
 def _network_for_contract(contract_doc):
@@ -672,10 +672,8 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 	try:
 		queue = frappe.sendmail(
 			recipients=[signatory_row.signatory_email],
-			subject=(
-				"Action Required: Sign Your CareverseHIMS Contract — %s — Invitation ID %s"
-				% (facility_subject, invitation_reference)
-			),
+			subject="%s — Contract ready for signature · Invitation ID %s"
+			% (facility_subject, invitation_reference),
 			message=branded_email_html(
 				network,
 				heading="Contract ready for your signature",
@@ -836,7 +834,10 @@ def _notify_internal_approvers(contract_name, deal_name):
 			try:
 				frappe.sendmail(
 					recipients=[approver_email],
-					subject="Approval Required: CareverseHIMS Contract %s" % contract_name,
+					subject=(
+						"%s — Contract approval required · %s"
+						% (_contract_email_subject_label(contract_doc), contract_name)
+					),
 					message=branded_email_html(
 						network,
 						heading="Contract awaiting your approval",
@@ -1940,10 +1941,7 @@ def request_otp(contract: Any, role: Any, token: Any):
 	try:
 		frappe.sendmail(
 			recipients=[signatory_row.signatory_email],
-			subject=(
-				"Your CareverseHIMS Contract Signing Code — %s — OTP ID %s"
-				% (facility_subject, otp_reference)
-			),
+			subject="%s — Contract verification code · OTP ID %s" % (facility_subject, otp_reference),
 			message=branded_email_html(
 				network,
 				heading="Verify your identity",

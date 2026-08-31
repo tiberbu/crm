@@ -99,6 +99,106 @@
       </div>
 
       <template v-else>
+        <section class="border-b border-outline-gray-2 py-6">
+          <div
+            class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"
+          >
+            <div>
+              <p
+                class="text-xs font-medium uppercase tracking-[0.12em] text-ink-gray-5"
+              >
+                {{ __('Pipeline coverage') }}
+              </p>
+              <h2 class="mt-1 text-base font-semibold text-ink-gray-9">
+                {{ __('Network contacts to Opt-In') }}
+              </h2>
+              <p class="mt-1 text-sm text-ink-gray-5">
+                {{
+                  __(
+                    'The eligible-facility roster compared with processed Opt-Ins in this view.',
+                  )
+                }}
+              </p>
+            </div>
+            <div class="sm:text-right">
+              <p
+                class="text-xs font-medium uppercase tracking-[0.12em] text-ink-gray-5"
+              >
+                {{ __('Opt-In rate') }}
+              </p>
+              <p
+                class="mt-1 text-2xl font-semibold tracking-tight text-ink-gray-9"
+              >
+                {{ formatCoveragePercent(coverage.rate) }}
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5 grid gap-3 sm:grid-cols-3">
+            <div
+              class="rounded-xl border border-outline-gray-2 bg-surface-white px-5 py-4 dark:bg-surface-gray-1"
+            >
+              <p
+                class="text-xs font-medium uppercase tracking-[0.1em] text-ink-gray-5"
+              >
+                {{ __('Network contact facilities') }}
+              </p>
+              <p
+                class="mt-2 text-3xl font-semibold tracking-tight text-ink-gray-9"
+              >
+                {{ formatNumber(coverage.networkFacilities) }}
+              </p>
+              <p class="mt-1 text-xs text-ink-gray-5">
+                {{
+                  __('Eligible facilities across the selected network roster')
+                }}
+              </p>
+            </div>
+            <div
+              class="rounded-xl border border-outline-gray-2 bg-surface-white px-5 py-4 dark:bg-surface-gray-1"
+            >
+              <p
+                class="text-xs font-medium uppercase tracking-[0.1em] text-ink-gray-5"
+              >
+                {{ __('Opted-in facilities') }}
+              </p>
+              <p
+                class="mt-2 text-3xl font-semibold tracking-tight text-ink-gray-9"
+              >
+                {{ formatNumber(coverage.optedInFacilities) }}
+              </p>
+              <p class="mt-1 text-xs text-ink-gray-5">
+                {{ __('Facilities with a processed Opt-In submission') }}
+              </p>
+            </div>
+            <div
+              class="rounded-xl border border-outline-gray-2 bg-surface-white px-5 py-4 dark:bg-surface-gray-1"
+            >
+              <p
+                class="text-xs font-medium uppercase tracking-[0.1em] text-ink-gray-5"
+              >
+                {{ __('Still to opt in') }}
+              </p>
+              <p
+                class="mt-2 text-3xl font-semibold tracking-tight text-ink-gray-9"
+              >
+                {{ formatNumber(coverage.remainingFacilities) }}
+              </p>
+              <div
+                class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-gray-2 dark:bg-surface-gray-3"
+              >
+                <div
+                  class="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                  :style="{ width: `${coverage.rate ?? 0}%` }"
+                />
+              </div>
+              <p class="mt-1 text-xs text-ink-gray-5">
+                {{ __('Not yet represented by a processed submission') }}
+              </p>
+            </div>
+          </div>
+        </section>
+
         <section
           class="grid divide-y divide-outline-gray-2 border-b border-outline-gray-2 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
         >
@@ -756,6 +856,25 @@ const networkOptions = computed(
 const signingTotal = computed(() =>
   dashboard.value.signing_breakdown.reduce((sum, row) => sum + row.value, 0),
 )
+const coverage = computed(() => {
+  const networkFacilities = dashboard.value.networks.reduce(
+    (sum, row) => sum + Number(row.eligible_facilities || 0),
+    0,
+  )
+  const optedInFacilities = dashboard.value.networks.reduce(
+    (sum, row) => sum + Number(row.opted_in_facilities || 0),
+    0,
+  )
+  const remainingFacilities = Math.max(networkFacilities - optedInFacilities, 0)
+  return {
+    networkFacilities,
+    optedInFacilities,
+    remainingFacilities,
+    rate: networkFacilities
+      ? Math.min(100, (optedInFacilities / networkFacilities) * 100)
+      : null,
+  }
+})
 const periodLabel = computed(
   () => periods.find((option) => option.value === period.value)?.label ?? '',
 )
@@ -776,9 +895,9 @@ const metrics = computed(() => [
     iconClass: 'text-emerald-600',
   },
   {
-    label: 'Facility signatures',
-    value: `${dashboard.value.summary.signature_rate}%`,
-    detail: `${dashboard.value.summary.signed} of ${dashboard.value.summary.contracts} generated contracts`,
+    label: 'Contracts generated',
+    value: formatNumber(dashboard.value.summary.contracts),
+    detail: `${formatNumber(dashboard.value.summary.signed)} facility signatures completed`,
     icon: FileSignature,
     iconClass: 'text-blue-600',
   },
@@ -960,6 +1079,10 @@ function progressWidth(value) {
 
 function formatPercent(value) {
   return value == null ? __('No roster') : `${value}%`
+}
+
+function formatCoveragePercent(value) {
+  return value == null ? __('No roster') : `${Number(value).toFixed(1)}%`
 }
 
 function formatDuration(hours) {
