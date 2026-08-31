@@ -9,7 +9,7 @@ from frappe.utils import add_days, random_string, today
 from crm.api.contracts import (
 	_build_contract_document_html,
 	_facility_name_for_contract,
-	_invitation_email_reference,
+	_generate_invitation_email_reference,
 	_issue_and_send_invitation,
 	_notify_internal_approvers,
 	_send_contract_sms,
@@ -239,6 +239,7 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._gen_token", return_value="invitation-token"),
+			patch("crm.api.contracts._generate_invitation_email_reference", return_value="REF-ONE"),
 			patch("crm.api.contracts._network_for_contract", return_value=None),
 			patch("crm.api.contracts._facility_name_for_contract", return_value="MediCare Hospital"),
 			patch("crm.api.contracts.branded_email_html", return_value="email"),
@@ -252,11 +253,9 @@ class TestOptInContractAutomation(UnitTestCase):
 		commit.assert_not_called()
 		self.assertTrue(signatory.invite_token)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
-		invitation_reference = _invitation_email_reference("invitation-token")
 		self.assertEqual(
 			sendmail.call_args.kwargs["subject"],
-			"Action Required: Sign Your CareverseHIMS Contract — MediCare Hospital — Invitation ID %s"
-			% invitation_reference,
+			"Action Required: Sign Your CareverseHIMS Contract — MediCare Hospital — Invitation ID REF-ONE",
 		)
 
 	def test_resending_invitation_changes_inbox_identifier(self):
@@ -272,6 +271,9 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._gen_token", side_effect=["invitation-token-1", "invitation-token-2"]),
+			patch(
+				"crm.api.contracts._generate_invitation_email_reference", side_effect=["REF-ONE", "REF-TWO"]
+			),
 			patch("crm.api.contracts._network_for_contract", return_value=None),
 			patch("crm.api.contracts._facility_name_for_contract", return_value="MediCare Hospital"),
 			patch("crm.api.contracts.branded_email_html", return_value="email"),
@@ -284,9 +286,16 @@ class TestOptInContractAutomation(UnitTestCase):
 		subjects = [call.kwargs["subject"] for call in sendmail.call_args_list]
 		self.assertEqual(len(subjects), 2)
 		self.assertEqual(len(set(subjects)), 2)
-		self.assertIn(_invitation_email_reference("invitation-token-1"), subjects[0])
-		self.assertIn(_invitation_email_reference("invitation-token-2"), subjects[1])
+		self.assertIn("Invitation ID REF-ONE", subjects[0])
+		self.assertIn("Invitation ID REF-TWO", subjects[1])
 		self.assertTrue(all("MediCare Hospital" in subject for subject in subjects))
+
+	def test_invitation_email_reference_is_random_and_nonempty(self):
+		first = _generate_invitation_email_reference()
+		second = _generate_invitation_email_reference()
+		self.assertEqual(len(first), 12)
+		self.assertTrue(first.isalnum())
+		self.assertNotEqual(first, second)
 
 	def test_facility_subject_label_uses_latest_optin_payload(self):
 		contract = SimpleNamespace(name="CONT-TEST-00001", deal="DEAL-TEST-00001")

@@ -74,15 +74,13 @@ def _gen_token():
 	return frappe.generate_hash(length=_TOKEN_LENGTH)
 
 
-def _invitation_email_reference(token):
+def _generate_invitation_email_reference():
 	"""Return a non-secret identifier for one invitation email issuance.
 
-	The reference is derived from the already-random invitation token, but does
-	not expose any token material that could be used to open the signing portal.
-	It changes whenever an invitation is resent, keeping inbox subjects distinct.
+	This is deliberately independent from the signing token. It changes whenever
+	an invitation is resent and cannot be used to open the signing portal.
 	"""
-	material = "crm-contract-invitation:%s" % frappe.utils.cstr(token)
-	return hashlib.sha256(material.encode("utf-8")).hexdigest()[:12].upper()
+	return frappe.generate_hash(length=12).upper()
 
 
 def _facility_name_for_contract(contract_doc):
@@ -599,7 +597,7 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 	link = _signing_link(contract_doc.name, role, token)
 	network = _network_for_contract(contract_doc)
 	name = frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
-	invitation_reference = _invitation_email_reference(token)
+	invitation_reference = _generate_invitation_email_reference()
 	facility_name = _facility_name_for_contract(contract_doc)
 	# Subject values are plain text; strip line breaks from user-supplied facility
 	# names so they cannot alter MIME headers. Fall back to the contract name for
