@@ -8,6 +8,7 @@ from frappe.utils import add_days, random_string, today
 
 from crm.api.contracts import (
 	_build_contract_document_html,
+	_invitation_email_reference,
 	_issue_and_send_invitation,
 	_notify_internal_approvers,
 	_send_contract_sms,
@@ -247,6 +248,37 @@ class TestOptInContractAutomation(UnitTestCase):
 		commit.assert_not_called()
 		self.assertTrue(signatory.invite_token)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
+		invitation_reference = _invitation_email_reference("invitation-token")
+		self.assertEqual(
+			sendmail.call_args.kwargs["subject"],
+			"Action Required: Sign Your CareverseHIMS Contract — CONT-TEST-00001 — Invitation ID %s"
+			% invitation_reference,
+		)
+
+	def test_resending_invitation_changes_inbox_identifier(self):
+		contract = SimpleNamespace(name="CONT-TEST-00001", network_slug="", save=Mock())
+		signatory = SimpleNamespace(
+			signatory_role="Facility Signatory",
+			signatory_name="Jane Signatory",
+			signatory_email="jane@example.com",
+		)
+		queue = SimpleNamespace(name="Email Queue-TEST-00002")
+
+		with (
+			patch("crm.api.contracts._gen_token", side_effect=["invitation-token-1", "invitation-token-2"]),
+			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch("crm.api.contracts.branded_email_html", return_value="email"),
+			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			_issue_and_send_invitation(contract, signatory, commit=False)
+			_issue_and_send_invitation(contract, signatory, commit=False)
+
+		subjects = [call.kwargs["subject"] for call in sendmail.call_args_list]
+		self.assertEqual(len(subjects), 2)
+		self.assertEqual(len(set(subjects)), 2)
+		self.assertIn(_invitation_email_reference("invitation-token-1"), subjects[0])
+		self.assertIn(_invitation_email_reference("invitation-token-2"), subjects[1])
 
 	def test_contract_sms_delivery_is_logged_and_does_not_commit_caller_transaction(self):
 		from frappe.core.doctype.sms_settings import sms_settings
