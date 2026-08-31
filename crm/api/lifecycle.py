@@ -138,6 +138,7 @@ def _resolve_signatories(contract: str | None) -> list:
 			"signed_at": r.signed_at,
 			"name": r.signatory_name,
 			"email": r.signatory_email,
+			"phone": r.signatory_phone,
 		}
 		for r in doc.signatories
 	]

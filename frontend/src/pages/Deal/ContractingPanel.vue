@@ -145,6 +145,13 @@
                 <p class="truncate text-xs text-ink-gray-5">
                   {{ __(s.role)
                   }}<template v-if="s.email"> · {{ s.email }}</template>
+                  <template v-if="s.phone"> · {{ s.phone }}</template>
+                </p>
+                <p v-if="smsDelivery(s)" class="mt-0.5 text-xs text-ink-gray-5">
+                  {{ __('SMS: {0}', [smsDelivery(s).status]) }}
+                  <template v-if="smsDelivery(s).attempts">
+                    · {{ __('{0} attempt(s)', [smsDelivery(s).attempts]) }}
+                  </template>
                 </p>
               </div>
               <span
@@ -189,12 +196,25 @@
                       : __('Resend link')
                   }}
                 </button>
+                <button
+                  v-if="canRetrySms(s)"
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="retryingSmsKey === rowKey(s)"
+                  @click="retrySms(s)"
+                >
+                  {{
+                    retryingSmsKey === rowKey(s)
+                      ? __('Retrying…')
+                      : __('Retry SMS')
+                  }}
+                </button>
               </div>
             </div>
 
             <!-- Inline edit form — free-text name + email for every signatory -->
             <div v-else class="space-y-2">
-              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <input
                   v-model="editName"
                   type="text"
@@ -205,6 +225,14 @@
                   v-model="editEmail"
                   type="email"
                   :placeholder="__('signatory@hospital.org')"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+                <input
+                  v-model="editPhone"
+                  type="tel"
+                  inputmode="tel"
+                  autocomplete="tel"
+                  :placeholder="__('Phone for SMS')"
                   class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
                 />
               </div>
@@ -336,7 +364,7 @@
       </p>
 
       <!-- Facility Signatory -->
-      <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
           <label class="mb-1 block text-xs font-medium text-ink-gray-6">
             {{ __('Facility Signatory Name')
@@ -363,10 +391,24 @@
             class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+            {{ __('Facility Signatory Phone') }}
+          </label>
+          <input
+            v-model="facilitySignatoryPhone"
+            type="tel"
+            inputmode="tel"
+            autocomplete="tel"
+            :placeholder="__('+254 7xx xxx xxx')"
+            :disabled="formLocked"
+            class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
       </div>
 
       <!-- Facility Witness -->
-      <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
           <label class="mb-1 block text-xs font-medium text-ink-gray-6">
             {{ __('Facility Witness Name') }}<span class="text-red-500">*</span>
@@ -388,6 +430,20 @@
             v-model="facilityWitnessEmail"
             type="email"
             :placeholder="__('witness@hospital.org')"
+            :disabled="formLocked"
+            class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+            {{ __('Facility Witness Phone') }}
+          </label>
+          <input
+            v-model="facilityWitnessPhone"
+            type="tel"
+            inputmode="tel"
+            autocomplete="tel"
+            :placeholder="__('+254 7xx xxx xxx')"
             :disabled="formLocked"
             class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
           />
@@ -433,6 +489,16 @@
                 <p class="truncate text-xs text-ink-gray-5">
                   {{ __(item.role)
                   }}<template v-if="item.email"> · {{ item.email }}</template>
+                  <template v-if="item.phone"> · {{ item.phone }}</template>
+                </p>
+                <p
+                  v-if="smsDelivery(item)"
+                  class="mt-0.5 text-xs text-ink-gray-5"
+                >
+                  {{ __('SMS: {0}', [smsDelivery(item).status]) }}
+                  <template v-if="smsDelivery(item).attempts">
+                    · {{ __('{0} attempt(s)', [smsDelivery(item).attempts]) }}
+                  </template>
                 </p>
               </div>
               <span
@@ -487,6 +553,19 @@
                       : __('Resend link')
                   }}
                 </button>
+                <button
+                  v-if="item.onContract && canRetrySms(item)"
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="retryingSmsKey === rowKey(item)"
+                  @click="retrySms(item)"
+                >
+                  {{
+                    retryingSmsKey === rowKey(item)
+                      ? __('Retrying…')
+                      : __('Retry SMS')
+                  }}
+                </button>
               </div>
             </div>
 
@@ -499,11 +578,19 @@
                     : __('Network Signatory')
                 }}
               </label>
-              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <input
                   v-model="coEditName"
                   type="text"
                   :placeholder="__('Full legal name')"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+                <input
+                  v-model="coEditPhone"
+                  type="tel"
+                  inputmode="tel"
+                  autocomplete="tel"
+                  :placeholder="__('Phone for SMS')"
                   class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
                 />
                 <input
@@ -577,7 +664,7 @@
             </label>
 
             <!-- Free-text name + email for both roles -->
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <input
                 v-model="coEditName"
                 type="text"
@@ -593,6 +680,14 @@
                     : __('signatory@network.org')
                 "
                 class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+              />
+              <input
+                v-model="coEditPhone"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel"
+                :placeholder="__('Phone for SMS')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 dark:bg-surface-gray-1"
               />
             </div>
 
@@ -665,7 +760,7 @@
           <p v-if="coSignatoryItems.length" class="text-xs text-ink-gray-4">
             {{
               __(
-                'Co-signatories are invited automatically once the facility signatory and witness have both signed.',
+                'Co-signatories are invited automatically once the facility signatory signs. They can sign in any order.',
               )
             }}
           </p>
@@ -697,13 +792,14 @@
               <p class="truncate text-xs text-ink-gray-5">
                 {{ __(cs.signer_role)
                 }}<template v-if="cs.email"> · {{ cs.email }}</template>
+                <template v-if="cs.phone"> · {{ cs.phone }}</template>
               </p>
             </div>
           </div>
           <p class="text-xs text-ink-gray-4">
             {{
               __(
-                'These co-signatories are seeded onto the contract at generation and invited automatically once the facility signatory and witness have both signed.',
+                'These co-signatories are seeded onto the contract at generation and invited automatically once the facility signatory signs. They can sign in any order.',
               )
             }}
           </p>
@@ -821,6 +917,63 @@ const coSignersLoading = ref(true)
 
 const coSigners = computed(() => coSignersResource.data?.signers ?? [])
 const networkSlug = computed(() => coSignersResource.data?.network_slug ?? '')
+const smsDeliveryResource = createResource({
+  url: 'crm.api.contracts.get_sms_delivery_status',
+})
+const retrySmsResource = createResource({
+  url: 'crm.api.contracts.retry_sms_delivery',
+})
+const smsDeliveries = ref([])
+const retryingSmsKey = ref('')
+
+const smsDeliveryByRow = computed(() => {
+  const latest = {}
+  for (const row of smsDeliveries.value) {
+    if (row.purpose !== 'Invitation' || latest[row.signatory_row]) continue
+    latest[row.signatory_row] = row
+  }
+  return latest
+})
+
+function smsDelivery(row) {
+  return row?.row_name ? smsDeliveryByRow.value[row.row_name] ?? null : null
+}
+
+function canRetrySms(row) {
+  const delivery = smsDelivery(row)
+  return !!delivery && ['Failed', 'Not Available'].includes(delivery.status)
+}
+
+async function loadSmsDeliveries(contract) {
+  if (!contract) {
+    smsDeliveries.value = []
+    return
+  }
+  try {
+    smsDeliveries.value = (await smsDeliveryResource.submit({ contract })) ?? []
+  } catch {
+    smsDeliveries.value = []
+  }
+}
+
+async function retrySms(row) {
+  const delivery = smsDelivery(row)
+  if (!delivery || retryingSmsKey.value) return
+  retryingSmsKey.value = rowKey(row)
+  try {
+    await retrySmsResource.submit({ notification: delivery.name })
+    toast.success(__('SMS invitation retried.'))
+    await loadSmsDeliveries(lc.value.contract?.name)
+  } catch (err) {
+    toast.error(
+      err?.messages?.[0] ??
+        err?.message ??
+        __('Could not retry the SMS invitation.'),
+    )
+  } finally {
+    retryingSmsKey.value = ''
+  }
+}
 
 // The top "Signatories" block owns only the facility parties; the Network /
 // Tiberbu counterparties are edited in their own block below (coSignatoryItems).
@@ -836,7 +989,15 @@ onMounted(async () => {
   } finally {
     coSignersLoading.value = false
   }
+  await loadSmsDeliveries(lc.value.contract?.name)
 })
+
+watch(
+  () => lc.value.contract?.name,
+  (contract) => {
+    loadSmsDeliveries(contract)
+  },
+)
 
 function initials(nameOrEmail) {
   const s = (nameOrEmail ?? '').trim()
@@ -897,8 +1058,10 @@ async function saveNotes() {
 // ---------------------------------------------------------------------------
 const facilitySignatoryName = ref('')
 const facilitySignatoryEmail = ref('')
+const facilitySignatoryPhone = ref('')
 const facilityWitnessName = ref('')
 const facilityWitnessEmail = ref('')
+const facilityWitnessPhone = ref('')
 
 // Pre-fill signatory + witness fields from oisDoc prop
 // Priority: explicit fields > raw_json contact > empty
@@ -920,6 +1083,9 @@ watch(
     if (!facilitySignatoryEmail.value) {
       facilitySignatoryEmail.value = explicitEmail || (rawContact?.email ?? '')
     }
+    if (!facilitySignatoryPhone.value) {
+      facilitySignatoryPhone.value = rawContact?.mobile_no ?? ''
+    }
 
     // Witness captured during opt-in submission — pre-fill so the exec doesn't
     // have to re-key it (still editable before generating).
@@ -928,6 +1094,9 @@ watch(
     }
     if (!facilityWitnessEmail.value) {
       facilityWitnessEmail.value = (doc.facility_witness_email ?? '').trim()
+    }
+    if (!facilityWitnessPhone.value) {
+      facilityWitnessPhone.value = (doc.facility_witness_phone ?? '').trim()
     }
   },
   { immediate: true },
@@ -983,8 +1152,10 @@ async function doGenerate() {
       quote: lc.value.quotation?.name ?? '',
       facility_signatory_name: facilitySignatoryName.value.trim(),
       facility_signatory_email: facilitySignatoryEmail.value.trim(),
+      facility_signatory_phone: facilitySignatoryPhone.value.trim(),
       facility_witness_name: facilityWitnessName.value.trim(),
       facility_witness_email: facilityWitnessEmail.value.trim(),
+      facility_witness_phone: facilityWitnessPhone.value.trim(),
     })
     successMsg.value = __('Contract sent — signing invitation emailed to {0}', [
       facilitySignatoryEmail.value.trim(),
@@ -1047,6 +1218,7 @@ const editingRole = ref('')
 const editRowName = ref('')
 const editName = ref('')
 const editEmail = ref('')
+const editPhone = ref('')
 const savingEdit = ref(false)
 
 // Every signatory row is editable — Pending, Declined, or Signed. Editing a
@@ -1081,6 +1253,7 @@ function startEdit(s) {
   editRowName.value = s.row_name ?? ''
   editName.value = s.name ?? ''
   editEmail.value = s.email ?? ''
+  editPhone.value = s.phone ?? ''
 }
 
 function cancelEdit() {
@@ -1088,6 +1261,7 @@ function cancelEdit() {
   editRowName.value = ''
   editName.value = ''
   editEmail.value = ''
+  editPhone.value = ''
 }
 
 async function saveEdit(role) {
@@ -1102,6 +1276,7 @@ async function saveEdit(role) {
       role,
       name,
       email,
+      phone: editPhone.value.trim(),
       row_name: editRowName.value ?? '',
     })
     toast.success(
@@ -1151,6 +1326,7 @@ const coEditRole = ref('')
 const coEditRowName = ref('') // child docname — targets the exact row when a role repeats
 const coEditName = ref('')
 const coEditEmail = ref('')
+const coEditPhone = ref('')
 const coEditOrigEmail = ref('') // network write-back: the config row to update (blank → append)
 const coEditIsAdd = ref(false) // true → row is configured but not yet on the contract
 const savingCo = ref(false)
@@ -1183,6 +1359,7 @@ const coSignatoryItems = computed(() => {
     role: r.role,
     name: r.name,
     email: r.email,
+    phone: r.phone,
     status: r.status,
     onContract: true,
   }))
@@ -1201,6 +1378,7 @@ const coSignatoryItems = computed(() => {
       role,
       name: cs.full_name || cs.email,
       email: cs.email,
+      phone: cs.phone,
       status: null,
       onContract: false,
     })
@@ -1220,6 +1398,7 @@ function startCoEdit(item) {
   coEditRowName.value = item.row_name ?? ''
   coEditName.value = item.name ?? ''
   coEditEmail.value = item.email ?? ''
+  coEditPhone.value = item.phone ?? ''
   coEditOrigEmail.value = item.email ?? ''
   coEditIsAdd.value = !item.onContract
 }
@@ -1247,6 +1426,7 @@ function cancelCoEdit() {
   coEditRowName.value = ''
   coEditName.value = ''
   coEditEmail.value = ''
+  coEditPhone.value = ''
   coEditOrigEmail.value = ''
   coEditIsAdd.value = false
 }
@@ -1264,7 +1444,13 @@ async function saveCoEdit() {
     if (isTiberbuRole(role)) {
       // Tiberbu stays per-contract — never overwrites the Opt-In Settings singleton.
       if (coEditIsAdd.value) {
-        await addSignatoryResource.submit({ contract, role, name, email })
+        await addSignatoryResource.submit({
+          contract,
+          role,
+          name,
+          email,
+          phone: coEditPhone.value.trim(),
+        })
         toast.success(__('Tiberbu signatory added to the contract.'))
       } else {
         const res = await updateSignatoryResource.submit({
@@ -1272,6 +1458,7 @@ async function saveCoEdit() {
           role,
           name,
           email,
+          phone: coEditPhone.value.trim(),
           row_name: coEditRowName.value ?? '',
         })
         toast.success(
@@ -1296,6 +1483,7 @@ async function saveCoEdit() {
         network_slug: networkSlug.value,
         name,
         email,
+        phone: coEditPhone.value.trim(),
         original_email: coEditOrigEmail.value ?? '',
         contract,
       })

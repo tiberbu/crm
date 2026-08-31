@@ -433,6 +433,11 @@
                 :label="__('Email')"
                 type="email"
               />
+              <FormControl
+                v-model="signer.phone"
+                :label="__('Phone for SMS')"
+                type="tel"
+              />
             </div>
           </div>
         </div>
@@ -1089,6 +1094,7 @@ function startEditNetwork() {
     })),
     network_signers: (doc?.network_signers ?? []).map((row) => ({
       ...row,
+      phone: row.phone ?? '',
       key: newRowKey(),
     })),
   })
@@ -1178,6 +1184,7 @@ function addSigner() {
     key: newRowKey(),
     full_name: '',
     email: '',
+    phone: '',
   })
 }
 

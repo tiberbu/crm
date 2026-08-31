@@ -104,25 +104,29 @@ def _resolve_network_slug(deal):
 	return ""
 
 
-def _resolve_user_identity(user, fallback_name="", fallback_email=""):
-	"""Resolve a User link to {full_name, email}, preferring live User values but
-	falling back to any stored/label values. Email is lower-cased. Never raises."""
+def _resolve_user_identity(user, fallback_name="", fallback_email="", fallback_phone=""):
+	"""Resolve a User link to {full_name, email, phone}, preferring live User values.
+
+	Phone is optional for backward compatibility with existing settings and users.
+	"""
 	name = frappe.utils.cstr(fallback_name or "").strip()
 	email = frappe.utils.cstr(fallback_email or "").strip().lower()
+	phone = frappe.utils.cstr(fallback_phone or "").strip()
 	user = frappe.utils.cstr(user or "").strip()
 	if user:
 		try:
-			u = frappe.db.get_value("User", user, ["full_name", "email"], as_dict=True)
+			u = frappe.db.get_value("User", user, ["full_name", "email", "mobile_no"], as_dict=True)
 			if u:
 				name = frappe.utils.cstr(u.full_name or name).strip()
 				email = frappe.utils.cstr(u.email or email).strip().lower()
+				phone = frappe.utils.cstr(u.mobile_no or phone).strip()
 		except Exception:
 			pass
-	return {"full_name": name, "email": email}
+	return {"full_name": name, "email": email, "phone": phone}
 
 
 def _network_signers(network_slug):
-	"""Configured co-signatories for a network → [{full_name, email}]. Network
+	"""Configured co-signatories for a network → [{full_name, email, phone}]. Network
 	signers are external people keyed by email (name + email, no Frappe User). A
 	network's name IS its slug (autoname field:slug)."""
 	network_slug = frappe.utils.cstr(network_slug or "").strip()
@@ -135,7 +139,7 @@ def _network_signers(network_slug):
 			"parenttype": "CRM Opt-In Network",
 			"parentfield": "network_signers",
 		},
-		fields=["full_name", "email"],
+		fields=["full_name", "email", "phone"],
 		order_by="idx asc",
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
@@ -147,6 +151,7 @@ def _network_signers(network_slug):
 				{
 					"full_name": frappe.utils.cstr(r.get("full_name") or "").strip() or email,
 					"email": email,
+					"phone": frappe.utils.cstr(r.get("phone") or "").strip(),
 				}
 			)
 	return signers
@@ -169,14 +174,14 @@ def _tiberbu_signer():
 
 
 def _facility_witness_from_deal(deal):
-	"""Facility witness captured on the deal's latest opt-in submission → {name, email}."""
+	"""Facility witness captured on the deal's latest opt-in submission."""
 	deal = frappe.utils.cstr(deal or "").strip()
 	if not deal:
-		return {"name": "", "email": ""}
+		return {"name": "", "email": "", "phone": ""}
 	rows = frappe.get_list(
 		"CRM Opt-In Submission",
 		filters={"deal": deal},
-		fields=["facility_witness_name", "facility_witness_email"],
+		fields=["facility_witness_name", "facility_witness_email", "facility_witness_phone"],
 		order_by="creation desc",
 		limit=1,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
@@ -185,8 +190,9 @@ def _facility_witness_from_deal(deal):
 		return {
 			"name": frappe.utils.cstr(rows[0].get("facility_witness_name") or "").strip(),
 			"email": frappe.utils.cstr(rows[0].get("facility_witness_email") or "").strip().lower(),
+			"phone": frappe.utils.cstr(rows[0].get("facility_witness_phone") or "").strip(),
 		}
-	return {"name": "", "email": ""}
+	return {"name": "", "email": "", "phone": ""}
 
 
 def _check_contract_rate_limit(limit=10, window=60):
@@ -333,6 +339,101 @@ def _signing_link(contract_name, role, token):
 	)
 
 
+def _sms_gateway_configured():
+	"""Return whether Frappe has an SMS gateway configured."""
+	try:
+		return bool(frappe.db.get_single_value("SMS Settings", "sms_gateway_url"))
+	except Exception:
+		return False
+
+
+def _new_sms_delivery(contract, signatory_row, purpose):
+	"""Create a delivery audit row without making SMS availability transactional."""
+	try:
+		delivery = frappe.new_doc("CRM Contract SMS Delivery")
+		delivery.contract = contract.name
+		delivery.signatory_row = signatory_row.name
+		delivery.signatory_role = frappe.utils.cstr(signatory_row.signatory_role)
+		delivery.purpose = purpose
+		delivery.recipient_phone = frappe.utils.cstr(
+			getattr(signatory_row, "signatory_phone", "") or ""
+		).strip()
+		delivery.status = "Pending"
+		delivery.attempts = 0
+		delivery.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+		return delivery
+	except Exception:
+		# A site upgrading from an older CRM build may not have synced the new
+		# DocType yet. Never prevent the contractual email from being delivered.
+		frappe.log_error(
+			frappe.get_traceback(),
+			"contracts: unable to create SMS delivery audit row for %s" % contract.name,
+		)
+		return None
+
+
+def _send_contract_sms(contract, signatory_row, purpose, message, delivery=None, commit=True):
+	"""Send one contract SMS and persist a retryable, non-secret delivery status."""
+	delivery = delivery or _new_sms_delivery(contract, signatory_row, purpose)
+	phone = frappe.utils.cstr(getattr(signatory_row, "signatory_phone", "") or "").strip()
+	if delivery:
+		delivery.recipient_phone = phone
+		delivery.attempts = frappe.utils.cint(delivery.attempts) + 1
+		delivery.last_attempt_at = frappe.utils.now_datetime()
+
+	if not phone or not _sms_gateway_configured():
+		status = "Not Available"
+		error = "No mobile number or SMS gateway is configured."
+		if delivery:
+			delivery.status = status
+			delivery.last_error = error
+			delivery.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+			if commit:
+				frappe.db.commit()
+		return status
+
+	try:
+		from frappe.core.doctype.sms_settings.sms_settings import send_sms
+
+		send_sms([phone], message, success_msg=False)
+		status = "Sent"
+		if delivery:
+			delivery.status = status
+			delivery.sent_at = frappe.utils.now_datetime()
+			delivery.last_error = ""
+	except Exception as error:
+		status = "Failed"
+		if delivery:
+			delivery.status = status
+			delivery.last_error = frappe.utils.cstr(error)[:2000]
+		frappe.log_error(
+			frappe.get_traceback(),
+			"contracts: SMS %s failed for %s / %s"
+			% (purpose.lower(), contract.name, signatory_row.signatory_role),
+		)
+
+	if delivery:
+		delivery.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		if commit:
+			frappe.db.commit()
+	return status
+
+
+def _invitation_sms_message(network, signatory_row, link):
+	"""Build a concise mobile-friendly invitation message."""
+	brand = frappe.utils.cstr((network or {}).get("display_name") or "CareverseHIMS")
+	return (
+		"%s: %s, please review and sign your contract: %s "
+		"Your identity will be verified with an OTP. Link expires in 7 days."
+		% (brand, frappe.utils.cstr(getattr(signatory_row, "signatory_name", "") or "Signatory"), link)
+	)
+
+
+def _otp_sms_message(network, signatory_row, otp):
+	brand = frappe.utils.cstr((network or {}).get("display_name") or "CareverseHIMS")
+	return "%s: your contract signing code is %s. It expires in 10 minutes." % (brand, otp)
+
+
 def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 	"""
 	Mint a fresh invitation token on the signatory row, persist it, and email the
@@ -386,6 +487,21 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 			frappe.get_traceback(),
 			"contracts._issue_and_send_invitation: email failed for %s / %s" % (contract_doc.name, role),
 		)
+
+	sms_status = _send_contract_sms(
+		contract_doc,
+		signatory_row,
+		"Invitation",
+		_invitation_sms_message(network, signatory_row, link),
+		commit=commit,
+	)
+	# Keep the historical return value (Email Queue document) intact for callers,
+	# while exposing the latest SMS status to new callers.
+	if queue is not None:
+		try:
+			queue.sms_status = sms_status
+		except Exception:
+			pass
 	return queue
 
 
@@ -547,7 +663,7 @@ def get_network_signatories(deal: Any = "", network_slug: Any = ""):
 	Signatory. Powers the auto-populate on the Quote/Contracting page.
 
 	Requires: Sales Manager or System Manager role.
-	Returns: {network_slug, signers: [{full_name, email, signer_role}]}
+	Returns: {network_slug, signers: [{full_name, email, phone, signer_role}]}
 	"""
 	_check_crm_role()
 
@@ -575,6 +691,8 @@ def _generate_contract(
 	network_approver_2="",
 	tiberbu_approver="",
 	commit=True,
+	facility_signatory_phone="",
+	facility_witness_phone="",
 ):
 	"""
 	Create a CRM Contract for a deal, render contract HTML from active T&C, and
@@ -596,6 +714,8 @@ def _generate_contract(
 	facility_signatory_email = frappe.utils.cstr(facility_signatory_email).strip().lower()
 	facility_witness_name = frappe.utils.cstr(facility_witness_name).strip()
 	facility_witness_email = frappe.utils.cstr(facility_witness_email).strip().lower()
+	facility_signatory_phone = frappe.utils.cstr(facility_signatory_phone or "").strip()
+	facility_witness_phone = frappe.utils.cstr(facility_witness_phone or "").strip()
 
 	if not deal:
 		frappe.throw(_("Deal is required to generate a contract."))
@@ -606,6 +726,7 @@ def _generate_contract(
 		ois_witness = _facility_witness_from_deal(deal)
 		facility_witness_name = facility_witness_name or ois_witness["name"]
 		facility_witness_email = facility_witness_email or ois_witness["email"]
+		facility_witness_phone = facility_witness_phone or ois_witness.get("phone", "")
 
 	if not facility_signatory_email or not facility_witness_email:
 		frappe.throw(_("Signatory and witness email addresses are required."))
@@ -659,6 +780,7 @@ def _generate_contract(
 		{
 			"signatory_name": facility_signatory_name,
 			"signatory_email": facility_signatory_email,
+			"signatory_phone": facility_signatory_phone,
 			"signatory_role": "Facility Signatory",
 			"status": "Pending",
 			"is_witness": 0,
@@ -672,6 +794,7 @@ def _generate_contract(
 		{
 			"signatory_name": facility_witness_name,
 			"signatory_email": facility_witness_email,
+			"signatory_phone": facility_witness_phone,
 			"signatory_role": "Facility Witness",
 			"status": "Pending",
 			"is_witness": 1,
@@ -687,6 +810,7 @@ def _generate_contract(
 			{
 				"signatory_name": signer["full_name"] or signer["email"],
 				"signatory_email": signer["email"],
+				"signatory_phone": signer.get("phone", ""),
 				"signatory_role": "Network Signatory",
 				"status": "Pending",
 				"is_witness": 0,
@@ -701,6 +825,7 @@ def _generate_contract(
 			{
 				"signatory_name": tb["full_name"] or tb["email"],
 				"signatory_email": tb["email"],
+				"signatory_phone": tb.get("phone", ""),
 				"signatory_role": "Tiberbu Signatory",
 				"status": "Pending",
 				"is_witness": 0,
@@ -738,6 +863,8 @@ def generate(
 	network_approver_1: Any = "",
 	network_approver_2: Any = "",
 	tiberbu_approver: Any = "",
+	facility_signatory_phone: Any = "",
+	facility_witness_phone: Any = "",
 ):
 	"""
 	Create and send a contract from the CRM Deal page.
@@ -753,6 +880,8 @@ def generate(
 		facility_signatory_email=facility_signatory_email,
 		facility_witness_name=facility_witness_name,
 		facility_witness_email=facility_witness_email,
+		facility_signatory_phone=facility_signatory_phone,
+		facility_witness_phone=facility_witness_phone,
 		network_approver_1=network_approver_1,
 		network_approver_2=network_approver_2,
 		tiberbu_approver=tiberbu_approver,
@@ -808,7 +937,81 @@ def resend_invitation(contract: Any, role: Any, row_name: Any = None):
 
 
 @frappe.whitelist()
-def update_signatory(contract: Any, role: Any, name: Any, email: Any, row_name: Any = None):
+def retry_sms_delivery(notification: Any):
+	"""Retry a failed contract invitation SMS without rotating its email link.
+
+	OTP SMS retries are intentionally performed by the signatory's existing
+	"request a new code" action: the server never stores a recoverable OTP. This
+	endpoint therefore only retries Invitation delivery and is safe to expose to
+	CRM managers as an idempotent operational action.
+	"""
+	_check_crm_role()
+	notification = frappe.utils.cstr(notification).strip()
+	if not notification:
+		frappe.throw(_("An SMS delivery record is required."), frappe.ValidationError)
+	delivery = frappe.get_doc("CRM Contract SMS Delivery", notification)
+	if delivery.purpose != "Invitation":
+		frappe.throw(
+			_("OTP SMS cannot be retried from CRM. Ask the signatory to request a new code."),
+			frappe.ValidationError,
+		)
+	if delivery.status not in ("Failed", "Not Available"):
+		frappe.throw(_("This SMS does not need a retry."), frappe.ValidationError)
+
+	contract_doc = frappe.get_doc("CRM Contract", delivery.contract)
+	signatory_row = next(
+		(row for row in contract_doc.signatories or [] if row.name == delivery.signatory_row),
+		None,
+	)
+	if not signatory_row or signatory_row.status != "Pending" or not signatory_row.invite_token:
+		frappe.throw(_("This signing invitation is no longer active."), frappe.ValidationError)
+
+	link = _signing_link(contract_doc.name, signatory_row.signatory_role, signatory_row.invite_token)
+	status = _send_contract_sms(
+		contract_doc,
+		signatory_row,
+		"Invitation",
+		_invitation_sms_message(_network_for_contract(contract_doc), signatory_row, link),
+		delivery=delivery,
+	)
+	return {"status": status, "notification": delivery.name}
+
+
+@frappe.whitelist()
+def get_sms_delivery_status(contract: Any):
+	"""Return safe SMS delivery status for a contract's CRM signatory panel."""
+	_check_crm_role()
+	contract = frappe.utils.cstr(contract).strip()
+	if not contract:
+		return []
+	return frappe.get_list(
+		"CRM Contract SMS Delivery",
+		filters={"contract": contract},
+		fields=[
+			"name",
+			"signatory_row",
+			"signatory_role",
+			"purpose",
+			"status",
+			"attempts",
+			"last_attempt_at",
+			"sent_at",
+			"last_error",
+		],
+		order_by="modified desc",
+		limit_page_length=100,
+	)
+
+
+@frappe.whitelist()
+def update_signatory(
+	contract: Any,
+	role: Any,
+	name: Any,
+	email: Any,
+	row_name: Any = None,
+	phone: Any = "",
+):
 	"""
 	Update the name/email of a signatory. Requires: Sales Manager or System
 	Manager role.
@@ -833,6 +1036,7 @@ def update_signatory(contract: Any, role: Any, name: Any, email: Any, row_name: 
 	role = frappe.utils.cstr(role).strip()
 	name = frappe.utils.cstr(name).strip()
 	email = frappe.utils.cstr(email).strip().lower()
+	phone = frappe.utils.cstr(phone or "").strip()
 	row_name = frappe.utils.cstr(row_name).strip() or None
 
 	if not name or not email:
@@ -845,6 +1049,7 @@ def update_signatory(contract: Any, role: Any, name: Any, email: Any, row_name: 
 
 	signatory_row.signatory_name = name
 	signatory_row.signatory_email = email
+	signatory_row.signatory_phone = phone
 
 	# Editing a signed row means the old signature no longer belongs to this
 	# (possibly new) person — clear it and the consumed OTP so the audit trail
@@ -902,7 +1107,7 @@ def update_signatory(contract: Any, role: Any, name: Any, email: Any, row_name: 
 
 
 @frappe.whitelist()
-def add_signatory(contract: Any, role: Any, name: Any, email: Any):
+def add_signatory(contract: Any, role: Any, name: Any, email: Any, phone: Any = ""):
 	"""
 	Add a Network/Tiberbu co-signatory row to a contract that is missing it —
 	e.g. a contract generated before co-signatories were wired, or where the
@@ -922,6 +1127,7 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any):
 	role = frappe.utils.cstr(role).strip()
 	name = frappe.utils.cstr(name).strip()
 	email = frappe.utils.cstr(email).strip().lower()
+	phone = frappe.utils.cstr(phone or "").strip()
 
 	if role not in _COUNTERPARTY_ROLES:
 		frappe.throw(_("Only Network and Tiberbu co-signatories can be added here."))
@@ -944,6 +1150,7 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any):
 		{
 			"signatory_name": name,
 			"signatory_email": email,
+			"signatory_phone": phone,
 			"signatory_role": role,
 			"status": "Pending",
 			"is_witness": 0,
@@ -967,7 +1174,7 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any):
 	return {"status": "added", "role": role, "email": email}
 
 
-def _sync_network_signer_on_contract(contract, name, email, original_email):
+def _sync_network_signer_on_contract(contract, name, email, phone, original_email):
 	"""Reflect a network-config signer change onto a live contract's Network
 	Signatory row. Reuses the whitelisted row operations so the Signed-row
 	invalidation + re-invite semantics (see update_signatory) are identical:
@@ -996,10 +1203,11 @@ def _sync_network_signer_on_contract(contract, name, email, original_email):
 			role="Network Signatory",
 			name=name,
 			email=email,
+			phone=phone,
 			row_name=row.name,
 		)
 		return "updated"
-	add_signatory(contract=contract, role="Network Signatory", name=name, email=email)
+	add_signatory(contract=contract, role="Network Signatory", name=name, email=email, phone=phone)
 	return "added"
 
 
@@ -1010,6 +1218,7 @@ def save_network_signer(
 	email: Any,
 	original_email: Any = "",
 	contract: Any = "",
+	phone: Any = "",
 ):
 	"""
 	Add, edit, or replace a Network Signatory in the NETWORK CONFIGURATION —
@@ -1034,6 +1243,7 @@ def save_network_signer(
 	network_slug = frappe.utils.cstr(network_slug).strip()
 	name = frappe.utils.cstr(name).strip()
 	email = frappe.utils.cstr(email).strip().lower()
+	phone = frappe.utils.cstr(phone or "").strip()
 	original_email = frappe.utils.cstr(original_email).strip().lower()
 	contract = frappe.utils.cstr(contract).strip()
 
@@ -1065,15 +1275,16 @@ def save_network_signer(
 	if target:
 		target.full_name = name
 		target.email = email
+		target.phone = phone
 	else:
-		net.append("network_signers", {"full_name": name, "email": email})
+		net.append("network_signers", {"full_name": name, "email": email, "phone": phone})
 
 	net.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 
 	contract_synced = ""
 	if contract and frappe.db.exists("CRM Contract", contract):
-		contract_synced = _sync_network_signer_on_contract(contract, name, email, original_email)
+		contract_synced = _sync_network_signer_on_contract(contract, name, email, phone, original_email)
 		log_deal_event(
 			frappe.get_value("CRM Contract", contract, "deal"),
 			"Network signer %s saved to network %s config and %s on contract %s"
@@ -1400,7 +1611,7 @@ def request_otp(contract: Any, role: Any, token: Any):
 	Validate the invitation token, generate a 6-digit OTP, store its HMAC on the
 	signatory row, and email it to the signatory.
 
-	Returns: {status: "sent"}
+	Returns: {status: "sent", sms_status: "Sent"|"Failed"|"Not Available"}
 	"""
 	_check_contract_rate_limit()
 	contract = frappe.utils.cstr(contract).strip()
@@ -1460,7 +1671,13 @@ def request_otp(contract: Any, role: Any, token: Any):
 			"contracts.request_otp: OTP email failed for %s / %s" % (contract, role),
 		)
 
-	return {"status": "sent"}
+	sms_status = _send_contract_sms(
+		contract_doc,
+		signatory_row,
+		"OTP",
+		_otp_sms_message(network, signatory_row, otp),
+	)
+	return {"status": "sent", "sms_status": sms_status}
 
 
 # nosemgrep: guest-whitelisted-method -- HMAC invitation validation and per-IP rate limit are enforced below.

@@ -507,6 +507,7 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 		frappe.throw(_("Please add your facility witness before submitting."), frappe.ValidationError)
 	witness_name = frappe.utils.cstr(witness.get("name") or "").strip()
 	witness_email = frappe.utils.cstr(witness.get("email") or "").strip().lower()
+	witness_phone = frappe.utils.cstr(witness.get("phone") or "").strip()
 	if not witness_name or frappe.utils.validate_email_address(witness_email) != witness_email:
 		frappe.throw(
 			_("Please provide a valid name and email address for your facility witness."),
@@ -573,7 +574,7 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 
 	# Store canonical facility and price data, never the browser's editable copy.
 	payload["contact"] = contact
-	payload["witness"] = {"name": witness_name, "email": witness_email}
+	payload["witness"] = {"name": witness_name, "email": witness_email, "phone": witness_phone}
 	payload["facilities"] = [
 		{
 			"mfl_code": row.get("mfl_code"),
@@ -1516,6 +1517,7 @@ def submit_async(
 	witness = payload.get("witness") or {}
 	sub.facility_witness_name = frappe.utils.cstr(witness.get("name") or "").strip()
 	sub.facility_witness_email = frappe.utils.cstr(witness.get("email") or "").strip().lower()
+	sub.facility_witness_phone = frappe.utils.cstr(witness.get("phone") or "").strip()
 	sub.submitted_at = frappe.utils.now_datetime()
 	if invitation:
 		sub.deal = invitation["deal"]
@@ -1993,6 +1995,60 @@ def _should_auto_generate_contract():
 		return False
 
 
+def _mark_opted_in_facilities(network_slug, facilities):
+	"""Mark memberships represented by a completed submission as Opted In.
+
+	The membership status is the fast, queryable source used by network list
+	views. Older submissions remain compatible through the backfill patch; missing
+	or stale facility rows are ignored rather than blocking the submission.
+	"""
+	network_slug = frappe.utils.cstr(network_slug or "").strip()
+	if not network_slug:
+		return
+	mfl_codes = {
+		frappe.utils.cstr(row.get("mfl_code") or "").strip()
+		for row in facilities or []
+		if isinstance(row, dict) and frappe.utils.cstr(row.get("mfl_code") or "").strip()
+	}
+	if not mfl_codes:
+		return
+	try:
+		facility_rows = frappe.get_list(
+			"CRM Pre-Qualified Facility",
+			filters={"mfl_code": ["in", list(mfl_codes)]},
+			fields=["name"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+		parent_names = [row.name for row in facility_rows]
+		if not parent_names:
+			return
+		memberships = frappe.get_list(
+			"CRM Facility Membership",
+			filters={
+				"parenttype": "CRM Pre-Qualified Facility",
+				"parent": ["in", parent_names],
+				"network": network_slug,
+			},
+			fields=["name"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+		for membership in memberships:
+			frappe.db.set_value(
+				"CRM Facility Membership",
+				membership.name,
+				"status",
+				"Opted In",
+				update_modified=False,
+			)
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"optin: unable to mark memberships opted in for %s" % network_slug,
+		)
+
+
 def _generate_contract_for_submission(submission, quote_name):
 	"""Create the configured contract inside the active Opt-In transaction.
 
@@ -2008,8 +2064,10 @@ def _generate_contract_for_submission(submission, quote_name):
 		quote=quote_name,
 		facility_signatory_name=submission.facility_signatory_name,
 		facility_signatory_email=submission.facility_signatory_email,
+		facility_signatory_phone=getattr(submission, "facility_signatory_phone", "") or "",
 		facility_witness_name=submission.facility_witness_name,
 		facility_witness_email=submission.facility_witness_email,
+		facility_witness_phone=getattr(submission, "facility_witness_phone", "") or "",
 		commit=False,
 	)
 	submission.contract = result["contract"]
@@ -2066,6 +2124,7 @@ def _process_deal_invitation_submission(sub, payload):
 		+ frappe.utils.cstr(contact.get("last_name") or "").strip()
 	).strip()
 	sub.facility_signatory_email = frappe.utils.cstr(contact.get("email") or "").strip().lower()
+	sub.facility_signatory_phone = frappe.utils.cstr(contact.get("mobile_no") or "").strip()
 	sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	deal.optin_submission = sub.name
 	deal.save(ignore_permissions=True)  # SYSTEM-INTERNAL
@@ -2136,6 +2195,7 @@ def _process_deal_invitation_submission(sub, payload):
 	network = _get_network_doc(sub.network_slug)
 	_queue_confirmation_email(sub, recipient, contact.get("first_name") or "", network, pricing)
 	_update_job_step(sub.name, "email", "done", "Confirmation email sending")
+	_mark_opted_in_facilities(sub.network_slug, payload.get("facilities") or [])
 	sub.status = "Processed"
 	sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	data = _get_job_progress(sub.name) or {}
@@ -2292,6 +2352,7 @@ def _process_submission(submission_ref):
 			+ frappe.utils.cstr(contact.get("last_name", "")).strip()
 		).strip()
 		sub.facility_signatory_email = frappe.utils.cstr(contact.get("email", "")).strip().lower()
+		sub.facility_signatory_phone = frappe.utils.cstr(contact.get("mobile_no", "")).strip()
 		sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 
 		# Forward back-link Deal -> Opt-In Submission for traceability (oh-s1-1).
@@ -2436,6 +2497,7 @@ def _process_submission(submission_ref):
 		network = _get_network_doc(sub.network_slug)
 		_queue_confirmation_email(sub, recipient, lead.first_name, network, pricing)
 		_update_job_step(submission_ref, "email", "done", "Confirmation email sending")
+		_mark_opted_in_facilities(sub.network_slug, facilities)
 
 		# ── Mark submission complete ──────────────────────────────────────────
 		sub.status = "Processed"

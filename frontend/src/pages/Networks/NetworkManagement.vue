@@ -40,6 +40,18 @@
         </select>
       </label>
       <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+        {{ __('Opt-in') }}
+        <select
+          v-model="optedIn"
+          class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          @change="applyFilters"
+        >
+          <option value="">{{ __('All opt-in states') }}</option>
+          <option value="1">{{ __('Opted in') }}</option>
+          <option value="0">{{ __('Not opted in') }}</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
         {{ __('Facility level') }}
         <select
           v-model="facilityLevel"
@@ -108,6 +120,9 @@
             <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Status') }}
             </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Opt-in') }}
+            </th>
             <th class="px-4 py-2.5 text-right font-medium">
               {{ __('Contacts') }}
             </th>
@@ -137,6 +152,19 @@
               <span :class="statusPill(row.enabled)">
                 {{ row.enabled ? __('Enabled') : __('Disabled') }}
               </span>
+            </td>
+            <td class="px-4 py-3">
+              <span :class="optInPill(row.opted_in)">
+                {{ row.opted_in ? __('Opted in') : __('Not opted in') }}
+              </span>
+              <p class="mt-1 text-xs text-ink-gray-5">
+                {{
+                  __('{0} of {1} facilities', [
+                    row.opted_in_count || 0,
+                    row.contact_count || 0,
+                  ])
+                }}
+              </p>
             </td>
             <td class="px-4 py-3 text-right font-medium text-ink-gray-7">
               {{ row.contact_count }}
@@ -211,6 +239,7 @@ const page = ref(0)
 const pageSize = 20
 const search = ref('')
 const enabled = ref('')
+const optedIn = ref('')
 const facilityLevel = ref('')
 const facility = ref('')
 const facilityLevels = [
@@ -231,6 +260,7 @@ const listResource = createResource({
     page_size: pageSize,
     search: search.value || null,
     enabled: enabled.value || null,
+    opted_in: optedIn.value || null,
     facility_level: facilityLevel.value || null,
     facility: facility.value || null,
   }),
@@ -262,6 +292,7 @@ function applyFilters() {
 function clearFilters() {
   search.value = ''
   enabled.value = ''
+  optedIn.value = ''
   facilityLevel.value = ''
   facility.value = ''
   applyFilters()
@@ -270,6 +301,13 @@ function clearFilters() {
 function statusPill(enabled) {
   const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
   return enabled
+    ? `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`
+    : `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`
+}
+
+function optInPill(opted) {
+  const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
+  return opted
     ? `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`
     : `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`
 }

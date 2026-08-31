@@ -96,7 +96,7 @@ class TestOptInNetworkList(UnitTestCase):
 				side_effect=[
 					[network],
 					[
-						frappe._dict({"network": "network-a"}),
+						frappe._dict({"network": "network-a", "status": "Opted In"}),
 						frappe._dict({"network": "network-a"}),
 					],
 					[frappe._dict({"name": "network-a"})],
@@ -107,6 +107,8 @@ class TestOptInNetworkList(UnitTestCase):
 
 		self.assertEqual(result["total"], 1)
 		self.assertEqual(result["rows"][0]["contact_count"], 2)
+		self.assertEqual(result["rows"][0]["opted_in_count"], 1)
+		self.assertTrue(result["rows"][0]["opted_in"])
 
 
 class TestOptInFacilityList(UnitTestCase):

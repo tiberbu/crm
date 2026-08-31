@@ -11,8 +11,10 @@
   "submitter_email",
   "facility_signatory_name",
   "facility_signatory_email",
+  "facility_signatory_phone",
   "facility_witness_name",
   "facility_witness_email",
+  "facility_witness_phone",
   "submitted_at",
   "section_break_confirmation",
   "confirmation_email_queue",
@@ -69,6 +71,11 @@
    "label": "Facility Signatory Email"
   },
   {
+   "fieldname": "facility_signatory_phone",
+   "fieldtype": "Data",
+   "label": "Facility Signatory Phone"
+  },
+  {
    "fieldname": "facility_witness_name",
    "fieldtype": "Data",
    "label": "Facility Witness Name"
@@ -77,6 +84,11 @@
    "fieldname": "facility_witness_email",
    "fieldtype": "Data",
    "label": "Facility Witness Email"
+  },
+  {
+   "fieldname": "facility_witness_phone",
+   "fieldtype": "Data",
+   "label": "Facility Witness Phone"
   },
   {
    "fieldname": "submitted_at",
