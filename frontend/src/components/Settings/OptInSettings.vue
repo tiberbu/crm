@@ -131,6 +131,39 @@
           />
         </div>
       </section>
+      <div class="border-t border-outline-elevation-2" />
+      <section class="py-5">
+        <h3 class="text-sm font-semibold text-ink-gray-8">
+          {{ __('Tiberbu approval contact') }}
+        </h3>
+        <p class="mt-1 max-w-xl text-sm text-ink-gray-5">
+          {{
+            __(
+              'Use a name, email, and mobile number for the Tiberbu approver. This contact does not need a CRM User account and receives both approval email and SMS notifications.',
+            )
+          }}
+        </p>
+        <div class="mt-4 grid max-w-xl gap-4">
+          <FormControl
+            v-model="form.tiberbu_approver_name"
+            :label="__('Approver name')"
+            type="text"
+            @update:modelValue="markDirty"
+          />
+          <FormControl
+            v-model="form.tiberbu_approver_email"
+            :label="__('Approver email')"
+            type="email"
+            @update:modelValue="markDirty"
+          />
+          <FormControl
+            v-model="form.tiberbu_approver_phone"
+            :label="__('Approver mobile number')"
+            type="tel"
+            @update:modelValue="markDirty"
+          />
+        </div>
+      </section>
       <ErrorMessage v-if="saveError" :message="saveError" />
     </div>
   </div>
@@ -158,6 +191,9 @@ const form = reactive({
   active_tc_document: '',
   default_lead_owner: '',
   tiberbu_signatory: '',
+  tiberbu_approver_name: '',
+  tiberbu_approver_email: '',
+  tiberbu_approver_phone: '',
 })
 
 const settingsResource = createResource({

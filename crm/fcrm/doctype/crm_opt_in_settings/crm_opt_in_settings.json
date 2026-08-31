@@ -14,7 +14,11 @@
   "auto_generate_contract_on_submission",
   "col_break_2",
   "default_lead_owner",
-  "tiberbu_signatory"
+  "tiberbu_signatory",
+  "section_break_tiberbu_approver",
+  "tiberbu_approver_name",
+  "tiberbu_approver_email",
+  "tiberbu_approver_phone"
  ],
  "fields": [
   {
@@ -79,6 +83,31 @@
    "label": "Tiberbu Signatory",
    "options": "User",
    "description": "Tiberbu-side user who co-signs every executed contract. Invited with a 7-day link together with every remaining signatory as soon as the facility signatory has signed; signs via the same OTP + signature-pad portal."
+  },
+  {
+   "fieldname": "section_break_tiberbu_approver",
+   "fieldtype": "Section Break",
+   "label": "Tiberbu Approval Contact"
+  },
+  {
+   "fieldname": "tiberbu_approver_name",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Name",
+   "description": "Default approver name for approval notifications. This may be an external contact without a CRM User account."
+  },
+  {
+   "fieldname": "tiberbu_approver_email",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Email",
+   "options": "Email",
+   "description": "Default email for approval notifications."
+  },
+  {
+   "fieldname": "tiberbu_approver_phone",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Phone",
+   "options": "Phone",
+   "description": "Default mobile number for approval SMS, in international format where possible."
   }
  ],
  "issingle": 1,

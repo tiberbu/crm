@@ -313,6 +313,39 @@ class TestOptInContractAutomation(UnitTestCase):
 			["Approval", "Approval"],
 		)
 
+	def test_tiberbu_approver_contact_does_not_require_a_user(self):
+		contract = SimpleNamespace(name="CONT-TEST-00002", deal="DEAL-TEST-00002", network_slug="")
+		onboarding = frappe._dict(
+			{
+				"name": "ONB-TEST-00002",
+				"network_approver_1": "",
+				"network_approver_2": "",
+				"tiberbu_approver": "",
+				"tiberbu_approver_name": "Tiberbu Reviewer",
+				"tiberbu_approver_email": "reviewer@tiberbu.example",
+				"tiberbu_approver_phone": "+254700000002",
+			}
+		)
+		with (
+			patch("crm.api.contracts.frappe.get_list", return_value=[onboarding]),
+			patch("crm.api.contracts.frappe.get_single", return_value=frappe._dict()),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts.frappe.sendmail") as sendmail,
+			patch("crm.api.contracts._send_contract_sms", return_value="Sent") as send_sms,
+		):
+			_notify_internal_approvers(contract.name, contract.deal)
+
+		sendmail.assert_called_once_with(
+			recipients=["reviewer@tiberbu.example"],
+			subject="Approval Required: CareverseHIMS Contract CONT-TEST-00002",
+			message=sendmail.call_args.kwargs["message"],
+			now=True,
+		)
+		send_sms.assert_called_once()
+		self.assertEqual(send_sms.call_args.args[2], "Approval")
+		self.assertEqual(send_sms.call_args.args[1].signatory_name, "Tiberbu Reviewer")
+		self.assertEqual(send_sms.call_args.args[1].signatory_phone, "+254700000002")
+
 	def test_first_facility_signature_invites_every_remaining_signatory_together(self):
 		facility = SimpleNamespace(
 			signatory_role="Facility Signatory", status="Signed", invite_token="original"

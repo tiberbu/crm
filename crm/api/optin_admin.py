@@ -451,6 +451,9 @@ def get_optin_settings():
 		"active_tc_document": settings.active_tc_document or "",
 		"default_lead_owner": settings.default_lead_owner or "",
 		"tiberbu_signatory": settings.tiberbu_signatory or "",
+		"tiberbu_approver_name": settings.get("tiberbu_approver_name") or "",
+		"tiberbu_approver_email": settings.get("tiberbu_approver_email") or "",
+		"tiberbu_approver_phone": settings.get("tiberbu_approver_phone") or "",
 	}
 
 
@@ -466,6 +469,9 @@ def update_optin_settings(settings: Any):
 	active_tc_document = frappe.utils.cstr(settings.get("active_tc_document")).strip()
 	default_lead_owner = frappe.utils.cstr(settings.get("default_lead_owner")).strip()
 	tiberbu_signatory = frappe.utils.cstr(settings.get("tiberbu_signatory")).strip()
+	tiberbu_approver_name = frappe.utils.cstr(settings.get("tiberbu_approver_name")).strip()
+	tiberbu_approver_email = frappe.utils.cstr(settings.get("tiberbu_approver_email")).strip().lower()
+	tiberbu_approver_phone = frappe.utils.cstr(settings.get("tiberbu_approver_phone")).strip()
 
 	if default_price_list and not frappe.db.exists(
 		"Price List", {"name": default_price_list, "selling": 1, "enabled": 1}
@@ -480,6 +486,12 @@ def update_optin_settings(settings: Any):
 	for field, user in (("Default Lead Owner", default_lead_owner), ("Tiberbu Signatory", tiberbu_signatory)):
 		if user and not frappe.db.exists("User", {"name": user, "enabled": 1}):
 			frappe.throw(_("{0} must be an enabled user.").format(field))
+	if any((tiberbu_approver_name, tiberbu_approver_email, tiberbu_approver_phone)) and not all(
+		(tiberbu_approver_name, tiberbu_approver_email, tiberbu_approver_phone)
+	):
+		frappe.throw(
+			_("Tiberbu Approver name, email, and phone are required for dual-channel notifications.")
+		)
 
 	doc = frappe.get_single("CRM Opt-In Settings")
 	doc.default_price_list = default_price_list
@@ -487,6 +499,9 @@ def update_optin_settings(settings: Any):
 	doc.active_tc_document = active_tc_document
 	doc.default_lead_owner = default_lead_owner
 	doc.tiberbu_signatory = tiberbu_signatory
+	doc.tiberbu_approver_name = tiberbu_approver_name
+	doc.tiberbu_approver_email = tiberbu_approver_email
+	doc.tiberbu_approver_phone = tiberbu_approver_phone
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 
