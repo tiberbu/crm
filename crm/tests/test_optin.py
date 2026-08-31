@@ -727,10 +727,11 @@ class TestOptInSubmissionList(UnitTestCase):
 				"creation": "2026-08-29 10:00:02",
 			}
 		)
-		facility_signatories = [
+		contract_signatories = [
 			frappe._dict(
 				{
 					"parent": contract.name,
+					"signatory_name": "Facility signer",
 					"signatory_role": "Facility Signatory",
 					"status": "Pending",
 					"signed_at": None,
@@ -741,10 +742,33 @@ class TestOptInSubmissionList(UnitTestCase):
 			frappe._dict(
 				{
 					"parent": contract.name,
+					"signatory_name": "Facility witness",
 					"signatory_role": "Facility Witness",
 					"status": "Pending",
 					"signed_at": None,
 					"invite_token": None,
+					"invite_expiry": None,
+				}
+			),
+			frappe._dict(
+				{
+					"parent": contract.name,
+					"signatory_name": "Network signer",
+					"signatory_role": "Network Signatory",
+					"status": "Pending",
+					"signed_at": None,
+					"invite_token": None,
+					"invite_expiry": None,
+				}
+			),
+			frappe._dict(
+				{
+					"parent": contract.name,
+					"signatory_name": "Tiberbu signer",
+					"signatory_role": "Tiberbu Signatory",
+					"status": "Signed",
+					"signed_at": "2026-08-29 11:00:00",
+					"invite_token": "tiberbu-token",
 					"invite_expiry": None,
 				}
 			),
@@ -757,7 +781,7 @@ class TestOptInSubmissionList(UnitTestCase):
 				[frappe._dict({"name": submission.name})],
 				email_queues,
 				[contract],
-				facility_signatories,
+				contract_signatories,
 			],
 		):
 			result = list_submissions()
@@ -769,4 +793,22 @@ class TestOptInSubmissionList(UnitTestCase):
 		self.assertEqual(
 			result["rows"][0]["facility_witness_signing_status"],
 			"Waiting for facility signatory",
+		)
+		self.assertEqual(
+			result["rows"][0]["network_signatories"],
+			[
+				{
+					"name": "Network signer",
+					"status": "Waiting for facility signatory",
+					"signed_at": None,
+				}
+			],
+		)
+		self.assertEqual(
+			result["rows"][0]["tiberbu_signatory"],
+			{
+				"name": "Tiberbu signer",
+				"status": "Signed",
+				"signed_at": "2026-08-29 11:00:00",
+			},
 		)

@@ -2727,7 +2727,7 @@ def list_submissions(
 			contracts_by_deal.setdefault(contract.deal, contract)
 
 	contract_names = list(contracts_by_name)
-	facility_signatories = {}
+	contract_signatories = {}
 	if contract_names:
 		signatory_rows = frappe.get_list(
 			"CRM Contract Signatory",
@@ -2735,13 +2735,32 @@ def list_submissions(
 				"parent": ["in", contract_names],
 				"parenttype": "CRM Contract",
 				"parentfield": "signatories",
-				"signatory_role": ["in", ["Facility Signatory", "Facility Witness"]],
+				"signatory_role": [
+					"in",
+					[
+						"Facility Signatory",
+						"Facility Witness",
+						"Network Signatory",
+						"Tiberbu Signatory",
+					],
+				],
 			},
-			fields=["parent", "signatory_role", "status", "signed_at", "invite_token", "invite_expiry"],
+			fields=[
+				"parent",
+				"signatory_name",
+				"signatory_role",
+				"status",
+				"signed_at",
+				"invite_token",
+				"invite_expiry",
+			],
+			order_by="parent asc, idx asc",
 			ignore_permissions=True,  # SYSTEM-INTERNAL: expose only summary state
 		)
 		for signatory in signatory_rows:
-			facility_signatories.setdefault(signatory.parent, {})[signatory.signatory_role] = signatory
+			contract_signatories.setdefault(signatory.parent, {}).setdefault(
+				signatory.signatory_role, []
+			).append(signatory)
 
 	return {
 		"rows": [
@@ -2749,7 +2768,7 @@ def list_submissions(
 				row,
 				queue_statuses,
 				contracts_by_name.get(row.contract) or contracts_by_deal.get(row.deal),
-				facility_signatories,
+				contract_signatories,
 			)
 			for row in rows
 		],
@@ -2757,15 +2776,35 @@ def list_submissions(
 	}
 
 
-def _submission_list_row(row, queue_statuses, contract, facility_signatories):
+def _submission_list_row(row, queue_statuses, contract, contract_signatories):
 	"""Build a permission-safe Opt-In review row with concise delivery/signing state."""
 	facilities = _dashboard_facilities(_dashboard_payload(row.get("raw_json")))
 	primary_facility = facilities[0] if facilities else {}
-	facility_roles = facility_signatories.get(contract.name, {}) if contract else {}
-	facility_signatory = facility_roles.get("Facility Signatory")
-	facility_witness = facility_roles.get("Facility Witness")
+	contract_roles = contract_signatories.get(contract.name, {}) if contract else {}
+	facility_signatory = (contract_roles.get("Facility Signatory") or [None])[0]
+	facility_witness = (contract_roles.get("Facility Witness") or [None])[0]
 	signing_status, signed_at = _facility_signing_state(facility_signatory)
 	witness_status, witness_signed_at = _facility_witness_signing_state(facility_signatory, facility_witness)
+	facility_signed = signing_status == "Signed"
+	network_signatories = []
+	for signatory in contract_roles.get("Network Signatory", []):
+		network_status, network_signed_at = _counterparty_signing_state(signatory, facility_signed)
+		network_signatories.append(
+			{
+				"name": getattr(signatory, "signatory_name", None) or _("Network signatory"),
+				"status": network_status,
+				"signed_at": network_signed_at,
+			}
+		)
+	tiberbu_row = (contract_roles.get("Tiberbu Signatory") or [None])[0]
+	tiberbu_signatory = None
+	if tiberbu_row:
+		tiberbu_status, tiberbu_signed_at = _counterparty_signing_state(tiberbu_row, facility_signed)
+		tiberbu_signatory = {
+			"name": getattr(tiberbu_row, "signatory_name", None) or _("Tiberbu signatory"),
+			"status": tiberbu_status,
+			"signed_at": tiberbu_signed_at,
+		}
 	contract_email_status = queue_statuses.get(row.contract_invitation_email_queue)
 	if not contract_email_status:
 		# Contracts created before Opt-In delivery tracking cannot be reliably
@@ -2780,6 +2819,8 @@ def _submission_list_row(row, queue_statuses, contract, facility_signatories):
 		"facility_signatory_signed_at": signed_at,
 		"facility_witness_signing_status": witness_status,
 		"facility_witness_signed_at": witness_signed_at,
+		"network_signatories": network_signatories,
+		"tiberbu_signatory": tiberbu_signatory,
 		"facility_name": primary_facility.get("facility_name") or _("Facility not recorded"),
 		"facility_mfl_code": primary_facility.get("mfl_code"),
 		"facility_level": primary_facility.get("level"),
@@ -2792,18 +2833,33 @@ def _facility_signing_state(signatory):
 	"""Return an operator-friendly Facility Signatory status for a contract summary."""
 	if not signatory:
 		return "Not generated", None
-	if signatory.status == "Signed":
-		return "Signed", signatory.signed_at
-	if signatory.status == "Declined":
+	return _counterparty_signing_state(signatory, False, "Preparing invitation")
+
+
+def _counterparty_signing_state(signatory, facility_signed, pending_without_invite=None):
+	"""Return a truthful status for a network or Tiberbu signatory row."""
+	if not signatory:
+		return "Not configured", None
+	status = " ".join(frappe.utils.cstr(getattr(signatory, "status", "") or "").strip().lower().split())
+	signed_at = getattr(signatory, "signed_at", None)
+	if status in ("signed", "completed", "complete", "fully signed") or signed_at:
+		return "Signed", signed_at
+	if status in ("declined", "rejected", "cancelled", "canceled"):
 		return "Declined", None
-	if signatory.invite_token:
+	if status not in ("", "pending"):
+		return "Review required", None
+	if getattr(signatory, "invite_token", None):
 		invite_expiry = (
-			frappe.utils.get_datetime(signatory.invite_expiry) if signatory.invite_expiry else None
+			frappe.utils.get_datetime(getattr(signatory, "invite_expiry", None))
+			if getattr(signatory, "invite_expiry", None)
+			else None
 		)
 		if invite_expiry and frappe.utils.now_datetime() > invite_expiry:
 			return "Signing link expired", None
 		return "Awaiting signature", None
-	return "Preparing invitation", None
+	if pending_without_invite:
+		return pending_without_invite, None
+	return ("Preparing invitation" if facility_signed else "Waiting for facility signatory"), None
 
 
 def _facility_witness_signing_state(facility_signatory, facility_witness):
