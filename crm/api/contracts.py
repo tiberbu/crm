@@ -302,19 +302,24 @@ def _network_signers(network_slug):
 
 
 def _tiberbu_signer():
-	"""Global Tiberbu co-signatory from CRM Opt-In Settings → {full_name, email} or None."""
-	user = ""
-	# A Single always "exists" by name; read the field directly.
-	try:
-		user = frappe.utils.cstr(
-			frappe.db.get_single_value("CRM Opt-In Settings", "tiberbu_signatory") or ""
-		).strip()
-	except Exception:
-		user = ""
-	if not user:
+	"""Return the configured global Tiberbu contract signer, including external contacts.
+
+	The contact triplet is the preferred source so a signer does not need a CRM User
+	account. The existing ``tiberbu_signatory`` User link remains a fallback for
+	backward compatibility, including its live email and mobile number.
+	"""
+	settings = _load_optin_settings_safely()
+	if not settings:
 		return None
-	ident = _resolve_user_identity(user)
-	return ident if ident["email"] else None
+
+	contact = _identity_from_fields(settings, prefix="tiberbu_signatory")
+	legacy_user = frappe.utils.cstr(settings.get("tiberbu_signatory") or "").strip()
+	legacy = _resolve_user_identity(legacy_user)
+	identity = _merge_identity(contact, legacy)
+	if not identity["email"]:
+		return None
+	identity["full_name"] = identity["full_name"] or identity["email"]
+	return identity
 
 
 def _facility_witness_from_deal(deal):

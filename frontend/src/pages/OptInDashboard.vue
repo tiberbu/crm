@@ -549,7 +549,7 @@
               <p class="mt-1 text-sm text-ink-gray-5">
                 {{
                   __(
-                    'Network and Tiberbu signatories with the most completions.',
+                    'One row per signatory, with signed and pending contract assignments.',
                   )
                 }}
               </p>
@@ -1052,7 +1052,13 @@ function roleProgress(progress) {
 }
 
 function signatoryProgress(row) {
-  return `${row.signed} of ${row.assigned} ${__('signed')}`
+  const signed = Number(row?.signed ?? 0)
+  const assigned = Number(row?.assigned ?? 0)
+  const pending = Number(row?.pending ?? Math.max(assigned - signed, 0))
+  const total = Math.max(assigned, signed + pending)
+  if (!total) return __('No assignments')
+  if (!pending) return `${signed} of ${total} ${__('signed')}`
+  return `${signed} of ${total} ${__('signed')} · ${pending} ${__('pending')}`
 }
 
 function roleProgressClass(progress) {

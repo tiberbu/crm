@@ -3009,6 +3009,27 @@ def _dashboard_percentage(numerator, denominator):
 	return round(numerator / denominator * 100, 1)
 
 
+def _dashboard_signatory_key(signatory):
+	"""Return a stable identity key for collapsing duplicate signer rows."""
+	role = frappe.utils.cstr(signatory.get("signatory_role") or "").strip().casefold()
+	email = frappe.utils.cstr(signatory.get("signatory_email") or "").strip().casefold()
+	name = " ".join(frappe.utils.cstr(signatory.get("signatory_name") or "").split()).casefold()
+	return "%s:%s" % (role, email or name)
+
+
+def _dashboard_unique_signatories(rows):
+	"""Collapse duplicate rows for one contract without losing a signed state."""
+	unique = {}
+	for row in rows or []:
+		key = _dashboard_signatory_key(row)
+		if not key or key.endswith(":"):
+			continue
+		current = unique.get(key)
+		if current is None or (row.get("status") == "Signed" and current.get("status") != "Signed"):
+			unique[key] = row
+	return list(unique.values())
+
+
 def _dashboard_role_progress(rows):
 	"""Summarise a group of signatories with the same workflow role."""
 	rows = rows or []
@@ -3026,6 +3047,7 @@ def _dashboard_role_progress(rows):
 
 def _dashboard_contract_progress(contract, signatories):
 	"""Return explicit sign-off state for every party on a generated contract."""
+	signatories = _dashboard_unique_signatories(signatories)
 	roles = defaultdict(list)
 	for signatory in signatories or []:
 		roles[frappe.utils.cstr(signatory.get("signatory_role") or "")].append(signatory)
@@ -3245,6 +3267,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 	facility_progress_by_key = {}
 	facility_leaderboard = []
 	signatory_leaders = {}
+	counted_leader_assignments = set()
 	tat_values = defaultdict(list)
 	annual_value = 0.0
 	contract_count = 0
@@ -3340,15 +3363,19 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 			("Network Signatory", "facility_complete_to_network_signatory"),
 			("Tiberbu Signatory", "facility_complete_to_tiberbu_signatory"),
 		):
-			for signatory in contract_progress["roles"][role]:
+			for signatory in _dashboard_unique_signatories(contract_progress["roles"][role]):
 				signed_at = _dashboard_datetime(signatory.get("signed_at"))
 				response_hours = _dashboard_elapsed_hours(facility_signed_at, signed_at)
-				if response_hours is not None:
-					tat_values[tat_key].append(response_hours)
 
 				email = frappe.utils.cstr(signatory.get("signatory_email") or "").strip().lower()
 				name = frappe.utils.cstr(signatory.get("signatory_name") or "").strip()
-				leader_key = "%s:%s" % (role, email or name.lower())
+				leader_key = _dashboard_signatory_key(signatory)
+				assignment_key = (contract.name if contract else submission.name, leader_key)
+				if assignment_key in counted_leader_assignments:
+					continue
+				counted_leader_assignments.add(assignment_key)
+				if response_hours is not None:
+					tat_values[tat_key].append(response_hours)
 				leader = signatory_leaders.setdefault(
 					leader_key,
 					{
@@ -3368,7 +3395,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 					if response_hours is not None:
 						leader["response_hours"].append(response_hours)
 
-		all_signed_at = _dashboard_latest_signed_at(contract_signatories)
+		all_signed_at = _dashboard_latest_signed_at(_dashboard_unique_signatories(contract_signatories))
 		end_to_end_hours = None
 		if contract_progress["fully_executed"] and all_signed_at:
 			end_to_end_hours = _dashboard_elapsed_hours(submission.submitted_at, all_signed_at)
@@ -3504,6 +3531,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 				"role": leader["role"],
 				"signed": leader["signed"],
 				"assigned": leader["assigned"],
+				"pending": max(leader["assigned"] - leader["signed"], 0),
 				"completion_rate": _dashboard_percentage(leader["signed"], leader["assigned"]),
 				"median_response_hours": duration["median_hours"],
 				"networks": sorted(leader["networks"]),

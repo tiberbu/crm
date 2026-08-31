@@ -15,9 +15,11 @@ from crm.api.contracts import (
 	_notify_internal_approvers,
 	_save_otp_state,
 	_send_contract_sms,
+	_tiberbu_signer,
 	_transition,
 	generate,
 	get_contract,
+	get_network_signatories,
 	request_otp,
 )
 from crm.api.optin import (
@@ -145,6 +147,67 @@ class TestOptInConfirmationEmail(UnitTestCase):
 		self.assertEqual(sendmail.call_args.kwargs["reference_doctype"], "CRM Opt-In Submission")
 		self.assertEqual(sendmail.call_args.kwargs["reference_name"], submission.name)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
+
+
+class TestOptInTiberbuContacts(UnitTestCase):
+	def test_quoting_page_resolves_the_global_tiberbu_contact(self):
+		contact = {
+			"full_name": "Tiberbu Signer",
+			"email": "signer@tiberbu.example",
+			"phone": "+254700000010",
+		}
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts._resolve_network_slug", return_value="network-a"),
+			patch("crm.api.contracts._network_signers", return_value=[]),
+			patch("crm.api.contracts._tiberbu_signer", return_value=contact),
+		):
+			result = get_network_signatories(deal="DEAL-TEST-00001")
+
+		self.assertEqual(result["network_slug"], "network-a")
+		self.assertEqual(
+			result["signers"],
+			[{**contact, "signer_role": "Tiberbu Signatory"}],
+		)
+
+	def test_tiberbu_signatory_contact_settings_are_used_without_a_user(self):
+		settings = frappe._dict(
+			{
+				"tiberbu_signatory": "",
+				"tiberbu_signatory_name": "Tiberbu Signer",
+				"tiberbu_signatory_email": "Signer@tiberbu.example",
+				"tiberbu_signatory_phone": "+254700000010",
+			}
+		)
+		with patch("crm.api.contracts._load_optin_settings_safely", return_value=settings):
+			self.assertEqual(
+				_tiberbu_signer(),
+				{
+					"full_name": "Tiberbu Signer",
+					"email": "signer@tiberbu.example",
+					"phone": "+254700000010",
+				},
+			)
+
+	def test_tiberbu_signatory_user_setting_remains_a_fallback(self):
+		settings = frappe._dict(
+			{
+				"tiberbu_signatory": "tiberbu.user@example.com",
+				"tiberbu_signatory_name": "",
+				"tiberbu_signatory_email": "",
+				"tiberbu_signatory_phone": "",
+			}
+		)
+		identity = {
+			"full_name": "Tiberbu User",
+			"email": "tiberbu.user@example.com",
+			"phone": "+254700000011",
+		}
+		with (
+			patch("crm.api.contracts._load_optin_settings_safely", return_value=settings),
+			patch("crm.api.contracts._resolve_user_identity", return_value=identity),
+		):
+			self.assertEqual(_tiberbu_signer(), identity)
 
 
 class TestOptInTermsPrinting(UnitTestCase):

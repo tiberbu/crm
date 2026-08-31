@@ -451,6 +451,9 @@ def get_optin_settings():
 		"active_tc_document": settings.active_tc_document or "",
 		"default_lead_owner": settings.default_lead_owner or "",
 		"tiberbu_signatory": settings.tiberbu_signatory or "",
+		"tiberbu_signatory_name": settings.get("tiberbu_signatory_name") or "",
+		"tiberbu_signatory_email": settings.get("tiberbu_signatory_email") or "",
+		"tiberbu_signatory_phone": settings.get("tiberbu_signatory_phone") or "",
 		"tiberbu_approver_name": settings.get("tiberbu_approver_name") or "",
 		"tiberbu_approver_email": settings.get("tiberbu_approver_email") or "",
 		"tiberbu_approver_phone": settings.get("tiberbu_approver_phone") or "",
@@ -469,6 +472,9 @@ def update_optin_settings(settings: Any):
 	active_tc_document = frappe.utils.cstr(settings.get("active_tc_document")).strip()
 	default_lead_owner = frappe.utils.cstr(settings.get("default_lead_owner")).strip()
 	tiberbu_signatory = frappe.utils.cstr(settings.get("tiberbu_signatory")).strip()
+	tiberbu_signatory_name = frappe.utils.cstr(settings.get("tiberbu_signatory_name")).strip()
+	tiberbu_signatory_email = frappe.utils.cstr(settings.get("tiberbu_signatory_email")).strip().lower()
+	tiberbu_signatory_phone = frappe.utils.cstr(settings.get("tiberbu_signatory_phone")).strip()
 	tiberbu_approver_name = frappe.utils.cstr(settings.get("tiberbu_approver_name")).strip()
 	tiberbu_approver_email = frappe.utils.cstr(settings.get("tiberbu_approver_email")).strip().lower()
 	tiberbu_approver_phone = frappe.utils.cstr(settings.get("tiberbu_approver_phone")).strip()
@@ -486,6 +492,10 @@ def update_optin_settings(settings: Any):
 	for field, user in (("Default Lead Owner", default_lead_owner), ("Tiberbu Signatory", tiberbu_signatory)):
 		if user and not frappe.db.exists("User", {"name": user, "enabled": 1}):
 			frappe.throw(_("{0} must be an enabled user.").format(field))
+	if any((tiberbu_signatory_name, tiberbu_signatory_email, tiberbu_signatory_phone)) and not all(
+		(tiberbu_signatory_name, tiberbu_signatory_email)
+	):
+		frappe.throw(_("Default Tiberbu signatory name and email are required when using a contact."))
 	if any((tiberbu_approver_name, tiberbu_approver_email, tiberbu_approver_phone)) and not all(
 		(tiberbu_approver_name, tiberbu_approver_email, tiberbu_approver_phone)
 	):
@@ -499,6 +509,9 @@ def update_optin_settings(settings: Any):
 	doc.active_tc_document = active_tc_document
 	doc.default_lead_owner = default_lead_owner
 	doc.tiberbu_signatory = tiberbu_signatory
+	doc.tiberbu_signatory_name = tiberbu_signatory_name
+	doc.tiberbu_signatory_email = tiberbu_signatory_email
+	doc.tiberbu_signatory_phone = tiberbu_signatory_phone
 	doc.tiberbu_approver_name = tiberbu_approver_name
 	doc.tiberbu_approver_email = tiberbu_approver_email
 	doc.tiberbu_approver_phone = tiberbu_approver_phone
