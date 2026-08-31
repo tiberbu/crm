@@ -628,6 +628,7 @@ def save_item_price(price_list: Any, item_code: Any, rate: Any):
 def list_facilities(
 	network: Any = None,
 	status: Any = None,
+	opted_in: Any = None,
 	facility: Any = None,
 	facility_level: Any = None,
 	organization: Any = None,
@@ -659,6 +660,11 @@ def list_facilities(
 	if status:
 		mem_filters["status"] = status
 
+	# The contact list is principally an opt-in view. Keep the old `status`
+	# argument for API compatibility, but expose a categorical filter that does
+	# not leak the internal Active/Declined enrollment states to the UI.
+	opted_in = frappe.utils.cstr(opted_in).strip().lower()
+
 	contact = frappe.utils.cstr(contact).strip()
 	contact_or_filters = None
 	if contact:
@@ -688,6 +694,13 @@ def list_facilities(
 		limit_page_length=0,
 	)
 
+	if not mem_rows:
+		return {"rows": [], "total": 0}
+
+	if opted_in in ("1", "true"):
+		mem_rows = [row for row in mem_rows if row.get("status") == "Opted In"]
+	elif opted_in in ("0", "false"):
+		mem_rows = [row for row in mem_rows if row.get("status") != "Opted In"]
 	if not mem_rows:
 		return {"rows": [], "total": 0}
 

@@ -526,20 +526,15 @@
           />
         </label>
         <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
-          {{ __('Enrollment') }}
+          {{ __('Opt-in') }}
           <select
-            v-model="contactStatusFilter"
+            v-model="contactOptInFilter"
             class="h-8 min-w-28 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
             @change="applyContactFilters"
           >
-            <option value="">{{ __('All statuses') }}</option>
-            <option
-              v-for="status in facilityStatuses"
-              :key="status"
-              :value="status"
-            >
-              {{ __(status) }}
-            </option>
+            <option value="">{{ __('All opt-in states') }}</option>
+            <option value="1">{{ __('Opted in') }}</option>
+            <option value="0">{{ __('Not opted in') }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
@@ -634,7 +629,7 @@
                 {{ __('KEPH Level') }}
               </th>
               <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Enrollment') }}
+                {{ __('Opt-in') }}
               </th>
               <th class="px-4 py-2.5 text-left font-medium">
                 {{ __('Contact') }}
@@ -669,8 +664,8 @@
                 >
               </td>
               <td class="px-4 py-3">
-                <span :class="statusPill(networkMembership(row)?.status)">
-                  {{ networkMembership(row)?.status || '—' }}
+                <span :class="optInPill(isOptedIn(row))">
+                  {{ isOptedIn(row) ? __('Opted in') : __('Not opted in') }}
                 </span>
               </td>
               <td class="px-4 py-3">
@@ -1200,7 +1195,7 @@ const facilitySearch = ref('')
 const facilityLevelFilter = ref('')
 const organizationFilter = ref('')
 const contactSearch = ref('')
-const contactStatusFilter = ref('')
+const contactOptInFilter = ref('')
 const inviteStatusFilter = ref('')
 const facilityLevels = [
   'Level 2',
@@ -1213,7 +1208,6 @@ const facilityLevels = [
   'Level 5A',
   'Level 5',
 ]
-const facilityStatuses = ['Active', 'Opted In', 'Declined']
 const inviteStatuses = ['Not Sent', 'Sending', 'Sent', 'Error']
 
 const facilitiesResource = createResource({
@@ -1224,7 +1218,7 @@ const facilitiesResource = createResource({
     facility_level: facilityLevelFilter.value || null,
     organization: organizationFilter.value || null,
     contact: contactSearch.value || null,
-    status: contactStatusFilter.value || null,
+    opted_in: contactOptInFilter.value || null,
     invite_status: inviteStatusFilter.value || null,
     page: page.value,
     page_size: pageSize,
@@ -1240,7 +1234,7 @@ const hasContactFilters = computed(
     Boolean(facilityLevelFilter.value) ||
     Boolean(organizationFilter.value) ||
     Boolean(contactSearch.value) ||
-    Boolean(contactStatusFilter.value) ||
+    Boolean(contactOptInFilter.value) ||
     Boolean(inviteStatusFilter.value),
 )
 
@@ -1254,7 +1248,7 @@ function clearContactFilters() {
   facilityLevelFilter.value = ''
   organizationFilter.value = ''
   contactSearch.value = ''
-  contactStatusFilter.value = ''
+  contactOptInFilter.value = ''
   inviteStatusFilter.value = ''
   applyContactFilters()
 }
@@ -1276,6 +1270,10 @@ function networkMembership(row) {
     memberships[0] ??
     null
   )
+}
+
+function isOptedIn(row) {
+  return networkMembership(row)?.status === 'Opted In'
 }
 
 // ── Add / Edit contact form ────────────────────────────────────────────────
@@ -1608,6 +1606,13 @@ function statusPill(status) {
     map[status] ??
     `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`
   )
+}
+
+function optInPill(optedIn) {
+  const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
+  return optedIn
+    ? `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`
+    : `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`
 }
 
 function inviteStatusPill(status) {
