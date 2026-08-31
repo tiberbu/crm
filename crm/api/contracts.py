@@ -73,6 +73,17 @@ def _gen_token():
 	return frappe.generate_hash(length=_TOKEN_LENGTH)
 
 
+def _invitation_email_reference(token):
+	"""Return a non-secret identifier for one invitation email issuance.
+
+	The reference is derived from the already-random invitation token, but does
+	not expose any token material that could be used to open the signing portal.
+	It changes whenever an invitation is resent, keeping inbox subjects distinct.
+	"""
+	material = "crm-contract-invitation:%s" % frappe.utils.cstr(token)
+	return hashlib.sha256(material.encode("utf-8")).hexdigest()[:12].upper()
+
+
 def _network_for_contract(contract_doc):
 	"""Resolve the branded-email network dict for a contract, or None. Never raises."""
 	slug = frappe.utils.cstr(getattr(contract_doc, "network_slug", "") or "").strip()
@@ -548,12 +559,16 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 	link = _signing_link(contract_doc.name, role, token)
 	network = _network_for_contract(contract_doc)
 	name = frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
+	invitation_reference = _invitation_email_reference(token)
 
 	queue = None
 	try:
 		queue = frappe.sendmail(
 			recipients=[signatory_row.signatory_email],
-			subject="Action Required: Sign Your CareverseHIMS Contract",
+			subject=(
+				"Action Required: Sign Your CareverseHIMS Contract — %s — Invitation ID %s"
+				% (contract_doc.name, invitation_reference)
+			),
 			message=branded_email_html(
 				network,
 				heading="Contract ready for your signature",
@@ -565,7 +580,10 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 				),
 				cta_label="Review & Sign Contract",
 				cta_url=link,
-				note_html=("This link expires in 7 days and is unique to you — please don't share it."),
+				note_html=(
+					"This link expires in 7 days and is unique to you — please don't share it. "
+					"Invitation reference: <strong>%s</strong>." % invitation_reference
+				),
 			),
 			now=True,
 		)
