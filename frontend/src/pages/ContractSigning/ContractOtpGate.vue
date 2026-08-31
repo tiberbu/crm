@@ -35,6 +35,16 @@
       <p class="mt-4 text-xs text-gray-400 dark:text-gray-500">
         {{ fatalHint }}
       </p>
+      <button
+        v-if="fatalRetryable"
+        :disabled="requestingOtp"
+        type="button"
+        class="mt-5 rounded-xl px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus:outline-none disabled:opacity-50"
+        style="background-color: var(--brand-primary, #bc1823)"
+        @click="doRequestOtp"
+      >
+        Try again
+      </button>
     </div>
 
     <!-- OTP entry form -->
@@ -141,6 +151,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { createResource } from 'frappe-ui'
+import { getContractSigningError } from '@/utils/contractSigningErrors'
 
 const props = defineProps({
   contract: { type: String, required: true },
@@ -162,6 +173,7 @@ const fatalHeading = ref('Link Invalid or Expired')
 const fatalHint = ref(
   'Please request a new signing link from the contract issuer.',
 )
+const fatalRetryable = ref(false)
 const smsStatus = ref('')
 const deliveryMessage = computed(() =>
   smsStatus.value === 'Sent'
@@ -205,6 +217,7 @@ onUnmounted(() => {
 async function doRequestOtp() {
   requestingOtp.value = true
   fatalError.value = ''
+  fatalRetryable.value = false
   try {
     const result = await requestOtpResource.fetch({
       contract: props.contract,
@@ -216,19 +229,11 @@ async function doRequestOtp() {
     // Focus first digit input after render settles
     setTimeout(() => inputRefs.value[0]?.focus(), 100)
   } catch (err) {
-    if (err?.exc_type === 'AuthenticationError') {
-      fatalHeading.value = 'Link Invalid or Expired'
-      fatalHint.value =
-        'Please request a new signing link from the contract issuer.'
-      fatalError.value = 'This signing link has expired or is invalid.'
-    } else {
-      // Network / CSRF / server error — NOT an expired link.
-      fatalHeading.value = 'Something went wrong'
-      fatalHint.value =
-        'Please refresh the page and try again, or contact the contract issuer.'
-      fatalError.value =
-        err?.message || 'Failed to send verification code. Please try again.'
-    }
+    const failure = getContractSigningError(err, 'otp')
+    fatalHeading.value = failure.heading
+    fatalError.value = failure.message
+    fatalHint.value = failure.hint
+    fatalRetryable.value = failure.retryable
   } finally {
     requestingOtp.value = false
   }
@@ -305,8 +310,12 @@ async function handleVerify() {
       signingToken: data.signing_token,
       signatoryName: data.signatory_name,
     })
-  } catch {
-    errorMsg.value = 'Incorrect code. Please try again.'
+  } catch (err) {
+    const failure = getContractSigningError(err, 'verify')
+    errorMsg.value =
+      failure.kind === 'rate-limit'
+        ? 'Too many incorrect attempts. Please request a new code.'
+        : failure.message
     digits.value = ['', '', '', '', '', '']
     setTimeout(() => inputRefs.value[0]?.focus(), 50)
   } finally {
@@ -330,8 +339,9 @@ async function handleResend() {
     startCountdown()
     digits.value = ['', '', '', '', '', '']
     setTimeout(() => inputRefs.value[0]?.focus(), 50)
-  } catch {
-    errorMsg.value = 'Failed to resend code. Please try again.'
+  } catch (err) {
+    const failure = getContractSigningError(err, 'otp')
+    errorMsg.value = failure.message
   } finally {
     resendLoading.value = false
   }

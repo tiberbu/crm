@@ -47,3 +47,4 @@ crm.patches.v1_0.backfill_quotation_vat
 crm.patches.v1_0.add_contract_sms_delivery_fields
 crm.patches.v1_0.seed_africas_talking_sms_settings
 crm.patches.v1_0.configure_africas_talking_sms_settings
+crm.patches.v1_0.backfill_contract_signatory_statuses

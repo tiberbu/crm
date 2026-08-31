@@ -8,10 +8,12 @@ from frappe.utils import add_days, random_string, today
 
 from crm.api.contracts import (
 	_build_contract_document_html,
+	_ensure_pending_signatory,
 	_facility_name_for_contract,
 	_generate_invitation_email_reference,
 	_issue_and_send_invitation,
 	_notify_internal_approvers,
+	_save_otp_state,
 	_send_contract_sms,
 	_transition,
 	generate,
@@ -172,6 +174,44 @@ class TestOptInTermsPrinting(UnitTestCase):
 
 
 class TestOptInContractAutomation(UnitTestCase):
+	def test_otp_accepts_legacy_blank_pending_status_only(self):
+		blank = SimpleNamespace(status="")
+		lowercase = SimpleNamespace(status="pending")
+		_ensure_pending_signatory(blank)
+		_ensure_pending_signatory(lowercase)
+		self.assertEqual(blank.status, "Pending")
+		self.assertEqual(lowercase.status, "Pending")
+
+		with self.assertRaises(frappe.ValidationError) as signed_error:
+			_ensure_pending_signatory(SimpleNamespace(status="Signed"))
+		self.assertIn("already been completed", str(signed_error.exception))
+
+		with self.assertRaises(frappe.ValidationError) as contradictory_error:
+			_ensure_pending_signatory(SimpleNamespace(status="Pending", signature_data="data"))
+		self.assertIn("already been completed", str(contradictory_error.exception))
+
+		with self.assertRaises(frappe.ValidationError) as declined_error:
+			_ensure_pending_signatory(SimpleNamespace(status="Declined"))
+		self.assertIn("no longer active", str(declined_error.exception))
+
+		with self.assertRaises(frappe.ValidationError) as unknown_error:
+			_ensure_pending_signatory(SimpleNamespace(status="Legacy status"))
+		self.assertIn("not ready yet", str(unknown_error.exception))
+
+	def test_otp_save_failure_is_logged_and_safe_for_guest(self):
+		contract = SimpleNamespace(save=Mock(side_effect=frappe.ValidationError("invalid legacy row")))
+		with (
+			patch("crm.api.contracts.frappe.db.rollback") as rollback,
+			patch("crm.api.contracts.frappe.log_error") as log_error,
+			patch("crm.api.contracts.frappe.get_traceback", return_value="traceback"),
+		):
+			with self.assertRaises(frappe.ValidationError) as raised:
+				_save_otp_state(contract, "CONT-TEST-00004", "Facility Signatory")
+
+		self.assertIn("couldn't prepare your verification code", str(raised.exception).lower())
+		rollback.assert_called_once_with()
+		log_error.assert_called_once()
+
 	def test_otp_email_identifies_facility_and_request(self):
 		contract = SimpleNamespace(name="CONT-TEST-00003", deal="DEAL-TEST-00003", save=Mock())
 		signatory = SimpleNamespace(

@@ -24,7 +24,17 @@
       v-else-if="loadError"
       class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400"
     >
-      {{ loadError }}
+      <p>{{ loadError }}</p>
+      <button
+        v-if="loadRetryable"
+        type="button"
+        class="mt-3 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus:outline-none disabled:opacity-50"
+        style="background-color: var(--brand-primary, #bc1823)"
+        :disabled="loading"
+        @click="loadContract"
+      >
+        Try again
+      </button>
     </div>
 
     <!-- Contract content -->
@@ -90,6 +100,7 @@
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
 import { createResource } from 'frappe-ui'
+import { getContractSigningError } from '@/utils/contractSigningErrors'
 
 const props = defineProps({
   signingToken: { type: String, required: true },
@@ -101,6 +112,7 @@ const emit = defineEmits(['scrolled-to-bottom', 'loaded'])
 
 const loading = ref(true)
 const loadError = ref('')
+const loadRetryable = ref(false)
 const contractHtml = ref('')
 const signatoryName = ref('')
 const signatoryRole = ref('')
@@ -124,7 +136,10 @@ function sanitizeContractHtml(raw) {
     .replace(/<\/?(?:html|head|body|meta|link|title)[^>]*>/gi, '')
 }
 
-onMounted(async () => {
+async function loadContract() {
+  loading.value = true
+  loadError.value = ''
+  loadRetryable.value = false
   try {
     const data = await getContractResource.fetch({
       signing_token: props.signingToken,
@@ -145,8 +160,9 @@ onMounted(async () => {
       signingProgress: data.signing_progress || [],
     })
   } catch (err) {
-    loadError.value =
-      err?.message || 'Failed to load contract. Your session may have expired.'
+    const failure = getContractSigningError(err, 'contract')
+    loadError.value = failure.message
+    loadRetryable.value = failure.retryable
   } finally {
     loading.value = false
     // SF-1: if the contract is shorter than the panel, the scroll event never fires.
@@ -158,7 +174,9 @@ onMounted(async () => {
       emit('scrolled-to-bottom')
     }
   }
-})
+}
+
+onMounted(loadContract)
 
 function onScroll() {
   if (reachedBottom.value) return
