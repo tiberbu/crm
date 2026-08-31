@@ -557,6 +557,9 @@ def _transition(contract_name):
 	# Done: every signatory has signed.
 	if sigs and all(s.status == "Signed" for s in sigs):
 		_set_contract_state(contract, "Fully Executed", status="Fully Executed")
+		# Internal approvers are notified only after every external signatory has
+		# completed the contract. The notifier sends both immediate email and SMS.
+		_notify_internal_approvers(contract.name, contract.deal)
 		log_deal_event(
 			contract.deal,
 			"All parties signed contract %s — fully executed" % contract.name,
@@ -577,10 +580,11 @@ def _notify_internal_approvers(contract_name, deal_name):
 	Fetch network_approver_1, network_approver_2, tiberbu_approver from the
 	CRM Onboarding Request linked to the deal. If no ONB record exists, logs a
 	warning and returns early — these fields do not exist on tabCRM Deal.
-	Send a branded approval-request email to each approver found.
+	Send a branded approval-request email and SMS to each approver found. Email is
+	still delivered immediately; SMS availability is recorded independently.
 	"""
 	approver_fields = ["network_approver_1", "network_approver_2", "tiberbu_approver"]
-	approver_names = []
+	approver_slots = []
 
 	if deal_name:
 		onboarding_rows = frappe.get_list(
@@ -595,12 +599,12 @@ def _notify_internal_approvers(contract_name, deal_name):
 			for f in approver_fields:
 				v = row.get(f)
 				if v:
-					approver_names.append(v)
+					approver_slots.append((f, v))
 
 	# NOTE: approver fields live only on CRM Onboarding Request, not on CRM Deal.
 	# If no onboarding request was found, log a warning and return — do NOT attempt
 	# to query tabCRM Deal for columns that don't exist there (OperationalError).
-	if not approver_names:
+	if not approver_slots:
 		frappe.log_error(
 			"No CRM Onboarding Request linked to deal %s; cannot notify internal approvers "
 			"for contract %s." % (deal_name, contract_name),
@@ -609,6 +613,7 @@ def _notify_internal_approvers(contract_name, deal_name):
 		return
 
 	network = None
+	contract_doc = None
 	try:
 		contract_doc = frappe.get_doc("CRM Contract", contract_name)
 		network = _network_for_contract(contract_doc)
@@ -617,37 +622,69 @@ def _notify_internal_approvers(contract_name, deal_name):
 
 	crm_url = frappe.utils.get_url("/crm/deals/%s" % deal_name) if deal_name else frappe.utils.get_url()
 
-	for approver_user in approver_names:
+	for approver_slot, approver_user in approver_slots:
 		approver_user = frappe.utils.cstr(approver_user).strip()
 		if not approver_user:
 			continue
-		try:
-			approver_email = frappe.db.get_value("User", approver_user, "email")
-			if not approver_email:
-				continue
-			frappe.sendmail(
-				recipients=[approver_email],
-				subject="Approval Required: CareverseHIMS Contract %s" % contract_name,
-				message=branded_email_html(
-					network,
-					heading="Contract awaiting your approval",
-					intro_html=(
-						"<p style='margin:0 0 6px'>Hello,</p>"
-						"<p style='margin:0'>Both facility signatories have signed contract "
-						"<strong>%s</strong>. It now requires your internal approval before it "
-						"can be executed.</p>" % frappe.utils.escape_html(contract_name)
+		identity = _resolve_user_identity(approver_user)
+		approver_email = identity.get("email", "")
+		approver_name = identity.get("full_name", "") or approver_user
+		approver_role = approver_slot.replace("_", " ").title()
+		if approver_email:
+			try:
+				frappe.sendmail(
+					recipients=[approver_email],
+					subject="Approval Required: CareverseHIMS Contract %s" % contract_name,
+					message=branded_email_html(
+						network,
+						heading="Contract awaiting your approval",
+						intro_html=(
+							"<p style='margin:0 0 6px'>Hello,</p>"
+							"<p style='margin:0'>All contract signatories have signed contract "
+							"<strong>%s</strong>. It now requires your internal approval before it "
+							"can be executed.</p>" % frappe.utils.escape_html(contract_name)
+						),
+						cta_label="Open in CRM",
+						cta_url=crm_url,
 					),
-					cta_label="Open in CRM",
-					cta_url=crm_url,
-				),
-				now=True,
+					now=True,
+				)
+			except Exception:
+				frappe.log_error(
+					frappe.get_traceback(),
+					"contracts._notify_internal_approvers: email failed for approver %s on %s"
+					% (approver_user, contract_name),
+				)
+
+		# Keep the approver reference in the audit row so a failed SMS can be
+		# retried after the user's mobile number or gateway is corrected. The row is
+		# intentionally not a Contract Signatory child row.
+		if contract_doc:
+			approver_row = frappe._dict(
+				{
+					"name": approver_user,
+					"signatory_name": approver_name,
+					"signatory_role": approver_role,
+					"signatory_phone": identity.get("phone", ""),
+				}
 			)
-		except Exception:
-			frappe.log_error(
-				frappe.get_traceback(),
-				"contracts._notify_internal_approvers: failed for approver %s on %s"
-				% (approver_user, contract_name),
+			_send_contract_sms(
+				contract_doc,
+				approver_row,
+				"Approval",
+				_approval_sms_message(network, contract_name, approver_name, crm_url),
 			)
+
+
+def _approval_sms_message(network, contract_name, approver_name, crm_url):
+	"""Build a concise SMS for an internal contract approver."""
+	brand = frappe.utils.cstr((network or {}).get("display_name") or "CareverseHIMS")
+	return "%s: %s, contract %s is ready for your approval. Open CRM: %s" % (
+		brand,
+		approver_name,
+		contract_name,
+		crm_url,
+	)
 
 
 # ---------------------------------------------------------------------------
@@ -938,19 +975,19 @@ def resend_invitation(contract: Any, role: Any, row_name: Any = None):
 
 @frappe.whitelist()
 def retry_sms_delivery(notification: Any):
-	"""Retry a failed contract invitation SMS without rotating its email link.
+	"""Retry a failed contract SMS without rotating an invitation email link.
 
 	OTP SMS retries are intentionally performed by the signatory's existing
 	"request a new code" action: the server never stores a recoverable OTP. This
-	endpoint therefore only retries Invitation delivery and is safe to expose to
-	CRM managers as an idempotent operational action.
+	endpoint retries invitation and approval delivery and is safe to expose to CRM
+	managers as an idempotent operational action.
 	"""
 	_check_crm_role()
 	notification = frappe.utils.cstr(notification).strip()
 	if not notification:
 		frappe.throw(_("An SMS delivery record is required."), frappe.ValidationError)
 	delivery = frappe.get_doc("CRM Contract SMS Delivery", notification)
-	if delivery.purpose != "Invitation":
+	if delivery.purpose not in ("Invitation", "Approval"):
 		frappe.throw(
 			_("OTP SMS cannot be retried from CRM. Ask the signatory to request a new code."),
 			frappe.ValidationError,
@@ -959,6 +996,41 @@ def retry_sms_delivery(notification: Any):
 		frappe.throw(_("This SMS does not need a retry."), frappe.ValidationError)
 
 	contract_doc = frappe.get_doc("CRM Contract", delivery.contract)
+	if delivery.purpose == "Approval":
+		approver_user = frappe.utils.cstr(delivery.signatory_row or "").strip()
+		if not approver_user:
+			frappe.throw(_("This approver SMS has no recipient reference."), frappe.ValidationError)
+		identity = _resolve_user_identity(approver_user, fallback_phone=delivery.recipient_phone)
+		if not identity.get("phone"):
+			frappe.throw(_("The approver has no mobile number configured."), frappe.ValidationError)
+		role = frappe.utils.cstr(delivery.signatory_role or "Contract Approver").strip()
+		approver_row = frappe._dict(
+			{
+				"name": approver_user,
+				"signatory_name": identity.get("full_name") or approver_user,
+				"signatory_role": role,
+				"signatory_phone": identity.get("phone", ""),
+			}
+		)
+		crm_url = (
+			frappe.utils.get_url("/crm/deals/%s" % contract_doc.deal)
+			if contract_doc.deal
+			else frappe.utils.get_url()
+		)
+		status = _send_contract_sms(
+			contract_doc,
+			approver_row,
+			"Approval",
+			_approval_sms_message(
+				_network_for_contract(contract_doc),
+				contract_doc.name,
+				identity.get("full_name") or approver_user,
+				crm_url,
+			),
+			delivery=delivery,
+		)
+		return {"status": status, "notification": delivery.name}
+
 	signatory_row = next(
 		(row for row in contract_doc.signatories or [] if row.name == delivery.signatory_row),
 		None,

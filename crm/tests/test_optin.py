@@ -9,6 +9,7 @@ from frappe.utils import add_days, random_string, today
 from crm.api.contracts import (
 	_build_contract_document_html,
 	_issue_and_send_invitation,
+	_notify_internal_approvers,
 	_send_contract_sms,
 	_transition,
 	generate,
@@ -280,6 +281,38 @@ class TestOptInContractAutomation(UnitTestCase):
 		)
 		commit.assert_not_called()
 
+	def test_internal_approvers_receive_email_and_sms(self):
+		contract = SimpleNamespace(name="CONT-TEST-00001", deal="DEAL-TEST-00001", network_slug="")
+		onboarding = frappe._dict(
+			{
+				"network_approver_1": "network.approver@example.com",
+				"network_approver_2": "",
+				"tiberbu_approver": "tiberbu.approver@example.com",
+			}
+		)
+		identity = {
+			"full_name": "Contract Approver",
+			"email": "approver@example.com",
+			"phone": "+254700000001",
+		}
+
+		with (
+			patch("crm.api.contracts.frappe.get_list", return_value=[onboarding]),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts._resolve_user_identity", return_value=identity),
+			patch("crm.api.contracts.frappe.sendmail") as sendmail,
+			patch("crm.api.contracts._send_contract_sms", return_value="Sent") as send_sms,
+		):
+			_notify_internal_approvers(contract.name, contract.deal)
+
+		self.assertEqual(sendmail.call_count, 2)
+		self.assertTrue(all(call.kwargs["now"] for call in sendmail.call_args_list))
+		self.assertEqual(send_sms.call_count, 2)
+		self.assertEqual(
+			[call.args[2] for call in send_sms.call_args_list],
+			["Approval", "Approval"],
+		)
+
 	def test_first_facility_signature_invites_every_remaining_signatory_together(self):
 		facility = SimpleNamespace(
 			signatory_role="Facility Signatory", status="Signed", invite_token="original"
@@ -301,6 +334,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
 			patch("crm.api.contracts._issue_and_send_invitation", side_effect=issue_invitation) as issue,
 			patch("crm.api.contracts._set_contract_state") as set_state,
+			patch("crm.api.contracts._notify_internal_approvers"),
 			patch("crm.api.contracts.log_deal_event") as log_event,
 		):
 			_transition(contract.name)

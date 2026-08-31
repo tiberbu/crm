@@ -41,7 +41,7 @@
    "fieldname": "purpose",
    "fieldtype": "Select",
    "label": "Purpose",
-   "options": "Invitation\nOTP",
+   "options": "Invitation\nOTP\nApproval",
    "reqd": 1,
    "in_list_view": 1
   },
