@@ -112,6 +112,62 @@ class TestOptInNetworkList(UnitTestCase):
 
 
 class TestOptInFacilityList(UnitTestCase):
+	def test_network_contacts_can_be_filtered_categorically_by_opt_in_state(self):
+		memberships = [
+			frappe._dict(
+				{
+					"name": "MEM-OPTED",
+					"parent": "FAC-0001",
+					"network": "network-a",
+					"status": "Opted In",
+					"contact_name": "Jane Doe",
+					"contact_email": "jane@example.com",
+					"contact_phone": "+254700000001",
+					"invite_email_queue": None,
+					"invite_sent_at": None,
+				}
+			),
+			frappe._dict(
+				{
+					"name": "MEM-ACTIVE",
+					"parent": "FAC-0002",
+					"network": "network-a",
+					"status": "Active",
+					"contact_name": "John Doe",
+					"contact_email": "john@example.com",
+					"contact_phone": "+254700000002",
+					"invite_email_queue": None,
+					"invite_sent_at": None,
+				}
+			),
+		]
+		facility = frappe._dict(
+			{
+				"name": "FAC-0001",
+				"mfl_code": "1001",
+				"facility_name": "First Clinic",
+				"organization": "Health Group",
+				"keph_level": "Level 3",
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch(
+				"crm.api.optin_admin.frappe.get_list",
+				side_effect=[
+					memberships,
+					[frappe._dict({"name": facility.name})],
+					[facility],
+				],
+			) as get_list,
+		):
+			result = list_facilities(network="network-a", opted_in="1")
+
+		self.assertEqual(result["total"], 1)
+		self.assertEqual(result["rows"][0]["name"], "FAC-0001")
+		self.assertEqual(get_list.call_args_list[0].kwargs["filters"]["network"], ["in", ["network-a"]])
+
 	def test_network_contacts_can_be_filtered_by_facility_and_contact_details(self):
 		membership = frappe._dict(
 			{
