@@ -32,6 +32,9 @@
   "network_approver_2_approved",
   "network_approver_2_at",
   "section_tiberbu_approval",
+  "tiberbu_approver_name",
+  "tiberbu_approver_email",
+  "tiberbu_approver_phone",
   "tiberbu_approver",
   "tiberbu_approver_approved",
   "tiberbu_approver_at",
@@ -195,10 +198,31 @@
    "label": "Tiberbu Approval"
   },
   {
+   "fieldname": "tiberbu_approver_name",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Name",
+   "description": "Name of the Tiberbu approver. Use this for an approver who does not have a CRM User account."
+  },
+  {
+   "fieldname": "tiberbu_approver_email",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Email",
+   "options": "Email",
+   "description": "Email used for the approval notification."
+  },
+  {
+   "fieldname": "tiberbu_approver_phone",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Phone",
+   "options": "Phone",
+   "description": "Mobile number used for the approval SMS, in international format where possible."
+  },
+  {
    "fieldname": "tiberbu_approver",
    "fieldtype": "Link",
-   "label": "Tiberbu Approver",
-   "options": "User"
+   "label": "Tiberbu Approver (legacy CRM User)",
+   "options": "User",
+   "description": "Backward-compatible fallback for installations that still nominate a CRM User. Prefer the contact fields above for an external approver."
   },
   {
    "fieldname": "tiberbu_approver_approved",

@@ -125,6 +125,93 @@ def _resolve_user_identity(user, fallback_name="", fallback_email="", fallback_p
 	return {"full_name": name, "email": email, "phone": phone}
 
 
+_APPROVER_SLOTS = ("network_approver_1", "network_approver_2", "tiberbu_approver")
+_TIBERBU_APPROVER_CONTACT_FIELDS = (
+	"tiberbu_approver_name",
+	"tiberbu_approver_email",
+	"tiberbu_approver_phone",
+)
+_APPROVER_ROLE_TO_SLOT = {
+	"Network Approver 1": "network_approver_1",
+	"Network Approver 2": "network_approver_2",
+	"Tiberbu Approver": "tiberbu_approver",
+}
+
+
+def _identity_from_fields(source, prefix="tiberbu_approver"):
+	"""Read a name/email/phone contact triplet from a document-like object."""
+	source = source or {}
+	return {
+		"full_name": frappe.utils.cstr(source.get("%s_name" % prefix) or "").strip(),
+		"email": frappe.utils.cstr(source.get("%s_email" % prefix) or "").strip().lower(),
+		"phone": frappe.utils.cstr(source.get("%s_phone" % prefix) or "").strip(),
+	}
+
+
+def _merge_identity(primary, fallback):
+	return {
+		key: frappe.utils.cstr(primary.get(key) or fallback.get(key) or "").strip()
+		for key in ("full_name", "email", "phone")
+	}
+
+
+def _load_optin_settings_safely():
+	try:
+		return frappe.get_single("CRM Opt-In Settings")
+	except Exception:
+		return None
+
+
+def _approver_identity(slot, onboarding_row=None, settings=None):
+	"""Resolve an approver from a User or a contact triplet.
+
+	Network approvers remain backward-compatible User links. Tiberbu approvers can
+	be external contacts (name/email/phone), with per-request values taking
+	precedence over the global Opt-In Settings default and the legacy User link.
+	"""
+	onboarding_row = onboarding_row or {}
+	if slot != "tiberbu_approver":
+		return _resolve_user_identity(onboarding_row.get(slot))
+
+	contact_identity = _identity_from_fields(onboarding_row)
+	if settings is None:
+		settings = _load_optin_settings_safely()
+	settings_identity = _identity_from_fields(settings)
+	legacy_value = frappe.utils.cstr(onboarding_row.get(slot) or "").strip()
+	legacy_identity = _resolve_user_identity(
+		legacy_value,
+		fallback_email=legacy_value if "@" in legacy_value else "",
+	)
+	return _merge_identity(_merge_identity(contact_identity, settings_identity), legacy_identity)
+
+
+def _onboarding_approver_row(deal_name):
+	"""Load approver fields without breaking sites before the new contact fields migrate."""
+	if not deal_name:
+		return frappe._dict()
+	base_fields = ["name", *_APPROVER_SLOTS]
+	fields = [*base_fields, *_TIBERBU_APPROVER_CONTACT_FIELDS]
+	try:
+		rows = frappe.get_list(
+			"CRM Onboarding Request",
+			filters={"deal": deal_name},
+			fields=fields,
+			order_by="creation desc",
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+	except Exception:
+		rows = frappe.get_list(
+			"CRM Onboarding Request",
+			filters={"deal": deal_name},
+			fields=base_fields,
+			order_by="creation desc",
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+	return frappe._dict(rows[0]) if rows else frappe._dict()
+
+
 def _network_signers(network_slug):
 	"""Configured co-signatories for a network → [{full_name, email, phone}]. Network
 	signers are external people keyed by email (name + email, no Frappe User). A
@@ -577,33 +664,27 @@ def _set_contract_state(contract, workflow_state, status=None):
 
 def _notify_internal_approvers(contract_name, deal_name):
 	"""
-	Fetch network_approver_1, network_approver_2, tiberbu_approver from the
-	CRM Onboarding Request linked to the deal. If no ONB record exists, logs a
-	warning and returns early — these fields do not exist on tabCRM Deal.
+	Fetch network approvers and the Tiberbu approval contact from the CRM
+	Onboarding Request linked to the deal. Network approvers remain User links for
+	backward compatibility; the Tiberbu approver may be a name/email/phone contact
+	with no CRM User account. Per-request Tiberbu contact fields override the
+	global Opt-In Settings default, which in turn overrides the legacy User link.
 	Send a branded approval-request email and SMS to each approver found. Email is
 	still delivered immediately; SMS availability is recorded independently.
 	"""
-	approver_fields = ["network_approver_1", "network_approver_2", "tiberbu_approver"]
+	onboarding_row = _onboarding_approver_row(deal_name)
+	settings = _load_optin_settings_safely()
 	approver_slots = []
+	for slot in _APPROVER_SLOTS:
+		if slot != "tiberbu_approver" and not onboarding_row.get(slot):
+			continue
+		identity = _approver_identity(slot, onboarding_row, settings)
+		if identity.get("email") or identity.get("phone"):
+			approver_slots.append((slot, identity))
 
-	if deal_name:
-		onboarding_rows = frappe.get_list(
-			"CRM Onboarding Request",
-			filters={"deal": deal_name},
-			fields=approver_fields,
-			limit=1,
-			ignore_permissions=True,  # SYSTEM-INTERNAL
-		)
-		if onboarding_rows:
-			row = onboarding_rows[0]
-			for f in approver_fields:
-				v = row.get(f)
-				if v:
-					approver_slots.append((f, v))
-
-	# NOTE: approver fields live only on CRM Onboarding Request, not on CRM Deal.
-	# If no onboarding request was found, log a warning and return — do NOT attempt
-	# to query tabCRM Deal for columns that don't exist there (OperationalError).
+	# NOTE: approver fields live only on CRM Onboarding Request (plus the global
+	# Tiberbu contact in Opt-In Settings), not on CRM Deal. If no approver is
+	# configured, log a warning and return — do not query nonexistent Deal columns.
 	if not approver_slots:
 		frappe.log_error(
 			"No CRM Onboarding Request linked to deal %s; cannot notify internal approvers "
@@ -622,13 +703,9 @@ def _notify_internal_approvers(contract_name, deal_name):
 
 	crm_url = frappe.utils.get_url("/crm/deals/%s" % deal_name) if deal_name else frappe.utils.get_url()
 
-	for approver_slot, approver_user in approver_slots:
-		approver_user = frappe.utils.cstr(approver_user).strip()
-		if not approver_user:
-			continue
-		identity = _resolve_user_identity(approver_user)
+	for approver_slot, identity in approver_slots:
 		approver_email = identity.get("email", "")
-		approver_name = identity.get("full_name", "") or approver_user
+		approver_name = identity.get("full_name", "") or approver_email or approver_slot
 		approver_role = approver_slot.replace("_", " ").title()
 		if approver_email:
 			try:
@@ -653,16 +730,20 @@ def _notify_internal_approvers(contract_name, deal_name):
 				frappe.log_error(
 					frappe.get_traceback(),
 					"contracts._notify_internal_approvers: email failed for approver %s on %s"
-					% (approver_user, contract_name),
+					% (approver_email, contract_name),
 				)
 
 		# Keep the approver reference in the audit row so a failed SMS can be
 		# retried after the user's mobile number or gateway is corrected. The row is
 		# intentionally not a Contract Signatory child row.
 		if contract_doc:
+			approver_reference = "%s:%s" % (
+				frappe.utils.cstr(onboarding_row.get("name") or "settings"),
+				approver_slot,
+			)
 			approver_row = frappe._dict(
 				{
-					"name": approver_user,
+					"name": approver_reference,
 					"signatory_name": approver_name,
 					"signatory_role": approver_role,
 					"signatory_phone": identity.get("phone", ""),
@@ -685,6 +766,26 @@ def _approval_sms_message(network, contract_name, approver_name, crm_url):
 		contract_name,
 		crm_url,
 	)
+
+
+def _approval_identity_for_delivery(contract_doc, delivery):
+	"""Resolve a retry recipient from current onboarding/settings data."""
+	role = frappe.utils.cstr(delivery.signatory_role or "").strip()
+	slot = _APPROVER_ROLE_TO_SLOT.get(role)
+	if slot:
+		identity = _approver_identity(
+			slot,
+			_onboarding_approver_row(contract_doc.deal),
+			_load_optin_settings_safely(),
+		)
+	else:
+		identity = _resolve_user_identity(
+			delivery.signatory_row,
+			fallback_phone=delivery.recipient_phone,
+		)
+	if not identity.get("phone"):
+		identity["phone"] = frappe.utils.cstr(delivery.recipient_phone or "").strip()
+	return identity
 
 
 # ---------------------------------------------------------------------------
@@ -997,17 +1098,14 @@ def retry_sms_delivery(notification: Any):
 
 	contract_doc = frappe.get_doc("CRM Contract", delivery.contract)
 	if delivery.purpose == "Approval":
-		approver_user = frappe.utils.cstr(delivery.signatory_row or "").strip()
-		if not approver_user:
-			frappe.throw(_("This approver SMS has no recipient reference."), frappe.ValidationError)
-		identity = _resolve_user_identity(approver_user, fallback_phone=delivery.recipient_phone)
+		identity = _approval_identity_for_delivery(contract_doc, delivery)
 		if not identity.get("phone"):
-			frappe.throw(_("The approver has no mobile number configured."), frappe.ValidationError)
+			frappe.throw(_("This approver SMS has no recipient reference."), frappe.ValidationError)
 		role = frappe.utils.cstr(delivery.signatory_role or "Contract Approver").strip()
 		approver_row = frappe._dict(
 			{
-				"name": approver_user,
-				"signatory_name": identity.get("full_name") or approver_user,
+				"name": frappe.utils.cstr(delivery.signatory_row or "").strip(),
+				"signatory_name": identity.get("full_name") or identity.get("email") or role,
 				"signatory_role": role,
 				"signatory_phone": identity.get("phone", ""),
 			}
@@ -1024,7 +1122,7 @@ def retry_sms_delivery(notification: Any):
 			_approval_sms_message(
 				_network_for_contract(contract_doc),
 				contract_doc.name,
-				identity.get("full_name") or approver_user,
+				identity.get("full_name") or identity.get("email") or role,
 				crm_url,
 			),
 			delivery=delivery,
