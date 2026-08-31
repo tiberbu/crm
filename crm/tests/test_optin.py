@@ -16,6 +16,7 @@ from crm.api.contracts import (
 	_transition,
 	generate,
 	get_contract,
+	request_otp,
 )
 from crm.api.optin import (
 	_KEPH_MAP,
@@ -171,6 +172,49 @@ class TestOptInTermsPrinting(UnitTestCase):
 
 
 class TestOptInContractAutomation(UnitTestCase):
+	def test_otp_email_identifies_facility_and_request(self):
+		contract = SimpleNamespace(name="CONT-TEST-00003", deal="DEAL-TEST-00003", save=Mock())
+		signatory = SimpleNamespace(
+			name="ROW-TEST-00003",
+			signatory_name="Jane Signatory",
+			signatory_email="jane@example.com",
+			signatory_role="Facility Signatory",
+			status="Pending",
+			invite_token="invitation-token",
+			invite_expiry=frappe.utils.add_days(frappe.utils.now_datetime(), 1),
+		)
+		cache = Mock()
+
+		with (
+			patch("crm.api.contracts._check_contract_rate_limit"),
+			patch("crm.api.contracts._load_signatory_by_token", return_value=(contract, signatory)),
+			patch("crm.api.contracts._validate_invite"),
+			patch("crm.api.contracts.secrets.randbelow", return_value=234567),
+			patch("crm.api.contracts._get_signing_key", return_value="test-key"),
+			patch("crm.api.contracts._hmac_hex", return_value="otp-hash"),
+			patch("crm.api.contracts.frappe.cache", return_value=cache),
+			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch("crm.api.contracts._contract_email_subject_label", return_value="MediCare Hospital"),
+			patch("crm.api.contracts._generate_invitation_email_reference", return_value="OTP-ONE"),
+			patch("crm.api.contracts.branded_email_html", return_value="otp-email") as render_email,
+			patch("crm.api.contracts.otp_code_block", return_value="otp-block"),
+			patch("crm.api.contracts.frappe.sendmail") as sendmail,
+			patch("crm.api.contracts._send_contract_sms", return_value="Not Available"),
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			result = request_otp("CONT-TEST-00003", "Facility Signatory", "invitation-token")
+
+		self.assertEqual(result, {"status": "sent", "sms_status": "Not Available"})
+		subject = sendmail.call_args.kwargs["subject"]
+		self.assertEqual(
+			subject,
+			"Your CareverseHIMS Contract Signing Code — MediCare Hospital — OTP ID OTP-ONE",
+		)
+		self.assertNotIn("234567", subject)
+		self.assertTrue(sendmail.call_args.kwargs["now"])
+		note_html = render_email.call_args.kwargs["note_html"]
+		self.assertIn("OTP reference: <strong>OTP-ONE</strong>", note_html)
+
 	def test_contract_generation_stays_in_submission_transaction_and_is_tracked(self):
 		submission = SimpleNamespace(
 			deal="DEAL-TEST-00001",

@@ -122,6 +122,14 @@ def _facility_name_for_contract(contract_doc):
 	return ""
 
 
+def _contract_email_subject_label(contract_doc):
+	"""Return a safe, human-readable label for contract email subjects."""
+	label = _facility_name_for_contract(contract_doc) or getattr(contract_doc, "name", "") or ""
+	# Subject values are plain text; line breaks from user-supplied facility names
+	# must not be allowed to alter MIME headers.
+	return frappe.utils.cstr(label).replace("\r", " ").replace("\n", " ").strip()
+
+
 def _network_for_contract(contract_doc):
 	"""Resolve the branded-email network dict for a contract, or None. Never raises."""
 	slug = frappe.utils.cstr(getattr(contract_doc, "network_slug", "") or "").strip()
@@ -598,13 +606,7 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 	network = _network_for_contract(contract_doc)
 	name = frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
 	invitation_reference = _generate_invitation_email_reference()
-	facility_name = _facility_name_for_contract(contract_doc)
-	# Subject values are plain text; strip line breaks from user-supplied facility
-	# names so they cannot alter MIME headers. Fall back to the contract name for
-	# manually-created contracts or older records without an Opt-In payload.
-	facility_subject = (
-		frappe.utils.cstr(facility_name or contract_doc.name).replace("\r", " ").replace("\n", " ").strip()
-	)
+	facility_subject = _contract_email_subject_label(contract_doc)
 
 	queue = None
 	try:
@@ -1878,12 +1880,18 @@ def request_otp(contract: Any, role: Any, token: Any):
 		expires_in_sec=_OTP_EXPIRY_SECONDS + 120,
 	)
 
-	# Send branded OTP email
+	# Send branded OTP email. Keep the facility and a fresh, non-secret reference
+	# in the subject so repeated code requests are easy to distinguish in an inbox.
 	network = _network_for_contract(contract_doc)
+	otp_reference = _generate_invitation_email_reference()
+	facility_subject = _contract_email_subject_label(contract_doc)
 	try:
 		frappe.sendmail(
 			recipients=[signatory_row.signatory_email],
-			subject="Your CareverseHIMS Contract Signing Code",
+			subject=(
+				"Your CareverseHIMS Contract Signing Code — %s — OTP ID %s"
+				% (facility_subject, otp_reference)
+			),
 			message=branded_email_html(
 				network,
 				heading="Verify your identity",
@@ -1894,7 +1902,10 @@ def request_otp(contract: Any, role: Any, token: Any):
 					% frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
 				),
 				highlight_html=otp_code_block(otp, network),
-				note_html=("This code expires in 10 minutes. Do not share it with anyone."),
+				note_html=(
+					"This code expires in 10 minutes. Do not share it with anyone. "
+					"OTP reference: <strong>%s</strong>." % otp_reference
+				),
 			),
 			now=True,
 		)
