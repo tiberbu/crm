@@ -6,6 +6,7 @@
  "field_order": [
   "signatory_name",
   "signatory_email",
+  "signatory_phone",
   "signatory_role",
   "status",
   "is_witness",
@@ -37,6 +38,12 @@
    "fieldtype": "Data",
    "label": "Signatory Email",
    "reqd": 1
+  },
+  {
+   "fieldname": "signatory_phone",
+   "fieldtype": "Data",
+   "label": "Signatory Phone",
+   "description": "Optional mobile number for SMS invitations and OTPs. Include the country code where possible."
   },
   {
    "fieldname": "signatory_role",

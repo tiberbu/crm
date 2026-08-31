@@ -18,6 +18,7 @@ export const useOptInStore = defineStore('optin', {
     witness: {
       name: '',
       email: '',
+      phone: '',
     },
     signingToken: '',
     signingExpiry: 0,

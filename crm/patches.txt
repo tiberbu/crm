@@ -44,3 +44,4 @@ crm.patches.v1_0.migrate_facility_memberships
 crm.patches.v1_0.backfill_prequalified_facility_organization
 crm.patches.v1_0.configure_optin_vat_template
 crm.patches.v1_0.backfill_quotation_vat
+crm.patches.v1_0.add_contract_sms_delivery_fields

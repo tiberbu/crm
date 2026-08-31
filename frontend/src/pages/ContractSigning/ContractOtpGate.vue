@@ -68,7 +68,7 @@
         Verify your identity
       </h2>
       <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
-        Enter the 6-digit code sent to your registered email address.
+        {{ deliveryMessage }}
       </p>
 
       <!-- OTP inputs -->
@@ -162,6 +162,12 @@ const fatalHeading = ref('Link Invalid or Expired')
 const fatalHint = ref(
   'Please request a new signing link from the contract issuer.',
 )
+const smsStatus = ref('')
+const deliveryMessage = computed(() =>
+  smsStatus.value === 'Sent'
+    ? 'Enter the 6-digit code sent to your email and mobile phone.'
+    : 'Enter the 6-digit code sent to your registered email address.',
+)
 
 // 10-minute countdown
 const countdown = ref(600)
@@ -200,11 +206,12 @@ async function doRequestOtp() {
   requestingOtp.value = true
   fatalError.value = ''
   try {
-    await requestOtpResource.fetch({
+    const result = await requestOtpResource.fetch({
       contract: props.contract,
       role: props.role,
       token: props.token,
     })
+    smsStatus.value = result?.sms_status ?? ''
     startCountdown()
     // Focus first digit input after render settles
     setTimeout(() => inputRefs.value[0]?.focus(), 100)

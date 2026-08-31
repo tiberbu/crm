@@ -103,6 +103,7 @@ def list_networks(
 	page_size: Any = 20,
 	search: Any = None,
 	enabled: Any = None,
+	opted_in: Any = None,
 	facility_level: Any = None,
 	facility: Any = None,
 ):
@@ -121,6 +122,36 @@ def list_networks(
 	enabled = frappe.utils.cstr(enabled).strip()
 	if enabled in ("0", "1"):
 		filters["enabled"] = frappe.utils.cint(enabled)
+
+	# Opt-in status is derived from membership rows, not the network's enabled
+	# flag. Keep this filter separate so a configured-but-unused network is
+	# clearly distinguishable from one with at least one completed submission.
+	opted_in = frappe.utils.cstr(opted_in).strip()
+	if opted_in in ("0", "1"):
+		opted_memberships = frappe.get_list(
+			"CRM Facility Membership",
+			filters={
+				"parenttype": "CRM Pre-Qualified Facility",
+				"status": "Opted In",
+			},
+			fields=["network"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: resolves status filter
+		)
+		opted_networks = {row.network for row in opted_memberships if row.network}
+		all_networks = frappe.get_list(
+			"CRM Opt-In Network",
+			filters=filters,
+			fields=["name"],
+			limit_page_length=0,
+		)
+		candidate_names = {row.name for row in all_networks}
+		matching_names = (
+			candidate_names & opted_networks if opted_in == "1" else candidate_names - opted_networks
+		)
+		if not matching_names:
+			return {"rows": [], "total": 0}
+		filters["name"] = ["in", list(matching_names)]
 
 	facility_level = frappe.utils.cstr(facility_level).strip()
 	facility = frappe.utils.cstr(facility).strip()
@@ -196,6 +227,7 @@ def list_networks(
 	)
 	network_names = [row.name for row in rows]
 	contact_counts = {}
+	contact_memberships = []
 	if network_names:
 		contact_memberships = frappe.get_list(
 			"CRM Facility Membership",
@@ -203,14 +235,21 @@ def list_networks(
 				"parenttype": "CRM Pre-Qualified Facility",
 				"network": ["in", network_names],
 			},
-			fields=["network"],
+			fields=["network", "status"],
 			limit_page_length=0,
 			ignore_permissions=True,  # SYSTEM-INTERNAL: only counts visible networks
 		)
 		for membership in contact_memberships:
 			contact_counts[membership.network] = contact_counts.get(membership.network, 0) + 1
+	opted_in_counts = {}
+	for membership in contact_memberships:
+		if membership.get("status") == "Opted In":
+			opted_in_counts[membership.network] = opted_in_counts.get(membership.network, 0) + 1
 	for row in rows:
 		row["contact_count"] = contact_counts.get(row.name, 0)
+		row["opted_in_count"] = opted_in_counts.get(row.name, 0)
+		row["opted_in"] = bool(row["opted_in_count"])
+		row["optin_status"] = "Opted In" if row["opted_in"] else "Not Opted In"
 
 	total = len(
 		frappe.get_list(
@@ -263,7 +302,7 @@ def save_network(data: Any):
 	child_fields = {
 		"partner_logos": ("partner_name", "logo", "website"),
 		"coordinators": ("user",),
-		"network_signers": ("full_name", "email"),
+		"network_signers": ("full_name", "email", "phone"),
 	}
 	for fieldname, allowed_fields in child_fields.items():
 		if fieldname in data:

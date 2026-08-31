@@ -9,6 +9,7 @@ from frappe.utils import add_days, random_string, today
 from crm.api.contracts import (
 	_build_contract_document_html,
 	_issue_and_send_invitation,
+	_send_contract_sms,
 	_transition,
 	generate,
 	get_contract,
@@ -245,6 +246,39 @@ class TestOptInContractAutomation(UnitTestCase):
 		commit.assert_not_called()
 		self.assertTrue(signatory.invite_token)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
+
+	def test_contract_sms_delivery_is_logged_and_does_not_commit_caller_transaction(self):
+		from frappe.core.doctype.sms_settings import sms_settings
+
+		contract = SimpleNamespace(name="CONT-TEST-00001")
+		signatory = SimpleNamespace(
+			name="ROW-TEST-00001",
+			signatory_role="Facility Signatory",
+			signatory_phone="+254700000001",
+		)
+		delivery = SimpleNamespace(attempts=0, save=Mock())
+		with (
+			patch("crm.api.contracts._new_sms_delivery", return_value=delivery),
+			patch("crm.api.contracts._sms_gateway_configured", return_value=True),
+			patch.object(sms_settings, "send_sms") as send_sms,
+			patch("crm.api.contracts.frappe.utils.now_datetime", return_value="2026-08-31 10:00:00"),
+			patch("crm.api.contracts.frappe.db.commit") as commit,
+		):
+			status = _send_contract_sms(
+				contract,
+				signatory,
+				"Invitation",
+				"Please sign: https://example.test/sign",
+				commit=False,
+			)
+
+		self.assertEqual(status, "Sent")
+		self.assertEqual(delivery.status, "Sent")
+		self.assertEqual(delivery.attempts, 1)
+		send_sms.assert_called_once_with(
+			["+254700000001"], "Please sign: https://example.test/sign", success_msg=False
+		)
+		commit.assert_not_called()
 
 	def test_first_facility_signature_invites_every_remaining_signatory_together(self):
 		facility = SimpleNamespace(
