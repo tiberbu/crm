@@ -98,6 +98,27 @@ def _hmac_hex(secret, message):
 	return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
+def _facility_email_subject_label(facilities, fallback="CareverseHIMS"):
+	"""Return the most useful facility-first label for an Opt-In email subject."""
+	names = []
+	seen = set()
+	for facility in facilities or []:
+		if not isinstance(facility, dict):
+			continue
+		name = frappe.utils.cstr(facility.get("facility_name") or "").strip()
+		name = name.replace("\r", " ").replace("\n", " ").strip()
+		key = name.casefold()
+		if name and key not in seen:
+			names.append(name)
+			seen.add(key)
+	if len(names) == 1:
+		return names[0]
+	if names:
+		return "%s + %s more facilities" % (names[0], len(names) - 1)
+	label = frappe.utils.cstr(fallback or "CareverseHIMS")
+	return label.replace("\r", " ").replace("\n", " ").strip() or "CareverseHIMS"
+
+
 def _validate_signing_token(signing_token, email, network_slug, expiry):
 	"""
 	Raise frappe.AuthenticationError if signing_token is invalid or expired.
@@ -744,14 +765,11 @@ def _otp_email_html(otp, network):
 
 
 def _send_otp_email(contact_email, otp, network=None):
-	"""
-	Send the branded OTP verification email. The code is placed in the subject line
-	(e.g. "Your Verification Code - 101783") so it is visible before the email is opened.
-	Invoked via frappe.enqueue — not whitelisted.
-	"""
+	"""Send the branded Opt-In OTP email with its network-first subject."""
 	frappe.sendmail(
 		recipients=[contact_email],
-		subject="Your Verification Code - %s" % otp,
+		subject="%s — Opt-In verification code · %s"
+		% (_facility_email_subject_label([], (network or {}).get("display_name") or "CareverseHIMS"), otp),
 		message=_otp_email_html(otp, network),
 		now=True,
 	)
@@ -1559,7 +1577,8 @@ def send_deal_optin_invitation(deal: Any, price_list: Any = None):
 	network = _get_network_doc(network_slug)
 	if not network:
 		frappe.throw(_("Select an enabled Opt-In Network."))
-	if not _deal_invitation_facilities({"deal": deal}):
+	invited_facilities = _deal_invitation_facilities({"deal": deal})
+	if not invited_facilities:
 		frappe.throw(
 			_(
 				"Add at least one facility with an MFL code, name, and KEPH level before sending an invitation."
@@ -1594,7 +1613,11 @@ def send_deal_optin_invitation(deal: Any, price_list: Any = None):
 	network_name = frappe.utils.escape_html(network.get("display_name") or network_slug)
 	frappe.sendmail(
 		recipients=[email],
-		subject="Complete your %s Opt-In" % (network.get("display_name") or "CareverseHIMS"),
+		subject="%s — Complete Opt-In · %s"
+		% (
+			_facility_email_subject_label(invited_facilities, network.get("display_name") or "CareverseHIMS"),
+			network.get("display_name") or "CareverseHIMS",
+		),
 		message=(
 			"<p>Dear %s,</p>"
 			"<p>Please review your facility details, pricing, and agreement for "
@@ -1967,9 +1990,10 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 def _queue_confirmation_email(submission, recipient, first_name, network, pricing):
 	"""Request immediate confirmation delivery and retain its queue record."""
 	brand_name = (network.get("display_name") if network else "") or "CareverseHIMS"
+	facility_subject = _facility_email_subject_label(pricing, brand_name)
 	queue = frappe.sendmail(
 		recipients=[recipient],
-		subject="%s Opt-In Confirmed — Reference %s" % (brand_name, submission.name),
+		subject="%s — Opt-In confirmed · Reference %s" % (facility_subject, submission.name),
 		message=_confirmation_email_html(first_name, submission.name, network, pricing),
 		reference_doctype="CRM Opt-In Submission",
 		reference_name=submission.name,

@@ -22,6 +22,7 @@ from crm.api.contracts import (
 )
 from crm.api.optin import (
 	_KEPH_MAP,
+	_facility_email_subject_label,
 	_facility_signing_state,
 	_facility_witness_signing_state,
 	_generate_contract_for_submission,
@@ -139,7 +140,7 @@ class TestOptInConfirmationEmail(UnitTestCase):
 		self.assertEqual(sendmail.call_args.kwargs["recipients"], ["jane@example.com"])
 		self.assertEqual(
 			sendmail.call_args.kwargs["subject"],
-			"Test Network Opt-In Confirmed — Reference OIS-TEST-00001",
+			"Test Network — Opt-In confirmed · Reference OIS-TEST-00001",
 		)
 		self.assertEqual(sendmail.call_args.kwargs["reference_doctype"], "CRM Opt-In Submission")
 		self.assertEqual(sendmail.call_args.kwargs["reference_name"], submission.name)
@@ -248,7 +249,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		subject = sendmail.call_args.kwargs["subject"]
 		self.assertEqual(
 			subject,
-			"Your CareverseHIMS Contract Signing Code — MediCare Hospital — OTP ID OTP-ONE",
+			"MediCare Hospital — Contract verification code · OTP ID OTP-ONE",
 		)
 		self.assertNotIn("234567", subject)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
@@ -339,7 +340,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertTrue(sendmail.call_args.kwargs["now"])
 		self.assertEqual(
 			sendmail.call_args.kwargs["subject"],
-			"Action Required: Sign Your CareverseHIMS Contract — MediCare Hospital — Invitation ID REF-ONE",
+			"MediCare Hospital — Contract ready for signature · Invitation ID REF-ONE",
 		)
 
 	def test_resending_invitation_changes_inbox_identifier(self):
@@ -380,6 +381,22 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertEqual(len(first), 12)
 		self.assertTrue(first.isalnum())
 		self.assertNotEqual(first, second)
+
+	def test_facility_email_subject_label_prioritizes_unique_facility_names(self):
+		self.assertEqual(
+			_facility_email_subject_label(
+				[
+					{"facility_name": "MediCare Hospital"},
+					{"facility_name": "Riverside Clinic"},
+					{"facility_name": "MediCare Hospital"},
+				]
+			),
+			"MediCare Hospital + 1 more facilities",
+		)
+		self.assertEqual(
+			_facility_email_subject_label([{"facility_name": "  Mobile\nClinic  "}]),
+			"Mobile Clinic",
+		)
 
 	def test_facility_subject_label_uses_latest_optin_payload(self):
 		contract = SimpleNamespace(name="CONT-TEST-00001", deal="DEAL-TEST-00001")
@@ -489,7 +506,7 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		sendmail.assert_called_once_with(
 			recipients=["reviewer@tiberbu.example"],
-			subject="Approval Required: CareverseHIMS Contract CONT-TEST-00002",
+			subject="CareverseHIMS — Contract approval required · CONT-TEST-00002",
 			message=sendmail.call_args.kwargs["message"],
 			now=True,
 		)
