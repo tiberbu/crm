@@ -232,6 +232,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { createResource } from 'frappe-ui'
+import { getContractSigningError } from '@/utils/contractSigningErrors'
 
 import ContractOtpGate from './ContractOtpGate.vue'
 import ContractView from './ContractView.vue'
@@ -313,8 +314,7 @@ async function handleSign() {
     })
     screen.value = 'done'
   } catch (err) {
-    signError.value =
-      err?.message || 'Signing failed. Please try again or contact support.'
+    signError.value = getContractSigningError(err, 'sign').message
   } finally {
     signing.value = false
   }

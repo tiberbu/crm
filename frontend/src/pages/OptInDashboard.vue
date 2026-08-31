@@ -372,19 +372,19 @@
               </div>
               <div class="grid grid-cols-3 gap-2 text-xs">
                 <div>
-                  <p class="text-ink-gray-4">{{ __('Facility') }}</p>
+                  <p class="text-ink-gray-4">{{ __('Facility sign-off') }}</p>
                   <span :class="roleProgressClass(row.facility)">
                     {{ roleProgress(row.facility) }}
                   </span>
                 </div>
                 <div>
-                  <p class="text-ink-gray-4">{{ __('Network') }}</p>
+                  <p class="text-ink-gray-4">{{ __('Network sign-off') }}</p>
                   <span :class="roleProgressClass(row.network_signatories)">
                     {{ roleProgress(row.network_signatories) }}
                   </span>
                 </div>
                 <div>
-                  <p class="text-ink-gray-4">{{ __('Tiberbu') }}</p>
+                  <p class="text-ink-gray-4">{{ __('Tiberbu sign-off') }}</p>
                   <span :class="roleProgressClass(row.tiberbu_signatories)">
                     {{ roleProgress(row.tiberbu_signatories) }}
                   </span>
@@ -477,7 +477,7 @@
                 </div>
                 <div class="text-right">
                   <p class="text-sm font-semibold text-ink-gray-8">
-                    {{ row.signed }} / {{ row.assigned }}
+                    {{ signatoryProgress(row) }}
                   </p>
                   <p class="mt-0.5 text-[11px] text-ink-gray-4">
                     {{ formatDuration(row.median_response_hours) }}
@@ -929,7 +929,11 @@ function attentionPill(state) {
 
 function roleProgress(progress) {
   if (!progress?.total) return __('Not configured')
-  return `${progress.signed}/${progress.total} ${__('signed')}`
+  return `${progress.signed} of ${progress.total} ${__('signed')}`
+}
+
+function signatoryProgress(row) {
+  return `${row.signed} of ${row.assigned} ${__('signed')}`
 }
 
 function roleProgressClass(progress) {

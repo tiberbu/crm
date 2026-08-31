@@ -437,6 +437,66 @@ def _validate_invite(signatory_row, token):
 		frappe.throw(_("Invalid signing link."), frappe.AuthenticationError)
 
 
+def _save_otp_state(contract_doc, contract, role):
+	"""Persist a newly issued OTP without exposing framework errors to guests.
+
+	A contract save validates the complete parent and all child signatory rows, so
+	a legacy contract with stale data can fail even though the signer only asked
+	for a code. Keep the diagnostic traceback in Error Log, roll back the partial
+	transaction, and return one actionable message to the public portal.
+	"""
+	try:
+		contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(
+			frappe.get_traceback(),
+			"contracts.request_otp: unable to save OTP state for %s / %s" % (contract, role),
+		)
+		frappe.throw(
+			_(
+				"We couldn't prepare your verification code. Please try again. "
+				"If the problem continues, ask the contract issuer to send a fresh link."
+			),
+			frappe.ValidationError,
+		)
+
+
+def _ensure_pending_signatory(signatory_row):
+	"""Normalize legacy pending values before issuing the first OTP.
+
+	Older contracts can contain an empty or differently-cased value because the
+	child-table default was introduced after those rows were created. Treat only
+	those equivalent pending values as recoverable; a completed or declined row
+	must never be reopened by a public link.
+	"""
+	# A captured signature is stronger evidence than a stale Select value. This
+	# prevents a contradictory Pending row from being reopened by a public link.
+	if getattr(signatory_row, "signature_data", None) or getattr(signatory_row, "signed_at", None):
+		signatory_row.status = "Signed"
+		frappe.throw(_("This signing slot has already been completed."), frappe.ValidationError)
+
+	status = " ".join(frappe.utils.cstr(signatory_row.status or "").strip().lower().split())
+	if not status or status == "pending":
+		signatory_row.status = "Pending"
+		return
+	if status in ("signed", "completed", "complete", "fully signed"):
+		message = _("This signing slot has already been completed.")
+	elif status in ("declined", "rejected", "cancelled", "canceled"):
+		message = _(
+			"This signing invitation is no longer active. Ask the contract issuer to send a new link."
+		)
+	else:
+		message = _(
+			"This signing invitation is not ready yet. Ask the contract issuer to review the contract."
+		)
+	frappe.throw(
+		message,
+		frappe.ValidationError,
+	)
+
+
 def _validate_signing(signatory_row, token):
 	"""Raise AuthenticationError unless token matches the stored, unexpired signing token."""
 	stored = frappe.utils.cstr(signatory_row.signing_token or "")
@@ -1113,10 +1173,7 @@ def resend_invitation(contract: Any, role: Any, row_name: Any = None):
 	contract_doc, signatory_row = _load_signatory(contract, role, row_name)
 
 	if signatory_row.status != "Pending":
-		frappe.throw(
-			_("This signatory has already completed signing — nothing to resend."),
-			frappe.ValidationError,
-		)
+		_ensure_pending_signatory(signatory_row)
 
 	# Before the facility signatory completes, remaining signatories have no invite
 	# token and cannot be resent. After that point they are invited together.
@@ -1855,11 +1912,7 @@ def request_otp(contract: Any, role: Any, token: Any):
 	contract_doc, signatory_row = _load_signatory_by_token(contract, role, token, "invite_token")
 	_validate_invite(signatory_row, token)
 
-	if signatory_row.status != "Pending":
-		frappe.throw(
-			_("This signing slot has already been completed."),
-			frappe.ValidationError,
-		)
+	_ensure_pending_signatory(signatory_row)
 
 	# Generate 6-digit OTP with a cryptographically-secure RNG (this is an auth factor)
 	otp = str(secrets.randbelow(900000) + 100000)
@@ -1869,8 +1922,7 @@ def request_otp(contract: Any, role: Any, token: Any):
 		frappe.utils.now_datetime(), seconds=_OTP_EXPIRY_SECONDS
 	)
 	signatory_row.otp_used = 0
-	contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-	frappe.db.commit()
+	_save_otp_state(contract_doc, contract, role)
 
 	# Reset attempt counter in Redis (keyed per-row so co-signatories sharing a
 	# role each get their own counter)
@@ -2042,11 +2094,7 @@ def sign(signing_token: Any, contract: Any, role: Any, signature_b64: Any):
 	contract_doc, signatory_row = _load_signatory_by_token(contract, role, signing_token, "signing_token")
 	_validate_signing(signatory_row, signing_token)
 
-	if signatory_row.status != "Pending":
-		frappe.throw(
-			_("This signing slot has already been completed."),
-			frappe.ValidationError,
-		)
+	_ensure_pending_signatory(signatory_row)
 
 	# Capture client IP
 	remote_addr = ""
