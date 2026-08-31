@@ -5,6 +5,12 @@ already call Frappe's native `frappe.core.doctype.sms_settings.sms_settings.send
 No CRM-specific provider doctype or SDK dependency is required for Africa's
 Talking.
 
+The `crm.patches.v1_0.seed_africas_talking_sms_settings` migration seeds this
+native configuration automatically when the site's SMS Gateway URL is empty. It
+does not overwrite an existing provider and it never stores real credentials.
+After migrating, replace the `CHANGE_ME` API-key value and update the username
+and sender settings for the target Africa's Talking account before sending.
+
 ## Recommended Frappe configuration
 
 Use Africa's Talking's standard single/multi-recipient messaging endpoint. The
