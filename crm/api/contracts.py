@@ -26,6 +26,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import secrets
 import time
 from typing import Any
@@ -82,6 +83,45 @@ def _invitation_email_reference(token):
 	"""
 	material = "crm-contract-invitation:%s" % frappe.utils.cstr(token)
 	return hashlib.sha256(material.encode("utf-8")).hexdigest()[:12].upper()
+
+
+def _facility_name_for_contract(contract_doc):
+	"""Return a concise facility label for a contract email subject.
+
+	Opt-In submissions keep their canonical facility list in ``raw_json``. Read
+	the latest submission for the contract's deal so this remains backward
+	compatible with contracts created before a dedicated facility field existed.
+	"""
+	deal = frappe.utils.cstr(getattr(contract_doc, "deal", "") or "").strip()
+	if not deal:
+		return ""
+	try:
+		rows = frappe.get_list(
+			"CRM Opt-In Submission",
+			filters={"deal": deal},
+			fields=["raw_json"],
+			order_by="creation desc",
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+		if not rows:
+			return ""
+		payload = json.loads(rows[0].get("raw_json") or "{}")
+		facilities = payload.get("pricing") or payload.get("facilities") or []
+		names = []
+		for facility in facilities:
+			if not isinstance(facility, dict):
+				continue
+			name = frappe.utils.cstr(facility.get("facility_name") or "").strip()
+			if name and name not in names:
+				names.append(name)
+		if len(names) == 1:
+			return names[0]
+		if names:
+			return "%s + %s more facilities" % (names[0], len(names) - 1)
+	except Exception:
+		pass
+	return ""
 
 
 def _network_for_contract(contract_doc):
@@ -560,6 +600,13 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 	network = _network_for_contract(contract_doc)
 	name = frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
 	invitation_reference = _invitation_email_reference(token)
+	facility_name = _facility_name_for_contract(contract_doc)
+	# Subject values are plain text; strip line breaks from user-supplied facility
+	# names so they cannot alter MIME headers. Fall back to the contract name for
+	# manually-created contracts or older records without an Opt-In payload.
+	facility_subject = (
+		frappe.utils.cstr(facility_name or contract_doc.name).replace("\r", " ").replace("\n", " ").strip()
+	)
 
 	queue = None
 	try:
@@ -567,7 +614,7 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 			recipients=[signatory_row.signatory_email],
 			subject=(
 				"Action Required: Sign Your CareverseHIMS Contract — %s — Invitation ID %s"
-				% (contract_doc.name, invitation_reference)
+				% (facility_subject, invitation_reference)
 			),
 			message=branded_email_html(
 				network,
