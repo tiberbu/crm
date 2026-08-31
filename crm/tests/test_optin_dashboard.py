@@ -252,10 +252,10 @@ class TestOptInDashboard(UnitTestCase):
 		self.assertEqual(result["signatory_leaderboard"][0]["name"], "Network Champion")
 		self.assertEqual(result["signatory_leaderboard"][0]["signed"], 1)
 		self.assertEqual(result["signatory_leaderboard"][0]["assigned"], 2)
-		self.assertEqual(result["signatory_leaderboard"][0]["median_response_hours"], 2.0)
+		self.assertEqual(result["signatory_leaderboard"][0]["median_response_hours"], 3.0)
 
 		tat = {row["key"]: row for row in result["tat"]}
 		self.assertEqual(tat["submission_to_contract"]["median_hours"], 0.5)
-		self.assertEqual(tat["facility_complete_to_network_signatory"]["median_hours"], 2.0)
+		self.assertEqual(tat["facility_complete_to_network_signatory"]["median_hours"], 3.0)
 		self.assertEqual(tat["submission_to_full_execution"]["median_hours"], 6.0)
 		self.assertEqual(result["facility_leaderboard"][0]["facility_name"], "First Clinic")

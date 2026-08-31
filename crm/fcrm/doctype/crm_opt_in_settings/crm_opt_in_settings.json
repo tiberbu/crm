@@ -78,7 +78,7 @@
    "fieldtype": "Link",
    "label": "Tiberbu Signatory",
    "options": "User",
-   "description": "Tiberbu-side user who co-signs every executed contract. Invited (7-day link) once both facility parties have signed; signs via the same OTP + signature-pad portal."
+   "description": "Tiberbu-side user who co-signs every executed contract. Invited with a 7-day link together with every remaining signatory as soon as the facility signatory has signed; signs via the same OTP + signature-pad portal."
   }
  ],
  "issingle": 1,

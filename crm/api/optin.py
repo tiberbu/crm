@@ -2902,12 +2902,8 @@ def _dashboard_contract_progress(contract, signatories):
 		state = "Fully executed"
 	elif not facility["complete"]:
 		state = "Awaiting facility signatory"
-	elif witness["total"] and not witness["complete"]:
-		state = "Awaiting facility witness"
-	elif network["total"] and not network["complete"]:
-		state = "Awaiting network signatory"
-	elif tiberbu["total"] and not tiberbu["complete"]:
-		state = "Awaiting Tiberbu signatory"
+	elif any(progress["total"] and not progress["complete"] for progress in (witness, network, tiberbu)):
+		state = "Awaiting remaining signatures"
 	else:
 		state = "Finalising execution"
 
@@ -3183,13 +3179,6 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 		contract_created_at = _dashboard_datetime(contract.get("creation")) if contract else None
 		facility_signed_at = _dashboard_latest_signed_at(contract_progress["roles"]["Facility Signatory"])
 		witness_signed_at = _dashboard_latest_signed_at(contract_progress["roles"]["Facility Witness"])
-		facility_completion_at = None
-		if contract_progress["facility_complete"]:
-			completion_candidates = [
-				value for value in (facility_signed_at, witness_signed_at) if value is not None
-			]
-			facility_completion_at = max(completion_candidates) if completion_candidates else None
-
 		if contract_created_at:
 			tat_values["submission_to_contract"].append(
 				_dashboard_elapsed_hours(submission.submitted_at, contract_created_at)
@@ -3203,13 +3192,15 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 				_dashboard_elapsed_hours(facility_signed_at, witness_signed_at)
 			)
 
+		# Preserve the established response keys for dashboard consumers while the
+		# displayed labels and calculation below reflect the parallel workflow.
 		for role, tat_key in (
 			("Network Signatory", "facility_complete_to_network_signatory"),
 			("Tiberbu Signatory", "facility_complete_to_tiberbu_signatory"),
 		):
 			for signatory in contract_progress["roles"][role]:
 				signed_at = _dashboard_datetime(signatory.get("signed_at"))
-				response_hours = _dashboard_elapsed_hours(facility_completion_at, signed_at)
+				response_hours = _dashboard_elapsed_hours(facility_signed_at, signed_at)
 				if response_hours is not None:
 					tat_values[tat_key].append(response_hours)
 
@@ -3278,9 +3269,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 				"Signing link expired": "Resend signing invitation",
 				"Declined": "Review declined contract",
 				"Awaiting facility signatory": "Awaiting facility signatory",
-				"Awaiting facility witness": "Awaiting facility witness",
-				"Awaiting network signatory": "Awaiting network signatory",
-				"Awaiting Tiberbu signatory": "Awaiting Tiberbu signatory",
+				"Awaiting remaining signatures": "Awaiting remaining signatures",
 				"Finalising execution": "Check contract execution",
 			}
 			attention.append(
@@ -3392,8 +3381,8 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 			("submission_to_contract", "Submission to contract"),
 			("contract_to_facility_signatory", "Contract to facility signatory"),
 			("facility_signatory_to_witness", "Facility signatory to witness"),
-			("facility_complete_to_network_signatory", "Facility complete to network signatory"),
-			("facility_complete_to_tiberbu_signatory", "Facility complete to Tiberbu signatory"),
+			("facility_complete_to_network_signatory", "Facility signatory to network signatory"),
+			("facility_complete_to_tiberbu_signatory", "Facility signatory to Tiberbu signatory"),
 			("submission_to_full_execution", "Submission to full execution"),
 		)
 	]
