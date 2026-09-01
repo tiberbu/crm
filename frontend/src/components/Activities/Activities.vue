@@ -443,13 +443,10 @@
 <script setup>
 import ActivityHeader from '@/components/Activities/ActivityHeader.vue'
 import EmailArea from '@/components/Activities/EmailArea.vue'
-import CommentArea from '@/components/Activities/CommentArea.vue'
 import CallArea from '@/components/Activities/CallArea.vue'
-import NoteArea from '@/components/Activities/NoteArea.vue'
 import TaskArea from '@/components/Activities/TaskArea.vue'
 import AttachmentArea from '@/components/Activities/AttachmentArea.vue'
 import DataFields from '@/components/Activities/DataFields.vue'
-import QuotingTab from '@/pages/Deal/QuotingTab.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 import ActivityIcon from '@/components/Icons/ActivityIcon.vue'
 import EmailIcon from '@/components/Icons/EmailIcon.vue'
@@ -494,6 +491,7 @@ import {
   computed,
   h,
   markRaw,
+  defineAsyncComponent,
   watch,
   nextTick,
   onMounted,
@@ -518,6 +516,19 @@ const route = useRoute()
 
 const reload = defineModel('reload', { type: Boolean, default: false })
 const tabIndex = defineModel('tabIndex', { type: Number, default: 0 })
+
+// Quote and contract rendering is one of the heaviest Deal surfaces. Keep it
+// out of the initial Activity/Lead bundle and load it only when the Quote tab
+// is selected. The component contract and route remain unchanged.
+const QuotingTab = defineAsyncComponent(
+  () => import('@/pages/Deal/QuotingTab.vue'),
+)
+const CommentArea = defineAsyncComponent(
+  () => import('@/components/Activities/CommentArea.vue'),
+)
+const NoteArea = defineAsyncComponent(
+  () => import('@/components/Activities/NoteArea.vue'),
+)
 
 const { document: _document } = useDocument(props.doctype, props.docname)
 

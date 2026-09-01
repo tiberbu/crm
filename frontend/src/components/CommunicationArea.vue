@@ -26,69 +26,75 @@
     @keydown.ctrl.enter.capture.stop="submitEmail"
     @keydown.meta.enter.capture.stop="submitEmail"
   >
-    <EmailEditor
-      ref="newEmailEditor"
-      v-model:content="newEmail"
-      v-model="doc"
-      v-model:attachments="attachments"
-      :submitButtonProps="{
-        variant: 'solid',
-        onClick: submitEmail,
-        disabled: emailEmpty,
-      }"
-      :discardButtonProps="{
-        onClick: async () => {
-          await deleteAttachedFiles()
-          showEmailBox = false
-          newEmailEditor.subject = subject
-          newEmailEditor.toEmails = doc.email ? [doc.email] : []
-          newEmailEditor.ccEmails = []
-          newEmailEditor.bccEmails = []
-          newEmailEditor.cc = false
-          newEmailEditor.bcc = false
-          newEmail = ''
-        },
-      }"
-      :editable="showEmailBox"
-      :doctype="doctype"
-      :subject="subject"
-      :placeholder="
-        __('Hi John, \n\nCan you please provide more details on this...')
-      "
-    />
+    <KeepAlive>
+      <EmailEditor
+        v-if="showEmailBox"
+        ref="newEmailEditor"
+        v-model:content="newEmail"
+        v-model="doc"
+        v-model:attachments="attachments"
+        :submitButtonProps="{
+          variant: 'solid',
+          onClick: submitEmail,
+          disabled: emailEmpty,
+        }"
+        :discardButtonProps="{
+          onClick: async () => {
+            await deleteAttachedFiles()
+            showEmailBox = false
+            if (newEmailEditor) {
+              newEmailEditor.subject = subject
+              newEmailEditor.toEmails = doc.email ? [doc.email] : []
+              newEmailEditor.ccEmails = []
+              newEmailEditor.bccEmails = []
+              newEmailEditor.cc = false
+              newEmailEditor.bcc = false
+            }
+            newEmail = ''
+          },
+        }"
+        :editable="showEmailBox"
+        :doctype="doctype"
+        :subject="subject"
+        :placeholder="
+          __('Hi John, \n\nCan you please provide more details on this...')
+        "
+      />
+    </KeepAlive>
   </div>
   <div
     v-show="showCommentBox"
     @keydown.ctrl.enter.capture.stop="submitComment"
     @keydown.meta.enter.capture.stop="submitComment"
   >
-    <CommentBox
-      ref="newCommentEditor"
-      v-model:content="newComment"
-      v-model="doc"
-      v-model:attachments="attachments"
-      :submitButtonProps="{
-        variant: 'solid',
-        onClick: submitComment,
-        disabled: commentEmpty,
-      }"
-      :discardButtonProps="{
-        onClick: async () => {
-          await deleteAttachedFiles()
-          showCommentBox = false
-          newComment = ''
-        },
-      }"
-      :editable="showCommentBox"
-      :doctype="doctype"
-      :placeholder="__('@John, can you please check this?')"
-    />
+    <KeepAlive>
+      <CommentBox
+        v-if="showCommentBox"
+        ref="newCommentEditor"
+        v-model:content="newComment"
+        v-model="doc"
+        v-model:attachments="attachments"
+        :submitButtonProps="{
+          variant: 'solid',
+          onClick: submitComment,
+          disabled: commentEmpty,
+        }"
+        :discardButtonProps="{
+          onClick: async () => {
+            await deleteAttachedFiles()
+            showCommentBox = false
+            newComment = ''
+          },
+        }"
+        :editable="showCommentBox"
+        :doctype="doctype"
+        :placeholder="__('@John, can you please check this?')"
+      />
+    </KeepAlive>
   </div>
 </template>
 
 <script setup>
-import EmailEditor from '@/components/EmailEditor.vue'
-import CommentBox from '@/components/CommentBox.vue'
 import CommentIcon from '@/components/Icons/CommentIcon.vue'
 import Email2Icon from '@/components/Icons/Email2Icon.vue'
 import { isContentEmpty } from '@/utils'
@@ -96,7 +102,16 @@ import { usersStore } from '@/stores/users'
 import { useStorage } from '@vueuse/core'
 import { useOnboarding, useTelemetry } from 'frappe-ui/frappe'
 import { call, createResource, toast } from 'frappe-ui'
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, defineAsyncComponent, nextTick } from 'vue'
+
+// Rich-text editors pull the Tiptap toolchain and are only needed after a
+// user starts composing. Keep them out of the initial Activity/Lead bundle.
+const EmailEditor = defineAsyncComponent(
+  () => import('@/components/EmailEditor.vue'),
+)
+const CommentBox = defineAsyncComponent(
+  () => import('@/components/CommentBox.vue'),
+)
 
 const props = defineProps({
   doctype: { type: String, default: 'CRM Lead' },
@@ -176,25 +191,40 @@ watch(newEmail, (value) => {
   if (!value) signatureAdded.value = false
 })
 
+function focusEmailEditor() {
+  let editor = newEmailEditor.value?.editor
+  if (!editor) return
+  editor.commands.focus()
+  setSignature(editor)
+}
+
 watch(
   () => showEmailBox.value,
-  (value) => {
+  async (value) => {
     if (value) {
-      let editor = newEmailEditor.value.editor
-      editor.commands.focus()
-      setSignature(editor)
+      await nextTick()
+      focusEmailEditor()
     }
   },
 )
 
+watch(newEmailEditor, (editor) => {
+  if (showEmailBox.value && editor?.editor) focusEmailEditor()
+})
+
 watch(
   () => showCommentBox.value,
-  (value) => {
+  async (value) => {
     if (value) {
-      newCommentEditor.value.editor.commands.focus()
+      await nextTick()
+      newCommentEditor.value?.editor?.commands.focus()
     }
   },
 )
+
+watch(newCommentEditor, (editor) => {
+  if (showCommentBox.value) editor?.editor?.commands.focus()
+})
 
 const commentEmpty = computed(() => isContentEmpty(newComment.value))
 

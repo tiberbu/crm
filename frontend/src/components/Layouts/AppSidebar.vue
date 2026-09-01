@@ -155,7 +155,7 @@
   </div>
 
   <template v-if="!mobile">
-    <Settings />
+    <Settings v-if="settingsLoaded" />
     <HelpModal
       v-if="showHelpModal"
       v-model="showHelpModal"
@@ -201,7 +201,6 @@ import CollapseSidebar from '@/components/Icons/CollapseSidebar.vue'
 import NotificationsIcon from '@/components/Icons/NotificationsIcon.vue'
 import HelpIcon from '@/components/Icons/HelpIcon.vue'
 import Notifications from '@/components/Notifications.vue'
-import Settings from '@/components/Settings/Settings.vue'
 import { viewsStore } from '@/stores/views'
 import {
   unreadNotificationsCount,
@@ -231,7 +230,15 @@ import {
 import router from '@/router'
 import { useStorage } from '@vueuse/core'
 import { useDemoData } from '@/composables/demoData'
-import { ref, reactive, computed, markRaw, onMounted, watch } from 'vue'
+import {
+  ref,
+  reactive,
+  computed,
+  markRaw,
+  onMounted,
+  watch,
+  defineAsyncComponent,
+} from 'vue'
 import { useRoute } from 'vue-router'
 
 const props = defineProps({
@@ -251,6 +258,17 @@ const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 // The mobile drawer pins the sidebar open, so it is never visually collapsed
 // even when the stored rail state says otherwise.
 const isCollapsed = computed(() => isSidebarCollapsed.value && !props.mobile)
+
+// Settings pulls in many administration screens and is rarely opened during
+// a normal CRM session. Defer that graph until the user opens Settings, then
+// keep it mounted so switching the dialog does not discard in-progress edits.
+const Settings = defineAsyncComponent(
+  () => import('@/components/Settings/Settings.vue'),
+)
+const settingsLoaded = ref(showSettings.value)
+watch(showSettings, (opened) => {
+  if (opened) settingsLoaded.value = true
+})
 
 const isFCSite = ref(window.is_fc_site)
 const isDemoSite = ref(window.is_demo_site)
