@@ -16,6 +16,8 @@
   "default_lead_owner",
   "tiberbu_signatory",
   "section_break_tiberbu_approver",
+  "tiberbu_signing_requirement",
+  "tiberbu_contacts",
   "tiberbu_signatory_name",
   "tiberbu_signatory_email",
   "tiberbu_signatory_phone",
@@ -92,6 +94,21 @@
    "fieldname": "section_break_tiberbu_approver",
    "fieldtype": "Section Break",
    "label": "Tiberbu Signing and Approval Contacts"
+  },
+  {
+   "fieldname": "tiberbu_signing_requirement",
+   "fieldtype": "Select",
+   "label": "Tiberbu signing requirement",
+   "options": "All must sign\nAt least one must sign",
+   "default": "All must sign",
+   "description": "Controls the Tiberbu Signatory rows below. Facility, witness, and network signatories remain required."
+  },
+  {
+   "fieldname": "tiberbu_contacts",
+   "fieldtype": "Table",
+   "label": "Tiberbu signing and approval contacts",
+   "options": "CRM Tiberbu Contact",
+   "description": "Add one row per Tiberbu signatory or approver. Contacts can be external and do not need CRM User accounts."
   },
   {
    "fieldname": "tiberbu_signatory_name",

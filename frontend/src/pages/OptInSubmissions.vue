@@ -14,6 +14,18 @@
       class="flex flex-wrap items-center gap-2 border-b border-outline-gray-2 px-5 py-2.5"
     >
       <button
+        type="button"
+        :class="[
+          'rounded-full border px-3 py-1 text-xs font-semibold transition-colors',
+          pendingMyAction
+            ? 'border-red-600 bg-red-600 text-white'
+            : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300',
+        ]"
+        @click="togglePendingMyAction"
+      >
+        {{ __('Pending my action') }}
+      </button>
+      <button
         v-for="s in statuses"
         :key="s"
         :class="[
@@ -367,15 +379,17 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { createResource, Button } from 'frappe-ui'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
+const route = useRoute()
 
 const statuses = ['All', 'Pending', 'Processing', 'Processed', 'Failed']
 const selectedStatus = ref('All')
 const selectedNetwork = ref('')
 const selectedFacilityLevel = ref('')
 const facilitySearch = ref('')
+const pendingMyAction = ref(route.query.pending_my_action === '1')
 const page = ref(0)
 const pageSize = 20
 const retrying = ref(null)
@@ -395,6 +409,7 @@ const listResource = createResource({
     network_slug: selectedNetwork.value || null,
     facility_level: selectedFacilityLevel.value || null,
     facility: facilitySearch.value || null,
+    pending_my_action: pendingMyAction.value ? 1 : 0,
     page: page.value,
     page_size: pageSize,
   }),
@@ -418,11 +433,17 @@ function applyFilters() {
   listResource.reload()
 }
 
+function togglePendingMyAction() {
+  pendingMyAction.value = !pendingMyAction.value
+  applyFilters()
+}
+
 function clearFilters() {
   selectedStatus.value = 'All'
   selectedNetwork.value = ''
   selectedFacilityLevel.value = ''
   facilitySearch.value = ''
+  pendingMyAction.value = false
   applyFilters()
 }
 

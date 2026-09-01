@@ -50,3 +50,5 @@ crm.patches.v1_0.seed_africas_talking_sms_settings
 crm.patches.v1_0.configure_africas_talking_sms_settings
 crm.patches.v1_0.backfill_contract_signatory_statuses
 crm.patches.v1_0.add_price_list_history_fields
+crm.patches.v1_0.add_tiberbu_contact_settings
+crm.patches.v1_0.link_optin_records_to_network

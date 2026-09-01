@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import add_months, date_diff, flt, get_first_day, today
 
 from crm.finance import erpnext_adapter
+from crm.utils.optin_network import set_network_link
 
 
 @frappe.whitelist()
@@ -1017,6 +1018,11 @@ def create_customer_payment(
 		# Seed from the first allocated invoice so accounts + rates resolve natively.
 		first = allocations[0]
 		pe = get_payment_entry("Sales Invoice", first.get("invoice"), party_amount=flt(first.get("amount")))
+		if frappe.db.has_column("Sales Invoice", "optin_network"):
+			set_network_link(
+				pe,
+				frappe.db.get_value("Sales Invoice", first.get("invoice"), "optin_network"),
+			)
 		# Reset references to exactly what the user allocated.
 		pe.set("references", [])
 		total = 0.0
@@ -1076,6 +1082,12 @@ def make_payment_entry_from_invoice(source_name):
 		frappe.throw("Invoice %s is already fully paid (outstanding: 0)" % source_name)
 
 	pe = get_payment_entry("Sales Invoice", source_name, party_amount=flt(inv.outstanding_amount))
+	set_network_link(
+		pe,
+		frappe.db.get_value("Sales Invoice", source_name, "optin_network")
+		if frappe.db.has_column("Sales Invoice", "optin_network")
+		else "",
+	)
 	return pe.as_dict()
 
 

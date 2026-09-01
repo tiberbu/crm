@@ -478,6 +478,16 @@ def get_optin_settings():
 		"tiberbu_approver_name": settings.get("tiberbu_approver_name") or "",
 		"tiberbu_approver_email": settings.get("tiberbu_approver_email") or "",
 		"tiberbu_approver_phone": settings.get("tiberbu_approver_phone") or "",
+		"tiberbu_signing_requirement": settings.get("tiberbu_signing_requirement") or "All must sign",
+		"tiberbu_contacts": [
+			{
+				"role": frappe.utils.cstr(row.get("role") or "").strip(),
+				"full_name": frappe.utils.cstr(row.get("full_name") or "").strip(),
+				"email": frappe.utils.cstr(row.get("email") or "").strip().lower(),
+				"phone": frappe.utils.cstr(row.get("phone") or "").strip(),
+			}
+			for row in (settings.get("tiberbu_contacts") or [])
+		],
 	}
 
 
@@ -499,6 +509,33 @@ def update_optin_settings(settings: Any):
 	tiberbu_approver_name = frappe.utils.cstr(settings.get("tiberbu_approver_name")).strip()
 	tiberbu_approver_email = frappe.utils.cstr(settings.get("tiberbu_approver_email")).strip().lower()
 	tiberbu_approver_phone = frappe.utils.cstr(settings.get("tiberbu_approver_phone")).strip()
+	tiberbu_signing_requirement = frappe.utils.cstr(
+		settings.get("tiberbu_signing_requirement") or "All must sign"
+	).strip()
+	if tiberbu_signing_requirement not in ("All must sign", "At least one must sign"):
+		frappe.throw(_("Choose whether all Tiberbu signatories or at least one must sign."))
+	tiberbu_contacts = settings.get("tiberbu_contacts")
+	if tiberbu_contacts is not None:
+		if not isinstance(tiberbu_contacts, list) or any(
+			not isinstance(row, dict) for row in tiberbu_contacts
+		):
+			frappe.throw(_("Tiberbu contacts must be a list of contact rows."))
+		normalized_contacts = []
+		seen_contacts = set()
+		for row in tiberbu_contacts:
+			role = frappe.utils.cstr(row.get("role") or "").strip().title()
+			name = frappe.utils.cstr(row.get("full_name") or "").strip()
+			email = frappe.utils.cstr(row.get("email") or "").strip().lower()
+			phone = frappe.utils.cstr(row.get("phone") or "").strip()
+			if role not in ("Signatory", "Approver") or not name or not email:
+				frappe.throw(_("Each Tiberbu contact needs a role, name, and email."))
+			key = (role, email)
+			if key in seen_contacts:
+				frappe.throw(_("Each Tiberbu contact email must be unique within its role."))
+			seen_contacts.add(key)
+			normalized_contacts.append({"role": role, "full_name": name, "email": email, "phone": phone})
+	else:
+		normalized_contacts = None
 
 	if default_price_list and not frappe.db.exists(
 		"Price List", {"name": default_price_list, "selling": 1, "enabled": 1}
@@ -536,6 +573,11 @@ def update_optin_settings(settings: Any):
 	doc.tiberbu_approver_name = tiberbu_approver_name
 	doc.tiberbu_approver_email = tiberbu_approver_email
 	doc.tiberbu_approver_phone = tiberbu_approver_phone
+	doc.tiberbu_signing_requirement = tiberbu_signing_requirement
+	if normalized_contacts is not None and frappe.get_meta("CRM Opt-In Settings").has_field(
+		"tiberbu_contacts"
+	):
+		doc.set("tiberbu_contacts", normalized_contacts)
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 

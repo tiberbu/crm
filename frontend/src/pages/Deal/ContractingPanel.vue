@@ -118,7 +118,7 @@
            editor's facility-signature guard. -->
       <section
         v-if="priceListSnapshot.initial || priceListSnapshot.history.length"
-        class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
+        class="mt-6 mb-8 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
         aria-label="Price list history"
       >
         <div class="flex flex-wrap items-start justify-between gap-3">
@@ -161,9 +161,142 @@
             <span v-if="event.at" class="ml-2 text-ink-gray-4">{{
               event.at
             }}</span>
+            <span v-if="event.by" class="ml-2 text-ink-gray-5">
+              · {{ __('Changed by {0}', [event.by]) }}
+            </span>
           </li>
         </ol>
       </section>
+
+      <!-- A network/Tiberbu signatory who is also a CRM user can act from the
+           protected Quote page. This is a separate authenticated branch: the
+           existing public invitation + OTP pathway remains unchanged. -->
+      <section
+        v-if="authenticatedSigningContext?.action_required"
+        class="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20"
+        aria-label="Your pending signature"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p
+              class="text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300"
+            >
+              {{ __('Your signature is required') }}
+            </p>
+            <p class="mt-1 text-sm font-medium text-ink-gray-9">
+              {{
+                authenticatedSigningContext.signatory_name || __('Signatory')
+              }}
+              <span class="font-normal text-ink-gray-6">
+                · {{ authenticatedSigningContext.role }}
+              </span>
+            </p>
+            <p class="mt-1 text-xs text-ink-gray-6">
+              {{
+                __(
+                  'You are signed in as {0}. Review the contract and sign securely from this page.',
+                  [authenticatedSigningContext.email],
+                )
+              }}
+            </p>
+          </div>
+          <Button variant="solid" theme="red" @click="openAuthenticatedSigning">
+            {{ __('Review & sign') }}
+          </Button>
+        </div>
+      </section>
+
+      <Dialog
+        v-model="showAuthenticatedSigning"
+        :options="{ title: __('Sign contract from CRM'), size: 'xl' }"
+      >
+        <template #body-content>
+          <div class="space-y-4">
+            <div v-if="authenticatedContractLoading" class="space-y-2">
+              <div class="h-4 animate-pulse rounded bg-surface-gray-2" />
+              <div class="h-4 animate-pulse rounded bg-surface-gray-2" />
+              <div class="h-32 animate-pulse rounded bg-surface-gray-2" />
+            </div>
+            <template v-else>
+              <div
+                class="max-h-64 overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-white p-4 text-sm text-ink-gray-8 dark:bg-surface-gray-1"
+              >
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <div v-html="authenticatedContractHtml" />
+              </div>
+              <div
+                v-if="authenticatedSigningProgress.length"
+                class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+              >
+                <p
+                  class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+                >
+                  {{ __('Signing progress') }}
+                </p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <span
+                    v-for="(signer, index) in authenticatedSigningProgress"
+                    :key="`${signer.role}-${signer.name}-${index}`"
+                    class="rounded-full px-2 py-1 text-xs font-medium"
+                    :class="
+                      signer.status === 'Signed'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-amber-100 text-amber-700'
+                    "
+                  >
+                    {{ signer.name }} · {{ signer.status }}
+                  </span>
+                </div>
+              </div>
+              <label class="flex items-start gap-2 text-sm text-ink-gray-7">
+                <input
+                  v-model="authenticatedReadConfirmed"
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4"
+                />
+                <span>{{
+                  __(
+                    'I have reviewed this contract and am authorised to sign it.',
+                  )
+                }}</span>
+              </label>
+              <div>
+                <p
+                  class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+                >
+                  {{ __('Your signature') }}
+                </p>
+                <SignatureCanvas
+                  ref="authenticatedCanvas"
+                  :disabled="!authenticatedReadConfirmed"
+                  @has-signature="authenticatedHasSignature = $event"
+                />
+              </div>
+            </template>
+            <p v-if="authenticatedSigningError" class="text-sm text-ink-red-6">
+              {{ authenticatedSigningError }}
+            </p>
+          </div>
+        </template>
+        <template #actions>
+          <Button variant="subtle" @click="closeAuthenticatedSigning">
+            {{ __('Cancel') }}
+          </Button>
+          <Button
+            variant="solid"
+            theme="red"
+            :loading="authenticatedSigning"
+            :disabled="
+              !authenticatedReadConfirmed ||
+              !authenticatedHasSignature ||
+              authenticatedContractLoading
+            "
+            @click="submitAuthenticatedSignature"
+          >
+            {{ __('Confirm signature') }}
+          </Button>
+        </template>
+      </Dialog>
 
       <!-- Signatory detail: edit unsigned signatories, resend/regenerate links -->
       <div
@@ -264,7 +397,7 @@
               </div>
             </div>
 
-            <!-- Inline edit form — free-text name + email for every signatory -->
+            <!-- Inline edit form — free-text name + email for unsigned signatories -->
             <div v-else class="space-y-2">
               <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <input
@@ -293,9 +426,7 @@
                 class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
               >
                 {{
-                  __(
-                    'This signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.',
-                  )
+                  __('This signatory has already signed and cannot be edited.')
                 }}
               </p>
               <p v-else class="text-xs text-ink-gray-4">
@@ -509,12 +640,35 @@
            reconfigured). Each signs via the same OTP + pad once invited. -->
       <div class="mb-6">
         <div class="mb-2 flex items-center justify-between">
-          <label class="block text-xs font-medium text-ink-gray-6">
-            {{ __('Network & Tiberbu Co-Signatories') }}
-          </label>
-          <span v-if="coSignersLoading" class="text-xs text-ink-gray-4">{{
-            __('Loading…')
-          }}</span>
+          <div>
+            <label class="block text-xs font-medium text-ink-gray-6">
+              {{ __('Network & Tiberbu Co-Signatories') }}
+            </label>
+            <p class="mt-0.5 text-xs text-ink-gray-4">
+              {{
+                __('Settings contacts are shown here. Signed rows are locked.')
+              }}
+              <template v-if="tiberbuSigningRequirement">
+                ·
+                {{
+                  __('Tiberbu rule: {0}', [tiberbuSigningRequirement])
+                }}</template
+              >
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <span v-if="coSignersLoading" class="text-xs text-ink-gray-4">{{
+              __('Loading…')
+            }}</span>
+            <Button
+              v-if="contractExists"
+              variant="subtle"
+              size="sm"
+              :loading="syncingCo"
+              :label="__('Sync from settings')"
+              @click="syncConfiguredSignatories"
+            />
+          </div>
         </div>
 
         <!-- Post-generate: editable rows (on-contract rows + configured-but-missing) -->
@@ -682,7 +836,7 @@
               >
                 {{
                   __(
-                    'This co-signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.',
+                    'This co-signatory has already signed and cannot be edited.',
                   )
                 }}
               </p>
@@ -814,7 +968,6 @@
               + {{ __('Add Network Signatory') }}
             </button>
             <button
-              v-if="!tiberbuOnContract"
               type="button"
               class="text-xs font-medium underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
               :disabled="!canGenerate"
@@ -893,6 +1046,42 @@
         </div>
       </div>
 
+      <!-- Tiberbu approval contacts are configured alongside signatories but do
+           not sign the contract. Keep them visible on the quote for a clear
+           hand-off, and refresh them with the same settings sync action above. -->
+      <div
+        v-if="tiberbuApprovers.length"
+        class="mb-6 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+      >
+        <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-4">
+          {{ __('Tiberbu approval contacts') }}
+        </p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+          <div
+            v-for="approver in tiberbuApprovers"
+            :key="`${approver.email}:${approver.full_name}`"
+            class="min-w-0 rounded-md bg-surface-white px-3 py-2 dark:bg-surface-gray-1"
+          >
+            <p class="truncate text-sm font-medium text-ink-gray-8">
+              {{ approver.full_name || approver.email }}
+            </p>
+            <p class="truncate text-xs text-ink-gray-5">
+              <template v-if="approver.email">{{ approver.email }}</template>
+              <template v-if="approver.phone">
+                <span v-if="approver.email"> · </span>{{ approver.phone }}
+              </template>
+            </p>
+          </div>
+        </div>
+        <p class="mt-2 text-xs text-ink-gray-4">
+          {{
+            __(
+              'Shown from Opt-In Settings. These contacts receive approval notifications after execution.',
+            )
+          }}
+        </p>
+      </div>
+
       <!-- Action row -->
       <div class="flex flex-wrap items-center justify-end gap-3">
         <span
@@ -940,9 +1129,10 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { createResource, toast, Button } from 'frappe-ui'
+import { createResource, toast, Button, Dialog } from 'frappe-ui'
 import { usersStore } from '@/stores/users'
 import { sessionStore } from '@/stores/session'
+import SignatureCanvas from '../ContractSigning/SignatureCanvas.vue'
 
 // ---------------------------------------------------------------------------
 // Props / Emits
@@ -967,6 +1157,113 @@ const { isManager } = usersStore()
 const lc = computed(() => props.lifecycle ?? {})
 
 const contractExists = computed(() => !!lc.value.contract?.name)
+
+// ---------------------------------------------------------------------------
+// Authenticated CRM signatory branch
+// ---------------------------------------------------------------------------
+const authenticatedSigningContext = ref(null)
+const authenticatedSigningContextResource = createResource({
+  url: 'crm.api.contracts.get_authenticated_signing_context',
+})
+const authenticatedContractResource = createResource({
+  url: 'crm.api.contracts.get_authenticated_contract',
+})
+const authenticatedSignResource = createResource({
+  url: 'crm.api.contracts.sign_authenticated',
+})
+const showAuthenticatedSigning = ref(false)
+const authenticatedContractLoading = ref(false)
+const authenticatedContractHtml = ref('')
+const authenticatedSigningProgress = ref([])
+const authenticatedReadConfirmed = ref(false)
+const authenticatedHasSignature = ref(false)
+const authenticatedSigning = ref(false)
+const authenticatedSigningError = ref('')
+const authenticatedCanvas = ref(null)
+
+function sanitizeAuthenticatedContractHtml(raw) {
+  return (raw || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/?(?:html|head|body|meta|link|title)[^>]*>/gi, '')
+}
+
+async function loadAuthenticatedSigningContext(contract) {
+  authenticatedSigningContext.value = null
+  if (!contract) return
+  try {
+    authenticatedSigningContext.value =
+      await authenticatedSigningContextResource.submit({
+        contract,
+      })
+  } catch {
+    // Most CRM users are not contract signatories. A denied/non-matching probe
+    // is intentionally silent and leaves the normal contract panel unchanged.
+  }
+}
+
+watch(
+  () => lc.value.contract?.name,
+  (contract) => loadAuthenticatedSigningContext(contract),
+  { immediate: true },
+)
+
+async function openAuthenticatedSigning() {
+  const contract = lc.value.contract?.name
+  const role = authenticatedSigningContext.value?.role
+  if (!contract || !role) return
+  authenticatedContractLoading.value = true
+  authenticatedSigningError.value = ''
+  try {
+    const data = await authenticatedContractResource.submit({ contract, role })
+    authenticatedContractHtml.value = sanitizeAuthenticatedContractHtml(
+      data?.contract_html,
+    )
+    authenticatedSigningProgress.value = data?.signing_progress ?? []
+    authenticatedReadConfirmed.value = false
+    authenticatedHasSignature.value = false
+    showAuthenticatedSigning.value = true
+  } catch (err) {
+    authenticatedSigningError.value =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('This signing action is no longer available.')
+  } finally {
+    authenticatedContractLoading.value = false
+  }
+}
+
+function closeAuthenticatedSigning() {
+  showAuthenticatedSigning.value = false
+  authenticatedReadConfirmed.value = false
+  authenticatedHasSignature.value = false
+  authenticatedSigningError.value = ''
+}
+
+async function submitAuthenticatedSignature() {
+  if (authenticatedSigning.value || !authenticatedHasSignature.value) return
+  const contract = lc.value.contract?.name
+  const role = authenticatedSigningContext.value?.role
+  const signature = authenticatedCanvas.value?.getSignatureDataUrl?.() || ''
+  if (!contract || !role || !signature) return
+  authenticatedSigning.value = true
+  authenticatedSigningError.value = ''
+  try {
+    await authenticatedSignResource.submit({
+      contract,
+      role,
+      signature_b64: signature,
+    })
+    toast.success(__('Your signature has been recorded.'))
+    closeAuthenticatedSigning()
+    emit('lifecycle-reload')
+  } catch (err) {
+    authenticatedSigningError.value =
+      err?.messages?.[0] ?? err?.message ?? __('Could not save your signature.')
+  } finally {
+    authenticatedSigning.value = false
+  }
+}
 
 const priceListSnapshot = computed(() => {
   const contractPrice = lc.value.contract?.price_list ?? {}
@@ -999,8 +1296,8 @@ const dealDocResource = createResource({
 const dealDoc = computed(() => dealDocResource.data ?? null)
 
 // ---------------------------------------------------------------------------
-// Co-signatories — Network Signatories (per network) + Tiberbu Signatory,
-// auto-resolved from configuration. Displayed read-only; not nominated here.
+// Co-signatories — Network Signatories (per network) + Tiberbu contacts,
+// auto-resolved from configuration.
 // ---------------------------------------------------------------------------
 const coSignersResource = createResource({
   url: 'crm.api.contracts.get_network_signatories',
@@ -1008,7 +1305,14 @@ const coSignersResource = createResource({
 const coSignersLoading = ref(true)
 
 const coSigners = computed(() => coSignersResource.data?.signers ?? [])
+const tiberbuApprovers = computed(() => coSignersResource.data?.approvers ?? [])
 const networkSlug = computed(() => coSignersResource.data?.network_slug ?? '')
+const tiberbuSigningRequirement = computed(
+  () =>
+    lc.value.contract?.tiberbu_signing_requirement ||
+    coSignersResource.data?.tiberbu_signing_requirement ||
+    'All must sign',
+)
 const smsDeliveryResource = createResource({
   url: 'crm.api.contracts.get_sms_delivery_status',
 })
@@ -1287,7 +1591,15 @@ async function doResend(role, rowName) {
       role,
       row_name: rowName ?? '',
     })
-    toast.success(__('Signing link re-sent to {0}', [res?.email ?? role]))
+    if (res?.status === 'crm_login_required') {
+      toast.info(
+        __(
+          'This signatory is a CRM user. They must sign in to complete this action.',
+        ),
+      )
+    } else {
+      toast.success(__('Signing link re-sent to {0}', [res?.email ?? role]))
+    }
     emit('lifecycle-reload')
   } catch (err) {
     const msg =
@@ -1313,15 +1625,12 @@ const editEmail = ref('')
 const editPhone = ref('')
 const savingEdit = ref(false)
 
-// Every signatory row is editable — Pending, Declined, or Signed. Editing a
-// Signed row invalidates its signature server-side (update_signatory clears the
-// signature + resets to Pending) so the person re-signs the current terms.
-function canEdit(_status) {
-  return true
+// A captured signature is immutable. Pending and Declined rows remain editable.
+function canEdit(status) {
+  return !isSignedStatus(status)
 }
 
-// True for an already-signed row — used to warn that editing will invalidate
-// the captured signature and require the party to sign again.
+// True for an already-signed row — used to lock the captured signature.
 function isSignedStatus(status) {
   return (status ?? '').toLowerCase() === 'signed'
 }
@@ -1340,7 +1649,7 @@ function isTiberbuRole(role) {
 }
 
 function startEdit(s) {
-  if (!canGenerate.value) return
+  if (!canGenerate.value || !canEdit(s.status)) return
   editingRole.value = s.role
   editRowName.value = s.row_name ?? ''
   editName.value = s.name ?? ''
@@ -1413,6 +1722,10 @@ const removeSignatoryResource = createResource({
 const saveNetworkSignerResource = createResource({
   url: 'crm.api.contracts.save_network_signer',
 })
+const syncConfiguredSignatoriesResource = createResource({
+  url: 'crm.api.contracts.sync_configured_signatories',
+})
+const syncingCo = ref(false)
 
 const ADD_KEY = '__add__' // sentinel: the standalone "add from scratch" form is open
 
@@ -1437,18 +1750,14 @@ function coKey(role, email) {
   return `${(role ?? '').toLowerCase()}::${(email ?? '').trim().toLowerCase()}`
 }
 
-// Merge the contract's counterparty rows with the configured co-signatories that
-// are not yet on the contract. `onContract` rows are edited via update_signatory;
-// the rest are added via add_signatory. Deduped on email (Tiberbu is singular).
+// Merge the contract's counterparty rows with configured co-signatories that are
+// not yet on the contract. `onContract` rows are edited via update_signatory; the
+// rest are added via add_signatory. All roles are deduped on email.
 const coSignatoryItems = computed(() => {
   const rows = (lc.value.signatories ?? []).filter((s) => isCoRole(s.role))
-  const onContractEmails = new Set(
-    rows.map((r) => (r.email ?? '').trim().toLowerCase()).filter(Boolean),
+  const onContractKeys = new Set(
+    rows.map((r) => coKey(r.role, r.email)).filter(Boolean),
   )
-  // Tiberbu is singular per contract; its config email may have changed after
-  // generation, so it is deduped by role (not email) — else a reconfigured
-  // Tiberbu would offer a phantom "Add" the backend singular-guard rejects.
-  const hasTiberbuOnContract = rows.some((r) => isTiberbuRole(r.role))
   const items = rows.map((r) => ({
     key: coKey(r.role, r.email),
     row_name: r.row_name,
@@ -1463,9 +1772,7 @@ const coSignatoryItems = computed(() => {
     const email = (cs.email ?? '').trim().toLowerCase()
     const role = cs.signer_role || 'Network Signatory'
     // Skip config entries already represented by a contract row.
-    if (isTiberbuRole(role)) {
-      if (hasTiberbuOnContract) continue
-    } else if (email && onContractEmails.has(email)) {
+    if (email && onContractKeys.has(coKey(role, email))) {
       continue
     }
     items.push({
@@ -1482,13 +1789,34 @@ const coSignatoryItems = computed(() => {
   return items
 })
 
-// A Tiberbu Signatory is singular per contract — hide "Add Tiberbu" once present.
-const tiberbuOnContract = computed(() =>
-  coSignatoryItems.value.some((i) => isTiberbuRole(i.role) && i.onContract),
-)
-
 function canRemoveCoSignatory(item) {
   return !!item?.row_name && item.onContract && !isSignedStatus(item.status)
+}
+
+async function syncConfiguredSignatories() {
+  if (!canGenerate.value || syncingCo.value || !contractExists.value) return
+  syncingCo.value = true
+  try {
+    const result = await syncConfiguredSignatoriesResource.submit({
+      contract: lc.value.contract?.name ?? '',
+    })
+    await coSignersResource.submit({ deal: props.dealId })
+    emit('lifecycle-reload')
+    toast.success(
+      __(
+        'Settings synced: {0} added, {1} updated, {2} signed rows protected.',
+        [result?.added ?? 0, result?.updated ?? 0, result?.skipped_signed ?? 0],
+      ),
+    )
+  } catch (err) {
+    toast.error(
+      err?.messages?.[0] ??
+        err?.message ??
+        __('Could not sync signing contacts from settings.'),
+    )
+  } finally {
+    syncingCo.value = false
+  }
 }
 
 async function removeCoSignatory(item) {
@@ -1528,7 +1856,7 @@ async function removeCoSignatory(item) {
 }
 
 function startCoEdit(item) {
-  if (!canGenerate.value) return
+  if (!canGenerate.value || (item.onContract && !canEdit(item.status))) return
   coEditKey.value = item.key
   coEditRole.value = item.role
   coEditRowName.value = item.row_name ?? ''

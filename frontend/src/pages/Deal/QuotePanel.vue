@@ -1,7 +1,9 @@
 <template>
-  <div class="mt-4">
+  <div class="mt-4 min-w-0">
     <!-- Section header -->
-    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+    <div
+      class="mb-3 flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:flex-wrap sm:items-center"
+    >
       <div class="flex items-center gap-2">
         <h2 class="text-base font-semibold text-ink-gray-9">
           {{ __('Quotation') }}
@@ -10,7 +12,9 @@
           data.name
         }}</span>
       </div>
-      <div class="flex items-center gap-2">
+      <div
+        class="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end"
+      >
         <!-- Price list (ERPNext Item Price architecture) -->
         <label
           v-if="canEdit || canSwitchPriceList"
@@ -25,7 +29,7 @@
           <select
             :value="data?.price_list"
             :disabled="!canSwitchPriceList || switchingList"
-            class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-1 text-xs text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-outline-red-4 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-surface-gray-2"
+            class="w-full max-w-full rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-xs text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-outline-red-4 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-1 dark:bg-surface-gray-2"
             @change="onChangePriceList($event.target.value)"
           >
             <option
@@ -50,7 +54,7 @@
          original and negotiated lists remain obvious after a switch. -->
     <section
       v-if="data?.initial_price_list || data?.price_list_history?.length"
-      class="rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
+      class="mb-8 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
       aria-label="Price list history"
     >
       <div class="flex flex-wrap items-start justify-between gap-3">
@@ -93,6 +97,9 @@
           <span v-if="event.at" class="ml-2 text-ink-gray-4">{{
             event.at
           }}</span>
+          <span v-if="event.by" class="ml-2 text-ink-gray-5">
+            · {{ __('Changed by {0}', [event.by]) }}
+          </span>
         </li>
       </ol>
     </section>
@@ -112,7 +119,7 @@
 
       <template v-else>
         <!-- Editable line-item table -->
-        <div class="overflow-x-auto">
+        <div class="hidden overflow-x-auto sm:block">
           <table class="w-full text-sm">
             <thead
               class="bg-surface-gray-2 text-xs uppercase tracking-wide text-ink-gray-5 dark:bg-surface-gray-3"
@@ -217,12 +224,103 @@
           </table>
         </div>
 
+        <!-- Stacked line-item editor keeps the quote usable without horizontal
+             scrolling on phones. The desktop table above remains unchanged. -->
+        <div class="space-y-3 p-3 sm:hidden">
+          <div
+            v-if="!lines.length"
+            class="rounded-lg bg-surface-gray-1 px-3 py-6 text-center text-sm text-ink-gray-4 dark:bg-surface-gray-2"
+          >
+            {{ __('No line items on this quote.') }}
+          </div>
+          <article
+            v-for="(line, i) in lines"
+            :key="`mobile-${i}`"
+            class="rounded-lg border border-outline-gray-2 bg-surface-white p-3 dark:bg-surface-gray-2"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-semibold text-ink-gray-9">
+                  {{ line.item_name }}
+                </p>
+                <p class="mt-0.5 font-mono text-xs text-ink-gray-4">
+                  {{ line.item_code }}
+                </p>
+              </div>
+              <button
+                v-if="canEdit"
+                type="button"
+                class="min-h-10 min-w-10 shrink-0 rounded-md p-2 text-ink-gray-4 hover:bg-surface-gray-2 hover:text-red-600 dark:hover:bg-surface-gray-3"
+                :title="__('Remove line')"
+                :aria-label="__('Remove {0}', [line.item_name])"
+                @click="removeLine(i)"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="mx-auto h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="3 6 5 6 21 6" />
+                  <path
+                    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                  />
+                </svg>
+              </button>
+            </div>
+            <p
+              v-if="line.description"
+              class="mt-2 text-xs leading-5 text-ink-gray-5"
+            >
+              {{ line.description }}
+            </p>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <label class="text-xs font-medium text-ink-gray-5">
+                {{ __('Qty') }}
+                <input
+                  v-model.number="line.qty"
+                  type="number"
+                  min="0"
+                  step="1"
+                  :disabled="!canEdit"
+                  class="mt-1 min-h-10 w-full rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-outline-red-4 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-surface-gray-1"
+                  @input="markDirty"
+                />
+              </label>
+              <label class="text-xs font-medium text-ink-gray-5">
+                {{ __('Unit price (KES)') }}
+                <input
+                  v-model.number="line.rate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  :disabled="!canEdit"
+                  class="mt-1 min-h-10 w-full rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-outline-red-4 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-surface-gray-1"
+                  @input="markDirty"
+                />
+              </label>
+            </div>
+            <div
+              class="mt-3 flex items-center justify-between border-t border-outline-gray-2 pt-2 text-sm"
+            >
+              <span class="text-ink-gray-5">{{ __('Amount') }}</span>
+              <strong class="text-ink-gray-9">{{
+                fmt((line.qty || 0) * (line.rate || 0))
+              }}</strong>
+            </div>
+          </article>
+        </div>
+
         <!-- Add line -->
         <div
           v-if="canEdit"
-          class="flex flex-wrap items-end gap-2 border-t border-outline-gray-2 px-3 py-3"
+          class="flex flex-col items-stretch gap-2 border-t border-outline-gray-2 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-end"
         >
-          <div class="min-w-[240px] flex-1">
+          <div class="w-full min-w-0 flex-1 sm:min-w-[240px]">
             <label class="mb-1 block text-xs font-medium text-ink-gray-5">{{
               __('Add item from catalogue')
             }}</label>
@@ -233,7 +331,12 @@
               @update:model-value="addItemCode = $event"
             />
           </div>
-          <Button variant="subtle" :disabled="!addItemCode" @click="addLine">
+          <Button
+            class="w-full sm:w-auto"
+            variant="subtle"
+            :disabled="!addItemCode"
+            @click="addLine"
+          >
             <template #prefix>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -255,9 +358,9 @@
 
         <!-- Totals -->
         <div
-          class="flex justify-end border-t border-outline-gray-2 bg-surface-gray-1 px-4 py-4 dark:bg-surface-gray-2"
+          class="flex justify-stretch border-t border-outline-gray-2 bg-surface-gray-1 px-4 py-4 sm:justify-end dark:bg-surface-gray-2"
         >
-          <div class="w-72 space-y-1.5 text-sm">
+          <div class="w-full space-y-1.5 text-sm sm:w-72">
             <div class="flex justify-between">
               <span class="text-ink-gray-6">{{
                 __('Sub Total (Excl. VAT)')
@@ -282,7 +385,7 @@
 
         <!-- Footer: permission notices + save -->
         <div
-          class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-2 px-4 py-3"
+          class="flex flex-col items-stretch justify-between gap-3 border-t border-outline-gray-2 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center"
         >
           <p v-if="!data?.editable" class="text-xs text-ink-gray-5">
             {{
@@ -307,8 +410,14 @@
             {{ dirty ? __('Unsaved changes') : __('All changes saved') }}
           </span>
 
-          <div class="flex items-center gap-2">
-            <Button variant="subtle" @click="doDownloadPdf">
+          <div
+            class="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center"
+          >
+            <Button
+              class="w-full sm:w-auto"
+              variant="subtle"
+              @click="doDownloadPdf"
+            >
               <template #prefix>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -328,6 +437,7 @@
               {{ __('PDF') }}
             </Button>
             <Button
+              class="w-full sm:w-auto"
               variant="solid"
               :disabled="!canEdit || !dirty"
               :loading="saving"

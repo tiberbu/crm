@@ -274,6 +274,7 @@ scheduler_events = {
 		"*/5 * * * *": ["crm.lead_syncing.background_sync.sync_leads_from_sources_5_minutes"],
 		"*/10 * * * *": ["crm.lead_syncing.background_sync.sync_leads_from_sources_10_minutes"],
 		"*/15 * * * *": ["crm.lead_syncing.background_sync.sync_leads_from_sources_15_minutes"],
+		"0 */2 * * *": ["crm.api.contracts.send_internal_signatory_reminders"],
 	},
 }
 

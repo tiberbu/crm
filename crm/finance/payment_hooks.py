@@ -1,6 +1,8 @@
 import frappe
 from frappe.utils import flt
 
+from crm.utils.optin_network import set_network_link
+
 
 # SYSTEM-INTERNAL — runs as Payment Entry on_submit; uses ignore_permissions
 def on_payment_entry_submit(doc, method):
@@ -51,7 +53,7 @@ def _maybe_create_rebate_voucher(payment_doc, invoice, ref, crm_deal):
 		return
 	rebate_amount = allocated * (rebate_pct / 100.0)
 
-	frappe.get_doc(
+	voucher = frappe.get_doc(
 		{
 			"doctype": "CRM Partner Rebate Voucher",
 			"partner": partner,
@@ -64,7 +66,9 @@ def _maybe_create_rebate_voucher(payment_doc, invoice, ref, crm_deal):
 			"currency": payment_doc.paid_to_account_currency,
 			"status": "Pending",
 		}
-	).insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+	)
+	set_network_link(voucher, frappe.db.get_value("CRM Deal", crm_deal, "optin_network"))
+	voucher.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
 
 
 def _maybe_create_commission(payment_doc, invoice, ref, crm_deal):
@@ -91,7 +95,7 @@ def _maybe_create_commission(payment_doc, invoice, ref, crm_deal):
 		return
 	commission_amount = allocated * (commission_pct / 100.0)
 
-	frappe.get_doc(
+	commission = frappe.get_doc(
 		{
 			"doctype": "CRM Sales Commission",
 			"sales_person": sales_person,
@@ -103,4 +107,6 @@ def _maybe_create_commission(payment_doc, invoice, ref, crm_deal):
 			"currency": payment_doc.paid_to_account_currency,
 			"status": "Reported",
 		}
-	).insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+	)
+	set_network_link(commission, frappe.db.get_value("CRM Deal", crm_deal, "optin_network"))
+	commission.insert(ignore_permissions=True)  # SYSTEM-INTERNAL

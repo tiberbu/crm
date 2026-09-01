@@ -129,63 +129,161 @@
         <h3 class="text-sm font-semibold text-ink-gray-8">
           {{ __('Tiberbu signing and approval contacts') }}
         </h3>
-        <p class="mt-1 max-w-xl text-sm text-ink-gray-5">
+        <p class="mt-1 max-w-3xl text-sm text-ink-gray-5">
           {{
             __(
-              'Keep the default Tiberbu contract signer and approval contact here. Signers can be external contacts without CRM User accounts; the Quoting page can still add a contract-only signer.',
+              'Maintain one row per Tiberbu signatory or approver. These contacts can be external to CRM and are copied onto new contracts.',
             )
           }}
         </p>
-        <div class="mt-4 grid max-w-xl gap-4">
+        <div class="mt-4 max-w-4xl rounded-lg border border-outline-gray-2">
+          <div
+            class="grid grid-cols-[8rem_1fr_1.3fr_1fr_2.5rem] gap-2 border-b border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+          >
+            <span>{{ __('Role') }}</span
+            ><span>{{ __('Name') }}</span
+            ><span>{{ __('Email') }}</span
+            ><span>{{ __('Phone') }}</span
+            ><span />
+          </div>
+          <div
+            v-if="!form.tiberbu_contacts.length"
+            class="px-3 py-4 text-sm text-ink-gray-5"
+          >
+            {{
+              __('No table contacts yet. Add a signatory or approver below.')
+            }}
+          </div>
+          <div
+            v-for="(contact, index) in form.tiberbu_contacts"
+            :key="contact._key || index"
+            class="grid grid-cols-[8rem_1fr_1.3fr_1fr_2.5rem] items-center gap-2 border-b border-outline-gray-2 px-3 py-2 last:border-b-0"
+          >
+            <select
+              v-model="contact.role"
+              class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm"
+              @change="markDirty"
+            >
+              <option value="Signatory">{{ __('Signatory') }}</option>
+              <option value="Approver">{{ __('Approver') }}</option>
+            </select>
+            <input
+              v-model="contact.full_name"
+              type="text"
+              :placeholder="__('Full name')"
+              class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm"
+              @input="markDirty"
+            />
+            <input
+              v-model="contact.email"
+              type="email"
+              :placeholder="__('name@tiberbu.com')"
+              class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm"
+              @input="markDirty"
+            />
+            <input
+              v-model="contact.phone"
+              type="tel"
+              :placeholder="__('+254 7xx xxx xxx')"
+              class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm"
+              @input="markDirty"
+            />
+            <button
+              type="button"
+              class="grid size-8 place-items-center rounded-md text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-red-5"
+              :aria-label="__('Remove contact')"
+              @click="removeContact(index)"
+            >
+              ×
+            </button>
+          </div>
+          <div
+            class="flex items-center justify-between gap-3 border-t border-outline-gray-2 bg-surface-gray-1 px-3 py-2"
+          >
+            <span class="text-xs text-ink-gray-5">{{
+              __('Facility, witness, and network signatories remain required.')
+            }}</span>
+            <Button
+              variant="subtle"
+              size="sm"
+              :label="__('Add contact')"
+              @click="addContact"
+            />
+          </div>
+        </div>
+        <div class="mt-4 max-w-sm">
           <FormControl
-            v-model="form.tiberbu_signatory_name"
-            :label="__('Default signatory name')"
-            type="text"
-            @update:modelValue="markDirty"
-          />
-          <FormControl
-            v-model="form.tiberbu_signatory_email"
-            :label="__('Default signatory email')"
-            type="email"
-            @update:modelValue="markDirty"
-          />
-          <FormControl
-            v-model="form.tiberbu_signatory_phone"
-            :label="__('Default signatory mobile number')"
-            type="tel"
-            @update:modelValue="markDirty"
-          />
-          <FormControl
-            v-model="form.tiberbu_signatory"
-            :label="__('Legacy signatory User (fallback)')"
-            :options="userOptions"
+            v-model="form.tiberbu_signing_requirement"
+            :label="__('Tiberbu signing rule')"
+            :options="signingRequirementOptions"
             type="select"
             :description="
               __(
-                'Used when the default signatory contact fields above are blank.',
+                'Choose whether every Tiberbu signatory must sign or any one of them is sufficient.',
               )
             "
             @update:modelValue="markDirty"
           />
-          <FormControl
-            v-model="form.tiberbu_approver_name"
-            :label="__('Approver name')"
-            type="text"
-            @update:modelValue="markDirty"
-          />
-          <FormControl
-            v-model="form.tiberbu_approver_email"
-            :label="__('Approver email')"
-            type="email"
-            @update:modelValue="markDirty"
-          />
-          <FormControl
-            v-model="form.tiberbu_approver_phone"
-            :label="__('Approver mobile number')"
-            type="tel"
-            @update:modelValue="markDirty"
-          />
         </div>
+        <details
+          class="mt-4 max-w-3xl rounded-lg border border-outline-gray-2 px-3 py-2"
+        >
+          <summary class="cursor-pointer text-sm font-medium text-ink-gray-7">
+            {{ __('Legacy fallback fields') }}
+          </summary>
+          <div class="mt-3 grid gap-4">
+            <FormControl
+              v-model="form.tiberbu_signatory"
+              :label="__('Legacy signatory User')"
+              :options="userOptions"
+              type="select"
+              :description="
+                __('Used only when the table has no signatory rows.')
+              "
+              @update:modelValue="markDirty"
+            />
+            <div class="grid gap-4 md:grid-cols-3">
+              <FormControl
+                v-model="form.tiberbu_signatory_name"
+                :label="__('Legacy signatory name')"
+                type="text"
+                @update:modelValue="markDirty"
+              />
+              <FormControl
+                v-model="form.tiberbu_signatory_email"
+                :label="__('Legacy signatory email')"
+                type="email"
+                @update:modelValue="markDirty"
+              />
+              <FormControl
+                v-model="form.tiberbu_signatory_phone"
+                :label="__('Legacy signatory phone')"
+                type="tel"
+                @update:modelValue="markDirty"
+              />
+            </div>
+            <div class="grid gap-4 md:grid-cols-3">
+              <FormControl
+                v-model="form.tiberbu_approver_name"
+                :label="__('Legacy approver name')"
+                type="text"
+                @update:modelValue="markDirty"
+              />
+              <FormControl
+                v-model="form.tiberbu_approver_email"
+                :label="__('Legacy approver email')"
+                type="email"
+                @update:modelValue="markDirty"
+              />
+              <FormControl
+                v-model="form.tiberbu_approver_phone"
+                :label="__('Legacy approver phone')"
+                type="tel"
+                @update:modelValue="markDirty"
+              />
+            </div>
+          </div>
+        </details>
       </section>
       <ErrorMessage v-if="saveError" :message="saveError" />
     </div>
@@ -220,6 +318,8 @@ const form = reactive({
   tiberbu_approver_name: '',
   tiberbu_approver_email: '',
   tiberbu_approver_phone: '',
+  tiberbu_signing_requirement: 'All must sign',
+  tiberbu_contacts: [],
 })
 
 const settingsResource = createResource({
@@ -227,6 +327,12 @@ const settingsResource = createResource({
   auto: true,
   onSuccess(data) {
     Object.assign(form, data)
+    form.tiberbu_contacts = (data.tiberbu_contacts ?? []).map(
+      (contact, index) => ({
+        ...contact,
+        _key: `${contact.role}-${contact.email}-${index}`,
+      }),
+    )
     dirty.value = false
   },
 })
@@ -280,6 +386,26 @@ const userOptions = computed(() => [
     value: user.name,
   })),
 ])
+const signingRequirementOptions = [
+  { label: __('All must sign'), value: 'All must sign' },
+  { label: __('At least one must sign'), value: 'At least one must sign' },
+]
+
+function addContact() {
+  form.tiberbu_contacts.push({
+    _key: `new-${Date.now()}-${form.tiberbu_contacts.length}`,
+    role: 'Signatory',
+    full_name: '',
+    email: '',
+    phone: '',
+  })
+  markDirty()
+}
+
+function removeContact(index) {
+  form.tiberbu_contacts.splice(index, 1)
+  markDirty()
+}
 
 function markDirty() {
   dirty.value = true

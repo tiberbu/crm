@@ -32,6 +32,7 @@ import frappe
 from frappe.utils import add_days, date_diff, getdate, nowdate
 
 from crm.api._timeline import log_deal_event
+from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import append_change, ensure_initial, snapshot
 from crm.utils.quotation_tax import apply_quotation_taxes, quotation_tax_summary
 
@@ -327,6 +328,7 @@ def create_quote(deal, price_list=None):
 			"items": [],
 		}
 	)
+	set_network_link(doc, frappe.db.get_value("CRM Deal", deal, "optin_network"))
 	doc.flags.ignore_permissions = True  # SYSTEM-INTERNAL
 	doc.flags.ignore_validate = True
 	doc.flags.ignore_mandatory = True
@@ -667,6 +669,8 @@ def get_quote_lines(quote):
 	editing on the Deal → Quoting tab. Returns exactly what is stored — so
 	OIS-sourced quotes with KEPH-level item codes render 1:1.
 	"""
+	if not frappe.has_permission("Quotation", "read", quote):
+		frappe.throw("Not permitted", frappe.PermissionError)
 	doc = frappe.get_doc("Quotation", quote)
 
 	lines = []
@@ -699,6 +703,7 @@ def get_quote_lines(quote):
 		"price_list_editable": _quote_price_list_is_editable(doc),
 		"currency": doc.currency or "KES",
 		"price_list": doc.get("selling_price_list") or DEFAULT_PRICE_LIST,
+		"optin_network": doc.get("optin_network") or "",
 		"initial_price_list": price_snapshot["initial"],
 		"price_list_history": price_snapshot["history"],
 		"payment_terms": doc.get("crm_payment_terms") or "Annual Upfront",

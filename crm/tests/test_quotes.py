@@ -150,6 +150,7 @@ class TestConfiguredQuotationVAT(UnitTestCase):
 		)
 		with (
 			patch("crm.api.quotes.frappe.get_doc", return_value=quote),
+			patch("crm.api.quotes.frappe.has_permission", return_value=True),
 			patch("crm.api.quotes.frappe.db.get_value", return_value=None),
 			patch("crm.api.quotes.quotation_tax_summary", return_value=tax_summary),
 		):
