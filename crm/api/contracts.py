@@ -34,8 +34,9 @@ from typing import Any
 import frappe
 from frappe import _
 
-from crm.api._email import branded_email_html, otp_code_block
+from crm.api._email import branded_email_html, internal_signatory_reminder_html, otp_code_block
 from crm.api._timeline import log_deal_event
+from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import contract_snapshot, set_snapshot, snapshot
 
 _OTP_EXPIRY_SECONDS = 600  # 10 minutes
@@ -133,7 +134,9 @@ def _contract_email_subject_label(contract_doc):
 
 def _network_for_contract(contract_doc):
 	"""Resolve the branded-email network dict for a contract, or None. Never raises."""
-	slug = frappe.utils.cstr(getattr(contract_doc, "network_slug", "") or "").strip()
+	slug = frappe.utils.cstr(
+		getattr(contract_doc, "optin_network", "") or getattr(contract_doc, "network_slug", "") or ""
+	).strip()
 	if not slug:
 		return None
 	try:
@@ -147,16 +150,21 @@ def _network_for_contract(contract_doc):
 def _resolve_network_slug(deal):
 	"""Best-effort: find the opt-in network slug for a deal via its submission. Never raises."""
 	try:
+		fields = ["network_slug"]
+		if frappe.db.has_column("CRM Opt-In Submission", "optin_network"):
+			fields.append("optin_network")
 		rows = frappe.get_list(
 			"CRM Opt-In Submission",
 			filters={"deal": deal},
-			fields=["network_slug"],
+			fields=fields,
 			order_by="creation desc",
 			limit=1,
 			ignore_permissions=True,  # SYSTEM-INTERNAL
 		)
 		if rows:
-			return frappe.utils.cstr(rows[0].get("network_slug") or "").strip()
+			return frappe.utils.cstr(
+				rows[0].get("optin_network") or rows[0].get("network_slug") or ""
+			).strip()
 	except Exception:
 		pass
 	return ""
@@ -181,6 +189,32 @@ def _resolve_user_identity(user, fallback_name="", fallback_email="", fallback_p
 		except Exception:
 			pass
 	return {"full_name": name, "email": email, "phone": phone}
+
+
+def _crm_user_exists(email):
+	"""Return whether an email belongs to an enabled CRM User.
+
+	The explicit identity check is important for mocked/older Frappe list
+	responses: a non-empty result alone must never route an external signatory to
+	the internal CRM path.
+	"""
+	email = frappe.utils.cstr(email or "").strip().lower()
+	if not email:
+		return False
+	try:
+		rows = frappe.get_list(
+			"User",
+			filters={"email": email, "enabled": 1},
+			fields=["name", "email"],
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: route notification safely
+		)
+		return any(
+			frappe.utils.cstr(row.get("email") or row.get("name") or "").strip().lower() == email
+			for row in rows
+		)
+	except Exception:
+		return False
 
 
 _APPROVER_SLOTS = ("network_approver_1", "network_approver_2", "tiberbu_approver")
@@ -626,6 +660,50 @@ def _signing_progress(contract_doc):
 	return progress
 
 
+def _current_user_signatory(contract_name, role=""):
+	"""Resolve the pending contract signer for the logged-in CRM user.
+
+		Authenticated CRM users do not need a second email OTP: the Frappe session,
+	the contract read permission, and the email-to-signatory match together prove
+	the identity. Public invitation links continue to use the existing token + OTP
+	path and are not changed by this helper.
+	"""
+	user = frappe.utils.cstr(frappe.session.user or "").strip()
+	if not user or user == "Guest":
+		frappe.throw(_("Please sign in to review and sign this contract."), frappe.AuthenticationError)
+	if not frappe.has_permission("CRM Contract", "read", contract_name):
+		frappe.throw(_("You do not have access to this network's contract."), frappe.PermissionError)
+	identity = frappe.db.get_value("User", user, ["email", "full_name"], as_dict=True) or frappe._dict()
+	email = frappe.utils.cstr(identity.get("email") or user).strip().lower()
+	doc = frappe.get_doc("CRM Contract", contract_name)
+	requested_role = frappe.utils.cstr(role or "").strip()
+	rows = [
+		row
+		for row in (doc.signatories or [])
+		if row.signatory_role in _COUNTERPARTY_ROLES
+		and (not requested_role or row.signatory_role == requested_role)
+		and frappe.utils.cstr(row.signatory_email or "").strip().lower() == email
+	]
+	row = next(
+		(
+			candidate
+			for candidate in rows
+			if " ".join(frappe.utils.cstr(candidate.status or "").lower().split())
+			in ("", "pending", "awaiting", "awaiting signature", "awaiting signatures", "invited", "sent")
+		),
+		rows[0] if rows else None,
+	)
+	# Counterparty invitations are released only after the facility signatory
+	# completes. Keep the same ordering for the authenticated CRM branch so a
+	# user-permission match cannot bypass the contract state machine.
+	if row and row.signatory_role in _COUNTERPARTY_ROLES:
+		facility = _get_signatory_row(doc, "Facility Signatory")
+		facility_status = " ".join(frappe.utils.cstr(getattr(facility, "status", "") or "").lower().split())
+		if facility_status not in ("signed", "completed", "complete", "fully signed"):
+			row = None
+	return doc, row, email, frappe.utils.cstr(identity.get("full_name") or "").strip()
+
+
 def _attempts_cache_key(contract, role, row_name=""):
 	# row_name disambiguates repeated roles (multiple Network Signatory rows) so
 	# each signatory has its own brute-force counter rather than a shared one.
@@ -752,6 +830,12 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 	(Resend link or a signatory edit that requires a fresh link). It keeps the
 	message distinct in inboxes without changing automatic invitation delivery.
 	"""
+	# CRM users sign from the authenticated Quote/Opt-In view.  Never mint or
+	# deliver a public invitation (email or SMS) for this branch, including when
+	# an executive explicitly presses Resend.
+	if _is_internal_crm_signatory(signatory_row):
+		_mark_internal_action_available(contract_doc, signatory_row)
+		return None
 	token = _gen_token()
 	signatory_row.invite_token = token
 	signatory_row.invite_expiry = frappe.utils.add_to_date(
@@ -823,6 +907,48 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 
 _COUNTERPARTY_ROLES = ("Network Signatory", "Tiberbu Signatory")
 _POST_FACILITY_SIGNATORY_ROLES = ("Facility Witness", *_COUNTERPARTY_ROLES)
+_INTERNAL_REMINDER_INTERVAL_SECONDS = 2 * 60 * 60
+
+
+def _is_internal_crm_signatory(signatory_row):
+	"""Return whether a counterparty signer should act inside the CRM session."""
+	return bool(
+		signatory_row
+		and signatory_row.signatory_role in _COUNTERPARTY_ROLES
+		and _crm_user_exists(getattr(signatory_row, "signatory_email", ""))
+	)
+
+
+def _mark_internal_action_available(contract, signatory_row):
+	"""Record the first internal action hand-off without emitting an invitation."""
+	if getattr(signatory_row, "crm_internal_action_notified_at", None):
+		return False
+	now = frappe.utils.now_datetime()
+	has_field = False
+	try:
+		has_field = frappe.db.has_column("CRM Contract Signatory", "crm_internal_action_notified_at")
+		if getattr(signatory_row, "name", None) and has_field:
+			frappe.db.set_value(
+				"CRM Contract Signatory",
+				signatory_row.name,
+				"crm_internal_action_notified_at",
+				now,
+				update_modified=False,
+			)
+	except Exception:
+		pass
+	if has_field or not getattr(signatory_row, "meta", None):
+		signatory_row.crm_internal_action_notified_at = now
+	log_deal_event(
+		contract.deal,
+		"CRM %s %s is ready to sign contract %s — login action required"
+		% (
+			frappe.utils.cstr(signatory_row.signatory_role),
+			frappe.utils.cstr(signatory_row.signatory_name or signatory_row.signatory_email),
+			contract.name,
+		),
+	)
+	return True
 
 
 def _transition(contract_name):
@@ -854,21 +980,27 @@ def _transition(contract_name):
 	# partially-issued wave cannot be delivered ahead of the rest.
 	if fac_sig_signed:
 		invited_any = False
+		internal_action_any = False
 		for row in sigs:
 			if (
 				row.signatory_role in _POST_FACILITY_SIGNATORY_ROLES
 				and row.status == "Pending"
 				and not row.invite_token
 			):
+				if _is_internal_crm_signatory(row):
+					_mark_internal_action_available(contract, row)
+					internal_action_any = True
+					continue
 				_issue_and_send_invitation(contract, row, commit=False)
 				invited_any = True
-		if invited_any:
+		if invited_any or internal_action_any:
 			_set_contract_state(contract, "Awaiting Remaining Signatures")
-			log_deal_event(
-				contract.deal,
-				"Facility signatory signed contract %s — all remaining signatories "
-				"invited together (7-day links)" % contract.name,
-			)
+			if invited_any:
+				log_deal_event(
+					contract.deal,
+					"Facility signatory signed contract %s — all external remaining "
+					"signatories invited together (7-day links)" % contract.name,
+				)
 
 	# Done: all mandatory parties have signed. Tiberbu rows may be configured as
 	# "At Least One" while facility, witness, and network rows remain mandatory.
@@ -882,6 +1014,125 @@ def _transition(contract_name):
 			contract.deal,
 			"All parties signed contract %s — fully executed" % contract.name,
 		)
+
+
+def _internal_reminder_due(signatory_row, now=None):
+	"""Return true when a two-hour CRM action reminder is due."""
+	last_sent = getattr(signatory_row, "crm_last_reminder_at", None)
+	if not last_sent:
+		return True
+	now = now or frappe.utils.now_datetime()
+	try:
+		return (
+			now - frappe.utils.get_datetime(last_sent)
+		).total_seconds() >= _INTERNAL_REMINDER_INTERVAL_SECONDS
+	except (TypeError, ValueError):
+		return True
+
+
+def _send_internal_signatory_reminder(contract, signatory_row, network=None):
+	"""Send one login-only reminder and record it on the linked Deal timeline."""
+	email = frappe.utils.cstr(getattr(signatory_row, "signatory_email", "") or "").strip()
+	if not email or not _is_internal_crm_signatory(signatory_row):
+		return False
+	action_url = frappe.utils.get_url("/opt-in-submissions?pending_my_action=1")
+	facility_label = _contract_email_subject_label(contract)
+	name = frappe.utils.cstr(getattr(signatory_row, "signatory_name", "") or email).strip()
+	role = frappe.utils.cstr(getattr(signatory_row, "signatory_role", "") or "Signatory").strip()
+	subject = "[Action needed] %s — Pending contract approval" % facility_label
+	try:
+		frappe.sendmail(
+			recipients=[email],
+			subject=subject,
+			message=internal_signatory_reminder_html(
+				network,
+				signatory_name=name,
+				role=role,
+				facility_label=facility_label,
+				action_url=action_url,
+			),
+			now=True,
+		)
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"contracts._send_internal_signatory_reminder: email failed for %s / %s" % (email, contract.name),
+		)
+		return False
+
+	now = frappe.utils.now_datetime()
+	has_field = False
+	try:
+		has_field = frappe.db.has_column("CRM Contract Signatory", "crm_last_reminder_at")
+		if getattr(signatory_row, "name", None) and has_field:
+			frappe.db.set_value(
+				"CRM Contract Signatory",
+				signatory_row.name,
+				"crm_last_reminder_at",
+				now,
+				update_modified=False,
+			)
+	except Exception:
+		pass
+	if has_field or not getattr(signatory_row, "meta", None):
+		signatory_row.crm_last_reminder_at = now
+	log_deal_event(
+		contract.deal,
+		"Two-hour CRM action reminder sent to %s (%s) for contract %s" % (name, role, contract.name),
+	)
+	return True
+
+
+def send_internal_signatory_reminders():
+	"""Remind CRM-user signatories every two hours until they sign.
+
+	This is a system scheduler entry.  It never sends a public contract link or
+	OTP; the email points to the permission-scoped pending-action list instead.
+	External signatories and all existing public invitation behavior are excluded.
+	"""
+	try:
+		contracts = frappe.get_list(
+			"CRM Contract",
+			fields=["name"],
+			filters={"status": ["in", ["Awaiting Remaining Signatures", "Pending", "Awaiting Signatures"]]},
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+	except Exception:
+		return {"sent": 0, "skipped": 0}
+
+	sent = skipped = 0
+	now = frappe.utils.now_datetime()
+	for summary in contracts:
+		try:
+			contract = frappe.get_doc("CRM Contract", summary.name)
+			facility = _get_signatory_row(contract, "Facility Signatory")
+			if not facility or facility.status != "Signed":
+				continue
+			network = _network_for_contract(contract)
+			for row in contract.signatories or []:
+				if (
+					row.signatory_role not in _COUNTERPARTY_ROLES
+					or row.status != "Pending"
+					or not _is_internal_crm_signatory(row)
+					or not _internal_reminder_due(row, now)
+				):
+					continue
+				if _send_internal_signatory_reminder(contract, row, network):
+					sent += 1
+				else:
+					skipped += 1
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"contracts.send_internal_signatory_reminders: contract failed %s" % summary.name,
+			)
+			skipped += 1
+	try:
+		frappe.db.commit()
+	except Exception:
+		pass
+	return {"sent": sent, "skipped": skipped}
 
 
 def _required_signatures_complete(contract):
@@ -1037,11 +1288,28 @@ def _notify_internal_approvers(contract_name, deal_name):
 		pass
 
 	crm_url = frappe.utils.get_url("/crm/deals/%s" % deal_name) if deal_name else frappe.utils.get_url()
+	pending_url = frappe.utils.get_url("/opt-in-submissions?pending_my_action=1")
 
 	for approver_slot, identity in approver_slots:
 		approver_email = identity.get("email", "")
 		approver_name = identity.get("full_name", "") or approver_email or approver_slot
 		approver_role = approver_slot.replace("_", " ").title()
+		is_crm_user = _crm_user_exists(approver_email)
+		action_url = pending_url if is_crm_user else crm_url
+		if is_crm_user:
+			approval_intro = (
+				"<p style='margin:0 0 6px'>Hello,</p>"
+				"<p style='margin:0'>All contract signatories have signed "
+				"<strong>%s</strong>. Sign in to CRM to review your pending approval.</p>"
+			)
+		else:
+			approval_intro = (
+				"<p style='margin:0 0 6px'>Hello,</p>"
+				"<p style='margin:0'>All contract signatories have signed contract "
+				"<strong>%s</strong>. It now requires your internal approval before it "
+				"can be executed.</p>"
+			)
+		approval_intro = approval_intro % frappe.utils.escape_html(contract_name)
 		if approver_email:
 			try:
 				frappe.sendmail(
@@ -1053,14 +1321,9 @@ def _notify_internal_approvers(contract_name, deal_name):
 					message=branded_email_html(
 						network,
 						heading="Contract awaiting your approval",
-						intro_html=(
-							"<p style='margin:0 0 6px'>Hello,</p>"
-							"<p style='margin:0'>All contract signatories have signed contract "
-							"<strong>%s</strong>. It now requires your internal approval before it "
-							"can be executed.</p>" % frappe.utils.escape_html(contract_name)
-						),
-						cta_label="Open in CRM",
-						cta_url=crm_url,
+						intro_html=approval_intro,
+						cta_label="Sign in to review" if is_crm_user else "Open in CRM",
+						cta_url=action_url,
 					),
 					now=True,
 				)
@@ -1091,7 +1354,7 @@ def _notify_internal_approvers(contract_name, deal_name):
 				contract_doc,
 				approver_row,
 				"Approval",
-				_approval_sms_message(network, contract_name, approver_name, crm_url),
+				_approval_sms_message(network, contract_name, approver_name, action_url),
 			)
 
 
@@ -1354,6 +1617,7 @@ def _generate_contract(
 	contract.tc_document_hash = tc_document_hash
 	network_slug = _resolve_network_slug(deal)
 	contract.network_slug = network_slug
+	set_network_link(contract, network_slug)
 	# Preserve the commercial provenance alongside the executed contract. The
 	# quotation is the source of truth; legacy quotes without the optional fields
 	# degrade to a truthful current-only snapshot.
@@ -1506,6 +1770,10 @@ def resend_invitation(contract: Any, role: Any, row_name: Any = None):
 
 	if signatory_row.status != "Pending":
 		_ensure_pending_signatory(signatory_row)
+
+	if _is_internal_crm_signatory(signatory_row):
+		_mark_internal_action_available(contract_doc, signatory_row)
+		return {"status": "crm_login_required", "email": signatory_row.signatory_email}
 
 	# Before the facility signatory completes, remaining signatories have no invite
 	# token and cannot be resent. After that point they are invited together.
@@ -2028,6 +2296,97 @@ def download_pdf(contract: Any):
 		frappe.throw(_("PDF generation failed."))
 
 
+@frappe.whitelist()
+def get_authenticated_signing_context(contract: Any, role: Any = ""):
+	"""Return whether the current CRM user can sign a counterparty row.
+
+	This is intentionally a small probe used by the Quote page. It never returns
+	invite tokens or OTP state and returns ``action_required=False`` when the
+	logged-in user is not one of the contract's Network/Tiberbu signatories.
+	"""
+	contract = frappe.utils.cstr(contract).strip()
+	role = frappe.utils.cstr(role).strip()
+	if not contract:
+		frappe.throw(_("Contract is required."), frappe.ValidationError)
+	doc, row, email, full_name = _current_user_signatory(contract, role)
+	status = " ".join(frappe.utils.cstr(getattr(row, "status", "") or "").lower().split()) if row else ""
+	action_required = bool(row) and status in (
+		"",
+		"pending",
+		"awaiting",
+		"awaiting signature",
+		"awaiting signatures",
+		"invited",
+		"sent",
+	)
+	return {
+		"contract": doc.name,
+		"action_required": action_required,
+		"role": frappe.utils.cstr(getattr(row, "signatory_role", "") or "") if row else "",
+		"signatory_name": frappe.utils.cstr(getattr(row, "signatory_name", "") or "") if row else "",
+		"email": email,
+		"full_name": full_name,
+		"signing_progress": _signing_progress(doc),
+	}
+
+
+@frappe.whitelist()
+def get_authenticated_contract(contract: Any, role: Any):
+	"""Return the contract body for a matching logged-in signer."""
+	contract = frappe.utils.cstr(contract).strip()
+	role = frappe.utils.cstr(role).strip()
+	doc, row, _email, _full_name = _current_user_signatory(contract, role)
+	if not row:
+		frappe.throw(_("You are not assigned to sign this contract."), frappe.PermissionError)
+	_ensure_pending_signatory(row)
+	_ensure_contract_signing_open(doc)
+	return {
+		"contract_html": frappe.utils.cstr(doc.contract_html or ""),
+		"signatory_name": frappe.utils.cstr(row.signatory_name or ""),
+		"signatory_role": frappe.utils.cstr(row.signatory_role or ""),
+		"contract_date": frappe.utils.cstr(doc.contract_date or ""),
+		"signing_progress": _signing_progress(doc),
+		"price_list_summary": _recipient_safe_price_snapshot(_contract_price_snapshot(doc)),
+	}
+
+
+@frappe.whitelist()
+def sign_authenticated(contract: Any, role: Any, signature_b64: Any):
+	"""Capture a signature from a matching, logged-in Network/Tiberbu signer.
+
+	No email OTP is requested on this branch because the user has already proved
+	identity through the CRM session and network-scoped User Permission. The
+	public invitation endpoint remains token + OTP protected.
+	"""
+	contract = frappe.utils.cstr(contract).strip()
+	role = frappe.utils.cstr(role).strip()
+	signature_b64 = frappe.utils.cstr(signature_b64 or "").strip()
+	if not signature_b64:
+		frappe.throw(_("Draw your signature before submitting."), frappe.ValidationError)
+	doc, row, _email, _full_name = _current_user_signatory(contract, role)
+	if not row:
+		frappe.throw(_("You are not assigned to sign this contract."), frappe.PermissionError)
+	_ensure_contract_signing_open(doc)
+	_ensure_pending_signatory(row)
+	remote_addr = ""
+	try:
+		remote_addr = frappe.local.request.environ.get("REMOTE_ADDR", "")
+	except AttributeError:
+		pass
+	row.signature_data = signature_b64
+	row.signed_at = frappe.utils.now_datetime()
+	row.signature_ip = remote_addr
+	row.status = "Signed"
+	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+	_transition(doc.name)
+	log_deal_event(
+		doc.deal,
+		"%s signed contract %s from the CRM" % (row.signatory_role, doc.name),
+	)
+	return {"status": "signed", "contract": doc.name, "role": row.signatory_role}
+
+
 def _build_contract_document_html(contract_doc):
 	"""Assemble the full print-ready executed-contract HTML (terms + signatures
 	+ certificate). Kept side-effect-free so it is safe to call for preview/PDF."""
@@ -2181,18 +2540,19 @@ def _render_price_list_history(contract_doc):
 			else event.get("to") or "—"
 		)
 		rows.append(
-			"<tr><td>%s</td><td>%s</td><td>%s</td></tr>"
+			"<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
 			% (
 				frappe.utils.escape_html(frappe.utils.cstr(event.get("event") or "Price list")),
 				frappe.utils.escape_html(frappe.utils.cstr(change)),
 				frappe.utils.escape_html(at or "—"),
+				frappe.utils.escape_html(frappe.utils.cstr(event.get("by") or "System")),
 			)
 		)
 	return """<section class='price-history'>
   <h2>Price list history</h2>
   <div class='price-kv'><b>Initial price list</b> {initial}</div>
   <div class='price-kv'><b>Negotiated price list</b> {negotiated}</div>
-  <table><thead><tr><th>Event</th><th>Price list</th><th>Recorded</th></tr></thead>
+  <table><thead><tr><th>Event</th><th>Price list</th><th>Recorded</th><th>Changed by</th></tr></thead>
   <tbody>{rows}</tbody></table>
 </section>""".format(
 		initial=frappe.utils.escape_html(initial or "—"),

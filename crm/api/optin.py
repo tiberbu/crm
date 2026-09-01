@@ -39,6 +39,7 @@ from typing import Any
 import frappe
 from frappe import _
 
+from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import ensure_initial
 from crm.utils.quotation_tax import (
 	apply_quotation_taxes,
@@ -1560,6 +1561,7 @@ def submit_async(
 	sub.naming_series = "OIS-.YYYY.-"
 	sub.status = "Pending"
 	sub.network_slug = network_slug
+	set_network_link(sub, network_slug)
 	sub.submitter_email = email
 	# Facility witness captured in the wizard — carried here so the contract's
 	# Facility Witness row can be pre-filled at generate() without re-keying.
@@ -1771,6 +1773,7 @@ def save_partial(signing_token: Any, email: Any, network_slug: Any, expiry: Any,
 	lead.job_title = frappe.utils.cstr(contact.get("role", ""))
 	lead.source = _get_optin_lead_source()
 	lead.status = "Open"
+	set_network_link(lead, network_slug)
 	lead.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
 
 	# Set opt-in partial flags via db_set to avoid controller side effects
@@ -2154,6 +2157,7 @@ def _process_deal_invitation_submission(sub, payload):
 		frappe.throw(_("The Deal for this Opt-In invitation no longer exists."))
 
 	deal = frappe.get_doc("CRM Deal", deal_name)
+	set_network_link(deal, sub.network_slug)
 	if deal.get("optin_submission") and deal.optin_submission != sub.name:
 		frappe.throw(_("This Deal already has an Opt-In submission."))
 	pricing = payload.get("pricing") or []
@@ -2208,6 +2212,7 @@ def _process_deal_invitation_submission(sub, payload):
 				"crm_sent": 1,
 			}
 		)
+		set_network_link(quote, sub.network_slug)
 		annual_rates = []
 		for product in pricing:
 			annual_rate = float(product.get("annual_kes") or 0)
@@ -2238,6 +2243,8 @@ def _process_deal_invitation_submission(sub, payload):
 		apply_quotation_taxes(quote)
 		ensure_initial(quote, context.get("price_list") or quote.get("selling_price_list"))
 		quote.insert(ignore_mandatory=True)
+	if existing_quotes and set_network_link(quote, sub.network_slug):
+		quote.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	_update_job_step(sub.name, "quote", "done", "Quote ready")
 
 	if _should_auto_generate_contract():
@@ -2280,6 +2287,10 @@ def _process_submission(submission_ref):
 			return False
 
 		sub = frappe.get_doc("CRM Opt-In Submission", submission_ref)
+		# Backfill the permission link on staged rows created before the network
+		# link migration, without changing the public network slug.
+		if set_network_link(sub, sub.network_slug):
+			sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 		if status == "Processed":
 			progress = _get_job_progress(submission_ref) or {}
 			progress["overall"] = "complete"
@@ -2329,6 +2340,7 @@ def _process_submission(submission_ref):
 			# Fields. They are only written for the newly created lead so a retry
 			# cannot overwrite the original acceptance evidence.
 			lead.optin_network_slug = sub.network_slug
+			set_network_link(lead, sub.network_slug)
 			lead.tc_accepted = 1
 			lead.tc_document = payload.get("tc_doc_name", "")
 			lead.tc_document_hash = payload.get("tc_doc_hash", "")
@@ -2413,6 +2425,20 @@ def _process_submission(submission_ref):
 
 		# Forward back-link Deal -> Opt-In Submission for traceability (oh-s1-1).
 		frappe.db.set_value("CRM Deal", deal_name, "optin_submission", submission_ref)  # SYSTEM-INTERNAL
+		# The Link is the permission boundary for network users. Keep the legacy
+		# slug as well, but never leave a newly processed Deal unscoped.
+		try:
+			deal_link = frappe.get_doc("CRM Deal", deal_name)
+			if set_network_link(deal_link, sub.network_slug):
+				frappe.db.set_value(
+					"CRM Deal",
+					deal_name,
+					"optin_network",
+					deal_link.get("optin_network"),
+					update_modified=False,
+				)
+		except Exception:
+			pass
 
 		# Deal transition timeline (oh-s1-3)
 		from crm.api._timeline import log_deal_event
@@ -2492,6 +2518,7 @@ def _process_submission(submission_ref):
 			# Selling Settings default (Standard Selling). ignore_pricing_rule
 			# stops set_missing_values() / validate from re-deriving line rates.
 			q.selling_price_list = quote_price_list
+			set_network_link(q, sub.network_slug)
 			ensure_initial(q, quote_price_list)
 			q.ignore_pricing_rule = 1
 
@@ -2655,6 +2682,7 @@ def list_submissions(
 	facility: Any = None,
 	page: Any = 0,
 	page_size: Any = 20,
+	pending_my_action: Any = 0,
 ):
 	"""
 	Paginated Opt-In submissions for the staff review surface.
@@ -2665,6 +2693,7 @@ def list_submissions(
 	"""
 	page = max(int(page or 0), 0)
 	page_size = min(max(int(page_size or 20), 1), 100)
+	pending_my_action = bool(frappe.utils.cint(pending_my_action))
 
 	filters = {}
 	if status and status != "All":
@@ -2693,7 +2722,7 @@ def list_submissions(
 		"raw_json",
 	]
 
-	if facility_level or facility:
+	if facility_level or facility or pending_my_action:
 		# Facility data is retained canonically in raw_json because one Opt-In can
 		# represent several facilities. Apply this uncommon, richer filter before
 		# slicing the page so both its results and total remain accurate without a
@@ -2710,9 +2739,13 @@ def list_submissions(
 			for row in filtered_rows
 			if _submission_matches_facility_filter(row.raw_json, facility_level, facility)
 		]
-		total = len(filtered_rows)
-		start = page * page_size
-		rows = filtered_rows[start : start + page_size]
+		if pending_my_action:
+			rows = filtered_rows
+			total = None
+		else:
+			total = len(filtered_rows)
+			start = page * page_size
+			rows = filtered_rows[start : start + page_size]
 	else:
 		rows = frappe.get_list(
 			"CRM Opt-In Submission",
@@ -2794,6 +2827,7 @@ def list_submissions(
 			fields=[
 				"parent",
 				"signatory_name",
+				"signatory_email",
 				"signatory_role",
 				"status",
 				"signed_at",
@@ -2808,18 +2842,149 @@ def list_submissions(
 				signatory.signatory_role, []
 			).append(signatory)
 
-	return {
-		"rows": [
-			_submission_list_row(
-				row,
-				queue_statuses,
-				contracts_by_name.get(row.contract) or contracts_by_deal.get(row.deal),
-				contract_signatories,
+	result_rows = [
+		_submission_list_row(
+			row,
+			queue_statuses,
+			contracts_by_name.get(row.contract) or contracts_by_deal.get(row.deal),
+			contract_signatories,
+		)
+		for row in rows
+	]
+	if pending_my_action:
+		pending_context = _pending_action_context()
+		result_rows = [
+			row
+			for row in result_rows
+			if _submission_pending_for_current_user(
+				row, contracts_by_name, contracts_by_deal, contract_signatories, pending_context
 			)
-			for row in rows
-		],
-		"total": total,
-	}
+		]
+		total = len(result_rows)
+		start = page * page_size
+		result_rows = result_rows[start : start + page_size]
+	return {"rows": result_rows, "total": total}
+
+
+def _current_user_emails():
+	"""Return normalized identities usable for signer/approver matching."""
+	user = frappe.utils.cstr(frappe.session.user or "").strip().lower()
+	if not user or user == "guest":
+		return set()
+	emails = {user} if "@" in user else set()
+	try:
+		identity = frappe.db.get_value("User", frappe.session.user, ["name", "email"], as_dict=True)
+		for value in (identity.get("name") if identity else "", identity.get("email") if identity else ""):
+			value = frappe.utils.cstr(value or "").strip().lower()
+			if value:
+				emails.add(value)
+	except Exception:
+		pass
+	return emails
+
+
+def _pending_action_context():
+	"""Load current-user approval identities once for the pending-action filter.
+
+	The list can contain hundreds of submissions.  Keep the filter O(rows) after
+	one onboarding/settings read instead of querying those doctypes once per row.
+	"""
+	identities = _current_user_emails()
+	context = {"identities": identities, "approver_deals": set()}
+	if not identities:
+		return context
+	try:
+		fields = ["name", "deal", "approval_status"]
+		for fieldname in (
+			"network_approver_1",
+			"network_approver_2",
+			"tiberbu_approver",
+			"network_approver_1_approved",
+			"network_approver_2_approved",
+			"tiberbu_approver_approved",
+			"tiberbu_approver_email",
+		):
+			if frappe.db.has_column("CRM Onboarding Request", fieldname):
+				fields.append(fieldname)
+		for onboarding in frappe.get_list(
+			"CRM Onboarding Request",
+			fields=fields,
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: build a permission-safe match set
+		):
+			if frappe.utils.cstr(onboarding.get("approval_status") or "Pending").strip() in (
+				"Approved",
+				"Rejected",
+			):
+				continue
+			for approver_field, approved_field in (
+				("network_approver_1", "network_approver_1_approved"),
+				("network_approver_2", "network_approver_2_approved"),
+				("tiberbu_approver", "tiberbu_approver_approved"),
+			):
+				value = frappe.utils.cstr(onboarding.get(approver_field) or "").strip().lower()
+				if value in identities and not frappe.utils.cint(onboarding.get(approved_field)):
+					context["approver_deals"].add(onboarding.get("deal"))
+			for fieldname in ("tiberbu_approver_email",):
+				value = frappe.utils.cstr(onboarding.get(fieldname) or "").strip().lower()
+				if value in identities and not frappe.utils.cint(onboarding.get("tiberbu_approver_approved")):
+					context["approver_deals"].add(onboarding.get("deal"))
+
+		settings = frappe.get_single("CRM Opt-In Settings")
+		configured_emails = {
+			frappe.utils.cstr(settings.get(fieldname) or "").strip().lower()
+			for fieldname in ("tiberbu_approver_email",)
+			if frappe.utils.cstr(settings.get(fieldname) or "").strip()
+		}
+		for contact in settings.get("tiberbu_contacts") or []:
+			role = frappe.utils.cstr(contact.get("role") or contact.get("contact_role") or "").strip().lower()
+			if role in ("approver", "tiberbu approver"):
+				configured_emails.add(frappe.utils.cstr(contact.get("email") or "").strip().lower())
+		if not configured_emails.intersection(identities):
+			return context
+		# A global Tiberbu approver applies to every onboarding request that has not
+		# been approved yet. The onboarding rows above provide the candidate deals.
+		for onboarding in frappe.get_list(
+			"CRM Onboarding Request",
+			fields=["deal", "approval_status", "tiberbu_approver_approved"],
+			filters={"approval_status": ["in", ["Pending", "Partially Approved"]]},
+			limit_page_length=0,
+			ignore_permissions=True,
+		):
+			if not frappe.utils.cint(onboarding.get("tiberbu_approver_approved")):
+				context["approver_deals"].add(onboarding.get("deal"))
+	except Exception:
+		pass
+	return context
+
+
+def _submission_pending_for_current_user(
+	row, contracts_by_name, contracts_by_deal, contract_signatories, context=None
+):
+	"""Return true when the current CRM user has an actionable signer/approver row."""
+	context = context or _pending_action_context()
+	identities = context.get("identities", set())
+	if not identities:
+		return False
+	contract_name = row.get("contract") or ""
+	contract = contracts_by_name.get(contract_name) or contracts_by_deal.get(row.get("deal"))
+	if contract:
+		facility_status = " ".join(
+			frappe.utils.cstr(row.get("facility_signing_status") or "").lower().split()
+		)
+		for role in ("Network Signatory", "Tiberbu Signatory"):
+			if facility_status not in ("signed", "completed", "complete", "fully signed"):
+				break
+			for signer in contract_signatories.get(contract.name, {}).get(role, []):
+				email = frappe.utils.cstr(getattr(signer, "signatory_email", "") or "").strip().lower()
+				status = " ".join(frappe.utils.cstr(getattr(signer, "status", "") or "").lower().split())
+				if email in identities and status not in ("signed", "completed", "complete", "fully signed"):
+					return True
+
+	# Approvers are intentionally not Contract Signatory rows. They receive a
+	# login nudge and act from the filtered list, so use the precomputed pending
+	# onboarding set rather than querying once per submission.
+	return row.get("deal") in context.get("approver_deals", set())
 
 
 def _submission_list_row(row, queue_statuses, contract, contract_signatories):
@@ -3758,6 +3923,7 @@ def submit_deal_optin_summary(deal: Any, quote: Any, network_slug: Any):
 
 	submission.status = "Processed"
 	submission.network_slug = network_slug
+	set_network_link(submission, network_slug)
 	submission.submitter_email = contact["email"]
 	submission.submitted_at = frappe.utils.now_datetime()
 	submission.deal = deal
@@ -3765,8 +3931,10 @@ def submit_deal_optin_summary(deal: Any, quote: Any, network_slug: Any):
 	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 
 	quotation.crm_sent = 1
+	set_network_link(quotation, network_slug)
 	quotation.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	deal_doc.optin_submission = submission.name
+	set_network_link(deal_doc, network_slug)
 	deal_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 
@@ -3807,6 +3975,10 @@ def build_ois_quote(deal: Any):
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
 	if existing:
+		quote = frappe.get_doc("Quotation", existing[0].name)
+		if set_network_link(quote, sub.network_slug):
+			quote.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+			frappe.db.commit()
 		return {"quote": existing[0].name}
 
 	if not pricing:
@@ -3818,19 +3990,21 @@ def build_ois_quote(deal: Any):
 	org_name = frappe.db.get_value("CRM Lead", sub.lead, "organization") or ""
 	customer_name = _ensure_customer(org_name)
 
-	q = frappe.get_doc(
-		{
-			"doctype": "Quotation",
-			"quotation_to": "Customer",
-			"party_name": customer_name,
-			"company": frappe.db.get_single_value("Global Defaults", "default_company"),
-			"transaction_date": frappe.utils.today(),
-			"valid_till": frappe.utils.add_days(frappe.utils.today(), 30),
-			"currency": "KES",
-			"order_type": "Sales",
-			"crm_deal": deal,
-		}
-	)
+	quote_data = {
+		"doctype": "Quotation",
+		"quotation_to": "Customer",
+		"party_name": customer_name,
+		"company": frappe.db.get_single_value("Global Defaults", "default_company"),
+		"transaction_date": frappe.utils.today(),
+		"valid_till": frappe.utils.add_days(frappe.utils.today(), 30),
+		"currency": "KES",
+		"order_type": "Sales",
+		"crm_deal": deal,
+	}
+	if frappe.db.has_column("CRM Deal", "optin_network"):
+		quote_data["optin_network"] = frappe.db.get_value("CRM Deal", deal, "optin_network") or ""
+	q = frappe.get_doc(quote_data)
+	set_network_link(q, sub.network_slug)
 
 	for prod in pricing:
 		q.append(

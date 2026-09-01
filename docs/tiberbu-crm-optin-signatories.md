@@ -79,3 +79,44 @@ which makes its old link inactive, records a deal activity event, and re-evaluat
 the normal contract transition. The configured network or global Tiberbu contact is
 not deleted, so it remains available as the default for future contracts and can be
 added again when needed.
+
+## Network-scoped records and CRM signatories
+
+Every opt-in pipeline record carries an **Opt-In Network** Link when the site
+has run the network-link migration. The field is present on the submission,
+deal, contract, quotation, Sales Invoice, Payment Entry, onboarding request,
+rebate voucher, and sales commission records. Existing `network_slug` values
+remain in place for public URLs and compatibility. The migration is idempotent,
+skips doctypes that are not installed (including ERPNext doctypes on a CRM-only
+site), and backfills only empty Link fields.
+
+To scope a network user, create a Frappe **User Permission** for that user on
+`CRM Opt-In Network` and select the permitted network. Because the pipeline
+records use real Link fields, standard Frappe list and document permission
+checks filter records belonging to other networks. Contacts and organizations
+are intentionally not stamped with one network: they can be shared by several
+facilities or networks and are not the access boundary.
+
+When a Network Signatory or Tiberbu Signatory is also a CRM User, the Quote
+page shows **Your signature is required** only when that signed-in user's email
+matches a pending signatory on a network-scoped contract and the facility
+signatory has completed their step. The user can review the contract and sign
+from the CRM page with the existing signature pad; this authenticated branch
+does not issue a second email OTP. The public invitation URL remains protected
+by its existing HMAC invitation token, email/SMS OTP, and short-lived signing
+token, so external signatories are unchanged.
+
+Internal approvers who are CRM Users receive a sign-in nudge rather than a
+public contract URL. Its link opens Opt-In Requests with `Pending my action`
+selected. The filter matches pending network/Tiberbu signers and configured
+approvers while respecting the records returned by Frappe permissions.
+
+CRM-user Network and Tiberbu Signatories follow the same login-only rule. They
+do not receive a contract invitation email, public signing URL, OTP, or signing
+SMS. Once the facility signature unlocks the contract, the first hand-off is
+recorded on the Deal activity timeline and the signer uses the authenticated
+Quote/Opt-In signing action. A scheduler runs every two hours and sends each
+still-pending CRM user a separate, facility-named reminder email linking to the
+permission-scoped `Pending my action` list. The reminder timestamp is stored on
+the signatory row, and every successful reminder is recorded on Deal activity;
+failed sends are logged without advancing the timestamp.

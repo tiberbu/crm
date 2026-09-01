@@ -8,6 +8,8 @@ crm_quotation) to the resulting Sales Invoice for Finance Cockpit traceability.
 
 import frappe
 
+from crm.utils.optin_network import set_network_link
+
 
 def _resolve_item_code(crm_sku):
 	"""Return the ERPNext item_code linked to a CRM Product, falling back to crm_sku."""
@@ -49,6 +51,12 @@ def create_sales_invoice_from_quotation(quotation_name):
 	crm_deal = frappe.db.get_value("Quotation", quotation_name, "crm_deal")
 	si.crm_deal = crm_deal
 	si.crm_quotation = quotation_name
+	quote_network = ""
+	if frappe.db.has_column("Quotation", "optin_network"):
+		quote_network = frappe.db.get_value("Quotation", quotation_name, "optin_network") or ""
+	if not quote_network and crm_deal and frappe.db.has_column("CRM Deal", "optin_network"):
+		quote_network = frappe.db.get_value("CRM Deal", crm_deal, "optin_network") or ""
+	set_network_link(si, quote_network)
 
 	si.flags.ignore_validate = True
 	si.flags.ignore_permissions = True  # SYSTEM-INTERNAL

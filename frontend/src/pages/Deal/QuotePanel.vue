@@ -50,7 +50,7 @@
          original and negotiated lists remain obvious after a switch. -->
     <section
       v-if="data?.initial_price_list || data?.price_list_history?.length"
-      class="rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
+      class="mb-8 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
       aria-label="Price list history"
     >
       <div class="flex flex-wrap items-start justify-between gap-3">
@@ -93,6 +93,9 @@
           <span v-if="event.at" class="ml-2 text-ink-gray-4">{{
             event.at
           }}</span>
+          <span v-if="event.by" class="ml-2 text-ink-gray-5">
+            · {{ __('Changed by {0}', [event.by]) }}
+          </span>
         </li>
       </ol>
     </section>

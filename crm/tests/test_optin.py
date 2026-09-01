@@ -18,6 +18,7 @@ from crm.api.contracts import (
 	_save_otp_state,
 	_send_contract_sms,
 	_send_fully_executed_contract,
+	_send_internal_signatory_reminder,
 	_tiberbu_signer,
 	_tiberbu_signers,
 	_transition,
@@ -918,6 +919,65 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertTrue(all(call.kwargs.get("for_update") for call in get_doc.call_args_list))
 		self.assertEqual([call.args[1] for call in issue.call_args_list], [witness, network, tiberbu])
 		set_state.assert_called_once_with(contract, "Awaiting Remaining Signatures")
+		log_event.assert_called_once()
+
+	def test_crm_user_cosignatory_gets_login_action_without_public_invitation(self):
+		facility = SimpleNamespace(
+			signatory_role="Facility Signatory", status="Signed", invite_token="original"
+		)
+		internal = SimpleNamespace(
+			name="ROW-INTERNAL-00001",
+			signatory_role="Network Signatory",
+			signatory_name="Network Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+			invite_token=None,
+		)
+		contract = SimpleNamespace(
+			name="CONT-TEST-00003",
+			deal="DEAL-TEST-00003",
+			signatories=[facility, internal],
+		)
+		with (
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts._is_internal_crm_signatory", return_value=True),
+			patch("crm.api.contracts._mark_internal_action_available") as mark_action,
+			patch("crm.api.contracts._issue_and_send_invitation") as issue,
+			patch("crm.api.contracts._set_contract_state") as set_state,
+			patch("crm.api.contracts.log_deal_event"),
+		):
+			_transition(contract.name)
+
+		issue.assert_not_called()
+		mark_action.assert_called_once_with(contract, internal)
+		set_state.assert_called_once_with(contract, "Awaiting Remaining Signatures")
+
+	def test_internal_signatory_reminder_is_facility_named_and_logged(self):
+		contract = SimpleNamespace(name="CONT-TEST-00004", deal="DEAL-TEST-00004")
+		row = SimpleNamespace(
+			name="ROW-INTERNAL-00002",
+			signatory_role="Tiberbu Signatory",
+			signatory_name="Tiberbu Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+			crm_last_reminder_at=None,
+		)
+		with (
+			patch("crm.api.contracts._is_internal_crm_signatory", return_value=True),
+			patch("crm.api.contracts._contract_email_subject_label", return_value="Test Hospital"),
+			patch("crm.api.contracts.frappe.sendmail") as sendmail,
+			patch("crm.api.contracts.frappe.db.has_column", return_value=True),
+			patch("crm.api.contracts.frappe.db.set_value") as set_value,
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			result = _send_internal_signatory_reminder(contract, row)
+
+		self.assertTrue(result)
+		sendmail.assert_called_once()
+		self.assertIn("Test Hospital", sendmail.call_args.kwargs["subject"])
+		self.assertTrue(sendmail.call_args.kwargs["now"])
+		self.assertIn("Open pending approvals", sendmail.call_args.kwargs["message"])
+		set_value.assert_called_once()
 		log_event.assert_called_once()
 
 	def test_signing_portal_returns_non_sensitive_progress_for_every_signatory(self):

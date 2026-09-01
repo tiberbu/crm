@@ -162,3 +162,38 @@ def otp_code_block(otp, network=None):
 		'font-weight:700;letter-spacing:8px;color:#111827">%s</span></div>'
 		% (tint, brand, frappe.utils.escape_html(otp))
 	)
+
+
+def internal_signatory_reminder_html(
+	network=None,
+	*,
+	signatory_name,
+	role,
+	facility_label,
+	action_url,
+):
+	"""Render the login-only reminder sent to CRM-user signatories.
+
+	Internal signatories do not receive a public contract invitation.  This
+	message deliberately links to the permission-scoped CRM queue instead, so a
+	forwarded email cannot expose a contract or bypass the normal CRM session.
+	"""
+	name = frappe.utils.escape_html(signatory_name or "there")
+	facility = frappe.utils.escape_html(facility_label or "your facility")
+	role_label = frappe.utils.escape_html(role or "signatory")
+	return branded_email_html(
+		network,
+		heading="Your approval is waiting",
+		intro_html=(
+			"<p style='margin:0 0 6px'>Hello %s,</p>"
+			"<p style='margin:0'>A <strong>%s</strong> action is waiting for "
+			"<strong>%s</strong>. Sign in to CRM to review the quote and complete "
+			"your secure signature.</p>" % (name, role_label, facility)
+		),
+		cta_label="Open pending approvals",
+		cta_url=action_url,
+		note_html=(
+			"This is a secure CRM reminder; no contract link is included. "
+			"You can open the same pending-action list from CRM at any time."
+		),
+	)

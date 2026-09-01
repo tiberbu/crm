@@ -118,7 +118,7 @@
            editor's facility-signature guard. -->
       <section
         v-if="priceListSnapshot.initial || priceListSnapshot.history.length"
-        class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
+        class="mt-6 mb-8 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
         aria-label="Price list history"
       >
         <div class="flex flex-wrap items-start justify-between gap-3">
@@ -161,9 +161,142 @@
             <span v-if="event.at" class="ml-2 text-ink-gray-4">{{
               event.at
             }}</span>
+            <span v-if="event.by" class="ml-2 text-ink-gray-5">
+              · {{ __('Changed by {0}', [event.by]) }}
+            </span>
           </li>
         </ol>
       </section>
+
+      <!-- A network/Tiberbu signatory who is also a CRM user can act from the
+           protected Quote page. This is a separate authenticated branch: the
+           existing public invitation + OTP pathway remains unchanged. -->
+      <section
+        v-if="authenticatedSigningContext?.action_required"
+        class="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20"
+        aria-label="Your pending signature"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p
+              class="text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300"
+            >
+              {{ __('Your signature is required') }}
+            </p>
+            <p class="mt-1 text-sm font-medium text-ink-gray-9">
+              {{
+                authenticatedSigningContext.signatory_name || __('Signatory')
+              }}
+              <span class="font-normal text-ink-gray-6">
+                · {{ authenticatedSigningContext.role }}
+              </span>
+            </p>
+            <p class="mt-1 text-xs text-ink-gray-6">
+              {{
+                __(
+                  'You are signed in as {0}. Review the contract and sign securely from this page.',
+                  [authenticatedSigningContext.email],
+                )
+              }}
+            </p>
+          </div>
+          <Button variant="solid" theme="red" @click="openAuthenticatedSigning">
+            {{ __('Review & sign') }}
+          </Button>
+        </div>
+      </section>
+
+      <Dialog
+        v-model="showAuthenticatedSigning"
+        :options="{ title: __('Sign contract from CRM'), size: 'xl' }"
+      >
+        <template #body-content>
+          <div class="space-y-4">
+            <div v-if="authenticatedContractLoading" class="space-y-2">
+              <div class="h-4 animate-pulse rounded bg-surface-gray-2" />
+              <div class="h-4 animate-pulse rounded bg-surface-gray-2" />
+              <div class="h-32 animate-pulse rounded bg-surface-gray-2" />
+            </div>
+            <template v-else>
+              <div
+                class="max-h-64 overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-white p-4 text-sm text-ink-gray-8 dark:bg-surface-gray-1"
+              >
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <div v-html="authenticatedContractHtml" />
+              </div>
+              <div
+                v-if="authenticatedSigningProgress.length"
+                class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+              >
+                <p
+                  class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+                >
+                  {{ __('Signing progress') }}
+                </p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <span
+                    v-for="(signer, index) in authenticatedSigningProgress"
+                    :key="`${signer.role}-${signer.name}-${index}`"
+                    class="rounded-full px-2 py-1 text-xs font-medium"
+                    :class="
+                      signer.status === 'Signed'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-amber-100 text-amber-700'
+                    "
+                  >
+                    {{ signer.name }} · {{ signer.status }}
+                  </span>
+                </div>
+              </div>
+              <label class="flex items-start gap-2 text-sm text-ink-gray-7">
+                <input
+                  v-model="authenticatedReadConfirmed"
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4"
+                />
+                <span>{{
+                  __(
+                    'I have reviewed this contract and am authorised to sign it.',
+                  )
+                }}</span>
+              </label>
+              <div>
+                <p
+                  class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+                >
+                  {{ __('Your signature') }}
+                </p>
+                <SignatureCanvas
+                  ref="authenticatedCanvas"
+                  :disabled="!authenticatedReadConfirmed"
+                  @has-signature="authenticatedHasSignature = $event"
+                />
+              </div>
+            </template>
+            <p v-if="authenticatedSigningError" class="text-sm text-ink-red-6">
+              {{ authenticatedSigningError }}
+            </p>
+          </div>
+        </template>
+        <template #actions>
+          <Button variant="subtle" @click="closeAuthenticatedSigning">
+            {{ __('Cancel') }}
+          </Button>
+          <Button
+            variant="solid"
+            theme="red"
+            :loading="authenticatedSigning"
+            :disabled="
+              !authenticatedReadConfirmed ||
+              !authenticatedHasSignature ||
+              authenticatedContractLoading
+            "
+            @click="submitAuthenticatedSignature"
+          >
+            {{ __('Confirm signature') }}
+          </Button>
+        </template>
+      </Dialog>
 
       <!-- Signatory detail: edit unsigned signatories, resend/regenerate links -->
       <div
@@ -996,9 +1129,10 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { createResource, toast, Button } from 'frappe-ui'
+import { createResource, toast, Button, Dialog } from 'frappe-ui'
 import { usersStore } from '@/stores/users'
 import { sessionStore } from '@/stores/session'
+import SignatureCanvas from '../ContractSigning/SignatureCanvas.vue'
 
 // ---------------------------------------------------------------------------
 // Props / Emits
@@ -1023,6 +1157,113 @@ const { isManager } = usersStore()
 const lc = computed(() => props.lifecycle ?? {})
 
 const contractExists = computed(() => !!lc.value.contract?.name)
+
+// ---------------------------------------------------------------------------
+// Authenticated CRM signatory branch
+// ---------------------------------------------------------------------------
+const authenticatedSigningContext = ref(null)
+const authenticatedSigningContextResource = createResource({
+  url: 'crm.api.contracts.get_authenticated_signing_context',
+})
+const authenticatedContractResource = createResource({
+  url: 'crm.api.contracts.get_authenticated_contract',
+})
+const authenticatedSignResource = createResource({
+  url: 'crm.api.contracts.sign_authenticated',
+})
+const showAuthenticatedSigning = ref(false)
+const authenticatedContractLoading = ref(false)
+const authenticatedContractHtml = ref('')
+const authenticatedSigningProgress = ref([])
+const authenticatedReadConfirmed = ref(false)
+const authenticatedHasSignature = ref(false)
+const authenticatedSigning = ref(false)
+const authenticatedSigningError = ref('')
+const authenticatedCanvas = ref(null)
+
+function sanitizeAuthenticatedContractHtml(raw) {
+  return (raw || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/?(?:html|head|body|meta|link|title)[^>]*>/gi, '')
+}
+
+async function loadAuthenticatedSigningContext(contract) {
+  authenticatedSigningContext.value = null
+  if (!contract) return
+  try {
+    authenticatedSigningContext.value =
+      await authenticatedSigningContextResource.submit({
+        contract,
+      })
+  } catch {
+    // Most CRM users are not contract signatories. A denied/non-matching probe
+    // is intentionally silent and leaves the normal contract panel unchanged.
+  }
+}
+
+watch(
+  () => lc.value.contract?.name,
+  (contract) => loadAuthenticatedSigningContext(contract),
+  { immediate: true },
+)
+
+async function openAuthenticatedSigning() {
+  const contract = lc.value.contract?.name
+  const role = authenticatedSigningContext.value?.role
+  if (!contract || !role) return
+  authenticatedContractLoading.value = true
+  authenticatedSigningError.value = ''
+  try {
+    const data = await authenticatedContractResource.submit({ contract, role })
+    authenticatedContractHtml.value = sanitizeAuthenticatedContractHtml(
+      data?.contract_html,
+    )
+    authenticatedSigningProgress.value = data?.signing_progress ?? []
+    authenticatedReadConfirmed.value = false
+    authenticatedHasSignature.value = false
+    showAuthenticatedSigning.value = true
+  } catch (err) {
+    authenticatedSigningError.value =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('This signing action is no longer available.')
+  } finally {
+    authenticatedContractLoading.value = false
+  }
+}
+
+function closeAuthenticatedSigning() {
+  showAuthenticatedSigning.value = false
+  authenticatedReadConfirmed.value = false
+  authenticatedHasSignature.value = false
+  authenticatedSigningError.value = ''
+}
+
+async function submitAuthenticatedSignature() {
+  if (authenticatedSigning.value || !authenticatedHasSignature.value) return
+  const contract = lc.value.contract?.name
+  const role = authenticatedSigningContext.value?.role
+  const signature = authenticatedCanvas.value?.getSignatureDataUrl?.() || ''
+  if (!contract || !role || !signature) return
+  authenticatedSigning.value = true
+  authenticatedSigningError.value = ''
+  try {
+    await authenticatedSignResource.submit({
+      contract,
+      role,
+      signature_b64: signature,
+    })
+    toast.success(__('Your signature has been recorded.'))
+    closeAuthenticatedSigning()
+    emit('lifecycle-reload')
+  } catch (err) {
+    authenticatedSigningError.value =
+      err?.messages?.[0] ?? err?.message ?? __('Could not save your signature.')
+  } finally {
+    authenticatedSigning.value = false
+  }
+}
 
 const priceListSnapshot = computed(() => {
   const contractPrice = lc.value.contract?.price_list ?? {}
@@ -1350,7 +1591,15 @@ async function doResend(role, rowName) {
       role,
       row_name: rowName ?? '',
     })
-    toast.success(__('Signing link re-sent to {0}', [res?.email ?? role]))
+    if (res?.status === 'crm_login_required') {
+      toast.info(
+        __(
+          'This signatory is a CRM user. They must sign in to complete this action.',
+        ),
+      )
+    } else {
+      toast.success(__('Signing link re-sent to {0}', [res?.email ?? role]))
+    }
     emit('lifecycle-reload')
   } catch (err) {
     const msg =
