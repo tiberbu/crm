@@ -1,5 +1,7 @@
 <template>
-  <div class="flex flex-col h-full overflow-y-auto px-3 pb-3 sm:px-10 sm:pb-5">
+  <div
+    class="flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto px-3 pb-3 sm:px-10 sm:pb-5"
+  >
     <!-- ── APPLICANT HERO CARD (OIS deals only) ──────────────────────────── -->
     <div
       v-if="dealDoc?.optin_submission"
@@ -74,38 +76,58 @@
     </div>
 
     <!-- ── FACILITIES TABLE (OIS deals only, shown when facilities exist) ── -->
-    <div
-      v-if="oisFacilities.length"
-      class="mt-3 overflow-x-auto rounded-lg border border-outline-gray-2"
-    >
-      <table class="w-full text-xs">
-        <thead class="bg-surface-gray-1 text-ink-gray-5">
-          <tr>
-            <th class="px-3 py-2 text-left font-medium">
-              {{ __('MFL Code') }}
-            </th>
-            <th class="px-3 py-2 text-left font-medium">
-              {{ __('Facility Name') }}
-            </th>
-            <th class="px-3 py-2 text-left font-medium">
-              {{ __('KEPH Level') }}
-            </th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-outline-elevation-2">
-          <tr
-            v-for="f in oisFacilities"
-            :key="f.mfl_code"
-            class="even:bg-surface-gray-1"
+    <div v-if="oisFacilities.length" class="mt-3">
+      <div
+        class="hidden overflow-x-auto rounded-lg border border-outline-gray-2 sm:block"
+      >
+        <table class="w-full text-xs">
+          <thead class="bg-surface-gray-1 text-ink-gray-5">
+            <tr>
+              <th class="px-3 py-2 text-left font-medium">
+                {{ __('MFL Code') }}
+              </th>
+              <th class="px-3 py-2 text-left font-medium">
+                {{ __('Facility Name') }}
+              </th>
+              <th class="px-3 py-2 text-left font-medium">
+                {{ __('KEPH Level') }}
+              </th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-outline-elevation-2">
+            <tr
+              v-for="f in oisFacilities"
+              :key="f.mfl_code"
+              class="even:bg-surface-gray-1"
+            >
+              <td class="px-3 py-2 font-mono text-ink-gray-7">
+                {{ f.mfl_code }}
+              </td>
+              <td class="px-3 py-2 text-ink-gray-8">{{ f.facility_name }}</td>
+              <td class="px-3 py-2 text-ink-gray-6">{{ f.keph_level }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="space-y-2 sm:hidden">
+        <article
+          v-for="f in oisFacilities"
+          :key="`mobile-${f.mfl_code}`"
+          class="rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-3 dark:bg-surface-gray-1"
+        >
+          <p class="text-sm font-semibold text-ink-gray-9">
+            {{ f.facility_name || __('Unnamed facility') }}
+          </p>
+          <div
+            class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-gray-5"
           >
-            <td class="px-3 py-2 font-mono text-ink-gray-7">
-              {{ f.mfl_code }}
-            </td>
-            <td class="px-3 py-2 text-ink-gray-8">{{ f.facility_name }}</td>
-            <td class="px-3 py-2 text-ink-gray-6">{{ f.keph_level }}</td>
-          </tr>
-        </tbody>
-      </table>
+            <span v-if="f.mfl_code" class="font-mono"
+              >MFL {{ f.mfl_code }}</span
+            >
+            <span v-if="f.keph_level">{{ f.keph_level }}</span>
+          </div>
+        </article>
+      </div>
     </div>
 
     <!-- Finance Cockpit handoff banner -->
@@ -139,7 +161,7 @@
     </div>
 
     <!-- ── QUOTES SECTION ─────────────────────────────────────────────────── -->
-    <div class="mt-4 flex items-center justify-between">
+    <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
       <h2 class="text-base font-semibold text-ink-gray-9">
         {{ __('Quotes') }}
       </h2>
@@ -289,124 +311,203 @@
       </div>
 
       <!-- Quote list table -->
-      <div
-        v-else
-        class="mt-4 overflow-x-auto rounded-lg border border-outline-elevation-2"
-      >
-        <table class="w-full text-sm">
-          <thead
-            class="bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5"
+      <div v-else class="mt-4">
+        <div
+          class="hidden overflow-x-auto rounded-lg border border-outline-elevation-2 sm:block"
+        >
+          <table class="w-full text-sm">
+            <thead
+              class="bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5"
+            >
+              <tr>
+                <th class="px-4 py-2.5 text-left font-medium">
+                  {{ __('Quote #') }}
+                </th>
+                <th class="px-4 py-2.5 text-left font-medium">
+                  {{ __('Created') }}
+                </th>
+                <th class="px-4 py-2.5 text-left font-medium">
+                  {{ __('Valid Until') }}
+                </th>
+                <th class="px-4 py-2.5 text-right font-medium">
+                  {{ __('Grand Total (incl. VAT)') }}
+                </th>
+                <th class="px-4 py-2.5 text-left font-medium">
+                  {{ __('Payment') }}
+                </th>
+                <th class="px-4 py-2.5 text-left font-medium">
+                  {{ __('Status') }}
+                </th>
+                <th class="px-4 py-2.5 text-right font-medium">
+                  {{ __('Actions') }}
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-outline-elevation-2">
+              <tr
+                v-for="q in quotes"
+                :key="q.name"
+                class="cursor-pointer transition-colors"
+                :class="
+                  selectedQuote === q.name
+                    ? 'bg-surface-gray-2 dark:bg-surface-gray-3'
+                    : 'hover:bg-surface-gray-1'
+                "
+                @click="selectQuote(q.name)"
+              >
+                <td class="px-4 py-3 font-medium text-ink-gray-9">
+                  {{ q.name }}
+                </td>
+                <td class="px-4 py-3">
+                  <span class="text-ink-gray-8 font-medium">{{
+                    timeAgo(q.creation ?? q.quote_date)
+                  }}</span>
+                  <div class="text-xs text-ink-gray-4">
+                    {{ formatDate(q.quote_date) }}
+                  </div>
+                </td>
+                <td
+                  class="px-4 py-3"
+                  :class="
+                    isExpired(q)
+                      ? 'text-red-500 font-medium'
+                      : 'text-ink-gray-6'
+                  "
+                >
+                  {{ formatDate(q.valid_until) }}
+                </td>
+                <td class="px-4 py-3 text-right font-semibold text-ink-gray-9">
+                  {{ fmtKes(q.grand_total) }}
+                </td>
+                <td class="px-4 py-3 text-ink-gray-6 text-xs">
+                  {{ q.payment_terms }}
+                </td>
+                <td class="px-4 py-3">
+                  <span :class="pillClass(q)">
+                    {{ isExpired(q) ? __('Expired') : __(q.status) }}
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-right" @click.stop>
+                  <div class="flex items-center justify-end gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      @click="selectQuote(q.name)"
+                      >{{ __('Edit') }}</Button
+                    >
+                    <Button
+                      v-if="q.status === 'Draft' || q.status === 'Sent'"
+                      size="sm"
+                      variant="ghost"
+                      @click="sendQuote(q.name)"
+                      :loading="sendingName === q.name"
+                      >{{ __('Send') }}</Button
+                    >
+                    <Button
+                      v-if="q.status === 'Sent'"
+                      size="sm"
+                      variant="ghost"
+                      theme="green"
+                      @click="acceptQuote(q.name)"
+                      :loading="actionName === q.name"
+                      >{{ __('Accept') }}</Button
+                    >
+                    <Button
+                      v-if="q.status === 'Sent'"
+                      size="sm"
+                      variant="ghost"
+                      theme="red"
+                      @click="confirmReject(q.name)"
+                      >{{ __('Reject') }}</Button
+                    >
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      @click="downloadPdf(q.name)"
+                      >{{ __('PDF') }}</Button
+                    >
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="space-y-2 sm:hidden">
+          <article
+            v-for="q in quotes"
+            :key="`mobile-${q.name}`"
+            class="rounded-lg border border-outline-elevation-2 bg-surface-white p-3 dark:bg-surface-gray-1"
+            :class="
+              selectedQuote === q.name
+                ? 'border-outline-red-4 bg-surface-gray-1 dark:bg-surface-gray-2'
+                : ''
+            "
           >
-            <tr>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Quote #') }}
-              </th>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Created') }}
-              </th>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Valid Until') }}
-              </th>
-              <th class="px-4 py-2.5 text-right font-medium">
-                {{ __('Grand Total (incl. VAT)') }}
-              </th>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Payment') }}
-              </th>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Status') }}
-              </th>
-              <th class="px-4 py-2.5 text-right font-medium">
-                {{ __('Actions') }}
-              </th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-outline-elevation-2">
-            <tr
-              v-for="q in quotes"
-              :key="q.name"
-              class="cursor-pointer transition-colors"
-              :class="
-                selectedQuote === q.name
-                  ? 'bg-surface-gray-2 dark:bg-surface-gray-3'
-                  : 'hover:bg-surface-gray-1'
-              "
+            <button
+              type="button"
+              class="flex w-full items-start justify-between gap-3 text-left"
               @click="selectQuote(q.name)"
             >
-              <td class="px-4 py-3 font-medium text-ink-gray-9">
-                {{ q.name }}
-              </td>
-              <td class="px-4 py-3">
-                <span class="text-ink-gray-8 font-medium">{{
-                  timeAgo(q.creation ?? q.quote_date)
-                }}</span>
-                <div class="text-xs text-ink-gray-4">
-                  {{ formatDate(q.quote_date) }}
-                </div>
-              </td>
-              <td
-                class="px-4 py-3"
-                :class="
-                  isExpired(q) ? 'text-red-500 font-medium' : 'text-ink-gray-6'
-                "
-              >
-                {{ formatDate(q.valid_until) }}
-              </td>
-              <td class="px-4 py-3 text-right font-semibold text-ink-gray-9">
-                {{ fmtKes(q.grand_total) }}
-              </td>
-              <td class="px-4 py-3 text-ink-gray-6 text-xs">
-                {{ q.payment_terms }}
-              </td>
-              <td class="px-4 py-3">
-                <span :class="pillClass(q)">
-                  {{ isExpired(q) ? __('Expired') : __(q.status) }}
+              <span class="min-w-0">
+                <span
+                  class="block truncate text-sm font-semibold text-ink-gray-9"
+                >
+                  {{ q.name }}
                 </span>
-              </td>
-              <td class="px-4 py-3 text-right" @click.stop>
-                <div class="flex items-center justify-end gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    @click="selectQuote(q.name)"
-                    >{{ __('Edit') }}</Button
-                  >
-                  <Button
-                    v-if="q.status === 'Draft' || q.status === 'Sent'"
-                    size="sm"
-                    variant="ghost"
-                    @click="sendQuote(q.name)"
-                    :loading="sendingName === q.name"
-                    >{{ __('Send') }}</Button
-                  >
-                  <Button
-                    v-if="q.status === 'Sent'"
-                    size="sm"
-                    variant="ghost"
-                    theme="green"
-                    @click="acceptQuote(q.name)"
-                    :loading="actionName === q.name"
-                    >{{ __('Accept') }}</Button
-                  >
-                  <Button
-                    v-if="q.status === 'Sent'"
-                    size="sm"
-                    variant="ghost"
-                    theme="red"
-                    @click="confirmReject(q.name)"
-                    >{{ __('Reject') }}</Button
-                  >
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    @click="downloadPdf(q.name)"
-                    >{{ __('PDF') }}</Button
-                  >
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                <span class="mt-0.5 block text-xs text-ink-gray-5">
+                  {{ formatDate(q.quote_date) }} ·
+                  {{ timeAgo(q.creation ?? q.quote_date) }}
+                </span>
+              </span>
+              <span :class="pillClass(q)" class="shrink-0">
+                {{ isExpired(q) ? __('Expired') : __(q.status) }}
+              </span>
+            </button>
+            <div
+              class="mt-3 flex items-center justify-between gap-3 border-t border-outline-elevation-2 pt-2"
+            >
+              <span class="text-sm font-semibold text-ink-gray-9">
+                {{ fmtKes(q.grand_total) }}
+              </span>
+              <div class="flex flex-wrap justify-end gap-1.5" @click.stop>
+                <Button size="sm" variant="ghost" @click="selectQuote(q.name)">
+                  {{ __('Edit') }}
+                </Button>
+                <Button
+                  v-if="q.status === 'Draft' || q.status === 'Sent'"
+                  size="sm"
+                  variant="ghost"
+                  @click="sendQuote(q.name)"
+                  :loading="sendingName === q.name"
+                >
+                  {{ __('Send') }}
+                </Button>
+                <Button
+                  v-if="q.status === 'Sent'"
+                  size="sm"
+                  variant="ghost"
+                  theme="green"
+                  @click="acceptQuote(q.name)"
+                  :loading="actionName === q.name"
+                >
+                  {{ __('Accept') }}
+                </Button>
+                <Button
+                  v-if="q.status === 'Sent'"
+                  size="sm"
+                  variant="ghost"
+                  theme="red"
+                  @click="confirmReject(q.name)"
+                >
+                  {{ __('Reject') }}
+                </Button>
+                <Button size="sm" variant="ghost" @click="downloadPdf(q.name)">
+                  {{ __('PDF') }}
+                </Button>
+              </div>
+            </div>
+          </article>
+        </div>
       </div>
 
       <!-- Inline editor for the selected quote (universal QuotePanel) -->
