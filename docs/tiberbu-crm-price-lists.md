@@ -46,6 +46,14 @@ Every removal writes a Comment to the source Price List. The change and its audi
 entry are committed together, so a failed audit cannot leave an unlogged price
 change.
 
+Facility contact edits intentionally do not expose or change a facility price-list
+override. The contact form preserves an existing override when its payload omits
+pricing. Sales Managers change the price list or negotiated rates from the Deal's
+Quotation panel instead; the server allows that only while the facility has not
+signed and records the quotation change in the Deal timeline. CSV/admin payloads
+may still send an explicit `price_list_override` for controlled imports and
+backward-compatible data maintenance.
+
 ## Quote price-list changes
 
 A Sales Manager may change a draft or sent quotation's price list after an

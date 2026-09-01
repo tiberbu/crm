@@ -1306,7 +1306,9 @@ def save_facility(data: Any):
 	  facility_name: str,
 	  organization?: str,  # blank defaults to the facility name
 	  keph_level: str,
-	  memberships: [{network, price_list_override, status, contact_name, contact_email, contact_phone}]
+	  memberships: [{network, price_list_override?, status, contact_name, contact_email, contact_phone}]
+	  ``price_list_override`` is optional on edits so contact updates cannot clear
+	  pricing accidentally; CSV/admin callers may send an explicit blank to clear it.
 	}
 	Max 2 memberships enforced.
 	"""
@@ -1355,6 +1357,7 @@ def save_facility(data: Any):
 		doc = frappe.new_doc("CRM Pre-Qualified Facility")
 	is_new_facility = doc.is_new()
 	existing_networks = {m.network for m in (doc.memberships or [])}
+	existing_memberships = {m.network: m for m in (doc.memberships or [])}
 
 	doc.mfl_code = mfl_code or doc.mfl_code
 	doc.facility_name = frappe.utils.cstr(data.get("facility_name") or doc.facility_name or "")
@@ -1382,9 +1385,17 @@ def save_facility(data: Any):
 			"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
 		}
 		if membership_has_override:
-			membership_values["price_list_override"] = frappe.utils.cstr(
-				mem_data.get("price_list_override") or ""
-			).strip()
+			# Contact edits do not expose pricing. Preserve an existing override when
+			# the caller omits the field, while CSV/admin callers can still clear or
+			# replace it by sending an explicit value.
+			if "price_list_override" in mem_data:
+				membership_values["price_list_override"] = frappe.utils.cstr(
+					mem_data.get("price_list_override") or ""
+				).strip()
+			elif net in existing_memberships:
+				membership_values["price_list_override"] = frappe.utils.cstr(
+					existing_memberships[net].get("price_list_override") or ""
+				).strip()
 		doc.append(
 			"memberships",
 			membership_values,

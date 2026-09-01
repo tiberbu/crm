@@ -904,6 +904,16 @@
             />
           </div>
         </div>
+        <p class="mb-4 text-xs text-ink-gray-5">
+          <template v-if="editingFacility">
+            {{ facilityPriceListLabel(editingFacility) }} ·
+          </template>
+          {{
+            __(
+              'Pricing is managed from the Quotation page before the facility signs; contact edits do not change rates.',
+            )
+          }}
+        </p>
 
         <!-- Row 2: Contact fields -->
         <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -918,31 +928,6 @@
               class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
               @input="organizationEdited = true"
             />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-gray-6">
-              {{ __('Facility price list') }}
-            </label>
-            <select
-              v-model="form.price_list_override"
-              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            >
-              <option value="">{{ __('Use network price list') }}</option>
-              <option
-                v-for="priceList in negotiatedPriceLists"
-                :key="priceList.value"
-                :value="priceList.value"
-              >
-                {{ priceList.label }}
-              </option>
-            </select>
-            <span class="text-[11px] text-ink-gray-5">
-              {{
-                __(
-                  'Use this only when the facility has negotiated a different rate.',
-                )
-              }}
-            </span>
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6"
@@ -1457,7 +1442,6 @@ const form = reactive({
   mfl_code: '',
   facility_name: '',
   organization: '',
-  price_list_override: '',
   keph_level: '',
   contact_name: '',
   contact_email: '',
@@ -1470,7 +1454,6 @@ function resetForm() {
   form.mfl_code = ''
   form.facility_name = ''
   form.organization = ''
-  form.price_list_override = ''
   form.keph_level = ''
   form.contact_name = ''
   form.contact_email = ''
@@ -1492,7 +1475,6 @@ function editContact(row) {
     mfl_code: row.mfl_code ?? '',
     facility_name: row.facility_name ?? '',
     organization: row.organization ?? row.facility_name ?? '',
-    price_list_override: m.price_list_override ?? '',
     keph_level: row.keph_level ?? '',
     contact_name: m.contact_name ?? '',
     contact_email: m.contact_email ?? '',
@@ -1575,7 +1557,6 @@ async function saveContact() {
     memberships: [
       {
         network: props.networkSlug,
-        price_list_override: form.price_list_override,
         status: form.status,
         contact_name: form.contact_name,
         contact_email: form.contact_email,

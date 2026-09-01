@@ -13,6 +13,7 @@ from crm.api.optin_admin import (
 	list_negotiated_price_lists,
 	list_networks,
 	list_price_list_facilities,
+	save_facility,
 	save_item_prices,
 	update_item_price,
 )
@@ -444,6 +445,61 @@ class TestOptInPriceListTools(UnitTestCase):
 
 		self.assertEqual(item_price.price_list, source.name)
 		log_event.assert_not_called()
+
+	def test_contact_edit_payload_without_pricing_preserves_facility_override(self):
+		class FakeFacility:
+			name = "FAC-0001"
+			mfl_code = "1001"
+			facility_name = "First Clinic"
+			keph_level = "Level 3"
+
+			def __init__(self):
+				self.memberships = [
+					frappe._dict(
+						{
+							"network": "network-a",
+							"price_list_override": "Negotiated Facility A",
+						}
+					)
+				]
+
+			def is_new(self):
+				return False
+
+			def append(self, _fieldname, values):
+				self.memberships.append(frappe._dict(values))
+
+			def save(self, **_kwargs):
+				return None
+
+		facility = FakeFacility()
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch("crm.api.optin_admin.frappe.db.commit"),
+		):
+			save_facility(
+				{
+					"name": facility.name,
+					"mfl_code": facility.mfl_code,
+					"facility_name": facility.facility_name,
+					"keph_level": facility.keph_level,
+					"memberships": [
+						{
+							"network": "network-a",
+							"status": "Active",
+							"contact_name": "Jane Doe",
+							"contact_email": "jane@example.com",
+							"contact_phone": "+254700000001",
+						}
+					],
+				}
+			)
+
+		self.assertEqual(len(facility.memberships), 1)
+		self.assertEqual(facility.memberships[0].price_list_override, "Negotiated Facility A")
 
 
 class TestOptInNetworkList(UnitTestCase):
