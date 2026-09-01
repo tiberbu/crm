@@ -66,6 +66,28 @@ guard is server-side and is independent of the UI control state. If the
 signature state cannot be read, the server also refuses the change until it can
 verify the state, rather than risking a post-signature edit.
 
+## Price-list provenance on quotes and contracts
+
+Each quotation now keeps two read-only fields: **Initial Price List** (the list
+selected when the quote was first created) and **Price List History** (an
+append-only JSON audit of the initial selection and every pre-signature switch,
+including the timestamp and actor). The current quotation list is the
+**Negotiated Price List**. This preserves the commercial story even when a quote
+is later re-priced.
+
+When a contract is generated, the initial list, negotiated list, and history are
+copied to the contract. Sales users see the summary prominently in the CRM Quote
+and Contracting panels. Every authenticated contract signer sees the same
+read-only summary before the signature pad, and the PDF includes it near the
+agreement header. It is informational only; the
+existing server-side rule still prevents price-list changes after the facility
+signs.
+
+The migration backfills legacy quotations from their current selling price list
+as a single truthful **Initial price list** event and copies that snapshot to
+linked contracts where possible. It never invents prior changes or overwrites
+existing history, and it is safe to run more than once.
+
 ## Level 6 migration
 
 `crm.patches.v1_0.seed_level_6_prices` adds `CV-HIMS-KEPH-6` and the five

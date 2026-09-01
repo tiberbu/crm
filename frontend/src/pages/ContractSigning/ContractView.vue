@@ -158,6 +158,7 @@ async function loadContract() {
       signatoryName: signatoryName.value,
       contractDate: contractDate.value,
       signingProgress: data.signing_progress || [],
+      priceListSummary: data.price_list_summary || null,
     })
   } catch (err) {
     const failure = getContractSigningError(err, 'contract')

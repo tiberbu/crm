@@ -32,6 +32,7 @@ import frappe
 from frappe.utils import add_days, date_diff, getdate, nowdate
 
 from crm.api._timeline import log_deal_event
+from crm.utils.price_list_history import append_change, ensure_initial, snapshot
 from crm.utils.quotation_tax import apply_quotation_taxes, quotation_tax_summary
 
 DEFAULT_PRICE_LIST = "Standard Selling"
@@ -331,6 +332,7 @@ def create_quote(deal, price_list=None):
 	doc.flags.ignore_mandatory = True
 	doc.set_missing_values()
 	apply_quotation_taxes(doc)
+	ensure_initial(doc, price_list)
 	doc.insert(ignore_mandatory=True, ignore_permissions=True)
 	frappe.db.commit()
 	return {"name": doc.name, "status": _derive_status(doc), "price_list": price_list}
@@ -625,6 +627,7 @@ def set_quote_price_list(quote, price_list):
 		frappe.throw("Select an enabled selling price list")
 
 	previous_price_list = doc.get("selling_price_list") or DEFAULT_PRICE_LIST
+	ensure_initial(doc, previous_price_list)
 	doc.selling_price_list = price_list
 	# Re-baseline every line to the new list's Item Price. A true miss resolves to
 	# 0 (via _get_item_price's Standard-Selling fallback) so the exec re-enters it.
@@ -636,6 +639,7 @@ def set_quote_price_list(quote, price_list):
 	doc.set_missing_values()
 	_apply_manual_rates(doc, baseline_rates)
 	apply_quotation_taxes(doc)
+	append_change(doc, previous_price_list, price_list)
 	doc.save(ignore_permissions=True)
 	if deal_name and previous_price_list != price_list:
 		log_deal_event(
@@ -644,9 +648,12 @@ def set_quote_price_list(quote, price_list):
 			% (doc.name, previous_price_list, price_list),
 		)
 	frappe.db.commit()
+	price_snapshot = snapshot(doc)
 
 	return {
 		"price_list": price_list,
+		"initial_price_list": price_snapshot["initial"],
+		"price_list_history": price_snapshot["history"],
 		"net_total": float(doc.net_total or 0),
 		"vat_amount": float(doc.vat_amount or 0),
 		"grand_total": float(doc.grand_total or 0),
@@ -682,6 +689,7 @@ def get_quote_lines(quote):
 	if not doc.net_total:
 		doc.net_total = sum(line["amount"] for line in lines)
 	tax_summary = quotation_tax_summary(doc)
+	price_snapshot = snapshot(doc)
 
 	return {
 		"name": doc.name,
@@ -691,6 +699,8 @@ def get_quote_lines(quote):
 		"price_list_editable": _quote_price_list_is_editable(doc),
 		"currency": doc.currency or "KES",
 		"price_list": doc.get("selling_price_list") or DEFAULT_PRICE_LIST,
+		"initial_price_list": price_snapshot["initial"],
+		"price_list_history": price_snapshot["history"],
 		"payment_terms": doc.get("crm_payment_terms") or "Annual Upfront",
 		"valid_until": str(doc.valid_till or ""),
 		"lines": lines,
