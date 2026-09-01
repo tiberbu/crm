@@ -14,9 +14,12 @@ from crm.api.contracts import (
 	_issue_and_send_invitation,
 	_network_signers,
 	_notify_internal_approvers,
+	_required_signatures_complete,
 	_save_otp_state,
 	_send_contract_sms,
+	_send_fully_executed_contract,
 	_tiberbu_signer,
+	_tiberbu_signers,
 	_transition,
 	generate,
 	get_contract,
@@ -24,6 +27,7 @@ from crm.api.contracts import (
 	remove_signatory,
 	request_otp,
 	resend_invitation,
+	update_signatory,
 )
 from crm.api.optin import (
 	_KEPH_MAP,
@@ -218,6 +222,98 @@ class TestOptInConfirmationEmail(UnitTestCase):
 
 
 class TestOptInTiberbuContacts(UnitTestCase):
+	def test_settings_table_resolves_multiple_tiberbu_signers(self):
+		settings = frappe._dict(
+			{
+				"tiberbu_contacts": [
+					{"role": "Signatory", "full_name": "Signer One", "email": "ONE@example.com", "phone": ""},
+					{
+						"role": "Signatory",
+						"full_name": "Signer One Duplicate",
+						"email": "one@example.com",
+						"phone": "+254700000001",
+					},
+					{
+						"role": "Approver",
+						"full_name": "Reviewer",
+						"email": "reviewer@example.com",
+						"phone": "+254700000002",
+					},
+				],
+			}
+		)
+		with patch("crm.api.contracts._load_optin_settings_safely", return_value=settings):
+			self.assertEqual(
+				_tiberbu_signers(),
+				[{"full_name": "Signer One", "email": "one@example.com", "phone": ""}],
+			)
+
+	def test_at_least_one_tiberbu_signer_satisfies_completion(self):
+		def row(role, status):
+			return SimpleNamespace(signatory_role=role, status=status)
+
+		contract = SimpleNamespace(
+			tiberbu_signing_requirement="At least one must sign",
+			signatories=[
+				row("Facility Signatory", "Signed"),
+				row("Facility Witness", "Signed"),
+				row("Network Signatory", "Signed"),
+				row("Tiberbu Signatory", "Signed"),
+				row("Tiberbu Signatory", "Pending"),
+			],
+		)
+		self.assertTrue(_required_signatures_complete(contract))
+
+	def test_signed_signatory_cannot_be_edited(self):
+		row = SimpleNamespace(
+			name="ROW-SIGNED",
+			signatory_role="Tiberbu Signatory",
+			signatory_name="Original",
+			signatory_email="original@example.com",
+			signatory_phone="",
+			status="Signed",
+			signature_data="data:image/png;base64,signed",
+			signed_at="2026-09-01 10:00:00",
+		)
+		contract = SimpleNamespace(signatories=[row])
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+		):
+			with self.assertRaises(frappe.ValidationError) as raised:
+				update_signatory(
+					contract="CONT-SIGNED",
+					role="Tiberbu Signatory",
+					name="Changed",
+					email="changed@example.com",
+				)
+		self.assertIn("cannot be edited", str(raised.exception).lower())
+
+	def test_fully_executed_contract_pdf_is_sent_once_to_facility(self):
+		facility = SimpleNamespace(
+			signatory_role="Facility Signatory", signatory_email="facility@example.com"
+		)
+		contract = SimpleNamespace(
+			name="CONT-EXECUTED",
+			deal="DEAL-EXECUTED",
+			signatories=[facility],
+			executed_contract_sent_at=None,
+			save=Mock(),
+		)
+		with (
+			patch("crm.api.contracts.frappe.get_print", return_value=b"pdf"),
+			patch("crm.api.contracts.frappe.sendmail") as sendmail,
+			patch("crm.api.contracts._contract_email_subject_label", return_value="Example Facility"),
+			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			self.assertTrue(_send_fully_executed_contract(contract))
+			self.assertFalse(_send_fully_executed_contract(contract))
+		self.assertEqual(sendmail.call_count, 1)
+		self.assertEqual(sendmail.call_args.kwargs["recipients"], ["facility@example.com"])
+		self.assertTrue(sendmail.call_args.kwargs["now"])
+		self.assertEqual(sendmail.call_args.kwargs["attachments"][0]["fcontent"], b"pdf")
+
 	def test_network_signers_collapse_duplicate_email_rows(self):
 		rows = [
 			frappe._dict({"full_name": "Network Reviewer", "email": "Reviewer@Example.com", "phone": ""}),

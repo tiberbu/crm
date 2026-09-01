@@ -264,7 +264,7 @@
               </div>
             </div>
 
-            <!-- Inline edit form — free-text name + email for every signatory -->
+            <!-- Inline edit form — free-text name + email for unsigned signatories -->
             <div v-else class="space-y-2">
               <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <input
@@ -293,9 +293,7 @@
                 class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
               >
                 {{
-                  __(
-                    'This signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.',
-                  )
+                  __('This signatory has already signed and cannot be edited.')
                 }}
               </p>
               <p v-else class="text-xs text-ink-gray-4">
@@ -509,12 +507,35 @@
            reconfigured). Each signs via the same OTP + pad once invited. -->
       <div class="mb-6">
         <div class="mb-2 flex items-center justify-between">
-          <label class="block text-xs font-medium text-ink-gray-6">
-            {{ __('Network & Tiberbu Co-Signatories') }}
-          </label>
-          <span v-if="coSignersLoading" class="text-xs text-ink-gray-4">{{
-            __('Loading…')
-          }}</span>
+          <div>
+            <label class="block text-xs font-medium text-ink-gray-6">
+              {{ __('Network & Tiberbu Co-Signatories') }}
+            </label>
+            <p class="mt-0.5 text-xs text-ink-gray-4">
+              {{
+                __('Settings contacts are shown here. Signed rows are locked.')
+              }}
+              <template v-if="tiberbuSigningRequirement">
+                ·
+                {{
+                  __('Tiberbu rule: {0}', [tiberbuSigningRequirement])
+                }}</template
+              >
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <span v-if="coSignersLoading" class="text-xs text-ink-gray-4">{{
+              __('Loading…')
+            }}</span>
+            <Button
+              v-if="contractExists"
+              variant="subtle"
+              size="sm"
+              :loading="syncingCo"
+              :label="__('Sync from settings')"
+              @click="syncConfiguredSignatories"
+            />
+          </div>
         </div>
 
         <!-- Post-generate: editable rows (on-contract rows + configured-but-missing) -->
@@ -682,7 +703,7 @@
               >
                 {{
                   __(
-                    'This co-signatory has already signed. Saving will invalidate their signature and send a fresh link so they sign again.',
+                    'This co-signatory has already signed and cannot be edited.',
                   )
                 }}
               </p>
@@ -814,7 +835,6 @@
               + {{ __('Add Network Signatory') }}
             </button>
             <button
-              v-if="!tiberbuOnContract"
               type="button"
               class="text-xs font-medium underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
               :disabled="!canGenerate"
@@ -891,6 +911,42 @@
             }}
           </p>
         </div>
+      </div>
+
+      <!-- Tiberbu approval contacts are configured alongside signatories but do
+           not sign the contract. Keep them visible on the quote for a clear
+           hand-off, and refresh them with the same settings sync action above. -->
+      <div
+        v-if="tiberbuApprovers.length"
+        class="mb-6 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+      >
+        <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-4">
+          {{ __('Tiberbu approval contacts') }}
+        </p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+          <div
+            v-for="approver in tiberbuApprovers"
+            :key="`${approver.email}:${approver.full_name}`"
+            class="min-w-0 rounded-md bg-surface-white px-3 py-2 dark:bg-surface-gray-1"
+          >
+            <p class="truncate text-sm font-medium text-ink-gray-8">
+              {{ approver.full_name || approver.email }}
+            </p>
+            <p class="truncate text-xs text-ink-gray-5">
+              <template v-if="approver.email">{{ approver.email }}</template>
+              <template v-if="approver.phone">
+                <span v-if="approver.email"> · </span>{{ approver.phone }}
+              </template>
+            </p>
+          </div>
+        </div>
+        <p class="mt-2 text-xs text-ink-gray-4">
+          {{
+            __(
+              'Shown from Opt-In Settings. These contacts receive approval notifications after execution.',
+            )
+          }}
+        </p>
       </div>
 
       <!-- Action row -->
@@ -999,8 +1055,8 @@ const dealDocResource = createResource({
 const dealDoc = computed(() => dealDocResource.data ?? null)
 
 // ---------------------------------------------------------------------------
-// Co-signatories — Network Signatories (per network) + Tiberbu Signatory,
-// auto-resolved from configuration. Displayed read-only; not nominated here.
+// Co-signatories — Network Signatories (per network) + Tiberbu contacts,
+// auto-resolved from configuration.
 // ---------------------------------------------------------------------------
 const coSignersResource = createResource({
   url: 'crm.api.contracts.get_network_signatories',
@@ -1008,7 +1064,14 @@ const coSignersResource = createResource({
 const coSignersLoading = ref(true)
 
 const coSigners = computed(() => coSignersResource.data?.signers ?? [])
+const tiberbuApprovers = computed(() => coSignersResource.data?.approvers ?? [])
 const networkSlug = computed(() => coSignersResource.data?.network_slug ?? '')
+const tiberbuSigningRequirement = computed(
+  () =>
+    lc.value.contract?.tiberbu_signing_requirement ||
+    coSignersResource.data?.tiberbu_signing_requirement ||
+    'All must sign',
+)
 const smsDeliveryResource = createResource({
   url: 'crm.api.contracts.get_sms_delivery_status',
 })
@@ -1313,15 +1376,12 @@ const editEmail = ref('')
 const editPhone = ref('')
 const savingEdit = ref(false)
 
-// Every signatory row is editable — Pending, Declined, or Signed. Editing a
-// Signed row invalidates its signature server-side (update_signatory clears the
-// signature + resets to Pending) so the person re-signs the current terms.
-function canEdit(_status) {
-  return true
+// A captured signature is immutable. Pending and Declined rows remain editable.
+function canEdit(status) {
+  return !isSignedStatus(status)
 }
 
-// True for an already-signed row — used to warn that editing will invalidate
-// the captured signature and require the party to sign again.
+// True for an already-signed row — used to lock the captured signature.
 function isSignedStatus(status) {
   return (status ?? '').toLowerCase() === 'signed'
 }
@@ -1340,7 +1400,7 @@ function isTiberbuRole(role) {
 }
 
 function startEdit(s) {
-  if (!canGenerate.value) return
+  if (!canGenerate.value || !canEdit(s.status)) return
   editingRole.value = s.role
   editRowName.value = s.row_name ?? ''
   editName.value = s.name ?? ''
@@ -1413,6 +1473,10 @@ const removeSignatoryResource = createResource({
 const saveNetworkSignerResource = createResource({
   url: 'crm.api.contracts.save_network_signer',
 })
+const syncConfiguredSignatoriesResource = createResource({
+  url: 'crm.api.contracts.sync_configured_signatories',
+})
+const syncingCo = ref(false)
 
 const ADD_KEY = '__add__' // sentinel: the standalone "add from scratch" form is open
 
@@ -1437,18 +1501,14 @@ function coKey(role, email) {
   return `${(role ?? '').toLowerCase()}::${(email ?? '').trim().toLowerCase()}`
 }
 
-// Merge the contract's counterparty rows with the configured co-signatories that
-// are not yet on the contract. `onContract` rows are edited via update_signatory;
-// the rest are added via add_signatory. Deduped on email (Tiberbu is singular).
+// Merge the contract's counterparty rows with configured co-signatories that are
+// not yet on the contract. `onContract` rows are edited via update_signatory; the
+// rest are added via add_signatory. All roles are deduped on email.
 const coSignatoryItems = computed(() => {
   const rows = (lc.value.signatories ?? []).filter((s) => isCoRole(s.role))
-  const onContractEmails = new Set(
-    rows.map((r) => (r.email ?? '').trim().toLowerCase()).filter(Boolean),
+  const onContractKeys = new Set(
+    rows.map((r) => coKey(r.role, r.email)).filter(Boolean),
   )
-  // Tiberbu is singular per contract; its config email may have changed after
-  // generation, so it is deduped by role (not email) — else a reconfigured
-  // Tiberbu would offer a phantom "Add" the backend singular-guard rejects.
-  const hasTiberbuOnContract = rows.some((r) => isTiberbuRole(r.role))
   const items = rows.map((r) => ({
     key: coKey(r.role, r.email),
     row_name: r.row_name,
@@ -1463,9 +1523,7 @@ const coSignatoryItems = computed(() => {
     const email = (cs.email ?? '').trim().toLowerCase()
     const role = cs.signer_role || 'Network Signatory'
     // Skip config entries already represented by a contract row.
-    if (isTiberbuRole(role)) {
-      if (hasTiberbuOnContract) continue
-    } else if (email && onContractEmails.has(email)) {
+    if (email && onContractKeys.has(coKey(role, email))) {
       continue
     }
     items.push({
@@ -1482,13 +1540,34 @@ const coSignatoryItems = computed(() => {
   return items
 })
 
-// A Tiberbu Signatory is singular per contract — hide "Add Tiberbu" once present.
-const tiberbuOnContract = computed(() =>
-  coSignatoryItems.value.some((i) => isTiberbuRole(i.role) && i.onContract),
-)
-
 function canRemoveCoSignatory(item) {
   return !!item?.row_name && item.onContract && !isSignedStatus(item.status)
+}
+
+async function syncConfiguredSignatories() {
+  if (!canGenerate.value || syncingCo.value || !contractExists.value) return
+  syncingCo.value = true
+  try {
+    const result = await syncConfiguredSignatoriesResource.submit({
+      contract: lc.value.contract?.name ?? '',
+    })
+    await coSignersResource.submit({ deal: props.dealId })
+    emit('lifecycle-reload')
+    toast.success(
+      __(
+        'Settings synced: {0} added, {1} updated, {2} signed rows protected.',
+        [result?.added ?? 0, result?.updated ?? 0, result?.skipped_signed ?? 0],
+      ),
+    )
+  } catch (err) {
+    toast.error(
+      err?.messages?.[0] ??
+        err?.message ??
+        __('Could not sync signing contacts from settings.'),
+    )
+  } finally {
+    syncingCo.value = false
+  }
 }
 
 async function removeCoSignatory(item) {
@@ -1528,7 +1607,7 @@ async function removeCoSignatory(item) {
 }
 
 function startCoEdit(item) {
-  if (!canGenerate.value) return
+  if (!canGenerate.value || (item.onContract && !canEdit(item.status))) return
   coEditKey.value = item.key
   coEditRole.value = item.role
   coEditRowName.value = item.row_name ?? ''

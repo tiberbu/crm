@@ -119,7 +119,12 @@ def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
 	if not _can_read("CRM Contract"):
 		return None
 	fields = ["name", "status", "workflow_state", "quote"]
-	for fieldname in ("initial_price_list", "negotiated_price_list", "price_list_history"):
+	for fieldname in (
+		"initial_price_list",
+		"negotiated_price_list",
+		"price_list_history",
+		"tiberbu_signing_requirement",
+	):
 		if frappe.db.has_column("CRM Contract", fieldname):
 			fields.append(fieldname)
 	rows = frappe.get_list(
@@ -139,6 +144,7 @@ def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
 		"name": r.name,
 		"status": r.status,
 		"workflow_state": r.workflow_state,
+		"tiberbu_signing_requirement": r.get("tiberbu_signing_requirement") or "All must sign",
 		"price_list": {
 			"initial": initial or negotiated,
 			"negotiated": negotiated or initial,

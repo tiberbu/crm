@@ -16,6 +16,8 @@
   "col_break_1",
   "status",
   "workflow_state",
+  "tiberbu_signing_requirement",
+  "executed_contract_sent_at",
   "section_break_body",
   "contract_html",
   "tc_document",
@@ -99,6 +101,23 @@
    "fieldtype": "Data",
    "label": "Workflow State",
    "read_only": 1
+  },
+  {
+   "fieldname": "tiberbu_signing_requirement",
+   "fieldtype": "Select",
+   "label": "Tiberbu signing requirement",
+   "options": "All must sign\nAt least one must sign",
+   "default": "All must sign",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Snapshot of the setting used when this contract was generated."
+  },
+  {
+   "fieldname": "executed_contract_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Executed contract sent at",
+   "read_only": 1,
+   "no_copy": 1
   },
   {
    "fieldname": "section_break_body",

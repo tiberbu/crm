@@ -334,6 +334,85 @@ def _tiberbu_signer():
 	return identity
 
 
+def _tiberbu_contact_rows(settings=None):
+	"""Return configured Tiberbu contact rows when the child table is available."""
+	settings = settings or _load_optin_settings_safely()
+	if not settings:
+		return []
+	rows = (
+		settings.get("tiberbu_contacts")
+		if hasattr(settings, "get")
+		else getattr(settings, "tiberbu_contacts", None)
+	)
+	return list(rows or [])
+
+
+def _tiberbu_contacts(role, settings=None):
+	"""Resolve configured Tiberbu contacts for a role, deduped by email."""
+	role = frappe.utils.cstr(role or "").strip().lower()
+	contacts = []
+	for row in _tiberbu_contact_rows(settings):
+		row_role = (
+			frappe.utils.cstr(row.get("role") if hasattr(row, "get") else getattr(row, "role", ""))
+			.strip()
+			.lower()
+		)
+		if row_role != role:
+			continue
+		identity = {
+			"full_name": frappe.utils.cstr(
+				row.get("full_name") if hasattr(row, "get") else getattr(row, "full_name", "")
+			).strip(),
+			"email": frappe.utils.cstr(row.get("email") if hasattr(row, "get") else getattr(row, "email", ""))
+			.strip()
+			.lower(),
+			"phone": frappe.utils.cstr(
+				row.get("phone") if hasattr(row, "get") else getattr(row, "phone", "")
+			).strip(),
+		}
+		if not identity["email"]:
+			continue
+		identity["full_name"] = identity["full_name"] or identity["email"]
+		if not any(existing["email"] == identity["email"] for existing in contacts):
+			contacts.append(identity)
+	return contacts
+
+
+def _tiberbu_signers(settings=None):
+	"""Return all configured Tiberbu signers, with the legacy signer as fallback."""
+	contacts = _tiberbu_contacts("signatory", settings)
+	if contacts:
+		return contacts
+	legacy = _tiberbu_signer()
+	return [legacy] if legacy else []
+
+
+def _tiberbu_approvers(settings=None):
+	"""Return all configured Tiberbu approvers plus the legacy contact if distinct."""
+	contacts = _tiberbu_contacts("approver", settings)
+	legacy = _identity_from_fields(settings or _load_optin_settings_safely())
+	if legacy.get("email") and not any(row["email"] == legacy["email"] for row in contacts):
+		legacy["full_name"] = legacy["full_name"] or legacy["email"]
+		contacts.append(legacy)
+	return contacts
+
+
+def _tiberbu_signing_requirement(settings=None):
+	"""Return the normalized requirement snapshot used by a newly generated contract."""
+	settings = settings or _load_optin_settings_safely()
+	value = settings.get("tiberbu_signing_requirement") if settings and hasattr(settings, "get") else ""
+	return (
+		"At least one must sign"
+		if frappe.utils.cstr(value).strip().lower()
+		in (
+			"at least one",
+			"at least one must sign",
+			"any",
+		)
+		else "All must sign"
+	)
+
+
 def _facility_witness_from_deal(deal):
 	"""Facility witness captured on the deal's latest opt-in submission."""
 	deal = frappe.utils.cstr(deal or "").strip()
@@ -382,7 +461,7 @@ def _get_signatory_row(contract_doc, role, row_name=None):
 	configured signers yields several "Network Signatory" rows. When row_name
 	(the child docname) is given, the exact row is returned so operations never
 	hit the wrong person; without it, the first row for the role is returned
-	(correct for the singular roles: facility signatory/witness, Tiberbu).
+	(correct for the singular roles: facility signatory/witness).
 	"""
 	rows = [r for r in (contract_doc.signatories or []) if r.signatory_role == role]
 	if row_name:
@@ -791,9 +870,11 @@ def _transition(contract_name):
 				"invited together (7-day links)" % contract.name,
 			)
 
-	# Done: every signatory has signed.
-	if sigs and all(s.status == "Signed" for s in sigs):
+	# Done: all mandatory parties have signed. Tiberbu rows may be configured as
+	# "At Least One" while facility, witness, and network rows remain mandatory.
+	if _required_signatures_complete(contract):
 		_set_contract_state(contract, "Fully Executed", status="Fully Executed")
+		_send_fully_executed_contract(contract)
 		# Internal approvers are notified only after every external signatory has
 		# completed the contract. The notifier sends both immediate email and SMS.
 		_notify_internal_approvers(contract.name, contract.deal)
@@ -801,6 +882,100 @@ def _transition(contract_name):
 			contract.deal,
 			"All parties signed contract %s — fully executed" % contract.name,
 		)
+
+
+def _required_signatures_complete(contract):
+	"""Evaluate completion using the requirement snapshot stored on the contract."""
+	rows = list(contract.signatories or [])
+	if not rows:
+		return False
+	mandatory = [row for row in rows if row.signatory_role != "Tiberbu Signatory"]
+	if not all(row.status == "Signed" for row in mandatory):
+		return False
+	tiberbu = [row for row in rows if row.signatory_role == "Tiberbu Signatory"]
+	if not tiberbu:
+		return True
+	requirement = (
+		frappe.utils.cstr(getattr(contract, "tiberbu_signing_requirement", "All") or "All").strip().lower()
+	)
+	if requirement in ("at least one", "at least one must sign", "any"):
+		return any(row.status == "Signed" for row in tiberbu)
+	return all(row.status == "Signed" for row in tiberbu)
+
+
+def _ensure_contract_signing_open(contract):
+	"""Reject new signing actions after the contract has been completed."""
+	if getattr(contract, "status", "") == "Fully Executed":
+		frappe.throw(
+			_("This contract has already been fully executed."),
+			frappe.ValidationError,
+		)
+
+
+def _send_fully_executed_contract(contract):
+	"""Send the CRM Contract Standard PDF to the facility exactly once."""
+	if getattr(contract, "executed_contract_sent_at", None):
+		return False
+	# Re-acquire the contract row lock after the state transition commit. This
+	# closes the race where two final signature requests could otherwise both see
+	# an empty sent marker and deliver the executed PDF twice.
+	try:
+		if frappe.db.get_value("CRM Contract", contract.name, "executed_contract_sent_at", for_update=True):
+			return False
+	except Exception:
+		# Older sites may not have the marker column until migrate; the local guard
+		# and the idempotent transition still preserve legacy behavior.
+		pass
+	facility = _get_signatory_row(contract, "Facility Signatory")
+	recipient = frappe.utils.cstr(getattr(facility, "signatory_email", "") or "").strip().lower()
+	if not recipient:
+		frappe.log_error(
+			"Fully executed contract %s has no facility recipient." % contract.name,
+			"contracts._send_fully_executed_contract: recipient missing",
+		)
+		return False
+	try:
+		try:
+			pdf_bytes = frappe.get_print(
+				"CRM Contract",
+				contract.name,
+				print_format="CRM Contract Standard",
+				as_pdf=True,
+				no_letterhead=1,
+			)
+		except Exception:
+			# Keep legacy sites working if the custom Print Format has not migrated yet.
+			from frappe.utils.pdf import get_pdf
+
+			pdf_bytes = get_pdf(_build_contract_document_html(contract))
+		facility_label = _contract_email_subject_label(contract)
+		frappe.sendmail(
+			recipients=[recipient],
+			subject="%s — Fully executed contract" % facility_label,
+			message=branded_email_html(
+				_network_for_contract(contract),
+				heading="Your fully executed contract",
+				intro_html=(
+					"<p style='margin:0'>All required signatories have completed the "
+					"<strong>%s</strong> agreement. The signed PDF is attached for your records.</p>"
+					% frappe.utils.escape_html(facility_label)
+				),
+			),
+			attachments=[{"fname": "%s-fully-executed.pdf" % contract.name, "fcontent": pdf_bytes}],
+			reference_doctype="CRM Contract",
+			reference_name=contract.name,
+			now=True,
+		)
+		contract.executed_contract_sent_at = frappe.utils.now_datetime()
+		contract.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		frappe.db.commit()
+		return True
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"contracts._send_fully_executed_contract: delivery failed for %s" % contract.name,
+		)
+		return False
 
 
 def _set_contract_state(contract, workflow_state, status=None):
@@ -831,6 +1006,16 @@ def _notify_internal_approvers(contract_name, deal_name):
 		identity = _approver_identity(slot, onboarding_row, settings)
 		if identity.get("email") or identity.get("phone"):
 			approver_slots.append((slot, identity))
+	legacy_tiberbu_emails = {
+		identity.get("email")
+		for slot, identity in approver_slots
+		if slot == "tiberbu_approver" and identity.get("email")
+	}
+	for index, identity in enumerate(_tiberbu_approvers(settings), 1):
+		if identity.get("email") in legacy_tiberbu_emails:
+			continue
+		if identity.get("email") or identity.get("phone"):
+			approver_slots.append(("tiberbu_approver_%s" % index, identity))
 
 	# NOTE: approver fields live only on CRM Onboarding Request (plus the global
 	# Tiberbu contact in Opt-In Settings), not on CRM Deal. If no approver is
@@ -931,6 +1116,13 @@ def _approval_identity_for_delivery(contract_doc, delivery):
 			_onboarding_approver_row(contract_doc.deal),
 			_load_optin_settings_safely(),
 		)
+	elif role.startswith("Tiberbu Approver"):
+		try:
+			index = int(role.rsplit(" ", 1)[-1]) - 1
+		except (TypeError, ValueError):
+			index = 0
+		contacts = _tiberbu_approvers(_load_optin_settings_safely())
+		identity = contacts[index] if 0 <= index < len(contacts) else {}
 	else:
 		identity = _resolve_user_identity(
 			delivery.signatory_row,
@@ -950,11 +1142,12 @@ def _approval_identity_for_delivery(contract_doc, delivery):
 def get_network_signatories(deal: Any = "", network_slug: Any = ""):
 	"""
 	Resolve the co-signatories that will be seeded onto a contract: every
-	Network Signatory configured on the deal's network plus the global Tiberbu
-	Signatory. Powers the auto-populate on the Quote/Contracting page.
+	Network Signatory configured on the deal's network plus all configured Tiberbu
+	Signatories. Powers the auto-populate on the Quote/Contracting page.
 
 	Requires: Sales Manager or System Manager role.
-	Returns: {network_slug, signers: [{full_name, email, phone, signer_role}]}
+	Returns: {network_slug, signers: [{full_name, email, phone, signer_role}],
+	approvers: [{full_name, email, phone, contact_role}]}
 	"""
 	_check_crm_role()
 
@@ -964,11 +1157,108 @@ def get_network_signatories(deal: Any = "", network_slug: Any = ""):
 		network_slug = _resolve_network_slug(deal) or ""
 
 	signers = [dict(s, signer_role="Network Signatory") for s in _network_signers(network_slug)]
-	tb = _tiberbu_signer()
-	if tb:
-		signers.append(dict(tb, signer_role="Tiberbu Signatory"))
+	signers.extend(dict(s, signer_role="Tiberbu Signatory") for s in _tiberbu_signers())
 
-	return {"network_slug": network_slug, "signers": signers}
+	return {
+		"network_slug": network_slug,
+		"signers": signers,
+		"approvers": [dict(contact, contact_role="Tiberbu Approver") for contact in _tiberbu_approvers()],
+		"tiberbu_signing_requirement": _tiberbu_signing_requirement(),
+	}
+
+
+@frappe.whitelist()
+def sync_configured_signatories(contract: Any):
+	"""Synchronize current network/Tiberbu contacts onto an unsigned contract.
+
+	Signed rows are never changed. New or changed unsigned rows are persisted and
+	then passed through the normal transition so invitations are sent only when the
+	facility signature has unlocked the remaining parties.
+	"""
+	_check_crm_role()
+	contract_name = frappe.utils.cstr(contract).strip()
+	if not contract_name:
+		frappe.throw(_("Contract is required."), frappe.ValidationError)
+	doc = frappe.get_doc("CRM Contract", contract_name)
+	configured = [dict(row, signer_role="Network Signatory") for row in _network_signers(doc.network_slug)]
+	tiberbu_configured = _tiberbu_signers()
+	configured.extend(dict(row, signer_role="Tiberbu Signatory") for row in tiberbu_configured)
+	tiberbu_pending = [
+		row
+		for row in (doc.signatories or [])
+		if row.signatory_role == "Tiberbu Signatory" and row.status != "Signed"
+	]
+	added = updated = skipped_signed = 0
+	for identity in configured:
+		role = identity["signer_role"]
+		email = identity["email"]
+		row = next(
+			(
+				candidate
+				for candidate in (doc.signatories or [])
+				if candidate.signatory_role == role
+				and frappe.utils.cstr(candidate.signatory_email or "").strip().lower() == email
+			),
+			None,
+		)
+		# A single unsigned Tiberbu row is the safe legacy equivalent of a changed
+		# settings contact email. Re-key it in place instead of leaving a stale
+		# pending row that would block the all-signers rule.
+		if (
+			not row
+			and role == "Tiberbu Signatory"
+			and len(tiberbu_configured) == 1
+			and len(tiberbu_pending) == 1
+		):
+			row = tiberbu_pending[0]
+		if row:
+			changed = (
+				frappe.utils.cstr(row.signatory_email or "").strip().lower() != email
+				or frappe.utils.cstr(row.signatory_name or "").strip() != identity["full_name"]
+				or frappe.utils.cstr(row.signatory_phone or "").strip() != identity.get("phone", "")
+			)
+			if not changed:
+				continue
+			if (
+				row.status == "Signed"
+				or getattr(row, "signature_data", None)
+				or getattr(row, "signed_at", None)
+			):
+				skipped_signed += 1
+				continue
+			row.signatory_name = identity["full_name"]
+			if frappe.utils.cstr(row.signatory_email or "").strip().lower() != email:
+				row.signatory_email = email
+				row.invite_token = None
+				row.invite_expiry = None
+				row.signing_token = None
+				row.signing_expiry = None
+			row.signatory_phone = identity.get("phone", "")
+			updated += 1
+			continue
+		doc.append(
+			"signatories",
+			{
+				"signatory_name": identity["full_name"],
+				"signatory_email": email,
+				"signatory_phone": identity.get("phone", ""),
+				"signatory_role": role,
+				"status": "Pending",
+				"is_witness": 0,
+			},
+		)
+		added += 1
+	if added or updated:
+		doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		frappe.db.commit()
+		_transition(contract_name)
+	if added or updated or skipped_signed:
+		log_deal_event(
+			doc.deal,
+			"Configured signatories synced on contract %s (added %s, updated %s, signed rows skipped %s)"
+			% (contract_name, added, updated, skipped_signed),
+		)
+	return {"status": "synced", "added": added, "updated": updated, "skipped_signed": skipped_signed}
 
 
 def _generate_contract(
@@ -988,7 +1278,7 @@ def _generate_contract(
 	"""
 	Create a CRM Contract for a deal, render contract HTML from active T&C, and
 	seed all signatory rows: Facility Signatory, Facility Witness, every configured
-	Network Signatory, and the global Tiberbu Signatory. Only the Facility Signatory
+	Network Signatory, and all configured Tiberbu Signatories. Only the Facility Signatory
 	is invited immediately; the rest are invited by the state machine in order
 	(see _transition). network_approver_* params are legacy no-ops — the network /
 	tiberbu co-signatories now come from configuration.
@@ -1121,9 +1411,10 @@ def _generate_contract(
 			},
 		)
 
-	# Row N+1: the global Tiberbu co-signatory.
-	tb = _tiberbu_signer()
-	if tb:
+	# Rows N+1..M: all configured Tiberbu co-signatories.
+	settings = _load_optin_settings_safely()
+	contract.tiberbu_signing_requirement = _tiberbu_signing_requirement(settings)
+	for tb in _tiberbu_signers(settings):
 		contract.append(
 			"signatories",
 			{
@@ -1354,12 +1645,10 @@ def update_signatory(
 	resolve to the first row and could invalidate the wrong person's signature.
 	Omit it for the singular roles (facility signatory/witness, Tiberbu).
 
-	Any row is editable — Pending, Declined, or already Signed. Editing a SIGNED
-	signatory invalidates the captured signature: the signature image, IP,
-	timestamp and any consumed OTP are cleared and the row is reset to Pending so
-	the (possibly new) person signs afresh. If the row had an outstanding invite
-	OR was signed, a fresh signing link is issued and emailed to the current
-	address (invalidating the old one); otherwise the exec can Resend.
+	Pending and Declined rows are editable. A captured signature is immutable: a
+	signed row cannot be edited or replaced, even if the source settings change.
+	If an unsigned row had an outstanding invite and its email changes, a fresh
+	signing link is issued and the old link is invalidated.
 
 	Returns: {status: "updated", email, resent: bool}
 	"""
@@ -1377,18 +1666,20 @@ def update_signatory(
 
 	contract_doc, signatory_row = _load_signatory(contract, role, row_name)
 
-	was_signed = signatory_row.status == "Signed"
+	if (
+		signatory_row.status == "Signed"
+		or getattr(signatory_row, "signature_data", None)
+		or getattr(signatory_row, "signed_at", None)
+	):
+		frappe.throw(
+			_("This signatory has already signed and cannot be edited."),
+			frappe.ValidationError,
+		)
 	email_changed = frappe.utils.cstr(signatory_row.signatory_email or "").strip().lower() != email
 
 	signatory_row.signatory_name = name
 	signatory_row.signatory_email = email
 	signatory_row.signatory_phone = phone
-
-	# Editing a signed row means the old signature no longer belongs to this
-	# (possibly new) person — clear it and the consumed OTP so the audit trail
-	# never shows a signature for someone who did not sign the current terms.
-	if was_signed:
-		_invalidate_signature(signatory_row)
 
 	# A corrected non-Pending row (Declined, or a just-invalidated Signed one)
 	# returns to Pending so it re-enters the signing flow.
@@ -1400,31 +1691,13 @@ def update_signatory(
 		if witness:
 			# Keep the "witnessing_for" label in sync when the principal is renamed.
 			witness.witnessing_for = name
-			# If the principal's signature was just invalidated, the witness's
-			# attestation is now void — it witnessed an event that no longer
-			# exists. Reset it so it is re-invited (after the principal re-signs)
-			# and re-witnesses the fresh signature.
-			if was_signed and witness.status == "Signed":
-				_invalidate_signature(witness)
-				witness.status = "Pending"
-				witness.invite_token = None
-				witness.invite_expiry = None
-
-	# A re-opened signed row means the contract is no longer fully executed —
-	# walk the contract-level state back to the awaiting stage for this party so
-	# the UI never shows "Fully Executed" alongside a Pending signatory.
-	if was_signed:
-		contract_doc.status = "Awaiting Signatures"
-		contract_doc.workflow_state = (
-			"Awaiting Facility Signature" if role == "Facility Signatory" else "Awaiting Remaining Signatures"
-		)
 
 	# Re-issue a fresh link when the address changed on an already-invited row,
-	# or whenever a signed row was edited (they must sign again). Re-issuing mints
-	# a new token (invalidating the stale link), emails it, and saves + commits.
+	# preserving the signed audit trail. Re-issuing mints a new token (invalidating
+	# the stale link), emails it, saves, and commits.
 	already_invited = bool(signatory_row.invite_token)
 	resent = False
-	if was_signed or (email_changed and already_invited):
+	if email_changed and already_invited:
 		_issue_and_send_invitation(contract_doc, signatory_row, reminder=True)
 		resent = True
 	else:
@@ -1448,9 +1721,9 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any, phone: Any = 
 	Requires: Sales Manager or System Manager role.
 
 	The new row is Pending and un-invited: it is invited automatically once the
-	facility signatory has signed (see _transition), or the exec can Resend. A
-	Tiberbu Signatory is unique per contract; a Network Signatory is deduped on
-	email so the same person is not added twice.
+	facility signatory has signed (see _transition), or the exec can Resend.
+	Both roles are deduped on email so the same person is not added twice; multiple
+	Tiberbu signatories are supported by the settings table.
 
 	Returns: {status: "added", role, email}
 	"""
@@ -1472,10 +1745,7 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any, phone: Any = 
 	for row in contract_doc.signatories or []:
 		if row.signatory_role != role:
 			continue
-		# Tiberbu is singular; a Network signer is unique by email.
-		if role == "Tiberbu Signatory" or (
-			frappe.utils.cstr(row.signatory_email or "").strip().lower() == email
-		):
+		if frappe.utils.cstr(row.signatory_email or "").strip().lower() == email:
 			frappe.throw(_("This co-signatory is already on the contract."))
 
 	contract_doc.append(
@@ -1622,9 +1892,9 @@ def save_network_signer(
 	- original_email set → the matching config row is updated/replaced.
 	- original_email blank → a new signer is appended (deduped by email).
 
-	This is the Network counterpart to the per-contract add_signatory. The
-	Tiberbu Signatory is deliberately NOT handled here — it is a global singleton
-	in CRM Opt-In Settings and must never be overwritten from a single deal, so
+	This is the Network counterpart to the per-contract add_signatory. Tiberbu
+	contacts are deliberately NOT handled here — they are managed in the CRM
+	Opt-In Settings table and must never be overwritten from a single deal, so
 	Tiberbu add/edit stays per-contract via add_signatory / update_signatory.
 
 	Returns: {status, network_slug, email, contract_synced}
@@ -1662,6 +1932,39 @@ def save_network_signer(
 			continue
 		if frappe.utils.cstr(r.email or "").strip().lower() == email:
 			frappe.throw(_("A network signer with this email already exists."))
+
+	# Validate the live contract before saving the network source of truth. A signed
+	# contract row is immutable; failing first avoids a settings/contract split.
+	if contract and frappe.db.exists("CRM Contract", contract):
+		live = frappe.get_doc("CRM Contract", contract)
+		old_email = original_email or email
+		live_row = next(
+			(
+				row
+				for row in (live.signatories or [])
+				if row.signatory_role == "Network Signatory"
+				and frappe.utils.cstr(row.signatory_email or "").strip().lower() == old_email
+			),
+			None,
+		)
+		live_changed = live_row and (
+			frappe.utils.cstr(live_row.signatory_name or "").strip() != name
+			or frappe.utils.cstr(live_row.signatory_email or "").strip().lower() != email
+			or frappe.utils.cstr(live_row.signatory_phone or "").strip() != phone
+		)
+		if (
+			live_row
+			and live_changed
+			and (
+				live_row.status == "Signed"
+				or getattr(live_row, "signature_data", None)
+				or getattr(live_row, "signed_at", None)
+			)
+		):
+			frappe.throw(
+				_("This network signatory has already signed and cannot be edited."),
+				frappe.ValidationError,
+			)
 
 	if target:
 		target.full_name = name
@@ -1988,8 +2291,8 @@ def _render_certificate_page(contract_doc, accent, date_str, brand=None):
 				ip,
 			)
 		)
-	executed = all((s.status == "Signed") for s in (contract_doc.signatories or [])) and bool(
-		contract_doc.signatories
+	executed = getattr(contract_doc, "status", "") == "Fully Executed" or _required_signatures_complete(
+		contract_doc
 	)
 	status_label = (
 		"Fully Executed"
@@ -2093,6 +2396,7 @@ def request_otp(contract: Any, role: Any, token: Any):
 
 	contract_doc, signatory_row = _load_signatory_by_token(contract, role, token, "invite_token")
 	_validate_invite(signatory_row, token)
+	_ensure_contract_signing_open(contract_doc)
 
 	_ensure_pending_signatory(signatory_row)
 
@@ -2175,6 +2479,7 @@ def verify_otp(contract: Any, role: Any, token: Any, otp: Any):
 
 	contract_doc, signatory_row = _load_signatory_by_token(contract, role, token, "invite_token")
 	_validate_invite(signatory_row, token)
+	_ensure_contract_signing_open(contract_doc)
 
 	if signatory_row.status != "Pending":
 		frappe.throw(_("Verification failed."), frappe.AuthenticationError)
@@ -2274,6 +2579,7 @@ def sign(signing_token: Any, contract: Any, role: Any, signature_b64: Any):
 
 	contract_doc, signatory_row = _load_signatory_by_token(contract, role, signing_token, "signing_token")
 	_validate_signing(signatory_row, signing_token)
+	_ensure_contract_signing_open(contract_doc)
 
 	_ensure_pending_signatory(signatory_row)
 

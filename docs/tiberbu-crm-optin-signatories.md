@@ -1,18 +1,25 @@
 # Opt-In signatory defaults
 
-The Opt-In Settings page is the source of truth for the default Tiberbu contract
-signer. The preferred fields are **Default signatory name**, **Default signatory
-email**, and **Default signatory mobile number**. They support an external signer
-who does not have a CRM User account and are pulled automatically into the
-Quoting page preview and every newly generated contract.
+The Opt-In Settings page is the source of truth for Tiberbu signing and approval
+contacts. The **Tiberbu signing and approval contacts** table supports one row per
+external or internal contact with a role, name, email, and optional mobile number.
+Rows are pulled automatically into the Quoting page preview and every newly
+generated contract. The **Tiberbu signing rule** controls whether **All must sign**
+or **At least one must sign**; facility, witness, and network signatories remain
+required in either mode.
 
 The older **Legacy signatory User (fallback)** field remains supported. It is
 used only when the contact fields are blank, so existing installations continue
 to resolve the same signer and live User email/mobile number after migration.
 
-The approval contact remains a separate name/email/phone triplet. It receives the
-internal approval notification after all contract signatories complete; it is not
-silently substituted for the contract signer.
+The legacy approval name/email/phone triplet remains supported as a fallback. Each
+configured Approver row receives the internal approval notification after all
+required contract signatories complete; it is not silently substituted for a
+contract signer.
+
+Existing flat fields are retained as migration-safe fallbacks. The migration
+patch seeds the table only when it is empty (including resolving the legacy User
+link), so an administrator's configured rows are never overwritten.
 
 ## Contract-only overrides
 
@@ -20,6 +27,19 @@ The Quoting page retains **Add Tiberbu Signatory**. This creates or edits a
 signatory on the current contract only and does not overwrite the global Opt-In
 default. That is useful for a one-off contract or a legacy contract generated
 before the default was configured.
+
+The Contracting panel also provides **Sync from settings**. It adds current
+network and Tiberbu rows to the open contract and updates unsigned rows. Signed
+rows are deliberately skipped and cannot be edited or removed, even when the
+settings table changes. The quote-page Add/Remove controls remain available for
+one-off unsigned Tiberbu contacts. Tiberbu Approver rows are shown separately on
+the same quote panel for a visible hand-off; they are not added as signing rows.
+
+When the required signature rule is satisfied, the workflow marks the contract
+**Fully Executed** and sends the facility one immediate email containing the
+`CRM Contract Standard` PDF. A sent timestamp prevents duplicate delivery; a
+failure is logged without undoing captured signatures so an operational retry can
+be added safely later.
 
 ## Dashboard wording and duplicate handling
 
