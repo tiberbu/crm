@@ -702,6 +702,13 @@
                   <Button
                     size="sm"
                     variant="subtle"
+                    :loading="sampleQuoteFacility === row.name"
+                    @click="viewSampleQuote(row)"
+                    >{{ __('Sample quote') }}</Button
+                  >
+                  <Button
+                    size="sm"
+                    variant="subtle"
                     :loading="
                       resendingMembership === networkMembership(row)?.name
                     "
@@ -768,6 +775,75 @@
           </div>
         </div>
       </div>
+
+      <Dialog
+        v-model="showSampleQuote"
+        :options="{ title: __('Sample quotation'), size: 'lg' }"
+      >
+        <template #body-content>
+          <div
+            v-if="sampleQuoteLoading"
+            class="py-10 text-center text-sm text-ink-gray-5"
+          >
+            {{ __('Loading sample quotation…') }}
+          </div>
+          <div v-else-if="sampleQuote" class="space-y-4">
+            <div>
+              <p class="text-lg font-semibold text-ink-gray-9">
+                {{ sampleQuote.facility }}
+              </p>
+              <p class="text-sm text-ink-gray-5">
+                {{ sampleQuote.organization }} · {{ sampleQuote.keph_level }} ·
+                {{ sampleQuote.network }}
+              </p>
+            </div>
+            <div
+              class="rounded-lg bg-surface-gray-1 p-3 text-sm dark:bg-surface-gray-2"
+            >
+              <div class="flex justify-between gap-4">
+                <span class="text-ink-gray-5">{{ __('Price list') }}</span>
+                <span class="font-medium text-ink-gray-9">{{
+                  sampleQuote.price_list
+                }}</span>
+              </div>
+              <div class="mt-1 flex justify-between gap-4">
+                <span class="text-ink-gray-5">{{ __('Item') }}</span>
+                <span class="text-right text-ink-gray-8">{{
+                  sampleQuote.item_name
+                }}</span>
+              </div>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-outline-gray-2 p-3">
+                <p class="text-xs uppercase tracking-wide text-ink-gray-5">
+                  {{ __('Monthly total') }}
+                </p>
+                <p class="mt-1 text-base font-semibold text-ink-gray-9">
+                  {{ formatKes(sampleQuote.monthly_gross) }}
+                </p>
+                <p class="text-xs text-ink-gray-5">
+                  {{ formatKes(sampleQuote.monthly_net) }}
+                  {{ __('excl. VAT') }} ·
+                  {{ sampleQuote.vat_label }}
+                </p>
+              </div>
+              <div class="rounded-lg border border-outline-gray-2 p-3">
+                <p class="text-xs uppercase tracking-wide text-ink-gray-5">
+                  {{ __('Annual total') }}
+                </p>
+                <p class="mt-1 text-base font-semibold text-ink-gray-9">
+                  {{ formatKes(sampleQuote.annual_gross) }}
+                </p>
+                <p class="text-xs text-ink-gray-5">
+                  {{ formatKes(sampleQuote.annual_net) }}
+                  {{ __('excl. VAT') }} ·
+                  {{ sampleQuote.vat_label }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </template>
+      </Dialog>
 
       <!-- Add / Edit inline form -->
       <div
@@ -1054,9 +1130,11 @@ import { useRouter } from 'vue-router'
 import {
   createResource,
   Button,
+  Dialog,
   FileUploader,
   FormControl,
   Switch,
+  toast,
 } from 'frappe-ui'
 import { validateIsImageFile } from '@/utils'
 
@@ -1241,6 +1319,7 @@ const facilityLevels = [
   'Level 4B',
   'Level 5A',
   'Level 5',
+  'Level 6',
 ]
 const inviteStatuses = ['Not Sent', 'Sending', 'Sent', 'Error']
 
@@ -1304,6 +1383,54 @@ function networkMembership(row) {
     memberships[0] ??
     null
   )
+}
+
+const showSampleQuote = ref(false)
+const sampleQuote = ref(null)
+const sampleQuoteLoading = ref(false)
+const sampleQuoteFacility = ref(null)
+const sampleQuoteResource = createResource({
+  url: 'crm.api.optin_admin.get_facility_sample_quote',
+})
+
+function effectiveFacilityPriceList(row) {
+  const membership = networkMembership(row)
+  return (
+    membership?.price_list_override ||
+    networkDoc.value?.price_list_override ||
+    ''
+  )
+}
+
+function formatKes(value) {
+  return `KES ${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+async function viewSampleQuote(row) {
+  sampleQuoteFacility.value = row.name
+  sampleQuoteLoading.value = true
+  sampleQuote.value = null
+  showSampleQuote.value = true
+  try {
+    sampleQuote.value = await sampleQuoteResource.submit({
+      facility: row.name,
+      network: props.networkSlug,
+      price_list: effectiveFacilityPriceList(row),
+    })
+  } catch (error) {
+    showSampleQuote.value = false
+    toast.error(
+      error?.messages?.[0] ??
+        error?.message ??
+        __('Could not load sample quote'),
+    )
+  } finally {
+    sampleQuoteLoading.value = false
+    sampleQuoteFacility.value = null
+  }
 }
 
 function facilityPriceListLabel(row) {

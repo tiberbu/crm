@@ -31,6 +31,7 @@ import json
 import frappe
 from frappe.utils import add_days, date_diff, getdate, nowdate
 
+from crm.api._timeline import log_deal_event
 from crm.utils.quotation_tax import apply_quotation_taxes, quotation_tax_summary
 
 DEFAULT_PRICE_LIST = "Standard Selling"
@@ -116,6 +117,67 @@ def _get_optin_submission_for_update(deal):
 	if not deal:
 		return ""
 	return frappe.db.get_value("CRM Deal", deal, "optin_submission", for_update=True) or ""
+
+
+def _facility_signatory_has_signed(deal):
+	"""Return whether the facility signatory has completed the linked contract.
+
+	Opt-In quotes remain negotiable until that milestone. Check both the normalized
+	status and captured signature fields so legacy contracts with stale Select
+	values cannot be edited after a real signature was recorded. ``None`` means
+	the state could not be verified and callers must fail closed.
+	"""
+	deal = frappe.utils.cstr(deal or "").strip()
+	if not deal:
+		return False
+	try:
+		contracts = frappe.get_list(
+			"CRM Contract",
+			filters={"deal": deal},
+			fields=["name"],
+			order_by="creation desc",
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+		if not contracts:
+			return False
+		rows = frappe.get_list(
+			"CRM Contract Signatory",
+			filters={
+				"parent": contracts[0].name,
+				"parenttype": "CRM Contract",
+				"signatory_role": "Facility Signatory",
+			},
+			fields=["status", "signature_data", "signed_at"],
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+		if not rows:
+			return False
+		row = rows[0]
+		status = " ".join(frappe.utils.cstr(row.get("status") or "").lower().split())
+		return status in ("signed", "completed", "complete", "fully signed") or bool(
+			row.get("signature_data") or row.get("signed_at")
+		)
+	except Exception:
+		# Signature lookup is intentionally fail-closed. Logging must not turn a
+		# harmless missing/legacy contract DocType into a second user-facing error.
+		try:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"Could not verify facility contract signature state",
+			)
+		except Exception:
+			pass
+		return None
+
+
+def _quote_price_list_is_editable(doc):
+	"""Whether a quote's price list can still be changed by a Sales Manager."""
+	if int(doc.get("docstatus") or 0) != 0:
+		return False
+	deal = frappe.utils.cstr(doc.get("crm_deal") or "").strip()
+	return _facility_signatory_has_signed(deal) is False
 
 
 def _resolve_leaf_tree_node(doctype, configured_name, group_field, parent_field, fallback_name):
@@ -547,9 +609,22 @@ def set_quote_price_list(quote, price_list):
 	doc = frappe.get_doc("Quotation", quote)
 	if int(doc.docstatus or 0) != 0:
 		frappe.throw("Cannot update price list on a submitted or cancelled Quotation")
-	if _get_optin_submission_for_update(doc.get("crm_deal")):
-		frappe.throw("Cannot update a quote after its Opt-In summary is submitted")
+	deal_name = frappe.utils.cstr(doc.get("crm_deal") or "").strip()
+	# Lock the deal while checking the contract milestone. A quote can be
+	# re-priced after the Opt-In summary is submitted, but never after the
+	# facility has signed the contract.
+	_get_optin_submission_for_update(deal_name)
+	facility_signed = _facility_signatory_has_signed(deal_name)
+	if facility_signed is not False:
+		if facility_signed:
+			frappe.throw("Cannot update the price list after the facility has signed")
+		frappe.throw("Could not verify the facility signature status. Please try again.")
 
+	price_list = frappe.utils.cstr(price_list or "").strip()
+	if not price_list or not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
+		frappe.throw("Select an enabled selling price list")
+
+	previous_price_list = doc.get("selling_price_list") or DEFAULT_PRICE_LIST
 	doc.selling_price_list = price_list
 	# Re-baseline every line to the new list's Item Price. A true miss resolves to
 	# 0 (via _get_item_price's Standard-Selling fallback) so the exec re-enters it.
@@ -562,6 +637,12 @@ def set_quote_price_list(quote, price_list):
 	_apply_manual_rates(doc, baseline_rates)
 	apply_quotation_taxes(doc)
 	doc.save(ignore_permissions=True)
+	if deal_name and previous_price_list != price_list:
+		log_deal_event(
+			deal_name,
+			"Price list changed on quotation %s: %s → %s before facility signature"
+			% (doc.name, previous_price_list, price_list),
+		)
 	frappe.db.commit()
 
 	return {
@@ -607,6 +688,7 @@ def get_quote_lines(quote):
 		"status": _derive_status(doc),
 		"editable": int(doc.docstatus or 0) == 0
 		and not frappe.db.get_value("CRM Deal", doc.get("crm_deal"), "optin_submission"),
+		"price_list_editable": _quote_price_list_is_editable(doc),
 		"currency": doc.currency or "KES",
 		"price_list": doc.get("selling_price_list") or DEFAULT_PRICE_LIST,
 		"payment_terms": doc.get("crm_payment_terms") or "Annual Upfront",

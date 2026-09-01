@@ -4,7 +4,13 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import UnitTestCase
 
-from crm.api.quotes import get_quote_lines, list_catalogue_items, list_quotes
+from crm.api.quotes import (
+	_facility_signatory_has_signed,
+	get_quote_lines,
+	list_catalogue_items,
+	list_quotes,
+	set_quote_price_list,
+)
 from crm.utils.jinja import get_quotation_tax_summary
 from crm.utils.quotation_tax import calculate_vat_totals, quotation_tax_summary
 
@@ -152,6 +158,76 @@ class TestConfiguredQuotationVAT(UnitTestCase):
 		self.assertEqual(result["vat_label"], "VAT (16%)")
 		self.assertEqual(result["vat_rate"], 16)
 		self.assertEqual(result["grand_total"], 116_000)
+
+
+class TestQuotationPriceListChanges(UnitTestCase):
+	def test_facility_signature_is_detected_from_status_or_signature_data(self):
+		with patch(
+			"crm.api.quotes.frappe.get_list",
+			side_effect=[
+				[frappe._dict({"name": "CONT-0001"})],
+				[frappe._dict({"status": "Pending", "signature_data": "signed-payload"})],
+			],
+		):
+			self.assertTrue(_facility_signatory_has_signed("DEAL-0001"))
+
+	def test_price_list_change_is_logged_before_facility_signature(self):
+		quote = SimpleNamespace(
+			name="QUO-0001",
+			docstatus=0,
+			crm_deal="DEAL-0001",
+			selling_price_list="Negotiated Year 1",
+			items=[],
+			net_total=0,
+			vat_amount=0,
+			grand_total=0,
+			flags=SimpleNamespace(),
+		)
+		quote.get = lambda fieldname, default=None: getattr(quote, fieldname, default)
+		quote.set_missing_values = lambda: None
+		quote.save = lambda **kwargs: None
+		with (
+			patch("crm.api.quotes._require_manager"),
+			patch("crm.api.quotes.frappe.get_doc", return_value=quote),
+			patch("crm.api.quotes.frappe.db.get_value", return_value=None),
+			patch("crm.api.quotes.frappe.db.exists", return_value=True),
+			patch("crm.api.quotes.frappe.get_list", return_value=[]),
+			patch("crm.api.quotes.apply_quotation_taxes"),
+			patch("crm.api.quotes.log_deal_event") as log_event,
+		):
+			result = set_quote_price_list("QUO-0001", "Negotiated Year 2")
+
+		self.assertEqual(result["price_list"], "Negotiated Year 2")
+		log_event.assert_called_once_with(
+			"DEAL-0001",
+			"Price list changed on quotation QUO-0001: Negotiated Year 1 → Negotiated Year 2 before facility signature",
+		)
+
+	def test_price_list_change_is_blocked_after_facility_signature(self):
+		quote = frappe._dict(
+			{"docstatus": 0, "crm_deal": "DEAL-0001", "selling_price_list": "Negotiated Year 1"}
+		)
+		with (
+			patch("crm.api.quotes._require_manager"),
+			patch("crm.api.quotes.frappe.get_doc", return_value=quote),
+			patch("crm.api.quotes._facility_signatory_has_signed", return_value=True),
+			patch("crm.api.quotes.frappe.db.get_value", return_value=None),
+		):
+			with self.assertRaises(Exception):
+				set_quote_price_list("QUO-0001", "Negotiated Year 2")
+
+	def test_price_list_change_fails_closed_when_signature_status_cannot_be_verified(self):
+		quote = frappe._dict(
+			{"docstatus": 0, "crm_deal": "DEAL-0001", "selling_price_list": "Negotiated Year 1"}
+		)
+		with (
+			patch("crm.api.quotes._require_manager"),
+			patch("crm.api.quotes.frappe.get_doc", return_value=quote),
+			patch("crm.api.quotes._facility_signatory_has_signed", return_value=None),
+			patch("crm.api.quotes.frappe.db.get_value", return_value=None),
+		):
+			with self.assertRaises(Exception):
+				set_quote_price_list("QUO-0001", "Negotiated Year 2")
 
 
 class TestQuotationPrintTaxSummary(UnitTestCase):

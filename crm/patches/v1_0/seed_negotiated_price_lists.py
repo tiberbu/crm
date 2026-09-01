@@ -10,6 +10,7 @@ ITEMS = {
 	"CV-HIMS-KEPH-4B": "CareverseHIMS -- Level 4B",
 	"CV-HIMS-KEPH-5A": "CareverseHIMS -- Level 5A",
 	"CV-HIMS-KEPH-5": "CareverseHIMS -- Level 5",
+	"CV-HIMS-KEPH-6": "CareverseHIMS -- Level 6",
 }
 
 PRICE_LISTS = {
@@ -23,6 +24,7 @@ PRICE_LISTS = {
 		"CV-HIMS-KEPH-4B": 101161.82,
 		"CV-HIMS-KEPH-5A": 201247.59,
 		"CV-HIMS-KEPH-5": 335412.65,
+		"CV-HIMS-KEPH-6": 386978.91,
 	},
 	"Negotiated Year 2": {
 		"CV-HIMS-KEPH-2": 28425.93,
@@ -34,6 +36,7 @@ PRICE_LISTS = {
 		"CV-HIMS-KEPH-4B": 101161.82,
 		"CV-HIMS-KEPH-5A": 201247.59,
 		"CV-HIMS-KEPH-5": 335412.65,
+		"CV-HIMS-KEPH-6": 386978.91,
 	},
 	"Negotiated Year 3": {
 		"CV-HIMS-KEPH-2": 22239.23,
@@ -45,6 +48,7 @@ PRICE_LISTS = {
 		"CV-HIMS-KEPH-4B": 83668.26,
 		"CV-HIMS-KEPH-5A": 166609.36,
 		"CV-HIMS-KEPH-5": 277682.26,
+		"CV-HIMS-KEPH-6": 305450.49,
 	},
 	"Negotiated Year 4": {
 		"CV-HIMS-KEPH-2": 23351.19,
@@ -56,6 +60,7 @@ PRICE_LISTS = {
 		"CV-HIMS-KEPH-4B": 87851.67,
 		"CV-HIMS-KEPH-5A": 174939.83,
 		"CV-HIMS-KEPH-5": 291566.38,
+		"CV-HIMS-KEPH-6": 320723.01,
 	},
 	"Negotiated Year 5": {
 		"CV-HIMS-KEPH-2": 24518.75,
@@ -67,6 +72,7 @@ PRICE_LISTS = {
 		"CV-HIMS-KEPH-4B": 92244.25,
 		"CV-HIMS-KEPH-5A": 183686.82,
 		"CV-HIMS-KEPH-5": 306144.69,
+		"CV-HIMS-KEPH-6": 336759.16,
 	},
 }
 

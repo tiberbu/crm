@@ -57,6 +57,7 @@ _KEPH_MAP = [
 	{"keph_level": "Level 4B", "item_code": "CV-HIMS-KEPH-4B"},
 	{"keph_level": "Level 5A", "item_code": "CV-HIMS-KEPH-5A"},
 	{"keph_level": "Level 5", "item_code": "CV-HIMS-KEPH-5"},
+	{"keph_level": "Level 6", "item_code": "CV-HIMS-KEPH-6"},
 ]
 
 
