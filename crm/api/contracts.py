@@ -654,7 +654,7 @@ def _otp_sms_message(network, signatory_row, otp):
 	return "%s: your contract signing code is %s. It expires in 10 minutes." % (brand, otp)
 
 
-def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
+def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminder=False):
 	"""
 	Mint a fresh invitation token on the signatory row, persist it, and email the
 	signatory a branded invitation with a Sign CTA. The caller is responsible for
@@ -667,6 +667,10 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 
 	Contract invitations always use immediate delivery. This avoids a completed
 	signing step being held behind a background Email Queue worker.
+
+	`reminder=True` is reserved for an intentional follow-up from the CRM UI
+	(Resend link or a signatory edit that requires a fresh link). It keeps the
+	message distinct in inboxes without changing automatic invitation delivery.
 	"""
 	token = _gen_token()
 	signatory_row.invite_token = token
@@ -686,10 +690,11 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 
 	queue = None
 	try:
+		subject_prefix = "[Reminder] " if reminder else ""
 		queue = frappe.sendmail(
 			recipients=[signatory_row.signatory_email],
-			subject="%s — Contract ready for signature · Invitation ID %s"
-			% (facility_subject, invitation_reference),
+			subject="%s%s — Contract ready for signature · Invitation ID %s"
+			% (subject_prefix, facility_subject, invitation_reference),
 			message=branded_email_html(
 				network,
 				heading="Contract ready for your signature",
@@ -1208,7 +1213,7 @@ def resend_invitation(contract: Any, role: Any, row_name: Any = None):
 			frappe.ValidationError,
 		)
 
-	_issue_and_send_invitation(contract_doc, signatory_row)
+	_issue_and_send_invitation(contract_doc, signatory_row, reminder=True)
 
 	log_deal_event(
 		contract_doc.deal,
@@ -1406,7 +1411,7 @@ def update_signatory(
 	already_invited = bool(signatory_row.invite_token)
 	resent = False
 	if was_signed or (email_changed and already_invited):
-		_issue_and_send_invitation(contract_doc, signatory_row)
+		_issue_and_send_invitation(contract_doc, signatory_row, reminder=True)
 		resent = True
 	else:
 		contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL

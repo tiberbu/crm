@@ -23,6 +23,7 @@ from crm.api.contracts import (
 	get_network_signatories,
 	remove_signatory,
 	request_otp,
+	resend_invitation,
 )
 from crm.api.optin import (
 	_KEPH_MAP,
@@ -492,6 +493,61 @@ class TestOptInContractAutomation(UnitTestCase):
 			sendmail.call_args.kwargs["subject"],
 			"MediCare Hospital — Contract ready for signature · Invitation ID REF-ONE",
 		)
+
+	def test_intentional_reminder_invitation_is_marked_in_subject(self):
+		contract = SimpleNamespace(
+			name="CONT-TEST-00001", deal="DEAL-TEST-00001", network_slug="", save=Mock()
+		)
+		signatory = SimpleNamespace(
+			signatory_role="Facility Signatory",
+			signatory_name="Jane Signatory",
+			signatory_email="jane@example.com",
+		)
+		queue = SimpleNamespace(name="Email Queue-TEST-00002")
+
+		with (
+			patch("crm.api.contracts._gen_token", return_value="reminder-token"),
+			patch("crm.api.contracts._generate_invitation_email_reference", return_value="REF-REMINDER"),
+			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch("crm.api.contracts._facility_name_for_contract", return_value="MediCare Hospital"),
+			patch("crm.api.contracts.branded_email_html", return_value="email"),
+			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
+			patch("crm.api.contracts._send_contract_sms", return_value="Not Available"),
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			_issue_and_send_invitation(contract, signatory, commit=False, reminder=True)
+
+		self.assertEqual(
+			sendmail.call_args.kwargs["subject"],
+			"[Reminder] MediCare Hospital — Contract ready for signature · Invitation ID REF-REMINDER",
+		)
+		self.assertTrue(sendmail.call_args.kwargs["now"])
+
+	def test_resend_invitation_marks_follow_up_as_reminder(self):
+		row = SimpleNamespace(
+			name="ROW-TEST-00004",
+			signatory_role="Network Signatory",
+			signatory_name="Network Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+			invite_token="active-token",
+		)
+		contract = SimpleNamespace(
+			name="CONT-TEST-00004",
+			deal="DEAL-TEST-00004",
+			signatories=[row],
+		)
+
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts._issue_and_send_invitation") as issue,
+			patch("crm.api.contracts.log_deal_event"),
+		):
+			result = resend_invitation(contract.name, row.signatory_role, row.name)
+
+		self.assertEqual(result, {"status": "sent", "email": "reviewer@example.com"})
+		issue.assert_called_once_with(contract, row, reminder=True)
 
 	def test_resending_invitation_changes_inbox_identifier(self):
 		contract = SimpleNamespace(

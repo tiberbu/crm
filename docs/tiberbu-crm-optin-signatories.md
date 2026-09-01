@@ -39,9 +39,11 @@ in one wave. That transition takes a database row lock on the contract before it
 checks `invite_token`, so duplicate requests or browser retries wait for the
 first wave and then observe the already-issued tokens. A signatory therefore
 receives one invitation per automatic trigger; a deliberate **Resend link**
-still rotates the token and sends a new message. Network signer configuration is
-also normalized by email when contracts are generated, protecting older imports
-that contain the same signer more than once.
+still rotates the token and sends one new message with a `[Reminder]` subject
+prefix. Editing a signatory after an invitation was issued also uses that prefix
+when a fresh link is required. Network signer configuration is also normalized by
+email when contracts are generated, protecting older imports that contain the same
+signer more than once.
 
 ## Removing an unsigned co-signatory
 
