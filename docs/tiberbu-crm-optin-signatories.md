@@ -31,3 +31,14 @@ signed · P pending** when work remains. The API also returns `assigned` and
 
 Regression coverage includes external-contact resolution, legacy User fallback,
 Quoting-page auto-resolution, and duplicate dashboard child rows.
+
+## Invitation delivery idempotency
+
+The first Facility Signatory signature unlocks the remaining signing invitations
+in one wave. That transition takes a database row lock on the contract before it
+checks `invite_token`, so duplicate requests or browser retries wait for the
+first wave and then observe the already-issued tokens. A signatory therefore
+receives one invitation per automatic trigger; a deliberate **Resend link**
+still rotates the token and sends a new message. Network signer configuration is
+also normalized by email when contracts are generated, protecting older imports
+that contain the same signer more than once.

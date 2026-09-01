@@ -287,18 +287,29 @@ def _network_signers(network_slug):
 		order_by="idx asc",
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
-	signers = []
+	# A legacy import (or two concurrent edits before the email uniqueness check)
+	# can leave the child table with the same signer more than once. Treat email as
+	# the stable identity here so one configured person cannot receive two contract
+	# invitations in the same generation wave. Keep the first display name and fill
+	# any missing contact details from a later duplicate row.
+	signers_by_email = {}
 	for r in rows:
-		email = frappe.utils.cstr(r.get("email") or "").strip()
-		if email:
-			signers.append(
-				{
-					"full_name": frappe.utils.cstr(r.get("full_name") or "").strip() or email,
-					"email": email,
-					"phone": frappe.utils.cstr(r.get("phone") or "").strip(),
-				}
-			)
-	return signers
+		email = frappe.utils.cstr(r.get("email") or "").strip().lower()
+		if not email:
+			continue
+		current = {
+			"full_name": frappe.utils.cstr(r.get("full_name") or "").strip(),
+			"email": email,
+			"phone": frappe.utils.cstr(r.get("phone") or "").strip(),
+		}
+		existing = signers_by_email.get(email)
+		if existing:
+			existing["full_name"] = existing["full_name"] or current["full_name"]
+			existing["phone"] = existing["phone"] or current["phone"]
+		else:
+			current["full_name"] = current["full_name"] or email
+			signers_by_email[email] = current
+	return list(signers_by_email.values())
 
 
 def _tiberbu_signer():
@@ -739,7 +750,12 @@ def _transition(contract_name):
 
 	All signatories must still sign before the contract becomes Fully Executed.
 	"""
-	contract = frappe.get_doc("CRM Contract", contract_name)
+	# Signing requests can arrive twice (double-clicks, browser retries, or two
+	# open tabs). Serialize the invitation wave on the contract row, then reload
+	# the latest child-table state. Without this lock two requests can both observe
+	# empty invite_token values, rotate the same links, and send duplicate emails;
+	# the first link then appears expired as soon as the second request commits.
+	contract = frappe.get_doc("CRM Contract", contract_name, for_update=True)
 	sigs = list(contract.signatories or [])
 	if not sigs:
 		return

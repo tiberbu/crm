@@ -12,6 +12,7 @@ from crm.api.contracts import (
 	_facility_name_for_contract,
 	_generate_invitation_email_reference,
 	_issue_and_send_invitation,
+	_network_signers,
 	_notify_internal_approvers,
 	_save_otp_state,
 	_send_contract_sms,
@@ -215,6 +216,26 @@ class TestOptInConfirmationEmail(UnitTestCase):
 
 
 class TestOptInTiberbuContacts(UnitTestCase):
+	def test_network_signers_collapse_duplicate_email_rows(self):
+		rows = [
+			frappe._dict({"full_name": "Network Reviewer", "email": "Reviewer@Example.com", "phone": ""}),
+			frappe._dict({"full_name": "", "email": " reviewer@example.com ", "phone": "+254700000001"}),
+			frappe._dict({"full_name": "Another Reviewer", "email": "other@example.com", "phone": ""}),
+		]
+		with (
+			patch("crm.api.contracts.frappe.db.exists", return_value=True),
+			patch("crm.api.contracts.frappe.get_list", return_value=rows),
+		):
+			result = _network_signers("network-a")
+
+		self.assertEqual(
+			result,
+			[
+				{"full_name": "Network Reviewer", "email": "reviewer@example.com", "phone": "+254700000001"},
+				{"full_name": "Another Reviewer", "email": "other@example.com", "phone": ""},
+			],
+		)
+
 	def test_quoting_page_resolves_the_global_tiberbu_contact(self):
 		contact = {
 			"full_name": "Tiberbu Signer",
@@ -661,7 +682,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			row.invite_token = "issued-%s" % row.signatory_role
 
 		with (
-			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract) as get_doc,
 			patch("crm.api.contracts._issue_and_send_invitation", side_effect=issue_invitation) as issue,
 			patch("crm.api.contracts._set_contract_state") as set_state,
 			patch("crm.api.contracts._notify_internal_approvers"),
@@ -671,6 +692,8 @@ class TestOptInContractAutomation(UnitTestCase):
 			_transition(contract.name)
 
 		self.assertEqual(issue.call_count, 3)
+		self.assertEqual(get_doc.call_count, 2)
+		self.assertTrue(all(call.kwargs.get("for_update") for call in get_doc.call_args_list))
 		self.assertEqual([call.args[1] for call in issue.call_args_list], [witness, network, tiberbu])
 		set_state.assert_called_once_with(contract, "Awaiting Remaining Signatures")
 		log_event.assert_called_once()
