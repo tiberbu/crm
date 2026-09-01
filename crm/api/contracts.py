@@ -1154,6 +1154,80 @@ def _required_signatures_complete(contract):
 	return all(row.status == "Signed" for row in tiberbu)
 
 
+def _contract_has_field(contract, fieldname):
+	"""Return whether a contract document supports an optional compatibility field."""
+	meta = getattr(contract, "meta", None)
+	if meta is not None:
+		try:
+			return bool(meta.has_field(fieldname))
+		except Exception:
+			pass
+	return hasattr(contract, fieldname)
+
+
+def _signatory_key(role, email):
+	"""Return the stable role/email key used for per-contract exclusions."""
+	return "::".join(
+		(
+			frappe.utils.cstr(role or "").strip().lower(),
+			frappe.utils.cstr(email or "").strip().lower(),
+		)
+	)
+
+
+def _excluded_signatory_keys(contract):
+	"""Read normalized per-contract signatory exclusions safely."""
+	if not _contract_has_field(contract, "excluded_signatories"):
+		return set()
+	raw = getattr(contract, "excluded_signatories", None)
+	if not raw:
+		return set()
+	try:
+		entries = json.loads(raw) if isinstance(raw, str) else raw
+	except (TypeError, ValueError):
+		return set()
+	if not isinstance(entries, list):
+		return set()
+	return {
+		_signatory_key(entry.get("role"), entry.get("email"))
+		for entry in entries
+		if isinstance(entry, dict) and entry.get("role") and entry.get("email")
+	}
+
+
+def _set_excluded_signatory(contract, role, email, excluded=True):
+	"""Add or remove one role/email exclusion without affecting source settings."""
+	if not _contract_has_field(contract, "excluded_signatories"):
+		return False
+	key = _signatory_key(role, email)
+	if not key or key == "::":
+		return False
+	entries = []
+	raw = getattr(contract, "excluded_signatories", None)
+	if raw:
+		try:
+			parsed = json.loads(raw) if isinstance(raw, str) else raw
+		except (TypeError, ValueError):
+			parsed = []
+		if isinstance(parsed, list):
+			entries = [
+				entry
+				for entry in parsed
+				if isinstance(entry, dict) and entry.get("role") and entry.get("email")
+			]
+
+	filtered = [entry for entry in entries if _signatory_key(entry.get("role"), entry.get("email")) != key]
+	if excluded:
+		filtered.append(
+			{
+				"role": frappe.utils.cstr(role or "").strip(),
+				"email": frappe.utils.cstr(email or "").strip().lower(),
+			}
+		)
+	contract.excluded_signatories = json.dumps(filtered, separators=(",", ":"))
+	return True
+
+
 def _reopen_stale_fully_executed_contract(contract):
 	"""Reopen a completed contract when a new unsigned row was added.
 
@@ -1533,6 +1607,10 @@ def sync_configured_signatories(contract: Any):
 			),
 			None,
 		)
+		# A removal is scoped to this contract. Check it before the legacy Tiberbu
+		# re-key fallback so a removed identity can never be resurrected by sync.
+		if not row and _signatory_key(role, email) in _excluded_signatory_keys(doc):
+			continue
 		# A single unsigned Tiberbu row is the safe legacy equivalent of a changed
 		# settings contact email. Re-key it in place instead of leaving a stale
 		# pending row that would block the all-signers rule.
@@ -2102,6 +2180,7 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any, phone: Any = 
 			"is_witness": 0,
 		},
 	)
+	_set_excluded_signatory(contract_doc, role, email, excluded=False)
 	_reopened = _reopen_stale_fully_executed_contract(contract_doc)
 	contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
@@ -2168,6 +2247,7 @@ def remove_signatory(contract: Any, role: Any, row_name: Any = None):
 	removed_email = frappe.utils.cstr(signatory_row.signatory_email or "").strip().lower()
 	removed_name = frappe.utils.cstr(signatory_row.signatory_name or "").strip()
 	contract_doc.remove(signatory_row)
+	_set_excluded_signatory(contract_doc, role, removed_email)
 	contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	log_deal_event(
 		contract_doc.deal,

@@ -1,9 +1,15 @@
 <template>
-  <div class="flex h-screen w-screen">
+  <div
+    class="crm-mobile-shell flex h-screen w-screen overflow-hidden bg-surface-base"
+  >
     <MobileSidebar />
-    <div class="flex h-full flex-1 flex-col overflow-auto bg-surface-base">
+    <div
+      class="flex min-h-0 h-full flex-1 flex-col overflow-hidden bg-surface-base"
+    >
       <MobileAppHeader />
-      <slot />
+      <main class="min-h-0 flex-1 overflow-hidden">
+        <slot />
+      </main>
     </div>
     <GlobalModals />
   </div>

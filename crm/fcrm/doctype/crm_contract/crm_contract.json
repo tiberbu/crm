@@ -18,6 +18,7 @@
   "workflow_state",
   "tiberbu_signing_requirement",
   "executed_contract_sent_at",
+  "excluded_signatories",
   "section_break_body",
   "contract_html",
   "tc_document",
@@ -118,6 +119,15 @@
    "label": "Executed contract sent at",
    "read_only": 1,
    "no_copy": 1
+  },
+  {
+   "fieldname": "excluded_signatories",
+   "fieldtype": "Long Text",
+   "label": "Excluded Signatories",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Internal per-contract exclusions for signatories removed before signing."
   },
   {
    "fieldname": "section_break_body",
