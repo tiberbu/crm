@@ -160,6 +160,41 @@ class TestOptInPriceListTools(UnitTestCase):
 		self.assertEqual(result[0]["facility_name"], "First Clinic")
 		self.assertEqual(result[0]["network"], "network-a")
 
+	def test_price_list_facilities_can_return_a_bounded_page(self):
+		price_list = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		facilities = [
+			frappe._dict(
+				{
+					"name": "FAC-%s" % index,
+					"facility_name": "Clinic %s" % index,
+					"organization": "Health Group",
+					"mfl_code": "10%s" % index,
+					"keph_level": "Level 3",
+				}
+			)
+			for index in range(1, 4)
+		]
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._get_negotiated_price_list", return_value=price_list),
+			patch(
+				"crm.api.optin_admin._price_list_assignments",
+				return_value={
+					"Negotiated Year 1": {
+						"facility_networks": {(facility.name, "network-a") for facility in facilities}
+					}
+				},
+			),
+			patch("crm.api.optin_admin.frappe.get_list", return_value=facilities),
+		):
+			result = list_price_list_facilities("Negotiated Year 1", page=2, page_length=1)
+
+		self.assertEqual(result["total"], 3)
+		self.assertEqual(result["page"], 2)
+		self.assertEqual(result["page_length"], 1)
+		self.assertTrue(result["has_more"])
+		self.assertEqual(result["rows"][0]["facility_name"], "Clinic 2")
+
 	def test_facility_sample_quote_uses_selected_price_list_and_exclusive_vat(self):
 		facility = frappe._dict(
 			{

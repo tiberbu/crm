@@ -26,6 +26,11 @@ Both previews use the selected/effective price list, the facility's KEPH item,
 and the configured VAT calculation, so they cannot change a quotation or create
 an ERPNext document.
 
+The attached-facilities section is collapsed by default and loads only when
+expanded. Facilities are fetched in pages of 50 with a **Load more** action, so a
+price list linked to 1,000 facilities does not mount or transfer all rows during
+the initial catalogue load.
+
 ## Quote price-list changes
 
 A Sales Manager may change a draft or sent quotation's price list after an

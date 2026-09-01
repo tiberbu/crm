@@ -622,8 +622,13 @@ def list_negotiated_price_lists():
 
 
 @frappe.whitelist()
-def list_price_list_facilities(price_list: Any):
-	"""Return facilities using a negotiated list, including their network scope."""
+def list_price_list_facilities(price_list: Any, page: Any = None, page_length: Any = None):
+	"""Return facilities using a negotiated list, including their network scope.
+
+	The original no-pagination response remains a list for existing callers. New
+	callers can pass ``page``/``page_length`` to receive a bounded page and total,
+	which keeps large catalogue views responsive without changing the data scope.
+	"""
 	if not _is_admin():
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	price_list = _get_negotiated_price_list(price_list)
@@ -642,7 +647,7 @@ def list_price_list_facilities(price_list: Any):
 			ignore_permissions=True,  # SYSTEM-INTERNAL: manager catalogue scope
 		)
 	}
-	return [
+	rows = [
 		{
 			"name": facility_name,
 			"facility_name": facilities[facility_name].facility_name,
@@ -661,6 +666,20 @@ def list_price_list_facilities(price_list: Any):
 		)
 		if facility_name in facilities
 	]
+	if page is None and page_length is None:
+		return rows
+
+	page = max(frappe.utils.cint(page) or 1, 1)
+	page_length = min(max(frappe.utils.cint(page_length) or 50, 1), 100)
+	start = (page - 1) * page_length
+	end = start + page_length
+	return {
+		"rows": rows[start:end],
+		"total": len(rows),
+		"page": page,
+		"page_length": page_length,
+		"has_more": end < len(rows),
+	}
 
 
 @frappe.whitelist()
