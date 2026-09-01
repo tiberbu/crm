@@ -17,7 +17,7 @@ import EventNotificationPopup from '@/components/EventNotificationPopup.vue'
 import DoctypeModals from '@/components/Modals/DoctypeModals.vue'
 import { Dialogs } from '@/utils/dialogs'
 import { sessionStore } from '@/stores/session'
-import { FrappeUIProvider, setConfig, useTheme } from 'frappe-ui'
+import { FrappeUIProvider, setConfig, useIsMobile, useTheme } from 'frappe-ui'
 import { computed, defineAsyncComponent, provide, ref } from 'vue'
 import { createResource } from 'frappe-ui'
 
@@ -46,13 +46,13 @@ const MobileLayout = defineAsyncComponent(
 const DesktopLayout = defineAsyncComponent(
   () => import('./components/Layouts/DesktopLayout.vue'),
 )
-const Layout = computed(() => {
-  if (window.innerWidth < 640) {
-    return MobileLayout
-  } else {
-    return DesktopLayout
-  }
-})
+// Keep the shell in sync with viewport changes (orientation changes, split
+// view, and browser resizing). The old one-time width check left the CRM in
+// the wrong shell until a full reload.
+const isMobileShell = useIsMobile(640)
+const Layout = computed(() =>
+  isMobileShell.value ? MobileLayout : DesktopLayout,
+)
 
 setConfig('systemTimezone', window.timezone?.system || null)
 setConfig('localTimezone', window.timezone?.user || null)
