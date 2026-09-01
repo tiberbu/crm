@@ -22,6 +22,7 @@ from crm.api.contracts import (
 	_tiberbu_signer,
 	_tiberbu_signers,
 	_transition,
+	check_user_email,
 	generate,
 	get_contract,
 	get_network_signatories,
@@ -57,6 +58,33 @@ class TestOptInForecastFields(UnitTestCase):
 
 		self.assertEqual(fields["expected_deal_value"], 48_000.5)
 		self.assertEqual(fields["expected_closure_date"], add_days(today(), 30))
+
+
+class TestSignatoryUserLookup(UnitTestCase):
+	def test_check_user_email_reports_enabled_account(self):
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch(
+				"crm.api.contracts.frappe.get_list",
+				return_value=[frappe._dict({"email": "signer@example.com", "full_name": "A Signer"})],
+			) as get_list,
+		):
+			result = check_user_email(" Signer@Example.com ")
+
+		self.assertEqual(result, {"checked": True, "linked": True, "full_name": "A Signer"})
+		self.assertEqual(
+			get_list.call_args.kwargs["filters"],
+			{"email": "signer@example.com", "enabled": 1},
+		)
+
+	def test_check_user_email_treats_missing_account_as_external(self):
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_list", return_value=[]),
+		):
+			result = check_user_email("external@example.com")
+
+		self.assertEqual(result, {"checked": True, "linked": False, "full_name": ""})
 
 
 class TestOptInNegotiatedPricing(UnitTestCase):

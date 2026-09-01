@@ -1402,6 +1402,36 @@ def _approval_identity_for_delivery(contract_doc, delivery):
 
 
 @frappe.whitelist()
+def check_user_email(email: Any = ""):
+	"""Report whether an email belongs to an enabled Frappe User.
+
+	The Quote page uses this before adding a Tiberbu signatory so an executive can
+	see which signing path will be used. Keep the lookup aligned with
+	``_crm_user_exists``: disabled accounts are treated as external signers. Only
+	the account's display name is returned; no user profile data is exposed.
+
+	Requires: Sales Manager, System Manager, or Administrator.
+	"""
+	_check_crm_role()
+	email = frappe.utils.cstr(email or "").strip().lower()
+	if not email:
+		return {"checked": False, "linked": False, "full_name": ""}
+
+	rows = frappe.get_list(
+		"User",
+		filters={"email": email, "enabled": 1},
+		fields=["email", "full_name"],
+		limit=1,
+	)
+	user = rows[0] if rows else None
+	return {
+		"checked": True,
+		"linked": bool(user),
+		"full_name": frappe.utils.cstr(user.get("full_name") or "") if user else "",
+	}
+
+
+@frappe.whitelist()
 def get_network_signatories(deal: Any = "", network_slug: Any = ""):
 	"""
 	Resolve the co-signatories that will be seeded onto a contract: every

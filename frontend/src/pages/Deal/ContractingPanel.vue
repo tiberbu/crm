@@ -917,6 +917,47 @@
               />
             </div>
 
+            <div
+              v-if="isTiberbuRole(coEditRole)"
+              class="text-xs"
+              aria-live="polite"
+              role="status"
+            >
+              <span v-if="coEditUserLookupLoading" class="text-ink-gray-5">
+                {{ __('Checking for an existing user account…') }}
+              </span>
+              <span
+                v-else-if="coEditUserLookup?.linked"
+                class="font-medium text-green-700 dark:text-green-400"
+              >
+                ✓
+                {{ __('Existing user account linked') }}
+                <span v-if="coEditUserLookup.full_name" class="font-normal">
+                  · {{ coEditUserLookup.full_name }}
+                </span>
+              </span>
+              <span
+                v-else-if="coEditUserLookup?.checked"
+                class="text-ink-gray-5"
+              >
+                {{
+                  __(
+                    'No active user account found — this signer will use the secure email/SMS link.',
+                  )
+                }}
+              </span>
+              <span
+                v-else-if="coEditUserLookupError"
+                class="text-amber-700 dark:text-amber-400"
+              >
+                {{
+                  __(
+                    'We could not verify the account right now. You can still add this signer.',
+                  )
+                }}
+              </span>
+            </div>
+
             <p class="text-xs text-ink-gray-4">
               {{
                 isTiberbuRole(coEditRole)
@@ -1128,7 +1169,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { createResource, toast, Button, Dialog } from 'frappe-ui'
 import { usersStore } from '@/stores/users'
 import { sessionStore } from '@/stores/session'
@@ -1739,6 +1780,63 @@ const coEditOrigEmail = ref('') // network write-back: the config row to update 
 const coEditIsAdd = ref(false) // true → row is configured but not yet on the contract
 const savingCo = ref(false)
 const removingKey = ref('')
+
+// The add form uses the same enabled-user rule as the contract invitation
+// routing. Debounce the lookup so typing an address never creates a request per
+// keystroke, and ignore late responses when the email has changed.
+const userEmailLookupResource = createResource({
+  url: 'crm.api.contracts.check_user_email',
+})
+const coEditUserLookup = ref(null)
+const coEditUserLookupLoading = ref(false)
+const coEditUserLookupError = ref(false)
+let userEmailLookupTimer = null
+let userEmailLookupSequence = 0
+
+function clearUserEmailLookup() {
+  if (userEmailLookupTimer) {
+    clearTimeout(userEmailLookupTimer)
+    userEmailLookupTimer = null
+  }
+  userEmailLookupSequence += 1
+  coEditUserLookup.value = null
+  coEditUserLookupError.value = false
+  coEditUserLookupLoading.value = false
+}
+
+function scheduleUserEmailLookup() {
+  clearUserEmailLookup()
+  if (coEditKey.value !== ADD_KEY || !isTiberbuRole(coEditRole.value)) return
+
+  const email = coEditEmail.value.trim().toLowerCase()
+  if (!email || !email.includes('@')) return
+
+  const sequence = userEmailLookupSequence
+  userEmailLookupTimer = setTimeout(async () => {
+    coEditUserLookupLoading.value = true
+    try {
+      const result = await userEmailLookupResource.submit({ email })
+      if (
+        sequence === userEmailLookupSequence &&
+        coEditEmail.value.trim().toLowerCase() === email
+      ) {
+        coEditUserLookup.value = result
+      }
+    } catch {
+      if (sequence === userEmailLookupSequence) {
+        coEditUserLookupError.value = true
+      }
+    } finally {
+      if (sequence === userEmailLookupSequence) {
+        coEditUserLookupLoading.value = false
+        userEmailLookupTimer = null
+      }
+    }
+  }, 300)
+}
+
+watch([coEditEmail, coEditKey, coEditRole], scheduleUserEmailLookup)
+onBeforeUnmount(clearUserEmailLookup)
 
 // Counterparty roles this surface owns — matches contracts.py _COUNTERPARTY_ROLES.
 function isCoRole(role) {
