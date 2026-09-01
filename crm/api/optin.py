@@ -57,6 +57,7 @@ _KEPH_MAP = [
 	{"keph_level": "Level 4B", "item_code": "CV-HIMS-KEPH-4B"},
 	{"keph_level": "Level 5A", "item_code": "CV-HIMS-KEPH-5A"},
 	{"keph_level": "Level 5", "item_code": "CV-HIMS-KEPH-5"},
+	{"keph_level": "Level 6", "item_code": "CV-HIMS-KEPH-6"},
 ]
 
 
@@ -296,6 +297,12 @@ def _get_membership(email, network_slug):
 	Return the first Active CRM Facility Membership for this email+network,
 	with its parent facility facts. Returns None if not found.
 	"""
+	membership_fields = ["name", "parent", "contact_name", "contact_phone", "otp_expiry", "otp_attempts"]
+	try:
+		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
+			membership_fields.insert(4, "price_list_override")
+	except Exception:
+		pass
 	mem_rows = frappe.get_list(
 		"CRM Facility Membership",
 		filters={
@@ -303,7 +310,7 @@ def _get_membership(email, network_slug):
 			"network": network_slug,
 			"status": "Active",
 		},
-		fields=["name", "parent", "contact_name", "contact_phone", "otp_expiry", "otp_attempts"],
+		fields=membership_fields,
 		limit=1,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
@@ -331,6 +338,7 @@ def _get_membership(email, network_slug):
 			"contact_name": mem.contact_name,
 			"contact_email": email,
 			"contact_phone": mem.contact_phone,
+			"price_list_override": mem.get("price_list_override") or "",
 			"otp_expiry": mem.otp_expiry,
 			"otp_attempts": mem.otp_attempts,
 		}
@@ -339,6 +347,12 @@ def _get_membership(email, network_slug):
 
 def _get_all_memberships(email, network_slug):
 	"""Return all Active facilities for this email+network as a list of dicts."""
+	membership_fields = ["name", "parent"]
+	try:
+		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
+			membership_fields.append("price_list_override")
+	except Exception:
+		pass
 	mem_rows = frappe.get_list(
 		"CRM Facility Membership",
 		filters={
@@ -346,7 +360,7 @@ def _get_all_memberships(email, network_slug):
 			"network": network_slug,
 			"status": "Active",
 		},
-		fields=["name", "parent"],
+		fields=membership_fields,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
 	if not mem_rows:
@@ -358,7 +372,11 @@ def _get_all_memberships(email, network_slug):
 		fields=["name", "mfl_code", "facility_name", "keph_level"],
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
-	return fac_rows
+	price_list_by_parent = {row.parent: row.get("price_list_override") or "" for row in mem_rows}
+	return [
+		frappe._dict({**row, "price_list_override": price_list_by_parent.get(row.name, "")})
+		for row in fac_rows
+	]
 
 
 def _get_quoted_facility_map(mfl_codes):
@@ -1117,19 +1135,21 @@ def get_pricing(
 		except Exception:
 			selected_mfl_codes = []
 
-	# Determine price list (network override or default)
+	# Determine the network fallback price list. A facility membership may override
+	# this for one network without affecting the same facility in another network.
 	network_doc = _get_network_doc(network_slug)
 	try:
 		settings = frappe.get_single("CRM Opt-In Settings")
 		default_pl = settings.default_price_list or "Negotiated Year 1"
 	except Exception:
 		default_pl = "Negotiated Year 1"
-	price_list = (
-		invitation.get("price_list")
-		if invitation
-		else (network_doc.get("price_list_override") if network_doc else None) or default_pl
-	)
-	if not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
+	if invitation:
+		network_price_list = invitation.get("price_list") or default_pl
+	else:
+		network_price_list = (network_doc.get("price_list_override") if network_doc else None) or default_pl
+	if not network_price_list:
+		network_price_list = default_pl
+	if not frappe.db.exists("Price List", {"name": network_price_list, "selling": 1, "enabled": 1}):
 		frappe.throw(
 			_("Pricing is temporarily unavailable. Please contact support."),
 			frappe.ConfigurationError,
@@ -1154,6 +1174,15 @@ def get_pricing(
 		fac = facility_map.get(mfl_code)
 		if not fac or quoted_map.get(mfl_code):
 			continue
+
+		price_list = frappe.utils.cstr(fac.get("price_list_override") or network_price_list).strip()
+		if not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
+			frappe.throw(
+				_(
+					"Pricing is temporarily unavailable for one or more selected facilities. Please contact support."
+				),
+				frappe.ConfigurationError,
+			)
 
 		item_code = _keph_to_item_code(fac.keph_level)
 
@@ -1180,6 +1209,7 @@ def get_pricing(
 				"facility_name": fac.facility_name,
 				"keph_level": fac.keph_level,
 				"item_code": item_code,
+				"price_list": price_list,
 				"monthly_kes": monthly_kes,
 				"annual_kes": annual_kes,
 			}
@@ -2411,7 +2441,20 @@ def _process_submission(submission_ref):
 				_default_pl = _q_settings.default_price_list or "Negotiated Year 1"
 			except Exception:
 				_default_pl = "Negotiated Year 1"
-			quote_price_list = (_q_network.get("price_list_override") if _q_network else None) or _default_pl
+			quote_price_lists = {
+				frappe.utils.cstr(product.get("price_list") or "").strip()
+				for product in pricing
+				if frappe.utils.cstr(product.get("price_list") or "").strip()
+			}
+			# ERPNext quotations have one header price list. If every facility used
+			# the same list, preserve it; for a mixed facility override quote keep the
+			# network/default list in the header while the canonical line rates remain
+			# authoritative below.
+			quote_price_list = (
+				next(iter(quote_price_lists))
+				if len(quote_price_lists) == 1
+				else (_q_network.get("price_list_override") if _q_network else None) or _default_pl
+			)
 
 			existing_quotes = frappe.get_list(
 				"Quotation",
@@ -3009,6 +3052,27 @@ def _dashboard_percentage(numerator, denominator):
 	return round(numerator / denominator * 100, 1)
 
 
+def _dashboard_signatory_key(signatory):
+	"""Return a stable identity key for collapsing duplicate signer rows."""
+	role = frappe.utils.cstr(signatory.get("signatory_role") or "").strip().casefold()
+	email = frappe.utils.cstr(signatory.get("signatory_email") or "").strip().casefold()
+	name = " ".join(frappe.utils.cstr(signatory.get("signatory_name") or "").split()).casefold()
+	return "%s:%s" % (role, email or name)
+
+
+def _dashboard_unique_signatories(rows):
+	"""Collapse duplicate rows for one contract without losing a signed state."""
+	unique = {}
+	for row in rows or []:
+		key = _dashboard_signatory_key(row)
+		if not key or key.endswith(":"):
+			continue
+		current = unique.get(key)
+		if current is None or (row.get("status") == "Signed" and current.get("status") != "Signed"):
+			unique[key] = row
+	return list(unique.values())
+
+
 def _dashboard_role_progress(rows):
 	"""Summarise a group of signatories with the same workflow role."""
 	rows = rows or []
@@ -3026,6 +3090,7 @@ def _dashboard_role_progress(rows):
 
 def _dashboard_contract_progress(contract, signatories):
 	"""Return explicit sign-off state for every party on a generated contract."""
+	signatories = _dashboard_unique_signatories(signatories)
 	roles = defaultdict(list)
 	for signatory in signatories or []:
 		roles[frappe.utils.cstr(signatory.get("signatory_role") or "")].append(signatory)
@@ -3245,6 +3310,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 	facility_progress_by_key = {}
 	facility_leaderboard = []
 	signatory_leaders = {}
+	counted_leader_assignments = set()
 	tat_values = defaultdict(list)
 	annual_value = 0.0
 	contract_count = 0
@@ -3340,15 +3406,19 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 			("Network Signatory", "facility_complete_to_network_signatory"),
 			("Tiberbu Signatory", "facility_complete_to_tiberbu_signatory"),
 		):
-			for signatory in contract_progress["roles"][role]:
+			for signatory in _dashboard_unique_signatories(contract_progress["roles"][role]):
 				signed_at = _dashboard_datetime(signatory.get("signed_at"))
 				response_hours = _dashboard_elapsed_hours(facility_signed_at, signed_at)
-				if response_hours is not None:
-					tat_values[tat_key].append(response_hours)
 
 				email = frappe.utils.cstr(signatory.get("signatory_email") or "").strip().lower()
 				name = frappe.utils.cstr(signatory.get("signatory_name") or "").strip()
-				leader_key = "%s:%s" % (role, email or name.lower())
+				leader_key = _dashboard_signatory_key(signatory)
+				assignment_key = (contract.name if contract else submission.name, leader_key)
+				if assignment_key in counted_leader_assignments:
+					continue
+				counted_leader_assignments.add(assignment_key)
+				if response_hours is not None:
+					tat_values[tat_key].append(response_hours)
 				leader = signatory_leaders.setdefault(
 					leader_key,
 					{
@@ -3368,7 +3438,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 					if response_hours is not None:
 						leader["response_hours"].append(response_hours)
 
-		all_signed_at = _dashboard_latest_signed_at(contract_signatories)
+		all_signed_at = _dashboard_latest_signed_at(_dashboard_unique_signatories(contract_signatories))
 		end_to_end_hours = None
 		if contract_progress["fully_executed"] and all_signed_at:
 			end_to_end_hours = _dashboard_elapsed_hours(submission.submitted_at, all_signed_at)
@@ -3504,6 +3574,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 				"role": leader["role"],
 				"signed": leader["signed"],
 				"assigned": leader["assigned"],
+				"pending": max(leader["assigned"] - leader["signed"], 0),
 				"completion_rate": _dashboard_percentage(leader["signed"], leader["assigned"]),
 				"median_response_hours": duration["median_hours"],
 				"networks": sorted(leader["networks"]),

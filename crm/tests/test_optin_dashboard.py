@@ -151,6 +151,20 @@ class TestOptInDashboard(UnitTestCase):
 					"invite_expiry": "2099-01-01 00:00:00",
 				}
 			),
+			# Duplicate child row from a legacy/retry path must not inflate the
+			# signatory leaderboard or make the same person appear twice.
+			frappe._dict(
+				{
+					"parent": "CONT-0001",
+					"signatory_name": "Network Champion",
+					"signatory_email": "NETWORK@example.com",
+					"signatory_role": "Network Signatory",
+					"status": "Signed",
+					"signed_at": "2026-08-28 14:00:00",
+					"invite_token": "sent-duplicate",
+					"invite_expiry": "2099-01-01 00:00:00",
+				}
+			),
 			frappe._dict(
 				{
 					"parent": "CONT-0001",
@@ -252,6 +266,7 @@ class TestOptInDashboard(UnitTestCase):
 		self.assertEqual(result["signatory_leaderboard"][0]["name"], "Network Champion")
 		self.assertEqual(result["signatory_leaderboard"][0]["signed"], 1)
 		self.assertEqual(result["signatory_leaderboard"][0]["assigned"], 2)
+		self.assertEqual(result["signatory_leaderboard"][0]["pending"], 1)
 		self.assertEqual(result["signatory_leaderboard"][0]["median_response_hours"], 3.0)
 
 		tat = {row["key"]: row for row in result["tat"]}

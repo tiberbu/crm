@@ -13,13 +13,18 @@
       <div class="flex items-center gap-2">
         <!-- Price list (ERPNext Item Price architecture) -->
         <label
-          v-if="canEdit"
+          v-if="canEdit || canSwitchPriceList"
           class="flex items-center gap-1.5 text-xs text-ink-gray-5"
+          :title="
+            canSwitchPriceList
+              ? __('Editable until the facility signs')
+              : __('Locked after the facility signs')
+          "
         >
           {{ __('Price List') }}
           <select
             :value="data?.price_list"
-            :disabled="!canEdit || switchingList"
+            :disabled="!canSwitchPriceList || switchingList"
             class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-1 text-xs text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-outline-red-4 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-surface-gray-2"
             @change="onChangePriceList($event.target.value)"
           >
@@ -323,6 +328,9 @@ watch(
 )
 
 const canEdit = computed(() => !!data.value?.editable && isMgr.value)
+const canSwitchPriceList = computed(
+  () => !!data.value?.price_list_editable && isMgr.value,
+)
 
 // ── Price list (ERPNext Item Price architecture) ─────────────────────────────
 const priceListsResource = createResource({
@@ -338,7 +346,7 @@ const switchListResource = createResource({
 
 async function onChangePriceList(priceList) {
   if (!priceList || priceList === data.value?.price_list) return
-  if (!canEdit.value) return
+  if (!canSwitchPriceList.value) return
   switchingList.value = true
   try {
     await switchListResource.submit({
@@ -388,9 +396,9 @@ const catalogueOptions = computed(() =>
 const addItemCode = ref('')
 
 watch(
-  canEdit,
-  (editable) => {
-    if (!editable) return
+  [canEdit, canSwitchPriceList],
+  ([editable, switchable]) => {
+    if (!editable && !switchable) return
     if (!priceListsResource.data && !priceListsResource.loading) {
       priceListsResource.fetch()
     }

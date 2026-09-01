@@ -16,6 +16,10 @@
   "default_lead_owner",
   "tiberbu_signatory",
   "section_break_tiberbu_approver",
+  "tiberbu_signatory_name",
+  "tiberbu_signatory_email",
+  "tiberbu_signatory_phone",
+  "section_break_tiberbu_approval",
   "tiberbu_approver_name",
   "tiberbu_approver_email",
   "tiberbu_approver_phone"
@@ -87,7 +91,32 @@
   {
    "fieldname": "section_break_tiberbu_approver",
    "fieldtype": "Section Break",
-   "label": "Tiberbu Approval Contact"
+   "label": "Tiberbu Signing and Approval Contacts"
+  },
+  {
+   "fieldname": "tiberbu_signatory_name",
+   "fieldtype": "Data",
+   "label": "Default Tiberbu Signatory Name",
+   "description": "Default contract signatory name. Use this for an external contact, or leave blank to use the selected User."
+  },
+  {
+   "fieldname": "tiberbu_signatory_email",
+   "fieldtype": "Data",
+   "label": "Default Tiberbu Signatory Email",
+   "options": "Email",
+   "description": "Default contract signatory email. Contact fields take precedence over the legacy User selection."
+  },
+  {
+   "fieldname": "tiberbu_signatory_phone",
+   "fieldtype": "Data",
+   "label": "Default Tiberbu Signatory Phone",
+   "options": "Phone",
+   "description": "Default contract signatory mobile number for SMS notifications."
+  },
+  {
+   "fieldname": "section_break_tiberbu_approval",
+   "fieldtype": "Section Break",
+   "label": "Approval Contact"
   },
   {
    "fieldname": "tiberbu_approver_name",

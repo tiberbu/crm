@@ -656,6 +656,9 @@
                   {{ row.organization || row.facility_name }} ·
                   {{ row.mfl_code }}
                 </p>
+                <p class="mt-0.5 text-xs text-ink-gray-5">
+                  {{ facilityPriceListLabel(row) }}
+                </p>
               </td>
               <td class="px-4 py-3">
                 <span
@@ -696,6 +699,13 @@
               </td>
               <td class="px-4 py-3 text-right" @click.stop>
                 <div class="flex items-center justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="subtle"
+                    :loading="sampleQuoteFacility === row.name"
+                    @click="viewSampleQuote(row)"
+                    >{{ __('Sample quote') }}</Button
+                  >
                   <Button
                     size="sm"
                     variant="subtle"
@@ -765,6 +775,75 @@
           </div>
         </div>
       </div>
+
+      <Dialog
+        v-model="showSampleQuote"
+        :options="{ title: __('Sample quotation'), size: 'lg' }"
+      >
+        <template #body-content>
+          <div
+            v-if="sampleQuoteLoading"
+            class="py-10 text-center text-sm text-ink-gray-5"
+          >
+            {{ __('Loading sample quotation…') }}
+          </div>
+          <div v-else-if="sampleQuote" class="space-y-4">
+            <div>
+              <p class="text-lg font-semibold text-ink-gray-9">
+                {{ sampleQuote.facility }}
+              </p>
+              <p class="text-sm text-ink-gray-5">
+                {{ sampleQuote.organization }} · {{ sampleQuote.keph_level }} ·
+                {{ sampleQuote.network }}
+              </p>
+            </div>
+            <div
+              class="rounded-lg bg-surface-gray-1 p-3 text-sm dark:bg-surface-gray-2"
+            >
+              <div class="flex justify-between gap-4">
+                <span class="text-ink-gray-5">{{ __('Price list') }}</span>
+                <span class="font-medium text-ink-gray-9">{{
+                  sampleQuote.price_list
+                }}</span>
+              </div>
+              <div class="mt-1 flex justify-between gap-4">
+                <span class="text-ink-gray-5">{{ __('Item') }}</span>
+                <span class="text-right text-ink-gray-8">{{
+                  sampleQuote.item_name
+                }}</span>
+              </div>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-outline-gray-2 p-3">
+                <p class="text-xs uppercase tracking-wide text-ink-gray-5">
+                  {{ __('Monthly total') }}
+                </p>
+                <p class="mt-1 text-base font-semibold text-ink-gray-9">
+                  {{ formatKes(sampleQuote.monthly_gross) }}
+                </p>
+                <p class="text-xs text-ink-gray-5">
+                  {{ formatKes(sampleQuote.monthly_net) }}
+                  {{ __('excl. VAT') }} ·
+                  {{ sampleQuote.vat_label }}
+                </p>
+              </div>
+              <div class="rounded-lg border border-outline-gray-2 p-3">
+                <p class="text-xs uppercase tracking-wide text-ink-gray-5">
+                  {{ __('Annual total') }}
+                </p>
+                <p class="mt-1 text-base font-semibold text-ink-gray-9">
+                  {{ formatKes(sampleQuote.annual_gross) }}
+                </p>
+                <p class="text-xs text-ink-gray-5">
+                  {{ formatKes(sampleQuote.annual_net) }}
+                  {{ __('excl. VAT') }} ·
+                  {{ sampleQuote.vat_label }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </template>
+      </Dialog>
 
       <!-- Add / Edit inline form -->
       <div
@@ -839,6 +918,31 @@
               class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
               @input="organizationEdited = true"
             />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-ink-gray-6">
+              {{ __('Facility price list') }}
+            </label>
+            <select
+              v-model="form.price_list_override"
+              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+            >
+              <option value="">{{ __('Use network price list') }}</option>
+              <option
+                v-for="priceList in negotiatedPriceLists"
+                :key="priceList.value"
+                :value="priceList.value"
+              >
+                {{ priceList.label }}
+              </option>
+            </select>
+            <span class="text-[11px] text-ink-gray-5">
+              {{
+                __(
+                  'Use this only when the facility has negotiated a different rate.',
+                )
+              }}
+            </span>
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6"
@@ -947,6 +1051,9 @@
                   {{ __('Organization') }}
                 </th>
                 <th class="px-3 py-2 text-left font-medium">
+                  {{ __('Price List') }}
+                </th>
+                <th class="px-3 py-2 text-left font-medium">
                   {{ __('Contact Email') }}
                 </th>
                 <th class="px-3 py-2 text-left font-medium">
@@ -967,6 +1074,9 @@
                 <td class="px-3 py-2 text-ink-gray-7">{{ r.facility_name }}</td>
                 <td class="px-3 py-2 text-ink-gray-7">
                   {{ r.organization || r.facility_name }}
+                </td>
+                <td class="px-3 py-2 text-ink-gray-7">
+                  {{ r.price_list_override || __('Use network price list') }}
                 </td>
                 <td class="px-3 py-2 text-ink-gray-6">{{ r.contact_email }}</td>
                 <td v-if="r.error" class="px-3 py-2 text-red-600">
@@ -1020,9 +1130,11 @@ import { useRouter } from 'vue-router'
 import {
   createResource,
   Button,
+  Dialog,
   FileUploader,
   FormControl,
   Switch,
+  toast,
 } from 'frappe-ui'
 import { validateIsImageFile } from '@/utils'
 
@@ -1207,6 +1319,7 @@ const facilityLevels = [
   'Level 4B',
   'Level 5A',
   'Level 5',
+  'Level 6',
 ]
 const inviteStatuses = ['Not Sent', 'Sending', 'Sent', 'Error']
 
@@ -1272,6 +1385,61 @@ function networkMembership(row) {
   )
 }
 
+const showSampleQuote = ref(false)
+const sampleQuote = ref(null)
+const sampleQuoteLoading = ref(false)
+const sampleQuoteFacility = ref(null)
+const sampleQuoteResource = createResource({
+  url: 'crm.api.optin_admin.get_facility_sample_quote',
+})
+
+function effectiveFacilityPriceList(row) {
+  const membership = networkMembership(row)
+  return (
+    membership?.price_list_override ||
+    networkDoc.value?.price_list_override ||
+    ''
+  )
+}
+
+function formatKes(value) {
+  return `KES ${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+async function viewSampleQuote(row) {
+  sampleQuoteFacility.value = row.name
+  sampleQuoteLoading.value = true
+  sampleQuote.value = null
+  showSampleQuote.value = true
+  try {
+    sampleQuote.value = await sampleQuoteResource.submit({
+      facility: row.name,
+      network: props.networkSlug,
+      price_list: effectiveFacilityPriceList(row),
+    })
+  } catch (error) {
+    showSampleQuote.value = false
+    toast.error(
+      error?.messages?.[0] ??
+        error?.message ??
+        __('Could not load sample quote'),
+    )
+  } finally {
+    sampleQuoteLoading.value = false
+    sampleQuoteFacility.value = null
+  }
+}
+
+function facilityPriceListLabel(row) {
+  const membership = networkMembership(row)
+  return membership?.price_list_override
+    ? `${__('Price list')}: ${membership.price_list_override}`
+    : `${__('Price list')}: ${networkDoc.value?.price_list_override || __('Opt-In default')}`
+}
+
 function isOptedIn(row) {
   return networkMembership(row)?.status === 'Opted In'
 }
@@ -1289,6 +1457,7 @@ const form = reactive({
   mfl_code: '',
   facility_name: '',
   organization: '',
+  price_list_override: '',
   keph_level: '',
   contact_name: '',
   contact_email: '',
@@ -1301,6 +1470,7 @@ function resetForm() {
   form.mfl_code = ''
   form.facility_name = ''
   form.organization = ''
+  form.price_list_override = ''
   form.keph_level = ''
   form.contact_name = ''
   form.contact_email = ''
@@ -1322,6 +1492,7 @@ function editContact(row) {
     mfl_code: row.mfl_code ?? '',
     facility_name: row.facility_name ?? '',
     organization: row.organization ?? row.facility_name ?? '',
+    price_list_override: m.price_list_override ?? '',
     keph_level: row.keph_level ?? '',
     contact_name: m.contact_name ?? '',
     contact_email: m.contact_email ?? '',
@@ -1404,6 +1575,7 @@ async function saveContact() {
     memberships: [
       {
         network: props.networkSlug,
+        price_list_override: form.price_list_override,
         status: form.status,
         contact_name: form.contact_name,
         contact_email: form.contact_email,

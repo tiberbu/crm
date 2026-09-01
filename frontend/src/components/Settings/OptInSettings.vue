@@ -122,28 +122,51 @@
             type="select"
             @update:modelValue="markDirty"
           />
-          <FormControl
-            v-model="form.tiberbu_signatory"
-            :label="__('Tiberbu Signatory')"
-            :options="userOptions"
-            type="select"
-            @update:modelValue="markDirty"
-          />
         </div>
       </section>
       <div class="border-t border-outline-elevation-2" />
       <section class="py-5">
         <h3 class="text-sm font-semibold text-ink-gray-8">
-          {{ __('Tiberbu approval contact') }}
+          {{ __('Tiberbu signing and approval contacts') }}
         </h3>
         <p class="mt-1 max-w-xl text-sm text-ink-gray-5">
           {{
             __(
-              'Use a name, email, and mobile number for the Tiberbu approver. This contact does not need a CRM User account and receives both approval email and SMS notifications.',
+              'Keep the default Tiberbu contract signer and approval contact here. Signers can be external contacts without CRM User accounts; the Quoting page can still add a contract-only signer.',
             )
           }}
         </p>
         <div class="mt-4 grid max-w-xl gap-4">
+          <FormControl
+            v-model="form.tiberbu_signatory_name"
+            :label="__('Default signatory name')"
+            type="text"
+            @update:modelValue="markDirty"
+          />
+          <FormControl
+            v-model="form.tiberbu_signatory_email"
+            :label="__('Default signatory email')"
+            type="email"
+            @update:modelValue="markDirty"
+          />
+          <FormControl
+            v-model="form.tiberbu_signatory_phone"
+            :label="__('Default signatory mobile number')"
+            type="tel"
+            @update:modelValue="markDirty"
+          />
+          <FormControl
+            v-model="form.tiberbu_signatory"
+            :label="__('Legacy signatory User (fallback)')"
+            :options="userOptions"
+            type="select"
+            :description="
+              __(
+                'Used when the default signatory contact fields above are blank.',
+              )
+            "
+            @update:modelValue="markDirty"
+          />
           <FormControl
             v-model="form.tiberbu_approver_name"
             :label="__('Approver name')"
@@ -191,6 +214,9 @@ const form = reactive({
   active_tc_document: '',
   default_lead_owner: '',
   tiberbu_signatory: '',
+  tiberbu_signatory_name: '',
+  tiberbu_signatory_email: '',
+  tiberbu_signatory_phone: '',
   tiberbu_approver_name: '',
   tiberbu_approver_email: '',
   tiberbu_approver_phone: '',

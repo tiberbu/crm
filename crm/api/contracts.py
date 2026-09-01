@@ -287,34 +287,50 @@ def _network_signers(network_slug):
 		order_by="idx asc",
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
-	signers = []
+	# A legacy import (or two concurrent edits before the email uniqueness check)
+	# can leave the child table with the same signer more than once. Treat email as
+	# the stable identity here so one configured person cannot receive two contract
+	# invitations in the same generation wave. Keep the first display name and fill
+	# any missing contact details from a later duplicate row.
+	signers_by_email = {}
 	for r in rows:
-		email = frappe.utils.cstr(r.get("email") or "").strip()
-		if email:
-			signers.append(
-				{
-					"full_name": frappe.utils.cstr(r.get("full_name") or "").strip() or email,
-					"email": email,
-					"phone": frappe.utils.cstr(r.get("phone") or "").strip(),
-				}
-			)
-	return signers
+		email = frappe.utils.cstr(r.get("email") or "").strip().lower()
+		if not email:
+			continue
+		current = {
+			"full_name": frappe.utils.cstr(r.get("full_name") or "").strip(),
+			"email": email,
+			"phone": frappe.utils.cstr(r.get("phone") or "").strip(),
+		}
+		existing = signers_by_email.get(email)
+		if existing:
+			existing["full_name"] = existing["full_name"] or current["full_name"]
+			existing["phone"] = existing["phone"] or current["phone"]
+		else:
+			current["full_name"] = current["full_name"] or email
+			signers_by_email[email] = current
+	return list(signers_by_email.values())
 
 
 def _tiberbu_signer():
-	"""Global Tiberbu co-signatory from CRM Opt-In Settings → {full_name, email} or None."""
-	user = ""
-	# A Single always "exists" by name; read the field directly.
-	try:
-		user = frappe.utils.cstr(
-			frappe.db.get_single_value("CRM Opt-In Settings", "tiberbu_signatory") or ""
-		).strip()
-	except Exception:
-		user = ""
-	if not user:
+	"""Return the configured global Tiberbu contract signer, including external contacts.
+
+	The contact triplet is the preferred source so a signer does not need a CRM User
+	account. The existing ``tiberbu_signatory`` User link remains a fallback for
+	backward compatibility, including its live email and mobile number.
+	"""
+	settings = _load_optin_settings_safely()
+	if not settings:
 		return None
-	ident = _resolve_user_identity(user)
-	return ident if ident["email"] else None
+
+	contact = _identity_from_fields(settings, prefix="tiberbu_signatory")
+	legacy_user = frappe.utils.cstr(settings.get("tiberbu_signatory") or "").strip()
+	legacy = _resolve_user_identity(legacy_user)
+	identity = _merge_identity(contact, legacy)
+	if not identity["email"]:
+		return None
+	identity["full_name"] = identity["full_name"] or identity["email"]
+	return identity
 
 
 def _facility_witness_from_deal(deal):
@@ -638,7 +654,7 @@ def _otp_sms_message(network, signatory_row, otp):
 	return "%s: your contract signing code is %s. It expires in 10 minutes." % (brand, otp)
 
 
-def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
+def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminder=False):
 	"""
 	Mint a fresh invitation token on the signatory row, persist it, and email the
 	signatory a branded invitation with a Sign CTA. The caller is responsible for
@@ -651,6 +667,10 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 
 	Contract invitations always use immediate delivery. This avoids a completed
 	signing step being held behind a background Email Queue worker.
+
+	`reminder=True` is reserved for an intentional follow-up from the CRM UI
+	(Resend link or a signatory edit that requires a fresh link). It keeps the
+	message distinct in inboxes without changing automatic invitation delivery.
 	"""
 	token = _gen_token()
 	signatory_row.invite_token = token
@@ -670,10 +690,11 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True):
 
 	queue = None
 	try:
+		subject_prefix = "[Reminder] " if reminder else ""
 		queue = frappe.sendmail(
 			recipients=[signatory_row.signatory_email],
-			subject="%s — Contract ready for signature · Invitation ID %s"
-			% (facility_subject, invitation_reference),
+			subject="%s%s — Contract ready for signature · Invitation ID %s"
+			% (subject_prefix, facility_subject, invitation_reference),
 			message=branded_email_html(
 				network,
 				heading="Contract ready for your signature",
@@ -734,7 +755,12 @@ def _transition(contract_name):
 
 	All signatories must still sign before the contract becomes Fully Executed.
 	"""
-	contract = frappe.get_doc("CRM Contract", contract_name)
+	# Signing requests can arrive twice (double-clicks, browser retries, or two
+	# open tabs). Serialize the invitation wave on the contract row, then reload
+	# the latest child-table state. Without this lock two requests can both observe
+	# empty invite_token values, rotate the same links, and send duplicate emails;
+	# the first link then appears expired as soon as the second request commits.
+	contract = frappe.get_doc("CRM Contract", contract_name, for_update=True)
 	sigs = list(contract.signatories or [])
 	if not sigs:
 		return
@@ -1187,7 +1213,7 @@ def resend_invitation(contract: Any, role: Any, row_name: Any = None):
 			frappe.ValidationError,
 		)
 
-	_issue_and_send_invitation(contract_doc, signatory_row)
+	_issue_and_send_invitation(contract_doc, signatory_row, reminder=True)
 
 	log_deal_event(
 		contract_doc.deal,
@@ -1385,7 +1411,7 @@ def update_signatory(
 	already_invited = bool(signatory_row.invite_token)
 	resent = False
 	if was_signed or (email_changed and already_invited):
-		_issue_and_send_invitation(contract_doc, signatory_row)
+		_issue_and_send_invitation(contract_doc, signatory_row, reminder=True)
 		resent = True
 	else:
 		contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
@@ -1465,6 +1491,64 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any, phone: Any = 
 	_transition(contract)
 
 	return {"status": "added", "role": role, "email": email}
+
+
+@frappe.whitelist()
+def remove_signatory(contract: Any, role: Any, row_name: Any = None):
+	"""Remove an unsigned Network/Tiberbu co-signatory from one contract.
+
+	The configured network or global Tiberbu signer is deliberately left in its
+	source configuration so future contracts retain that contact. Removing the
+	contract row invalidates its invitation and OTP state because the old row (and
+	its tokens) no longer belongs to the signing workflow. A captured signature is
+	never removable; use the existing signed-row replacement flow instead.
+	"""
+	_check_crm_role()
+
+	contract = frappe.utils.cstr(contract).strip()
+	role = frappe.utils.cstr(role).strip()
+	row_name = frappe.utils.cstr(row_name).strip() or None
+
+	if role not in _COUNTERPARTY_ROLES:
+		frappe.throw(
+			_("Only Network and Tiberbu co-signatories can be removed here."),
+			frappe.ValidationError,
+		)
+	if not row_name:
+		frappe.throw(
+			_("The exact signatory row is required."),
+			frappe.ValidationError,
+		)
+
+	contract_doc, signatory_row = _load_signatory(contract, role, row_name)
+	status = " ".join(frappe.utils.cstr(signatory_row.status or "").lower().split())
+	if (
+		status in ("signed", "completed", "complete", "fully signed")
+		or getattr(signatory_row, "signature_data", None)
+		or getattr(signatory_row, "signed_at", None)
+	):
+		frappe.throw(
+			_("This signatory has already signed and cannot be removed."),
+			frappe.ValidationError,
+		)
+
+	removed_email = frappe.utils.cstr(signatory_row.signatory_email or "").strip().lower()
+	removed_name = frappe.utils.cstr(signatory_row.signatory_name or "").strip()
+	contract_doc.remove(signatory_row)
+	contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	log_deal_event(
+		contract_doc.deal,
+		"Co-signatory %s (%s) removed from contract %s before signing"
+		% (role, removed_email or removed_name, contract),
+	)
+	frappe.db.commit()
+
+	# Removing the last pending party can make a contract fully executable. Reuse
+	# the normal idempotent transition so state and approval notifications remain
+	# consistent with a real signature event.
+	_transition(contract)
+
+	return {"status": "removed", "role": role, "email": removed_email}
 
 
 def _sync_network_signer_on_contract(contract, name, email, phone, original_email):

@@ -328,6 +328,7 @@ const links = [
     label: 'Item Catalogue',
     icon: OptInIcon,
     to: 'NetworkPricing',
+    condition: () => isManager(),
     gated: true,
   },
   {
@@ -473,9 +474,10 @@ const { users, isManager, isAdmin, isSalesUser } = usersStore()
 // A `gated` nav item is visible-but-disabled (never hidden — project rule) when
 // the user lacks read access. CRM Opt-In Submission grants read to System
 // Manager + Sales User; mirrors the role-helper gating already used for other
-// sidebar items (e.g. Clear Demo Data → isManager()).
+// sidebar items (e.g. Clear Demo Data → isManager()). Managers also need access
+// to manager-only catalogue and Opt-In administration surfaces.
 function isLinkDisabled(link) {
-  return !!link.gated && !(isAdmin() || isSalesUser())
+  return !!link.gated && !(isAdmin() || isSalesUser() || isManager())
 }
 const { isOnboardingStepsCompleted, setUp } = useOnboarding('frappecrm')
 

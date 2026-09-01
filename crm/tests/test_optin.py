@@ -12,13 +12,18 @@ from crm.api.contracts import (
 	_facility_name_for_contract,
 	_generate_invitation_email_reference,
 	_issue_and_send_invitation,
+	_network_signers,
 	_notify_internal_approvers,
 	_save_otp_state,
 	_send_contract_sms,
+	_tiberbu_signer,
 	_transition,
 	generate,
 	get_contract,
+	get_network_signatories,
+	remove_signatory,
 	request_otp,
+	resend_invitation,
 )
 from crm.api.optin import (
 	_KEPH_MAP,
@@ -30,6 +35,7 @@ from crm.api.optin import (
 	_process_submission,
 	_queue_confirmation_email,
 	_submission_matches_facility_filter,
+	get_pricing,
 	list_submissions,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
@@ -64,6 +70,70 @@ class TestOptInNegotiatedPricing(UnitTestCase):
 		for price_list, (level_3c_rate, level_5a_rate) in expected_rates.items():
 			self.assertEqual(PRICE_LISTS[price_list]["CV-HIMS-KEPH-3C"], level_3c_rate)
 			self.assertEqual(PRICE_LISTS[price_list]["CV-HIMS-KEPH-5A"], level_5a_rate)
+
+	def test_facility_membership_price_list_overrides_network_default(self):
+		facilities = [
+			frappe._dict(
+				{
+					"mfl_code": "1001",
+					"facility_name": "Network-priced Clinic",
+					"keph_level": "Level 3",
+					"price_list_override": "",
+				}
+			),
+			frappe._dict(
+				{
+					"mfl_code": "1002",
+					"facility_name": "Facility-negotiated Hospital",
+					"keph_level": "Level 5",
+					"price_list_override": "Negotiated Year 2",
+				}
+			),
+		]
+
+		def item_prices(_doctype, **kwargs):
+			price_list = kwargs["filters"]["price_list"]
+			return [frappe._dict({"price_list_rate": 100 if price_list == "Negotiated Year 1" else 200})]
+
+		def tax_totals(value, tax_template=None):
+			return SimpleNamespace(
+				net_total=value,
+				vat_amount=0,
+				grand_total=value,
+				template=tax_template or "VAT",
+				vat_rate=16,
+				vat_label="VAT",
+			)
+
+		with (
+			patch("crm.api.optin._validate_signing_token"),
+			patch("crm.api.optin._decode_deal_invitation", return_value=None),
+			patch(
+				"crm.api.optin._get_network_doc",
+				return_value=frappe._dict({"price_list_override": "Negotiated Year 1"}),
+			),
+			patch(
+				"crm.api.optin.frappe.get_single",
+				return_value=frappe._dict({"default_price_list": "Negotiated Year 1"}),
+			),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin._get_all_memberships", return_value=facilities),
+			patch("crm.api.optin._get_quoted_facility_map", return_value={}),
+			patch("crm.api.optin.frappe.get_list", side_effect=item_prices),
+			patch("crm.api.optin.calculate_vat_totals", side_effect=tax_totals),
+		):
+			result = get_pricing(
+				"token",
+				"jane@example.com",
+				"network-a",
+				9999999999,
+				["1001", "1002"],
+			)
+
+		self.assertEqual(
+			[row["price_list"] for row in result["facilities"]],
+			["Negotiated Year 1", "Negotiated Year 2"],
+		)
 
 
 class TestOptInSynchronousProcessor(UnitTestCase):
@@ -145,6 +215,87 @@ class TestOptInConfirmationEmail(UnitTestCase):
 		self.assertEqual(sendmail.call_args.kwargs["reference_doctype"], "CRM Opt-In Submission")
 		self.assertEqual(sendmail.call_args.kwargs["reference_name"], submission.name)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
+
+
+class TestOptInTiberbuContacts(UnitTestCase):
+	def test_network_signers_collapse_duplicate_email_rows(self):
+		rows = [
+			frappe._dict({"full_name": "Network Reviewer", "email": "Reviewer@Example.com", "phone": ""}),
+			frappe._dict({"full_name": "", "email": " reviewer@example.com ", "phone": "+254700000001"}),
+			frappe._dict({"full_name": "Another Reviewer", "email": "other@example.com", "phone": ""}),
+		]
+		with (
+			patch("crm.api.contracts.frappe.db.exists", return_value=True),
+			patch("crm.api.contracts.frappe.get_list", return_value=rows),
+		):
+			result = _network_signers("network-a")
+
+		self.assertEqual(
+			result,
+			[
+				{"full_name": "Network Reviewer", "email": "reviewer@example.com", "phone": "+254700000001"},
+				{"full_name": "Another Reviewer", "email": "other@example.com", "phone": ""},
+			],
+		)
+
+	def test_quoting_page_resolves_the_global_tiberbu_contact(self):
+		contact = {
+			"full_name": "Tiberbu Signer",
+			"email": "signer@tiberbu.example",
+			"phone": "+254700000010",
+		}
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts._resolve_network_slug", return_value="network-a"),
+			patch("crm.api.contracts._network_signers", return_value=[]),
+			patch("crm.api.contracts._tiberbu_signer", return_value=contact),
+		):
+			result = get_network_signatories(deal="DEAL-TEST-00001")
+
+		self.assertEqual(result["network_slug"], "network-a")
+		self.assertEqual(
+			result["signers"],
+			[{**contact, "signer_role": "Tiberbu Signatory"}],
+		)
+
+	def test_tiberbu_signatory_contact_settings_are_used_without_a_user(self):
+		settings = frappe._dict(
+			{
+				"tiberbu_signatory": "",
+				"tiberbu_signatory_name": "Tiberbu Signer",
+				"tiberbu_signatory_email": "Signer@tiberbu.example",
+				"tiberbu_signatory_phone": "+254700000010",
+			}
+		)
+		with patch("crm.api.contracts._load_optin_settings_safely", return_value=settings):
+			self.assertEqual(
+				_tiberbu_signer(),
+				{
+					"full_name": "Tiberbu Signer",
+					"email": "signer@tiberbu.example",
+					"phone": "+254700000010",
+				},
+			)
+
+	def test_tiberbu_signatory_user_setting_remains_a_fallback(self):
+		settings = frappe._dict(
+			{
+				"tiberbu_signatory": "tiberbu.user@example.com",
+				"tiberbu_signatory_name": "",
+				"tiberbu_signatory_email": "",
+				"tiberbu_signatory_phone": "",
+			}
+		)
+		identity = {
+			"full_name": "Tiberbu User",
+			"email": "tiberbu.user@example.com",
+			"phone": "+254700000011",
+		}
+		with (
+			patch("crm.api.contracts._load_optin_settings_safely", return_value=settings),
+			patch("crm.api.contracts._resolve_user_identity", return_value=identity),
+		):
+			self.assertEqual(_tiberbu_signer(), identity)
 
 
 class TestOptInTermsPrinting(UnitTestCase):
@@ -343,6 +494,61 @@ class TestOptInContractAutomation(UnitTestCase):
 			"MediCare Hospital — Contract ready for signature · Invitation ID REF-ONE",
 		)
 
+	def test_intentional_reminder_invitation_is_marked_in_subject(self):
+		contract = SimpleNamespace(
+			name="CONT-TEST-00001", deal="DEAL-TEST-00001", network_slug="", save=Mock()
+		)
+		signatory = SimpleNamespace(
+			signatory_role="Facility Signatory",
+			signatory_name="Jane Signatory",
+			signatory_email="jane@example.com",
+		)
+		queue = SimpleNamespace(name="Email Queue-TEST-00002")
+
+		with (
+			patch("crm.api.contracts._gen_token", return_value="reminder-token"),
+			patch("crm.api.contracts._generate_invitation_email_reference", return_value="REF-REMINDER"),
+			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch("crm.api.contracts._facility_name_for_contract", return_value="MediCare Hospital"),
+			patch("crm.api.contracts.branded_email_html", return_value="email"),
+			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
+			patch("crm.api.contracts._send_contract_sms", return_value="Not Available"),
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			_issue_and_send_invitation(contract, signatory, commit=False, reminder=True)
+
+		self.assertEqual(
+			sendmail.call_args.kwargs["subject"],
+			"[Reminder] MediCare Hospital — Contract ready for signature · Invitation ID REF-REMINDER",
+		)
+		self.assertTrue(sendmail.call_args.kwargs["now"])
+
+	def test_resend_invitation_marks_follow_up_as_reminder(self):
+		row = SimpleNamespace(
+			name="ROW-TEST-00004",
+			signatory_role="Network Signatory",
+			signatory_name="Network Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+			invite_token="active-token",
+		)
+		contract = SimpleNamespace(
+			name="CONT-TEST-00004",
+			deal="DEAL-TEST-00004",
+			signatories=[row],
+		)
+
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts._issue_and_send_invitation") as issue,
+			patch("crm.api.contracts.log_deal_event"),
+		):
+			result = resend_invitation(contract.name, row.signatory_role, row.name)
+
+		self.assertEqual(result, {"status": "sent", "email": "reviewer@example.com"})
+		issue.assert_called_once_with(contract, row, reminder=True)
+
 	def test_resending_invitation_changes_inbox_identifier(self):
 		contract = SimpleNamespace(
 			name="CONT-TEST-00001", deal="DEAL-TEST-00001", network_slug="", save=Mock()
@@ -515,6 +721,75 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertEqual(send_sms.call_args.args[1].signatory_name, "Tiberbu Reviewer")
 		self.assertEqual(send_sms.call_args.args[1].signatory_phone, "+254700000002")
 
+	def test_unsigned_cosignatory_can_be_removed_from_current_contract(self):
+		row = SimpleNamespace(
+			name="ROW-NETWORK-00001",
+			signatory_role="Network Signatory",
+			signatory_name="Network Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+			signature_data=None,
+			signed_at=None,
+		)
+		contract = SimpleNamespace(
+			name="CONT-TEST-00005",
+			deal="DEAL-TEST-00005",
+			signatories=[row],
+			remove=Mock(),
+			save=Mock(),
+		)
+
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+			patch("crm.api.contracts._transition") as transition,
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			result = remove_signatory(
+				contract.name,
+				"Network Signatory",
+				row.name,
+			)
+
+		self.assertEqual(
+			result,
+			{"status": "removed", "role": "Network Signatory", "email": "reviewer@example.com"},
+		)
+		contract.remove.assert_called_once_with(row)
+		contract.save.assert_called_once_with(ignore_permissions=True)
+		transition.assert_called_once_with(contract.name)
+		self.assertIn("removed from contract", log_event.call_args.args[1])
+
+	def test_signed_cosignatory_cannot_be_removed_even_with_pending_status(self):
+		row = SimpleNamespace(
+			name="ROW-TIBERBU-00001",
+			signatory_role="Tiberbu Signatory",
+			signatory_name="Tiberbu Reviewer",
+			signatory_email="reviewer@tiberbu.example",
+			status="Pending",
+			signature_data="captured-signature",
+			signed_at=None,
+		)
+		contract = SimpleNamespace(
+			name="CONT-TEST-00006",
+			deal="DEAL-TEST-00006",
+			signatories=[row],
+			remove=Mock(),
+			save=Mock(),
+		)
+
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+		):
+			with self.assertRaises(frappe.ValidationError) as raised:
+				remove_signatory(contract.name, "Tiberbu Signatory", row.name)
+
+		self.assertIn("already signed", str(raised.exception).lower())
+		contract.remove.assert_not_called()
+		contract.save.assert_not_called()
+
 	def test_first_facility_signature_invites_every_remaining_signatory_together(self):
 		facility = SimpleNamespace(
 			signatory_role="Facility Signatory", status="Signed", invite_token="original"
@@ -533,7 +808,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			row.invite_token = "issued-%s" % row.signatory_role
 
 		with (
-			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract) as get_doc,
 			patch("crm.api.contracts._issue_and_send_invitation", side_effect=issue_invitation) as issue,
 			patch("crm.api.contracts._set_contract_state") as set_state,
 			patch("crm.api.contracts._notify_internal_approvers"),
@@ -543,6 +818,8 @@ class TestOptInContractAutomation(UnitTestCase):
 			_transition(contract.name)
 
 		self.assertEqual(issue.call_count, 3)
+		self.assertEqual(get_doc.call_count, 2)
+		self.assertTrue(all(call.kwargs.get("for_update") for call in get_doc.call_args_list))
 		self.assertEqual([call.args[1] for call in issue.call_args_list], [witness, network, tiberbu])
 		set_state.assert_called_once_with(contract, "Awaiting Remaining Signatures")
 		log_event.assert_called_once()

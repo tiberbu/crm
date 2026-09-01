@@ -451,6 +451,9 @@ def get_optin_settings():
 		"active_tc_document": settings.active_tc_document or "",
 		"default_lead_owner": settings.default_lead_owner or "",
 		"tiberbu_signatory": settings.tiberbu_signatory or "",
+		"tiberbu_signatory_name": settings.get("tiberbu_signatory_name") or "",
+		"tiberbu_signatory_email": settings.get("tiberbu_signatory_email") or "",
+		"tiberbu_signatory_phone": settings.get("tiberbu_signatory_phone") or "",
 		"tiberbu_approver_name": settings.get("tiberbu_approver_name") or "",
 		"tiberbu_approver_email": settings.get("tiberbu_approver_email") or "",
 		"tiberbu_approver_phone": settings.get("tiberbu_approver_phone") or "",
@@ -469,6 +472,9 @@ def update_optin_settings(settings: Any):
 	active_tc_document = frappe.utils.cstr(settings.get("active_tc_document")).strip()
 	default_lead_owner = frappe.utils.cstr(settings.get("default_lead_owner")).strip()
 	tiberbu_signatory = frappe.utils.cstr(settings.get("tiberbu_signatory")).strip()
+	tiberbu_signatory_name = frappe.utils.cstr(settings.get("tiberbu_signatory_name")).strip()
+	tiberbu_signatory_email = frappe.utils.cstr(settings.get("tiberbu_signatory_email")).strip().lower()
+	tiberbu_signatory_phone = frappe.utils.cstr(settings.get("tiberbu_signatory_phone")).strip()
 	tiberbu_approver_name = frappe.utils.cstr(settings.get("tiberbu_approver_name")).strip()
 	tiberbu_approver_email = frappe.utils.cstr(settings.get("tiberbu_approver_email")).strip().lower()
 	tiberbu_approver_phone = frappe.utils.cstr(settings.get("tiberbu_approver_phone")).strip()
@@ -486,6 +492,10 @@ def update_optin_settings(settings: Any):
 	for field, user in (("Default Lead Owner", default_lead_owner), ("Tiberbu Signatory", tiberbu_signatory)):
 		if user and not frappe.db.exists("User", {"name": user, "enabled": 1}):
 			frappe.throw(_("{0} must be an enabled user.").format(field))
+	if any((tiberbu_signatory_name, tiberbu_signatory_email, tiberbu_signatory_phone)) and not all(
+		(tiberbu_signatory_name, tiberbu_signatory_email)
+	):
+		frappe.throw(_("Default Tiberbu signatory name and email are required when using a contact."))
 	if any((tiberbu_approver_name, tiberbu_approver_email, tiberbu_approver_phone)) and not all(
 		(tiberbu_approver_name, tiberbu_approver_email, tiberbu_approver_phone)
 	):
@@ -499,6 +509,9 @@ def update_optin_settings(settings: Any):
 	doc.active_tc_document = active_tc_document
 	doc.default_lead_owner = default_lead_owner
 	doc.tiberbu_signatory = tiberbu_signatory
+	doc.tiberbu_signatory_name = tiberbu_signatory_name
+	doc.tiberbu_signatory_email = tiberbu_signatory_email
+	doc.tiberbu_signatory_phone = tiberbu_signatory_phone
 	doc.tiberbu_approver_name = tiberbu_approver_name
 	doc.tiberbu_approver_email = tiberbu_approver_email
 	doc.tiberbu_approver_phone = tiberbu_approver_phone
@@ -530,6 +543,53 @@ def _get_negotiated_price_list(name):
 	return price_list
 
 
+def _price_list_assignments():
+	"""Return effective price-list assignments for network facility memberships."""
+	membership_fields = ["parent", "network"]
+	try:
+		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
+			membership_fields.append("price_list_override")
+	except Exception:
+		pass
+	memberships = frappe.get_list(
+		"CRM Facility Membership",
+		filters={"parenttype": "CRM Pre-Qualified Facility"},
+		fields=membership_fields,
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: scope metadata for managers
+	)
+	networks = frappe.get_list(
+		"CRM Opt-In Network",
+		fields=["name", "slug", "price_list_override"],
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: scope metadata for managers
+	)
+	network_lists = {
+		network.name: {
+			"slug": network.get("slug") or network.name,
+			"price_list": network.get("price_list_override") or "",
+		}
+		for network in networks
+	}
+	default_price_list = (
+		frappe.db.get_single_value("CRM Opt-In Settings", "default_price_list") or "Negotiated Year 1"
+	)
+	assignments = {}
+	for membership in memberships:
+		network = network_lists.get(membership.network, {})
+		price_list = membership.get("price_list_override") or network.get("price_list") or default_price_list
+		if not price_list or not membership.parent:
+			continue
+		assignment = assignments.setdefault(
+			price_list,
+			{"facilities": set(), "networks": set(), "facility_networks": set()},
+		)
+		assignment["facilities"].add(membership.parent)
+		assignment["networks"].add(network.get("slug") or membership.network)
+		assignment["facility_networks"].add((membership.parent, network.get("slug") or membership.network))
+	return assignments
+
+
 @frappe.whitelist()
 def list_negotiated_price_lists():
 	"""Return enabled negotiated selling price lists for opt-in configuration."""
@@ -538,11 +598,142 @@ def list_negotiated_price_lists():
 	rows = frappe.get_list(
 		"Price List",
 		filters=[["selling", "=", 1], ["enabled", "=", 1], ["name", "like", "Negotiated%"]],
-		fields=["name", "currency"],
+		fields=["name", "currency", "creation", "modified", "owner", "modified_by"],
 		order_by="name asc",
 		limit_page_length=0,
 	)
-	return [{"value": row.name, "label": row.name, "currency": row.currency} for row in rows]
+
+	assignments = _price_list_assignments()
+
+	return [
+		{
+			"value": row.name,
+			"label": row.name,
+			"currency": row.currency,
+			"creation": row.creation,
+			"modified": row.modified,
+			"owner": row.owner,
+			"modified_by": row.modified_by,
+			"facility_count": len(assignments.get(row.name, {}).get("facilities", set())),
+			"network_count": len(assignments.get(row.name, {}).get("networks", set())),
+		}
+		for row in rows
+	]
+
+
+@frappe.whitelist()
+def list_price_list_facilities(price_list: Any):
+	"""Return facilities using a negotiated list, including their network scope."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	price_list = _get_negotiated_price_list(price_list)
+	assignment = _price_list_assignments().get(price_list.name, {})
+	pairs = assignment.get("facility_networks", set())
+	if not pairs:
+		return []
+	facility_names = {facility for facility, _network in pairs}
+	facilities = {
+		row.name: row
+		for row in frappe.get_list(
+			"CRM Pre-Qualified Facility",
+			filters={"name": ["in", list(facility_names)]},
+			fields=["name", "facility_name", "organization", "mfl_code", "keph_level"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: manager catalogue scope
+		)
+	}
+	return [
+		{
+			"name": facility_name,
+			"facility_name": facilities[facility_name].facility_name,
+			"organization": facilities[facility_name].organization or facilities[facility_name].facility_name,
+			"mfl_code": facilities[facility_name].mfl_code,
+			"keph_level": facilities[facility_name].keph_level,
+			"network": network,
+			"price_list": price_list.name,
+		}
+		for facility_name, network in sorted(
+			pairs,
+			key=lambda pair: (
+				facilities.get(pair[0], {}).get("facility_name", pair[0]),
+				pair[1],
+			),
+		)
+		if facility_name in facilities
+	]
+
+
+@frappe.whitelist()
+def get_facility_sample_quote(facility: Any, network: Any = None, price_list: Any = None):
+	"""Return a non-persisted quotation preview for a facility and price list."""
+	facility = frappe.utils.cstr(facility).strip()
+	network = frappe.utils.cstr(network).strip()
+	if not facility:
+		frappe.throw(_("A facility is required."))
+	if not _is_admin() and network:
+		_assert_network_access(network)
+	if not _is_admin() and not network:
+		frappe.throw(_("A network is required."), frappe.PermissionError)
+
+	facility_doc = frappe.get_doc("CRM Pre-Qualified Facility", facility)
+	membership = next(
+		(member for member in facility_doc.memberships or [] if not network or member.network == network),
+		None,
+	)
+	if not membership:
+		frappe.throw(_("This facility is not attached to the selected network."))
+
+	network_doc = None
+	if network:
+		network_rows = frappe.get_list(
+			"CRM Opt-In Network",
+			filters={"slug": network, "enabled": 1},
+			fields=["name", "slug", "display_name", "price_list_override"],
+			limit_page_length=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: access was checked above
+		)
+		if not network_rows:
+			frappe.throw(_("Network not found."))
+		network_doc = network_rows[0]
+
+	settings_default = frappe.db.get_single_value("CRM Opt-In Settings", "default_price_list")
+	selected_price_list = (
+		frappe.utils.cstr(price_list).strip()
+		or membership.get("price_list_override")
+		or (network_doc.get("price_list_override") if network_doc else "")
+		or settings_default
+		or "Negotiated Year 1"
+	)
+	if not frappe.db.exists("Price List", {"name": selected_price_list, "selling": 1, "enabled": 1}):
+		frappe.throw(_("The selected price list is not enabled."))
+
+	from crm.api.optin import _keph_to_item_code
+	from crm.api.quotes import _get_item_price
+	from crm.utils.quotation_tax import calculate_vat_totals
+
+	item_code = _keph_to_item_code(facility_doc.keph_level)
+	monthly_net = _get_item_price(item_code, selected_price_list)
+	monthly_totals = calculate_vat_totals(monthly_net)
+	annual_net = round(monthly_net * 12, 2)
+	annual_totals = calculate_vat_totals(annual_net)
+	return {
+		"facility": facility_doc.facility_name,
+		"organization": facility_doc.organization or facility_doc.facility_name,
+		"mfl_code": facility_doc.mfl_code,
+		"keph_level": facility_doc.keph_level,
+		"network": network_doc.display_name if network_doc else network,
+		"price_list": selected_price_list,
+		"item_code": item_code,
+		"item_name": frappe.db.get_value("Item", item_code, "item_name") or item_code,
+		"monthly_net": monthly_totals.net_total,
+		"monthly_vat": monthly_totals.vat_amount,
+		"monthly_gross": monthly_totals.grand_total,
+		"annual_net": annual_totals.net_total,
+		"annual_vat": annual_totals.vat_amount,
+		"annual_gross": annual_totals.grand_total,
+		"vat_rate": monthly_totals.vat_rate,
+		"vat_label": monthly_totals.vat_label,
+	}
 
 
 @frappe.whitelist()
@@ -578,6 +769,35 @@ def list_sellable_items(search: Any = None):
 
 
 @frappe.whitelist()
+def create_sellable_item(item_code: Any, item_name: Any, stock_uom: Any = "Nos"):
+	"""Create a sales item from the Opt-In catalogue without exposing ERPNext CRUD."""
+	if not _is_admin():
+		frappe.throw("Not permitted", frappe.PermissionError)
+	item_code = frappe.utils.cstr(item_code or "").strip()
+	item_name = frappe.utils.cstr(item_name or "").strip()
+	stock_uom = frappe.utils.cstr(stock_uom or "Nos").strip() or "Nos"
+	if not item_code or not item_name:
+		frappe.throw("Item code and item name are required.")
+	if frappe.db.exists("Item", item_code):
+		frappe.throw("An item with this code already exists.")
+
+	item = frappe.get_doc(
+		{
+			"doctype": "Item",
+			"item_code": item_code,
+			"item_name": item_name,
+			"item_group": "Services",
+			"stock_uom": stock_uom,
+			"is_sales_item": 1,
+			"is_stock_item": 0,
+		}
+	)
+	item.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+	return {"value": item.name, "item_name": item.item_name, "stock_uom": item.stock_uom}
+
+
+@frappe.whitelist()
 def create_negotiated_price_list(name: Any):
 	"""Create an empty, KES-denominated negotiated selling price list."""
 	if not _is_admin():
@@ -600,6 +820,77 @@ def create_negotiated_price_list(name: Any):
 	price_list.insert(ignore_permissions=True)
 	frappe.db.commit()
 	return {"name": price_list.name}
+
+
+@frappe.whitelist()
+def duplicate_negotiated_price_list(source: Any, name: Any):
+	"""Copy a negotiated selling price list and all of its item prices."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	source = _get_negotiated_price_list(source)
+	name = frappe.utils.cstr(name).strip()
+	if not name.startswith("Negotiated"):
+		frappe.throw(_("Negotiated price lists must begin with 'Negotiated'."))
+	if frappe.db.exists("Price List", name):
+		frappe.throw(_("A price list with this name already exists."))
+
+	price_list = frappe.get_doc(
+		{
+			"doctype": "Price List",
+			"price_list_name": name,
+			"currency": source.currency or "KES",
+			"selling": 1,
+			"buying": 0,
+			"enabled": 1,
+		}
+	)
+	price_list.insert(ignore_permissions=True)
+
+	# Keep the fields that describe an Item Price across ERPNext v15/v16. The
+	# common fields are enough for the editor, while dates/customer/batch context
+	# preserve a complete copy when those optional columns exist on the site.
+	item_price_fields = [
+		"item_code",
+		"uom",
+		"packing_unit",
+		"item_name",
+		"brand",
+		"item_description",
+		"customer",
+		"supplier",
+		"batch_no",
+		"currency",
+		"price_list_rate",
+		"valid_from",
+		"lead_time_days",
+		"valid_upto",
+		"note",
+		"reference",
+	]
+	available_fields = set(frappe.get_meta("Item Price").get_fieldnames())
+	source_rows = frappe.get_list(
+		"Item Price",
+		filters={"price_list": source.name, "selling": 1},
+		fields=["name", *[field for field in item_price_fields if field in available_fields]],
+		order_by="item_code asc, name asc",
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL
+	)
+	for source_row in source_rows:
+		values = {
+			field: source_row.get(field)
+			for field in item_price_fields
+			if field in available_fields and source_row.get(field) is not None
+		}
+		values.update({"doctype": "Item Price", "price_list": price_list.name, "selling": 1, "buying": 0})
+		if not values.get("currency"):
+			values["currency"] = price_list.currency or "KES"
+		if not values.get("uom"):
+			values["uom"] = frappe.db.get_value("Item", values["item_code"], "stock_uom") or "Nos"
+		frappe.get_doc(values).insert(ignore_permissions=True)
+
+	frappe.db.commit()
+	return {"name": price_list.name, "source": source.name, "copied": len(source_rows)}
 
 
 @frappe.whitelist()
@@ -632,6 +923,56 @@ def save_item_price(price_list: Any, item_code: Any, rate: Any):
 	item_price.save(ignore_permissions=True)
 	frappe.db.commit()
 	return {"name": item_price.name}
+
+
+@frappe.whitelist()
+def save_item_prices(price_list: Any, prices: Any):
+	"""Create/update several Item Prices in one atomic Opt-In catalogue action."""
+	if not _is_admin():
+		frappe.throw("Not permitted", frappe.PermissionError)
+	if isinstance(prices, str):
+		try:
+			prices = json.loads(prices)
+		except (TypeError, ValueError):
+			frappe.throw("Prices must be a list.")
+	if not isinstance(prices, list):
+		frappe.throw("Prices must be a list.")
+
+	price_list = _get_negotiated_price_list(price_list)
+	saved = 0
+	seen = set()
+	for row in prices:
+		if not isinstance(row, dict):
+			continue
+		item_code = frappe.utils.cstr(row.get("item_code") or "").strip()
+		if not item_code or item_code in seen:
+			continue
+		seen.add(item_code)
+		if not frappe.db.exists("Item", item_code):
+			frappe.throw("Item not found: %s" % item_code)
+		try:
+			rate = float(row.get("rate"))
+		except (TypeError, ValueError):
+			frappe.throw("Enter a valid price for %s." % item_code)
+		if not math.isfinite(rate) or rate < 0:
+			frappe.throw("Enter a non-negative finite price for %s." % item_code)
+
+		existing = frappe.db.exists(
+			"Item Price", {"price_list": price_list.name, "item_code": item_code, "selling": 1}
+		)
+		item_price = frappe.get_doc("Item Price", existing) if existing else frappe.new_doc("Item Price")
+		item_price.price_list = price_list.name
+		item_price.item_code = item_code
+		item_price.price_list_rate = rate
+		item_price.currency = price_list.currency or "KES"
+		item_price.selling = 1
+		item_price.buying = 0
+		item_price.uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
+		item_price.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		saved += 1
+
+	frappe.db.commit()
+	return {"name": price_list.name, "saved": saved}
 
 
 # ---------------------------------------------------------------------------
@@ -690,21 +1031,28 @@ def list_facilities(
 			["contact_phone", "like", contact_like],
 		]
 
+	membership_fields = [
+		"name",
+		"parent",
+		"network",
+		"status",
+		"contact_name",
+		"contact_email",
+		"contact_phone",
+		"invite_email_queue",
+		"invite_sent_at",
+	]
+	try:
+		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
+			membership_fields.insert(3, "price_list_override")
+	except Exception:
+		pass
+
 	mem_rows = frappe.get_list(
 		"CRM Facility Membership",
 		filters=mem_filters,
 		or_filters=contact_or_filters,
-		fields=[
-			"name",
-			"parent",
-			"network",
-			"status",
-			"contact_name",
-			"contact_email",
-			"contact_phone",
-			"invite_email_queue",
-			"invite_sent_at",
-		],
+		fields=membership_fields,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 		limit_page_length=0,
 	)
@@ -810,6 +1158,7 @@ def list_facilities(
 					{
 						"network": m.network,
 						"name": m.name,
+						"price_list_override": m.get("price_list_override") or "",
 						"status": m.status,
 						"contact_name": m.contact_name,
 						"contact_email": m.contact_email,
@@ -836,7 +1185,7 @@ def save_facility(data: Any):
 	  facility_name: str,
 	  organization?: str,  # blank defaults to the facility name
 	  keph_level: str,
-	  memberships: [{network, status, contact_name, contact_email, contact_phone}]
+	  memberships: [{network, price_list_override, status, contact_name, contact_email, contact_phone}]
 	}
 	Max 2 memberships enforced.
 	"""
@@ -854,6 +1203,13 @@ def save_facility(data: Any):
 	memberships = data.get("memberships") or []
 	if len(memberships) > 2:
 		frappe.throw(_("A facility may belong to at most 2 networks."))
+
+	for membership in memberships:
+		price_list_override = frappe.utils.cstr(membership.get("price_list_override") or "").strip()
+		if price_list_override and not frappe.db.exists(
+			"Price List", {"name": price_list_override, "selling": 1, "enabled": 1}
+		):
+			frappe.throw(_("Select an enabled selling price list for the facility override."))
 
 	name = data.get("name")
 	mfl_code = frappe.utils.cstr(data.get("mfl_code") or "").strip()
@@ -889,19 +1245,28 @@ def save_facility(data: Any):
 	new_network_set = {m.get("network") for m in memberships if m.get("network")}
 	# Remove membership rows for networks being replaced
 	doc.memberships = [m for m in (doc.memberships or []) if m.network not in new_network_set]
+	try:
+		membership_has_override = frappe.db.has_column("CRM Facility Membership", "price_list_override")
+	except Exception:
+		membership_has_override = False
 	for mem_data in memberships:
 		net = frappe.utils.cstr(mem_data.get("network") or "").strip()
 		if not net:
 			continue
+		membership_values = {
+			"network": net,
+			"status": mem_data.get("status") or "Active",
+			"contact_name": frappe.utils.cstr(mem_data.get("contact_name") or ""),
+			"contact_email": frappe.utils.cstr(mem_data.get("contact_email") or "").lower(),
+			"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
+		}
+		if membership_has_override:
+			membership_values["price_list_override"] = frappe.utils.cstr(
+				mem_data.get("price_list_override") or ""
+			).strip()
 		doc.append(
 			"memberships",
-			{
-				"network": net,
-				"status": mem_data.get("status") or "Active",
-				"contact_name": frappe.utils.cstr(mem_data.get("contact_name") or ""),
-				"contact_email": frappe.utils.cstr(mem_data.get("contact_email") or "").lower(),
-				"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
-			},
+			membership_values,
 		)
 
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
@@ -1021,15 +1386,16 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 	Expected CSV columns (order flexible, matched by header name):
 	  mfl_code, facility_name (optional — auto-filled from HFR if blank),
 	  keph_level (optional — auto-filled from HFR if blank),
-	  organization (optional — defaults to facility_name), contact_name,
-	  contact_email, contact_phone
+	  organization (optional — defaults to facility_name), price_list_override
+	  (optional — defaults to the network price list), contact_name, contact_email,
+	  contact_phone
 
 	Returns:
 	  {
 	    imported: int,
 	    valid_count: int,
 	    error_count: int,
-	    rows: [{row, mfl_code, facility_name, organization, contact_email, error}],
+	    rows: [{row, mfl_code, facility_name, organization, price_list_override, contact_email, error}],
 	    errors: [{row: int, mfl_code: str, message: str}],
 	    dry_run: bool
 	  }
@@ -1080,6 +1446,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		contact_name = row.get("contact_name", "")
 		contact_email = row.get("contact_email", "").lower()
 		contact_phone = row.get("contact_phone", "")
+		price_list_override = row.get("price_list_override", "")
 		facility_name = row.get("facility_name", "")
 		keph_level = row.get("keph_level", "")
 		preview = {
@@ -1087,6 +1454,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 			"mfl_code": mfl_code,
 			"facility_name": facility_name,
 			"organization": row.get("organization", ""),
+			"price_list_override": price_list_override,
 			"contact_email": contact_email,
 			"error": None,
 		}
@@ -1102,6 +1470,12 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 			error = "contact_email is required"
 		if not error and not contact_phone:
 			error = "contact_phone is required"
+		if (
+			not error
+			and price_list_override
+			and not frappe.db.exists("Price List", {"name": price_list_override, "selling": 1, "enabled": 1})
+		):
+			error = "price_list_override must be an enabled selling price list"
 
 		# HFR enrichment if fields missing. It is safe in preview mode because
 		# it does not write; it also ensures the count matches what can import.
@@ -1136,6 +1510,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 						"memberships": [
 							{
 								"network": network_slug,
+								"price_list_override": price_list_override,
 								"status": "Active",
 								"contact_name": contact_name,
 								"contact_email": contact_email,
@@ -1167,4 +1542,4 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 @frappe.whitelist()
 def csv_template():
 	"""Return the CSV template as a string for download."""
-	return "mfl_code,facility_name,organization,keph_level,contact_name,contact_email,contact_phone\n22999,Example Hospital,Example Hospital Group,Level 4,Jane Wanjiku,jane@hospital.co.ke,0722000000\n"
+	return "mfl_code,facility_name,organization,price_list_override,keph_level,contact_name,contact_email,contact_phone\n22999,Example Hospital,Example Hospital Group,,Level 4,Jane Wanjiku,jane@hospital.co.ke,0722000000\n"

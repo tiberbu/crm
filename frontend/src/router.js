@@ -138,6 +138,7 @@ const routes = [
     path: '/item-prices',
     name: 'NetworkPricing',
     component: () => import('@/pages/ItemPrices.vue'),
+    meta: { salesManagerOnly: true },
   },
   {
     path: '/opt-in-terms',
@@ -207,7 +208,7 @@ router.beforeEach(async (to, from, next) => {
   router.previousRoute = from
 
   const { isLoggedIn, user } = sessionStore()
-  const { users, isCrmUser, isAdmin } = usersStore()
+  const { users, isCrmUser, isAdmin, isManager } = usersStore()
 
   if (isLoggedIn && !users.fetched) {
     try {
@@ -218,6 +219,10 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const isAdminUser = isLoggedIn && (isAdmin() || user === 'Administrator')
+
+  if (isLoggedIn && to.meta?.salesManagerOnly && !isManager()) {
+    return next({ name: 'Not Permitted' })
+  }
 
   // Only admins who haven't finished may reach the wizard, even via direct URL.
   if (isLoggedIn && to.name === 'Onboarding') {
