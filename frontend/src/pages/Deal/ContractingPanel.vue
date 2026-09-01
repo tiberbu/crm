@@ -1850,14 +1850,21 @@ function coKey(role, email) {
 
 // Merge the contract's counterparty rows with configured co-signatories that are
 // not yet on the contract. `onContract` rows are edited via update_signatory; the
-// rest are added via add_signatory. All roles are deduped on email.
+// rest are added via add_signatory. Contract child rows stay independently
+// addressable even when legacy data contains repeated role/email pairs.
 const coSignatoryItems = computed(() => {
   const rows = (lc.value.signatories ?? []).filter((s) => isCoRole(s.role))
+  const excludedKeys = new Set(
+    (lc.value.contract?.excluded_signatories ?? []).map((s) =>
+      coKey(s.role, s.email),
+    ),
+  )
   const onContractKeys = new Set(
     rows.map((r) => coKey(r.role, r.email)).filter(Boolean),
   )
   const items = rows.map((r) => ({
-    key: coKey(r.role, r.email),
+    // Child row names keep repeated role/email rows independently addressable.
+    key: r.row_name ? `contract::${r.row_name}` : coKey(r.role, r.email),
     row_name: r.row_name,
     role: r.role,
     name: r.name,
@@ -1869,6 +1876,9 @@ const coSignatoryItems = computed(() => {
   for (const cs of coSigners.value) {
     const email = (cs.email ?? '').trim().toLowerCase()
     const role = cs.signer_role || 'Network Signatory'
+    // A removal is scoped to this contract. Keep the source configuration intact
+    // for future contracts without presenting the removed contact as re-addable.
+    if (excludedKeys.has(coKey(role, email))) continue
     // Skip config entries already represented by a contract row.
     if (email && onContractKeys.has(coKey(role, email))) {
       continue

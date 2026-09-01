@@ -49,7 +49,9 @@ const DesktopLayout = defineAsyncComponent(
 // Keep the shell in sync with viewport changes (orientation changes, split
 // view, and browser resizing). The old one-time width check left the CRM in
 // the wrong shell until a full reload.
-const isMobileShell = useIsMobile(640)
+// Keep the shell breakpoint aligned with the router/mobile page breakpoint so
+// tablet-sized viewports do not render a mobile page inside the desktop shell.
+const isMobileShell = useIsMobile(768)
 const Layout = computed(() =>
   isMobileShell.value ? MobileLayout : DesktopLayout,
 )

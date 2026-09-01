@@ -31,6 +31,7 @@ from crm.api.contracts import (
 	remove_signatory,
 	request_otp,
 	resend_invitation,
+	sync_configured_signatories,
 	update_signatory,
 )
 from crm.api.optin import (
@@ -336,7 +337,6 @@ class TestOptInTiberbuContacts(UnitTestCase):
 			],
 			save=Mock(),
 		)
-
 		with (
 			patch("crm.api.contracts._check_crm_role"),
 			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
@@ -938,6 +938,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		contract = SimpleNamespace(
 			name="CONT-TEST-00005",
 			deal="DEAL-TEST-00005",
+			excluded_signatories="",
 			signatories=[row],
 			remove=Mock(),
 			save=Mock(),
@@ -962,8 +963,96 @@ class TestOptInContractAutomation(UnitTestCase):
 		)
 		contract.remove.assert_called_once_with(row)
 		contract.save.assert_called_once_with(ignore_permissions=True)
+		self.assertEqual(
+			json.loads(contract.excluded_signatories),
+			[{"role": "Network Signatory", "email": "reviewer@example.com"}],
+		)
 		transition.assert_called_once_with(contract.name)
 		self.assertIn("removed from contract", log_event.call_args.args[1])
+
+	def test_duplicate_unsigned_rows_can_be_removed_one_at_a_time(self):
+		class ContractDoc(SimpleNamespace):
+			def remove(self, row):
+				self.signatories.remove(row)
+
+		rows = [
+			SimpleNamespace(
+				name="ROW-DUPLICATE-00001",
+				signatory_role="Network Signatory",
+				signatory_name="Duplicate Reviewer",
+				signatory_email="duplicate@example.com",
+				status="Pending",
+				signature_data=None,
+				signed_at=None,
+			),
+			SimpleNamespace(
+				name="ROW-DUPLICATE-00002",
+				signatory_role="Network Signatory",
+				signatory_name="Duplicate Reviewer",
+				signatory_email="duplicate@example.com",
+				status="Pending",
+				signature_data=None,
+				signed_at=None,
+			),
+		]
+		contract = ContractDoc(
+			name="CONT-TEST-DUPLICATES",
+			deal="DEAL-TEST-DUPLICATES",
+			excluded_signatories="",
+			signatories=rows,
+			save=Mock(),
+		)
+		first_row, second_row = rows
+
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts.log_deal_event"),
+			patch("crm.api.contracts._transition"),
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			remove_signatory(contract.name, "Network Signatory", first_row.name)
+			self.assertEqual([row.name for row in contract.signatories], [second_row.name])
+			remove_signatory(contract.name, "Network Signatory", second_row.name)
+
+		self.assertEqual(contract.signatories, [])
+		self.assertEqual(
+			json.loads(contract.excluded_signatories),
+			[{"role": "Network Signatory", "email": "duplicate@example.com"}],
+		)
+
+	def test_sync_does_not_resurrect_a_removed_configured_signatory(self):
+		contract = SimpleNamespace(
+			name="CONT-TEST-EXCLUSION",
+			network_slug="network-a",
+			excluded_signatories=json.dumps([{"role": "Network Signatory", "email": "reviewer@example.com"}]),
+			signatories=[],
+			append=Mock(),
+			save=Mock(),
+		)
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch(
+				"crm.api.contracts._network_signers",
+				return_value=[
+					{
+						"full_name": "Network Reviewer",
+						"email": "reviewer@example.com",
+						"phone": "",
+					}
+				],
+			),
+			patch("crm.api.contracts._tiberbu_signers", return_value=[]),
+			patch("crm.api.contracts.frappe.db.commit"),
+			patch("crm.api.contracts._transition"),
+		):
+			result = sync_configured_signatories(contract.name)
+
+		self.assertEqual(result["added"], 0)
+		self.assertEqual(result["updated"], 0)
+		contract.append.assert_not_called()
+		contract.save.assert_not_called()
 
 	def test_signed_cosignatory_cannot_be_removed_even_with_pending_status(self):
 		row = SimpleNamespace(

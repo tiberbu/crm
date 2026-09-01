@@ -38,10 +38,18 @@
   </LayoutHeader>
   <div
     v-if="doc.name"
-    class="flex h-12 items-center justify-between gap-2 border-b px-3 py-2.5"
+    class="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-3 py-2.5"
   >
     <AssignTo v-model="assignees.data" doctype="CRM Deal" :docname="dealId" />
-    <div class="flex items-center gap-2">
+    <div class="flex min-w-0 items-center gap-2 overflow-x-auto">
+      <Button
+        variant="solid"
+        size="sm"
+        icon="lucide-file-text"
+        :label="__('Quote')"
+        aria-label="Open quote"
+        @click="changeTabTo('quoting')"
+      />
       <CustomActions
         v-if="document._actions?.length"
         :actions="document._actions"
@@ -52,12 +60,12 @@
       />
     </div>
   </div>
-  <div v-if="doc.name" class="flex h-full overflow-hidden">
+  <div v-if="doc.name" class="flex min-h-0 h-full overflow-hidden">
     <Tabs
       v-model="tabIndex"
       as="div"
       :tabs="tabs"
-      class="flex flex-1 overflow-auto flex-col [&_[role='tab']]:px-0 [&_[role='tab']]:shrink-0 [&_[role='tablist']]:px-3 [&_[role='tablist']]:min-h-[45px] [&_[role='tablist']]:gap-7.5 [&_[role='tabpanel']:not([hidden])]:flex [&_[role='tabpanel']:not([hidden])]:grow"
+      class="crm-mobile-tabs flex min-h-0 flex-1 flex-col overflow-hidden [&_[role='tab']]:px-0 [&_[role='tab']]:shrink-0 [&_[role='tablist']]:px-3 [&_[role='tablist']]:min-h-[45px] [&_[role='tablist']]:gap-7.5 [&_[role='tabpanel']:not([hidden])]:flex [&_[role='tabpanel']:not([hidden])]:grow"
     >
       <template #tab-panel="{ tab }">
         <div v-if="tab.name == 'Details'">
@@ -437,6 +445,11 @@ const tabs = computed(() => {
       condition: () => isMobileView.value,
     },
     {
+      name: 'Quoting',
+      label: __('Quote'),
+      icon: AttachmentIcon,
+    },
+    {
       name: 'Activity',
       label: __('Activity'),
       icon: ActivityIcon,
@@ -483,15 +496,10 @@ const tabs = computed(() => {
       icon: WhatsAppIcon,
       condition: () => whatsappEnabled.value,
     },
-    {
-      name: 'Quoting',
-      label: __('Quoting'),
-      icon: AttachmentIcon,
-    },
   ]
   return tabOptions.filter((tab) => (tab.condition ? tab.condition() : true))
 })
-const { tabIndex } = useActiveTabManager(tabs, 'lastDealTab')
+const { tabIndex, changeTabTo } = useActiveTabManager(tabs, 'lastDealTab')
 
 const sections = createResource({
   url: 'crm.fcrm.doctype.crm_fields_layout.crm_fields_layout.get_sidepanel_sections',

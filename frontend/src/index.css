@@ -194,6 +194,63 @@ html {
   scrollbar-width: thin;
   scrollbar-color: var(--outline-gray-3) transparent;
 }
+
+/* Mobile shell and tab rails are deliberately scoped to the mobile-only
+   layout/pages. Desktop CRM surfaces keep their existing overflow and density. */
+.crm-mobile-shell {
+  height: 100vh;
+  height: 100dvh;
+  overscroll-behavior: none;
+}
+
+.crm-mobile-app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  align-items: center;
+  background: var(--glass-bg);
+  border-bottom: 1px solid var(--glass-border-color);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+}
+
+.crm-mobile-tabs {
+  overscroll-behavior: none;
+}
+
+.crm-mobile-tabs [role='tablist'] {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  max-width: 100%;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  white-space: nowrap;
+  background: var(--surface-white);
+  border-bottom: 1px solid var(--outline-gray-2);
+}
+
+.crm-mobile-tabs [role='tablist']::-webkit-scrollbar {
+  display: none;
+}
+
+.crm-mobile-tabs [role='tab'] {
+  min-height: 3rem;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.crm-mobile-tabs [role='tabpanel']:not([hidden]) {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

@@ -20,6 +20,8 @@ Rules enforced:
 
 from __future__ import annotations
 
+import json
+
 import frappe
 from frappe import _
 
@@ -34,7 +36,7 @@ def get_deal_lifecycle(deal: str) -> dict:
 	    {
 	      "submission":    {"ref", "status"} | None,
 	      "quotation":     {"name", "status", "docstatus", "grand_total", "price_list", "initial_price_list", "price_list_history"} | None,
-	      "contract":      {"name", "status", "workflow_state", "price_list"} | None,
+	      "contract":      {"name", "status", "workflow_state", "price_list", "excluded_signatories"} | None,
 	      "signatories":   [{"row_name", "role", "status", "signed_at", "name", "email"}],
 	      "onboarding":    {"name", "approval_status", "n1", "n2", "tiberbu"} | None,
 	      "sales_invoice": {"name", "docstatus", "outstanding"} | None,
@@ -124,6 +126,7 @@ def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
 		"negotiated_price_list",
 		"price_list_history",
 		"tiberbu_signing_requirement",
+		"excluded_signatories",
 	):
 		if frappe.db.has_column("CRM Contract", fieldname):
 			fields.append(fieldname)
@@ -138,6 +141,20 @@ def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
 		return None
 	r = rows[0]
 	price_history = read_history(r, "price_list_history")
+	excluded_signatories = []
+	try:
+		parsed_exclusions = json.loads(r.get("excluded_signatories") or "[]")
+		if isinstance(parsed_exclusions, list):
+			excluded_signatories = [
+				{
+					"role": frappe.utils.cstr(entry.get("role") or "").strip(),
+					"email": frappe.utils.cstr(entry.get("email") or "").strip().lower(),
+				}
+				for entry in parsed_exclusions
+				if isinstance(entry, dict) and entry.get("role") and entry.get("email")
+			]
+	except (TypeError, ValueError):
+		pass
 	initial = r.get("initial_price_list") or (quotation or {}).get("initial_price_list") or ""
 	negotiated = r.get("negotiated_price_list") or (quotation or {}).get("price_list") or initial
 	return {
@@ -145,6 +162,7 @@ def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
 		"status": r.status,
 		"workflow_state": r.workflow_state,
 		"tiberbu_signing_requirement": r.get("tiberbu_signing_requirement") or "All must sign",
+		"excluded_signatories": excluded_signatories,
 		"price_list": {
 			"initial": initial or negotiated,
 			"negotiated": negotiated or initial,
