@@ -45,3 +45,10 @@ negotiated-year prices from the approved rate card. It is idempotent and
 create-only: existing items, price lists, and Item Prices are never overwritten.
 The patch safely exits on CRM-only sites without ERPNext or without an Item
 Group available for the new service item.
+
+## Duplicate compatibility
+
+Duplicating a negotiated list reads the installed `Item Price` metadata through
+the cross-version `Meta.fields` surface. This works on Frappe v15 and v16; it does
+not depend on the removed `Meta.get_fieldnames()` method. Optional Item Price
+columns are copied only when present on the target site's schema.

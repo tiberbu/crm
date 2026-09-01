@@ -867,7 +867,13 @@ def duplicate_negotiated_price_list(source: Any, name: Any):
 		"note",
 		"reference",
 	]
-	available_fields = set(frappe.get_meta("Item Price").get_fieldnames())
+	# Meta.get_fieldnames() is not available on Frappe v15/v16 Meta objects.
+	# `fields` is the stable metadata surface across both versions.
+	available_fields = set()
+	for field in getattr(frappe.get_meta("Item Price"), "fields", []):
+		fieldname = frappe.utils.cstr(getattr(field, "fieldname", "")).strip()
+		if fieldname:
+			available_fields.add(fieldname)
 	source_rows = frappe.get_list(
 		"Item Price",
 		filters={"price_list": source.name, "selling": 1},

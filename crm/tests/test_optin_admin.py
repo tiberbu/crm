@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -275,12 +276,12 @@ class TestOptInPriceListTools(UnitTestCase):
 			patch("crm.api.optin_admin.frappe.get_list") as get_list,
 			patch("crm.api.optin_admin.frappe.get_doc", return_value=new_price_list) as get_doc,
 		):
-			get_meta.return_value.get_fieldnames.return_value = {
-				"item_code",
-				"uom",
-				"currency",
-				"price_list_rate",
-			}
+			get_meta.return_value = SimpleNamespace(
+				fields=[
+					frappe._dict({"fieldname": field})
+					for field in ("item_code", "uom", "currency", "price_list_rate")
+				]
+			)
 			get_list.return_value = [
 				frappe._dict(
 					{
