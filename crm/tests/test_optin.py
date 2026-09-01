@@ -8,6 +8,7 @@ from frappe.utils import add_days, random_string, today
 
 from crm.api.contracts import (
 	_build_contract_document_html,
+	_ensure_contract_signing_open,
 	_ensure_pending_signatory,
 	_facility_name_for_contract,
 	_generate_invitation_email_reference,
@@ -22,6 +23,8 @@ from crm.api.contracts import (
 	_tiberbu_signer,
 	_tiberbu_signers,
 	_transition,
+	add_signatory,
+	check_user_email,
 	generate,
 	get_contract,
 	get_network_signatories,
@@ -57,6 +60,33 @@ class TestOptInForecastFields(UnitTestCase):
 
 		self.assertEqual(fields["expected_deal_value"], 48_000.5)
 		self.assertEqual(fields["expected_closure_date"], add_days(today(), 30))
+
+
+class TestSignatoryUserLookup(UnitTestCase):
+	def test_check_user_email_reports_enabled_account(self):
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch(
+				"crm.api.contracts.frappe.get_list",
+				return_value=[frappe._dict({"email": "signer@example.com", "full_name": "A Signer"})],
+			) as get_list,
+		):
+			result = check_user_email(" Signer@Example.com ")
+
+		self.assertEqual(result, {"checked": True, "linked": True, "full_name": "A Signer"})
+		self.assertEqual(
+			get_list.call_args.kwargs["filters"],
+			{"email": "signer@example.com", "enabled": 1},
+		)
+
+	def test_check_user_email_treats_missing_account_as_external(self):
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_list", return_value=[]),
+		):
+			result = check_user_email("external@example.com")
+
+		self.assertEqual(result, {"checked": True, "linked": False, "full_name": ""})
 
 
 class TestOptInNegotiatedPricing(UnitTestCase):
@@ -289,6 +319,83 @@ class TestOptInTiberbuContacts(UnitTestCase):
 					email="changed@example.com",
 				)
 		self.assertIn("cannot be edited", str(raised.exception).lower())
+
+	def test_adding_signatory_reopens_stale_fully_executed_contract(self):
+		class ContractDoc(SimpleNamespace):
+			def append(self, _fieldname, values):
+				self.signatories.append(SimpleNamespace(**values))
+
+		contract = ContractDoc(
+			name="CONT-STALE-00001",
+			deal="DEAL-STALE-00001",
+			status="Fully Executed",
+			workflow_state="Fully Executed",
+			executed_contract_sent_at="2026-09-01 10:00:00",
+			signatories=[
+				SimpleNamespace(signatory_role="Facility Signatory", status="Signed"),
+			],
+			save=Mock(),
+		)
+
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts.frappe.db.commit"),
+			patch("crm.api.contracts.log_deal_event"),
+			patch("crm.api.contracts._transition"),
+		):
+			result = add_signatory(
+				contract.name,
+				"Tiberbu Signatory",
+				"New Reviewer",
+				"new-reviewer@example.com",
+			)
+
+		self.assertEqual(result["status"], "added")
+		self.assertEqual(contract.status, "Awaiting Signatures")
+		self.assertEqual(contract.workflow_state, "Awaiting Remaining Signatures")
+		self.assertIsNone(contract.executed_contract_sent_at)
+		self.assertEqual(contract.signatories[-1].status, "Pending")
+
+	def test_pending_signatory_can_repair_legacy_fully_executed_state(self):
+		contract = SimpleNamespace(
+			name="CONT-STALE-00002",
+			deal="DEAL-STALE-00002",
+			status="Fully Executed",
+			workflow_state="Fully Executed",
+			executed_contract_sent_at="2026-09-01 10:00:00",
+			signatories=[
+				SimpleNamespace(signatory_role="Facility Signatory", status="Signed"),
+				SimpleNamespace(signatory_role="Tiberbu Signatory", status="Pending"),
+			],
+			save=Mock(),
+		)
+
+		with (
+			patch("crm.api.contracts.frappe.db.commit"),
+			patch("crm.api.contracts.log_deal_event"),
+		):
+			_ensure_contract_signing_open(contract)
+
+		self.assertEqual(contract.status, "Awaiting Signatures")
+		self.assertEqual(contract.workflow_state, "Awaiting Remaining Signatures")
+		self.assertIsNone(contract.executed_contract_sent_at)
+		contract.save.assert_called_once_with(ignore_permissions=True)
+
+	def test_fully_executed_contract_with_no_pending_rows_stays_protected(self):
+		contract = SimpleNamespace(
+			name="CONT-EXECUTED-00002",
+			deal="DEAL-EXECUTED-00002",
+			status="Fully Executed",
+			signatories=[
+				SimpleNamespace(signatory_role="Facility Signatory", status="Signed"),
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			_ensure_contract_signing_open(contract)
+
+		self.assertIn("already been fully executed", str(raised.exception).lower())
 
 	def test_fully_executed_contract_pdf_is_sent_once_to_facility(self):
 		facility = SimpleNamespace(

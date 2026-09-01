@@ -136,9 +136,11 @@
             )
           }}
         </p>
-        <div class="mt-4 max-w-4xl rounded-lg border border-outline-gray-2">
+        <div
+          class="mt-4 w-full max-w-5xl overflow-hidden rounded-xl border border-outline-gray-2 bg-surface-white shadow-sm dark:bg-surface-gray-1"
+        >
           <div
-            class="grid grid-cols-[8rem_1fr_1.3fr_1fr_2.5rem] gap-2 border-b border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+            class="hidden grid-cols-[8rem_1fr_1.3fr_1fr_2.5rem] gap-3 border-b border-outline-gray-2 bg-surface-gray-1/80 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-gray-5 md:grid dark:bg-surface-gray-2"
           >
             <span>{{ __('Role') }}</span
             ><span>{{ __('Name') }}</span
@@ -148,61 +150,117 @@
           </div>
           <div
             v-if="!form.tiberbu_contacts.length"
-            class="px-3 py-4 text-sm text-ink-gray-5"
+            class="px-4 py-8 text-center text-sm text-ink-gray-5"
           >
-            {{
-              __('No table contacts yet. Add a signatory or approver below.')
-            }}
+            <div
+              class="mx-auto mb-2 grid size-9 place-items-center rounded-full bg-surface-gray-2 text-lg text-ink-gray-5 dark:bg-surface-gray-3"
+              aria-hidden="true"
+            >
+              +
+            </div>
+            <p class="font-medium text-ink-gray-7">
+              {{ __('No signing contacts yet') }}
+            </p>
+            <p class="mt-1 text-xs text-ink-gray-5">
+              {{ __('Add a signatory or approver to use on new contracts.') }}
+            </p>
           </div>
           <div
             v-for="(contact, index) in form.tiberbu_contacts"
             :key="contact._key || index"
-            class="grid grid-cols-[8rem_1fr_1.3fr_1fr_2.5rem] items-center gap-2 border-b border-outline-gray-2 px-3 py-2 last:border-b-0"
+            class="grid grid-cols-1 gap-3 border-b border-outline-gray-2 px-4 py-4 last:border-b-0 md:grid-cols-[8rem_1fr_1.3fr_1fr_2.5rem] md:items-center md:gap-3 md:px-3 md:py-2.5"
           >
-            <select
-              v-model="contact.role"
-              class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm"
-              @change="markDirty"
+            <div
+              class="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 md:contents"
             >
-              <option value="Signatory">{{ __('Signatory') }}</option>
-              <option value="Approver">{{ __('Approver') }}</option>
-            </select>
-            <input
-              v-model="contact.full_name"
-              type="text"
-              :placeholder="__('Full name')"
-              class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm"
-              @input="markDirty"
-            />
-            <input
-              v-model="contact.email"
-              type="email"
-              :placeholder="__('name@tiberbu.com')"
-              class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm"
-              @input="markDirty"
-            />
-            <input
-              v-model="contact.phone"
-              type="tel"
-              :placeholder="__('+254 7xx xxx xxx')"
-              class="rounded-md border border-outline-gray-2 bg-surface-white px-2 py-2 text-sm"
-              @input="markDirty"
-            />
-            <button
-              type="button"
-              class="grid size-8 place-items-center rounded-md text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-red-5"
-              :aria-label="__('Remove contact')"
-              @click="removeContact(index)"
+              <span class="text-xs font-medium text-ink-gray-5 md:hidden">
+                {{ __('Role') }}
+              </span>
+              <select
+                v-model="contact.role"
+                :aria-label="__('Contact role')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none transition focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
+                @change="markDirty"
+              >
+                <option value="Signatory">{{ __('Signatory') }}</option>
+                <option value="Approver">{{ __('Approver') }}</option>
+              </select>
+            </div>
+            <div
+              class="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 md:contents"
             >
-              ×
-            </button>
+              <span class="text-xs font-medium text-ink-gray-5 md:hidden">
+                {{ __('Name') }}
+              </span>
+              <input
+                v-model="contact.full_name"
+                type="text"
+                :aria-label="__('Contact full name')"
+                :placeholder="__('Full name')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none transition placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
+                @input="markDirty"
+              />
+            </div>
+            <div
+              class="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 md:contents"
+            >
+              <span class="text-xs font-medium text-ink-gray-5 md:hidden">
+                {{ __('Email') }}
+              </span>
+              <input
+                v-model="contact.email"
+                type="email"
+                :aria-label="__('Contact email')"
+                :placeholder="__('name@tiberbu.com')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none transition placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
+                @input="markDirty"
+              />
+            </div>
+            <div
+              class="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 md:contents"
+            >
+              <span class="text-xs font-medium text-ink-gray-5 md:hidden">
+                {{ __('Phone') }}
+              </span>
+              <input
+                v-model="contact.phone"
+                type="tel"
+                :aria-label="__('Contact phone')"
+                :placeholder="__('+254 7xx xxx xxx')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none transition placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
+                @input="markDirty"
+              />
+            </div>
+            <div class="flex justify-end md:justify-center">
+              <button
+                type="button"
+                class="grid size-8 place-items-center rounded-lg text-lg text-ink-gray-5 transition hover:bg-surface-gray-2 hover:text-ink-red-5 focus:outline-none focus:ring-2 focus:ring-outline-gray-2 dark:hover:bg-surface-gray-3"
+                :aria-label="__('Remove contact')"
+                :title="__('Remove contact')"
+                @click="removeContact(index)"
+              >
+                ×
+              </button>
+            </div>
           </div>
           <div
-            class="flex items-center justify-between gap-3 border-t border-outline-gray-2 bg-surface-gray-1 px-3 py-2"
+            class="flex flex-col gap-3 border-t border-outline-gray-2 bg-surface-gray-1/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:bg-surface-gray-2"
           >
-            <span class="text-xs text-ink-gray-5">{{
-              __('Facility, witness, and network signatories remain required.')
-            }}</span>
+            <div class="flex items-center gap-2">
+              <Badge
+                :label="
+                  __('{0} contact{1}', [
+                    form.tiberbu_contacts.length,
+                    form.tiberbu_contacts.length === 1 ? '' : 's',
+                  ])
+                "
+                theme="gray"
+                variant="subtle"
+              />
+              <span class="text-xs text-ink-gray-5">
+                {{ __('Used for new contracts') }}
+              </span>
+            </div>
             <Button
               variant="subtle"
               size="sm"

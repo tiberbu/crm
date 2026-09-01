@@ -1154,9 +1154,48 @@ def _required_signatures_complete(contract):
 	return all(row.status == "Signed" for row in tiberbu)
 
 
+def _reopen_stale_fully_executed_contract(contract):
+	"""Reopen a completed contract when a new unsigned row was added.
+
+	Adding a co-signatory after execution is supported from the quotation page.
+	The child row correctly starts as ``Pending``, but older versions left the
+	parent status at ``Fully Executed``. That contradictory state blocked the new
+	person at the first OTP request. Treat the pending row as a new execution
+	version: restore the normal signing status and clear the one-shot delivery
+	marker so the updated fully executed PDF can be sent after the new row signs.
+
+	Only an actually incomplete contract is changed; a genuinely completed
+	contract remains protected by ``_ensure_contract_signing_open``.
+	"""
+	if getattr(contract, "status", "") != "Fully Executed":
+		return False
+	rows = list(contract.signatories or [])
+	if not rows or all(row.status == "Signed" for row in rows):
+		return False
+
+	contract.status = "Awaiting Signatures"
+	contract.workflow_state = "Awaiting Remaining Signatures"
+	if hasattr(contract, "executed_contract_sent_at"):
+		contract.executed_contract_sent_at = None
+	return True
+
+
 def _ensure_contract_signing_open(contract):
-	"""Reject new signing actions after the contract has been completed."""
+	"""Reject new signing actions after the contract has been completed.
+
+	Repair the legacy state where an unsigned co-signatory was appended after the
+	contract was marked fully executed. This keeps existing pending links usable
+	without weakening the guard for genuinely completed contracts.
+	"""
 	if getattr(contract, "status", "") == "Fully Executed":
+		if _reopen_stale_fully_executed_contract(contract):
+			contract.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+			frappe.db.commit()
+			log_deal_event(
+				contract.deal,
+				"Contract %s reopened because it has an unsigned signatory row" % contract.name,
+			)
+			return
 		frappe.throw(
 			_("This contract has already been fully executed."),
 			frappe.ValidationError,
@@ -1402,6 +1441,36 @@ def _approval_identity_for_delivery(contract_doc, delivery):
 
 
 @frappe.whitelist()
+def check_user_email(email: Any = ""):
+	"""Report whether an email belongs to an enabled Frappe User.
+
+	The Quote page uses this before adding a Tiberbu signatory so an executive can
+	see which signing path will be used. Keep the lookup aligned with
+	``_crm_user_exists``: disabled accounts are treated as external signers. Only
+	the account's display name is returned; no user profile data is exposed.
+
+	Requires: Sales Manager, System Manager, or Administrator.
+	"""
+	_check_crm_role()
+	email = frappe.utils.cstr(email or "").strip().lower()
+	if not email:
+		return {"checked": False, "linked": False, "full_name": ""}
+
+	rows = frappe.get_list(
+		"User",
+		filters={"email": email, "enabled": 1},
+		fields=["email", "full_name"],
+		limit=1,
+	)
+	user = rows[0] if rows else None
+	return {
+		"checked": True,
+		"linked": bool(user),
+		"full_name": frappe.utils.cstr(user.get("full_name") or "") if user else "",
+	}
+
+
+@frappe.whitelist()
 def get_network_signatories(deal: Any = "", network_slug: Any = ""):
 	"""
 	Resolve the co-signatories that will be seeded onto a contract: every
@@ -1512,9 +1581,15 @@ def sync_configured_signatories(contract: Any):
 		)
 		added += 1
 	if added or updated:
+		reopened = _reopen_stale_fully_executed_contract(doc)
 		doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 		frappe.db.commit()
 		_transition(contract_name)
+		if reopened:
+			log_deal_event(
+				doc.deal,
+				"Contract %s reopened after configured signatory changes" % contract_name,
+			)
 	if added or updated or skipped_signed:
 		log_deal_event(
 			doc.deal,
@@ -2027,6 +2102,7 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any, phone: Any = 
 			"is_witness": 0,
 		},
 	)
+	_reopened = _reopen_stale_fully_executed_contract(contract_doc)
 	contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 
@@ -2034,6 +2110,11 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any, phone: Any = 
 		contract_doc.deal,
 		"Co-signatory %s (%s) added to contract %s" % (role, email, contract),
 	)
+	if _reopened:
+		log_deal_event(
+			contract_doc.deal,
+			"Contract %s reopened after adding an unsigned co-signatory" % contract,
+		)
 
 	# If the facility signatory has already signed (the common legacy case — the
 	# contract predates co-signing), the new counterparty would otherwise sit
