@@ -199,32 +199,86 @@
           </div>
         </div>
         <div
-          v-if="priceListFacilities.length"
+          v-if="selectedPriceListMeta.facility_count"
           class="mt-4 border-t border-outline-gray-2 pt-3"
         >
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <p
-              class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
-            >
-              {{ __('Attached facilities') }}
-            </p>
-            <span class="text-xs text-ink-gray-5">
-              {{ __('Select a facility to preview its quote') }}
-            </span>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <Button
-              v-for="facility in priceListFacilities"
-              :key="`${facility.name}-${facility.network}`"
-              variant="subtle"
-              size="sm"
-              @click="viewSampleQuote(facility)"
-            >
-              {{ facility.facility_name }}
-              <span class="ml-1 text-xs text-ink-gray-5"
-                >({{ facility.network }})</span
+          <button
+            type="button"
+            class="flex w-full items-center justify-between gap-3 rounded-md py-1 text-left hover:bg-surface-gray-2"
+            :aria-expanded="showAttachedFacilities"
+            aria-controls="attached-facilities-list"
+            @click="toggleAttachedFacilities"
+          >
+            <span class="flex items-center gap-2">
+              <span
+                class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
               >
-            </Button>
+                {{ __('Attached facilities') }}
+              </span>
+              <span
+                class="rounded-full bg-surface-gray-3 px-2 py-0.5 text-xs font-medium text-ink-gray-6 dark:bg-surface-gray-4"
+              >
+                {{ selectedPriceListMeta.facility_count }}
+              </span>
+            </span>
+            <span class="text-xs font-medium text-ink-gray-6">
+              {{ showAttachedFacilities ? __('Hide list') : __('Show list') }}
+            </span>
+          </button>
+          <p class="mt-1 text-xs text-ink-gray-5">
+            {{ __('Select a facility to preview its quote') }}
+          </p>
+          <div
+            v-if="showAttachedFacilities"
+            id="attached-facilities-list"
+            class="mt-3"
+          >
+            <div
+              v-if="priceListFacilitiesLoading && !priceListFacilities.length"
+              class="py-3 text-center text-xs text-ink-gray-5"
+            >
+              {{ __('Loading attached facilities…') }}
+            </div>
+            <div v-else-if="priceListFacilities.length" class="space-y-3">
+              <div class="flex flex-wrap gap-2">
+                <Button
+                  v-for="facility in priceListFacilities"
+                  :key="`${facility.name}-${facility.network}`"
+                  variant="subtle"
+                  size="sm"
+                  @click="viewSampleQuote(facility)"
+                >
+                  {{ facility.facility_name }}
+                  <span class="ml-1 text-xs text-ink-gray-5"
+                    >({{ facility.network }})</span
+                  >
+                </Button>
+              </div>
+              <div
+                v-if="priceListFacilitiesHasMore"
+                class="flex items-center justify-between gap-3"
+              >
+                <span class="text-xs text-ink-gray-5">
+                  {{
+                    __('Showing {0} of {1}', [
+                      priceListFacilities.length,
+                      priceListFacilitiesTotal,
+                    ])
+                  }}
+                </span>
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  :loading="priceListFacilitiesLoading"
+                  @click="loadMorePriceListFacilities"
+                >
+                  {{ __('Load more') }}
+                </Button>
+              </div>
+            </div>
+            <p v-else class="py-3 text-center text-xs text-ink-gray-5">
+              {{ __('No attached facilities found.') }}
+            </p>
           </div>
         </div>
       </div>
@@ -370,6 +424,15 @@
         v-else-if="itemPrices.length"
         class="overflow-x-auto rounded-lg border border-outline-gray-2"
       >
+        <p
+          class="border-b border-outline-gray-2 bg-surface-gray-1 px-4 py-2 text-xs text-ink-gray-5 dark:bg-surface-gray-2"
+        >
+          {{
+            __(
+              'Change the destination to move an item price, or choose Remove from this list to delete it.',
+            )
+          }}
+        </p>
         <table class="w-full text-sm">
           <thead
             class="bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5"
@@ -381,6 +444,9 @@
               <th class="px-4 py-2.5 text-left font-medium">{{ __('UOM') }}</th>
               <th class="px-4 py-2.5 text-right font-medium">
                 {{ __('Monthly Price (KES)') }}
+              </th>
+              <th class="px-4 py-2.5 text-left font-medium">
+                {{ __('Destination') }}
               </th>
               <th class="px-4 py-2.5 text-right font-medium">
                 {{ __('Actions') }}
@@ -409,13 +475,36 @@
                   class="w-36 rounded border border-outline-gray-2 bg-surface-white px-2 py-1 text-right text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
                 />
               </td>
+              <td class="px-4 py-3">
+                <select
+                  v-model="itemPriceTargets[itemPrice.name]"
+                  class="min-w-52 rounded border border-outline-gray-2 bg-surface-white px-2 py-1 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+                  :aria-label="
+                    __('Destination for {0}', [
+                      itemPrice.item_name || itemPrice.item_code,
+                    ])
+                  "
+                >
+                  <option :value="selectedPriceList">
+                    {{ __('Keep in {0}', [selectedPriceList]) }}
+                  </option>
+                  <option
+                    v-for="priceList in destinationPriceLists"
+                    :key="priceList.value"
+                    :value="priceList.value"
+                  >
+                    {{ __('Move to {0}', [priceList.label]) }}
+                  </option>
+                  <option value="">{{ __('Remove from this list') }}</option>
+                </select>
+              </td>
               <td class="px-4 py-3 text-right">
                 <Button
                   size="sm"
                   variant="subtle"
                   :loading="savingItem === itemPrice.name"
                   @click="saveItemPrice(itemPrice)"
-                  >{{ __('Save') }}</Button
+                  >{{ itemPriceActionLabel(itemPrice) }}</Button
                 >
               </td>
             </tr>
@@ -514,15 +603,28 @@ const creatingItem = ref(false)
 const savingItem = ref(false)
 const savingAllItems = ref(false)
 const bulkRates = ref({})
+const itemPriceTargets = ref({})
 const showSampleQuote = ref(false)
 const sampleQuote = ref(null)
 const sampleQuoteLoading = ref(false)
+const showAttachedFacilities = ref(false)
+const priceListFacilities = ref([])
+const priceListFacilitiesTotal = ref(0)
+const priceListFacilitiesPage = ref(0)
+const priceListFacilitiesLoading = ref(false)
+const priceListFacilitiesPageSize = 50
+let priceListFacilitiesRequestId = 0
 
 const priceListsResource = createResource({
   url: 'crm.api.optin_admin.list_negotiated_price_lists',
   auto: true,
 })
 const priceLists = computed(() => priceListsResource.data ?? [])
+const destinationPriceLists = computed(() =>
+  priceLists.value.filter(
+    (priceList) => priceList.value !== selectedPriceList.value,
+  ),
+)
 const selectedPriceListMeta = computed(
   () =>
     priceLists.value.find(
@@ -542,6 +644,9 @@ const itemPrices = computed(() => pricesResource.data ?? [])
 const saveResource = createResource({
   url: 'crm.api.optin_admin.save_item_price',
 })
+const updateItemPriceResource = createResource({
+  url: 'crm.api.optin_admin.update_item_price',
+})
 const createListResource = createResource({
   url: 'crm.api.optin_admin.create_negotiated_price_list',
 })
@@ -554,8 +659,8 @@ const bulkSaveResource = createResource({
 const priceListFacilitiesResource = createResource({
   url: 'crm.api.optin_admin.list_price_list_facilities',
 })
-const priceListFacilities = computed(
-  () => priceListFacilitiesResource.data ?? [],
+const priceListFacilitiesHasMore = computed(
+  () => priceListFacilities.value.length < priceListFacilitiesTotal.value,
 )
 const sampleQuoteResource = createResource({
   url: 'crm.api.optin_admin.get_facility_sample_quote',
@@ -580,21 +685,91 @@ watch(
   ([prices, selected], previous) => {
     if (selected !== previous?.[1]) {
       bulkRates.value = {}
+      itemPriceTargets.value = {}
       return
     }
     const configured = Object.fromEntries(
       prices.map((item) => [item.item_code, item.price_list_rate]),
     )
     bulkRates.value = { ...configured, ...bulkRates.value }
+
+    const targets = Object.fromEntries(
+      prices.map((item) => [
+        item.name,
+        itemPriceTargets.value[item.name] ?? selected,
+      ]),
+    )
+    itemPriceTargets.value = targets
   },
   { immediate: true },
 )
 
 watch(selectedPriceList, (value) => {
+  resetPriceListFacilities()
   if (!value) return
   pricesResource.reload()
-  priceListFacilitiesResource.submit({ price_list: value })
+  if (showAttachedFacilities.value) loadPriceListFacilities()
 })
+
+function resetPriceListFacilities() {
+  priceListFacilitiesRequestId += 1
+  priceListFacilities.value = []
+  priceListFacilitiesTotal.value = 0
+  priceListFacilitiesPage.value = 0
+  priceListFacilitiesLoading.value = false
+}
+
+async function loadPriceListFacilities(append = false) {
+  const value = selectedPriceList.value
+  if (!value || priceListFacilitiesLoading.value) return
+  if (append && !priceListFacilitiesHasMore.value) return
+
+  const requestId = ++priceListFacilitiesRequestId
+  const page = append ? priceListFacilitiesPage.value + 1 : 1
+  priceListFacilitiesLoading.value = true
+  try {
+    const response = await priceListFacilitiesResource.submit({
+      price_list: value,
+      page,
+      page_length: priceListFacilitiesPageSize,
+    })
+    if (
+      requestId !== priceListFacilitiesRequestId ||
+      value !== selectedPriceList.value
+    )
+      return
+    const rows = Array.isArray(response) ? response : response?.rows ?? []
+    priceListFacilities.value = append
+      ? [...priceListFacilities.value, ...rows]
+      : rows
+    priceListFacilitiesTotal.value = Array.isArray(response)
+      ? rows.length
+      : response?.total ?? rows.length
+    priceListFacilitiesPage.value = Array.isArray(response)
+      ? 1
+      : response?.page ?? page
+  } catch (error) {
+    if (requestId !== priceListFacilitiesRequestId) return
+    toast.error(
+      error?.messages?.[0] ??
+        error?.message ??
+        __('Could not load attached facilities'),
+    )
+  } finally {
+    if (requestId === priceListFacilitiesRequestId)
+      priceListFacilitiesLoading.value = false
+  }
+}
+
+function toggleAttachedFacilities() {
+  showAttachedFacilities.value = !showAttachedFacilities.value
+  if (showAttachedFacilities.value && !priceListFacilitiesPage.value)
+    loadPriceListFacilities()
+}
+
+function loadMorePriceListFacilities() {
+  loadPriceListFacilities(true)
+}
 
 function formatTimestamp(value) {
   if (!value) return '—'
@@ -737,6 +912,36 @@ async function saveItemPrice(itemPrice = null) {
   if (!itemCode || rate === null || rate === '') return
   savingItem.value = itemPrice?.name ?? 'new'
   try {
+    const destination = itemPrice
+      ? itemPriceTargets.value[itemPrice.name] ?? selectedPriceList.value
+      : selectedPriceList.value
+    if (itemPrice && destination !== selectedPriceList.value) {
+      if (
+        !destination &&
+        !confirm(
+          __('Remove {0} from {1}? This change will be recorded.', [
+            itemPrice.item_name || itemPrice.item_code,
+            selectedPriceList.value,
+          ]),
+        )
+      ) {
+        return
+      }
+      const result = await updateItemPriceResource.submit({
+        price_list: selectedPriceList.value,
+        item_price: itemPrice.name,
+        target_price_list: destination,
+        rate,
+      })
+      await pricesResource.reload()
+      toast.success(
+        result.action === 'removed'
+          ? __('Item price removed and logged')
+          : __('Item price moved and logged'),
+      )
+      return
+    }
+
     await saveResource.submit({
       price_list: selectedPriceList.value,
       item_code: itemCode,
@@ -753,6 +958,14 @@ async function saveItemPrice(itemPrice = null) {
   } finally {
     savingItem.value = false
   }
+}
+
+function itemPriceActionLabel(itemPrice) {
+  const destination =
+    itemPriceTargets.value[itemPrice.name] ?? selectedPriceList.value
+  if (!destination) return __('Remove')
+  if (destination !== selectedPriceList.value) return __('Move & save')
+  return __('Save')
 }
 
 async function saveAllItemPrices() {

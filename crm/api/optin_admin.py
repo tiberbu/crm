@@ -58,6 +58,27 @@ def _assert_network_access(network_slug):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 
+def _validate_opted_in_price_list_override(existing_membership, requested_override):
+	"""Keep facility pricing immutable once its membership has opted in.
+
+	The contact editor omits the override for opted-in facilities, but this guard
+	also protects older clients and direct API callers from changing the effective
+	price list outside the quotation workflow.
+	"""
+	if not existing_membership or existing_membership.get("status") != "Opted In":
+		return
+
+	existing_override = frappe.utils.cstr(existing_membership.get("price_list_override") or "").strip()
+	requested_override = frappe.utils.cstr(requested_override or "").strip()
+	if requested_override != existing_override:
+		frappe.throw(
+			_(
+				"The facility price list is locked after Opt-In. Update pricing from the quotation before the facility signs."
+			),
+			frappe.ValidationError,
+		)
+
+
 def _require_optin_settings_manager():
 	"""Only system administrators may change the global Opt-In agreement."""
 	if (
@@ -622,8 +643,13 @@ def list_negotiated_price_lists():
 
 
 @frappe.whitelist()
-def list_price_list_facilities(price_list: Any):
-	"""Return facilities using a negotiated list, including their network scope."""
+def list_price_list_facilities(price_list: Any, page: Any = None, page_length: Any = None):
+	"""Return facilities using a negotiated list, including their network scope.
+
+	The original no-pagination response remains a list for existing callers. New
+	callers can pass ``page``/``page_length`` to receive a bounded page and total,
+	which keeps large catalogue views responsive without changing the data scope.
+	"""
 	if not _is_admin():
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	price_list = _get_negotiated_price_list(price_list)
@@ -642,7 +668,7 @@ def list_price_list_facilities(price_list: Any):
 			ignore_permissions=True,  # SYSTEM-INTERNAL: manager catalogue scope
 		)
 	}
-	return [
+	rows = [
 		{
 			"name": facility_name,
 			"facility_name": facilities[facility_name].facility_name,
@@ -661,6 +687,20 @@ def list_price_list_facilities(price_list: Any):
 		)
 		if facility_name in facilities
 	]
+	if page is None and page_length is None:
+		return rows
+
+	page = max(frappe.utils.cint(page) or 1, 1)
+	page_length = min(max(frappe.utils.cint(page_length) or 50, 1), 100)
+	start = (page - 1) * page_length
+	end = start + page_length
+	return {
+		"rows": rows[start:end],
+		"total": len(rows),
+		"page": page,
+		"page_length": page_length,
+		"has_more": end < len(rows),
+	}
 
 
 @frappe.whitelist()
@@ -749,6 +789,102 @@ def list_item_prices(price_list: Any):
 		order_by="item_code asc",
 		limit_page_length=0,
 	)
+
+
+def _log_price_list_event(price_list: str, content: str) -> None:
+	"""Write a price-list audit comment in the same transaction as the change."""
+	if not price_list or not content:
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Comment",
+			"comment_type": "Comment",
+			"reference_doctype": "Price List",
+			"reference_name": price_list,
+			"content": content,
+		}
+	).insert(ignore_permissions=True)  # SYSTEM-INTERNAL: manager catalogue audit
+
+
+@frappe.whitelist()
+def update_item_price(price_list: Any, item_price: Any, target_price_list: Any = None, rate: Any = None):
+	"""Move or remove an Item Price from the selected negotiated list.
+
+	An empty target removes the Item Price. A non-empty target moves it to another
+	enabled negotiated selling list. Both operations are audited and committed as
+	one transaction; a failed audit leaves the price unchanged.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	source = _get_negotiated_price_list(price_list)
+	item_price_name = frappe.utils.cstr(item_price or "").strip()
+	if not item_price_name:
+		frappe.throw(_("An item price is required."))
+
+	item_price_doc = frappe.get_doc("Item Price", item_price_name)
+	if item_price_doc.price_list != source.name or not frappe.utils.cint(item_price_doc.selling):
+		frappe.throw(_("This item price is not part of the selected price list."))
+
+	target_name = frappe.utils.cstr(target_price_list or "").strip()
+	if target_name == source.name:
+		frappe.throw(_("Choose another price list or Remove from this list."))
+
+	if not target_name:
+		frappe.delete_doc("Item Price", item_price_name, ignore_permissions=True)
+		_log_price_list_event(
+			source.name,
+			_("Removed item price %(item)s from %(price_list)s.")
+			% {"item": item_price_doc.item_code, "price_list": source.name},
+		)
+		frappe.db.commit()
+		return {
+			"action": "removed",
+			"item_price": item_price_name,
+			"source": source.name,
+		}
+
+	target = _get_negotiated_price_list(target_name)
+	duplicate = frappe.db.exists(
+		"Item Price",
+		{"price_list": target.name, "item_code": item_price_doc.item_code, "selling": 1},
+	)
+	if duplicate and duplicate != item_price_name:
+		frappe.throw(
+			_("An item price for %(item)s already exists in %(price_list)s.")
+			% {"item": item_price_doc.item_code, "price_list": target.name}
+		)
+
+	if rate is not None and rate != "":
+		try:
+			rate = float(rate)
+		except (TypeError, ValueError):
+			frappe.throw(_("Enter a valid price."))
+		if not math.isfinite(rate) or rate < 0:
+			frappe.throw(_("Enter a non-negative finite price."))
+		item_price_doc.price_list_rate = rate
+
+	previous = source.name
+	item_price_doc.price_list = target.name
+	item_price_doc.currency = target.currency or item_price_doc.currency or "KES"
+	item_price_doc.save(ignore_permissions=True)
+	_log_price_list_event(
+		previous,
+		_("Moved item price %(item)s to %(price_list)s.")
+		% {"item": item_price_doc.item_code, "price_list": target.name},
+	)
+	_log_price_list_event(
+		target.name,
+		_("Added item price %(item)s from %(price_list)s.")
+		% {"item": item_price_doc.item_code, "price_list": previous},
+	)
+	frappe.db.commit()
+	return {
+		"action": "moved",
+		"item_price": item_price_name,
+		"source": previous,
+		"target": target.name,
+	}
 
 
 @frappe.whitelist()
@@ -867,7 +1003,13 @@ def duplicate_negotiated_price_list(source: Any, name: Any):
 		"note",
 		"reference",
 	]
-	available_fields = set(frappe.get_meta("Item Price").get_fieldnames())
+	# Meta.get_fieldnames() is not available on Frappe v15/v16 Meta objects.
+	# `fields` is the stable metadata surface across both versions.
+	available_fields = set()
+	for field in getattr(frappe.get_meta("Item Price"), "fields", []):
+		fieldname = frappe.utils.cstr(getattr(field, "fieldname", "")).strip()
+		if fieldname:
+			available_fields.add(fieldname)
 	source_rows = frappe.get_list(
 		"Item Price",
 		filters={"price_list": source.name, "selling": 1},
@@ -1185,7 +1327,9 @@ def save_facility(data: Any):
 	  facility_name: str,
 	  organization?: str,  # blank defaults to the facility name
 	  keph_level: str,
-	  memberships: [{network, price_list_override, status, contact_name, contact_email, contact_phone}]
+	  memberships: [{network, price_list_override?, status, contact_name, contact_email, contact_phone}]
+	  ``price_list_override`` is optional on edits so contact updates cannot clear
+	  pricing accidentally; CSV/admin callers may send an explicit blank to clear it.
 	}
 	Max 2 memberships enforced.
 	"""
@@ -1234,6 +1378,7 @@ def save_facility(data: Any):
 		doc = frappe.new_doc("CRM Pre-Qualified Facility")
 	is_new_facility = doc.is_new()
 	existing_networks = {m.network for m in (doc.memberships or [])}
+	existing_memberships = {m.network: m for m in (doc.memberships or [])}
 
 	doc.mfl_code = mfl_code or doc.mfl_code
 	doc.facility_name = frappe.utils.cstr(data.get("facility_name") or doc.facility_name or "")
@@ -1261,9 +1406,20 @@ def save_facility(data: Any):
 			"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
 		}
 		if membership_has_override:
-			membership_values["price_list_override"] = frappe.utils.cstr(
-				mem_data.get("price_list_override") or ""
-			).strip()
+			# Preserve an existing override when the caller omits the field, while
+			# pre-opt-in edits and CSV/admin callers may clear or replace it explicitly.
+			if "price_list_override" in mem_data:
+				if net in existing_memberships:
+					_validate_opted_in_price_list_override(
+						existing_memberships[net], mem_data.get("price_list_override")
+					)
+				membership_values["price_list_override"] = frappe.utils.cstr(
+					mem_data.get("price_list_override") or ""
+				).strip()
+			elif net in existing_memberships:
+				membership_values["price_list_override"] = frappe.utils.cstr(
+					existing_memberships[net].get("price_list_override") or ""
+				).strip()
 		doc.append(
 			"memberships",
 			membership_values,

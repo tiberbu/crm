@@ -904,9 +904,19 @@
             />
           </div>
         </div>
+        <p class="mb-4 text-xs text-ink-gray-5">
+          <template v-if="editingFacility">
+            {{ facilityPriceListLabel(editingFacility) }} ·
+          </template>
+          {{
+            __(
+              'Choose a facility-specific negotiated price list before Opt-In. Once the facility opts in, its price list is locked and can only be changed from the quotation workflow before signature.',
+            )
+          }}
+        </p>
 
         <!-- Row 2: Contact fields -->
-        <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{
               __('Organization')
@@ -920,12 +930,13 @@
             />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-gray-6">
-              {{ __('Facility price list') }}
-            </label>
+            <label class="text-xs font-medium text-ink-gray-6">{{
+              __('Facility Price List')
+            }}</label>
             <select
               v-model="form.price_list_override"
-              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+              :disabled="!!editingFacility && isOptedIn(editingFacility)"
+              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:cursor-not-allowed disabled:bg-surface-gray-2 disabled:opacity-60 dark:bg-surface-gray-3 dark:text-ink-gray-3"
             >
               <option value="">{{ __('Use network price list') }}</option>
               <option
@@ -938,9 +949,9 @@
             </select>
             <span class="text-[11px] text-ink-gray-5">
               {{
-                __(
-                  'Use this only when the facility has negotiated a different rate.',
-                )
+                editingFacility && isOptedIn(editingFacility)
+                  ? __('Locked after Opt-In')
+                  : __('Optional facility-specific negotiated rate')
               }}
             </span>
           </div>
@@ -1457,11 +1468,11 @@ const form = reactive({
   mfl_code: '',
   facility_name: '',
   organization: '',
-  price_list_override: '',
   keph_level: '',
   contact_name: '',
   contact_email: '',
   contact_phone: '',
+  price_list_override: '',
   status: 'Active',
 })
 const organizationEdited = ref(false)
@@ -1470,11 +1481,11 @@ function resetForm() {
   form.mfl_code = ''
   form.facility_name = ''
   form.organization = ''
-  form.price_list_override = ''
   form.keph_level = ''
   form.contact_name = ''
   form.contact_email = ''
   form.contact_phone = ''
+  form.price_list_override = ''
   form.status = 'Active'
   organizationEdited.value = false
   formError.value = ''
@@ -1492,11 +1503,11 @@ function editContact(row) {
     mfl_code: row.mfl_code ?? '',
     facility_name: row.facility_name ?? '',
     organization: row.organization ?? row.facility_name ?? '',
-    price_list_override: m.price_list_override ?? '',
     keph_level: row.keph_level ?? '',
     contact_name: m.contact_name ?? '',
     contact_email: m.contact_email ?? '',
     contact_phone: m.contact_phone ?? '',
+    price_list_override: m.price_list_override ?? '',
     status: m.status ?? 'Active',
   })
   editingFacility.value = row
@@ -1567,21 +1578,24 @@ async function saveContact() {
   }
   formError.value = ''
   saveLoading.value = true
+  const membership = {
+    network: props.networkSlug,
+    status: form.status,
+    contact_name: form.contact_name,
+    contact_email: form.contact_email,
+    contact_phone: form.contact_phone,
+  }
+  // Opted-in pricing is immutable here. The quotation workflow remains the
+  // only place where pricing can be changed before facility signature.
+  if (!editingFacility.value || !isOptedIn(editingFacility.value)) {
+    membership.price_list_override = form.price_list_override
+  }
   const data = {
     mfl_code: form.mfl_code,
     facility_name: form.facility_name,
     organization: form.organization,
     keph_level: form.keph_level,
-    memberships: [
-      {
-        network: props.networkSlug,
-        price_list_override: form.price_list_override,
-        status: form.status,
-        contact_name: form.contact_name,
-        contact_email: form.contact_email,
-        contact_phone: form.contact_phone,
-      },
-    ],
+    memberships: [membership],
   }
   if (editingFacility.value?.name) data.name = editingFacility.value.name
   try {

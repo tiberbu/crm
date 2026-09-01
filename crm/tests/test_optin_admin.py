@@ -1,9 +1,11 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import UnitTestCase
 
 from crm.api.optin_admin import (
+	_validate_opted_in_price_list_override,
 	create_sellable_item,
 	duplicate_negotiated_price_list,
 	get_facility_sample_quote,
@@ -12,7 +14,9 @@ from crm.api.optin_admin import (
 	list_negotiated_price_lists,
 	list_networks,
 	list_price_list_facilities,
+	save_facility,
 	save_item_prices,
+	update_item_price,
 )
 
 
@@ -159,6 +163,41 @@ class TestOptInPriceListTools(UnitTestCase):
 		self.assertEqual(result[0]["facility_name"], "First Clinic")
 		self.assertEqual(result[0]["network"], "network-a")
 
+	def test_price_list_facilities_can_return_a_bounded_page(self):
+		price_list = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		facilities = [
+			frappe._dict(
+				{
+					"name": "FAC-%s" % index,
+					"facility_name": "Clinic %s" % index,
+					"organization": "Health Group",
+					"mfl_code": "10%s" % index,
+					"keph_level": "Level 3",
+				}
+			)
+			for index in range(1, 4)
+		]
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._get_negotiated_price_list", return_value=price_list),
+			patch(
+				"crm.api.optin_admin._price_list_assignments",
+				return_value={
+					"Negotiated Year 1": {
+						"facility_networks": {(facility.name, "network-a") for facility in facilities}
+					}
+				},
+			),
+			patch("crm.api.optin_admin.frappe.get_list", return_value=facilities),
+		):
+			result = list_price_list_facilities("Negotiated Year 1", page=2, page_length=1)
+
+		self.assertEqual(result["total"], 3)
+		self.assertEqual(result["page"], 2)
+		self.assertEqual(result["page_length"], 1)
+		self.assertTrue(result["has_more"])
+		self.assertEqual(result["rows"][0]["facility_name"], "Clinic 2")
+
 	def test_facility_sample_quote_uses_selected_price_list_and_exclusive_vat(self):
 		facility = frappe._dict(
 			{
@@ -275,12 +314,12 @@ class TestOptInPriceListTools(UnitTestCase):
 			patch("crm.api.optin_admin.frappe.get_list") as get_list,
 			patch("crm.api.optin_admin.frappe.get_doc", return_value=new_price_list) as get_doc,
 		):
-			get_meta.return_value.get_fieldnames.return_value = {
-				"item_code",
-				"uom",
-				"currency",
-				"price_list_rate",
-			}
+			get_meta.return_value = SimpleNamespace(
+				fields=[
+					frappe._dict({"fieldname": field})
+					for field in ("item_code", "uom", "currency", "price_list_rate")
+				]
+			)
 			get_list.return_value = [
 				frappe._dict(
 					{
@@ -297,6 +336,237 @@ class TestOptInPriceListTools(UnitTestCase):
 
 		self.assertEqual(result["copied"], 1)
 		self.assertEqual(get_doc.call_count, 2)
+
+	def test_item_price_can_be_removed_and_audited(self):
+		source = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		item_price = frappe._dict(
+			{
+				"name": "ITEM-PRICE-1",
+				"price_list": source.name,
+				"selling": 1,
+				"item_code": "CV-HIMS-KEPH-3",
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._get_negotiated_price_list", return_value=source),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=item_price),
+			patch("crm.api.optin_admin.frappe.delete_doc") as delete_doc,
+			patch("crm.api.optin_admin._log_price_list_event") as log_event,
+			patch("crm.api.optin_admin.frappe.db.commit") as commit,
+		):
+			result = update_item_price(source.name, item_price.name, "")
+
+		self.assertEqual(result["action"], "removed")
+		delete_doc.assert_called_once_with("Item Price", item_price.name, ignore_permissions=True)
+		log_event.assert_called_once_with(
+			source.name,
+			"Removed item price CV-HIMS-KEPH-3 from Negotiated Year 1.",
+		)
+		commit.assert_called_once_with()
+
+	def test_item_price_can_be_moved_and_audited_on_both_lists(self):
+		source = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		target = frappe._dict({"name": "Negotiated Facility A", "currency": "KES"})
+		item_price = frappe._dict(
+			{
+				"name": "ITEM-PRICE-1",
+				"price_list": source.name,
+				"selling": 1,
+				"item_code": "CV-HIMS-KEPH-3",
+				"price_list_rate": 100,
+				"currency": "KES",
+				"save": lambda **kwargs: None,
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch(
+				"crm.api.optin_admin._get_negotiated_price_list",
+				side_effect=[source, target],
+			),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=item_price),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=False),
+			patch("crm.api.optin_admin._log_price_list_event") as log_event,
+		):
+			result = update_item_price(source.name, item_price.name, target.name, rate=125)
+
+		self.assertEqual(result["action"], "moved")
+		self.assertEqual(item_price.price_list, target.name)
+		self.assertEqual(item_price.price_list_rate, 125)
+		self.assertEqual(log_event.call_count, 2)
+		self.assertEqual(log_event.call_args_list[0].args[0], source.name)
+		self.assertEqual(log_event.call_args_list[1].args[0], target.name)
+
+	def test_item_price_cannot_move_when_it_belongs_to_another_list(self):
+		source = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		item_price = frappe._dict(
+			{
+				"name": "ITEM-PRICE-1",
+				"price_list": "Negotiated Year 2",
+				"selling": 1,
+				"item_code": "CV-HIMS-KEPH-3",
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._get_negotiated_price_list", return_value=source),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=item_price),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				update_item_price(source.name, item_price.name, "")
+
+	def test_item_price_move_rejects_an_existing_item_in_target_list(self):
+		source = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		target = frappe._dict({"name": "Negotiated Facility A", "currency": "KES"})
+		item_price = frappe._dict(
+			{
+				"name": "ITEM-PRICE-1",
+				"price_list": source.name,
+				"selling": 1,
+				"item_code": "CV-HIMS-KEPH-3",
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch(
+				"crm.api.optin_admin._get_negotiated_price_list",
+				side_effect=[source, target],
+			),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=item_price),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value="ITEM-PRICE-2"),
+			patch("crm.api.optin_admin._log_price_list_event") as log_event,
+		):
+			with self.assertRaises(frappe.ValidationError):
+				update_item_price(source.name, item_price.name, target.name)
+
+		self.assertEqual(item_price.price_list, source.name)
+		log_event.assert_not_called()
+
+	def test_contact_edit_payload_without_pricing_preserves_facility_override(self):
+		class FakeFacility:
+			name = "FAC-0001"
+			mfl_code = "1001"
+			facility_name = "First Clinic"
+			keph_level = "Level 3"
+
+			def __init__(self):
+				self.memberships = [
+					frappe._dict(
+						{
+							"network": "network-a",
+							"price_list_override": "Negotiated Facility A",
+						}
+					)
+				]
+
+			def is_new(self):
+				return False
+
+			def append(self, _fieldname, values):
+				self.memberships.append(frappe._dict(values))
+
+			def save(self, **_kwargs):
+				return None
+
+		facility = FakeFacility()
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch("crm.api.optin_admin.frappe.db.commit"),
+		):
+			save_facility(
+				{
+					"name": facility.name,
+					"mfl_code": facility.mfl_code,
+					"facility_name": facility.facility_name,
+					"keph_level": facility.keph_level,
+					"memberships": [
+						{
+							"network": "network-a",
+							"status": "Active",
+							"contact_name": "Jane Doe",
+							"contact_email": "jane@example.com",
+							"contact_phone": "+254700000001",
+						}
+					],
+				}
+			)
+
+		self.assertEqual(len(facility.memberships), 1)
+		self.assertEqual(facility.memberships[0].price_list_override, "Negotiated Facility A")
+
+	def test_opted_in_membership_cannot_change_facility_price_list(self):
+		existing = frappe._dict({"status": "Opted In", "price_list_override": "Negotiated Facility A"})
+
+		with self.assertRaises(frappe.ValidationError):
+			_validate_opted_in_price_list_override(existing, "Negotiated Facility B")
+
+		# Re-sending the persisted value is safe; omitted values are not validated.
+		_validate_opted_in_price_list_override(existing, "Negotiated Facility A")
+		_validate_opted_in_price_list_override(
+			frappe._dict({"status": "Opted In", "price_list_override": ""}), ""
+		)
+
+	def test_save_facility_enforces_opted_in_price_list_lock(self):
+		class FakeFacility:
+			name = "FAC-0001"
+			mfl_code = "1001"
+			facility_name = "First Clinic"
+			keph_level = "Level 3"
+
+			def __init__(self):
+				self.memberships = [
+					frappe._dict(
+						{
+							"network": "network-a",
+							"status": "Opted In",
+							"price_list_override": "Negotiated Facility A",
+						}
+					)
+				]
+
+			def is_new(self):
+				return False
+
+			def append(self, _fieldname, values):
+				self.memberships.append(frappe._dict(values))
+
+			def save(self, **_kwargs):
+				return None
+
+		facility = FakeFacility()
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				save_facility(
+					{
+						"name": facility.name,
+						"mfl_code": facility.mfl_code,
+						"facility_name": facility.facility_name,
+						"keph_level": facility.keph_level,
+						"memberships": [
+							{
+								"network": "network-a",
+								"status": "Opted In",
+								"price_list_override": "Negotiated Facility B",
+								"contact_name": "Jane Doe",
+								"contact_email": "jane@example.com",
+								"contact_phone": "+254700000001",
+							}
+						],
+					}
+				)
 
 
 class TestOptInNetworkList(UnitTestCase):

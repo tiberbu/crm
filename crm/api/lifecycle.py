@@ -23,6 +23,8 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
+from crm.utils.price_list_history import read_history
+
 
 @frappe.whitelist()
 def get_deal_lifecycle(deal: str) -> dict:
@@ -31,8 +33,8 @@ def get_deal_lifecycle(deal: str) -> dict:
 
 	    {
 	      "submission":    {"ref", "status"} | None,
-	      "quotation":     {"name", "status", "docstatus", "grand_total"} | None,
-	      "contract":      {"name", "status", "workflow_state"} | None,
+	      "quotation":     {"name", "status", "docstatus", "grand_total", "price_list", "initial_price_list", "price_list_history"} | None,
+	      "contract":      {"name", "status", "workflow_state", "price_list"} | None,
 	      "signatories":   [{"row_name", "role", "status", "signed_at", "name", "email"}],
 	      "onboarding":    {"name", "approval_status", "n1", "n2", "tiberbu"} | None,
 	      "sales_invoice": {"name", "docstatus", "outstanding"} | None,
@@ -46,7 +48,7 @@ def get_deal_lifecycle(deal: str) -> dict:
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 	quotation = _resolve_quotation(deal)
-	contract = _resolve_contract(deal)
+	contract = _resolve_contract(deal, quotation)
 
 	return {
 		"submission": _resolve_submission(deal),
@@ -86,10 +88,14 @@ def _resolve_submission(deal: str) -> dict | None:
 def _resolve_quotation(deal: str) -> dict | None:
 	if not _can_read("Quotation"):
 		return None
+	fields = ["name", "status", "docstatus", "grand_total", "selling_price_list"]
+	for fieldname in ("crm_initial_price_list", "crm_price_list_history"):
+		if frappe.db.has_column("Quotation", fieldname):
+			fields.append(fieldname)
 	rows = frappe.get_list(
 		"Quotation",
 		filters={"crm_deal": deal},
-		fields=["name", "status", "docstatus", "grand_total"],
+		fields=fields,
 		order_by="creation desc",
 		limit=1,
 	)
@@ -101,23 +107,44 @@ def _resolve_quotation(deal: str) -> dict | None:
 		"status": r.status,
 		"docstatus": r.docstatus,
 		"grand_total": r.grand_total,
+		"price_list": r.get("selling_price_list") or "Standard Selling",
+		"initial_price_list": r.get("crm_initial_price_list")
+		or r.get("selling_price_list")
+		or "Standard Selling",
+		"price_list_history": read_history(r),
 	}
 
 
-def _resolve_contract(deal: str) -> dict | None:
+def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
 	if not _can_read("CRM Contract"):
 		return None
+	fields = ["name", "status", "workflow_state", "quote"]
+	for fieldname in ("initial_price_list", "negotiated_price_list", "price_list_history"):
+		if frappe.db.has_column("CRM Contract", fieldname):
+			fields.append(fieldname)
 	rows = frappe.get_list(
 		"CRM Contract",
 		filters={"deal": deal},
-		fields=["name", "status", "workflow_state"],
+		fields=fields,
 		order_by="creation desc",
 		limit=1,
 	)
 	if not rows:
 		return None
 	r = rows[0]
-	return {"name": r.name, "status": r.status, "workflow_state": r.workflow_state}
+	price_history = read_history(r, "price_list_history")
+	initial = r.get("initial_price_list") or (quotation or {}).get("initial_price_list") or ""
+	negotiated = r.get("negotiated_price_list") or (quotation or {}).get("price_list") or initial
+	return {
+		"name": r.name,
+		"status": r.status,
+		"workflow_state": r.workflow_state,
+		"price_list": {
+			"initial": initial or negotiated,
+			"negotiated": negotiated or initial,
+			"history": price_history or (quotation or {}).get("price_list_history", []),
+		},
+	}
 
 
 def _resolve_signatories(contract: str | None) -> list:

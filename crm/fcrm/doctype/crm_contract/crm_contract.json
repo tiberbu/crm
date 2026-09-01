@@ -9,6 +9,10 @@
   "contract_date",
   "deal",
   "quote",
+  "pricing_section",
+  "initial_price_list",
+  "negotiated_price_list",
+  "price_list_history",
   "col_break_1",
   "status",
   "workflow_state",
@@ -47,6 +51,35 @@
    "label": "Quotation",
    "options": "Quotation",
    "in_list_view": 1
+  },
+  {
+   "fieldname": "pricing_section",
+   "fieldtype": "Section Break",
+   "label": "Price List History",
+   "collapsible": 0
+  },
+  {
+   "fieldname": "initial_price_list",
+   "fieldtype": "Data",
+   "label": "Initial Price List",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "negotiated_price_list",
+   "fieldtype": "Data",
+   "label": "Negotiated Price List",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "price_list_history",
+   "fieldtype": "Long Text",
+   "label": "Price List History",
+   "read_only": 1,
+   "no_copy": 1
   },
   {
    "fieldname": "col_break_1",

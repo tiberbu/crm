@@ -39,6 +39,7 @@ from typing import Any
 import frappe
 from frappe import _
 
+from crm.utils.price_list_history import ensure_initial
 from crm.utils.quotation_tax import (
 	apply_quotation_taxes,
 	calculate_vat_totals,
@@ -2235,6 +2236,7 @@ def _process_deal_invitation_submission(sub, payload):
 			row.rate = annual_rate
 			row.discount_percentage = 0
 		apply_quotation_taxes(quote)
+		ensure_initial(quote, context.get("price_list") or quote.get("selling_price_list"))
 		quote.insert(ignore_mandatory=True)
 	_update_job_step(sub.name, "quote", "done", "Quote ready")
 
@@ -2490,6 +2492,7 @@ def _process_submission(submission_ref):
 			# Selling Settings default (Standard Selling). ignore_pricing_rule
 			# stops set_missing_values() / validate from re-deriving line rates.
 			q.selling_price_list = quote_price_list
+			ensure_initial(q, quote_price_list)
 			q.ignore_pricing_rule = 1
 
 			annual_rates = []
