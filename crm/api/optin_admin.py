@@ -770,6 +770,102 @@ def list_item_prices(price_list: Any):
 	)
 
 
+def _log_price_list_event(price_list: str, content: str) -> None:
+	"""Write a price-list audit comment in the same transaction as the change."""
+	if not price_list or not content:
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Comment",
+			"comment_type": "Comment",
+			"reference_doctype": "Price List",
+			"reference_name": price_list,
+			"content": content,
+		}
+	).insert(ignore_permissions=True)  # SYSTEM-INTERNAL: manager catalogue audit
+
+
+@frappe.whitelist()
+def update_item_price(price_list: Any, item_price: Any, target_price_list: Any = None, rate: Any = None):
+	"""Move or remove an Item Price from the selected negotiated list.
+
+	An empty target removes the Item Price. A non-empty target moves it to another
+	enabled negotiated selling list. Both operations are audited and committed as
+	one transaction; a failed audit leaves the price unchanged.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	source = _get_negotiated_price_list(price_list)
+	item_price_name = frappe.utils.cstr(item_price or "").strip()
+	if not item_price_name:
+		frappe.throw(_("An item price is required."))
+
+	item_price_doc = frappe.get_doc("Item Price", item_price_name)
+	if item_price_doc.price_list != source.name or not frappe.utils.cint(item_price_doc.selling):
+		frappe.throw(_("This item price is not part of the selected price list."))
+
+	target_name = frappe.utils.cstr(target_price_list or "").strip()
+	if target_name == source.name:
+		frappe.throw(_("Choose another price list or Remove from this list."))
+
+	if not target_name:
+		frappe.delete_doc("Item Price", item_price_name, ignore_permissions=True)
+		_log_price_list_event(
+			source.name,
+			_("Removed item price %(item)s from %(price_list)s.")
+			% {"item": item_price_doc.item_code, "price_list": source.name},
+		)
+		frappe.db.commit()
+		return {
+			"action": "removed",
+			"item_price": item_price_name,
+			"source": source.name,
+		}
+
+	target = _get_negotiated_price_list(target_name)
+	duplicate = frappe.db.exists(
+		"Item Price",
+		{"price_list": target.name, "item_code": item_price_doc.item_code, "selling": 1},
+	)
+	if duplicate and duplicate != item_price_name:
+		frappe.throw(
+			_("An item price for %(item)s already exists in %(price_list)s.")
+			% {"item": item_price_doc.item_code, "price_list": target.name}
+		)
+
+	if rate is not None and rate != "":
+		try:
+			rate = float(rate)
+		except (TypeError, ValueError):
+			frappe.throw(_("Enter a valid price."))
+		if not math.isfinite(rate) or rate < 0:
+			frappe.throw(_("Enter a non-negative finite price."))
+		item_price_doc.price_list_rate = rate
+
+	previous = source.name
+	item_price_doc.price_list = target.name
+	item_price_doc.currency = target.currency or item_price_doc.currency or "KES"
+	item_price_doc.save(ignore_permissions=True)
+	_log_price_list_event(
+		previous,
+		_("Moved item price %(item)s to %(price_list)s.")
+		% {"item": item_price_doc.item_code, "price_list": target.name},
+	)
+	_log_price_list_event(
+		target.name,
+		_("Added item price %(item)s from %(price_list)s.")
+		% {"item": item_price_doc.item_code, "price_list": previous},
+	)
+	frappe.db.commit()
+	return {
+		"action": "moved",
+		"item_price": item_price_name,
+		"source": previous,
+		"target": target.name,
+	}
+
+
 @frappe.whitelist()
 def list_sellable_items(search: Any = None):
 	"""Return CRM-selectable ERPNext service items for negotiated pricing."""

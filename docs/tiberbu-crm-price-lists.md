@@ -31,6 +31,21 @@ expanded. Facilities are fetched in pages of 50 with a **Load more** action, so 
 price list linked to 1,000 facilities does not mount or transfer all rows during
 the initial catalogue load.
 
+## Moving and removing item prices
+
+Each configured item price has a **Destination** control. Keep it in the current
+list, move it to another enabled negotiated list, or choose **Remove from this
+list**. Saving a move updates the existing ERPNext `Item Price` record; removing
+it deletes only that record, so the catalogue no longer offers that rate to new
+quotes (already-created quotes are unchanged). The server verifies that the
+record belongs to the selected list, prevents duplicate item/list combinations,
+and requires a manager or Administrator.
+
+Every move writes an audit Comment to both the source and destination Price List.
+Every removal writes a Comment to the source Price List. The change and its audit
+entry are committed together, so a failed audit cannot leave an unlogged price
+change.
+
 ## Quote price-list changes
 
 A Sales Manager may change a draft or sent quotation's price list after an

@@ -14,6 +14,7 @@ from crm.api.optin_admin import (
 	list_networks,
 	list_price_list_facilities,
 	save_item_prices,
+	update_item_price,
 )
 
 
@@ -333,6 +334,116 @@ class TestOptInPriceListTools(UnitTestCase):
 
 		self.assertEqual(result["copied"], 1)
 		self.assertEqual(get_doc.call_count, 2)
+
+	def test_item_price_can_be_removed_and_audited(self):
+		source = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		item_price = frappe._dict(
+			{
+				"name": "ITEM-PRICE-1",
+				"price_list": source.name,
+				"selling": 1,
+				"item_code": "CV-HIMS-KEPH-3",
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._get_negotiated_price_list", return_value=source),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=item_price),
+			patch("crm.api.optin_admin.frappe.delete_doc") as delete_doc,
+			patch("crm.api.optin_admin._log_price_list_event") as log_event,
+			patch("crm.api.optin_admin.frappe.db.commit") as commit,
+		):
+			result = update_item_price(source.name, item_price.name, "")
+
+		self.assertEqual(result["action"], "removed")
+		delete_doc.assert_called_once_with("Item Price", item_price.name, ignore_permissions=True)
+		log_event.assert_called_once_with(
+			source.name,
+			"Removed item price CV-HIMS-KEPH-3 from Negotiated Year 1.",
+		)
+		commit.assert_called_once_with()
+
+	def test_item_price_can_be_moved_and_audited_on_both_lists(self):
+		source = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		target = frappe._dict({"name": "Negotiated Facility A", "currency": "KES"})
+		item_price = frappe._dict(
+			{
+				"name": "ITEM-PRICE-1",
+				"price_list": source.name,
+				"selling": 1,
+				"item_code": "CV-HIMS-KEPH-3",
+				"price_list_rate": 100,
+				"currency": "KES",
+				"save": lambda **kwargs: None,
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch(
+				"crm.api.optin_admin._get_negotiated_price_list",
+				side_effect=[source, target],
+			),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=item_price),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=False),
+			patch("crm.api.optin_admin._log_price_list_event") as log_event,
+		):
+			result = update_item_price(source.name, item_price.name, target.name, rate=125)
+
+		self.assertEqual(result["action"], "moved")
+		self.assertEqual(item_price.price_list, target.name)
+		self.assertEqual(item_price.price_list_rate, 125)
+		self.assertEqual(log_event.call_count, 2)
+		self.assertEqual(log_event.call_args_list[0].args[0], source.name)
+		self.assertEqual(log_event.call_args_list[1].args[0], target.name)
+
+	def test_item_price_cannot_move_when_it_belongs_to_another_list(self):
+		source = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		item_price = frappe._dict(
+			{
+				"name": "ITEM-PRICE-1",
+				"price_list": "Negotiated Year 2",
+				"selling": 1,
+				"item_code": "CV-HIMS-KEPH-3",
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._get_negotiated_price_list", return_value=source),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=item_price),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				update_item_price(source.name, item_price.name, "")
+
+	def test_item_price_move_rejects_an_existing_item_in_target_list(self):
+		source = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		target = frappe._dict({"name": "Negotiated Facility A", "currency": "KES"})
+		item_price = frappe._dict(
+			{
+				"name": "ITEM-PRICE-1",
+				"price_list": source.name,
+				"selling": 1,
+				"item_code": "CV-HIMS-KEPH-3",
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch(
+				"crm.api.optin_admin._get_negotiated_price_list",
+				side_effect=[source, target],
+			),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=item_price),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value="ITEM-PRICE-2"),
+			patch("crm.api.optin_admin._log_price_list_event") as log_event,
+		):
+			with self.assertRaises(frappe.ValidationError):
+				update_item_price(source.name, item_price.name, target.name)
+
+		self.assertEqual(item_price.price_list, source.name)
+		log_event.assert_not_called()
 
 
 class TestOptInNetworkList(UnitTestCase):
