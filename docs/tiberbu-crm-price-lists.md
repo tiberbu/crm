@@ -46,13 +46,16 @@ Every removal writes a Comment to the source Price List. The change and its audi
 entry are committed together, so a failed audit cannot leave an unlogged price
 change.
 
-Facility contact edits intentionally do not expose or change a facility price-list
-override. The contact form preserves an existing override when its payload omits
-pricing. Sales Managers change the price list or negotiated rates from the Deal's
-Quotation panel instead; the server allows that only while the facility has not
-signed and records the quotation change in the Deal timeline. CSV/admin payloads
-may still send an explicit `price_list_override` for controlled imports and
-backward-compatible data maintenance.
+The facility contact form exposes a facility-specific override for new and
+pre-Opt-In contacts, including an option to use the network price list. Once a
+facility opts in, the selector is visibly locked and its value is preserved when
+the contact is edited. The server also rejects direct/API attempts to change an
+Opted-In override. Sales Managers change the price list or negotiated rates from
+the Deal's Quotation panel instead; the server allows that only while the
+facility has not signed and records the quotation change in the Deal timeline.
+CSV/admin payloads may still send an explicit `price_list_override` for
+controlled imports and backward-compatible data maintenance, subject to the
+same Opt-In lock.
 
 ## Quote price-list changes
 

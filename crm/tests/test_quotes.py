@@ -171,7 +171,7 @@ class TestQuotationPriceListChanges(UnitTestCase):
 		):
 			self.assertTrue(_facility_signatory_has_signed("DEAL-0001"))
 
-	def test_price_list_change_is_logged_before_facility_signature(self):
+	def test_price_list_change_remains_available_after_optin_before_facility_signature(self):
 		quote = SimpleNamespace(
 			name="QUO-0001",
 			docstatus=0,
@@ -189,7 +189,9 @@ class TestQuotationPriceListChanges(UnitTestCase):
 		with (
 			patch("crm.api.quotes._require_manager"),
 			patch("crm.api.quotes.frappe.get_doc", return_value=quote),
-			patch("crm.api.quotes.frappe.db.get_value", return_value=None),
+			# An Opt-In summary may already exist; only the facility signature closes
+			# the quotation price-list editing window.
+			patch("crm.api.quotes.frappe.db.get_value", return_value="OIS-0001"),
 			patch("crm.api.quotes.frappe.db.exists", return_value=True),
 			patch("crm.api.quotes.frappe.get_list", return_value=[]),
 			patch("crm.api.quotes.apply_quotation_taxes"),

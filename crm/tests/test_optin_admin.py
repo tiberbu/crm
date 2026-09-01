@@ -5,6 +5,7 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from crm.api.optin_admin import (
+	_validate_opted_in_price_list_override,
 	create_sellable_item,
 	duplicate_negotiated_price_list,
 	get_facility_sample_quote,
@@ -500,6 +501,72 @@ class TestOptInPriceListTools(UnitTestCase):
 
 		self.assertEqual(len(facility.memberships), 1)
 		self.assertEqual(facility.memberships[0].price_list_override, "Negotiated Facility A")
+
+	def test_opted_in_membership_cannot_change_facility_price_list(self):
+		existing = frappe._dict({"status": "Opted In", "price_list_override": "Negotiated Facility A"})
+
+		with self.assertRaises(frappe.ValidationError):
+			_validate_opted_in_price_list_override(existing, "Negotiated Facility B")
+
+		# Re-sending the persisted value is safe; omitted values are not validated.
+		_validate_opted_in_price_list_override(existing, "Negotiated Facility A")
+		_validate_opted_in_price_list_override(
+			frappe._dict({"status": "Opted In", "price_list_override": ""}), ""
+		)
+
+	def test_save_facility_enforces_opted_in_price_list_lock(self):
+		class FakeFacility:
+			name = "FAC-0001"
+			mfl_code = "1001"
+			facility_name = "First Clinic"
+			keph_level = "Level 3"
+
+			def __init__(self):
+				self.memberships = [
+					frappe._dict(
+						{
+							"network": "network-a",
+							"status": "Opted In",
+							"price_list_override": "Negotiated Facility A",
+						}
+					)
+				]
+
+			def is_new(self):
+				return False
+
+			def append(self, _fieldname, values):
+				self.memberships.append(frappe._dict(values))
+
+			def save(self, **_kwargs):
+				return None
+
+		facility = FakeFacility()
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				save_facility(
+					{
+						"name": facility.name,
+						"mfl_code": facility.mfl_code,
+						"facility_name": facility.facility_name,
+						"keph_level": facility.keph_level,
+						"memberships": [
+							{
+								"network": "network-a",
+								"status": "Opted In",
+								"price_list_override": "Negotiated Facility B",
+								"contact_name": "Jane Doe",
+								"contact_email": "jane@example.com",
+								"contact_phone": "+254700000001",
+							}
+						],
+					}
+				)
 
 
 class TestOptInNetworkList(UnitTestCase):

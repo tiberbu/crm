@@ -58,6 +58,27 @@ def _assert_network_access(network_slug):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 
+def _validate_opted_in_price_list_override(existing_membership, requested_override):
+	"""Keep facility pricing immutable once its membership has opted in.
+
+	The contact editor omits the override for opted-in facilities, but this guard
+	also protects older clients and direct API callers from changing the effective
+	price list outside the quotation workflow.
+	"""
+	if not existing_membership or existing_membership.get("status") != "Opted In":
+		return
+
+	existing_override = frappe.utils.cstr(existing_membership.get("price_list_override") or "").strip()
+	requested_override = frappe.utils.cstr(requested_override or "").strip()
+	if requested_override != existing_override:
+		frappe.throw(
+			_(
+				"The facility price list is locked after Opt-In. Update pricing from the quotation before the facility signs."
+			),
+			frappe.ValidationError,
+		)
+
+
 def _require_optin_settings_manager():
 	"""Only system administrators may change the global Opt-In agreement."""
 	if (
@@ -1385,10 +1406,13 @@ def save_facility(data: Any):
 			"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
 		}
 		if membership_has_override:
-			# Contact edits do not expose pricing. Preserve an existing override when
-			# the caller omits the field, while CSV/admin callers can still clear or
-			# replace it by sending an explicit value.
+			# Preserve an existing override when the caller omits the field, while
+			# pre-opt-in edits and CSV/admin callers may clear or replace it explicitly.
 			if "price_list_override" in mem_data:
+				if net in existing_memberships:
+					_validate_opted_in_price_list_override(
+						existing_memberships[net], mem_data.get("price_list_override")
+					)
 				membership_values["price_list_override"] = frappe.utils.cstr(
 					mem_data.get("price_list_override") or ""
 				).strip()
