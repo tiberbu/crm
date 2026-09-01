@@ -55,7 +55,7 @@ import { getSettings } from '@/stores/settings'
 import { showSettings, isMobileView } from '@/composables/settings'
 import { showAboutModal } from '@/composables/modals'
 import { confirmLoginToFrappeCloud } from '@/composables/frappecloud'
-import { createResource, Dropdown } from 'frappe-ui'
+import { createResource, Dropdown, useTheme } from 'frappe-ui'
 import { computed, h, markRaw } from 'vue'
 
 defineProps({
@@ -65,6 +65,7 @@ defineProps({
 const { settings, brand } = getSettings()
 const { logout } = sessionStore()
 const { getUser } = usersStore()
+const { currentTheme, setTheme } = useTheme()
 
 const user = computed(() => getUser() || {})
 
@@ -101,6 +102,30 @@ const dropdownItems = computed(() => {
         items: [],
       })
     }
+  })
+
+  // Keep appearance reachable from the mobile user menu. Settings itself is
+  // intentionally desktop-only, but theme changes should not require a user
+  // to switch layouts or hunt through a modal.
+  _dropdownItems.push({
+    group: '',
+    hideLabel: true,
+    items: [
+      {
+        icon: 'lucide-sun-moon',
+        label: __('Theme'),
+        submenu: [
+          { label: __('Light'), icon: 'lucide-sun', value: 'light' },
+          { label: __('Dark'), icon: 'lucide-moon', value: 'dark' },
+          { label: __('System'), icon: 'lucide-monitor', value: 'system' },
+        ].map(({ label, icon, value }) => ({
+          label,
+          icon,
+          selected: currentTheme.value === value,
+          onClick: () => setTheme(value),
+        })),
+      },
+    ],
   })
 
   return _dropdownItems

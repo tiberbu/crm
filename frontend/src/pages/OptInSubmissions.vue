@@ -2,7 +2,7 @@
   <div class="flex h-full flex-col overflow-hidden">
     <!-- Header -->
     <div
-      class="flex items-center justify-between border-b border-outline-gray-2 px-5 py-3"
+      class="flex items-center justify-between border-b border-outline-gray-2 px-3 py-3 sm:px-5"
     >
       <h1 class="text-xl font-semibold text-ink-gray-9">
         {{ __('Opt-In Requests') }}
@@ -11,12 +11,12 @@
 
     <!-- Status filter chips -->
     <div
-      class="flex flex-wrap items-center gap-2 border-b border-outline-gray-2 px-5 py-2.5"
+      class="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-outline-gray-2 px-3 py-2.5 sm:flex-wrap sm:px-5"
     >
       <button
         type="button"
         :class="[
-          'rounded-full border px-3 py-1 text-xs font-semibold transition-colors',
+          'shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition-colors',
           pendingMyAction
             ? 'border-red-600 bg-red-600 text-white'
             : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300',
@@ -29,7 +29,7 @@
         v-for="s in statuses"
         :key="s"
         :class="[
-          'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+          'shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors',
           selectedStatus === s
             ? 'bg-red-600 text-white'
             : 'bg-surface-gray-2 text-ink-gray-6 hover:bg-surface-gray-3 dark:bg-surface-gray-4 dark:text-ink-gray-4 dark:hover:bg-surface-gray-5',
@@ -41,13 +41,15 @@
     </div>
 
     <div
-      class="flex flex-wrap items-end gap-2 border-b border-outline-gray-2 px-5 py-3"
+      class="grid grid-cols-2 gap-2 border-b border-outline-gray-2 px-3 py-3 sm:flex sm:flex-wrap sm:items-end sm:px-5"
     >
-      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+      <label
+        class="col-span-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+      >
         {{ __('Network') }}
         <select
           v-model="selectedNetwork"
-          class="h-8 min-w-36 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3 sm:w-auto sm:min-w-36"
           @change="applyFilters"
         >
           <option value="">{{ __('All networks') }}</option>
@@ -60,11 +62,13 @@
           </option>
         </select>
       </label>
-      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+      <label
+        class="col-span-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+      >
         {{ __('Facility level') }}
         <select
           v-model="selectedFacilityLevel"
-          class="h-8 min-w-32 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3 sm:w-auto sm:min-w-32"
           @change="applyFilters"
         >
           <option value="">{{ __('All levels') }}</option>
@@ -77,25 +81,51 @@
           </option>
         </select>
       </label>
-      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+      <label
+        class="col-span-2 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6 sm:col-span-1"
+      >
         {{ __('Facility') }}
         <input
           v-model="facilitySearch"
-          class="h-8 w-48 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3 sm:w-48"
           :placeholder="__('Facility name or MFL code')"
           @keyup.enter="applyFilters"
+          @input="scheduleSearch"
         />
       </label>
-      <Button size="sm" variant="subtle" @click="applyFilters">{{
-        __('Apply')
-      }}</Button>
-      <Button size="sm" variant="ghost" @click="clearFilters">{{
-        __('Clear')
-      }}</Button>
+      <div class="col-span-2 flex gap-2 sm:col-span-1">
+        <Button
+          class="flex-1 sm:flex-none"
+          size="sm"
+          variant="subtle"
+          @click="applyFilters"
+          >{{ __('Apply') }}</Button
+        >
+        <Button
+          class="flex-1 sm:flex-none"
+          size="sm"
+          variant="ghost"
+          @click="clearFilters"
+          >{{ __('Clear') }}</Button
+        >
+      </div>
     </div>
 
     <!-- Table -->
     <div class="flex-1 overflow-auto">
+      <div
+        class="flex items-center justify-between border-b border-outline-gray-2 px-3 py-2 text-xs text-ink-gray-5 sm:px-5"
+        aria-live="polite"
+      >
+        <span v-if="listResource.loading">{{ __('Updating results…') }}</span>
+        <span v-else>{{ __('{0} results', [total]) }}</span>
+        <span
+          v-if="facilitySearch"
+          class="max-w-[60%] truncate text-ink-gray-6"
+        >
+          {{ __('For “{0}”', [facilitySearch]) }}
+        </span>
+      </div>
       <div
         v-if="listResource.loading"
         class="flex items-center justify-center py-16"
@@ -377,7 +407,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { createResource, Button } from 'frappe-ui'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -396,11 +426,20 @@ const retrying = ref(null)
 
 function setStatus(s) {
   selectedStatus.value = s
-  page.value = 0
-  listResource.reload()
+  applyFilters()
 }
 
 watch(page, () => listResource.reload())
+
+let searchTimer = null
+
+function scheduleSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    searchTimer = null
+    applyFilters()
+  }, 300)
+}
 
 const listResource = createResource({
   url: 'crm.api.optin.list_submissions',
@@ -429,9 +468,20 @@ const filterFacilityLevels = computed(
 )
 
 function applyFilters() {
-  page.value = 0
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+  if (page.value !== 0) {
+    page.value = 0
+    return
+  }
   listResource.reload()
 }
+
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+})
 
 function togglePendingMyAction() {
   pendingMyAction.value = !pendingMyAction.value

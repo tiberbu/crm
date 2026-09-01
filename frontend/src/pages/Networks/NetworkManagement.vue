@@ -2,7 +2,7 @@
   <div class="flex h-full flex-col overflow-hidden">
     <!-- Header -->
     <div
-      class="flex items-center justify-between border-b border-outline-gray-2 px-5 py-3"
+      class="flex items-center justify-between gap-2 border-b border-outline-gray-2 px-3 py-3 sm:px-5"
     >
       <h1 class="text-xl font-semibold text-ink-gray-9">
         {{ __('Opt-In Networks') }}
@@ -16,22 +16,27 @@
     </div>
 
     <div
-      class="flex flex-wrap items-end gap-2 border-b border-outline-gray-2 px-5 py-3"
+      class="grid grid-cols-2 gap-2 border-b border-outline-gray-2 px-3 py-3 sm:flex sm:flex-wrap sm:items-end sm:px-5"
     >
-      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+      <label
+        class="col-span-2 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6 sm:col-span-1"
+      >
         {{ __('Search') }}
         <input
           v-model="search"
-          class="h-8 w-44 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3 sm:w-44"
           :placeholder="__('Name, slug or email')"
           @keyup.enter="applyFilters"
+          @input="scheduleSearch"
         />
       </label>
-      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+      <label
+        class="col-span-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+      >
         {{ __('Status') }}
         <select
           v-model="enabled"
-          class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
           @change="applyFilters"
         >
           <option value="">{{ __('All statuses') }}</option>
@@ -39,11 +44,13 @@
           <option value="0">{{ __('Disabled') }}</option>
         </select>
       </label>
-      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+      <label
+        class="col-span-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+      >
         {{ __('Opt-in') }}
         <select
           v-model="optedIn"
-          class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
           @change="applyFilters"
         >
           <option value="">{{ __('All opt-in states') }}</option>
@@ -51,11 +58,13 @@
           <option value="0">{{ __('Not opted in') }}</option>
         </select>
       </label>
-      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+      <label
+        class="col-span-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+      >
         {{ __('Facility level') }}
         <select
           v-model="facilityLevel"
-          class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
           @change="applyFilters"
         >
           <option value="">{{ __('All levels') }}</option>
@@ -64,25 +73,48 @@
           </option>
         </select>
       </label>
-      <label class="flex flex-col gap-1 text-xs font-medium text-ink-gray-6">
+      <label
+        class="col-span-2 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6 sm:col-span-1"
+      >
         {{ __('Facility') }}
         <input
           v-model="facility"
-          class="h-8 w-44 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3 sm:w-44"
           :placeholder="__('Name, MFL or organization')"
           @keyup.enter="applyFilters"
+          @input="scheduleSearch"
         />
       </label>
-      <Button size="sm" variant="subtle" @click="applyFilters">{{
-        __('Apply')
-      }}</Button>
-      <Button size="sm" variant="ghost" @click="clearFilters">{{
-        __('Clear')
-      }}</Button>
+      <div class="col-span-2 flex gap-2 sm:col-span-1">
+        <Button
+          class="flex-1 sm:flex-none"
+          size="sm"
+          variant="subtle"
+          @click="applyFilters"
+          >{{ __('Apply') }}</Button
+        >
+        <Button
+          class="flex-1 sm:flex-none"
+          size="sm"
+          variant="ghost"
+          @click="clearFilters"
+          >{{ __('Clear') }}</Button
+        >
+      </div>
     </div>
 
     <!-- Table area -->
     <div class="flex-1 overflow-auto">
+      <div
+        class="flex items-center justify-between border-b border-outline-gray-2 px-3 py-2 text-xs text-ink-gray-5 sm:px-5"
+        aria-live="polite"
+      >
+        <span v-if="listResource.loading">{{ __('Updating results…') }}</span>
+        <span v-else>{{ __('{0} networks', [total]) }}</span>
+        <span v-if="search" class="max-w-[60%] truncate text-ink-gray-6">
+          {{ __('For “{0}”', [search]) }}
+        </span>
+      </div>
       <div
         v-if="listResource.loading"
         class="flex items-center justify-center py-16"
@@ -229,7 +261,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { createResource, Button } from 'frappe-ui'
 
@@ -270,24 +302,45 @@ const listResource = createResource({
 const rows = computed(() => listResource.data?.rows ?? [])
 const total = computed(() => listResource.data?.total ?? 0)
 
+watch(page, () => listResource.reload())
+
 function openNetwork(row) {
   router.push({ name: 'NetworkDetail', params: { networkSlug: row.slug } })
 }
 
 function prevPage() {
   page.value--
-  listResource.reload()
 }
 
 function nextPage() {
   page.value++
-  listResource.reload()
+}
+
+let searchTimer = null
+
+function scheduleSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    searchTimer = null
+    applyFilters()
+  }, 300)
 }
 
 function applyFilters() {
-  page.value = 0
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+  if (page.value !== 0) {
+    page.value = 0
+    return
+  }
   listResource.reload()
 }
+
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+})
 
 function clearFilters() {
   search.value = ''
