@@ -21,6 +21,7 @@ from crm.api.contracts import (
 	generate,
 	get_contract,
 	get_network_signatories,
+	remove_signatory,
 	request_otp,
 )
 from crm.api.optin import (
@@ -663,6 +664,75 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertEqual(send_sms.call_args.args[2], "Approval")
 		self.assertEqual(send_sms.call_args.args[1].signatory_name, "Tiberbu Reviewer")
 		self.assertEqual(send_sms.call_args.args[1].signatory_phone, "+254700000002")
+
+	def test_unsigned_cosignatory_can_be_removed_from_current_contract(self):
+		row = SimpleNamespace(
+			name="ROW-NETWORK-00001",
+			signatory_role="Network Signatory",
+			signatory_name="Network Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+			signature_data=None,
+			signed_at=None,
+		)
+		contract = SimpleNamespace(
+			name="CONT-TEST-00005",
+			deal="DEAL-TEST-00005",
+			signatories=[row],
+			remove=Mock(),
+			save=Mock(),
+		)
+
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+			patch("crm.api.contracts._transition") as transition,
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			result = remove_signatory(
+				contract.name,
+				"Network Signatory",
+				row.name,
+			)
+
+		self.assertEqual(
+			result,
+			{"status": "removed", "role": "Network Signatory", "email": "reviewer@example.com"},
+		)
+		contract.remove.assert_called_once_with(row)
+		contract.save.assert_called_once_with(ignore_permissions=True)
+		transition.assert_called_once_with(contract.name)
+		self.assertIn("removed from contract", log_event.call_args.args[1])
+
+	def test_signed_cosignatory_cannot_be_removed_even_with_pending_status(self):
+		row = SimpleNamespace(
+			name="ROW-TIBERBU-00001",
+			signatory_role="Tiberbu Signatory",
+			signatory_name="Tiberbu Reviewer",
+			signatory_email="reviewer@tiberbu.example",
+			status="Pending",
+			signature_data="captured-signature",
+			signed_at=None,
+		)
+		contract = SimpleNamespace(
+			name="CONT-TEST-00006",
+			deal="DEAL-TEST-00006",
+			signatories=[row],
+			remove=Mock(),
+			save=Mock(),
+		)
+
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+		):
+			with self.assertRaises(frappe.ValidationError) as raised:
+				remove_signatory(contract.name, "Tiberbu Signatory", row.name)
+
+		self.assertIn("already signed", str(raised.exception).lower())
+		contract.remove.assert_not_called()
+		contract.save.assert_not_called()
 
 	def test_first_facility_signature_invites_every_remaining_signatory_together(self):
 		facility = SimpleNamespace(

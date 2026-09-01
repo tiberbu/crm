@@ -42,3 +42,18 @@ receives one invitation per automatic trigger; a deliberate **Resend link**
 still rotates the token and sends a new message. Network signer configuration is
 also normalized by email when contracts are generated, protecting older imports
 that contain the same signer more than once.
+
+## Removing an unsigned co-signatory
+
+The Quoting page's Contracting panel includes a **Remove** action for Network and
+Tiberbu co-signatories whose current contract row is still unsigned. The action is
+manager-only, asks for confirmation, and targets the exact child row so repeated
+Network Signatory rows cannot remove the wrong person.
+
+The server is authoritative: it refuses removal when the row is Signed (or has a
+signature timestamp or captured signature data), even if the browser shows a stale
+Pending status. Removal deletes the invitation-bearing row from this contract,
+which makes its old link inactive, records a deal activity event, and re-evaluates
+the normal contract transition. The configured network or global Tiberbu contact is
+not deleted, so it remains available as the default for future contracts and can be
+added again when needed.

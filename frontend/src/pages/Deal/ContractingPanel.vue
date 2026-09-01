@@ -566,6 +566,26 @@
                       : __('Retry SMS')
                   }}
                 </button>
+                <button
+                  v-if="item.onContract && canRemoveCoSignatory(item)"
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-red-600 disabled:opacity-40 disabled:no-underline"
+                  :disabled="
+                    !canGenerate || removingKey === rowKey(item) || savingCo
+                  "
+                  :title="
+                    canGenerate
+                      ? __('Remove this unsigned signatory from the contract')
+                      : __('Sales Manager role required')
+                  "
+                  @click="removeCoSignatory(item)"
+                >
+                  {{
+                    removingKey === rowKey(item)
+                      ? __('Removing…')
+                      : __('Remove')
+                  }}
+                </button>
               </div>
             </div>
 
@@ -1315,6 +1335,9 @@ async function saveEdit(role) {
 const addSignatoryResource = createResource({
   url: 'crm.api.contracts.add_signatory',
 })
+const removeSignatoryResource = createResource({
+  url: 'crm.api.contracts.remove_signatory',
+})
 const saveNetworkSignerResource = createResource({
   url: 'crm.api.contracts.save_network_signer',
 })
@@ -1330,6 +1353,7 @@ const coEditPhone = ref('')
 const coEditOrigEmail = ref('') // network write-back: the config row to update (blank → append)
 const coEditIsAdd = ref(false) // true → row is configured but not yet on the contract
 const savingCo = ref(false)
+const removingKey = ref('')
 
 // Counterparty roles this surface owns — matches contracts.py _COUNTERPARTY_ROLES.
 function isCoRole(role) {
@@ -1390,6 +1414,46 @@ const coSignatoryItems = computed(() => {
 const tiberbuOnContract = computed(() =>
   coSignatoryItems.value.some((i) => isTiberbuRole(i.role) && i.onContract),
 )
+
+function canRemoveCoSignatory(item) {
+  return !!item?.row_name && item.onContract && !isSignedStatus(item.status)
+}
+
+async function removeCoSignatory(item) {
+  if (!canGenerate.value || !canRemoveCoSignatory(item) || removingKey.value)
+    return
+
+  const label = item.name || item.email || item.role
+  if (
+    !confirm(
+      __(
+        'Remove {0} from this contract? Their current signing link will stop working. The configured contact will remain available for future contracts.',
+        [label],
+      ),
+    )
+  )
+    return
+
+  removingKey.value = rowKey(item)
+  try {
+    await removeSignatoryResource.submit({
+      contract: lc.value.contract?.name ?? '',
+      role: item.role,
+      row_name: item.row_name,
+    })
+    toast.success(__('{0} removed from this contract.', [label]))
+    cancelCoEdit()
+    emit('lifecycle-reload')
+  } catch (err) {
+    toast.error(
+      err?.messages?.[0] ??
+        err?.message ??
+        __('Could not remove this signatory.'),
+    )
+  } finally {
+    removingKey.value = ''
+  }
+}
 
 function startCoEdit(item) {
   if (!canGenerate.value) return

@@ -1488,6 +1488,64 @@ def add_signatory(contract: Any, role: Any, name: Any, email: Any, phone: Any = 
 	return {"status": "added", "role": role, "email": email}
 
 
+@frappe.whitelist()
+def remove_signatory(contract: Any, role: Any, row_name: Any = None):
+	"""Remove an unsigned Network/Tiberbu co-signatory from one contract.
+
+	The configured network or global Tiberbu signer is deliberately left in its
+	source configuration so future contracts retain that contact. Removing the
+	contract row invalidates its invitation and OTP state because the old row (and
+	its tokens) no longer belongs to the signing workflow. A captured signature is
+	never removable; use the existing signed-row replacement flow instead.
+	"""
+	_check_crm_role()
+
+	contract = frappe.utils.cstr(contract).strip()
+	role = frappe.utils.cstr(role).strip()
+	row_name = frappe.utils.cstr(row_name).strip() or None
+
+	if role not in _COUNTERPARTY_ROLES:
+		frappe.throw(
+			_("Only Network and Tiberbu co-signatories can be removed here."),
+			frappe.ValidationError,
+		)
+	if not row_name:
+		frappe.throw(
+			_("The exact signatory row is required."),
+			frappe.ValidationError,
+		)
+
+	contract_doc, signatory_row = _load_signatory(contract, role, row_name)
+	status = " ".join(frappe.utils.cstr(signatory_row.status or "").lower().split())
+	if (
+		status in ("signed", "completed", "complete", "fully signed")
+		or getattr(signatory_row, "signature_data", None)
+		or getattr(signatory_row, "signed_at", None)
+	):
+		frappe.throw(
+			_("This signatory has already signed and cannot be removed."),
+			frappe.ValidationError,
+		)
+
+	removed_email = frappe.utils.cstr(signatory_row.signatory_email or "").strip().lower()
+	removed_name = frappe.utils.cstr(signatory_row.signatory_name or "").strip()
+	contract_doc.remove(signatory_row)
+	contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	log_deal_event(
+		contract_doc.deal,
+		"Co-signatory %s (%s) removed from contract %s before signing"
+		% (role, removed_email or removed_name, contract),
+	)
+	frappe.db.commit()
+
+	# Removing the last pending party can make a contract fully executable. Reuse
+	# the normal idempotent transition so state and approval notifications remain
+	# consistent with a real signature event.
+	_transition(contract)
+
+	return {"status": "removed", "role": role, "email": removed_email}
+
+
 def _sync_network_signer_on_contract(contract, name, email, phone, original_email):
 	"""Reflect a network-config signer change onto a live contract's Network
 	Signatory row. Reuses the whitelisted row operations so the Signed-row
