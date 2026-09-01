@@ -32,6 +32,7 @@ from crm.api.optin import (
 	_process_submission,
 	_queue_confirmation_email,
 	_submission_matches_facility_filter,
+	get_pricing,
 	list_submissions,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
@@ -66,6 +67,70 @@ class TestOptInNegotiatedPricing(UnitTestCase):
 		for price_list, (level_3c_rate, level_5a_rate) in expected_rates.items():
 			self.assertEqual(PRICE_LISTS[price_list]["CV-HIMS-KEPH-3C"], level_3c_rate)
 			self.assertEqual(PRICE_LISTS[price_list]["CV-HIMS-KEPH-5A"], level_5a_rate)
+
+	def test_facility_membership_price_list_overrides_network_default(self):
+		facilities = [
+			frappe._dict(
+				{
+					"mfl_code": "1001",
+					"facility_name": "Network-priced Clinic",
+					"keph_level": "Level 3",
+					"price_list_override": "",
+				}
+			),
+			frappe._dict(
+				{
+					"mfl_code": "1002",
+					"facility_name": "Facility-negotiated Hospital",
+					"keph_level": "Level 5",
+					"price_list_override": "Negotiated Year 2",
+				}
+			),
+		]
+
+		def item_prices(_doctype, **kwargs):
+			price_list = kwargs["filters"]["price_list"]
+			return [frappe._dict({"price_list_rate": 100 if price_list == "Negotiated Year 1" else 200})]
+
+		def tax_totals(value, tax_template=None):
+			return SimpleNamespace(
+				net_total=value,
+				vat_amount=0,
+				grand_total=value,
+				template=tax_template or "VAT",
+				vat_rate=16,
+				vat_label="VAT",
+			)
+
+		with (
+			patch("crm.api.optin._validate_signing_token"),
+			patch("crm.api.optin._decode_deal_invitation", return_value=None),
+			patch(
+				"crm.api.optin._get_network_doc",
+				return_value=frappe._dict({"price_list_override": "Negotiated Year 1"}),
+			),
+			patch(
+				"crm.api.optin.frappe.get_single",
+				return_value=frappe._dict({"default_price_list": "Negotiated Year 1"}),
+			),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin._get_all_memberships", return_value=facilities),
+			patch("crm.api.optin._get_quoted_facility_map", return_value={}),
+			patch("crm.api.optin.frappe.get_list", side_effect=item_prices),
+			patch("crm.api.optin.calculate_vat_totals", side_effect=tax_totals),
+		):
+			result = get_pricing(
+				"token",
+				"jane@example.com",
+				"network-a",
+				9999999999,
+				["1001", "1002"],
+			)
+
+		self.assertEqual(
+			[row["price_list"] for row in result["facilities"]],
+			["Negotiated Year 1", "Negotiated Year 2"],
+		)
 
 
 class TestOptInSynchronousProcessor(UnitTestCase):

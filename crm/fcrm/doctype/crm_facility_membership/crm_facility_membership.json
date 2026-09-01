@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "network",
+  "price_list_override",
   "status",
   "contact_name",
   "contact_email",
@@ -26,6 +27,13 @@
    "options": "CRM Opt-In Network",
    "reqd": 1,
    "in_list_view": 1
+  },
+  {
+   "fieldname": "price_list_override",
+   "fieldtype": "Link",
+   "label": "Facility Price List Override",
+   "options": "Price List",
+   "description": "Optional selling price list for this facility in this network. Leave blank to use the network price list."
   },
   {
    "fieldname": "status",

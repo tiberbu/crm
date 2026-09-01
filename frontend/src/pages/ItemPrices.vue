@@ -11,7 +11,7 @@
           {{ __('Manage sellable items and their negotiated price lists.') }}
         </p>
       </div>
-      <Button variant="solid" size="sm" @click="showNewList = true">{{
+      <Button variant="solid" size="sm" @click="openNewListForm">{{
         __('New Price List')
       }}</Button>
     </div>
@@ -43,24 +43,65 @@
         }}</Button>
       </div>
 
-      <label
-        class="mb-5 flex max-w-md flex-col gap-1 text-xs font-medium text-ink-gray-6"
+      <div
+        v-if="showDuplicateList"
+        class="mb-5 flex flex-wrap items-end gap-3 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
       >
-        {{ __('Price List') }}
-        <select
-          v-model="selectedPriceList"
-          class="rounded border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+        <div class="min-w-64 flex-1 text-xs text-ink-gray-6">
+          {{ __('Copying prices from') }}
+          <span class="font-medium text-ink-gray-8">{{
+            selectedPriceList
+          }}</span>
+        </div>
+        <label
+          class="flex min-w-64 flex-1 flex-col gap-1 text-xs font-medium text-ink-gray-6"
         >
-          <option value="">{{ __('Select a price list') }}</option>
-          <option
-            v-for="priceList in priceLists"
-            :key="priceList.value"
-            :value="priceList.value"
+          {{ __('New Price List Name') }}
+          <input
+            v-model="duplicateListName"
+            class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+            :placeholder="__('Negotiated Year 6')"
+          />
+        </label>
+        <Button
+          variant="solid"
+          size="sm"
+          :loading="duplicatingList"
+          @click="duplicatePriceList"
+          >{{ __('Duplicate with prices') }}</Button
+        >
+        <Button variant="subtle" size="sm" @click="showDuplicateList = false">
+          {{ __('Cancel') }}
+        </Button>
+      </div>
+
+      <div class="mb-5 flex flex-wrap items-end gap-2">
+        <label
+          class="flex min-w-64 max-w-md flex-1 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+        >
+          {{ __('Price List') }}
+          <select
+            v-model="selectedPriceList"
+            class="rounded border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
           >
-            {{ priceList.label }}
-          </option>
-        </select>
-      </label>
+            <option value="">{{ __('Select a price list') }}</option>
+            <option
+              v-for="priceList in priceLists"
+              :key="priceList.value"
+              :value="priceList.value"
+            >
+              {{ priceList.label }}
+            </option>
+          </select>
+        </label>
+        <Button
+          v-if="selectedPriceList"
+          variant="subtle"
+          size="sm"
+          @click="openDuplicateForm"
+          >{{ __('Duplicate list') }}</Button
+        >
+      </div>
 
       <div
         v-if="selectedPriceList"
@@ -185,10 +226,13 @@ import { Button, createResource, toast } from 'frappe-ui'
 
 const selectedPriceList = ref('')
 const showNewList = ref(false)
+const showDuplicateList = ref(false)
 const newListName = ref('')
+const duplicateListName = ref('')
 const newItemCode = ref('')
 const newRate = ref(null)
 const creatingList = ref(false)
+const duplicatingList = ref(false)
 const savingItem = ref(false)
 
 const priceListsResource = createResource({
@@ -212,10 +256,18 @@ const saveResource = createResource({
 const createListResource = createResource({
   url: 'crm.api.optin_admin.create_negotiated_price_list',
 })
+const duplicateListResource = createResource({
+  url: 'crm.api.optin_admin.duplicate_negotiated_price_list',
+})
 
 watch(selectedPriceList, (value) => {
   if (value) pricesResource.reload()
 })
+
+function openNewListForm() {
+  showDuplicateList.value = false
+  showNewList.value = true
+}
 
 async function createPriceList() {
   if (!newListName.value.trim()) return
@@ -237,6 +289,40 @@ async function createPriceList() {
     )
   } finally {
     creatingList.value = false
+  }
+}
+
+function openDuplicateForm() {
+  if (!selectedPriceList.value) return
+  duplicateListName.value = `${selectedPriceList.value} Copy`
+  showNewList.value = false
+  showDuplicateList.value = true
+}
+
+async function duplicatePriceList() {
+  const name = duplicateListName.value.trim()
+  if (!selectedPriceList.value || !name) return
+  duplicatingList.value = true
+  try {
+    const result = await duplicateListResource.submit({
+      source: selectedPriceList.value,
+      name,
+    })
+    await priceListsResource.reload()
+    selectedPriceList.value = result.name
+    duplicateListName.value = ''
+    showDuplicateList.value = false
+    toast.success(
+      __('Price list duplicated with {0} items', [result.copied ?? 0]),
+    )
+  } catch (error) {
+    toast.error(
+      error?.messages?.[0] ??
+        error?.message ??
+        __('Could not duplicate price list'),
+    )
+  } finally {
+    duplicatingList.value = false
   }
 }
 

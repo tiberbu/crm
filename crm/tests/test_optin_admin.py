@@ -3,7 +3,12 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import UnitTestCase
 
-from crm.api.optin_admin import import_facilities_csv, list_facilities, list_networks
+from crm.api.optin_admin import (
+	duplicate_negotiated_price_list,
+	import_facilities_csv,
+	list_facilities,
+	list_networks,
+)
 
 
 class TestOptInFacilityCsvImport(UnitTestCase):
@@ -69,6 +74,7 @@ class TestOptInFacilityCsvImport(UnitTestCase):
 				"memberships": [
 					{
 						"network": "network-a",
+						"price_list_override": "",
 						"status": "Active",
 						"contact_name": "Jane Doe",
 						"contact_email": "jane@example.com",
@@ -77,6 +83,68 @@ class TestOptInFacilityCsvImport(UnitTestCase):
 				],
 			}
 		)
+
+
+class TestOptInPriceListTools(UnitTestCase):
+	def test_import_passes_a_facility_price_list_override(self):
+		csv_data = (
+			"mfl_code,facility_name,price_list_override,keph_level,contact_name,contact_email,contact_phone\n"
+			"1001,First Clinic,Negotiated Year 2,Level 3,Jane Doe,jane@example.com,0712000001\n"
+		)
+
+		with (
+			patch("crm.api.optin_admin._assert_network_access"),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.save_facility") as save_facility,
+		):
+			result = import_facilities_csv(csv_data, "network-a", dry_run=0)
+
+		self.assertEqual(result["valid_count"], 1)
+		self.assertEqual(
+			save_facility.call_args.args[0]["memberships"][0]["price_list_override"],
+			"Negotiated Year 2",
+		)
+
+	def test_duplicate_price_list_copies_all_selling_item_prices(self):
+		source = frappe._dict({"name": "Negotiated Year 1", "currency": "KES"})
+		new_price_list = frappe._dict(
+			{
+				"name": "Negotiated Facility A",
+				"currency": "KES",
+				"insert": lambda **kwargs: None,
+			}
+		)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._get_negotiated_price_list", return_value=source),
+			patch("crm.api.optin_admin.frappe.db.exists", side_effect=[False, "ITEM-PRICE-1"]),
+			patch("crm.api.optin_admin.frappe.get_meta") as get_meta,
+			patch("crm.api.optin_admin.frappe.get_list") as get_list,
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=new_price_list) as get_doc,
+		):
+			get_meta.return_value.get_fieldnames.return_value = {
+				"item_code",
+				"uom",
+				"currency",
+				"price_list_rate",
+			}
+			get_list.return_value = [
+				frappe._dict(
+					{
+						"name": "ITEM-PRICE-1",
+						"item_code": "CV-HIMS-KEPH-3",
+						"uom": "Nos",
+						"currency": "KES",
+						"price_list_rate": 100,
+					}
+				)
+			]
+
+			result = duplicate_negotiated_price_list("Negotiated Year 1", "Negotiated Facility A")
+
+		self.assertEqual(result["copied"], 1)
+		self.assertEqual(get_doc.call_count, 2)
 
 
 class TestOptInNetworkList(UnitTestCase):
@@ -174,6 +242,7 @@ class TestOptInFacilityList(UnitTestCase):
 				"name": "MEM-0001",
 				"parent": "FAC-0001",
 				"network": "network-a",
+				"price_list_override": "Negotiated Year 2",
 				"status": "Active",
 				"contact_name": "Jane Doe",
 				"contact_email": "jane@example.com",
@@ -223,3 +292,7 @@ class TestOptInFacilityList(UnitTestCase):
 		self.assertEqual(facility_call["or_filters"][0], ["facility_name", "like", "%First%"])
 		self.assertEqual(result["total"], 1)
 		self.assertEqual(result["rows"][0]["memberships"][0]["invite_status"], "Not Sent")
+		self.assertEqual(
+			result["rows"][0]["memberships"][0]["price_list_override"],
+			"Negotiated Year 2",
+		)

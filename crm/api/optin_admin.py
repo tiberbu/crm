@@ -616,6 +616,77 @@ def create_negotiated_price_list(name: Any):
 
 
 @frappe.whitelist()
+def duplicate_negotiated_price_list(source: Any, name: Any):
+	"""Copy a negotiated selling price list and all of its item prices."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	source = _get_negotiated_price_list(source)
+	name = frappe.utils.cstr(name).strip()
+	if not name.startswith("Negotiated"):
+		frappe.throw(_("Negotiated price lists must begin with 'Negotiated'."))
+	if frappe.db.exists("Price List", name):
+		frappe.throw(_("A price list with this name already exists."))
+
+	price_list = frappe.get_doc(
+		{
+			"doctype": "Price List",
+			"price_list_name": name,
+			"currency": source.currency or "KES",
+			"selling": 1,
+			"buying": 0,
+			"enabled": 1,
+		}
+	)
+	price_list.insert(ignore_permissions=True)
+
+	# Keep the fields that describe an Item Price across ERPNext v15/v16. The
+	# common fields are enough for the editor, while dates/customer/batch context
+	# preserve a complete copy when those optional columns exist on the site.
+	item_price_fields = [
+		"item_code",
+		"uom",
+		"packing_unit",
+		"item_name",
+		"brand",
+		"item_description",
+		"customer",
+		"supplier",
+		"batch_no",
+		"currency",
+		"price_list_rate",
+		"valid_from",
+		"lead_time_days",
+		"valid_upto",
+		"note",
+		"reference",
+	]
+	available_fields = set(frappe.get_meta("Item Price").get_fieldnames())
+	source_rows = frappe.get_list(
+		"Item Price",
+		filters={"price_list": source.name, "selling": 1},
+		fields=["name", *[field for field in item_price_fields if field in available_fields]],
+		order_by="item_code asc, name asc",
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL
+	)
+	for source_row in source_rows:
+		values = {
+			field: source_row.get(field)
+			for field in item_price_fields
+			if field in available_fields and source_row.get(field) is not None
+		}
+		values.update({"doctype": "Item Price", "price_list": price_list.name, "selling": 1, "buying": 0})
+		if not values.get("currency"):
+			values["currency"] = price_list.currency or "KES"
+		if not values.get("uom"):
+			values["uom"] = frappe.db.get_value("Item", values["item_code"], "stock_uom") or "Nos"
+		frappe.get_doc(values).insert(ignore_permissions=True)
+
+	frappe.db.commit()
+	return {"name": price_list.name, "source": source.name, "copied": len(source_rows)}
+
+
+@frappe.whitelist()
 def save_item_price(price_list: Any, item_code: Any, rate: Any):
 	"""Create or update a selling Item Price in a negotiated price list."""
 	if not _is_admin():
@@ -703,21 +774,28 @@ def list_facilities(
 			["contact_phone", "like", contact_like],
 		]
 
+	membership_fields = [
+		"name",
+		"parent",
+		"network",
+		"status",
+		"contact_name",
+		"contact_email",
+		"contact_phone",
+		"invite_email_queue",
+		"invite_sent_at",
+	]
+	try:
+		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
+			membership_fields.insert(3, "price_list_override")
+	except Exception:
+		pass
+
 	mem_rows = frappe.get_list(
 		"CRM Facility Membership",
 		filters=mem_filters,
 		or_filters=contact_or_filters,
-		fields=[
-			"name",
-			"parent",
-			"network",
-			"status",
-			"contact_name",
-			"contact_email",
-			"contact_phone",
-			"invite_email_queue",
-			"invite_sent_at",
-		],
+		fields=membership_fields,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 		limit_page_length=0,
 	)
@@ -823,6 +901,7 @@ def list_facilities(
 					{
 						"network": m.network,
 						"name": m.name,
+						"price_list_override": m.get("price_list_override") or "",
 						"status": m.status,
 						"contact_name": m.contact_name,
 						"contact_email": m.contact_email,
@@ -849,7 +928,7 @@ def save_facility(data: Any):
 	  facility_name: str,
 	  organization?: str,  # blank defaults to the facility name
 	  keph_level: str,
-	  memberships: [{network, status, contact_name, contact_email, contact_phone}]
+	  memberships: [{network, price_list_override, status, contact_name, contact_email, contact_phone}]
 	}
 	Max 2 memberships enforced.
 	"""
@@ -867,6 +946,13 @@ def save_facility(data: Any):
 	memberships = data.get("memberships") or []
 	if len(memberships) > 2:
 		frappe.throw(_("A facility may belong to at most 2 networks."))
+
+	for membership in memberships:
+		price_list_override = frappe.utils.cstr(membership.get("price_list_override") or "").strip()
+		if price_list_override and not frappe.db.exists(
+			"Price List", {"name": price_list_override, "selling": 1, "enabled": 1}
+		):
+			frappe.throw(_("Select an enabled selling price list for the facility override."))
 
 	name = data.get("name")
 	mfl_code = frappe.utils.cstr(data.get("mfl_code") or "").strip()
@@ -902,19 +988,28 @@ def save_facility(data: Any):
 	new_network_set = {m.get("network") for m in memberships if m.get("network")}
 	# Remove membership rows for networks being replaced
 	doc.memberships = [m for m in (doc.memberships or []) if m.network not in new_network_set]
+	try:
+		membership_has_override = frappe.db.has_column("CRM Facility Membership", "price_list_override")
+	except Exception:
+		membership_has_override = False
 	for mem_data in memberships:
 		net = frappe.utils.cstr(mem_data.get("network") or "").strip()
 		if not net:
 			continue
+		membership_values = {
+			"network": net,
+			"status": mem_data.get("status") or "Active",
+			"contact_name": frappe.utils.cstr(mem_data.get("contact_name") or ""),
+			"contact_email": frappe.utils.cstr(mem_data.get("contact_email") or "").lower(),
+			"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
+		}
+		if membership_has_override:
+			membership_values["price_list_override"] = frappe.utils.cstr(
+				mem_data.get("price_list_override") or ""
+			).strip()
 		doc.append(
 			"memberships",
-			{
-				"network": net,
-				"status": mem_data.get("status") or "Active",
-				"contact_name": frappe.utils.cstr(mem_data.get("contact_name") or ""),
-				"contact_email": frappe.utils.cstr(mem_data.get("contact_email") or "").lower(),
-				"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
-			},
+			membership_values,
 		)
 
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
@@ -1034,15 +1129,16 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 	Expected CSV columns (order flexible, matched by header name):
 	  mfl_code, facility_name (optional — auto-filled from HFR if blank),
 	  keph_level (optional — auto-filled from HFR if blank),
-	  organization (optional — defaults to facility_name), contact_name,
-	  contact_email, contact_phone
+	  organization (optional — defaults to facility_name), price_list_override
+	  (optional — defaults to the network price list), contact_name, contact_email,
+	  contact_phone
 
 	Returns:
 	  {
 	    imported: int,
 	    valid_count: int,
 	    error_count: int,
-	    rows: [{row, mfl_code, facility_name, organization, contact_email, error}],
+	    rows: [{row, mfl_code, facility_name, organization, price_list_override, contact_email, error}],
 	    errors: [{row: int, mfl_code: str, message: str}],
 	    dry_run: bool
 	  }
@@ -1093,6 +1189,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		contact_name = row.get("contact_name", "")
 		contact_email = row.get("contact_email", "").lower()
 		contact_phone = row.get("contact_phone", "")
+		price_list_override = row.get("price_list_override", "")
 		facility_name = row.get("facility_name", "")
 		keph_level = row.get("keph_level", "")
 		preview = {
@@ -1100,6 +1197,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 			"mfl_code": mfl_code,
 			"facility_name": facility_name,
 			"organization": row.get("organization", ""),
+			"price_list_override": price_list_override,
 			"contact_email": contact_email,
 			"error": None,
 		}
@@ -1115,6 +1213,12 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 			error = "contact_email is required"
 		if not error and not contact_phone:
 			error = "contact_phone is required"
+		if (
+			not error
+			and price_list_override
+			and not frappe.db.exists("Price List", {"name": price_list_override, "selling": 1, "enabled": 1})
+		):
+			error = "price_list_override must be an enabled selling price list"
 
 		# HFR enrichment if fields missing. It is safe in preview mode because
 		# it does not write; it also ensures the count matches what can import.
@@ -1149,6 +1253,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 						"memberships": [
 							{
 								"network": network_slug,
+								"price_list_override": price_list_override,
 								"status": "Active",
 								"contact_name": contact_name,
 								"contact_email": contact_email,
@@ -1180,4 +1285,4 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 @frappe.whitelist()
 def csv_template():
 	"""Return the CSV template as a string for download."""
-	return "mfl_code,facility_name,organization,keph_level,contact_name,contact_email,contact_phone\n22999,Example Hospital,Example Hospital Group,Level 4,Jane Wanjiku,jane@hospital.co.ke,0722000000\n"
+	return "mfl_code,facility_name,organization,price_list_override,keph_level,contact_name,contact_email,contact_phone\n22999,Example Hospital,Example Hospital Group,,Level 4,Jane Wanjiku,jane@hospital.co.ke,0722000000\n"

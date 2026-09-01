@@ -656,6 +656,9 @@
                   {{ row.organization || row.facility_name }} ·
                   {{ row.mfl_code }}
                 </p>
+                <p class="mt-0.5 text-xs text-ink-gray-5">
+                  {{ facilityPriceListLabel(row) }}
+                </p>
               </td>
               <td class="px-4 py-3">
                 <span
@@ -841,6 +844,31 @@
             />
           </div>
           <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-ink-gray-6">
+              {{ __('Facility price list') }}
+            </label>
+            <select
+              v-model="form.price_list_override"
+              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+            >
+              <option value="">{{ __('Use network price list') }}</option>
+              <option
+                v-for="priceList in negotiatedPriceLists"
+                :key="priceList.value"
+                :value="priceList.value"
+              >
+                {{ priceList.label }}
+              </option>
+            </select>
+            <span class="text-[11px] text-ink-gray-5">
+              {{
+                __(
+                  'Use this only when the facility has negotiated a different rate.',
+                )
+              }}
+            </span>
+          </div>
+          <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6"
               >{{ __('Contact Name') }}
               <span class="text-red-600">*</span></label
@@ -947,6 +975,9 @@
                   {{ __('Organization') }}
                 </th>
                 <th class="px-3 py-2 text-left font-medium">
+                  {{ __('Price List') }}
+                </th>
+                <th class="px-3 py-2 text-left font-medium">
                   {{ __('Contact Email') }}
                 </th>
                 <th class="px-3 py-2 text-left font-medium">
@@ -967,6 +998,9 @@
                 <td class="px-3 py-2 text-ink-gray-7">{{ r.facility_name }}</td>
                 <td class="px-3 py-2 text-ink-gray-7">
                   {{ r.organization || r.facility_name }}
+                </td>
+                <td class="px-3 py-2 text-ink-gray-7">
+                  {{ r.price_list_override || __('Use network price list') }}
                 </td>
                 <td class="px-3 py-2 text-ink-gray-6">{{ r.contact_email }}</td>
                 <td v-if="r.error" class="px-3 py-2 text-red-600">
@@ -1272,6 +1306,13 @@ function networkMembership(row) {
   )
 }
 
+function facilityPriceListLabel(row) {
+  const membership = networkMembership(row)
+  return membership?.price_list_override
+    ? `${__('Price list')}: ${membership.price_list_override}`
+    : `${__('Price list')}: ${networkDoc.value?.price_list_override || __('Opt-In default')}`
+}
+
 function isOptedIn(row) {
   return networkMembership(row)?.status === 'Opted In'
 }
@@ -1289,6 +1330,7 @@ const form = reactive({
   mfl_code: '',
   facility_name: '',
   organization: '',
+  price_list_override: '',
   keph_level: '',
   contact_name: '',
   contact_email: '',
@@ -1301,6 +1343,7 @@ function resetForm() {
   form.mfl_code = ''
   form.facility_name = ''
   form.organization = ''
+  form.price_list_override = ''
   form.keph_level = ''
   form.contact_name = ''
   form.contact_email = ''
@@ -1322,6 +1365,7 @@ function editContact(row) {
     mfl_code: row.mfl_code ?? '',
     facility_name: row.facility_name ?? '',
     organization: row.organization ?? row.facility_name ?? '',
+    price_list_override: m.price_list_override ?? '',
     keph_level: row.keph_level ?? '',
     contact_name: m.contact_name ?? '',
     contact_email: m.contact_email ?? '',
@@ -1404,6 +1448,7 @@ async function saveContact() {
     memberships: [
       {
         network: props.networkSlug,
+        price_list_override: form.price_list_override,
         status: form.status,
         contact_name: form.contact_name,
         contact_email: form.contact_email,
