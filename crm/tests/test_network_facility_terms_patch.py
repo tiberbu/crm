@@ -35,7 +35,12 @@ class TestNetworkFacilityTermsPatch(UnitTestCase):
 		self.assertIn("{{ pricing_table }}", payload["terms"])
 		self.assertIn("Schedule B — Facility-specific pricing", payload["terms"])
 		self.assertIn("Optional services, hardware and software", payload["terms"])
-		self.assertIn("Endpoint security", payload["terms"])
+		self.assertIn("Endpoint software security", payload["terms"])
+		self.assertIn("Discounted unit price (KES, excl. VAT)", payload["terms"])
+		self.assertIn("Total price (KES, excl. VAT)", payload["terms"])
+		self.assertIn("Endpoint software security per user per year", payload["terms"])
+		self.assertIn("KES 220,000.00", payload["terms"])
+		self.assertEqual(payload["terms"].count("Endpoint workstation — DELL OPTIPLEX 7010 MT SYSTEM"), 2)
 		self.assertIn("An optional item becomes part of this Agreement only when", payload["terms"])
 		self.assertIn("CAREVERSEHIMS · INDIVIDUAL FACILITY AGREEMENT", payload["terms"])
 		self.assertIn('{{ price_list or "Quotation price list" }}', payload["terms"])
@@ -44,17 +49,29 @@ class TestNetworkFacilityTermsPatch(UnitTestCase):
 		terms_doc.insert.assert_called_once_with(ignore_permissions=True)
 		commit.assert_called_once_with()
 
-	def test_is_idempotent_when_template_already_exists(self):
+	def test_refreshes_existing_seeded_template_without_changing_settings(self):
+		terms_doc = Mock(terms="old template")
+		template = Path(__file__).parents[1] / "setup" / "templates" / "chak_careverse_saas_agreement_v1.html"
 		with (
 			patch(
 				"crm.patches.v1_0.seed_network_facility_terms_v1.frappe.db.exists",
 				side_effect=[True, True],
 			),
-			patch("crm.patches.v1_0.seed_network_facility_terms_v1.frappe.get_doc") as get_doc,
+			patch(
+				"crm.patches.v1_0.seed_network_facility_terms_v1.frappe.get_app_path",
+				return_value=str(template),
+			),
+			patch(
+				"crm.patches.v1_0.seed_network_facility_terms_v1.frappe.get_doc",
+				return_value=terms_doc,
+			),
+			patch("crm.patches.v1_0.seed_network_facility_terms_v1.frappe.db.commit") as commit,
 		):
 			execute()
 
-		get_doc.assert_not_called()
+		self.assertEqual(terms_doc.terms, template.read_text(encoding="utf-8"))
+		terms_doc.save.assert_called_once_with(ignore_permissions=True)
+		commit.assert_called_once_with()
 
 	def test_template_scalar_values_are_escaped_before_jinja(self):
 		self.assertEqual(

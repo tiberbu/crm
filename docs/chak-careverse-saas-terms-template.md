@@ -40,11 +40,16 @@ they are exposed to Jinja; the only HTML-valued variable is the server-built
 expressions only (no `{% for %}` or `{% if %}` blocks), because Frappe's Terms and
 Conditions Text Editor sanitiser removes block tags on save.
 
-The patch is idempotent, skips CRM-only sites where the ERPNext Terms and
-Conditions DocType is unavailable, and leaves an existing document with the same
-title untouched.
+The patch skips CRM-only sites where the ERPNext Terms and Conditions DocType is
+unavailable. On each migration it creates the seeded document when absent, or
+refreshes the document with the exact seeded title from the reviewed repository
+asset when it already exists. It does not change `CRM Opt-In Settings` or any
+other Terms and Conditions document. This keeps deployments convergent while
+ensuring the full reviewed agreement (including the optional-offerings table) is
+not left truncated on a site that received an earlier version of the patch.
 
 ## Deployment
 
-Run the normal site migration. After reviewing the new document in **Terms and
-Conditions**, set it as the active document in **CRM Opt-In Settings** when ready.
+Run the normal site migration. Review the seeded document in **Terms and
+Conditions** (the exact-title document is refreshed on migration), then set it as
+the active document in **CRM Opt-In Settings** when ready.
