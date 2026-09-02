@@ -17,11 +17,11 @@ administrator can review the rendered agreement and select it manually.
 - The complete body of the reviewed CHAK/Tiberbu agreement is included, including
   the execution page and Schedules/Appendices A–G. Source tables are rendered as
   readable print tables rather than being summarised or truncated.
-- Schedule B contains only the accepted submission pricing in `pricing_table`.
+- Schedule B opens with the accepted submission pricing in `pricing_table`.
   It is generated from the server-side KEPH/Item Price result and includes the
-  configured VAT calculation. The generic KEPH-level price appendices from the
-  source document are intentionally excluded; they would expose unrelated levels
-  on an individual facility contract.
+  configured VAT calculation. The complete source framework pricing references
+  are retained below it for auditability and are clearly labelled as reference
+  pricing; they do not replace the facility-specific negotiated rates above.
 - Appendix B retains the complete **Optional Services, Hardware and Software**
   table from the source agreement. It covers implementation/training/support
   add-ons, endpoint hardware and endpoint/office software, with reference rates
@@ -48,8 +48,9 @@ unavailable. On each migration it creates the seeded document when absent, or
 refreshes the document with the exact seeded title from the reviewed repository
 asset when it already exists. It does not change `CRM Opt-In Settings` or any
 other Terms and Conditions document. This keeps deployments convergent while
-ensuring the full reviewed agreement (including the optional-offerings table) is
-not left truncated on a site that received an earlier version of the patch.
+ensuring the full reviewed agreement (including all pricing and optional-offerings
+tables) is not left truncated on a site that received an earlier version of the
+patch.
 
 ## Deployment
 
