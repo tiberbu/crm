@@ -142,7 +142,8 @@ session:
    particular can make an SPA appear to hang for tens of seconds.
    The generated worker now keeps the PWA manifest but does not install Workbox's
    default `index.html` navigation fallback: this deployment serves multiple Frappe
-   HTML shells, and `index.html` is not a precached navigation target.
+   HTML shells, so `index.html` is not the navigation target that the worker should
+   intercept.
 3. **An intermittent origin event not present during testing** — e.g. a gunicorn sync
    worker briefly tied up by a slow outbound `requests.get` (call-recording proxy,
    timeout 30 s) or a burst that momentarily exhausts the 9-worker pool. Low probability
