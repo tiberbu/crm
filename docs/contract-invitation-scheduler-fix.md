@@ -14,6 +14,11 @@ were online, but there was consequently no scheduled record for the daemon to
 execute. The configured expression `0 */2 * * *` is correct: it runs at minute
 zero every two hours.
 
+Contract generation had a separate retry race. The UI prevents a normal
+double-click, but a retried request, two browser tabs, or an integration retry
+could still create a second contract for the same deal and send another
+facility invitation before either view refreshed.
+
 ## Fix
 
 - Resend and signatory-edit reads now use the parent contract row lock. A
@@ -25,12 +30,15 @@ zero every two hours.
 - The migration adds the timestamp field only when the signatory DocType exists
   and idempotently repairs the Scheduled Job Type with frequency `Cron` and
   `0 */2 * * *`. Existing `Stopped` choices are preserved.
+- Contract generation now locks the deal while checking for an existing active
+  contract. Retries return that contract (and its tracked invitation queue when
+  available) instead of creating another contract or invitation.
 - Invitation email delivery remains immediate (`now=True`); SMS delivery and
   its existing retry/audit path are unchanged.
 
 ## Verification
 
 The opt-in backend suite covers duplicate resend suppression, old timestamps,
-automatic invitation behavior, and existing signing transitions. Migration on
-`crm.io` produced an active Scheduled Job Type with the expected cron and a
-persisted timestamp column.
+idempotent contract generation, automatic invitation behavior, and existing
+signing transitions. Migration on `crm.io` produced an active Scheduled Job
+Type with the expected cron and a persisted timestamp column.

@@ -448,6 +448,48 @@ def _tiberbu_signing_requirement(settings=None):
 	)
 
 
+def _lock_deal_for_contract_generation(deal):
+	"""Serialize contract generation requests for the same deal."""
+	try:
+		frappe.db.get_value("CRM Deal", deal, "name", for_update=True)
+	except Exception:
+		# Keep legacy/custom sites working if CRM Deal is not available while the
+		# caller is already validating the deal through another integration path.
+		pass
+
+
+def _existing_contract_for_deal(deal):
+	"""Return the latest non-cancelled contract for a deal, if one exists."""
+	try:
+		rows = frappe.get_list(
+			"CRM Contract",
+			filters={"deal": deal, "status": ["!=", "Cancelled"]},
+			fields=["name", "status"],
+			order_by="creation desc",
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: idempotency guard
+		)
+		return rows[0] if rows else None
+	except Exception:
+		return None
+
+
+def _existing_contract_invitation_queue(contract_name):
+	"""Find a tracked invitation queue for an already-generated contract."""
+	try:
+		rows = frappe.get_list(
+			"CRM Opt-In Submission",
+			filters={"contract": contract_name},
+			fields=["contract_invitation_email_queue"],
+			order_by="creation desc",
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: idempotent retry lookup
+		)
+		return frappe.utils.cstr(rows[0].get("contract_invitation_email_queue") or "") if rows else ""
+	except Exception:
+		return ""
+
+
 def _facility_witness_from_deal(deal):
 	"""Facility witness captured on the deal's latest opt-in submission."""
 	deal = frappe.utils.cstr(deal or "").strip()
@@ -1761,6 +1803,19 @@ def _generate_contract(
 
 	if not deal:
 		frappe.throw(_("Deal is required to generate a contract."))
+
+	# A double-click, two browser tabs, or a retried HTTP request must not create
+	# two contracts (and therefore two facility invitations) for one deal. The
+	# deal lock makes the check-and-create sequence atomic for callers using this
+	# endpoint; returning the existing record makes retries safe and predictable.
+	_lock_deal_for_contract_generation(deal)
+	existing_contract = _existing_contract_for_deal(deal)
+	if existing_contract:
+		return {
+			"contract": existing_contract.name,
+			"invitation_queue": _existing_contract_invitation_queue(existing_contract.name),
+			"already_exists": True,
+		}
 
 	# Witness falls back to what the facility captured on their opt-in submission,
 	# so the exec need not re-key it.

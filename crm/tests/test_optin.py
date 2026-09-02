@@ -11,6 +11,7 @@ from crm.api.contracts import (
 	_ensure_contract_signing_open,
 	_ensure_pending_signatory,
 	_facility_name_for_contract,
+	_generate_contract,
 	_generate_invitation_email_reference,
 	_invitation_sent_recently,
 	_issue_and_send_invitation,
@@ -583,6 +584,37 @@ class TestOptInTermsPrinting(UnitTestCase):
 
 
 class TestOptInContractAutomation(UnitTestCase):
+	def test_contract_generation_is_idempotent_for_an_existing_deal_contract(self):
+		existing = frappe._dict({"name": "CONT-EXISTING-00001", "status": "Awaiting Signatures"})
+		with (
+			patch("crm.api.contracts._lock_deal_for_contract_generation") as lock_deal,
+			patch("crm.api.contracts._existing_contract_for_deal", return_value=existing),
+			patch(
+				"crm.api.contracts._existing_contract_invitation_queue",
+				return_value="Email Queue-EXISTING-00001",
+			),
+			patch("crm.api.contracts.frappe.new_doc") as new_doc,
+		):
+			result = _generate_contract(
+				deal="DEAL-EXISTING-00001",
+				quote="QUO-EXISTING-00001",
+				facility_signatory_name="Facility Signatory",
+				facility_signatory_email="facility@example.com",
+				facility_witness_name="Facility Witness",
+				facility_witness_email="witness@example.com",
+			)
+
+		self.assertEqual(
+			result,
+			{
+				"contract": "CONT-EXISTING-00001",
+				"invitation_queue": "Email Queue-EXISTING-00001",
+				"already_exists": True,
+			},
+		)
+		lock_deal.assert_called_once_with("DEAL-EXISTING-00001")
+		new_doc.assert_not_called()
+
 	def test_otp_accepts_legacy_blank_pending_status_only(self):
 		blank = SimpleNamespace(status="")
 		lowercase = SimpleNamespace(status="pending")
