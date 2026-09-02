@@ -8,7 +8,7 @@
           {{ __('Item Catalogue') }}
         </h1>
         <p class="mt-1 text-sm text-ink-gray-5">
-          {{ __('Manage sellable items and their negotiated price lists.') }}
+          {{ __('Manage sellable items and Opt-In price lists.') }}
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -33,7 +33,7 @@
           <input
             v-model="newListName"
             class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            placeholder="Negotiated Year 6"
+            :placeholder="__('Year 6 Partner Rates')"
           />
         </label>
         <Button
@@ -111,7 +111,7 @@
           <input
             v-model="duplicateListName"
             class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            :placeholder="__('Negotiated Year 6')"
+            :placeholder="__('Year 6 Partner Rates')"
           />
         </label>
         <Button
@@ -294,7 +294,7 @@
           <p class="mt-1 text-xs text-ink-gray-5">
             {{
               __(
-                'Set negotiated prices for several items at once. Item and Item Price records are handled automatically.',
+                'Set prices for several items at once. Item and Item Price records are handled automatically.',
               )
             }}
           </p>
@@ -345,7 +345,7 @@
           </table>
         </div>
         <div v-else class="mb-4 text-xs text-ink-gray-5">
-          {{ __('Add a catalogue item to configure a negotiated price.') }}
+          {{ __('Add a catalogue item to configure a price.') }}
         </div>
         <div class="flex justify-end">
           <Button

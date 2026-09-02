@@ -13,6 +13,7 @@ from crm.api.contracts import (
 	_facility_name_for_contract,
 	_generate_contract,
 	_generate_invitation_email_reference,
+	_internal_reminder_item,
 	_invitation_sent_recently,
 	_issue_and_send_invitation,
 	_network_signers,
@@ -33,6 +34,7 @@ from crm.api.contracts import (
 	remove_signatory,
 	request_otp,
 	resend_invitation,
+	send_internal_signatory_reminders,
 	sync_configured_signatories,
 	update_signatory,
 )
@@ -1260,6 +1262,102 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertIn("Open pending approvals", sendmail.call_args.kwargs["message"])
 		set_value.assert_called_once()
 		log_event.assert_called_once()
+
+	def test_internal_signatory_reminder_groups_pending_workload(self):
+		first_contract = SimpleNamespace(name="CONT-TEST-00005", deal="DEAL-TEST-00005")
+		second_contract = SimpleNamespace(name="CONT-TEST-00006", deal="DEAL-TEST-00006")
+		first_row = SimpleNamespace(
+			name="ROW-INTERNAL-00003",
+			signatory_role="Network Signatory",
+			signatory_name="Tiberbu Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+		)
+		second_row = SimpleNamespace(
+			name="ROW-INTERNAL-00004",
+			signatory_role="Tiberbu Signatory",
+			signatory_name="Tiberbu Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+		)
+		first_item = _internal_reminder_item(first_contract, first_row)
+		second_item = _internal_reminder_item(second_contract, second_row)
+		first_item["facility_label"] = "Aga Khan Hospital"
+		second_item["facility_label"] = "Lifecare Hospital"
+
+		with (
+			patch("crm.api.contracts._is_internal_crm_signatory", return_value=True),
+			patch("crm.api.contracts.frappe.sendmail") as sendmail,
+			patch("crm.api.contracts.frappe.db.has_column", return_value=True),
+			patch("crm.api.contracts.frappe.db.set_value") as set_value,
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			result = _send_internal_signatory_reminder(
+				first_contract,
+				first_row,
+				pending_items=[first_item, second_item],
+			)
+
+		self.assertTrue(result)
+		sendmail.assert_called_once()
+		self.assertIn("Aga Khan Hospital + 1 more", sendmail.call_args.kwargs["subject"])
+		self.assertIn("Aga Khan Hospital", sendmail.call_args.kwargs["message"])
+		self.assertIn("Lifecare Hospital", sendmail.call_args.kwargs["message"])
+		self.assertTrue(sendmail.call_args.kwargs["now"])
+		self.assertEqual(set_value.call_count, 2)
+		self.assertEqual(log_event.call_count, 2)
+
+	def test_internal_reminder_scheduler_groups_same_user_and_skips_external_rows(self):
+		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed")
+		internal = SimpleNamespace(
+			name="ROW-INTERNAL-00005",
+			signatory_role="Network Signatory",
+			signatory_name="CRM Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+			crm_last_reminder_at=None,
+		)
+		external = SimpleNamespace(
+			name="ROW-EXTERNAL-00001",
+			signatory_role="Tiberbu Signatory",
+			signatory_name="External Reviewer",
+			signatory_email="external@example.com",
+			status="Pending",
+			crm_last_reminder_at=None,
+		)
+		first = SimpleNamespace(
+			name="CONT-TEST-00007", deal="DEAL-TEST-00007", signatories=[facility, internal]
+		)
+		second = SimpleNamespace(
+			name="CONT-TEST-00008", deal="DEAL-TEST-00008", signatories=[facility, internal]
+		)
+		external_contract = SimpleNamespace(
+			name="CONT-TEST-00009", deal="DEAL-TEST-00009", signatories=[facility, external]
+		)
+
+		with (
+			patch(
+				"crm.api.contracts.frappe.get_list",
+				return_value=[
+					frappe._dict({"name": first.name}),
+					frappe._dict({"name": second.name}),
+					frappe._dict({"name": external_contract.name}),
+				],
+			),
+			patch("crm.api.contracts.frappe.get_doc", side_effect=[first, second, external_contract]),
+			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch(
+				"crm.api.contracts._is_internal_crm_signatory",
+				side_effect=lambda row: row.signatory_email == "reviewer@example.com",
+			),
+			patch("crm.api.contracts._send_internal_signatory_reminder", return_value=True) as send,
+			patch("crm.api.contracts.frappe.db.commit"),
+		):
+			result = send_internal_signatory_reminders()
+
+		self.assertEqual(result, {"sent": 1, "skipped": 0})
+		send.assert_called_once()
+		self.assertEqual(len(send.call_args.kwargs["pending_items"]), 2)
 
 	def test_signing_portal_returns_non_sensitive_progress_for_every_signatory(self):
 		current = SimpleNamespace(signatory_name="Facility Signatory")

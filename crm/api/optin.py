@@ -1341,16 +1341,100 @@ def _pricing_tax_context(pricing, deal=None):
 	}
 
 
+def _safe_tc_text(value, fallback=""):
+	"""Escape a scalar before exposing it to the Terms and Conditions template.
+
+	Terms and Conditions are stored as HTML and Frappe's Jinja environment does not
+	consistently auto-escape values across supported versions.  Keep the template
+	source static and pass only escaped scalar values; the one intentionally-HTML
+	value (``pricing_table``) is built by ``_build_pricing_table`` from escaped cells.
+	"""
+	value = frappe.utils.cstr(value or fallback).strip()
+	return frappe.utils.escape_html(value)
+
+
+def _safe_tc_pricing_rows(pricing):
+	"""Return the minimal, escaped pricing shape exposed to Jinja templates."""
+	rows = []
+	for row in pricing or []:
+		if not isinstance(row, dict):
+			continue
+		rows.append(
+			{
+				"facility_name": _safe_tc_text(row.get("facility_name"), "Selected facility"),
+				"mfl_code": _safe_tc_text(row.get("mfl_code")),
+				"keph_level": _safe_tc_text(row.get("keph_level")),
+				"item_code": _safe_tc_text(row.get("item_code")),
+				"price_list": _safe_tc_text(row.get("price_list")),
+				"monthly_kes": frappe.utils.flt(row.get("monthly_kes")),
+				"annual_kes": frappe.utils.flt(row.get("annual_kes")),
+			}
+		)
+	return rows
+
+
+def _build_tc_context(pricing, contact, network_doc, deal=None, quote=None, date=None):
+	"""Build the single, escaped context used by portal, contract and print renders."""
+	pricing = pricing or []
+	contact = contact if isinstance(contact, dict) else {}
+	network_doc = network_doc or {}
+	tax_totals = _pricing_tax_context(pricing, deal)
+	safe_pricing = _safe_tc_pricing_rows(pricing)
+	first = safe_pricing[0] if safe_pricing else {}
+	network_display_raw = frappe.utils.cstr(network_doc.get("display_name") or "").strip() or "CareverseHIMS"
+	network_display = _safe_tc_text(network_display_raw)
+	network_legal_raw = (
+		frappe.utils.cstr(network_doc.get("footer_legal_name") or "").strip() or network_display_raw
+	)
+	network_legal = _safe_tc_text(network_legal_raw)
+	network_email = _safe_tc_text(network_doc.get("contact_email"))
+	facility_name = first.get("facility_name") or "Selected facility"
+	facility = {
+		"name": facility_name,
+		"facility_name": facility_name,
+		"mfl_code": first.get("mfl_code", ""),
+		"keph_level": first.get("keph_level", ""),
+		"organization": facility_name,
+	}
+	customer_email = _safe_tc_text(contact.get("email"))
+	price_lists = {row.get("price_list") for row in safe_pricing if row.get("price_list")}
+	price_list = next(iter(price_lists), "") if len(price_lists) == 1 else ""
+	return {
+		"contact": {"email": customer_email},
+		"customer": {"name": facility_name, "email": customer_email},
+		"facility": facility,
+		"facilities": safe_pricing,
+		"pricing": safe_pricing,
+		"facility_count": len(safe_pricing),
+		"pricing_table": _build_pricing_table(pricing),
+		"price_list": price_list,
+		**tax_totals,
+		"vat_label": _safe_tc_text(tax_totals.get("vat_label"), "VAT"),
+		"grand_total_monthly_display": _fmt_kes(tax_totals["grand_total_monthly"]),
+		"grand_total_annual_display": _fmt_kes(tax_totals["grand_total_annual"]),
+		"date": date or frappe.utils.format_date(frappe.utils.today()),
+		"deal": _safe_tc_text(deal),
+		"quote": _safe_tc_text(quote),
+		"network": {
+			"slug": _safe_tc_text(network_doc.get("name") or network_doc.get("slug")),
+			"display_name": network_display,
+			"legal_name": network_legal,
+			"contact_email": network_email,
+			"footer_legal_name": network_legal,
+			"header_copy": _safe_tc_text(network_doc.get("custom_header_copy")),
+		},
+	}
+
+
 def build_tc_context_for_deal(deal):
 	"""Reconstruct the T&C render context (network, contact, pricing) for a deal
 	from its opt-in submission.
 
-	The Terms & Conditions Jinja template references {{ network.display_name }},
-	{{ contact.email }}, {{ pricing_table }} and {{ grand_total_*_display }}; a
-	context missing any of these raises UndefinedError. Contract generation and PDF
-	export call this so they render the SAME priced terms the customer accepted,
-	sourced from the submission's stored payload. Returns None if no submission is
-	found for the deal (caller should degrade gracefully).
+	The Terms & Conditions Jinja template references the escaped network, customer,
+	facility and pricing values, plus the pre-rendered ``pricing_table`` and totals.
+	Contract generation and PDF export call this so they render the SAME priced terms
+	the customer accepted, sourced from the submission's stored payload. Returns None
+	if no submission is found for the deal (caller should degrade gracefully).
 	"""
 	if not deal:
 		return None
@@ -1376,22 +1460,8 @@ def build_tc_context_for_deal(deal):
 	# expects. Fall back to "facilities" for older payloads.
 	pricing = data.get("pricing") or data.get("facilities") or []
 	contact = data.get("contact") or {}
-	tax_totals = _pricing_tax_context(pricing, deal)
-
 	network_doc = _get_network_doc(subs[0].network_slug)
-	network_display = (network_doc.get("display_name") if network_doc else "CareverseHIMS") or "CareverseHIMS"
-
-	return {
-		"contact": {"email": frappe.utils.cstr(contact.get("email") or "")},
-		"facilities": pricing,
-		"pricing": pricing,
-		"pricing_table": _build_pricing_table(pricing),
-		**tax_totals,
-		"grand_total_monthly_display": _fmt_kes(tax_totals["grand_total_monthly"]),
-		"grand_total_annual_display": _fmt_kes(tax_totals["grand_total_annual"]),
-		"date": frappe.utils.format_date(frappe.utils.today()),
-		"network": {"display_name": network_display},
-	}
+	return _build_tc_context(pricing, contact, network_doc, deal=deal)
 
 
 # nosemgrep: guest-whitelisted-method -- signing-token, email, network, and expiry are verified before terms are returned.
@@ -1428,36 +1498,32 @@ def get_terms_text(
 
 	tc_doc = frappe.get_doc("Terms and Conditions", tc_name)
 
-	# Resolve network display name for the template
-	network_doc = _get_network_doc(network_slug)
-	network_display = (network_doc.get("display_name") if network_doc else "CareverseHIMS") or "CareverseHIMS"
-
 	# Compute pricing to embed in the T&C
 	pricing_result = get_pricing(
 		signing_token, email, network_slug, expiry, selected_mfl_codes, deal_invitation
 	)
 
 	facilities = pricing_result.get("facilities", [])
-	context = {
-		"contact": {"email": email},
-		"facilities": facilities,
-		"pricing": facilities,
-		# Pre-rendered so the template needs no {% for %} loop (sanitiser-stripped).
-		"pricing_table": _build_pricing_table(facilities),
-		"grand_total_monthly": pricing_result.get("grand_total_monthly", 0),
-		"grand_total_annual": pricing_result.get("grand_total_annual", 0),
-		"subtotal_monthly": pricing_result.get("subtotal_monthly", 0),
-		"subtotal_annual": pricing_result.get("subtotal_annual", 0),
-		"vat_monthly": pricing_result.get("vat_monthly", 0),
-		"vat_annual": pricing_result.get("vat_annual", 0),
-		"tax_template": pricing_result.get("tax_template", ""),
-		"vat_rate": pricing_result.get("vat_rate", 0),
-		"vat_label": pricing_result.get("vat_label", _("VAT")),
-		"grand_total_monthly_display": _fmt_kes(pricing_result.get("grand_total_monthly", 0)),
-		"grand_total_annual_display": _fmt_kes(pricing_result.get("grand_total_annual", 0)),
-		"date": frappe.utils.format_date(frappe.utils.today()),
-		"network": {"display_name": network_display},
-	}
+	# Use the same escaped context as contract generation/PDF rendering.  This keeps
+	# the customer's accepted terms, the stored contract body, and later prints in
+	# lockstep while keeping user-entered labels out of executable template source.
+	network_doc = _get_network_doc(network_slug)
+	context = _build_tc_context(facilities, {"email": email}, network_doc)
+	context.update(
+		{
+			"grand_total_monthly": pricing_result.get("grand_total_monthly", 0),
+			"grand_total_annual": pricing_result.get("grand_total_annual", 0),
+			"subtotal_monthly": pricing_result.get("subtotal_monthly", 0),
+			"subtotal_annual": pricing_result.get("subtotal_annual", 0),
+			"vat_monthly": pricing_result.get("vat_monthly", 0),
+			"vat_annual": pricing_result.get("vat_annual", 0),
+			"tax_template": _safe_tc_text(pricing_result.get("tax_template")),
+			"vat_rate": pricing_result.get("vat_rate", 0),
+			"vat_label": _safe_tc_text(pricing_result.get("vat_label"), _("VAT")),
+			"grand_total_monthly_display": _fmt_kes(pricing_result.get("grand_total_monthly", 0)),
+			"grand_total_annual_display": _fmt_kes(pricing_result.get("grand_total_annual", 0)),
+		}
+	)
 
 	rendered_html = frappe.render_template(tc_doc.terms or "", context)
 	# Content-integrity fingerprint of the rendered T&C — NOT a credential.

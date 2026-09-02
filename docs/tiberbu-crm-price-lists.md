@@ -1,17 +1,18 @@
-# Negotiated price lists
+# Opt-In price lists
 
 The Item Catalogue gives Sales Managers a CRM-level workflow for negotiated
 pricing. It hides the ERPNext `Item` → `Item Price` → `Price List` relationship:
 
 - **New Catalogue Item** creates a sellable, non-stock service item.
 - **New Price List** creates an enabled KES selling list. Existing lists can be
-  duplicated, including their current prices.
+  duplicated, including their current prices. Names do not need a `Negotiated`
+  prefix; the generic ERPNext `Standard Selling` list is excluded.
 - **Quick price setup** configures several item prices for the selected list in
   one save. Prices are entered as monthly KES amounts exclusive of VAT.
 
 The backend still uses native ERPNext records so quotations, network overrides,
 and facility overrides resolve through the standard Item Price lookup. The API
-accepts only enabled negotiated selling lists and requires Sales Manager,
+accepts only enabled selling lists other than `Standard Selling` and requires Sales Manager,
 System Manager, or Administrator access. The Item Catalogue route and sidebar
 entry are also hidden from users without the manager role.
 

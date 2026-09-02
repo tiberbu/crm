@@ -1,0 +1,364 @@
+<style>
+  .cv-contract { font-family: Arial, Helvetica, sans-serif; color: #1f2937; font-size: 11.2px; line-height: 1.55; }
+  .cv-contract * { box-sizing: border-box; }
+  .cv-contract h1 { color: #12395b; font-size: 21px; letter-spacing: .02em; margin: 0 0 5px; }
+  .cv-contract h2 { color: #12395b; font-size: 14px; margin: 20px 0 7px; border-bottom: 1px solid #cbd8e5; padding-bottom: 4px; page-break-after: avoid; }
+  .cv-contract h3 { color: #234e70; font-size: 11.2px; margin: 13px 0 4px; page-break-after: avoid; }
+  .cv-contract p { margin: 0 0 8px; }
+  .cv-contract ul { margin: 0 0 9px 19px; padding: 0; }
+  .cv-contract li { margin: 0 0 3px; }
+  .cv-contract .muted { color: #64748b; }
+  .cv-contract .cover { border: 1px solid #cbd8e5; border-top: 5px solid #12395b; background: #f8fafc; padding: 16px 18px 13px; margin-bottom: 14px; }
+  .cv-contract .eyebrow { color: #64748b; font-size: 9px; font-weight: 700; letter-spacing: .14em; margin: 0 0 8px; }
+  .cv-contract .subtitle { color: #475569; font-size: 12px; margin: 0 0 12px; }
+  .cv-contract .document-id { color: #64748b; font-size: 9.5px; letter-spacing: .02em; margin: 0; }
+  .cv-contract .meta, .cv-contract .summary { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
+  .cv-contract .meta td, .cv-contract .summary td { border: 1px solid #d8e2ec; padding: 6px 8px; vertical-align: top; }
+  .cv-contract .meta td:first-child, .cv-contract .summary td:first-child { width: 30%; background: #f4f7fa; color: #475569; font-weight: 700; }
+  .cv-contract .meta td:nth-child(3) { width: 20%; background: #f4f7fa; color: #475569; font-weight: 700; }
+  .cv-contract .callout { border-left: 4px solid #12395b; background: #f1f5f9; padding: 9px 11px; margin: 10px 0; }
+  .cv-contract .commercial { border: 1px solid #b9ccdc; border-radius: 2px; padding: 0 12px 10px; margin: 0 0 18px; page-break-inside: avoid; }
+  .cv-contract .commercial .price-heading { margin: 0 -12px 9px; }
+  .cv-contract .price-heading { background: #12395b; color: #fff; padding: 8px 10px; font-size: 12px; letter-spacing: .02em; font-weight: 700; }
+  .cv-contract .section-intro { color: #475569; margin-bottom: 8px; }
+  .cv-contract .pricing-table { margin: 0 0 3px; overflow: hidden; }
+  .cv-contract .pricing-table table { margin: 0 !important; }
+  .cv-contract .summary { margin-top: 9px; }
+  .cv-contract .summary td:last-child { text-align: right; white-space: nowrap; }
+  .cv-contract .summary tr:nth-child(3) td, .cv-contract .summary tr:nth-child(6) td { background: #eef5fa; font-size: 12px; }
+  .cv-contract .summary tr:nth-child(4) td { border-top: 2px solid #9fb6ca; }
+  .cv-contract .page-break { page-break-before: always; break-before: page; height: 0; }
+  .cv-contract .no-break { page-break-inside: avoid; break-inside: avoid; }
+  .cv-contract .signature { width: 100%; border-collapse: separate; border-spacing: 12px 0; margin: 20px 0 0; page-break-inside: avoid; }
+  .cv-contract .signature td { width: 50%; padding: 26px 12px 6px; vertical-align: top; border-top: 1px solid #475569; }
+  .cv-contract .signature td strong { color: #12395b; }
+  .cv-contract .signature-note { color: #64748b; font-size: 9.5px; margin-top: 9px; }
+  .cv-contract .footer { color: #64748b; border-top: 1px solid #d8e2ec; padding-top: 8px; margin-top: 20px; font-size: 9px; }
+  @media print {
+    .cv-contract { font-size: 10.5pt; }
+    .cv-contract .cover, .cv-contract .commercial { border-color: #aebdca; }
+  }
+</style>
+
+<div class="cv-contract">
+  <div class="cover no-break">
+    <p class="eyebrow">CAREVERSEHIMS · INDIVIDUAL FACILITY AGREEMENT</p>
+    <h1>SOFTWARE-AS-A-SERVICE AGREEMENT</h1>
+    <p class="subtitle">Provision of the CareverseHIMS Hospital Management Information System</p>
+    <p class="document-id">Prepared for {{ facility.name }} · Effective {{ date }} · Quote {{ quote or "To be confirmed" }}</p>
+  </div>
+
+  <table class="meta no-break">
+    <tr><td>Customer / facility</td><td>{{ customer.name }}</td><td>Network</td><td>{{ network.display_name }}</td></tr>
+    <tr><td>Facility level</td><td>{{ facility.keph_level or "Not specified" }}</td><td>MFL code</td><td>{{ facility.mfl_code or "Not specified" }}</td></tr>
+    <tr><td>Customer contact</td><td>{{ customer.email or "Not specified" }}</td><td>Price list</td><td>{{ price_list or "Quotation price list" }}</td></tr>
+  </table>
+
+  <div class="commercial">
+    <div class="price-heading">Schedule B — Facility-specific pricing · All rates exclusive of VAT</div>
+    <p class="section-intro">This commercial summary is part of the individual facility agreement. It contains only the accepted facilities and negotiated rates for this quotation; no unrelated facility-level prices are included.</p>
+    <div class="pricing-table">{{ pricing_table }}</div>
+    <table class="summary">
+      <tr><td>Monthly commitment (exclusive of VAT)</td><td>KES {{ "{:,.2f}".format(subtotal_monthly or 0) }}</td></tr>
+      <tr><td>{{ vat_label }}</td><td>KES {{ "{:,.2f}".format(vat_monthly or 0) }}</td></tr>
+      <tr><td>Monthly commitment (inclusive of VAT)</td><td><strong>KES {{ grand_total_monthly_display }}</strong></td></tr>
+      <tr><td>Annual commitment (exclusive of VAT)</td><td>KES {{ "{:,.2f}".format(subtotal_annual or 0) }}</td></tr>
+      <tr><td>{{ vat_label }} — annual</td><td>KES {{ "{:,.2f}".format(vat_annual or 0) }}</td></tr>
+      <tr><td>Annual commitment (inclusive of VAT)</td><td><strong>KES {{ grand_total_annual_display }}</strong></td></tr>
+    </table>
+    <div class="callout"><strong>Commercial basis:</strong> The amounts above are drawn from the accepted quotation and the configured Taxes and Charges template. VAT is shown separately and added to the exclusive-of-VAT rates.</div>
+  </div>
+
+  <h2>1. Contract information</h2>
+  <h3>1.1 Parties</h3>
+  <p>This Software-as-a-Service Agreement (the “Agreement”) is entered into by and between:</p>
+  <p><strong>TIBERBU HEALTHNET LIMITED</strong>, a company incorporated in the Republic of Kenya,
+    with its registered office at 4th Avenue Towers, 18th Floor, 4th Ngong Avenue off Ngong Road,
+    Nairobi (the “Provider” or “Tiberbu”);</p>
+  <p><strong>{{ customer.name }}</strong>, being the healthcare facility or legal entity identified in
+    this Agreement (the “Customer”), with the facility profile shown below; and</p>
+  <p><strong>{{ network.legal_name }}</strong> (the “Network Partner”), being the network or
+    coordinating organisation through which the Customer is participating in this CareverseHIMS
+    programme. The Network Partner’s role is limited to the coordination responsibilities expressly
+    described in this Agreement and does not make it the owner or licensor of CareverseHIMS.</p>
+  <p>Tiberbu, the Customer and the Network Partner are each a “Party” and together the “Parties”.</p>
+
+  <h3>1.2 Recitals</h3>
+  <ul>
+    <li>Tiberbu owns, operates and licenses the proprietary cloud-based CareverseHIMS hospital management information system.</li>
+    <li>The Customer operates the facility identified in this Agreement and wishes to subscribe to CareverseHIMS with implementation, training and support.</li>
+    <li>The Network Partner supports the Customer’s onboarding and coordination under its applicable network framework.</li>
+    <li>The Parties intend this Agreement and its schedules to be the complete agreement for the Customer’s facility subscription.</li>
+  </ul>
+
+  <h3>1.3 Definitions and interpretation</h3>
+  <p>“CareverseHIMS” means Tiberbu’s hosted hospital management information system, including its
+    software, updates, documentation and related services. “Customer Data” means data entered into,
+    generated through, stored in or processed by CareverseHIMS for the Customer. “Services” means the
+    subscription, hosting, support, implementation, training, maintenance and related services described
+    in this Agreement. “Business Day” means a day other than a Saturday, Sunday or public holiday in Kenya.</p>
+  <p>References to laws include amendments and subordinate legislation. The headings are for convenience
+    only. The schedules form part of this Agreement.</p>
+
+  <h3>1.4 Order of precedence</h3>
+  <p>If documents conflict, the main body of this Agreement prevails, followed by the schedules, then any
+    signed quotation, order form or statement of work incorporated by reference. The facility-specific
+    pricing shown in Schedule B above prevails on the commercial amounts for this facility.</p>
+
+  <h2>2. Commercial terms</h2>
+  <h3>2.1 Scope of Services</h3>
+  <p>Tiberbu shall provide the CareverseHIMS subscription, hosting, embedded support, implementation,
+    configuration and role-based training described in this Agreement. The Network Partner may assist
+    with onboarding, facility engagement, training logistics and escalation coordination.</p>
+
+  <h3>2.2 Subscription grant and permitted use</h3>
+  <p>Subject to payment of the applicable Fees and compliance with this Agreement, Tiberbu grants the
+    Customer a limited, non-exclusive, non-transferable and revocable right during the Subscription Term
+    to access and use CareverseHIMS solely for the Customer’s internal healthcare operations at the facility
+    identified in Schedule A. No ownership of the software is transferred.</p>
+
+  <h3>2.3 Authorized users</h3>
+  <p>The Customer shall ensure that only authorised users access CareverseHIMS, credentials are not shared,
+    and access is removed promptly when a user leaves or no longer needs access.</p>
+
+  <h3>2.4 Subscription term and renewal</h3>
+  <p>The initial Subscription Term is sixty (60) months from the Effective Date unless terminated earlier
+    under Clause 15. It renews for successive sixty (60) month periods unless either Party gives at least
+    sixty (60) days’ written notice of non-renewal.</p>
+
+  <h3>2.5 Facility-specific Fees and pricing</h3>
+  <p>Schedule B above is the complete pricing schedule for this Agreement. It contains only the facility or
+    facilities covered by this individual contract, their KEPH levels and the negotiated rates drawn from
+    the applicable quotation. No prices for unrelated facility levels or other customers form part of this
+    Agreement.</p>
+
+  <h3>2.6 Taxes</h3>
+  <p>All Fees are exclusive of Value Added Tax (VAT), withholding tax and other applicable taxes, levies
+    or duties imposed under Kenyan law. VAT is calculated from the configured Taxes and Charges template
+    and added to the invoice at the applicable statutory rate. Where withholding tax is required, the Customer
+    shall provide Tiberbu with the official withholding tax certificate.</p>
+
+  <h3>2.7 Payment terms</h3>
+  <p>Unless the quotation states otherwise, annual subscription Fees are payable in advance. Quarterly
+    payment, where offered, is an instalment arrangement and does not reduce the annual commitment.
+    Invoices are payable within thirty (30) days. All payments shall be made in Kenya Shillings (KES),
+    without deduction or set-off except as required by law.</p>
+
+  <h3>2.8 Payment account and late payment</h3>
+  <p>Payments must be made to the bank account designated by Tiberbu in writing. If an undisputed amount
+    remains unpaid for more than thirty (30) days after its due date, Tiberbu may charge a late payment fee
+    of five percent (5%) and, after written notice, suspend access until payment is received, while using
+    reasonable efforts to minimise disruption to emergency patient care.</p>
+
+  <h3>2.9 Network Partner role and authority</h3>
+  <p>{{ network.legal_name }} may coordinate onboarding, facility engagement, training logistics, implementation
+    tracking and escalation. It may not vary prices or payment terms, bind Tiberbu or the Customer, access
+    Customer Data except as expressly authorised, or represent itself as the owner or licensor of CareverseHIMS.</p>
+
+  <h2>3. Services description</h2>
+  <h3>3.1 CareverseHIMS</h3>
+  <p>CareverseHIMS is a cloud-based hospital management information system integrating patient registration,
+    clinical documentation, billing and financial management, pharmacy and inventory, reporting and analytics,
+    and compliance administration.</p>
+  <h3>3.2 Included functionality</h3>
+  <p>Depending on the subscribed service scope, the Services may include patient registration and appointments,
+    triage and nursing documentation, electronic medical records, diagnostics and procedures, billing,
+    pharmacy and inventory, reporting, dashboards, audit support and payer workflows.</p>
+  <h3>3.3 Third-party services</h3>
+  <p>CareverseHIMS may integrate with payer, regulatory and diagnostic platforms where technically feasible.
+    Availability, performance, acceptance and reimbursement outcomes of third-party platforms remain outside
+    Tiberbu’s control.</p>
+  <h3>3.4 Implementation, training and changes</h3>
+  <p>Tiberbu shall provide or oversee implementation, configuration and role-based training in accordance
+    with the agreed plan. Data migration and any work outside the agreed baseline scope are subject to a
+    written change request and, where applicable, additional Fees.</p>
+
+  <h2>4. Service levels and support</h2>
+  <p>Tiberbu shall provide support in accordance with this Clause 4 and Schedule C. Embedded support is
+    included in the subscription unless dedicated on-site support is agreed separately.</p>
+  <h3>4.1 Availability</h3>
+  <p>Tiberbu shall use commercially reasonable efforts to maintain the hosted production environment. The
+    target availability is 99.5% monthly, excluding scheduled or emergency maintenance, customer-caused
+    outages, connectivity or power failures outside the managed environment, third-party systems and force majeure.</p>
+  <h3>4.2 Support channels</h3>
+  <p>Support is available through the support portal at https://www.tiberbu.com/support, email at
+    support@tiberbu.com and telephone at +254111043566 or +254111043555. Support matters should include
+    the facility name, severity, business impact and actions already taken.</p>
+  <h3>4.3 Severity and response targets</h3>
+  <ul>
+    <li><strong>Critical:</strong> production unavailable or material business stoppage — initial response within one hour during covered support hours.</li>
+    <li><strong>High:</strong> major functionality unavailable without a reasonable workaround — initial response within four business hours.</li>
+    <li><strong>Medium:</strong> moderate impact with a workaround — initial response within one business day.</li>
+    <li><strong>Low:</strong> minor issue, cosmetic concern or general guidance — initial response within two business days.</li>
+  </ul>
+  <p>Scheduled maintenance will, where reasonably practicable, be notified in advance and performed outside
+    core operating hours. Emergency maintenance may occur without prior notice to address a security,
+    availability or regulatory risk.</p>
+
+  <h2>5. Customer obligations</h2>
+  <p>The Customer shall provide accurate implementation information, nominate operational, clinical, finance
+    and technical contacts, cooperate with onboarding and training, maintain suitable devices and connectivity,
+    manage users and access, and comply with applicable laws.</p>
+  <p>The Customer shall not reverse engineer CareverseHIMS, introduce malicious code, infringe third-party
+    rights, submit fraudulent claims or resell access without Tiberbu’s written consent.</p>
+
+  <h2>6. Data protection and privacy</h2>
+  <p>Each Party shall comply with the Data Protection Act, 2019 and applicable ODPC guidance. The Customer is
+    the data controller for patient, staff and facility data. Tiberbu is the data processor and shall process
+    Customer Data only on documented instructions, except where required by law. The Network Partner is not a
+    controller or processor unless expressly authorised in writing and shall have only the minimum access needed
+    for its coordination role.</p>
+  <p>Customer Data may include demographic, clinical, billing, claims, staff, access and audit information.
+    Tiberbu shall apply appropriate technical and organisational safeguards, support data-subject requests
+    where reasonably required, and notify the Customer without undue delay and within forty-eight (48) hours
+    of becoming aware of a confirmed personal data breach affecting Customer Data.</p>
+  <p>Tiberbu may use sub-processors to provide the Services, provided that equivalent data protection obligations
+    apply and Tiberbu remains responsible for their performance. Cross-border transfers shall comply with Kenyan law.</p>
+
+  <h2>7. Information security</h2>
+  <p>Security is a shared responsibility. Tiberbu provides role-based access controls, encryption in transit and
+    at rest within the managed environment, monitoring, backup, disaster recovery and security incident processes.
+    The Customer is responsible for local devices, connectivity, physical security, passwords, user behaviour and
+    timely de-provisioning.</p>
+
+  <h2>8. Data ownership and records</h2>
+  <p>The Customer owns Customer Data. Tiberbu owns CareverseHIMS, its software, architecture, documentation and
+    de-identified aggregate operational metadata that does not identify the Customer or a data subject.</p>
+  <p>The Customer may export Customer Data in a commonly used structured format during the Subscription Term and
+    for the applicable retention period. Following termination, Customer Data will be available on a read-only basis
+    for seven (7) years unless law or a written agreement requires longer. Data archive during legally required
+    retention is available without an additional fee; bespoke migration assistance may be separately priced.</p>
+
+  <h2>9. Intellectual property</h2>
+  <p>All intellectual property in CareverseHIMS remains with Tiberbu or its licensors. Customer-specific
+    configuration and enhancements form part of the platform unless otherwise agreed in writing. The Customer
+    receives only the limited use rights granted by this Agreement. Open-source components remain subject to their
+    respective licences.</p>
+
+  <h2>10. Confidentiality</h2>
+  <p>Each Party shall protect the other Party’s non-public commercial, technical, financial, operational, security
+    and patient-related information and use it only for the permitted purpose. Disclosure is permitted to personnel,
+    advisers, authorised representatives or regulators who need to know and are bound by equivalent obligations.
+    Confidentiality survives for five (5) years after termination; obligations for Health Data and trade secrets
+    survive while the information remains confidential.</p>
+
+  <h2>11. Warranties</h2>
+  <p>Tiberbu warrants that, under normal authorised use, CareverseHIMS will materially perform in accordance with
+    its Documentation and that professional services will be delivered with reasonable skill and care. Regulatory
+    readiness features do not guarantee certification, approval or acceptance by SHA, DHA, HIE or another third party.
+    Except as expressly stated, no implied warranty is given to the maximum extent permitted by Kenyan law.</p>
+
+  <h2>12. Risk allocation</h2>
+  <p>Each Party shall indemnify the other for direct losses arising from its breach of data protection or
+    confidentiality obligations, gross negligence, wilful misconduct or fraud. Tiberbu shall defend qualifying
+    intellectual-property claims arising from authorised use of CareverseHIMS. Neither Party is liable for indirect,
+    incidental, special or consequential loss. Subject to the exceptions below, aggregate liability is capped at the
+    Fees paid or payable in the twelve (12) months preceding the event. Nothing limits liability that cannot lawfully
+    be limited, including death or personal injury caused by negligence, fraud or wilful misconduct.</p>
+
+  <h2>13. Regulatory and sector compliance</h2>
+  <p>The Customer remains responsible for facility licensing, clinical governance, lawful data collection, records
+    management and compliance with Kenyan healthcare requirements. CareverseHIMS may support SHA, DHA, HIE and payer
+    workflows, but external processing, approvals and system availability remain subject to the applicable regulator
+    or payer.</p>
+
+  <h2>14. Change management</h2>
+  <p>Changes to scope, workflows, integrations, reports, training, deployment, timelines, pricing, payment structure,
+    support entitlement or facility onboarding assumptions require a written change request. No variation is binding
+    until confirmed in writing by Tiberbu and the Customer; the Network Partner may coordinate the request.</p>
+
+  <h2>15. Termination</h2>
+  <p>Either Party may terminate for convenience on ninety (90) days’ written notice or for an uncured material breach
+    after sixty (60) days’ notice. Tiberbu may terminate for undisputed non-payment after the applicable suspension
+    and notice periods. Either Party may terminate immediately for insolvency. On termination, access ceases except
+    for read-only data retrieval rights, outstanding amounts become payable, and each Party returns or destroys the
+    other’s Confidential Information subject to legal retention obligations.</p>
+
+  <h2>16. Legal and governance provisions</h2>
+  <p>Notices shall be delivered by hand, registered post or email with confirmation of receipt to the addresses
+    identified by the Parties. Neither Party may assign this Agreement without consent, except to an Affiliate or in
+    connection with a merger or sale of substantially all assets. Tiberbu may subcontract while remaining responsible
+    for subcontractors. The Parties are independent contractors. This Agreement is the entire agreement, may be amended
+    only in writing, is severable, may be executed in counterparts and may be signed electronically where permitted by law.</p>
+
+  <h2>17. Dispute resolution and governing law</h2>
+  <p>The Parties shall first attempt good-faith negotiation within fourteen (14) days of written notice of a dispute,
+    then escalate to senior management and attempt mediation. An unresolved dispute shall be finally resolved by a
+    sole arbitrator seated in Nairobi under the Arbitration Act, 1995 and the rules of the Chartered Institute of
+    Arbitrators (Kenya Branch). Kenyan courts have jurisdiction for interim relief and matters not subject to arbitration.
+    This Agreement is governed by the laws of the Republic of Kenya.</p>
+
+  <div class="page-break"></div>
+  <h2>Schedule A — Facility service profile</h2>
+  <table class="meta">
+    <tr><td>Facility</td><td>{{ facility.name }}</td></tr>
+    <tr><td>Facility level</td><td>{{ facility.keph_level or "Not specified" }}</td></tr>
+    <tr><td>MFL code</td><td>{{ facility.mfl_code or "Not specified" }}</td></tr>
+    <tr><td>Network</td><td>{{ network.display_name }}</td></tr>
+    <tr><td>Customer contact</td><td>{{ customer.email or "Not specified" }}</td></tr>
+    <tr><td>Price list</td><td>{{ price_list or "Quotation price list" }}</td></tr>
+    <tr><td>Subscribed service</td><td>CareverseHIMS hosted hospital management information system</td></tr>
+  </table>
+  <p>The Subscription includes cloud hosting, application maintenance and updates, embedded support, security
+    management within the managed environment, monitoring, backup and disaster recovery, role-based access controls,
+    audit logging, standard reporting, implementation/onboarding and role-based training as agreed in the implementation plan.</p>
+
+  <h2>Schedule C — Service Level Agreement</h2>
+  <p>This Schedule applies to the CareverseHIMS hosted production environment, application support, incident
+    management, security incident management, maintenance and supported integrations managed by Tiberbu. It does not
+    apply to Customer-owned infrastructure, internet provider failures, Customer endpoints, third-party systems or
+    delays attributable to SHA, DHA or another external platform.</p>
+  <table class="meta">
+    <tr><td>Support coverage</td><td>Monday to Saturday, 08:00–17:00 EAT; 24x7 handling for Critical incidents where contracted.</td></tr>
+    <tr><td>Support channels</td><td>https://www.tiberbu.com/support · support@tiberbu.com · +254111043566 / +254111043555</td></tr>
+    <tr><td>Incident workflow</td><td>Logging, assignment, severity assessment, response, investigation, resolution/workaround, Customer validation and closure.</td></tr>
+    <tr><td>Security incidents</td><td>Managed under Clauses 6 and 7; confirmed breaches affecting Customer Data are notified within 48 hours of awareness.</td></tr>
+  </table>
+
+  <h2>Schedule D — Data Processing Addendum</h2>
+  <p>Tiberbu processes Personal Data and Health Data on the Customer’s documented instructions to host, secure,
+    maintain, support, back up, restore, administer and operate CareverseHIMS. Processing may include collection,
+    storage, retrieval, use, transmission to authorised users, backup, restoration, anonymisation and deletion.</p>
+  <p>Categories may include patient demographics, clinical records, billing and claims, staff and user information,
+    technical logs and audit trails. Data subjects may include patients, guardians, clinicians, staff, contractors,
+    beneficiaries and authorised users. The Customer determines lawful bases, notices, consents and access permissions.
+    Tiberbu shall maintain appropriate safeguards, assist with data-subject rights where reasonably required, control
+    sub-processors and support audits subject to confidentiality and reasonable cost recovery.</p>
+
+  <h2>Schedule E — Security requirements</h2>
+  <table class="meta">
+    <tr><td>Application security</td><td>Tiberbu maintains secure development, patching, monitoring and managed-environment controls.</td></tr>
+    <tr><td>Access management</td><td>Tiberbu provides role-based access capability; the Customer approves roles and removes departing users.</td></tr>
+    <tr><td>Encryption and backup</td><td>Encryption is applied in transit and at rest; backups and disaster recovery are maintained for the hosted environment.</td></tr>
+    <tr><td>Local environment</td><td>The Customer secures devices, networks, power, connectivity, operating systems and physical access.</td></tr>
+  </table>
+
+  <h2>Schedule F — Change control procedure</h2>
+  <p>A change request must identify the requestor, date, description, business justification, priority, desired date,
+    affected module or facility and supporting documents. Tiberbu assesses functional, technical, security, compliance,
+    cost, timeline, resource and risk impacts before written approval, rejection or deferral.</p>
+
+  <h2>Schedule G — Data migration and exit plan</h2>
+  <p>Following termination, Tiberbu will make available a structured export of Customer Data and provide reasonable
+    clarification support. The Customer validates the export and remains responsible for importing it into a successor
+    system. Read-only retention is provided for seven (7) years or longer where law requires; data is then securely
+    deleted, destroyed or permanently anonymised subject to applicable obligations.</p>
+
+  <div class="page-break"></div>
+  <h2>Execution</h2>
+  <p>By accepting the Opt-In submission and signing the generated contract, the authorised representatives of the
+    Parties confirm that they have read, understood and agreed to this individual facility Agreement, including the
+    facility-specific pricing in Schedule B.</p>
+  <table class="signature no-break">
+    <tr>
+      <td><div class="line"><strong>For Tiberbu Healthnet Limited</strong><br/>Name and designation recorded electronically</div></td>
+      <td><div class="line"><strong>For {{ customer.name }}</strong><br/>Name and designation recorded electronically</div></td>
+    </tr>
+    <tr>
+      <td><div class="line"><strong>For {{ network.legal_name }}</strong><br/>Network representative recorded electronically</div></td>
+      <td><div class="line"><strong>Customer witness</strong><br/>Name and details recorded electronically</div></td>
+    </tr>
+  </table>
+  <p class="signature-note">Electronic signature records, timestamps and verification details are retained with the corresponding contract record.</p>
+  <div class="footer">Private and confidential · {{ network.display_name }} · CareverseHIMS · All amounts are in KES and exclusive of VAT unless expressly stated otherwise.</div>
+</div>
