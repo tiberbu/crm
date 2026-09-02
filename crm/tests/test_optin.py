@@ -12,6 +12,7 @@ from crm.api.contracts import (
 	_ensure_pending_signatory,
 	_facility_name_for_contract,
 	_generate_invitation_email_reference,
+	_invitation_sent_recently,
 	_issue_and_send_invitation,
 	_network_signers,
 	_notify_internal_approvers,
@@ -48,6 +49,7 @@ from crm.api.optin import (
 	list_submissions,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
+from crm.setup.optin import ensure_internal_signatory_reminder_job
 
 
 class TestOptInForecastFields(UnitTestCase):
@@ -88,6 +90,57 @@ class TestSignatoryUserLookup(UnitTestCase):
 			result = check_user_email("external@example.com")
 
 		self.assertEqual(result, {"checked": True, "linked": False, "full_name": ""})
+
+	def test_resend_suppresses_a_second_request_in_the_duplicate_window(self):
+		row = SimpleNamespace(
+			name="ROW-TEST-DEDUP",
+			signatory_role="Network Signatory",
+			signatory_name="Network Reviewer",
+			signatory_email="reviewer@example.com",
+			status="Pending",
+			invite_token="active-token",
+			crm_last_invitation_sent_at=frappe.utils.now_datetime(),
+		)
+		contract = SimpleNamespace(
+			name="CONT-TEST-DEDUP",
+			deal="DEAL-TEST-DEDUP",
+			signatories=[row],
+		)
+
+		with (
+			patch("crm.api.contracts._check_crm_role"),
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract) as get_doc,
+			patch("crm.api.contracts._issue_and_send_invitation") as issue,
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			result = resend_invitation(contract.name, row.signatory_role, row.name)
+
+		self.assertEqual(result, {"status": "already_sent", "email": row.signatory_email})
+		issue.assert_not_called()
+		self.assertTrue(get_doc.call_args.kwargs["for_update"])
+		log_event.assert_called_once()
+
+	def test_invitation_dedupe_window_accepts_old_invitation(self):
+		row = SimpleNamespace(
+			crm_last_invitation_sent_at=frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=-120)
+		)
+		self.assertFalse(_invitation_sent_recently(row))
+
+	def test_internal_reminder_scheduler_is_registered_with_two_hour_cron(self):
+		with (
+			patch("crm.setup.optin.frappe.db.table_exists", return_value=True),
+			patch(
+				"frappe.core.doctype.scheduled_job_type.scheduled_job_type.insert_single_event"
+			) as insert_event,
+			patch("crm.setup.optin.frappe.db.commit"),
+		):
+			self.assertTrue(ensure_internal_signatory_reminder_job())
+
+		insert_event.assert_called_once_with(
+			"Cron",
+			"crm.api.contracts.send_internal_signatory_reminders",
+			"0 */2 * * *",
+		)
 
 
 class TestOptInNegotiatedPricing(UnitTestCase):

@@ -1639,7 +1639,15 @@ async function doResend(role, rowName) {
         ),
       )
     } else {
-      toast.success(__('Signing link re-sent to {0}', [res?.email ?? role]))
+      if (res?.status === 'already_sent') {
+        toast.info(
+          __(
+            'A signing link was sent moments ago. No duplicate email was sent.',
+          ),
+        )
+      } else {
+        toast.success(__('Signing link re-sent to {0}', [res?.email ?? role]))
+      }
     }
     emit('lifecycle-reload')
   } catch (err) {

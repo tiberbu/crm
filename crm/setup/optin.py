@@ -12,6 +12,8 @@ import frappe
 
 DEFAULT_TC_TITLE = "CareverseHIMS Opt-In Terms and Conditions"
 OPTIN_LEAD_SOURCE = "Self Opt-In Portal"
+INTERNAL_REMINDER_METHOD = "crm.api.contracts.send_internal_signatory_reminders"
+INTERNAL_REMINDER_CRON = "0 */2 * * *"
 
 
 def ensure_lead_source():
@@ -28,6 +30,30 @@ def ensure_lead_source():
 		frappe.db.commit()
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "ensure_lead_source: failed to seed opt-in lead source")
+
+
+def ensure_internal_signatory_reminder_job():
+	"""Ensure the two-hour internal-signatory reminder job is registered.
+
+	Normal migrations sync ``hooks.scheduler_events``. This explicit, idempotent
+	bootstrap also repairs sites that were migrated before the reminder hook was
+	introduced, where the method exists in hooks but has no Scheduled Job Type row.
+	It preserves an administrator's ``Stopped`` choice when a row already exists.
+	"""
+	try:
+		if not frappe.db.table_exists("Scheduled Job Type"):
+			return False
+		from frappe.core.doctype.scheduled_job_type.scheduled_job_type import insert_single_event
+
+		insert_single_event("Cron", INTERNAL_REMINDER_METHOD, INTERNAL_REMINDER_CRON)
+		frappe.db.commit()
+		return True
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"ensure_internal_signatory_reminder_job: failed to register scheduled job",
+		)
+		return False
 
 
 def ensure_signing_key():

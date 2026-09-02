@@ -44,6 +44,7 @@ _SIGN_EXPIRY_SECONDS = 7200  # 2 hours
 _INVITE_EXPIRY_SECONDS = 604800  # 7 days
 _MAX_OTP_ATTEMPTS = 3
 _TOKEN_LENGTH = 48
+_INVITATION_DEDUPE_SECONDS = 60
 
 
 # ---------------------------------------------------------------------------
@@ -506,9 +507,9 @@ def _get_signatory_row(contract_doc, role, row_name=None):
 	return rows[0] if rows else None
 
 
-def _load_signatory(contract, role, row_name=None):
+def _load_signatory(contract, role, row_name=None, for_update=False):
 	"""Load the contract doc and the signatory row for role. Raise if either is missing."""
-	contract_doc = frappe.get_doc("CRM Contract", contract)
+	contract_doc = frappe.get_doc("CRM Contract", contract, for_update=for_update)
 	signatory_row = _get_signatory_row(contract_doc, role, row_name)
 	if not signatory_row:
 		frappe.throw(_("Signatory role not found in this contract."), frappe.DoesNotExistError)
@@ -812,6 +813,41 @@ def _otp_sms_message(network, signatory_row, otp):
 	return "%s: your contract signing code is %s. It expires in 10 minutes." % (brand, otp)
 
 
+def _invitation_sent_recently(signatory_row, now=None):
+	"""Return whether this row received an invitation in the duplicate window."""
+	last_sent = getattr(signatory_row, "crm_last_invitation_sent_at", None)
+	if not last_sent:
+		return False
+	now = now or frappe.utils.now_datetime()
+	try:
+		age = (now - frappe.utils.get_datetime(last_sent)).total_seconds()
+		return 0 <= age < _INVITATION_DEDUPE_SECONDS
+	except (TypeError, ValueError):
+		return False
+
+
+def _mark_invitation_sent(signatory_row, sent_at=None, commit=True):
+	"""Persist the latest successful invitation timestamp when the field exists."""
+	sent_at = sent_at or frappe.utils.now_datetime()
+	has_field = False
+	try:
+		has_field = frappe.db.has_column("CRM Contract Signatory", "crm_last_invitation_sent_at")
+		if getattr(signatory_row, "name", None) and has_field:
+			frappe.db.set_value(
+				"CRM Contract Signatory",
+				signatory_row.name,
+				"crm_last_invitation_sent_at",
+				sent_at,
+				update_modified=False,
+			)
+	except Exception:
+		pass
+	if has_field or not getattr(signatory_row, "meta", None):
+		signatory_row.crm_last_invitation_sent_at = sent_at
+	if commit:
+		frappe.db.commit()
+
+
 def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminder=False):
 	"""
 	Mint a fresh invitation token on the signatory row, persist it, and email the
@@ -842,8 +878,6 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 		frappe.utils.now_datetime(), seconds=_INVITE_EXPIRY_SECONDS
 	)
 	contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-	if commit:
-		frappe.db.commit()
 
 	role = frappe.utils.cstr(signatory_row.signatory_role)
 	link = _signing_link(contract_doc.name, role, token)
@@ -853,6 +887,7 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 	facility_subject = _contract_email_subject_label(contract_doc)
 
 	queue = None
+	email_sent = False
 	try:
 		subject_prefix = "[Reminder] " if reminder else ""
 		queue = frappe.sendmail(
@@ -877,19 +912,29 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 			),
 			now=True,
 		)
+		email_sent = True
 	except Exception:
 		frappe.log_error(
 			frappe.get_traceback(),
 			"contracts._issue_and_send_invitation: email failed for %s / %s" % (contract_doc.name, role),
 		)
+	if email_sent:
+		# Keep the marker in the same transaction as the rotated token. Committing
+		# the token before the marker would leave a race where a second resend could
+		# acquire the row lock in between and send another email.
+		_mark_invitation_sent(signatory_row, commit=False)
 
 	sms_status = _send_contract_sms(
 		contract_doc,
 		signatory_row,
 		"Invitation",
 		_invitation_sms_message(network, signatory_row, link),
-		commit=commit,
+		commit=False,
 	)
+	if commit:
+		# now=True mail is dispatched by Frappe's after-commit callback. Commit only
+		# after the token, dedupe marker, and SMS audit row are all persisted.
+		frappe.db.commit()
 	# Keep the historical return value (Email Queue document) intact for callers,
 	# while exposing the latest SMS status to new callers.
 	if queue is not None:
@@ -1919,7 +1964,10 @@ def resend_invitation(contract: Any, role: Any, row_name: Any = None):
 	role = frappe.utils.cstr(role).strip()
 	row_name = frappe.utils.cstr(row_name).strip() or None
 
-	contract_doc, signatory_row = _load_signatory(contract, role, row_name)
+	# Lock the parent while checking and rotating the token. A browser retry that
+	# arrives while the first resend is committing must observe its timestamp and
+	# be suppressed instead of sending a second link.
+	contract_doc, signatory_row = _load_signatory(contract, role, row_name, for_update=True)
 
 	if signatory_row.status != "Pending":
 		_ensure_pending_signatory(signatory_row)
@@ -1927,6 +1975,14 @@ def resend_invitation(contract: Any, role: Any, row_name: Any = None):
 	if _is_internal_crm_signatory(signatory_row):
 		_mark_internal_action_available(contract_doc, signatory_row)
 		return {"status": "crm_login_required", "email": signatory_row.signatory_email}
+
+	if _invitation_sent_recently(signatory_row):
+		log_deal_event(
+			contract_doc.deal,
+			"Duplicate signing-link resend suppressed for %s on contract %s"
+			% (signatory_row.signatory_email, contract),
+		)
+		return {"status": "already_sent", "email": signatory_row.signatory_email}
 
 	# Before the facility signatory completes, remaining signatories have no invite
 	# token and cannot be resent. After that point they are invited together.
@@ -2085,7 +2141,7 @@ def update_signatory(
 	if not name or not email:
 		frappe.throw(_("Signatory name and email are required."))
 
-	contract_doc, signatory_row = _load_signatory(contract, role, row_name)
+	contract_doc, signatory_row = _load_signatory(contract, role, row_name, for_update=True)
 
 	if (
 		signatory_row.status == "Signed"
