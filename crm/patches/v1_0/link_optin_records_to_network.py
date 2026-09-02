@@ -13,7 +13,6 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 from crm.utils.optin_network import network_name
 
-
 _LINK_LABELS = {
 	"CRM Lead": "Opt-In Network",
 	"CRM Deal": "Opt-In Network",
@@ -91,7 +90,7 @@ def _create_link_fields():
 						"label": "Last CRM Action Reminder Sent",
 						"read_only": 1,
 						"no_copy": 1,
-					}
+					},
 				]
 			},
 			ignore_validate=True,
@@ -186,8 +185,10 @@ def _backfill_contracts(deals, quotations):
 		limit_page_length=0,
 		ignore_permissions=True,
 	):
-		slug = network_name(row.get("network_slug")) or deals.get(row.get("deal")) or quotations.get(
-			row.get("quote")
+		slug = (
+			network_name(row.get("network_slug"))
+			or deals.get(row.get("deal"))
+			or quotations.get(row.get("quote"))
 		)
 		_set_if_empty("CRM Contract", row.name, slug)
 

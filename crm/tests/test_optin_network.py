@@ -38,7 +38,7 @@ class TestOptInNetworkLinks(UnitTestCase):
 					signatory_email="Signer@example.com",
 					signatory_name="Network Signer",
 					status="Pending",
-				)
+				),
 			],
 		)
 		with (
