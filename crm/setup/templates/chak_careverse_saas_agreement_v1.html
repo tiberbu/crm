@@ -1,364 +1,2521 @@
 <style>
-  .cv-contract { font-family: Arial, Helvetica, sans-serif; color: #1f2937; font-size: 11.2px; line-height: 1.55; }
-  .cv-contract * { box-sizing: border-box; }
-  .cv-contract h1 { color: #12395b; font-size: 21px; letter-spacing: .02em; margin: 0 0 5px; }
-  .cv-contract h2 { color: #12395b; font-size: 14px; margin: 20px 0 7px; border-bottom: 1px solid #cbd8e5; padding-bottom: 4px; page-break-after: avoid; }
-  .cv-contract h3 { color: #234e70; font-size: 11.2px; margin: 13px 0 4px; page-break-after: avoid; }
-  .cv-contract p { margin: 0 0 8px; }
-  .cv-contract ul { margin: 0 0 9px 19px; padding: 0; }
-  .cv-contract li { margin: 0 0 3px; }
-  .cv-contract .muted { color: #64748b; }
-  .cv-contract .cover { border: 1px solid #cbd8e5; border-top: 5px solid #12395b; background: #f8fafc; padding: 16px 18px 13px; margin-bottom: 14px; }
-  .cv-contract .eyebrow { color: #64748b; font-size: 9px; font-weight: 700; letter-spacing: .14em; margin: 0 0 8px; }
-  .cv-contract .subtitle { color: #475569; font-size: 12px; margin: 0 0 12px; }
-  .cv-contract .document-id { color: #64748b; font-size: 9.5px; letter-spacing: .02em; margin: 0; }
-  .cv-contract .meta, .cv-contract .summary { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
-  .cv-contract .meta td, .cv-contract .summary td { border: 1px solid #d8e2ec; padding: 6px 8px; vertical-align: top; }
-  .cv-contract .meta td:first-child, .cv-contract .summary td:first-child { width: 30%; background: #f4f7fa; color: #475569; font-weight: 700; }
-  .cv-contract .meta td:nth-child(3) { width: 20%; background: #f4f7fa; color: #475569; font-weight: 700; }
-  .cv-contract .callout { border-left: 4px solid #12395b; background: #f1f5f9; padding: 9px 11px; margin: 10px 0; }
-  .cv-contract .commercial { border: 1px solid #b9ccdc; border-radius: 2px; padding: 0 12px 10px; margin: 0 0 18px; page-break-inside: avoid; }
-  .cv-contract .commercial .price-heading { margin: 0 -12px 9px; }
-  .cv-contract .price-heading { background: #12395b; color: #fff; padding: 8px 10px; font-size: 12px; letter-spacing: .02em; font-weight: 700; }
-  .cv-contract .section-intro { color: #475569; margin-bottom: 8px; }
-  .cv-contract .pricing-table { margin: 0 0 3px; overflow: hidden; }
-  .cv-contract .pricing-table table { margin: 0 !important; }
-  .cv-contract .summary { margin-top: 9px; }
-  .cv-contract .summary td:last-child { text-align: right; white-space: nowrap; }
-  .cv-contract .summary tr:nth-child(3) td, .cv-contract .summary tr:nth-child(6) td { background: #eef5fa; font-size: 12px; }
-  .cv-contract .summary tr:nth-child(4) td { border-top: 2px solid #9fb6ca; }
-  .cv-contract .page-break { page-break-before: always; break-before: page; height: 0; }
-  .cv-contract .no-break { page-break-inside: avoid; break-inside: avoid; }
-  .cv-contract .signature { width: 100%; border-collapse: separate; border-spacing: 12px 0; margin: 20px 0 0; page-break-inside: avoid; }
-  .cv-contract .signature td { width: 50%; padding: 26px 12px 6px; vertical-align: top; border-top: 1px solid #475569; }
-  .cv-contract .signature td strong { color: #12395b; }
-  .cv-contract .signature-note { color: #64748b; font-size: 9.5px; margin-top: 9px; }
-  .cv-contract .footer { color: #64748b; border-top: 1px solid #d8e2ec; padding-top: 8px; margin-top: 20px; font-size: 9px; }
-  @media print {
-    .cv-contract { font-size: 10.5pt; }
-    .cv-contract .cover, .cv-contract .commercial { border-color: #aebdca; }
-  }
+.cv-contract { font-family: Arial, Helvetica, sans-serif; color: #1f2937; font-size: 10.5px; line-height: 1.48; }
+.cv-contract * { box-sizing: border-box; }
+.cv-contract h1 { color: #12395b; font-size: 21px; letter-spacing: .02em; margin: 0 0 6px; }
+.cv-contract h2 { color: #12395b; font-size: 14px; margin: 19px 0 7px; border-bottom: 1px solid #cbd8e5; padding-bottom: 4px; page-break-after: avoid; }
+.cv-contract h3 { color: #234e70; font-size: 11.4px; margin: 13px 0 4px; page-break-after: avoid; }
+.cv-contract h4 { color: #234e70; font-size: 10.8px; margin: 10px 0 3px; page-break-after: avoid; }
+.cv-contract p { margin: 0 0 7px; }
+.cv-contract ul { margin: 0 0 9px 19px; padding: 0; }
+.cv-contract li { margin: 0 0 3px; }
+.cv-contract .muted { color: #64748b; }
+.cv-contract .cover { border: 1px solid #cbd8e5; border-top: 5px solid #12395b; background: #f8fafc; padding: 16px 18px 13px; margin-bottom: 13px; page-break-inside: avoid; }
+.cv-contract .eyebrow { color: #64748b; font-size: 9px; font-weight: 700; letter-spacing: .14em; margin: 0 0 8px; }
+.cv-contract .subtitle { color: #475569; font-size: 12px; margin: 0 0 12px; }
+.cv-contract .cover-line { margin: 2px 0; text-align: center; font-size: 10.5px; }
+.cv-contract .cover-line strong { color: #12395b; }
+.cv-contract .document-id { color: #64748b; font-size: 9.5px; letter-spacing: .02em; margin: 10px 0 0; }
+.cv-contract .meta, .cv-contract .summary { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
+.cv-contract .meta td, .cv-contract .summary td { border: 1px solid #d8e2ec; padding: 6px 8px; vertical-align: top; }
+.cv-contract .meta td:first-child, .cv-contract .summary td:first-child { width: 30%; background: #f4f7fa; color: #475569; font-weight: 700; }
+.cv-contract .meta td:nth-child(3) { width: 20%; background: #f4f7fa; color: #475569; font-weight: 700; }
+.cv-contract .callout { border-left: 4px solid #12395b; background: #f1f5f9; padding: 9px 11px; margin: 10px 0; }
+.cv-contract .commercial { border: 1px solid #b9ccdc; padding: 0 12px 10px; margin: 0 0 18px; page-break-inside: avoid; }
+.cv-contract .commercial .price-heading { margin: 0 -12px 9px; }
+.cv-contract .price-heading { background: #12395b; color: #fff; padding: 8px 10px; font-size: 12px; letter-spacing: .02em; font-weight: 700; }
+.cv-contract .section-intro { color: #475569; margin-bottom: 8px; }
+.cv-contract .pricing-table { margin: 0 0 3px; overflow: hidden; }
+.cv-contract .pricing-table table { margin: 0 !important; }
+.cv-contract .summary { margin-top: 9px; }
+.cv-contract .summary td:last-child { text-align: right; white-space: nowrap; }
+.cv-contract .summary tr:nth-child(3) td, .cv-contract .summary tr:nth-child(6) td { background: #eef5fa; font-size: 12px; }
+.cv-contract .summary tr:nth-child(4) td { border-top: 2px solid #9fb6ca; }
+.cv-contract .source-section { margin-top: 2px; }
+.cv-contract .source-section > h2:first-child { margin-top: 12px; }
+.cv-contract .table-wrap { overflow: hidden; margin: 8px 0 13px; page-break-inside: avoid; break-inside: avoid; }
+.cv-contract .table-wrap table { width: 100%; border-collapse: collapse; font-size: 9.3px; }
+.cv-contract .table-wrap th, .cv-contract .table-wrap td { border: 1px solid #d8e2ec; padding: 5px 6px; text-align: left; vertical-align: top; }
+.cv-contract .table-wrap th { background: #eaf1f6; color: #12395b; font-size: 8.7px; letter-spacing: .035em; text-transform: uppercase; }
+.cv-contract .table-wrap .group-row td { background: #eef5fa; color: #12395b; font-weight: 700; }
+.cv-contract .optional-table table { font-size: 9px; }
+.cv-contract .reference-pricing table { font-size: 8.6px; }
+.cv-contract .reference-pricing th, .cv-contract .reference-pricing td { padding: 4px 5px; }
+.cv-contract .reference-pricing .numeric { text-align: right; white-space: nowrap; }
+.cv-contract .signature-table td { min-height: 90px; padding: 20px 10px; }
+.cv-contract .optional-table th { background: #12395b; color: #fff; }
+.cv-contract .optional-table .group-row td { background: #eef5fa; color: #12395b; text-transform: uppercase; letter-spacing: .04em; }
+.cv-contract .page-break { page-break-before: always; break-before: page; height: 0; }
+.cv-contract .source-cover { margin: 0 0 16px; text-align: center; page-break-inside: avoid; }
+.cv-contract .source-cover .confidential { margin-top: 10px; color: #12395b; font-weight: 700; letter-spacing: .12em; }
+.cv-contract .source-cover .source-title { font-size: 18px; color: #12395b; font-weight: 700; margin: 0 0 4px; }
+.cv-contract .footer { color: #64748b; border-top: 1px solid #d8e2ec; padding-top: 8px; margin-top: 20px; font-size: 9px; }
+@media print { .cv-contract { font-size: 10.5pt; } .cv-contract .cover { border-color: #aebdca; } }
 </style>
-
 <div class="cv-contract">
-  <div class="cover no-break">
-    <p class="eyebrow">CAREVERSEHIMS · INDIVIDUAL FACILITY AGREEMENT</p>
-    <h1>SOFTWARE-AS-A-SERVICE AGREEMENT</h1>
-    <p class="subtitle">Provision of the CareverseHIMS Hospital Management Information System</p>
-    <p class="document-id">Prepared for {{ facility.name }} · Effective {{ date }} · Quote {{ quote or "To be confirmed" }}</p>
-  </div>
-
-  <table class="meta no-break">
-    <tr><td>Customer / facility</td><td>{{ customer.name }}</td><td>Network</td><td>{{ network.display_name }}</td></tr>
-    <tr><td>Facility level</td><td>{{ facility.keph_level or "Not specified" }}</td><td>MFL code</td><td>{{ facility.mfl_code or "Not specified" }}</td></tr>
-    <tr><td>Customer contact</td><td>{{ customer.email or "Not specified" }}</td><td>Price list</td><td>{{ price_list or "Quotation price list" }}</td></tr>
-  </table>
-
-  <div class="commercial">
-    <div class="price-heading">Schedule B — Facility-specific pricing · All rates exclusive of VAT</div>
-    <p class="section-intro">This commercial summary is part of the individual facility agreement. It contains only the accepted facilities and negotiated rates for this quotation; no unrelated facility-level prices are included.</p>
-    <div class="pricing-table">{{ pricing_table }}</div>
-    <table class="summary">
-      <tr><td>Monthly commitment (exclusive of VAT)</td><td>KES {{ "{:,.2f}".format(subtotal_monthly or 0) }}</td></tr>
-      <tr><td>{{ vat_label }}</td><td>KES {{ "{:,.2f}".format(vat_monthly or 0) }}</td></tr>
-      <tr><td>Monthly commitment (inclusive of VAT)</td><td><strong>KES {{ grand_total_monthly_display }}</strong></td></tr>
-      <tr><td>Annual commitment (exclusive of VAT)</td><td>KES {{ "{:,.2f}".format(subtotal_annual or 0) }}</td></tr>
-      <tr><td>{{ vat_label }} — annual</td><td>KES {{ "{:,.2f}".format(vat_annual or 0) }}</td></tr>
-      <tr><td>Annual commitment (inclusive of VAT)</td><td><strong>KES {{ grand_total_annual_display }}</strong></td></tr>
-    </table>
-    <div class="callout"><strong>Commercial basis:</strong> The amounts above are drawn from the accepted quotation and the configured Taxes and Charges template. VAT is shown separately and added to the exclusive-of-VAT rates.</div>
-  </div>
-
-  <h2>1. Contract information</h2>
-  <h3>1.1 Parties</h3>
-  <p>This Software-as-a-Service Agreement (the “Agreement”) is entered into by and between:</p>
-  <p><strong>TIBERBU HEALTHNET LIMITED</strong>, a company incorporated in the Republic of Kenya,
-    with its registered office at 4th Avenue Towers, 18th Floor, 4th Ngong Avenue off Ngong Road,
-    Nairobi (the “Provider” or “Tiberbu”);</p>
-  <p><strong>{{ customer.name }}</strong>, being the healthcare facility or legal entity identified in
-    this Agreement (the “Customer”), with the facility profile shown below; and</p>
-  <p><strong>{{ network.legal_name }}</strong> (the “Network Partner”), being the network or
-    coordinating organisation through which the Customer is participating in this CareverseHIMS
-    programme. The Network Partner’s role is limited to the coordination responsibilities expressly
-    described in this Agreement and does not make it the owner or licensor of CareverseHIMS.</p>
-  <p>Tiberbu, the Customer and the Network Partner are each a “Party” and together the “Parties”.</p>
-
-  <h3>1.2 Recitals</h3>
-  <ul>
-    <li>Tiberbu owns, operates and licenses the proprietary cloud-based CareverseHIMS hospital management information system.</li>
-    <li>The Customer operates the facility identified in this Agreement and wishes to subscribe to CareverseHIMS with implementation, training and support.</li>
-    <li>The Network Partner supports the Customer’s onboarding and coordination under its applicable network framework.</li>
-    <li>The Parties intend this Agreement and its schedules to be the complete agreement for the Customer’s facility subscription.</li>
-  </ul>
-
-  <h3>1.3 Definitions and interpretation</h3>
-  <p>“CareverseHIMS” means Tiberbu’s hosted hospital management information system, including its
-    software, updates, documentation and related services. “Customer Data” means data entered into,
-    generated through, stored in or processed by CareverseHIMS for the Customer. “Services” means the
-    subscription, hosting, support, implementation, training, maintenance and related services described
-    in this Agreement. “Business Day” means a day other than a Saturday, Sunday or public holiday in Kenya.</p>
-  <p>References to laws include amendments and subordinate legislation. The headings are for convenience
-    only. The schedules form part of this Agreement.</p>
-
-  <h3>1.4 Order of precedence</h3>
-  <p>If documents conflict, the main body of this Agreement prevails, followed by the schedules, then any
-    signed quotation, order form or statement of work incorporated by reference. The facility-specific
-    pricing shown in Schedule B above prevails on the commercial amounts for this facility.</p>
-
-  <h2>2. Commercial terms</h2>
-  <h3>2.1 Scope of Services</h3>
-  <p>Tiberbu shall provide the CareverseHIMS subscription, hosting, embedded support, implementation,
-    configuration and role-based training described in this Agreement. The Network Partner may assist
-    with onboarding, facility engagement, training logistics and escalation coordination.</p>
-
-  <h3>2.2 Subscription grant and permitted use</h3>
-  <p>Subject to payment of the applicable Fees and compliance with this Agreement, Tiberbu grants the
-    Customer a limited, non-exclusive, non-transferable and revocable right during the Subscription Term
-    to access and use CareverseHIMS solely for the Customer’s internal healthcare operations at the facility
-    identified in Schedule A. No ownership of the software is transferred.</p>
-
-  <h3>2.3 Authorized users</h3>
-  <p>The Customer shall ensure that only authorised users access CareverseHIMS, credentials are not shared,
-    and access is removed promptly when a user leaves or no longer needs access.</p>
-
-  <h3>2.4 Subscription term and renewal</h3>
-  <p>The initial Subscription Term is sixty (60) months from the Effective Date unless terminated earlier
-    under Clause 15. It renews for successive sixty (60) month periods unless either Party gives at least
-    sixty (60) days’ written notice of non-renewal.</p>
-
-  <h3>2.5 Facility-specific Fees and pricing</h3>
-  <p>Schedule B above is the complete pricing schedule for this Agreement. It contains only the facility or
-    facilities covered by this individual contract, their KEPH levels and the negotiated rates drawn from
-    the applicable quotation. No prices for unrelated facility levels or other customers form part of this
-    Agreement.</p>
-
-  <h3>2.6 Taxes</h3>
-  <p>All Fees are exclusive of Value Added Tax (VAT), withholding tax and other applicable taxes, levies
-    or duties imposed under Kenyan law. VAT is calculated from the configured Taxes and Charges template
-    and added to the invoice at the applicable statutory rate. Where withholding tax is required, the Customer
-    shall provide Tiberbu with the official withholding tax certificate.</p>
-
-  <h3>2.7 Payment terms</h3>
-  <p>Unless the quotation states otherwise, annual subscription Fees are payable in advance. Quarterly
-    payment, where offered, is an instalment arrangement and does not reduce the annual commitment.
-    Invoices are payable within thirty (30) days. All payments shall be made in Kenya Shillings (KES),
-    without deduction or set-off except as required by law.</p>
-
-  <h3>2.8 Payment account and late payment</h3>
-  <p>Payments must be made to the bank account designated by Tiberbu in writing. If an undisputed amount
-    remains unpaid for more than thirty (30) days after its due date, Tiberbu may charge a late payment fee
-    of five percent (5%) and, after written notice, suspend access until payment is received, while using
-    reasonable efforts to minimise disruption to emergency patient care.</p>
-
-  <h3>2.9 Network Partner role and authority</h3>
-  <p>{{ network.legal_name }} may coordinate onboarding, facility engagement, training logistics, implementation
-    tracking and escalation. It may not vary prices or payment terms, bind Tiberbu or the Customer, access
-    Customer Data except as expressly authorised, or represent itself as the owner or licensor of CareverseHIMS.</p>
-
-  <h2>3. Services description</h2>
-  <h3>3.1 CareverseHIMS</h3>
-  <p>CareverseHIMS is a cloud-based hospital management information system integrating patient registration,
-    clinical documentation, billing and financial management, pharmacy and inventory, reporting and analytics,
-    and compliance administration.</p>
-  <h3>3.2 Included functionality</h3>
-  <p>Depending on the subscribed service scope, the Services may include patient registration and appointments,
-    triage and nursing documentation, electronic medical records, diagnostics and procedures, billing,
-    pharmacy and inventory, reporting, dashboards, audit support and payer workflows.</p>
-  <h3>3.3 Third-party services</h3>
-  <p>CareverseHIMS may integrate with payer, regulatory and diagnostic platforms where technically feasible.
-    Availability, performance, acceptance and reimbursement outcomes of third-party platforms remain outside
-    Tiberbu’s control.</p>
-  <h3>3.4 Implementation, training and changes</h3>
-  <p>Tiberbu shall provide or oversee implementation, configuration and role-based training in accordance
-    with the agreed plan. Data migration and any work outside the agreed baseline scope are subject to a
-    written change request and, where applicable, additional Fees.</p>
-
-  <h2>4. Service levels and support</h2>
-  <p>Tiberbu shall provide support in accordance with this Clause 4 and Schedule C. Embedded support is
-    included in the subscription unless dedicated on-site support is agreed separately.</p>
-  <h3>4.1 Availability</h3>
-  <p>Tiberbu shall use commercially reasonable efforts to maintain the hosted production environment. The
-    target availability is 99.5% monthly, excluding scheduled or emergency maintenance, customer-caused
-    outages, connectivity or power failures outside the managed environment, third-party systems and force majeure.</p>
-  <h3>4.2 Support channels</h3>
-  <p>Support is available through the support portal at https://www.tiberbu.com/support, email at
-    support@tiberbu.com and telephone at +254111043566 or +254111043555. Support matters should include
-    the facility name, severity, business impact and actions already taken.</p>
-  <h3>4.3 Severity and response targets</h3>
-  <ul>
-    <li><strong>Critical:</strong> production unavailable or material business stoppage — initial response within one hour during covered support hours.</li>
-    <li><strong>High:</strong> major functionality unavailable without a reasonable workaround — initial response within four business hours.</li>
-    <li><strong>Medium:</strong> moderate impact with a workaround — initial response within one business day.</li>
-    <li><strong>Low:</strong> minor issue, cosmetic concern or general guidance — initial response within two business days.</li>
-  </ul>
-  <p>Scheduled maintenance will, where reasonably practicable, be notified in advance and performed outside
-    core operating hours. Emergency maintenance may occur without prior notice to address a security,
-    availability or regulatory risk.</p>
-
-  <h2>5. Customer obligations</h2>
-  <p>The Customer shall provide accurate implementation information, nominate operational, clinical, finance
-    and technical contacts, cooperate with onboarding and training, maintain suitable devices and connectivity,
-    manage users and access, and comply with applicable laws.</p>
-  <p>The Customer shall not reverse engineer CareverseHIMS, introduce malicious code, infringe third-party
-    rights, submit fraudulent claims or resell access without Tiberbu’s written consent.</p>
-
-  <h2>6. Data protection and privacy</h2>
-  <p>Each Party shall comply with the Data Protection Act, 2019 and applicable ODPC guidance. The Customer is
-    the data controller for patient, staff and facility data. Tiberbu is the data processor and shall process
-    Customer Data only on documented instructions, except where required by law. The Network Partner is not a
-    controller or processor unless expressly authorised in writing and shall have only the minimum access needed
-    for its coordination role.</p>
-  <p>Customer Data may include demographic, clinical, billing, claims, staff, access and audit information.
-    Tiberbu shall apply appropriate technical and organisational safeguards, support data-subject requests
-    where reasonably required, and notify the Customer without undue delay and within forty-eight (48) hours
-    of becoming aware of a confirmed personal data breach affecting Customer Data.</p>
-  <p>Tiberbu may use sub-processors to provide the Services, provided that equivalent data protection obligations
-    apply and Tiberbu remains responsible for their performance. Cross-border transfers shall comply with Kenyan law.</p>
-
-  <h2>7. Information security</h2>
-  <p>Security is a shared responsibility. Tiberbu provides role-based access controls, encryption in transit and
-    at rest within the managed environment, monitoring, backup, disaster recovery and security incident processes.
-    The Customer is responsible for local devices, connectivity, physical security, passwords, user behaviour and
-    timely de-provisioning.</p>
-
-  <h2>8. Data ownership and records</h2>
-  <p>The Customer owns Customer Data. Tiberbu owns CareverseHIMS, its software, architecture, documentation and
-    de-identified aggregate operational metadata that does not identify the Customer or a data subject.</p>
-  <p>The Customer may export Customer Data in a commonly used structured format during the Subscription Term and
-    for the applicable retention period. Following termination, Customer Data will be available on a read-only basis
-    for seven (7) years unless law or a written agreement requires longer. Data archive during legally required
-    retention is available without an additional fee; bespoke migration assistance may be separately priced.</p>
-
-  <h2>9. Intellectual property</h2>
-  <p>All intellectual property in CareverseHIMS remains with Tiberbu or its licensors. Customer-specific
-    configuration and enhancements form part of the platform unless otherwise agreed in writing. The Customer
-    receives only the limited use rights granted by this Agreement. Open-source components remain subject to their
-    respective licences.</p>
-
-  <h2>10. Confidentiality</h2>
-  <p>Each Party shall protect the other Party’s non-public commercial, technical, financial, operational, security
-    and patient-related information and use it only for the permitted purpose. Disclosure is permitted to personnel,
-    advisers, authorised representatives or regulators who need to know and are bound by equivalent obligations.
-    Confidentiality survives for five (5) years after termination; obligations for Health Data and trade secrets
-    survive while the information remains confidential.</p>
-
-  <h2>11. Warranties</h2>
-  <p>Tiberbu warrants that, under normal authorised use, CareverseHIMS will materially perform in accordance with
-    its Documentation and that professional services will be delivered with reasonable skill and care. Regulatory
-    readiness features do not guarantee certification, approval or acceptance by SHA, DHA, HIE or another third party.
-    Except as expressly stated, no implied warranty is given to the maximum extent permitted by Kenyan law.</p>
-
-  <h2>12. Risk allocation</h2>
-  <p>Each Party shall indemnify the other for direct losses arising from its breach of data protection or
-    confidentiality obligations, gross negligence, wilful misconduct or fraud. Tiberbu shall defend qualifying
-    intellectual-property claims arising from authorised use of CareverseHIMS. Neither Party is liable for indirect,
-    incidental, special or consequential loss. Subject to the exceptions below, aggregate liability is capped at the
-    Fees paid or payable in the twelve (12) months preceding the event. Nothing limits liability that cannot lawfully
-    be limited, including death or personal injury caused by negligence, fraud or wilful misconduct.</p>
-
-  <h2>13. Regulatory and sector compliance</h2>
-  <p>The Customer remains responsible for facility licensing, clinical governance, lawful data collection, records
-    management and compliance with Kenyan healthcare requirements. CareverseHIMS may support SHA, DHA, HIE and payer
-    workflows, but external processing, approvals and system availability remain subject to the applicable regulator
-    or payer.</p>
-
-  <h2>14. Change management</h2>
-  <p>Changes to scope, workflows, integrations, reports, training, deployment, timelines, pricing, payment structure,
-    support entitlement or facility onboarding assumptions require a written change request. No variation is binding
-    until confirmed in writing by Tiberbu and the Customer; the Network Partner may coordinate the request.</p>
-
-  <h2>15. Termination</h2>
-  <p>Either Party may terminate for convenience on ninety (90) days’ written notice or for an uncured material breach
-    after sixty (60) days’ notice. Tiberbu may terminate for undisputed non-payment after the applicable suspension
-    and notice periods. Either Party may terminate immediately for insolvency. On termination, access ceases except
-    for read-only data retrieval rights, outstanding amounts become payable, and each Party returns or destroys the
-    other’s Confidential Information subject to legal retention obligations.</p>
-
-  <h2>16. Legal and governance provisions</h2>
-  <p>Notices shall be delivered by hand, registered post or email with confirmation of receipt to the addresses
-    identified by the Parties. Neither Party may assign this Agreement without consent, except to an Affiliate or in
-    connection with a merger or sale of substantially all assets. Tiberbu may subcontract while remaining responsible
-    for subcontractors. The Parties are independent contractors. This Agreement is the entire agreement, may be amended
-    only in writing, is severable, may be executed in counterparts and may be signed electronically where permitted by law.</p>
-
-  <h2>17. Dispute resolution and governing law</h2>
-  <p>The Parties shall first attempt good-faith negotiation within fourteen (14) days of written notice of a dispute,
-    then escalate to senior management and attempt mediation. An unresolved dispute shall be finally resolved by a
-    sole arbitrator seated in Nairobi under the Arbitration Act, 1995 and the rules of the Chartered Institute of
-    Arbitrators (Kenya Branch). Kenyan courts have jurisdiction for interim relief and matters not subject to arbitration.
-    This Agreement is governed by the laws of the Republic of Kenya.</p>
-
-  <div class="page-break"></div>
-  <h2>Schedule A — Facility service profile</h2>
-  <table class="meta">
-    <tr><td>Facility</td><td>{{ facility.name }}</td></tr>
-    <tr><td>Facility level</td><td>{{ facility.keph_level or "Not specified" }}</td></tr>
-    <tr><td>MFL code</td><td>{{ facility.mfl_code or "Not specified" }}</td></tr>
-    <tr><td>Network</td><td>{{ network.display_name }}</td></tr>
-    <tr><td>Customer contact</td><td>{{ customer.email or "Not specified" }}</td></tr>
-    <tr><td>Price list</td><td>{{ price_list or "Quotation price list" }}</td></tr>
-    <tr><td>Subscribed service</td><td>CareverseHIMS hosted hospital management information system</td></tr>
-  </table>
-  <p>The Subscription includes cloud hosting, application maintenance and updates, embedded support, security
-    management within the managed environment, monitoring, backup and disaster recovery, role-based access controls,
-    audit logging, standard reporting, implementation/onboarding and role-based training as agreed in the implementation plan.</p>
-
-  <h2>Schedule C — Service Level Agreement</h2>
-  <p>This Schedule applies to the CareverseHIMS hosted production environment, application support, incident
-    management, security incident management, maintenance and supported integrations managed by Tiberbu. It does not
-    apply to Customer-owned infrastructure, internet provider failures, Customer endpoints, third-party systems or
-    delays attributable to SHA, DHA or another external platform.</p>
-  <table class="meta">
-    <tr><td>Support coverage</td><td>Monday to Saturday, 08:00–17:00 EAT; 24x7 handling for Critical incidents where contracted.</td></tr>
-    <tr><td>Support channels</td><td>https://www.tiberbu.com/support · support@tiberbu.com · +254111043566 / +254111043555</td></tr>
-    <tr><td>Incident workflow</td><td>Logging, assignment, severity assessment, response, investigation, resolution/workaround, Customer validation and closure.</td></tr>
-    <tr><td>Security incidents</td><td>Managed under Clauses 6 and 7; confirmed breaches affecting Customer Data are notified within 48 hours of awareness.</td></tr>
-  </table>
-
-  <h2>Schedule D — Data Processing Addendum</h2>
-  <p>Tiberbu processes Personal Data and Health Data on the Customer’s documented instructions to host, secure,
-    maintain, support, back up, restore, administer and operate CareverseHIMS. Processing may include collection,
-    storage, retrieval, use, transmission to authorised users, backup, restoration, anonymisation and deletion.</p>
-  <p>Categories may include patient demographics, clinical records, billing and claims, staff and user information,
-    technical logs and audit trails. Data subjects may include patients, guardians, clinicians, staff, contractors,
-    beneficiaries and authorised users. The Customer determines lawful bases, notices, consents and access permissions.
-    Tiberbu shall maintain appropriate safeguards, assist with data-subject rights where reasonably required, control
-    sub-processors and support audits subject to confidentiality and reasonable cost recovery.</p>
-
-  <h2>Schedule E — Security requirements</h2>
-  <table class="meta">
-    <tr><td>Application security</td><td>Tiberbu maintains secure development, patching, monitoring and managed-environment controls.</td></tr>
-    <tr><td>Access management</td><td>Tiberbu provides role-based access capability; the Customer approves roles and removes departing users.</td></tr>
-    <tr><td>Encryption and backup</td><td>Encryption is applied in transit and at rest; backups and disaster recovery are maintained for the hosted environment.</td></tr>
-    <tr><td>Local environment</td><td>The Customer secures devices, networks, power, connectivity, operating systems and physical access.</td></tr>
-  </table>
-
-  <h2>Schedule F — Change control procedure</h2>
-  <p>A change request must identify the requestor, date, description, business justification, priority, desired date,
-    affected module or facility and supporting documents. Tiberbu assesses functional, technical, security, compliance,
-    cost, timeline, resource and risk impacts before written approval, rejection or deferral.</p>
-
-  <h2>Schedule G — Data migration and exit plan</h2>
-  <p>Following termination, Tiberbu will make available a structured export of Customer Data and provide reasonable
-    clarification support. The Customer validates the export and remains responsible for importing it into a successor
-    system. Read-only retention is provided for seven (7) years or longer where law requires; data is then securely
-    deleted, destroyed or permanently anonymised subject to applicable obligations.</p>
-
-  <div class="page-break"></div>
-  <h2>Execution</h2>
-  <p>By accepting the Opt-In submission and signing the generated contract, the authorised representatives of the
-    Parties confirm that they have read, understood and agreed to this individual facility Agreement, including the
-    facility-specific pricing in Schedule B.</p>
-  <table class="signature no-break">
+<div class="cover">
+  <p class="eyebrow">CAREVERSEHIMS · INDIVIDUAL FACILITY AGREEMENT</p>
+  <h1>SOFTWARE-AS-A-SERVICE AGREEMENT</h1>
+  <p class="subtitle">FOR THE PROVISION OF THE CAREVERSEHIMS HOSPITAL MANAGEMENT INFORMATION SYSTEM</p>
+  <p class="cover-line">BETWEEN</p>
+  <p class="cover-line">
+<strong>TIBERBU HEALTHNET LIMITED</strong>
+</p>
+  <p class="cover-line">("Tiberbu" or the "Provider")</p>
+  <p class="cover-line">AND</p>
+  <p class="cover-line">
+<strong>{{ customer.name }}</strong>
+</p>
+  <p class="cover-line">(the "Customer")</p>
+  <p class="cover-line">AND</p>
+  <p class="cover-line">
+<strong>CHAK BUSINESS SERVICES LIMITED</strong>
+</p>
+  <p class="cover-line">("CBSL" or the "Technology Delivery Partner")</p>
+  <p class="cover-line confidential">CONFIDENTIAL</p>
+  <p class="document-id">Facility {{ facility.name }} · Network {{ network.display_name }} · Effective {{ date }} · Quote {{ quote or "To be confirmed" }}</p>
+</div>
+<table class="meta">
+  <tr>
+<td>Customer / facility</td>
+<td>{{ customer.name }}</td>
+<td>Network</td>
+<td>{{ network.display_name }}</td>
+</tr>
+  <tr>
+<td>Facility level</td>
+<td>{{ facility.keph_level or "Not specified" }}</td>
+<td>MFL code</td>
+<td>{{ facility.mfl_code or "Not specified" }}</td>
+</tr>
+  <tr>
+<td>Customer contact</td>
+<td>{{ customer.email or "Not specified" }}</td>
+<td>Price list</td>
+<td>{{ price_list or "Quotation price list" }}</td>
+</tr>
+</table>
+<div class="commercial">
+  <div class="price-heading">Schedule B — Facility-specific pricing · All rates exclusive of VAT</div>
+  <p class="section-intro">This commercial summary is the accepted facility pricing for this individual Agreement. It is rendered from the submitted quotation and contains only the selected facility or facilities.</p>
+  <div class="pricing-table">{{ pricing_table }}</div>
+  <table class="summary">
     <tr>
-      <td><div class="line"><strong>For Tiberbu Healthnet Limited</strong><br/>Name and designation recorded electronically</div></td>
-      <td><div class="line"><strong>For {{ customer.name }}</strong><br/>Name and designation recorded electronically</div></td>
-    </tr>
+<td>Monthly commitment (exclusive of VAT)</td>
+<td>KES {{ "{:,.2f}".format(subtotal_monthly or 0) }}</td>
+</tr>
     <tr>
-      <td><div class="line"><strong>For {{ network.legal_name }}</strong><br/>Network representative recorded electronically</div></td>
-      <td><div class="line"><strong>Customer witness</strong><br/>Name and details recorded electronically</div></td>
-    </tr>
+<td>{{ vat_label }}</td>
+<td>KES {{ "{:,.2f}".format(vat_monthly or 0) }}</td>
+</tr>
+    <tr>
+<td>Monthly commitment (inclusive of VAT)</td>
+<td>
+<strong>KES {{ grand_total_monthly_display }}</strong>
+</td>
+</tr>
+    <tr>
+<td>Annual commitment (exclusive of VAT)</td>
+<td>KES {{ "{:,.2f}".format(subtotal_annual or 0) }}</td>
+</tr>
+    <tr>
+<td>{{ vat_label }} — annual</td>
+<td>KES {{ "{:,.2f}".format(vat_annual or 0) }}</td>
+</tr>
+    <tr>
+<td>Annual commitment (inclusive of VAT)</td>
+<td>
+<strong>KES {{ grand_total_annual_display }}</strong>
+</td>
+</tr>
   </table>
-  <p class="signature-note">Electronic signature records, timestamps and verification details are retained with the corresponding contract record.</p>
-  <div class="footer">Private and confidential · {{ network.display_name }} · CareverseHIMS · All amounts are in KES and exclusive of VAT unless expressly stated otherwise.</div>
+  <div class="callout">
+<strong>Commercial basis:</strong> Subscription rates are exclusive of VAT. VAT is shown separately and calculated from the configured Taxes and Charges template.</div>
+</div>
+<div class="source-section">
+<h2>1. CONTRACT INFORMATION</h2>
+<h3>1.1 Parties</h3>
+<p>TIBERBU HEALTHNET LIMITED, a company duly incorporated and registered in the Republic of Kenya under registration number PVT-XYU8GBD3, having its registered office and principal place of business at 4th Avenue Towers, 18th Floor, 4th Ngong Avenue off Ngong Road, and of P. O. Box 7744 – 00610 Nairobi, hereinafter referred to as “Tiberbu”, the “Provider” or the “Service Provider”, which expression shall, where the context so admits, include its successors and permitted assigns;</p>
+<p>BETWEEN:</p>
+<p>{{ customer.name }}, a healthcare facility or other legal entity duly incorporated, registered, licensed or otherwise established under the laws of the Republic of Kenya under registration number To be completed by the Customer, having its registered office and principal place of business at To be completed by the Customer, and of {{ customer.email or "To be completed by the Customer" }} and To be completed by the Customer, hereinafter referred to as the “Customer”, which expression shall, where the context so admits, include its successors and permitted assigns.</p>
+<p>CHAK BUSINESS SERVICES LIMITED, a company affiliated with or designated by the Christian Health Association of Kenya to support the delivery of technology-enabled services to CHAK Member Health Facilities, having its principal place of business at Musa Gitau Road, Off Waiyaki Way, Lavington, Nairobi, Kenya, hereinafter referred to as “CBSL” or the “Technology Delivery Partner”, which expression shall, where the context so admits, include its successors and permitted assigns.</p>
+<p>AND</p>
+<p>Tiberbu, the Customer, and CBSL are hereinafter referred to individually as a "Party" and collectively as the "Parties".</p>
+<h3>1.2 Recitals / Background</h3>
+<p>WHEREAS:</p>
+<ul>
+<li>Tiberbu owns, operates, and licenses a proprietary cloud-based Hospital Management Information System known as "CareverseHIMS", designed to support patient management, clinical management, billing and financial management, pharmacy and inventory management, reporting and analytics, compliance administration, and related healthcare operations functionality;</li>
+<li>The Customer operates a healthcare facility in Kenya and wishes to subscribe to CareverseHIMS as a Software-as-a-Service solution, together with associated implementation, training, support, and (where applicable) hardware and endpoint security services, on the terms set out in this Agreement;</li>
+<li>Tiberbu has agreed to grant the Customer a right to access and use CareverseHIMS, and to provide the associated professional and support services, subject to the terms and conditions of this Agreement;</li>
+<li>CBSL has been appointed under the CHAK collaboration framework as the technology delivery partner responsible for supporting implementation coordination, onboarding support, training logistics, member engagement, field coordination, first-line implementation facilitation, implementation action tracking, stakeholder communication, and escalation of technical, commercial, contractual, data protection, pricing, scope, approval, or support matters to Tiberbu and CHAK as appropriate;</li>
+<li>The Parties acknowledge that CBSL’s role under this Agreement is limited to the authorized co-delivery and coordination responsibilities expressly set out herein and does not transfer ownership of CareverseHIMS, Tiberbu’s intellectual property, pricing authority, contracting authority, product control, customer relationship rights, service obligations, or final technical approval rights to CBSL;</li>
+<li>The Parties intend that this Agreement, together with its Schedules, shall constitute the entire and legally binding agreement between them in respect of the subject matter herein, and that it shall be governed by and construed in accordance with the laws of the Republic of Kenya.</li>
+</ul>
+<p>NOW THEREFORE, in consideration of the mutual covenants contained in this Agreement, the sufficiency of which the Parties hereby acknowledge, the Parties agree as follows:</p>
+<h3>1.3 Definitions and Interpretation</h3>
+<p>In this Agreement, unless the context otherwise requires, the following words and expressions shall bear the following meanings:</p>
+<p>"Affiliate" means, in relation to a Party, any entity that directly or indirectly controls, is controlled by, or is under common control with that Party.</p>
+<p>"Agreement" means this Software-as-a-Service Agreement together with all Schedules, appendices, annexures, order forms, statements of work and documents incorporated by reference.</p>
+<p>"Authorized User" means an employee, contractor, consultant, clinician, administrator, finance officer, support staff member or other individual authorized by the Customer to access and use CareverseHIMS.</p>
+<p>"Business Day" means any day other than a Saturday, Sunday or public holiday in Kenya.</p>
+<p>"CareverseHIMS" means the proprietary cloud-based Hospital Management Information System owned, licensed, operated and maintained by Tiberbu.</p>
+<p>"Change Request" means a request for modification, enhancement, customization, variation or amendment to the agreed implementation scope, functionality, integrations, deliverables or services.</p>
+<p>"Confidential Information" shall have the meaning assigned to it in Clause 10.</p>
+<p>"CBSL" means CHAK Business Services Limited, the CHAK-affiliated technology delivery partner appointed to support coordination, onboarding, training logistics, field coordination, member engagement, first-line implementation facilitation, implementation action tracking, and escalation activities in relation to CareverseHIMS deployments under this Agreement.</p>
+<p>"CHAK" means the Christian Health Association of Kenya.</p>
+<p>"CHAK Collaboration Framework" means the Memorandum of Understanding, Letter of Intent, partnership framework, or related arrangement under which CHAK, CBSL, and Tiberbu have aligned on the promotion, deployment, onboarding, training, support coordination, and facility-level adoption of CareverseHIMS within CHAK-affiliated or CBSL-onboarded facilities.</p>
+<p>"Controller" shall have the meaning assigned to "Data Controller" under the Data Protection Act, 2019.</p>
+<p>"Customer" means the healthcare institution, company, partnership, sole proprietorship or other legal entity identified in Clause 1.1 subscribing to the Services.</p>
+<p>"Customer Data" means all data, information, records, documents, images, files, reports, metadata and content submitted to, entered into, generated through, stored in, transmitted by, or processed through CareverseHIMS on behalf of the Customer.</p>
+<p>"Data Breach" means any actual, suspected or confirmed unauthorized access, disclosure, acquisition, alteration, corruption, loss, destruction or unavailability of Customer Data or Personal Data.</p>
+<p>"Data Protection Act" means the Data Protection Act, 2019 of Kenya, together with all regulations, guidelines, directives and amendments thereto.</p>
+<p>"DHA" means the Digital Health Agency of Kenya and any successor body.</p>
+<p>"Documentation" means user manuals, operating instructions, technical guides, release notes, knowledge base articles and related documentation provided by Tiberbu concerning CareverseHIMS.</p>
+<p>"Effective Date" means the date upon which this Agreement is executed by both Parties or such other date as expressly stated in the Agreement.</p>
+<p>"Emergency Maintenance" means maintenance undertaken immediately to address an actual or suspected security vulnerability, service failure, operational risk or regulatory requirement.</p>
+<p>"Fees" means all subscription fees, implementation fees, training fees, support fees, project fees, professional service fees and any other amounts payable by the Customer under this Agreement.</p>
+<p>"Go-Live" means the date on which CareverseHIMS is made available for live operational use by the Customer.</p>
+<p>"Health Data" means personal data relating to the physical or mental health of an individual, healthcare provision, diagnosis, treatment, medical history, prescription information, clinical observations or any other health-related information classified as sensitive personal data under applicable law.</p>
+<p>"HIE" means Health Information Exchange or any healthcare interoperability framework recognized by the Digital Health Agency or applicable law.</p>
+<p>"Implementation Services" means configuration, onboarding, data migration, integration, training, testing, project management and deployment services provided by Tiberbu.</p>
+<p>"Incident" means any unplanned interruption, degradation, malfunction, error, defect or security event affecting the Services.</p>
+<p>"Initial Term" means the initial subscription period specified in Clause 2.6.</p>
+<p>"Intellectual Property Rights" means all present and future copyrights, patents, trademarks, trade names, registered designs, design rights, database rights, domain names, trade secrets, know-how and all other intellectual property rights recognized under Kenyan law or internationally.</p>
+<p>"Maintenance Release" means a software update intended to correct errors, improve performance, strengthen security or maintain regulatory compliance.</p>
+<p>"Modules" means functional components of CareverseHIMS, including clinical, pharmacy, laboratory, radiology, inventory, billing, finance, insurance, reporting and administrative modules.</p>
+<p>"ODPC" means the Office of the Data Protection Commissioner established under the Data Protection Act, 2019.</p>
+<p>"Party" means Tiberbu, the Customer, or CBSL, and "Parties" means all of them collectively.</p>
+<p>"Personal Data" shall have the meaning assigned under the Data Protection Act, 2019.</p>
+<p>"Processing", "Process" or "Processed" shall have the meaning assigned under the Data Protection Act, 2019.</p>
+<p>"Processor" shall have the meaning assigned to "Data Processor" under the Data Protection Act, 2019.</p>
+<p>"Professional Services" means implementation, consulting, project management, configuration, training, migration, support and related services provided by Tiberbu outside the ordinary operation of the SaaS platform.</p>
+<p>"Provider", "Service Provider" or "Tiberbu" means TIBERBU HEALTHNET LIMITED.</p>
+<p>"Recovery Point Objective (RPO)" means the maximum acceptable amount of data loss measured by time following a service disruption.</p>
+<p>"Recovery Time Objective (RTO)" means the target period within which Services should be restored following a qualifying disruption.</p>
+<p>"Renewal Term" means each renewal period described in Clause 2.7.</p>
+<p>"Schedules" means the schedules attached to and forming part of this Agreement.</p>
+<p>"Security Incident" means any event that compromises or is reasonably suspected of compromising the confidentiality, integrity, availability or security of CareverseHIMS, Customer Data or related systems.</p>
+<p>"Service Levels" means the support, availability, response and service obligations described in Clause 4 and Schedule C.</p>
+<p>"Services" means all software, hosting, support, implementation, maintenance, training, consulting and related services provided by Tiberbu under this Agreement.</p>
+<p>"SHA" means the Social Health Authority of Kenya and includes any replacement or successor payer authority.</p>
+<p>"SLA" means the Service Level Agreement contained in Schedule C and Clause 4.</p>
+<p>"Software" means the CareverseHIMS application, including all updates, upgrades, releases, modifications, enhancements and related components supplied by Tiberbu.</p>
+<p>"Subscription" means the right granted to the Customer to access and use CareverseHIMS during the Subscription Term in accordance with this Agreement.</p>
+<p>"Subscription Term" means the Initial Term together with any Renewal Terms.</p>
+<p>"Sub-Processor" means a third party engaged by Tiberbu to Process Personal Data on behalf of the Customer in connection with the Services.</p>
+<p>"Technology Delivery Partner" means CBSL acting in its limited and authorized coordination, onboarding, training logistics, field facilitation, member engagement, implementation tracking, and escalation role, subject always to Tiberbu’s product ownership, intellectual property rights, contracting authority, pricing authority, security standards, data protection requirements, and final technical approval rights.</p>
+<p>"Support Services" means technical assistance, troubleshooting, issue management, maintenance and related customer support services provided by Tiberbu.</p>
+<p>"Update" means any modification, improvement, patch, release, enhancement or correction to CareverseHIMS provided by Tiberbu.</p>
+<p>"User Credentials" means usernames, passwords, authentication tokens, certificates or other security credentials used to access CareverseHIMS.</p>
+<p>In this Agreement, unless the context otherwise requires: (a) references to statutes include any subordinate legislation, regulations, and amendments made thereunder; (b) words importing the singular include the plural and vice versa; (c) headings are for convenience only and do not affect interpretation; (d) references to "writing" include email unless otherwise stated; and (e) the Schedules form an integral part of this Agreement.</p>
+<h3>1.4 Order of Precedence of Contract Documents</h3>
+<p>In the event of any conflict or inconsistency between the documents comprising this Agreement, the order of precedence shall, unless expressly stated otherwise, be as follows: (a) the main body of this Agreement; (b) the Schedules (with Schedule B — Pricing Schedule prevailing over other Schedules on commercial matters, and Schedule D — Data Processing Addendum prevailing on data protection matters); (c) any duly signed order form, quotation, or statement of work incorporated by reference; and (d) the CareverseHIMS Customer Proposal dated July 2026, to the extent expressly incorporated and not otherwise inconsistent with the foregoing.</p>
+<h2>2. COMMERCIAL TERMS</h2>
+<h3>2.1 Scope of Services</h3>
+<p>Tiberbu shall provide to the Customer, with CBSL supporting the agreed onboarding and implementation coordination role, the following Services in accordance with the tier selected by the Customer and set out in Schedule A: (a) a subscription to CareverseHIMS on a Software-as-a-Service basis, including application hosting; (b) embedded technical support in accordance with Clause 4; (c) implementation and configuration in accordance with Clause 14 and the implementation plan developed jointly upon signing of the contract; (d) role-based training services; (e) coordination support by CBSL for facility onboarding, implementation readiness, training logistics, field coordination, implementation action tracking, stakeholder communication, and escalation of issues to Tiberbu and CHAK as appropriate; and (f) such other services as may be agreed in writing between the Parties from time to time.</p>
+<h3>2.2 SaaS Subscription Grant</h3>
+<p>Subject to payment of the applicable Fees and compliance with this Agreement, Tiberbu grants to the Customer a limited, non-exclusive, non-transferable, revocable right, during the Subscription Term, to access and use CareverseHIMS solely for the Customer's internal healthcare operations at the facility or facilities specified in Schedule A. No right, title, or interest in CareverseHIMS is transferred to the Customer, and all rights not expressly granted are reserved by Tiberbu.</p>
+<h3>2.3 Permitted Use</h3>
+<p>The Customer shall use CareverseHIMS solely for lawful, internal business and clinical operations in connection with the delivery of healthcare services, and strictly in accordance with the Documentation, this Agreement, and all applicable laws, including the Data Protection Act, the Health Act, 2017, the Digital Health Act, and any professional or regulatory obligations applicable to the Customer's facility.</p>
+<h3>2.4 User Types and Licensing Model</h3>
+<p>Access to CareverseHIMS is licensed on a per-Authorized-facility basis, as specified in Schedule A. The Customer shall ensure that: (a) login credentials are not shared between individuals; (b) only Authorized Users access the Solution; and (c) access is promptly revoked for users who cease to be employed by or engaged with the Customer.</p>
+<h3>2.5 Customer Affiliates and Authorized Users</h3>
+<p>Where agreed in writing, the Customer may extend access to CareverseHIMS to its Affiliates, provided that the Customer shall remain fully responsible for such Affiliates' compliance with this Agreement, and any reference to the "Customer" in relation to obligations of use, payment, and data protection shall be read to include such Affiliates unless the Parties agree a separate direct agreement.</p>
+<h3>2.6 Subscription Term</h3>
+<p>This Agreement shall commence on the Effective Date and continue for an initial subscription term of Sixty (60) months (the "Initial Term"), unless terminated earlier in accordance with Clause 15.</p>
+<h3>2.7 Renewal Terms</h3>
+<p>Upon expiry of the Initial Term, this Agreement shall automatically renew for successive periods of Sixty (60) months each (each a "Renewal Term"), unless either Party gives the other not less than Sixty (60) days' written notice of non-renewal prior to the end of the then-current term. Fees applicable to any Renewal Term shall be as set out in Schedule B, subject to any agreed annual adjustment.</p>
+<h3>2.8 Pricing and Fees</h3>
+<p>The Fees payable by the Customer shall be as set out in Schedule B (Pricing Schedule), which shall constitute and already negotiated and agreed formal priced quotation forming part of this Agreement. Pricing is determined by the CareverseHIMS tier selected (Core, Advanced, or Enterprise), the implementation scope, optional on-site support requirements, and any optional hardware, productivity, or endpoint security items procured by the Customer. Support is embedded within the SaaS subscription Fee and is not separately itemized unless dedicated on-site support is expressly agreed.</p>
+<h3>2.9 Annual SaaS Pricing and Automatic Renewal</h3>
+<p>The SaaS subscription pricing set out in Schedule B is provided on an annual basis for each subscribed facility and reflects the pricing negotiated between Tiberbu and the Christian Health Association of Kenya (CHAK) under the applicable Memorandum of Understanding. Unless otherwise expressly agreed in writing, the applicable annual SaaS subscription Fees shall be payable in advance and shall automatically renew on each anniversary of the Go-Live date for successive twelve (12) month periods. The Customer shall remain liable for the renewed annual SaaS subscription Fees unless either Party gives written notice of non-renewal in accordance with the notice period set out in Clause 2.7.</p>
+<h3>2.10 Framework Purchasing for Additional Facilities</h3>
+<p>The Customer may, during the Subscription Term, procure CareverseHIMS subscriptions, implementation services, support services, integrations, hardware, endpoint security, training, or other related Services for additional facilities under the framework purchasing mechanism set out in the applicable Schedule. Such additional facilities may be onboarded by issuance of an agreed order form, quotation, purchase order, statement of work, or other written ordering document referencing this Agreement and the relevant Schedule, without requiring execution of a new master agreement. Unless expressly varied in the applicable ordering document, all such additional facility purchases shall be governed by the terms of this Agreement, including the applicable pricing, service scope, implementation assumptions, support entitlements, data protection obligations, and change management procedures set out in the Schedules. Each additional facility shall become a licensed facility only upon written acceptance by Tiberbu and payment or commitment to pay the applicable Fees.</p>
+<h3>2.11 Package Utilization Audit and Alignment</h3>
+<p>Tiberbu and CBSL shall have the right, upon reasonable prior notice and subject to applicable confidentiality, data protection, and security obligations, to review and audit the Customer’s utilization of CareverseHIMS for the limited purpose of confirming whether the CareverseHIMS package procured by the Customer remains aligned with the Customer’s actual facility level, service scope, volumes, workflows, modules, integrations, user activity, transaction volumes, reporting needs, and operational use of the HIMS. Such review may include usage analytics, implementation records, facility profile information, configuration scope, module activation, support records, and other non-intrusive operational information reasonably required to assess package alignment, provided that access to Personal Data, Health Data, or identifiable Customer Data shall be limited to the minimum necessary and handled in accordance with this Agreement.</p>
+<p>Where such review or audit identifies that the Customer’s actual utilization, facility level, module requirements, transaction volumes, service complexity, integrations, reporting requirements, or operational scope exceed or materially differ from the CareverseHIMS package procured, Tiberbu may notify the Customer of the discrepancy and recommend the appropriate CareverseHIMS package required to support the Customer’s actual use. The Customer shall cooperate in good faith to regularize the discrepancy, including by upgrading to the appropriate CareverseHIMS package and paying the applicable revised Fees, prorated charges, implementation or configuration costs, and any related commercial adjustments as may be set out in a written commercial addendum or revised ordering document agreed by the Parties.</p>
+<h3>2.12 Backdated Package Alignment Charges and Penalty</h3>
+<p>Where a utilization review, audit, facility level change, or other verification establishes that the Customer used CareverseHIMS at a facility level, package entitlement, module scope, transaction volume, integration scope, service complexity, or operational profile higher than the package procured, Tiberbu may calculate and invoice a backdated package alignment charge for the period of misalignment. The backdated package alignment charge shall be calculated as the positive difference between: (a) the Fees that would have been payable for the appropriate CareverseHIMS package during the misalignment period; and (b) the Fees actually paid by the Customer for the package then in force during the same period, prorated on a monthly basis and based on the applicable pricing in Schedule B or the relevant ordering document.</p>
+<p>In addition to the backdated package alignment charge, Tiberbu may apply an administrative penalty equal to ten percent (10%) of the backdated package alignment charge, or such other percentage as may be agreed in the applicable commercial addendum, to cover administrative review, audit, reconciliation, support, configuration, and commercial regularization costs arising from the Customer’s use of CareverseHIMS outside the appropriate package. The misalignment period shall run from the earlier of: (a) the date on which the Customer’s actual utilization first exceeded the procured package; (b) the effective date of the facility level or service scope change; or (c) where the precise date cannot reasonably be established, the date reasonably determined by Tiberbu from available usage records, implementation records, support records, regulatory classification records, or other reliable evidence. Such charges shall be payable within Thirty (30) days of invoice and shall be without prejudice to Tiberbu’s right to require immediate package upgrade and execution of the applicable commercial addendum.</p>
+<h3>2.13 Facility Level Change and Package Upgrade</h3>
+<p>If, during the Subscription Term, the Customer’s facility level, regulatory classification, service scope, bed capacity, clinical service offering, claims complexity, transaction volume, integration requirements, or operational profile changes in a manner that requires a higher CareverseHIMS package or materially different service scope, the Customer shall promptly notify Tiberbu and CBSL. Tiberbu shall assess the revised facility profile and determine the appropriate CareverseHIMS package, support entitlement, implementation scope, and commercial terms applicable to the changed facility level or operating model.</p>
+<p>Where an upgrade is required as a result of such facility level change or revised operational profile, the Parties shall document the revised facility level, applicable CareverseHIMS package, adjusted Fees, effective date, implementation or configuration requirements, support entitlement, and any prorated commercial impact in a written commercial addendum, quotation, order form, or other agreed ordering document. The Customer shall not continue to utilize functionality, capacity, integrations, or service entitlements materially beyond the procured package without completing the required upgrade and associated commercial documentation.</p>
+<p>For ease of invoicing, billing administration, and subscription management, any CareverseHIMS subscription procured for an additional facility during the Subscription Term shall be co-termed with the then-current subscription and renewal cycle under this Agreement. Where an additional facility is activated part-way through a subscription year, the applicable SaaS subscription Fees for that additional facility may be prorated from its Go-Live date to the next applicable renewal date, after which the subscription for that facility shall renew together with the other subscribed facilities on the common renewal date, unless otherwise expressly agreed in the applicable ordering document.</p>
+<h3>2.14 Taxes</h3>
+<p>All Fees are exclusive of Value Added Tax (VAT), withholding tax, and any other applicable taxes, levies, or duties imposed under the laws of Kenya, including the Value Added Tax Act, 2013 and the Income Tax Act (Cap. 470), which shall be borne by the Customer and added to invoices at the applicable statutory rate, except where the Customer is required by law to withhold tax at source, in which case the Customer shall provide Tiberbu with an official withholding tax certificate within the period prescribed by the Kenya Revenue Authority.</p>
+<h3>2.15 Payment Terms</h3>
+<p>Unless otherwise agreed in Schedule B, the applicable annual SaaS subscription Fees may be paid quarterly in advance, with each quarterly instalment representing one quarter of the applicable annual Fee for the relevant subscription year. The availability of quarterly payment terms shall not convert the SaaS subscription pricing into quarterly pricing, and the Customer shall remain liable for the full applicable annual Fees for each subscription year, including any renewed subscription year. Invoices shall be payable within Thirty (30) days of the invoice date. Implementation and training Fees shall be payable in accordance with the milestone schedule set out in Schedule B. All payments shall be made in Kenya Shillings (KES) unless otherwise agreed, free of any deduction or set-off except as required by law.</p>
+<h3>2.16 Payment Account Details</h3>
+<p>All payments due under this Agreement shall be made by the Customer into the bank account designated by Tiberbu in writing. Unless otherwise notified by Tiberbu, the applicable payment account details shall be as follows: Bank Name: To be completed by the Parties; Bank Branch: To be completed by the Parties; Account Number: To be completed by the Parties. Any change to the designated payment account details shall be valid only if communicated to the Customer in writing by an authorized representative of Tiberbu. The Customer shall not make payment to any alternative account unless such account has been formally confirmed in writing by Tiberbu.</p>
+<h3>2.17 Late Payment and Suspension Rights</h3>
+<p>Without prejudice to any other right or remedy, where any undisputed amount remains unpaid for more than Thirty (30) days after its due date, Tiberbu may: (a) charge a late payment fee on the overdue amount at the rate of 5% and (b) following not less than Thirty (30) days' written notice, suspend the Customer's access to CareverseHIMS until payment is received in full, without liability for any loss arising from such suspension, provided that Tiberbu shall not suspend access to functionality reasonably required for emergency patient care without first attempting good-faith engagement with the Customer.</p>
+<h3>2.18 CBSL Role and Authority</h3>
+<p>CBSL shall act as the Technology Delivery Partner for the purposes of supporting the facility-level rollout of CareverseHIMS under this Agreement. CBSL’s authorized role is limited to implementation coordination, onboarding support, member or facility engagement, training logistics, field coordination, first-line implementation facilitation, implementation action tracking, facility-level scheduling, stakeholder communication, and escalation of technical, commercial, contractual, data protection, pricing, scope, approval, or support matters to Tiberbu and CHAK as appropriate.</p>
+<p>For avoidance of doubt, CBSL shall not: (a) vary pricing or payment terms; (b) issue binding commitments on behalf of Tiberbu; (c) represent itself as the owner, licensor, or principal provider of CareverseHIMS unless expressly authorized in writing by Tiberbu; (d) modify, reverse engineer, configure beyond approved parameters, or otherwise interfere with CareverseHIMS; (e) access Customer Data, Personal Data, Health Data, confidential information, implementation environments, pricing information, technical documentation, or CareverseHIMS materials except to the extent expressly authorized and necessary for its approved delivery role; or (f) bind Tiberbu, CHAK, or the Customer without prior written authority.</p>
+<p>CBSL shall perform its role subject to confidentiality, data protection, restricted-use, non-disclosure, non-circumvention, intellectual property protection, compliance, security, and acceptable-use obligations no less protective of Tiberbu and the Customer than those set out in this Agreement.</p>
+<h2>3. SERVICES DESCRIPTION</h2>
+<h3>3.1 Description of the SaaS Solution</h3>
+<p>CareverseHIMS is a cloud-based, tiered hospital management information system that integrates patient registration, clinical documentation, billing and financial management, pharmacy and inventory management, reporting and analytics, and compliance administration within a single platform.</p>
+<h3>3.2 Service Scope</h3>
+<p>The specific modules, functionality, and facility profile applicable to the Customer shall be determined by the tier selected under Schedule A (Core, Advanced, or Enterprise), reflecting the Customer's patient volumes, service lines, claims complexity, and integration requirements.</p>
+<h3>3.3 Included Features and Functionality</h3>
+<p>The Solution includes, depending on the applicable tier: patient registration and appointment scheduling; triage and nursing documentation; electronic medical records and consultation workflows; diagnostics and procedure ordering; day-case, theatre, and follow-up workflows; standardized billing across cash, insurance, corporate, and mobile money payment methods; pharmacy dispensing and inventory management; reporting, dashboards, and analytics; and compliance and audit support.</p>
+<h3>3.4 Third-Party Services and Integrations</h3>
+<p>CareverseHIMS supports integration with designated third-party platforms, including insurance and payer platforms (such as SHA, SMART, LCT, and MAKL-PSMS) and diagnostic equipment, where technically feasible. The Customer acknowledges that the availability, functionality, and performance of any third-party platform or service is outside Tiberbu's control, and Tiberbu shall use reasonable efforts, but gives no warranty, in respect of third-party system availability or performance.</p>
+<h3>3.5 Professional Services (Implementation, Configuration, Training)</h3>
+<p>Tiberbu shall provide or oversee implementation, configuration, data migration support where expressly agreed, and role-based training services in accordance with the implementation plan. CBSL shall support these activities by coordinating implementation readiness, onboarding logistics, facility engagement, training schedules, field coordination, first-line implementation facilitation, implementation action tracking, and escalation of issues to Tiberbu and CHAK as appropriate. CBSL shall not make final technical decisions, approve deviations from Tiberbu’s configuration standards, or make binding commitments regarding scope, pricing, timelines, data access, or support obligations unless expressly authorized in writing by Tiberbu.</p>
+<p>Data migration for LH is expressly required as part of initial implementation.</p>
+<h3>3.6 Custom Development and Enhancements</h3>
+<p>Any request by the Customer for custom development, product enhancement, or configuration change outside the agreed baseline scope shall be treated as a change request under Clause 14 and, where it relates to the core CareverseHIMS platform, shall be reviewed through Tiberbu's product roadmap and release management process rather than delivered as an immediate bespoke change, in order to preserve the integrity and supportability of the shared SaaS platform.</p>
+<h2>4. SERVICE LEVELS AND SUPPORT</h2>
+<h3>4.1 Service Level Agreement (SLA)</h3>
+<p>Tiberbu shall provide technical support for CareverseHIMS in accordance with this Clause 4 and Schedule C (Service Level Agreement), which forms an embedded component of the SaaS subscription and is not a separately priced package unless dedicated on-site support is expressly agreed.</p>
+<h3>4.2 Service Availability / Uptime Commitment</h3>
+<p>Tiberbu shall use reasonable efforts, consistent with industry practice for cloud-hosted healthcare software, to maintain availability of the hosted CareverseHIMS environment, subject to Scheduled Maintenance, Emergency Maintenance, and matters beyond Tiberbu's reasonable control, including third-party hosting, connectivity, and power availability. This is requested at 99.5% of the time, and any downtime may result in financial credits to the client, if this extends for more than6 hours in any given week or group of weeks.</p>
+<h3>4.3 Incident Severity Levels and Response/Resolution Matrix</h3>
+<p>Support incidents shall be classified and handled in accordance with the following severity matrix:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Severity</th>
+<th>Typical Impact</th>
+<th>Initial Response Target</th>
+<th>Update Frequency</th>
+<th>Resolution / Restoration Approach</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Critical</td>
+<td>Production system unavailable or material business stoppage</td>
+<td>Within 1 hour during covered support hours</td>
+<td>Every 2 hours or as materially updated</td>
+<td>Continuous effort toward restoration or an agreed workaround, subject to customer and third-party dependencies</td>
+</tr>
+<tr>
+<td>High</td>
+<td>Major feature unavailable with no reasonable workaround</td>
+<td>Within 4 business hours</td>
+<td>Daily or as materially updated</td>
+<td>Targeted correction or workaround through standard escalation and product support processes</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td>Moderate impact with workaround available</td>
+<td>Within 1 business day</td>
+<td>As agreed in the case record</td>
+<td>Handled through standard support queues and maintenance cycles</td>
+</tr>
+<tr>
+<td>Low</td>
+<td>Minor issue, cosmetic concern, or general guidance request</td>
+<td>Within 2 business days</td>
+<td>As needed</td>
+<td>Addressed through routine support activity, knowledge guidance, or planned product updates</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>4.4 Support Channels</h3>
+<p>Support may be accessed via the online support portal (https://www.tiberbu.com/support), email (support@tiberbu.com), and telephone (+254111043566 and +254111043555), together with a self-service knowledge base.</p>
+<h3>4.5 Response Times and Resolution Targets</h3>
+<p>Response and resolution efforts shall be governed by the severity matrix set out at Clause 4.3. The Customer acknowledges that resolution timelines for Critical and High severity incidents may be affected by dependencies on customer-controlled infrastructure and third-party platforms outside Tiberbu's control.</p>
+<h3>4.6 Scheduled Maintenance</h3>
+<p>Tiberbu may perform scheduled maintenance on the hosted environment, which shall, where reasonably practicable, be carried out outside the Customer's core operating hours and preceded by reasonable advance notice through the agreed support and governance channels.</p>
+<h3>4.7 Emergency Maintenance</h3>
+<p>Tiberbu may perform emergency maintenance without prior notice where necessary to address a security vulnerability, prevent imminent harm to the Service, or comply with a legal or regulatory requirement, and shall notify the Customer as soon as reasonably practicable.</p>
+<h3>4.8 Service Credits</h3>
+<p>Save as may be separately and expressly agreed in Schedule C, this Agreement does not provide for service credits. The Parties may agree service credit arrangements in writing where the Customer's tier or negotiated commercial terms so provide.</p>
+<h3>4.9 Escalation Procedures</h3>
+<p>Where a support matter is not resolved within the applicable target set out in Clause 4.3, either Party may escalate the matter through the escalation matrix set out in Schedule C. CBSL may assist with first-line implementation follow-up, implementation action tracking, facility communication, and escalation coordination, but all technical, commercial, contractual, pricing, scope, data protection, approval, or unresolved support matters shall be escalated to Tiberbu and, where relevant, CHAK in accordance with the agreed governance and escalation procedures. CBSL shall not settle disputes, approve service credits, vary contractual obligations, or bind Tiberbu or the Customer without written authority.</p>
+<h2>5. CUSTOMER OBLIGATIONS</h2>
+<h3>5.1 Customer Responsibilities</h3>
+<p>The Customer shall: (a) provide complete, accurate, and timely implementation inputs, including workflows, authorized user lists, service catalogues, charge schedules, and payer mappings; (b) nominate authorized focal persons for operational, clinical, finance, and technical workstreams; (c) cooperate with Tiberbu and CBSL in implementation readiness activities, facility scheduling, training logistics, user onboarding, workflow discovery, and implementation action tracking; (d) ensure the lawful collection and use of all Customer Data; and (e) comply with its payment obligations under Clause 2.</p>
+<h3>5.2 Infrastructure and Connectivity Requirements</h3>
+<p>The Customer shall be solely responsible for procuring and maintaining suitable end-user devices, local area network and Wi-Fi infrastructure, internet connectivity, printers, power supply, and any other infrastructure reasonably required to access and use CareverseHIMS, unless expressly supplied by Tiberbu under Schedule A or a related order.</p>
+<h3>5.3 User Account Management</h3>
+<p>The Customer shall be responsible for approving user roles, provisioning and de-provisioning Authorized User accounts, and promptly notifying Tiberbu of any suspected unauthorized access or account compromise.</p>
+<h3>5.4 Acceptable Use Policy</h3>
+<p>The Customer shall not, and shall ensure that its Authorized Users do not: (a) reverse engineer, decompile, or attempt to derive the source code of CareverseHIMS, save to the extent such restriction is prohibited by applicable law; (b) use the Solution to infringe any third-party rights or applicable law; (c) introduce any virus, malware, or other malicious code into the Solution; or (d) resell, sublicense, or provide access to the Solution to any third party without Tiberbu's prior written consent.</p>
+<h3>5.5 Prohibited Activities</h3>
+<p>The Customer shall not use CareverseHIMS for any purpose that is unlawful, fraudulent, or that could bring Tiberbu into disrepute, including submission of false or misleading claims data to SHA or any other payer.</p>
+<h3>5.6 Compliance with Applicable Laws</h3>
+<p>The Customer shall at all times comply with all applicable laws in connection with its use of CareverseHIMS, including the Data Protection Act, 2019, the Health Act, 2017, the Digital Health Act, 2023, the Social Health Insurance Act, 2023, and any regulations, codes of conduct, or professional obligations applicable to its healthcare facility.</p>
+<h2>6. DATA PROTECTION AND PRIVACY</h2>
+<h3>6.1 Data Protection Compliance</h3>
+<p>Each Party shall comply with its respective obligations under the Data Protection Act, 2019, and any regulations or guidance issued by the Office of the Data Protection Commissioner (ODPC), in connection with the processing of Personal Data and Health Data under this Agreement.</p>
+<h3>6.2 Role of Parties (Controller/Processor)</h3>
+<p>For purposes of the Data Protection Act, the Customer is the data controller in respect of Personal Data and Health Data of its patients and staff processed through CareverseHIMS, and Tiberbu acts as a data processor, processing such data solely on the documented instructions of the Customer as set out in this Agreement and Schedule D (Data Processing Addendum), save where otherwise required by law. CBSL shall not act as a controller or processor of Customer Data, Personal Data, or Health Data unless expressly authorized in writing under a separate data processing, confidentiality, implementation, or access protocol approved by Tiberbu and the Customer. Where CBSL is granted access to any Personal Data, Health Data, Customer Data, implementation information, or facility information, such access shall be strictly limited to the minimum necessary for its authorized coordination and delivery role and shall remain subject to confidentiality, data protection, security, restricted-use, and audit obligations no less protective than those imposed on Tiberbu under this Agreement.</p>
+<h3>6.3 Processing Instructions</h3>
+<p>Tiberbu shall process Customer Data only for the purposes of providing the Services and in accordance with the Customer's documented instructions, unless required to do otherwise by Kenyan law, in which case Tiberbu shall, to the extent legally permitted, inform the Customer of that legal requirement before processing.</p>
+<h3>6.4 Personal Data Categories</h3>
+<p>The Personal Data processed through CareverseHIMS may include patient demographic and contact details, national identification and SHA numbers, next-of-kin details, billing and payment information, and staff user account information, as further described in Schedule D.</p>
+<h3>6.5 Special Category / Health Data Processing</h3>
+<p>The Parties acknowledge that clinical, diagnostic, and treatment data processed through CareverseHIMS constitutes sensitive personal data (Health Data) under the Data Protection Act, requiring heightened safeguards. Tiberbu shall apply the security measures set out in Clause 7 and Schedule E in respect of such data.</p>
+<h3>6.6 Security Measures</h3>
+<p>Tiberbu shall implement appropriate technical and organizational measures to protect Customer Data against accidental or unlawful destruction, loss, alteration, unauthorized disclosure, or access, proportionate to the risk, in accordance with Schedule E (Security Requirements).</p>
+<h3>6.7 Data Subject Rights Support</h3>
+<p>Tiberbu shall provide reasonable assistance to the Customer, at the Customer's cost where such assistance requires material additional effort, to enable the Customer to respond to requests from data subjects exercising their rights under the Data Protection Act, including rights of access, correction, deletion, and objection to processing.</p>
+<h3>6.8 Cross-Border Data Transfers</h3>
+<p>Where CareverseHIMS data is hosted or backed up outside Kenya, Tiberbu shall ensure that any cross-border transfer of Personal Data complies with the requirements of the Data Protection Act, including, as applicable, the existence of appropriate safeguards, the data subject's consent, or another lawful basis recognized under the Act and any regulations on cross-border data transfer issued by the ODPC.</p>
+<h3>6.9 Data Breach Notification</h3>
+<p>Tiberbu shall notify the Customer without undue delay, and in any event within 48 hours of becoming aware, of any confirmed personal data breach affecting Customer Data, providing available details of the nature and likely consequences of the breach and the measures taken or proposed. The Customer shall remain responsible for any notification obligations owed to the ODPC and to affected data subjects under the Data Protection Act.</p>
+<h3>6.10 Data Processing Addendum (DPA)</h3>
+<p>The Parties shall execute the Data Processing Addendum set out in Schedule D, which sets out in further detail the subject matter, duration, nature, and purpose of processing, the types of Personal Data and categories of data subjects, and the respective obligations of the Parties.</p>
+<h3>6.11 Audit and Compliance Support</h3>
+<p>Tiberbu shall, on reasonable prior written notice and no more than once per year (save where required by a regulator or following a security incident), make available such information as is reasonably necessary to demonstrate compliance with this Clause 6, and shall permit and contribute to audits, including inspections, conducted by the Customer or an auditor mandated by the Customer, subject to reasonable confidentiality safeguards.</p>
+<h3>6.12 Sub-processors</h3>
+<p>Tiberbu may engage sub-processors (including cloud hosting providers) to assist in providing the Services, provided that Tiberbu shall: (a) maintain a list of current sub-processors available to the Customer on request; (b) impose data protection obligations on sub-processors no less protective than those set out in this Clause 6; and (c) remain liable to the Customer for the acts and omissions of its sub-processors in connection with the processing of Customer Data.</p>
+<h2>7. INFORMATION SECURITY</h2>
+<h3>7.1 Information Security Obligations</h3>
+<p>Security of CareverseHIMS and the surrounding operating environment is a shared responsibility between Tiberbu and the Customer, as set out in the responsibility matrix at Clause 7.2 and further detailed in Schedule E.</p>
+<h3>7.2 Shared Security Responsibility Matrix</h3>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Security Area</th>
+<th>Tiberbu Responsibility</th>
+<th>Customer Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Application security</td>
+<td>Secure software development, patching, and product security controls within the managed application scope</td>
+<td>Use the solution in accordance with documented procedures and avoid unauthorized modifications</td>
+</tr>
+<tr>
+<td>User access management</td>
+<td>Provide configurable role-based access capability</td>
+<td>Approve user roles, maintain user accounts, and remove or disable access for departing or reassigned users</td>
+</tr>
+<tr>
+<td>Endpoint and local environment security</td>
+<td>Provide guidance where relevant to supplied solutions and supported configurations</td>
+<td>Secure local devices, antivirus/endpoint security posture, OS updates, physical security, and local network controls</td>
+</tr>
+<tr>
+<td>Passwords and user behaviour</td>
+<td>Support configurable authentication controls within the product scope</td>
+<td>Enforce password discipline, user awareness, confidential credential handling, and internal access governance</td>
+</tr>
+<tr>
+<td>Data handling and privacy</td>
+<td>Process data only within the agreed service scope and apply reasonable technical and organizational safeguards in the managed environment</td>
+<td>Ensure lawful collection, use, instruction, and disclosure of personal and patient data and maintain compliance with applicable legal requirements</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>7.3 Access Controls</h3>
+<p>Tiberbu shall provide role-based access control functionality within CareverseHIMS, enabling the Customer to assign access rights aligned to job function across clinical, operational, finance, and administrative teams.</p>
+<h3>7.4 Encryption Standards</h3>
+<p>Tiberbu shall apply industry-standard encryption to Customer Data in transit and at rest within the managed hosting environment, in accordance with Schedule E.</p>
+<h3>7.5 Backup and Recovery</h3>
+<p>Tiberbu shall maintain reasonable backup procedures for the hosted CareverseHIMS environment, including periodic backups of Customer Data, to support recovery in the event of data loss or system failure, on a reasonable efforts basis.</p>
+<h3>7.6 Disaster Recovery</h3>
+<p>Tiberbu shall maintain disaster recovery arrangements intended to support restoration of the hosted CareverseHIMS environment within a reasonable period following a qualifying disaster event, subject to the severity of the incident and any third-party hosting dependencies.</p>
+<h3>7.7 Business Continuity</h3>
+<p>Tiberbu shall maintain business continuity practices intended to support the resilience and continuity of the Services, applied on a reasonable efforts basis and subject to the agreed service model and matters outside Tiberbu's reasonable control.</p>
+<h3>7.8 Security Incident Management</h3>
+<p>Tiberbu shall maintain a security incident management process and shall notify the Customer of confirmed security incidents affecting Customer Data in accordance with Clause 6.9.</p>
+<h3>7.9 Security Assessments and Audits</h3>
+<p>Tiberbu shall, on reasonable request and no more than once per year (absent a security incident or regulatory requirement), make available a summary of its security posture and, subject to reasonable confidentiality protections, cooperate with security assessments reasonably requested by the Customer.</p>
+<h2>8. DATA OWNERSHIP AND RECORDS</h2>
+<h3>8.1 Customer Data Ownership</h3>
+<p>As between the Parties, the Customer owns all right, title, and interest in and to Customer Data, including all patient and clinical records generated or stored through CareverseHIMS.</p>
+<h3>8.2 Provider Data Ownership</h3>
+<p>As between the Parties, Tiberbu owns all right, title, and interest in and to CareverseHIMS, including its software, source code, architecture, and Documentation, and any aggregated or de-identified data derived from the operation of the platform that does not identify the Customer or any data subject.</p>
+<h3>8.3 Usage Analytics and Metadata Rights</h3>
+<p>Tiberbu may collect and use aggregated, de-identified usage and performance metadata for the purposes of product improvement, benchmarking, and support, provided that such data shall not identify the Customer or any data subject and shall not include Customer Data in identifiable form.</p>
+<h3>8.4 Data Access Rights</h3>
+<p>The Customer shall, at all times during the Subscription Term, have access to its Customer Data through CareverseHIMS in accordance with its subscribed tier and Authorized User permissions.</p>
+<h3>8.5 Data Export Rights</h3>
+<p>The Customer may request export of its Customer Data in a commonly used, structured format (such as CSV or an agreed structured export) at any time during the Subscription Term and for the retention period specified in Clause 8.8, subject to reasonable advance notice and, where the request exceeds standard export functionality, payment of a reasonable fee for the additional effort involved. This fee for archive will be capped at Kes 10,000 per event, for the unusual cases. The client will be trained on how to back up locally as part of implementation.</p>
+<h3>8.6 Data Portability</h3>
+<p>Tiberbu shall provide reasonable assistance to facilitate the Customer's transition of Customer Data to a successor system, including the provision of data exports and, where separately agreed, migration support priced as a professional service. This should be capped at no more than Kes 30,000.</p>
+<h3>8.7 Record Retention Requirements</h3>
+<p>The Customer shall be responsible for determining and complying with any statutory or professional record retention obligations applicable to patient and clinical records under Kenyan law, including any requirements of the Kenya Medical Practitioners and Dentists Council, the Nursing Council of Kenya, or other applicable regulatory bodies.</p>
+<h3>8.8 End-of-Contract Data Handling</h3>
+<p>Upon termination or expiry of this Agreement, Tiberbu shall retain the Customer's Health Data and other Customer Data on a read-only basis for a retention period of seven (7) years from the effective date of discontinuation (the "Retention Period"), unless a longer period is required by applicable Kenyan law, regulator directive, court order, clinical governance obligation, or written agreement between the Parties, in accordance with Clause 15.7 and Schedule G (Data Migration and Exit Plan). A service discontinuation and data retention fee, as will be determined based on the volumn of data and number of read only access accounts required, shall apply to cover the cost of secure hosting, storage, backup retention, and administrative oversight of the retained data for the Retention Period.</p>
+<p>Client should have rights to download, analyse and use data for audit and other purposes for the legal retention period; with no rights to amend, correct or add new data. There will be no additional costs for legal data retention.</p>
+<h2>9. INTELLECTUAL PROPERTY</h2>
+<h3>9.1 Ownership of Software</h3>
+<p>All intellectual property rights in and to CareverseHIMS, including the software, source code, object code, application architecture, and any related proprietary materials, shall remain vested exclusively in Tiberbu and/or its licensors. Nothing in this Agreement shall be construed as transferring ownership of any such intellectual property to the Customer.</p>
+<h3>9.2 Ownership of Customizations</h3>
+<p>Save as otherwise agreed in writing, any configuration, customization, or enhancement developed by Tiberbu for the Customer, whether bespoke or otherwise, shall form part of the CareverseHIMS platform and shall be owned by Tiberbu, provided that the Customer shall retain a right to use such customization for so long as it remains a subscriber under this Agreement.</p>
+<h3>9.3 Ownership of Documentation</h3>
+<p>All Documentation, training materials, methodologies, and templates supplied by Tiberbu shall remain the property of Tiberbu, and the Customer is granted a limited right to use such materials solely in connection with its permitted use of CareverseHIMS.</p>
+<h3>9.4 Feedback Rights</h3>
+<p>Where the Customer provides suggestions, feedback, or feature requests in relation to CareverseHIMS, Tiberbu may use such feedback without restriction or compensation to the Customer, for the purposes of improving its products and services.</p>
+<h3>9.5 Trademark Usage</h3>
+<p>Neither Party shall use the other Party's trademarks, logos, or trade names without the prior written consent of the other Party, save that Tiberbu may identify the Customer as a customer for reasonable marketing purposes, subject to the Customer's prior written consent, which shall not be unreasonably withheld.</p>
+<h3>9.6 Open Source Software</h3>
+<p>CareverseHIMS may incorporate open-source software components, which remain subject to their respective open-source licence terms. Tiberbu warrants that any such incorporation does not impose copyleft or disclosure obligations on the Customer's own systems or data.</p>
+<h3>9.7 Intellectual Property Infringement Claims</h3>
+<p>Tiberbu shall defend the Customer against any third-party claim alleging that the Customer's authorized use of CareverseHIMS (in accordance with this Agreement and the Documentation) infringes such third party's intellectual property rights registered in Kenya, and shall indemnify the Customer against damages finally awarded or agreed in settlement, provided that the Customer promptly notifies Tiberbu of the claim, grants Tiberbu sole control of the defence and settlement, and provides reasonable cooperation. This indemnity shall not apply to claims arising from: (a) unauthorized modification of CareverseHIMS by the Customer; (b) use in combination with third-party software or hardware not authorized by Tiberbu; or (c) use other than in accordance with the Documentation.</p>
+<h2>10. CONFIDENTIALITY</h2>
+<h3>10.1 Confidential Information Definition</h3>
+<p>"Confidential Information" means any non-public commercial, technical, financial, operational, security, or patient-related information disclosed by one Party to the other in connection with this Agreement, whether disclosed orally, in writing, or in electronic form, and whether or not marked as confidential.</p>
+<h3>10.2 Confidentiality Obligations</h3>
+<p>Each Party shall keep confidential and shall not disclose the other Party’s Confidential Information to any third party, except to its employees, professional advisers, subcontractors, authorized representatives, or CBSL personnel who have a legitimate need to know such information for the permitted purpose and who are bound by confidentiality obligations no less protective than those set out in this Clause 10. CBSL shall use Confidential Information only for its authorized role under this Agreement and shall not use such information for competitive, commercial, resale, non-circumvention, reverse engineering, independent product development, or unauthorized customer engagement purposes.</p>
+<h3>10.3 Permitted Disclosures</h3>
+<p>Confidential Information may be disclosed to the extent required by law, regulation, or a lawful order of a court or regulator (including the ODPC, SHA, or DHA), provided that, where legally permissible, the disclosing Party notifies the other Party promptly of such requirement.</p>
+<h3>10.4 Exceptions to Confidentiality</h3>
+<p>The obligations in this Clause 10 shall not apply to information that: (a) is or becomes publicly available through no fault of the receiving Party; (b) was lawfully in the receiving Party's possession prior to disclosure; (c) is lawfully received from a third party without breach of confidentiality; or (d) is independently developed without reference to the disclosing Party's Confidential Information.</p>
+<h3>10.5 Data Security Obligations</h3>
+<p>Each Party shall apply reasonable technical and organizational measures to protect the other Party's Confidential Information against unauthorized access, use, or disclosure, consistent with the security obligations set out in Clauses 6 and 7.</p>
+<h3>10.6 Survival of Confidentiality Obligations</h3>
+<p>The obligations of confidentiality under this Clause 10 shall survive the termination or expiry of this Agreement for a period of [five (5)] years, save that obligations relating to Health Data and trade secrets shall survive indefinitely or for as long as such information retains its confidential character.</p>
+<h2>11. WARRANTIES</h2>
+<h3>11.1 SaaS Service Warranty</h3>
+<p>Tiberbu warrants that, under normal authorized use and within the agreed service scope, CareverseHIMS will materially perform in accordance with its Documentation. Reported defects shall be handled through the support processes set out in Clause 4.</p>
+<h3>11.2 Professional Services Warranty</h3>
+<p>Tiberbu warrants that implementation, training, and other professional services shall be performed with reasonable skill and care, consistent with generally accepted industry standards for healthcare software implementation in Kenya.</p>
+<h3>11.3 Compliance Warranty</h3>
+<p>Tiberbu warrants that it shall provide the Services in material compliance with applicable Kenyan law relevant to the provision of a hosted software service, including the Data Protection Act, provided that the Customer acknowledges that regulatory readiness features relating to SHA eClaims, DHA, and HIE integration are provided on a "readiness" basis and do not constitute a warranty of certification, approval, or acceptance by any third-party regulator or payer.</p>
+<h3>11.4 Mutual Authority Warranty</h3>
+<p>Each Party warrants that it has full corporate power and authority to enter into and perform this Agreement, and that this Agreement, when executed, constitutes a valid and binding obligation enforceable against it in accordance with its terms.</p>
+<h3>11.5 Disclaimer of Unstated Warranties</h3>
+<p>Save as expressly stated in this Agreement, all conditions, warranties, and other terms implied by statute, common law, or otherwise are, to the maximum extent permitted by applicable Kenyan law, excluded from this Agreement. Without limiting the foregoing, Tiberbu does not warrant that CareverseHIMS will operate uninterrupted or error-free in all circumstances, or that third-party systems, connectivity, external regulatory approvals, or customer-controlled environments will perform without interruption or incompatibility.</p>
+<h2>12. RISK ALLOCATION</h2>
+<h3>12.1 Indemnities</h3>
+<p>Each Party (the "Indemnifying Party") shall indemnify and hold harmless the other Party against direct losses, damages, and reasonable costs (including legal fees) arising from the Indemnifying Party's breach of Clause 6 (Data Protection) or Clause 10 (Confidentiality), or from the Indemnifying Party's gross negligence, wilful misconduct, or fraud.</p>
+<h3>12.2 Intellectual Property Indemnity</h3>
+<p>Tiberbu's intellectual property indemnity obligations are as set out in Clause 9.7.</p>
+<h3>12.3 Data Breach Indemnity</h3>
+<p>Tiberbu shall indemnify the Customer against direct losses arising from a personal data breach caused by Tiberbu's failure to comply with its security obligations under Clause 6 and Clause 7, save to the extent such breach arises from the Customer's own acts or omissions, including failure to maintain adequate local access controls or endpoint security in accordance with Clause 7.2.</p>
+<h3>12.4 Third-Party Claims</h3>
+<p>Each Party shall promptly notify the other of any third-party claim which may give rise to an indemnity obligation under this Clause 12, and shall provide reasonable cooperation in the defence of such claim.</p>
+<h3>12.5 Limitation of Liability</h3>
+<p>Save in respect of the matters excluded from limitation under Clause 12.7, neither Party shall be liable to the other for any indirect, incidental, special, or consequential loss, or for loss of profits, revenue, goodwill, or anticipated savings, whether arising in contract, tort (including negligence), or otherwise, even where such loss was foreseeable.</p>
+<h3>12.6 Liability Cap</h3>
+<p>Save in respect of the matters excluded from limitation under Clause 12.7, the total aggregate liability of each Party arising out of or in connection with this Agreement, whether in contract, tort, or otherwise, shall not exceed an amount equal to the total Fees paid or payable by the Customer under this Agreement in the twelve (12) months immediately preceding the event giving rise to the claim.</p>
+<h3>12.7 Excluded Damages / Unlimited Liability Exceptions</h3>
+<p>Nothing in this Agreement shall exclude or limit either Party's liability for: (a) death or personal injury caused by its negligence; (b) fraud or fraudulent misrepresentation; (c) breach of the confidentiality obligations under Clause 10 involving wilful or grossly negligent disclosure; (d) breach of the data protection obligations under Clause 6 amounting to wilful misconduct or gross negligence; or (e) any other liability which cannot lawfully be excluded or limited under the laws of Kenya.</p>
+<h2>13. REGULATORY AND SECTOR COMPLIANCE</h2>
+<h3>13.1 Healthcare Regulatory Compliance</h3>
+<p>Where applicable to the Customer's facility, the Customer shall remain solely responsible for compliance with all healthcare regulatory requirements applicable to its operations, including licensing and registration requirements under the Health Act, 2017, and requirements of the applicable professional regulatory bodies.</p>
+<h3>13.2 SHA / eClaims Compliance</h3>
+<p>CareverseHIMS is configured to support SHA eClaims submission workflows and claims data preparation in line with the applicable integration and data requirements made available by SHA from time to time. The Customer acknowledges that claim acceptance, reimbursement timing, and third-party processing outcomes remain subject to the Customer's data quality, clinical and billing practices, SHA's rules, and the availability of the SHA platform, and are not guaranteed by Tiberbu.</p>
+<h3>13.3 DHA / HIE Compliance</h3>
+<p>CareverseHIMS is designed to support Health Information Exchange readiness in accordance with applicable DHA standards and technical specifications made available from time to time. The Customer acknowledges that actual HIE participation, external approvals, certification outcomes, and ecosystem connectivity remain subject to prevailing law, DHA regulatory processes, and third-party requirements, and any costs payable to DHA arising from future HIE integration regulations are not included in the Fees under this Agreement unless separately agreed.</p>
+<h3>13.4 Records Management Obligations</h3>
+<p>The Customer shall ensure that its use of CareverseHIMS supports compliance with applicable clinical records management obligations under Kenyan law and professional regulatory requirements, including retention, accuracy, and confidentiality of patient records.</p>
+<h3>13.5 Audit Cooperation</h3>
+<p>Tiberbu shall provide reasonable cooperation to the Customer in connection with any audit or inspection conducted by a healthcare regulator, SHA, DHA, or the ODPC, to the extent relating to the Services provided under this Agreement, subject to reasonable confidentiality protections and cost reimbursement where the cooperation required is material. CBSL shall provide reasonable coordination support where the audit or inspection relates to onboarding records, implementation action trackers, training logistics, field coordination, facility engagement, or other activities within CBSL’s authorized delivery role, provided that CBSL shall not disclose Customer Data, Personal Data, Health Data, Tiberbu Confidential Information, pricing information, technical documentation, or system access information except as expressly authorized under this Agreement or required by law.</p>
+<h2>14. CHANGE MANAGEMENT</h2>
+<h3>14.1 Change Request Process</h3>
+<p>Any request that changes the agreed implementation scope, workflows, deliverables, integrations, reports, training approach, deployment model, timelines, pricing, payment structure, support entitlement, facility onboarding plan, or other approved implementation assumptions after baseline confirmation shall be treated as a change request and shall be reviewed for technical feasibility, timeline impact, dependency impact, data protection impact, operational impact, and commercial effect, in accordance with the change control procedure set out in Schedule F. CBSL may assist with identifying, documenting, tracking, and escalating potential change requests arising during implementation or onboarding, but no variation shall be binding unless reviewed and confirmed in writing by Tiberbu and the Customer, and where applicable acknowledged by CBSL for coordination purposes.</p>
+<h3>14.2 Product Updates</h3>
+<p>Tiberbu may release updates, patches, and maintenance releases to CareverseHIMS from time to time as part of the embedded SaaS service, including to address security vulnerabilities, bug fixes, and statutory or regulatory changes.</p>
+<h3>14.3 New Releases</h3>
+<p>Tiberbu may introduce new major versions of CareverseHIMS with enhanced functionality, which shall be made available to the Customer as part of the SaaS subscription, subject to reasonable advance notice of any material change affecting the Customer's workflows.</p>
+<h3>14.4 Feature Deprecation</h3>
+<p>Where Tiberbu intends to deprecate or materially change a feature relied upon by the Customer, Tiberbu shall provide reasonable prior written notice and, where reasonably practicable, a migration path to an alternative feature.</p>
+<h3>14.5 Customer-Specific Enhancements</h3>
+<p>Requests for customer-specific enhancements shall be reviewed for technical fit, supportability, shared-platform impact, and product roadmap priority, and where approved, shall be introduced through scheduled release windows or delivered as separately scoped and priced professional services.</p>
+<h2>15. TERMINATION</h2>
+<h3>15.1 Termination for Convenience</h3>
+<p>Either Party may terminate this Agreement for convenience by giving not less than ninety (90) days' prior written notice to the other Party, save that any subscription Fees paid in advance for the remainder of the then-current Subscription Term shall not be refundable except where the Customer terminates for Tiberbu's uncured material breach under Clause 15.2.</p>
+<h3>15.2 Termination for Cause</h3>
+<p>Either Party may terminate this Agreement with immediate effect by written notice if the other Party commits a material breach of this Agreement which, if capable of remedy, is not remedied within Sixty (60) days of receiving written notice specifying the breach.</p>
+<h3>15.3 Termination for Non-Payment</h3>
+<p>Tiberbu may terminate this Agreement if any undisputed Fees remain unpaid for more than Ninety (90) days after the due date, following the suspension process set out in Clause 2.11 and not less than Thirty (30) days' further written notice of intended termination.</p>
+<h3>15.4 Insolvency Termination</h3>
+<p>Either Party may terminate this Agreement with immediate effect by written notice if the other Party becomes insolvent, enters into administration, receivership, liquidation, or any analogous process under the Insolvency Act, 2015 (Kenya), or ceases or threatens to cease carrying on business.</p>
+<h3>15.5 Suspension Rights</h3>
+<p>In addition to the suspension right in Clause 2.11, Tiberbu may suspend access to CareverseHIMS where reasonably necessary to prevent imminent harm to the Solution, other customers, or third parties, including in the event of a security incident attributable to the Customer's systems, provided that Tiberbu shall use reasonable efforts to minimize disruption to patient care.</p>
+<h3>15.6 Effects of Termination</h3>
+<p>Upon termination or expiry of this Agreement for any reason: (a) all licences granted to the Customer shall immediately cease, save for the read-only data access rights set out in Clause 15.7; (b) the Customer shall pay all all outstanding, unpaid, invoiced, committed, ordered, renewed, prorated, and accrued amounts must be settled immediately upon termination up to the effective date of termination; and (c) each Party shall return or destroy the other Party's Confidential Information in its possession, save as required to be retained by law or under Clause 8.8.</p>
+<h3>15.7 Data Retrieval Rights</h3>
+<p>Following termination or expiry, the Customer shall have the right to retrieve its Customer Data in accordance with Clause 8.5 and 8.8, and Tiberbu shall provide read-only access to Customer Data for the Retention Period set out in Clause 8.8 and Schedule G, subject to the applicable data retention fee.</p>
+<h3>15.8 Transition Assistance</h3>
+<p>Tiberbu shall provide reasonable transition assistance to support the Customer's migration to a successor system, priced as a separate professional service unless otherwise agreed, in accordance with the exit plan set out in Schedule G. Data Archive during transition should be free of charge.</p>
+<h2>16. LEGAL AND GOVERNANCE PROVISIONS</h2>
+<h3>16.1 Notices</h3>
+<p>Any notice given under this Agreement shall be in writing and delivered by hand, registered post, or email (with confirmation of receipt) to the addresses of the Parties set out in Clause 1.1, or such other address as either Party may notify to the other from time to time.</p>
+<h3>16.2 Assignment</h3>
+<p>Neither Party may assign, novate, or transfer its rights or obligations under this Agreement without the prior written consent of the other Party, such consent not to be unreasonably withheld, save that either Party may assign this Agreement to an Affiliate or in connection with a merger, acquisition, or sale of substantially all of its assets, upon written -Consent to the other Party.</p>
+<h3>16.3 Subcontracting</h3>
+<p>Tiberbu may subcontract the performance of any part of the Services, including to sub-processors under Clause 6.12, provided that Tiberbu shall remain fully liable for the performance of its subcontractors. CBSL’s appointment as Technology Delivery Partner shall not be construed as a transfer, assignment, agency, resale arrangement, or delegation of Tiberbu’s core service obligations unless expressly agreed in writing. CBSL shall perform only the authorized coordination and co-delivery functions set out in this Agreement and any applicable implementation protocol, subject always to Tiberbu’s product ownership, intellectual property rights, pricing authority, contracting authority, data protection requirements, security standards, and final technical approval rights.</p>
+<h3>16.4 Force Majeure</h3>
+<p>Neither Party shall be liable for any failure or delay in performance of this Agreement (other than payment obligations) to the extent caused by circumstances beyond its reasonable control, including acts of God, war, civil unrest, government action, pandemic, power or internet infrastructure failure, or failure of third-party platforms (including SHA or DHA systems), provided that the affected Party notifies the other Party promptly and uses reasonable efforts to mitigate the impact.</p>
+<h3>16.5 Independent Contractor Status</h3>
+<p>The Parties are independent contractors, and nothing in this Agreement shall be construed as creating a partnership, joint venture, agency, or employment relationship between them.</p>
+<h3>16.6 Non-Solicitation of Personnel</h3>
+<p>Neither Party shall, during the term of this Agreement and for a period of twelve (12) months thereafter, directly solicit for employment any employee of the other Party who has been materially involved in the performance of this Agreement, without the prior written consent of the other Party, save for general recruitment advertising not specifically targeted at such employees.</p>
+<h3>16.7 Entire Agreement</h3>
+<p>This Agreement, together with its Schedules, constitutes the entire agreement between the Parties in relation to its subject matter and supersedes all prior agreements, negotiations, and understandings, whether written or oral, including the CareverseHIMS Customer Proposal dated July 2026, save to the extent expressly incorporated by reference.</p>
+<h3>16.8 Amendments</h3>
+<p>No amendment or variation of this Agreement shall be effective unless made in writing and signed by authorized representatives of both Parties.</p>
+<h3>16.9 Waiver</h3>
+<p>No failure or delay by either Party in exercising any right under this Agreement shall operate as a waiver of that right, nor shall any single or partial exercise of a right preclude any other or further exercise of that or any other right.</p>
+<h3>16.10 Severability</h3>
+<p>If any provision of this Agreement is held by a court or tribunal of competent jurisdiction to be invalid or unenforceable, such provision shall be modified to the minimum extent necessary to make it valid and enforceable, and the remaining provisions of this Agreement shall continue in full force and effect.</p>
+<h3>16.11 Counterparts</h3>
+<p>This Agreement may be executed in counterparts, each of which shall be deemed an original, and all of which together shall constitute one and the same instrument.</p>
+<h3>16.12 Electronic Signatures</h3>
+<p>This Agreement may be executed by way of electronic signature, which shall be recognized as valid and binding between the Parties to the extent permitted under the Kenya Information and Communications Act (Cap. 411A) and the Electronic Transactions provisions applicable thereunder.</p>
+<h2>17. DISPUTE RESOLUTION</h2>
+<h3>17.1 Good Faith Negotiation</h3>
+<p>In the event of any dispute arising out of or in connection with this Agreement, the Parties shall first attempt to resolve the dispute through good faith negotiation between their respective designated representatives within Fourteen (14) days of a written notice of dispute.</p>
+<h3>17.2 Escalation Procedures</h3>
+<p>If the dispute is not resolved through negotiation under Clause 17.1, it shall be escalated to the senior management of each Party for resolution within a further Fourteen (14) days.</p>
+<h3>17.3 Mediation</h3>
+<p>If the dispute remains unresolved following escalation under Clause 17.2, the Parties shall attempt to resolve the dispute through mediation administered by the Mediation Accreditation Committee or a mediator agreed between the Parties, before resorting to arbitration or litigation.</p>
+<h3>17.4 Arbitration</h3>
+<p>Any dispute not resolved through negotiation, escalation, or mediation shall be referred to and finally resolved by arbitration in Nairobi, Kenya, in accordance with the Arbitration Act, 1995 (Kenya) and the Arbitration Rules of the Chartered Institute of Arbitrators (Kenya Branch), by a sole arbitrator appointed by agreement of the Parties or, failing agreement within Fourteen (14) days, appointed by the Chairman of the Chartered Institute of Arbitrators (Kenya Branch). The seat of arbitration shall be Nairobi and the language of the arbitration shall be English.</p>
+<h3>17.5 Court Jurisdiction</h3>
+<p>Notwithstanding Clause 17.4, either Party may apply to the High Court of Kenya for interim or urgent injunctive relief pending the outcome of arbitration, and the courts of Kenya shall have exclusive jurisdiction over any matter not subject to arbitration under this Agreement.</p>
+<h3>17.6 Governing Law</h3>
+<p>This Agreement shall be governed by, and construed in accordance with, the laws of the Republic of Kenya.</p>
+<h2>18. SCHEDULES / APPENDICES</h2>
+<p>The following Schedules are attached to and form an integral part of this Agreement:</p>
+<ul>
+<li>Schedule A – Service Description (CareverseHIMS tier, modules, and facility profile selected by the Customer)</li>
+<li>Schedule B – Pricing Schedule (subscription fees, implementation and training fees, and optional hardware/security pricing)</li>
+<li>Schedule C – Service Level Agreement (severity matrix, support channels, and embedded support entitlement)</li>
+<li>Schedule D – Data Processing Addendum (roles, processing instructions, and cross-border transfer terms)</li>
+<li>Schedule E – Security Requirements (technical and organizational measures)</li>
+<li>Schedule F – Change Control Procedure</li>
+<li>Schedule G – Data Migration and Exit Plan</li>
+</ul>
+<h2>EXECUTION</h2>
+<p>IN WITNESS WHEREOF, the Parties have caused this Agreement to be executed by their duly authorized representatives on the date first written above.</p>
+<div class="table-wrap source-table signature-table">
+<table>
+<tbody>
+<tr>
+<td>SIGNED for and on behalf of<br>TIBERBU HEALTHNET LIMITED<br>Signature: ___________________________<br>Name: ___________________________<br>Designation: ___________________________<br>Date: ___________________________</td>
+<td>SIGNED for and on behalf of<br>{{ customer.name }}<br>Signature: ___________________________<br>Name: ___________________________<br>Designation: ___________________________<br>Date: ___________________________</td>
+</tr>
+<tr>
+<td colspan="2">SIGNED for and on behalf of<br>CHAK BUSINESS SERVICES LIMITED<br>Signature: ___________________________<br>Name: ___________________________<br>Designation: ___________________________<br>Date: ___________________________</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>WITNESSED BY (where applicable):</h3>
+<div class="table-wrap source-table signature-table">
+<table>
+<tbody>
+<tr>
+<td>Witness Signature: _______________________<br>Name: ___________________________<br>ID No.: ___________________________</td>
+<td>Witness Signature: _______________________<br>Name: ___________________________<br>ID No.: ___________________________</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2>Appendix A: Schedule A – Service Description</h2>
+<h3>A1. Customer Information for {{ facility.name }}</h3>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Customer Legal Name</td>
+<td>{{ customer.name }}</td>
+</tr>
+<tr>
+<td>Facility Name</td>
+<td>{{ facility.name }}</td>
+</tr>
+<tr>
+<td>SHA Registration Number</td>
+<td>To be completed by the Customer</td>
+</tr>
+<tr>
+<td>DHA Facility Identifier</td>
+<td>To be completed by the Customer</td>
+</tr>
+<tr>
+<td>Facility Level</td>
+<td>{{ facility.keph_level or "Not specified" }}</td>
+</tr>
+<tr>
+<td>Facility Type</td>
+<td>Hospital</td>
+</tr>
+<tr>
+<td>Primary Location</td>
+<td>To be completed by the Customer</td>
+</tr>
+<tr>
+<td>Selected CareverseHIMS Package</td>
+<td>To be completed by the Customer</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>A2. Selected CareverseHIMS Tier</h3>
+<p>The Customer has selected the following CareverseHIMS service tier pursuant to Clause 2 and Clause 3 of the Agreement.</p>
+<ul>
+<li>☐ CareverseHIMS Core</li>
+</ul>
+<ul>
+<li>☐ CareverseHIMS Advanced</li>
+</ul>
+<ul>
+<li>☐ CareverseHIMS Enterprise</li>
+</ul>
+<p>The subscribed tier shall determine the modules, integrations, scalability limits, implementation approach, reporting capabilities and support entitlements available to the Customer as detailed in the CareverseHIMS Proposal attached as an appendix to this contract.</p>
+<h3>A3. Platform Services Included</h3>
+<p>The Subscription includes:</p>
+<p>Cloud hosting of CareverseHIMS.</p>
+<p>Application maintenance and updates.</p>
+<p>Embedded support services.</p>
+<p>Security management within the managed environment.</p>
+<p>System monitoring.</p>
+<p>Backup and disaster recovery services.</p>
+<p>User management capabilities.</p>
+<p>Audit logging.</p>
+<p>Role-based access controls.</p>
+<p>Standard reporting and dashboards.</p>
+<p>Implementation and onboarding services.</p>
+<p>Role-based user training.</p>
+<h3>A4. Infrastructure and Hosting Profile</h3>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hosting Model</td>
+<td>Multi-Tenant</td>
+</tr>
+<tr>
+<td>Hosting Location</td>
+<td>Kenya / Africa / Other Approved Location</td>
+</tr>
+<tr>
+<td>Production Environment</td>
+<td>Included</td>
+</tr>
+<tr>
+<td>Test Environment</td>
+<td>Included</td>
+</tr>
+<tr>
+<td>Backup Environment</td>
+<td>Included/Local</td>
+</tr>
+<tr>
+<td>Authentication Method</td>
+<td>Local / SSO</td>
+</tr>
+<tr>
+<td>MFA Enabled</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Data Retention</td>
+<td>As per Agreement</td>
+</tr>
+<tr>
+<td>Read-Only Retention Period</td>
+<td>Seven (7) Years after termination</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>A5. Professional Services Included</h3>
+<p>The following implementation services are included.</p>
+<ul>
+<li>☐ Project Management</li>
+</ul>
+<ul>
+<li>☐ Requirements Validation</li>
+</ul>
+<ul>
+<li>☐ Facility Workflow Mapping</li>
+</ul>
+<ul>
+<li>☐ Configuration</li>
+</ul>
+<ul>
+<li>☐ User Setup</li>
+</ul>
+<ul>
+<li>☐ Integration Setup</li>
+</ul>
+<ul>
+<li>☐ Testing</li>
+</ul>
+<ul>
+<li>☐ User Acceptance Testing</li>
+</ul>
+<ul>
+<li>☐ Go-Live Support</li>
+</ul>
+<ul>
+<li>☐ Hypercare Support</li>
+</ul>
+<ul>
+<li>☐ Training</li>
+</ul>
+<ul>
+<li>☐ Train-The-Trainer</li>
+</ul>
+<ul>
+<li>☐ Reporting Configuration</li>
+</ul>
+<h3>A6. Support Entitlements</h3>
+<p>Embedded support services are included within the subscription.</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Service Category</th>
+<th>Included</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Phone Support</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Email Support</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Support Portal</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Knowledge Base</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Remote Support</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Software Updates</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Security Updates</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>A7. Pricing for Additional Facilities</h3>
+<p>The Customer may procure CareverseHIMS subscriptions and related services for additional facilities during the Subscription Term under the framework pricing mechanism set out in this Schedule A and the applicable quotation or pricing table in Schedule B. Each additional facility shall be ordered through an agreed order form, quotation, purchase order, statement of work, or other written ordering document referencing this Agreement.</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Framework Item</th>
+<th>Pricing / Ordering Basis</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Additional Facility Subscription</td>
+<td>Priced per additional licensed facility, based on the selected CareverseHIMS tier, facility level, facility type, expected service scope, modules, integrations and support entitlement.</td>
+</tr>
+<tr>
+<td>Implementation and Onboarding</td>
+<td>Implementation, configuration, workflow mapping, user setup, migration assistance, testing, go-live support and training shall be priced per additional facility unless expressly bundled in Schedule B.</td>
+</tr>
+<tr>
+<td>Optional Add-Ons</td>
+<td>Dedicated onsite support, endpoint protection, Microsoft 365 services, managed IT support, managed security services, advanced BI, custom development and additional integrations shall be priced separately where selected.</td>
+</tr>
+<tr>
+<td>Framework Price Validity</td>
+<td>Framework pricing shall remain valid during the Subscription Term unless varied by mutual written agreement, annual price adjustment, material scope change, regulatory requirement, third-party cost increase, or foreign exchange impact affecting pass-through items.</td>
+</tr>
+<tr>
+<td>Ordering and Activation</td>
+<td>An additional facility becomes a licensed facility only after written acceptance by Tiberbu, confirmation of scope, issuance of the applicable ordering document and payment or commitment to pay the relevant Fees.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>For avoidance of doubt, unless expressly varied in the applicable ordering document, each additional facility shall be governed by the terms of the Agreement, including the applicable service description, pricing, support obligations, data protection provisions, security requirements, implementation assumptions, and change management process. Where an additional facility requires materially different workflows, integrations, migration requirements, infrastructure assumptions, or support coverage, Tiberbu may issue a separate scope and price confirmation before onboarding.</p>
+<h3>A8. Accepted Service Scope</h3>
+<p>The Parties acknowledge that this Schedule A constitutes the definitive statement of the Customer's subscribed CareverseHIMS modules, facilities, integrations and implementation scope and shall be used as the baseline for implementation, support and change management activities under the Agreement. Any variation shall be processed in accordance with Clause 14 (Change Management).</p>
+<h2>Appendix B: Schedule B – Pricing Schedule</h2>
+<h3>Framework Pricing for additional facilities:</h3>
+<p class="section-intro">The following framework price references are reproduced from the source agreement for completeness. The facility-specific pricing summary at the beginning of this document is the negotiated commercial basis for this individual Agreement.</p>
+<div class="table-wrap reference-pricing">
+<table>
+<thead>
+<tr>
+<th>Keph Level</th>
+<th>Package</th>
+<th>Per Facility Total Year 1 - Monthly</th>
+<th>Per Facility Total Year 2  - Monthly</th>
+<th>Per Facility Total Year 3  - Monthly</th>
+<th>Per Facility Total Year 4  - Monthly</th>
+<th>Per Facility Total Year 5  - Monthly</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LEVEL 2</td>
+<td>Core</td>
+<td class="numeric">28,425.93</td>
+<td class="numeric">28,425.93</td>
+<td class="numeric">22,239.23</td>
+<td class="numeric">23,351.19</td>
+<td class="numeric">24,518.75</td>
+</tr>
+<tr>
+<td>LEVEL 3</td>
+<td>Core</td>
+<td class="numeric">28,425.93</td>
+<td class="numeric">28,425.93</td>
+<td class="numeric">22,239.23</td>
+<td class="numeric">23,351.19</td>
+<td class="numeric">24,518.75</td>
+</tr>
+<tr>
+<td>LEVEL 3B</td>
+<td>Core</td>
+<td class="numeric">28,425.93</td>
+<td class="numeric">28,425.93</td>
+<td class="numeric">22,239.23</td>
+<td class="numeric">23,351.19</td>
+<td class="numeric">24,518.75</td>
+</tr>
+<tr>
+<td>LEVEL 3A</td>
+<td>Advanced</td>
+<td class="numeric">101,161.82</td>
+<td class="numeric">101,161.82</td>
+<td class="numeric">83,668.26</td>
+<td class="numeric">87,851.67</td>
+<td class="numeric">92,244.25</td>
+</tr>
+<tr>
+<td>LEVEL 4</td>
+<td>Advanced</td>
+<td class="numeric">101,161.82</td>
+<td class="numeric">101,161.82</td>
+<td class="numeric">83,668.26</td>
+<td class="numeric">87,851.67</td>
+<td class="numeric">92,244.25</td>
+</tr>
+<tr>
+<td>LEVEL 4B</td>
+<td>Enterprise</td>
+<td class="numeric">101,161.82</td>
+<td class="numeric">101,161.82</td>
+<td class="numeric">83,668.26</td>
+<td class="numeric">87,851.67</td>
+<td class="numeric">92,244.25</td>
+</tr>
+<tr>
+<td>LEVEL 5</td>
+<td>Enterprise</td>
+<td class="numeric">335,412.65</td>
+<td class="numeric">335,412.65</td>
+<td class="numeric">277,682.26</td>
+<td class="numeric">291,566.38</td>
+<td class="numeric">306,144.69</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="table-wrap reference-pricing">
+<table>
+<thead>
+<tr>
+<th>Package</th>
+<th>Facility Level</th>
+<th>Per Facility Total Year 1 - Monthly</th>
+<th>Per Facility Total Year 2  - Monthly</th>
+<th>Per Facility Total Year 3  - Monthly</th>
+<th>Per Facility Total Year 4  - Monthly</th>
+<th>Per Facility Total Year 5  - Monthly</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Core</td>
+<td>L2,L3,L3B</td>
+<td class="numeric">28,425.93</td>
+<td class="numeric">28,425.93</td>
+<td class="numeric">22,239.23</td>
+<td class="numeric">23,351.19</td>
+<td class="numeric">24,518.75</td>
+</tr>
+<tr>
+<td>Advanced</td>
+<td>L3A, L4, L4B</td>
+<td class="numeric">101,161.82</td>
+<td class="numeric">101,161.82</td>
+<td class="numeric">83,668.26</td>
+<td class="numeric">87,851.67</td>
+<td class="numeric">92,244.25</td>
+</tr>
+<tr>
+<td>Enterpise</td>
+<td>L5, L6</td>
+<td class="numeric">335,412.65</td>
+<td class="numeric">335,412.65</td>
+<td class="numeric">277,682.26</td>
+<td class="numeric">291,566.38</td>
+<td class="numeric">306,144.69</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>Optional Services, Hardware and Software</h3>
+<div class="table-wrap optional-table">
+<table>
+<thead>
+<tr>
+<th>No.</th>
+<th>Item</th>
+<th>Description</th>
+<th>Package</th>
+<th>Qty</th>
+<th>Discounted Unit Price (KES) Excl. VAT</th>
+<th>Total Price (KES) Excl. VAT</th>
+</tr>
+</thead>
+<tbody>
+<tr class="group-row">
+<td colspan="7">Services</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Implementation costs Outside Nairobi Metropolis</td>
+<td>Per Day Per Implementor</td>
+<td>1</td>
+<td>1</td>
+<td>Ksh 14,500.00</td>
+<td>Ksh 14,500.00</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Refresher Training Sessions - Virtual</td>
+<td>Per Session (6 Hours)</td>
+<td>1</td>
+<td>1</td>
+<td>Ksh 2,500.00</td>
+<td>Ksh 2,500.00</td>
+</tr>
+<tr>
+<td>3</td>
+<td>On-Site Support Engineer</td>
+<td>5 days per week on site per Engineer per Month (Select # of Months)</td>
+<td>1</td>
+<td>1</td>
+<td>Ksh 220,000.00</td>
+<td>Ksh 220,000.00</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Part-Time Support Engineer</td>
+<td>2 days per week on site per Engineer per Month (Select # of Months)</td>
+<td>1</td>
+<td>1</td>
+<td>Ksh 100,000.00</td>
+<td>Ksh 100,000.00</td>
+</tr>
+<tr class="group-row">
+<td colspan="7">Hardware</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Hardware Products</td>
+<td>Endpoint workstations - DELL OPTIPLEX 7010 MT SYSTEM (CI3-13100/ 8GB/ 256GB/ DVDRW/ UBUNTU/ MONITOR/ MOUSE/ KEYBOARD)</td>
+<td>
+</td>
+<td>1</td>
+<td>Ksh 84,000.00</td>
+<td>Ksh 84,000.00</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Hardware Products</td>
+<td>Endpoint workstations - DELL OPTIPLEX 7010 MT SYSTEM (CI3-13100/ 8GB/ 256GB/ DVDRW/ UBUNTU/ MONITOR/ MOUSE/ KEYBOARD)</td>
+<td>
+</td>
+<td>1</td>
+<td>Ksh 84,000.00</td>
+<td>Ksh 84,000.00</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Hardware Products</td>
+<td>Endpoint Tablet - 10.1 Inch Display, 12GB RAM, 512GB Storage, Dual SIM, Android, 6000 mAh, keyboard,</td>
+<td>
+</td>
+<td>1</td>
+<td>Ksh 38,888.89</td>
+<td>Ksh 38,888.89</td>
+</tr>
+<tr class="group-row">
+<td colspan="7">Software</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Software Subscriptions</td>
+<td>Endpoint Security/User/Year</td>
+<td>1</td>
+<td>1</td>
+<td>Ksh 8,100.00</td>
+<td>Ksh 8,100.00</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Software Subscriptions</td>
+<td>Office Management Suite/User/Year</td>
+<td>1</td>
+<td>1</td>
+<td>Ksh 13,885.71</td>
+<td>Ksh 13,885.71</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2>Appendix C: Schedule C – Service Level Agreement</h2>
+<h3>C1. Purpose</h3>
+<p>This Service Level Agreement ("SLA") forms part of the CareverseHIMS SaaS Agreement and defines the support services, service commitments, incident management process, escalation procedures and support entitlements applicable to the Services provided by Tiberbu.</p>
+<h3>C2. Scope of SLA</h3>
+<p>This SLA applies to:</p>
+<p>CareverseHIMS SaaS platform.</p>
+<p>Hosted production environment.</p>
+<p>Application support services.</p>
+<p>Incident management services.</p>
+<p>Security incident management.</p>
+<p>Platform maintenance activities.</p>
+<p>Supported integrations managed by Tiberbu.</p>
+<p>The SLA does not apply to:</p>
+<p>Customer-owned infrastructure.</p>
+<p>Internet service provider failures.</p>
+<p>Customer networking equipment.</p>
+<p>Customer endpoint devices.</p>
+<p>Third-party systems outside Tiberbu's control.</p>
+<p>Delays attributable to regulatory platforms including SHA, DHA or third-party payer systems.</p>
+<h3>C3. Support Coverage</h3>
+<p>Standard Support Coverage</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Service Commitment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Support Window</td>
+<td>Monday to Saturday</td>
+</tr>
+<tr>
+<td>Business Hours</td>
+<td>08:00 – 17:00 EAT</td>
+</tr>
+<tr>
+<td>Public Holidays</td>
+<td>Excluded</td>
+</tr>
+<tr>
+<td>Email Support</td>
+<td>Included</td>
+</tr>
+<tr>
+<td>Telephone Support</td>
+<td>Included</td>
+</tr>
+<tr>
+<td>Support Portal</td>
+<td>Included</td>
+</tr>
+<tr>
+<td>Remote Support</td>
+<td>Included</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Extended Support Coverage</p>
+<p>For Customers subscribing to Advanced &amp; Enterprise Tier or Dedicated Support Services:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Service Commitment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Extended Support</td>
+<td>24x7 Critical Incidents</td>
+</tr>
+<tr>
+<td>Emergency Support</td>
+<td>Included</td>
+</tr>
+<tr>
+<td>Escalation Support</td>
+<td>Included</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>C4. Support Channels</h3>
+<p>Support requests may be logged through any of the following:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Channel</th>
+<th>Contact Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Support Portal</td>
+<td>https://www.tiberbu.com/support</td>
+</tr>
+<tr>
+<td>Email</td>
+<td>support@tiberbu.com</td>
+</tr>
+<tr>
+<td>Telephone</td>
+<td>+254111043566</td>
+</tr>
+<tr>
+<td>Telephone</td>
+<td>+254111043555</td>
+</tr>
+<tr>
+<td>Escalation Email</td>
+<td>support@tiberbu.com</td>
+</tr>
+<tr>
+<td>Customer Success Desk</td>
+<td>Assigned upon onboarding</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The support channels above are referenced within Clause 4 of the Agreement.</p>
+<h3>C5. Service Availability</h3>
+<p>Platform Availability Commitment</p>
+<p>Tiberbu shall use commercially reasonable efforts to maintain service availability for the hosted CareverseHIMS production environment.</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Availability Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Production Environment</td>
+<td>99.5% Monthly</td>
+</tr>
+<tr>
+<td>Test Environment</td>
+<td>Best Effort</td>
+</tr>
+<tr>
+<td>Customer Internet Connectivity</td>
+<td>Excluded</td>
+</tr>
+<tr>
+<td>Third-Party Services</td>
+<td>Excluded</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Availability calculations exclude:</p>
+<p>Scheduled maintenance windows.</p>
+<p>Emergency maintenance.</p>
+<p>Customer-caused outages.</p>
+<p>Internet provider failures.</p>
+<p>Power outages outside Tiberbu's managed environment.</p>
+<p>Force majeure events.</p>
+<h3>C6. Incident Classification Matrix</h3>
+<p>Severity Level 1 – Critical</p>
+<p>Typical Impact</p>
+<p>Complete system outage.</p>
+<p>Patient care operations materially impacted.</p>
+<p>Claims processing unavailable.</p>
+<p>Security incident causing service disruption.</p>
+<p>No viable workaround available.</p>
+<p>Commitment</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Initial Response</td>
+<td>1 Hour</td>
+</tr>
+<tr>
+<td>Status Updates</td>
+<td>Every 2 Hours</td>
+</tr>
+<tr>
+<td>Escalation</td>
+<td>Immediate</td>
+</tr>
+<tr>
+<td>Restoration Effort</td>
+<td>Continuous Until Restored</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>These targets reflect the severity commitments already provided in Clause 4.3.</p>
+<p>Severity Level 2 – High</p>
+<p>Typical Impact</p>
+<p>Major functionality unavailable.</p>
+<p>Significant operational disruption.</p>
+<p>Integration failure affecting operations.</p>
+<p>No acceptable workaround.</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Initial Response</td>
+<td>4 Business Hours</td>
+</tr>
+<tr>
+<td>Status Updates</td>
+<td>Daily</td>
+</tr>
+<tr>
+<td>Resolution Approach</td>
+<td>Priority Resolution</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Severity Level 3 – Medium</p>
+<p>Typical Impact</p>
+<p>Partial functionality affected.</p>
+<p>Limited operational impact.</p>
+<p>Workaround available.</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Initial Response</td>
+<td>1 Business Day</td>
+</tr>
+<tr>
+<td>Status Updates</td>
+<td>As Agreed</td>
+</tr>
+<tr>
+<td>Resolution Approach</td>
+<td>Standard Support Queue</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Severity Level 4 – Low</p>
+<p>Typical Impact</p>
+<p>Cosmetic issue.</p>
+<p>Reporting adjustment.</p>
+<p>General enquiry.</p>
+<p>User guidance request.</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Initial Response</td>
+<td>2 Business Days</td>
+</tr>
+<tr>
+<td>Status Updates</td>
+<td>As Needed</td>
+</tr>
+<tr>
+<td>Resolution Approach</td>
+<td>Routine Support Activity</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>C7. Incident Management Process</h3>
+<p>Support incidents shall be managed through the following workflow:</p>
+<p>Incident Logging.</p>
+<p>Ticket Assignment.</p>
+<p>Severity Assessment.</p>
+<p>Initial Response.</p>
+<p>Investigation.</p>
+<p>Resolution or Workaround.</p>
+<p>Customer Validation.</p>
+<p>Ticket Closure.</p>
+<p>The severity assessment shall be determined jointly by Tiberbu and the Customer using the categories defined in this SLA.</p>
+<h3>C8. Escalation Matrix</h3>
+<p>Support matters should first be logged through the standard support channels. If the matter remains unresolved within the applicable response or update target, it may be escalated using the matrix below. Escalations should include the ticket reference, facility name, severity level, business impact, actions already taken, and the requested decision or support required.</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Escalation Point</th>
+<th>When to Use</th>
+<th>Contact Information</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Level 1</td>
+<td>Service Desk / Support Engineer</td>
+<td>Initial incident logging, first-line troubleshooting, ticket acknowledgement, and routine support follow-up.</td>
+<td>Support Portal: https://www.tiberbu.com/support Email: support@tiberbu.com Telephone: +254111043566 / +254111043555</td>
+</tr>
+<tr>
+<td>Level 2</td>
+<td>Technical Lead / Senior Technical Engineer</td>
+<td>Issue remains unresolved after Level 1 review, requires deeper technical analysis, or affects a key module or supported integration.</td>
+<td>Email: support@tiberbu.com Telephone: +254111043566 / +254111043555</td>
+</tr>
+<tr>
+<td>Level 3</td>
+<td>Service Delivery Manager / Customer Success Desk</td>
+<td>Service targets are at risk, coordination is required across teams, or the Customer requires management attention.</td>
+<td>Email: support@tiberbu.com Customer Success Desk: assigned upon onboarding</td>
+</tr>
+<tr>
+<td>Level 4</td>
+<td>Executive Escalation</td>
+<td>Critical unresolved matter requiring senior management, commercial, contractual, or executive intervention.</td>
+<td>Through the senior representatives identified in the Notices clause, or any executive contact separately notified in writing by the Parties.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>This escalation structure supports the escalation requirements referenced under Clause 4.9. The Parties may update named escalation contacts by written notice without amending the Agreement, provided the support portal, support email, and telephone contacts above remain available for incident logging and tracking.</p>
+<h3>C9. Scheduled Maintenance</h3>
+<p>Tiberbu may undertake scheduled maintenance activities for:</p>
+<p>Platform upgrades.</p>
+<p>Security enhancements.</p>
+<p>Infrastructure maintenance.</p>
+<p>Regulatory updates.</p>
+<p>Performance optimisation.</p>
+<p>Notice Period</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Maintenance Type</th>
+<th>Minimum Notice</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Standard Maintenance</td>
+<td>72 Hours</td>
+</tr>
+<tr>
+<td>Major Infrastructure Maintenance</td>
+<td>7 Days</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Scheduled maintenance shall, where reasonably practicable, occur outside the Customer's primary operating hours.</p>
+<h3>C10. Emergency Maintenance</h3>
+<p>Emergency maintenance may be performed immediately where necessary to:</p>
+<p>Address critical vulnerabilities.</p>
+<p>Prevent imminent service failure.</p>
+<p>Protect Customer Data.</p>
+<p>Meet urgent regulatory obligations.</p>
+<p>Tiberbu shall notify the Customer as soon as reasonably practicable following commencement of emergency maintenance.</p>
+<h3>C11. Backup and Disaster Recovery Commitments</h3>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Commitment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data Backup</td>
+<td>Daily</td>
+</tr>
+<tr>
+<td>Backup Retention</td>
+<td>In accordance with internal retention policies</td>
+</tr>
+<tr>
+<td>Disaster Recovery Capability</td>
+<td>Included</td>
+</tr>
+<tr>
+<td>Recovery Point Objective (RPO)</td>
+<td>Up to 24 Hours</td>
+</tr>
+<tr>
+<td>Recovery Time Objective (RTO)</td>
+<td>Up to 24 Hours</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>These commitments support the backup and disaster recovery obligations referenced elsewhere in the Agreement.</p>
+<h3>C12. Security Incident Response</h3>
+<p>Security incidents shall be handled in accordance with Clauses 6 and 7 of the Agreement.</p>
+<p>For confirmed incidents affecting Customer Data:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Commitment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Initial Internal Response</td>
+<td>Immediate</td>
+</tr>
+<tr>
+<td>Customer Notification</td>
+<td>Within 48 Hours</td>
+</tr>
+<tr>
+<td>Incident Containment</td>
+<td>As Soon As Practicable</td>
+</tr>
+<tr>
+<td>Investigation Report</td>
+<td>Upon Completion</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The Agreement requires notification of confirmed personal data breaches within 48 hours of becoming aware of the breach.</p>
+<h3>C13. Embedded Support Entitlement</h3>
+<p>Support services are included within the subscription fee and are not separately priced unless dedicated support services are contracted.</p>
+<p>The embedded entitlement includes:</p>
+<ul>
+<li>✅ Phone Support ✅ Email Support ✅ Remote Assistance ✅ Knowledge Base Access ✅ Support Portal Access ✅ Software Updates ✅ Maintenance Releases ✅ Security Updates ✅ Incident Management ✅ Escalation Management</li>
+</ul>
+<p>Dedicated onsite support resources, managed services or resident engineers shall be subject to separate commercial arrangements under Schedule B.</p>
+<h3>C14. SLA Review</h3>
+<p>This SLA shall be reviewed:</p>
+<p>Upon each renewal term.</p>
+<p>Following major service changes.</p>
+<p>Following significant regulatory changes.</p>
+<p>Following material changes to CareverseHIMS support operations.</p>
+<p>Any amendments shall be made in accordance with the Agreement's amendment provisions.</p>
+<p>Appendix 4: Schedule D – Data Processing Addendum</p>
+<h3>D1. Purpose and Scope</h3>
+<h3>D1.1 This Data Processing Addendum (“DPA”) forms part of the CareverseHIMS SaaS Agreement and shall be read together with Clause 6 (Data Protection and Privacy), Clause 7 (Information Security), Clause 8 (Data Ownership and Records), Schedule E (Security Requirements), and all other provisions relating to Personal Data, Health Data, Customer Data, Confidential Information, and information security.</h3>
+<h3>D1.2 This DPA governs the Processing of Personal Data, Sensitive Personal Data, Health Data, and Customer Data by Tiberbu on behalf of the Customer in connection with the provision, operation, hosting, support, maintenance, implementation, integration, reporting, backup, disaster recovery, and exit management of CareverseHIMS.</h3>
+<h3>D1.3 This DPA is intended to align the Parties’ data protection obligations with the Data Protection Act, 2019 of Kenya, the Data Protection (General) Regulations, 2021, the Data Protection (Registration of Data Controllers and Data Processors) Regulations, 2021, applicable guidance issued by the Office of the Data Protection Commissioner (“ODPC”), and applicable Kenyan healthcare privacy and information security obligations.</h3>
+<h3>D1.4 In the event of any conflict between this DPA and any other provision of the Agreement relating to the Processing of Personal Data, this DPA shall prevail to the extent of the conflict, except where Schedule B governs commercial charges only.</h3>
+<h3>D2. Definitions</h3>
+<h3>D2.1 Capitalized terms used but not defined in this DPA shall have the meanings assigned to them in the Agreement and the Data Protection Act, 2019.</h3>
+<h3>D2.2 “Controller” or “Data Controller” means the person or entity that determines the purpose and means of Processing Personal Data.</h3>
+<h3>D2.3 “Processor” or “Data Processor” means the person or entity that Processes Personal Data on behalf of a Data Controller.</h3>
+<h3>D2.4 “Data Subject” means an identified or identifiable natural person to whom Personal Data relates.</h3>
+<h3>D2.5 “Health Data” means Personal Data relating to the physical or mental health of a Data Subject, including information generated in the course of registration for, or provision of, health services.</h3>
+<h3>D2.6 “Personal Data Breach” means a breach of security leading to accidental or unlawful destruction, loss, alteration, unauthorised disclosure of, or access to, Personal Data transmitted, stored, or otherwise Processed.</h3>
+<h3>D2.7 “Sensitive Personal Data” means Personal Data requiring heightened safeguards under applicable law, including health status, genetic data, biometric data, and other protected categories.</h3>
+<h3>D2.8 “Sub-Processor” means a third party appointed by Tiberbu to Process Personal Data on behalf of the Customer in connection with the Services.</h3>
+<h3>D3. Roles of the Parties</h3>
+<h3>D3.1 Customer as Controller. The Customer is the Data Controller in respect of Personal Data and Health Data relating to its patients, staff, contractors, beneficiaries, dependants, guardians, corporate clients, insured members, and other persons whose Personal Data is Processed through CareverseHIMS. The Customer determines the lawful basis, purposes, and authorised scope of such Processing.</h3>
+<h3>D3.2 Tiberbu as Processor. Tiberbu acts as Data Processor and shall Process Personal Data and Health Data only on the Customer’s documented instructions, except where required to do otherwise by Kenyan law, a competent regulator, court order, or binding governmental authority.</h3>
+<h3>D3.3 Independent Controller Activities. Each Party shall act as an independent Controller in relation to Personal Data it Processes for its own corporate, employment, taxation, audit, regulatory, legal, security, or compliance purposes.</h3>
+<h3>D3.4 ODPC Registration. Each Party shall maintain any ODPC registration required under the Data Protection Act and applicable registration regulations, taking into account the Party’s role, sector, Processing volumes, Processing of Sensitive Personal Data, and applicable statutory thresholds.</h3>
+<h3>D4. Subject Matter and Duration of Processing</h3>
+<h3>D4.1 The subject matter of Processing is the provision of CareverseHIMS as a hosted hospital management information system, together with implementation, configuration, data migration, integrations, training, support, maintenance, reporting, audit, security, backup, disaster recovery, and transition services.</h3>
+<h3>D4.2 The duration of Processing shall be the Subscription Term, any Renewal Term, any agreed transition period, any post-termination read-only retention period, and any longer period required by applicable law, regulator directive, court order, clinical governance requirement, or written agreement between the Parties.</h3>
+<h3>D5. Nature and Purpose of Processing</h3>
+<h3>D5.1 Tiberbu may Process Customer Data only to provide, secure, maintain, support, troubleshoot, back up, restore, host, administer, and operate CareverseHIMS and the related Services.</h3>
+<h3>D5.2 Processing activities may include collection, recording, organisation, structuring, storage, adaptation, retrieval, consultation, use, transmission, disclosure to authorised users, alignment, combination, restriction, erasure, anonymisation, backup, restoration, and destruction.</h3>
+<h3>D5.3 The purposes of Processing include patient registration, appointment management, triage, clinical care delivery, consultations, diagnostics, pharmacy management, inventory management, billing, receivables management, insurance and SHA claims processing, regulatory reporting, audit and compliance support, technical support, incident management, security monitoring, backup and recovery, disaster recovery, and business continuity.</h3>
+<h3>D5.4 Tiberbu shall not sell, rent, disclose, commercially exploit, profile for unrelated purposes, or use Customer Data for marketing or advertising without the Customer’s prior written authorisation and a lawful basis under applicable law.</h3>
+<h3>D6. Categories of Personal Data and Data Subjects</h3>
+<h3>D6.1 The Personal Data Processed under this DPA may include the following categories:</h3>
+<p>(a) Patient demographic data, including names, date of birth, national identification number, SHA number, contact details, address information, next-of-kin details, and emergency contact details.</p>
+<p>(b) Health and clinical data, including medical histories, diagnoses, treatment notes, prescriptions, nursing notes, laboratory results, radiology reports, procedures, vital signs, admission records, discharge records, and referral records.</p>
+<p>(c) Billing and claims data, including tariffs, invoices, receipts, payment records, payer details, insurance membership data, corporate account data, claims submissions, approvals, and reconciliation records.</p>
+<p>(d) Staff and system user data, including names, roles, permissions, professional registration numbers, contact details, login identifiers, audit trails, training records, and support interaction records.</p>
+<p>(e) Technical and audit data, including system logs, access logs, device and session metadata, user activity history, security event logs, and administrative records.</p>
+<h3>D6.2 Data Subjects may include patients, guardians, parents, dependants, beneficiaries, clinicians, nurses, pharmacists, laboratory personnel, radiology personnel, administrators, finance officers, Customer employees, contractors, corporate clients, insured members, authorised users, and other persons whose information is entered into or generated through CareverseHIMS.</h3>
+<h3>D7. Lawful Basis and Customer Responsibilities</h3>
+<h3>D7.1 The Customer shall be responsible for determining, documenting, and maintaining the lawful basis for Processing Personal Data and Health Data through CareverseHIMS, including for collection, clinical use, disclosure, claims processing, reporting, retention, and any regulatory submission.</h3>
+<h3>D7.2 The Customer shall ensure that notices, consents, patient communications, lawful clinical grounds, regulatory permissions, and internal governance approvals required under applicable law are obtained and maintained where applicable.</h3>
+<h3>D7.3 The Customer shall ensure that only authorised personnel access CareverseHIMS and that role assignments, user approvals, de-provisioning, local access controls, and end-user compliance obligations are properly managed.</h3>
+<h3>D8. Processing Instructions</h3>
+<h3>D8.1 Tiberbu shall Process Customer Data only in accordance with: (a) the Agreement; (b) this DPA; (c) Schedule A; (d) documented configuration, implementation, support, or migration instructions issued by the Customer; and (e) applicable Kenyan law.</h3>
+<h3>D8.2 Tiberbu shall promptly notify the Customer if, in Tiberbu’s reasonable opinion, an instruction infringes the Data Protection Act, applicable regulations, a binding ODPC direction, healthcare privacy obligations, or any other applicable law, unless prohibited from doing so by law.</h3>
+<h3>D8.3 Tiberbu may Process Customer Data without further instruction where necessary to protect the security, availability, or integrity of CareverseHIMS, or to comply with emergency maintenance, security incident response, legal obligation, regulator instruction, or court order, provided that Tiberbu shall notify the Customer as soon as reasonably practicable where legally permitted.</h3>
+<h3>D9. Confidentiality and Personnel Controls</h3>
+<h3>D9.1 Tiberbu shall ensure that personnel authorised to Process Customer Data are bound by confidentiality obligations and are trained on applicable privacy, security, and confidentiality requirements.</h3>
+<h3>D9.2 Access to Customer Data shall be limited to personnel who require access for the performance of the Services and shall be managed on a need-to-know and least-privilege basis.</h3>
+<h3>D9.3 Tiberbu shall maintain internal controls to prevent unauthorised access, disclosure, copying, alteration, deletion, extraction, or misuse of Customer Data.</h3>
+<h3>D10. Security Measures</h3>
+<h3>D10.1 Tiberbu shall implement appropriate technical and organisational measures proportionate to the sensitivity, volume, context, and risk of Processing, including safeguards appropriate for Health Data and other Sensitive Personal Data.</h3>
+<h3>D10.2 Such measures shall include, as applicable: role-based access controls, least-privilege access, account management controls, password controls, encryption of Customer Data in transit and at rest within the managed hosting environment, backup controls, audit logging, security monitoring, vulnerability management, incident response procedures, and segregation of duties.</h3>
+<h3>D10.3 The Customer remains responsible for local user governance, end-user device security, local network security, lawful collection and use of Personal Data, and proper management of user access privileges within its organisation.</h3>
+<h3>D11. Sub-Processors</h3>
+<h3>D11.1 Tiberbu may engage Sub-Processors, including cloud hosting providers, support providers, security service providers, and other technical service providers, where necessary to provide the Services.</h3>
+<h3>D11.2 Tiberbu shall ensure that Sub-Processors are bound by written obligations that are no less protective than the relevant obligations in this DPA, including confidentiality, security, lawful Processing, breach notification, assistance, and return or deletion obligations.</h3>
+<h3>D11.3 Tiberbu shall remain liable to the Customer for the acts and omissions of its Sub-Processors in connection with the Processing of Customer Data.</h3>
+<h3>D11.4 Tiberbu shall maintain a list of current material Sub-Processors and make relevant information available to the Customer upon reasonable written request.</h3>
+<h3>D12. Data Subject Rights Assistance</h3>
+<h3>D12.1 Taking into account the nature of the Processing and information available to Tiberbu, Tiberbu shall provide reasonable assistance to the Customer to enable the Customer to respond to requests from Data Subjects exercising their rights under the Data Protection Act.</h3>
+<h3>D12.2 Tiberbu shall not respond directly to a Data Subject request relating to Customer Data unless authorised by the Customer, legally required, or necessary to confirm that the request should be directed to the Customer.</h3>
+<h3>D12.3 The Customer remains responsible for assessing, approving, refusing, or fulfilling Data Subject requests in accordance with applicable law.</h3>
+<h3>D13. Personal Data Breach Notification</h3>
+<h3>D13.1 Tiberbu shall notify the Customer without undue delay, and in any event within forty-eight (48) hours of becoming aware of a confirmed Personal Data Breach affecting Customer Data.</h3>
+<h3>D13.2 The notification shall include, to the extent available: the nature of the breach, categories and approximate number of affected Data Subjects, categories and approximate number of affected records, likely consequences, measures taken or proposed to address the breach, and contact details for follow-up.</h3>
+<h3>D13.3 Tiberbu shall take reasonable steps to contain, investigate, mitigate, and remediate any confirmed Personal Data Breach affecting Customer Data.</h3>
+<h3>D13.4 The Customer shall remain responsible for making any notification to the ODPC or affected Data Subjects where required by applicable law, unless the Parties agree otherwise in writing or the law imposes a direct obligation on Tiberbu.</h3>
+<h3>D14. Cross-Border Data Transfers</h3>
+<h3>D14.1 Personal Data shall not be transferred, hosted, backed up, accessed, or otherwise Processed outside Kenya unless such transfer is permitted under the Data Protection Act, applicable regulations, ODPC guidance, and this DPA.</h3>
+<h3>D14.2 Where Customer Data is transferred outside Kenya, Tiberbu shall ensure that one or more lawful transfer mechanisms applies, including adequate protection in the recipient jurisdiction, appropriate contractual safeguards, binding corporate rules where applicable, documented necessity for performance of the Agreement, Data Subject consent where required, public interest, vital interest, legal claim or other lawful derogation, or any approval, authorisation, or mechanism recognised by the ODPC.</h3>
+<h3>D14.3 In relation to Health Data and other Sensitive Personal Data, Tiberbu shall apply enhanced scrutiny before cross-border transfer, including documented safeguards, encryption where appropriate, purpose limitation, limitation on onward transfers, and adequate contractual protection for the Customer and Data Subjects.</h3>
+<h3>D14.4 Tiberbu shall maintain reasonable records of cross-border Processing locations, categories of data transferred, categories of recipients, material Sub-Processors, and transfer safeguards, and shall make relevant information available to the Customer upon reasonable written request.</h3>
+<h3>D14.5 Tiberbu shall not permit onward transfer of Customer Data by a recipient or Sub-Processor unless the onward transfer is subject to equivalent protections and is permitted by the applicable transfer mechanism.</h3>
+<h3>D15. Data Localisation and Hosting Records</h3>
+<h3>D15.1 Where any category of Customer Data is required by applicable Kenyan law, regulator direction, public-sector requirement, healthcare regulation, or contractual commitment to be stored or processed in Kenya, the Parties shall comply with such requirement.</h3>
+<h3>D15.2 Tiberbu shall not knowingly alter the primary hosting location for production Customer Data in a manner that materially changes the applicable cross-border transfer position without reasonable notice to the Customer, except where required for emergency security, disaster recovery, or legal compliance purposes.</h3>
+<h3>D16. Data Protection Impact Assessments and High-Risk Processing</h3>
+<h3>D16.1 Where the Customer determines that a data protection impact assessment or privacy risk assessment is required due to high-risk Processing, Processing of Sensitive Personal Data, new integrations, new jurisdictions, major changes to Processing, or regulator direction, Tiberbu shall provide reasonable information and cooperation relevant to the Services.</h3>
+<h3>D16.2 The Customer remains responsible for determining whether a data protection impact assessment is required and for approving any residual risk associated with its Processing activities, unless applicable law imposes a direct obligation on Tiberbu.</h3>
+<h3>D17. Audit and Compliance Support</h3>
+<h3>D17.1 Tiberbu shall make available reasonable information necessary to demonstrate compliance with this DPA, subject to reasonable notice, confidentiality safeguards, security restrictions, and any restrictions imposed by law or third-party confidentiality obligations.</h3>
+<h3>D17.2 Any audit or inspection shall be conducted in a manner that does not unreasonably disrupt Tiberbu’s operations, compromise security, or expose other customers’ confidential information.</h3>
+<h3>D17.3 Unless required following a confirmed Personal Data Breach, regulator request, or material compliance concern, audits shall not be conducted more than once in any twelve-month period.</h3>
+<h3>D18. Return, Retention, Deletion, and Exit</h3>
+<h3>D18.1 Upon termination or expiry of the Agreement, Tiberbu shall support the Customer’s retrieval of Customer Data in accordance with Clause 8, Clause 15, and Schedule G.</h3>
+<h3>D18.2 Tiberbu shall retain Customer Data only for the period required under the Agreement, applicable law, regulator directive, court order, clinical governance obligation, or written instruction of the Customer.</h3>
+<h3>D18.3 Upon expiry of the applicable retention period, Tiberbu shall, subject to legal or regulatory retention obligations, securely delete, destroy, or anonymise Customer Data and may provide written confirmation upon request.</h3>
+<h3>D19. Records of Processing and ODPC Cooperation</h3>
+<h3>D19.1 Each Party shall maintain records of Processing activities required under the Data Protection Act and applicable ODPC regulations in relation to its respective role.</h3>
+<h3>D19.2 Tiberbu shall provide reasonable cooperation to the Customer in relation to ODPC inquiries, regulator requests, data protection compliance reviews, and investigations relating to the Services, to the extent such cooperation concerns Processing performed by Tiberbu under this DPA.</h3>
+<h3>D20. Survival</h3>
+<h3>D20.1 The obligations in this DPA shall survive termination or expiry of the Agreement for as long as Tiberbu retains, accesses, stores, or otherwise Processes Customer Data.</h3>
+<p>Appendix 5: Schedule E – Security Requirements</p>
+<h3>E1. PURPOSE</h3>
+<p>This Data Processing Addendum ("DPA") forms an integral part of the CareverseHIMS SaaS Agreement and governs the Processing of Personal Data, Sensitive Personal Data, Health Data and Customer Data by Tiberbu in connection with the Services. This DPA shall be interpreted in accordance with the Data Protection Act, 2019, applicable regulations issued by the Office of the Data Protection Commissioner ("ODPC"), and applicable Kenyan healthcare privacy obligations. The Agreement expressly requires compliance with the Data Protection Act and establishes roles for the Parties in relation to Personal Data and Health Data.</p>
+<h3>E2. ROLES OF THE PARTIES</h3>
+<h3>E2.1 Customer as Data Controller</h3>
+<p>The Customer is the Data Controller in respect of all Personal Data and Health Data relating to its patients, staff, contractors, beneficiaries and other data subjects processed through CareverseHIMS. The Customer shall determine the purposes, lawful basis and means of Processing such data.</p>
+<h3>E2.2 Tiberbu as Data Processor</h3>
+<p>Tiberbu acts as Data Processor and shall Process Personal Data solely on documented instructions of the Customer unless otherwise required by Kenyan law.</p>
+<h3>E2.3 Independent Controller Activities</h3>
+<p>Where either Party Processes Personal Data for its own internal legal, regulatory, taxation, audit, employment, fraud prevention, compliance or corporate governance purposes, that Party shall act as an independent Data Controller in respect of such Processing.</p>
+<h3>E2.4 Registration</h3>
+<p>Each Party shall maintain any registration required under the Data Protection Act and applicable ODPC regulations for its Processing activities.</p>
+<h3>E3. SUBJECT MATTER AND DURATION OF PROCESSING</h3>
+<p>The subject matter of Processing under this DPA includes:</p>
+<p>CareverseHIMS SaaS platform services.</p>
+<p>Cloud hosting services.</p>
+<p>Implementation services.</p>
+<p>User onboarding.</p>
+<p>Configuration services.</p>
+<p>Data migration services.</p>
+<p>Integration services.</p>
+<p>Training services.</p>
+<p>Support services.</p>
+<p>Reporting and analytics services.</p>
+<p>Backup and disaster recovery services.</p>
+<p>The Processing shall continue for the duration of the Subscription Term, any Renewal Term, any agreed transition period and any retention period required under the Agreement.</p>
+<h3>E4. NATURE AND PURPOSE OF PROCESSING</h3>
+<p>Personal Data may be Processed for the following purposes:</p>
+<p>Patient registration.</p>
+<p>Appointment management.</p>
+<p>Clinical care delivery.</p>
+<p>Pharmacy management.</p>
+<p>Laboratory management.</p>
+<p>Radiology management.</p>
+<p>Billing and receivables management.</p>
+<p>Insurance and SHA claims management.</p>
+<p>Regulatory reporting.</p>
+<p>Audit and compliance requirements.</p>
+<p>Technical support.</p>
+<p>Security monitoring.</p>
+<p>Backup and recovery.</p>
+<p>Disaster recovery.</p>
+<p>Business continuity.</p>
+<p>Tiberbu shall not Process Customer Data for marketing, profiling, advertising or any unrelated commercial purpose without the Customer's prior written instruction and a lawful basis under applicable law. Processing instructions are already restricted under Clause 6.3 of the Agreement.</p>
+<h3>E5. CATEGORIES OF PERSONAL DATA</h3>
+<p>Personal Data may include:</p>
+<p>Patient Information</p>
+<p>Full names.</p>
+<p>National ID numbers.</p>
+<p>Passport numbers.</p>
+<p>SHA numbers.</p>
+<p>Contact details.</p>
+<p>Address information.</p>
+<p>Next-of-kin information.</p>
+<p>Emergency contact details.</p>
+<p>Health Data</p>
+<p>Medical histories.</p>
+<p>Clinical notes.</p>
+<p>Nursing notes.</p>
+<p>Prescriptions.</p>
+<p>Laboratory results.</p>
+<p>Radiology reports.</p>
+<p>Diagnoses.</p>
+<p>Treatment plans.</p>
+<p>Procedure records.</p>
+<p>Admission records.</p>
+<p>Discharge records.</p>
+<p>The Agreement expressly recognises that such clinical information constitutes Health Data and sensitive personal data requiring heightened safeguards.</p>
+<p>Billing and Claims Data</p>
+<p>Invoices.</p>
+<p>Receipts.</p>
+<p>Payment records.</p>
+<p>Insurance details.</p>
+<p>Claims data.</p>
+<p>Corporate billing records.</p>
+<p>User and Staff Data</p>
+<p>User names.</p>
+<p>Login details.</p>
+<p>Professional registration numbers.</p>
+<p>Roles and permissions.</p>
+<p>Audit records.</p>
+<h3>E6. CATEGORIES OF DATA SUBJECTS</h3>
+<p>Data Subjects may include:</p>
+<p>Patients.</p>
+<p>Dependants.</p>
+<p>Guardians.</p>
+<p>Parents.</p>
+<p>Beneficiaries.</p>
+<p>Clinicians.</p>
+<p>Nurses.</p>
+<p>Pharmacists.</p>
+<p>Laboratory personnel.</p>
+<p>Administrative staff.</p>
+<p>Contractors.</p>
+<p>Corporate clients.</p>
+<p>Insurance members.</p>
+<p>Authorised users.</p>
+<h3>E7. PROCESSING INSTRUCTIONS</h3>
+<p>Tiberbu shall:</p>
+<p>Process Personal Data only on documented instructions of the Customer.</p>
+<p>Process data solely for purposes necessary to perform the Services.</p>
+<p>Ensure authorised personnel are subject to confidentiality obligations.</p>
+<p>Implement appropriate technical and organisational safeguards.</p>
+<p>Notify the Customer if an instruction is believed to conflict with applicable law.</p>
+<p>Restrict access to authorised personnel on a need-to-know basis.</p>
+<h3>E8. SECURITY MEASURES</h3>
+<p>Tiberbu shall implement technical and organisational measures proportionate to the sensitivity of the Personal Data and Health Data processed through CareverseHIMS. The Agreement already requires appropriate security measures, role-based access controls, encryption, backup procedures and security incident management.</p>
+<p>Such measures shall include:</p>
+<p>Encryption in transit.</p>
+<p>Encryption at rest.</p>
+<p>Role-based access control.</p>
+<p>Audit logging.</p>
+<p>Password controls.</p>
+<p>Multi-factor authentication capability.</p>
+<p>Backup security.</p>
+<p>Security monitoring.</p>
+<p>Vulnerability management.</p>
+<p>Incident response procedures.</p>
+<p>Access approval processes.</p>
+<p>Confidentiality obligations for personnel.</p>
+<h3>E9. DATA SUBJECT RIGHTS ASSISTANCE</h3>
+<p>Tiberbu shall provide reasonable assistance to enable the Customer to respond to Data Subject requests, including:</p>
+<p>Access requests.</p>
+<p>Rectification requests.</p>
+<p>Deletion requests.</p>
+<p>Objection requests.</p>
+<p>Restriction requests.</p>
+<p>Data portability requests.</p>
+<p>This obligation reflects the assistance provisions already stated in the Agreement.</p>
+<h3>E10. PERSONAL DATA BREACHES</h3>
+<h3>E10.1 Notification</h3>
+<p>Tiberbu shall notify the Customer without undue delay and in any event within forty-eight (48) hours of becoming aware of a confirmed Personal Data Breach affecting Customer Data.</p>
+<h3>E10.2 Contents of Notification</h3>
+<p>The notification shall include:</p>
+<p>Nature of the incident.</p>
+<p>Categories of affected data.</p>
+<p>Estimated volume of affected records.</p>
+<p>Likely consequences.</p>
+<p>Mitigation measures.</p>
+<p>Corrective actions.</p>
+<h3>E10.3 Cooperation</h3>
+<p>Tiberbu shall reasonably cooperate with the Customer regarding investigations, remediation activities and regulatory notifications. The Agreement confirms that the Customer remains responsible for notifications owed to the ODPC and affected Data Subjects.</p>
+<h3>D11. SUB-PROCESSORS</h3>
+<p>The Customer authorizes Tiberbu to engage Sub-Processors for hosting, monitoring, support, backup, disaster recovery and related operational services.</p>
+<p>Tiberbu shall:</p>
+<p>Maintain a list of current Sub-Processors.</p>
+<p>Make the list available upon reasonable request.</p>
+<p>Impose obligations no less protective than those contained in this DPA.</p>
+<p>Remain responsible for Sub-Processor compliance.</p>
+<p>These requirements are already contemplated in Clause 6.12.</p>
+<h3>E12. CROSS-BORDER DATA TRANSFERS</h3>
+<h3>E12.1 General Principle</h3>
+<p>Personal Data shall not be transferred outside Kenya unless such transfer is permitted under the Data Protection Act, applicable regulations and applicable ODPC guidance. The Agreement already requires that any cross-border transfer comply with the Data Protection Act and applicable safeguards.</p>
+<h3>E12.2 Permitted Transfer Mechanisms</h3>
+<p>Tiberbu may transfer Personal Data outside Kenya only where:</p>
+<p>Adequate protection exists in the receiving jurisdiction.</p>
+<p>Appropriate contractual safeguards have been implemented.</p>
+<p>Transfer is necessary for provision of the Services.</p>
+<p>Transfer is required to meet backup, disaster recovery or business continuity requirements.</p>
+<p>The transfer is otherwise permitted under Kenyan law.</p>
+<h3>E12.3 Transfer Safeguards</h3>
+<p>Tiberbu shall maintain:</p>
+<p>Appropriate security measures.</p>
+<p>Transfer documentation.</p>
+<p>Evidence of applicable safeguards.</p>
+<p>Records of transfer jurisdictions and sub-processors where reasonably required.</p>
+<h3>E12.4 Onward Transfers</h3>
+<p>No onward transfer shall occur unless equivalent safeguards apply to the onward recipient.</p>
+<h3>E13. AUDIT AND COMPLIANCE</h3>
+<p>Tiberbu shall, on reasonable prior notice and not more than once annually (unless required by a regulator, security incident or applicable law), provide information reasonably necessary to demonstrate compliance with this DPA. The Agreement already contains audit and compliance support obligations.</p>
+<p>Evidence of compliance may include:</p>
+<p>Security policies.</p>
+<p>Privacy policies.</p>
+<p>Audit summaries.</p>
+<p>Compliance attestations.</p>
+<p>ODPC registration confirmation where applicable.</p>
+<p>Security assessment summaries.</p>
+<h3>E14. DATA RETURN, RETENTION AND DELETION</h3>
+<p>Upon termination or expiry of the Agreement:</p>
+<p>The Customer may retrieve Customer Data in accordance with the Agreement.</p>
+<p>Tiberbu shall provide transition assistance where agreed.</p>
+<p>Customer Data shall be retained in accordance with the retention provisions of the Agreement, including the seven (7) year read-only retention period where applicable.</p>
+<p>Following expiry of the applicable retention period, Customer Data shall be securely deleted, destroyed or permanently anonymized unless retention is required by law.</p>
+<h3>E15. REGULATORY COOPERATION</h3>
+<p>Tiberbu shall provide reasonable cooperation in relation to:</p>
+<p>ODPC inspections.</p>
+<p>Healthcare regulator audits.</p>
+<p>Data Subject complaints.</p>
+<p>Regulatory investigations.</p>
+<p>Court orders.</p>
+<p>Lawful information requests.</p>
+<p>This aligns with the cooperation obligations already contemplated under the Agreement.</p>
+<h3>E16. ORDER OF PRECEDENCE</h3>
+<p>In the event of any inconsistency between this DPA and any other provision of the Agreement concerning Personal Data Processing, this Schedule D shall prevail to the extent of the inconsistency. The Agreement states that Schedule D prevails on data protection matters.</p>
+<p>Appendix 6: Schedule F – Change Control Procedure</p>
+<h3>F1. Purpose</h3>
+<p>This Schedule F establishes the formal procedure for managing, evaluating, approving, implementing and documenting changes affecting the Services, implementation scope, integrations, timelines, deliverables, reports, interfaces, training requirements, hosting arrangements, security requirements, service levels or any other aspect of the CareverseHIMS engagement. This Schedule supplements Clause 14 (Change Management) of the Agreement.</p>
+<h3>F2. Objectives</h3>
+<p>The objectives of this Change Control Procedure are to:</p>
+<p>Maintain alignment between agreed scope and delivered Services.</p>
+<p>Ensure changes are properly assessed before implementation.</p>
+<p>Protect the stability and integrity of CareverseHIMS.</p>
+<p>Ensure regulatory, security and operational impacts are evaluated.</p>
+<p>Provide clear governance and accountability for change decisions.</p>
+<p>Prevent unauthorized scope expansion ("scope creep").</p>
+<p>Ensure commercial impacts are identified and approved before implementation.</p>
+<h3>F3. What Constitutes a Change Request</h3>
+<p>A Change Request ("CR") shall include any request to:</p>
+<h3>F3.1 Functional Changes</h3>
+<p>New system functionality.</p>
+<p>Additional modules.</p>
+<p>New reports or dashboards.</p>
+<p>Workflow modifications.</p>
+<p>New forms or templates.</p>
+<p>Enhanced user permissions.</p>
+<h3>F3.2 Technical Changes</h3>
+<p>New integrations.</p>
+<p>API modifications.</p>
+<p>Hosting changes.</p>
+<p>Authentication changes.</p>
+<p>Data migration amendments.</p>
+<p>Security architecture changes.</p>
+<h3>F3.3 Implementation Changes</h3>
+<p>Additional facilities.</p>
+<p>Additional departments.</p>
+<p>Revised implementation schedule.</p>
+<p>Additional user training.</p>
+<p>Changes to agreed deliverables.</p>
+<h3>F3.4 Commercial Changes</h3>
+<p>Additional subscriptions.</p>
+<p>Expanded support services.</p>
+<p>Additional professional services.</p>
+<p>Dedicated onsite resources.</p>
+<h3>F3.5 Regulatory Changes</h3>
+<p>SHA updates.</p>
+<p>DHA requirements.</p>
+<p>HIE requirements.</p>
+<p>Healthcare regulatory updates.</p>
+<p>Data protection compliance requirements.</p>
+<h3>F4. Changes Excluded from Change Control</h3>
+<p>The following shall not require a formal Change Request:</p>
+<h3>F4.1 Standard Platform Updates</h3>
+<p>Software updates.</p>
+<p>Security patches.</p>
+<p>Bug fixes.</p>
+<p>Regulatory maintenance releases.</p>
+<p>Performance improvements.</p>
+<p>provided such updates do not materially alter agreed functionality.</p>
+<h3>F4.2 Support Activities</h3>
+<p>Incident resolution.</p>
+<p>User assistance.</p>
+<p>Knowledge transfer.</p>
+<p>Routine administration.</p>
+<p>User account management.</p>
+<h3>F4.3 Emergency Security Actions</h3>
+<p>Tiberbu may implement emergency corrective actions required to:</p>
+<p>Address critical vulnerabilities.</p>
+<p>Protect Customer Data.</p>
+<p>Prevent service disruption.</p>
+<p>Meet urgent legal obligations.</p>
+<p>provided notification is issued as soon as reasonably practicable.</p>
+<h3>F5. Change Request Submission</h3>
+<h3>F5.1 Request Initiation</h3>
+<p>Any Party may submit a Change Request.</p>
+<p>All Change Requests shall be submitted in writing using the Change Request Form.</p>
+<h3>F5.2 Minimum Information Required</h3>
+<p>The request shall include:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Requirement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CR Reference Number</td>
+<td>Assigned by Tiberbu</td>
+</tr>
+<tr>
+<td>Requestor</td>
+<td>Customer or Tiberbu</td>
+</tr>
+<tr>
+<td>Date Submitted</td>
+<td>Date raised</td>
+</tr>
+<tr>
+<td>Description</td>
+<td>Detailed change description</td>
+</tr>
+<tr>
+<td>Business Justification</td>
+<td>Reason for change</td>
+</tr>
+<tr>
+<td>Priority</td>
+<td>Low / Medium / High / Critical</td>
+</tr>
+<tr>
+<td>Desired Completion Date</td>
+<td>Target implementation date</td>
+</tr>
+<tr>
+<td>Affected Area</td>
+<td>Module, process or service</td>
+</tr>
+<tr>
+<td>Supporting Documents</td>
+<td>Attachments if applicable</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>F6. Change Classification</h3>
+<h3>F6.1 Minor Change</h3>
+<p>Characteristics:</p>
+<p>Low risk.</p>
+<p>Minimal effort.</p>
+<p>No material commercial impact.</p>
+<p>No regulatory implications.</p>
+<p>Limited testing required.</p>
+<p>Examples:</p>
+<p>New report.</p>
+<p>Additional user role.</p>
+<p>Template amendment.</p>
+<h3>F6.2 Standard Change</h3>
+<p>Characteristics:</p>
+<p>Moderate effort.</p>
+<p>Defined implementation activities.</p>
+<p>Possible timeline impact.</p>
+<p>Possible commercial adjustment.</p>
+<p>Examples:</p>
+<p>Minor integration changes.</p>
+<p>Additional workflows.</p>
+<p>New facility configuration.</p>
+<h3>F6.3 Major Change</h3>
+<p>Characteristics:</p>
+<p>Significant effort.</p>
+<p>Architectural impact.</p>
+<p>Material commercial impact.</p>
+<p>Significant operational impact.</p>
+<p>Extensive testing required.</p>
+<p>Examples:</p>
+<p>New module deployment.</p>
+<p>Additional facility onboarding.</p>
+<p>Enterprise integration.</p>
+<p>Hosting model change.</p>
+<h3>F6.4 Emergency Change</h3>
+<p>Characteristics:</p>
+<p>Security risk.</p>
+<p>Regulatory deadline.</p>
+<p>Critical service risk.</p>
+<p>Patient safety concern.</p>
+<p>Emergency Changes may be expedited through accelerated approval procedures.</p>
+<h3>F7. Change Assessment Process</h3>
+<p>Upon receipt of a Change Request, Tiberbu shall conduct an assessment including:</p>
+<h3>F7.1 Functional Assessment</h3>
+<p>Evaluation of:</p>
+<p>Business requirements.</p>
+<p>User impacts.</p>
+<p>Operational impacts.</p>
+<p>Workflow implications.</p>
+<h3>F7.2 Technical Assessment</h3>
+<p>Evaluation of:</p>
+<p>System impacts.</p>
+<p>Integration impacts.</p>
+<p>Security implications.</p>
+<p>Infrastructure requirements.</p>
+<h3>F7.3 Compliance Assessment</h3>
+<p>Evaluation of:</p>
+<p>Data protection implications.</p>
+<p>SHA implications.</p>
+<p>DHA implications.</p>
+<p>Healthcare regulatory impacts.</p>
+<h3>F7.4 Commercial Assessment</h3>
+<p>Evaluation of:</p>
+<p>Additional costs.</p>
+<p>Resource requirements.</p>
+<p>Subscription impacts.</p>
+<p>Ongoing support requirements.</p>
+<h3>F7.5 Timeline Assessment</h3>
+<p>Evaluation of:</p>
+<p>Delivery timeline.</p>
+<p>Testing effort.</p>
+<p>Dependencies.</p>
+<p>Go-live implications.</p>
+<h3>F8. Change Impact Statement</h3>
+<p>Following assessment, Tiberbu shall provide a Change Impact Statement containing:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Assessment Area</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Functional Impact</td>
+<td>Effect on agreed solution</td>
+</tr>
+<tr>
+<td>Technical Impact</td>
+<td>Infrastructure and system impact</td>
+</tr>
+<tr>
+<td>Security Impact</td>
+<td>Security considerations</td>
+</tr>
+<tr>
+<td>Compliance Impact</td>
+<td>Regulatory implications</td>
+</tr>
+<tr>
+<td>Cost Impact</td>
+<td>Additional charges (if any)</td>
+</tr>
+<tr>
+<td>Timeline Impact</td>
+<td>Revised timeline</td>
+</tr>
+<tr>
+<td>Resource Impact</td>
+<td>Additional resources required</td>
+</tr>
+<tr>
+<td>Risks</td>
+<td>Associated project risks</td>
+</tr>
+<tr>
+<td>Recommendation</td>
+<td>Approve / Reject / Defer</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>F9. Approval Authority</h3>
+<h3>F9.1 Customer Approval</h3>
+<p>Changes affecting:</p>
+<p>Scope.</p>
+<p>Cost.</p>
+<p>Timelines.</p>
+<p>Integrations.</p>
+<p>Regulatory obligations.</p>
+<p>must be approved by the Customer's designated authorised representative.</p>
+<h3>F9.2 Tiberbu Approval</h3>
+<p>Changes affecting:</p>
+<p>Product roadmap.</p>
+<p>Security architecture.</p>
+<p>Infrastructure design.</p>
+<p>Platform integrity.</p>
+<p>must be approved by Tiberbu's designated authorised representative.</p>
+<h3>F9.3 Mutual Approval</h3>
+<p>The following require written approval from both Parties:</p>
+<p>Commercial amendments.</p>
+<p>Scope changes.</p>
+<p>Timeline changes.</p>
+<p>New modules.</p>
+<p>New integrations.</p>
+<p>Material service modifications.</p>
+<p>No Change Request shall become binding until approved in writing by both Parties.</p>
+<h3>F10. Change Request Outcomes</h3>
+<p>A Change Request may be: Approved</p>
+<p>The change proceeds to implementation. Approved with Conditions</p>
+<p>The change proceeds subject to agreed conditions. Deferred</p>
+<p>The change is retained for future consideration. Rejected</p>
+<p>The change shall not be implemented. Reasons for rejection shall be documented.</p>
+<h3>F11. Implementation</h3>
+<p>Upon approval:</p>
+<p>Tiberbu shall prepare an implementation plan.</p>
+<p>Responsibilities shall be assigned.</p>
+<p>Testing requirements shall be defined.</p>
+<p>Acceptance criteria shall be confirmed.</p>
+<p>Target implementation dates shall be agreed.</p>
+<p>Implementation may be performed:</p>
+<p>During scheduled release windows.</p>
+<p>During maintenance windows.</p>
+<p>During agreed project activities.</p>
+<p>Through emergency deployment where approved.</p>
+<h3>F12. Testing and Acceptance</h3>
+<p>Where applicable:</p>
+<h3>F12.1 Internal Testing</h3>
+<p>Tiberbu shall perform:</p>
+<p>Functional testing.</p>
+<p>Integration testing.</p>
+<p>Security testing.</p>
+<p>Regression testing.</p>
+<h3>F12.2 Customer Validation</h3>
+<p>The Customer shall perform:</p>
+<p>User Acceptance Testing (UAT).</p>
+<p>Workflow validation.</p>
+<p>Business process confirmation.</p>
+<h3>F12.3 Acceptance</h3>
+<p>A Change Request shall be deemed accepted when:</p>
+<p>Agreed acceptance criteria are met.</p>
+<p>Customer confirms acceptance in writing; or</p>
+<p>The change is used in production for ten (10) Business Days without notification of material defects.</p>
+<h3>F13. Emergency Change Procedure</h3>
+<p>Where a change is necessary to:</p>
+<p>Protect Customer Data;</p>
+<p>Mitigate a cybersecurity threat;</p>
+<p>Maintain service availability;</p>
+<p>Meet urgent regulatory requirements; or</p>
+<p>Prevent material disruption to healthcare operations,</p>
+<p>Tiberbu may implement the change prior to formal approval, provided:</p>
+<p>The Customer is notified as soon as reasonably practicable.</p>
+<p>A retrospective Change Request record is created.</p>
+<p>Impact documentation is maintained.</p>
+<h3>F14. Change Register</h3>
+<p>Tiberbu shall maintain a Change Register containing:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CR Number</td>
+<td>Unique Identifier</td>
+</tr>
+<tr>
+<td>Request Date</td>
+<td>Date raised</td>
+</tr>
+<tr>
+<td>Requestor</td>
+<td>Party raising request</td>
+</tr>
+<tr>
+<td>Summary</td>
+<td>Description of change</td>
+</tr>
+<tr>
+<td>Classification</td>
+<td>Minor / Standard / Major / Emergency</td>
+</tr>
+<tr>
+<td>Status</td>
+<td>Open / Review / Approved / Implemented / Closed</td>
+</tr>
+<tr>
+<td>Approval Date</td>
+<td>Date approved</td>
+</tr>
+<tr>
+<td>Go-Live Date</td>
+<td>Date implemented</td>
+</tr>
+<tr>
+<td>Closure Date</td>
+<td>Date completed</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The Change Register shall be made available to the Customer during governance reviews upon reasonable request.</p>
+<h3>F15. Governance Review</h3>
+<p>Outstanding Change Requests shall be reviewed during:</p>
+<p>Project Steering Committee meetings.</p>
+<p>Service Review Meetings.</p>
+<p>Governance Review Meetings.</p>
+<p>Executive Escalation Meetings where applicable.</p>
+<h3>F16. Order of Precedence</h3>
+<p>Where a Change Request results in a modification to the Services, the approved Change Request shall amend the relevant portions of:</p>
+<p>Schedule A (Service Description);</p>
+<p>Schedule B (Pricing Schedule);</p>
+<p>Schedule C (Service Levels);</p>
+<p>Schedule D (Data Processing Addendum); or</p>
+<p>Any other Schedule affected by the approved change,</p>
+<p>and shall thereafter form part of the Agreement.</p>
+<p>Appendix 7: Schedule G – Data Migration and Exit Plan</p>
+<h3>G1. Purpose</h3>
+<p>This Schedule G establishes the Parties’ rights, obligations, procedures and responsibilities relating to the extraction, retention, migration, transition and secure disposition of Customer Data upon expiry, termination, non-renewal, migration to another platform, business discontinuity event or any other cessation of the Services. This Schedule supplements Clauses 8.5, 8.6, 8.8, 15.7 and 15.8 of the Agreement.</p>
+<h3>G2. Objectives</h3>
+<p>The objectives of this Schedule are to:</p>
+<p>Protect continuity of patient care.</p>
+<p>Ensure preservation of Patient Health Information.</p>
+<p>Facilitate orderly transition to a successor system.</p>
+<p>Minimise operational disruption during migration.</p>
+<p>Ensure compliance with Kenyan healthcare record retention obligations.</p>
+<p>Maintain compliance with the Data Protection Act, 2019.</p>
+<p>Protect the integrity, confidentiality and availability of Customer Data during transition.</p>
+<p>Define responsibilities and costs associated with exit activities.</p>
+<h3>G3. Exit Events</h3>
+<p>The Exit Plan may be invoked upon:</p>
+<ul>
+<li>Contract Expiry: Expiry of the Subscription Term where the Agreement is not renewed.</li>
+<li>Termination: Termination under Clause 15 of the Agreement.</li>
+<li>Migration to Alternative Solution: The Customer's decision to replace CareverseHIMS with another solution.</li>
+<li>Corporate Change: Merger, acquisition, restructuring, insolvency or corporate reorganisation affecting either Party.</li>
+<li>Regulatory Direction: Where a regulator, court or lawful authority requires migration or transfer of records.</li>
+</ul>
+<h3>G4. Exit Governance</h3>
+<h3>G4.1 Exit Coordination Team</h3>
+<p>Upon activation of this Schedule, each Party shall appoint an Exit Coordinator.</p>
+<p>The Exit Coordination Team shall include:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Customer Project Lead</td>
+<td>Customer coordination</td>
+</tr>
+<tr>
+<td>Customer Technical Lead</td>
+<td>Successor system coordination</td>
+</tr>
+<tr>
+<td>Tiberbu Project Manager</td>
+<td>Exit management</td>
+</tr>
+<tr>
+<td>Tiberbu Technical Lead</td>
+<td>Data extraction activities</td>
+</tr>
+<tr>
+<td>Information Security Representative</td>
+<td>Security oversight</td>
+</tr>
+<tr>
+<td>Compliance Representative</td>
+<td>Regulatory compliance oversight</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>G4.2 Exit Plan Kick-Off Meeting</h3>
+<p>Within ten (10) Business Days of an Exit Event, the Parties shall hold an Exit Planning Workshop to confirm:</p>
+<p>Scope of migration.</p>
+<p>Required exports.</p>
+<p>Successor system requirements.</p>
+<p>Timelines.</p>
+<p>Security requirements.</p>
+<p>Data retention obligations.</p>
+<p>Responsibilities.</p>
+<p>Commercial arrangements.</p>
+<h3>G5. Customer Data Ownership</h3>
+<p>The Parties acknowledge that all Customer Data remains owned by the Customer. Tiberbu shall not claim ownership over any Patient Information, Health Data, billing records or Customer records maintained within CareverseHIMS.</p>
+<h3>G6. Data Available for Export</h3>
+<p>The Customer may request export of:</p>
+<h3>G6.1 Master Records</h3>
+<p>Patient demographic records.</p>
+<p>Patient identifiers.</p>
+<p>Next-of-kin details.</p>
+<p>Corporate client records.</p>
+<p>Insurance members.</p>
+<p>Facility records.</p>
+<h3>G6.2 Clinical Records</h3>
+<p>Consultation notes.</p>
+<p>Nursing records.</p>
+<p>Admission records.</p>
+<p>Discharge summaries.</p>
+<p>Diagnoses.</p>
+<p>Procedures.</p>
+<p>Prescriptions.</p>
+<p>Medication administration records.</p>
+<p>Referral records.</p>
+<h3>G6.3 Diagnostic Records</h3>
+<p>Laboratory results.</p>
+<p>Radiology reports.</p>
+<p>Diagnostic requests.</p>
+<p>Clinical observations.</p>
+<h3>G6.4 Claims and Billing Records</h3>
+<p>Invoices.</p>
+<p>Receipts.</p>
+<p>Payment history.</p>
+<p>SHA claims.</p>
+<p>Insurance claims.</p>
+<p>Corporate billing records.</p>
+<p>Outstanding balances.</p>
+<h3>G6.5 Operational Records</h3>
+<p>Appointment schedules.</p>
+<p>Theatre schedules.</p>
+<p>Ward occupancy records.</p>
+<p>Inventory records.</p>
+<p>Pharmacy transactions.</p>
+<h3>G6.6 Administrative Records</h3>
+<p>User accounts.</p>
+<p>Audit logs.</p>
+<p>Access records.</p>
+<p>Security logs.</p>
+<p>System configuration where applicable.</p>
+<h3>G7. Export Formats</h3>
+<p>Unless otherwise agreed, exports may be provided in one or more of the following formats:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Data Type</th>
+<th>Format</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Structured Data</td>
+<td>CSV</td>
+</tr>
+<tr>
+<td>Tabular Data</td>
+<td>XLSX</td>
+</tr>
+<tr>
+<td>Reports</td>
+<td>PDF</td>
+</tr>
+<tr>
+<td>Documents</td>
+<td>PDF</td>
+</tr>
+<tr>
+<td>Images</td>
+<td>ZIP Package</td>
+</tr>
+<tr>
+<td>Attachments</td>
+<td>Native Format</td>
+</tr>
+<tr>
+<td>Databases</td>
+<td>Agreed Structured Export</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The Customer acknowledges that migration into a third-party solution may require transformation activities outside Tiberbu's control.</p>
+<h3>G8. Migration Assistance Services</h3>
+<h3>G8.1 Standard Exit Support</h3>
+<p>Included within the Agreement:</p>
+<p>Exit planning meetings.</p>
+<p>Standard data extraction.</p>
+<p>Provision of export files.</p>
+<p>Technical clarification meetings.</p>
+<p>Data dictionary availability.</p>
+<h3>G8.2 Extended Migration Support</h3>
+<p>The following services shall constitute Professional Services and may attract additional fees:</p>
+<p>Data mapping.</p>
+<p>Data transformation.</p>
+<p>Data cleansing.</p>
+<p>Data validation.</p>
+<p>Integration support.</p>
+<p>Successor vendor workshops.</p>
+<p>Dedicated migration resources.</p>
+<p>Custom export development.</p>
+<p>On-site migration assistance.</p>
+<h3>G9. Migration Responsibilities</h3>
+<h3>G9.1 Tiberbu Responsibilities</h3>
+<p>Tiberbu shall:</p>
+<p>Provide available exports of Customer Data.</p>
+<p>Maintain reasonable system availability during migration.</p>
+<p>Support extraction activities.</p>
+<p>Support validation of exported data.</p>
+<p>Maintain security controls during migration.</p>
+<p>Preserve confidentiality of Customer Data.</p>
+<p>Provide technical information reasonably required to understand exported data.</p>
+<h3>G9.2 Customer Responsibilities</h3>
+<p>The Customer shall:</p>
+<p>Define migration requirements.</p>
+<p>Select the successor platform.</p>
+<p>Validate exported data.</p>
+<p>Conduct import activities into successor systems.</p>
+<p>Coordinate third-party vendors.</p>
+<p>Ensure adequate testing.</p>
+<p>Verify migration completeness.</p>
+<p>Maintain legal authority to transfer the data.</p>
+<h3>G10. Data Validation</h3>
+<p>Following data extraction:</p>
+<p>The Customer shall review the exported data.</p>
+<p>The Parties shall reconcile any reported discrepancies.</p>
+<p>A validation period of thirty (30) days shall apply unless otherwise agreed.</p>
+<p>Data shall be deemed accepted if no material discrepancies are raised during the validation period.</p>
+<h3>G11. Transition Support Period</h3>
+<p>Following contract termination:</p>
+<div class="table-wrap source-table">
+<table>
+<thead>
+<tr>
+<th>Activity</th>
+<th>Period</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data Export Availability</td>
+<td>Up to 90 Days</td>
+</tr>
+<tr>
+<td>Technical Clarification Support</td>
+<td>Up to 90 Days</td>
+</tr>
+<tr>
+<td>Read-Only Data Access</td>
+<td>Seven (7) Years</td>
+</tr>
+<tr>
+<td>Retention Services</td>
+<td>As per Agreement</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The read-only retention period shall remain subject to Clause 8.8 of the Agreement.</p>
+<h3>G12. Read-Only Retention Services</h3>
+<p>Upon termination:</p>
+<p>Customer Data shall be retained in a secure read-only environment.</p>
+<p>No amendments to records shall be permitted.</p>
+<p>Access shall be restricted to authorised users.</p>
+<p>Data shall remain searchable and reportable where technically feasible.</p>
+<p>Access may be provided to designated clinical, administrative and compliance personnel.</p>
+<p>The retention period shall be seven (7) years unless a longer period is required by law or agreed by the Parties..</p>
+<h3>G13. Security Requirements During Migration</h3>
+<p>During transition activities:</p>
+<p>Encryption shall be applied in transit.</p>
+<p>Access shall be restricted to authorised personnel.</p>
+<p>Export files shall be transferred securely.</p>
+<p>Audit records shall be maintained.</p>
+<p>Security incidents shall be managed in accordance with the Agreement.</p>
+<h3>G14. Regulatory Compliance</h3>
+<p>Both Parties shall ensure migration activities comply with:</p>
+<p>Data Protection Act, 2019.</p>
+<p>Health Act, 2017.</p>
+<p>Digital Health Act, 2023.</p>
+<p>Applicable ODPC requirements.</p>
+<p>DHA requirements.</p>
+<p>SHA requirements.</p>
+<p>Applicable professional healthcare record retention obligations.</p>
+<h3>G15. Cross-Border Transfers During Migration</h3>
+<p>Where migration involves transfer of data outside Kenya:</p>
+<p>The Customer shall notify Tiberbu.</p>
+<p>Appropriate safeguards shall be implemented.</p>
+<p>Transfer mechanisms shall comply with the Data Protection Act.</p>
+<p>Equivalent protection shall be maintained by the receiving party.</p>
+<p>Relevant records of transfer shall be maintained.</p>
+<p>This requirement aligns with Clause 6.8 of the Agreement.</p>
+<h3>G16. Fees and Charges</h3>
+<h3>G16.1 Standard Services</h3>
+<p>Standard export services reasonably required for ordinary transition shall be included within the Agreement.</p>
+<h3>G16.2 Additional Services</h3>
+<p>Additional charges may apply for:</p>
+<p>Custom exports.</p>
+<p>Data transformation.</p>
+<p>Data cleansing.</p>
+<p>Dedicated migration resources.</p>
+<p>Onsite support.</p>
+<p>Extended retention services.</p>
+<p>Additional read-only accounts.</p>
+<p>Third-party coordination services.</p>
+<p>Any additional fees shall be agreed in writing before commencement.</p>
+<h3>G17. Final Data Disposition</h3>
+<p>Upon expiry of the applicable retention period:</p>
+<p>Tiberbu shall, subject to legal or regulatory retention obligations:</p>
+<p>Securely delete Customer Data; or</p>
+<p>Securely destroy Customer Data; or</p>
+<p>Permanently anonymise Customer Data.</p>
+<p>Tiberbu may provide a Certificate of Data Destruction upon written request.</p>
+<h3>G18. Business Continuity and Provider Failure</h3>
+<p>In the event of:</p>
+<p>Insolvency;</p>
+<p>Liquidation;</p>
+<p>Business cessation;</p>
+<p>Force majeure affecting continued operation;</p>
+<p>Tiberbu shall use reasonable efforts to:</p>
+<p>Enable Customer Data extraction.</p>
+<p>Facilitate access to retained records.</p>
+<p>Provide available documentation required to support continuity of patient care.</p>
+<h3>G19. Survival</h3>
+<p>The obligations contained within this Schedule shall survive termination or expiry of the Agreement for as long as Customer Data remains in Tiberbu's possession or control. This includes confidentiality, security, data protection and record retention obligations.</p>
+<h3>G20. Order of Precedence</h3>
+<p>In the event of a conflict between this Schedule G and any provisions relating to data migration, retention, export or transition assistance elsewhere in the Agreement, this Schedule G shall prevail solely in relation to migration and exit activities, except that mandatory requirements under applicable Kenyan law shall take precedence.</p>
+</div>
+<div class="footer">Private and confidential · {{ network.display_name }} · CareverseHIMS · All amounts are in KES; subscription rates are exclusive of VAT unless expressly stated otherwise.</div>
 </div>

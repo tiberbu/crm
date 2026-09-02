@@ -995,6 +995,7 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 _COUNTERPARTY_ROLES = ("Network Signatory", "Tiberbu Signatory")
 _POST_FACILITY_SIGNATORY_ROLES = ("Facility Witness", *_COUNTERPARTY_ROLES)
 _INTERNAL_REMINDER_INTERVAL_SECONDS = 2 * 60 * 60
+_PENDING_ACTION_ROUTE = "/crm/opt-in-submissions?pending_my_action=1"
 
 
 def _is_internal_crm_signatory(signatory_row):
@@ -1168,22 +1169,12 @@ def _send_internal_signatory_reminder(contract, signatory_row, network=None, pen
 		# malformed workload data.
 		return False
 	email = next(iter(emails))
-	action_url = frappe.utils.get_url("/opt-in-submissions?pending_my_action=1")
+	action_url = frappe.utils.get_url(_PENDING_ACTION_ROUTE)
 	first = valid_items[0]
-	facility_labels = []
-	for item in valid_items:
-		label = frappe.utils.cstr(item.get("facility_label") or "CareverseHIMS").strip() or "CareverseHIMS"
-		if label not in facility_labels:
-			facility_labels.append(label)
-	if len(facility_labels) == 1:
-		subject_label = facility_labels[0]
-	else:
-		subject_label = "%s + %d more" % (facility_labels[0], len(facility_labels) - 1)
 	name = frappe.utils.cstr(first.get("signatory_name") or email).strip()
-	subject = "[Action needed] %s — Pending contract approval%s" % (
-		subject_label,
-		"s" if len(valid_items) != 1 else "",
-	)
+	# Keep the subject independent of any one facility. A single message can
+	# contain work from several networks, so the count is the useful inbox cue.
+	subject = "[Action needed] Pending contract approvals (%d)" % len(valid_items)
 	message_items = [
 		{
 			"facility_label": item.get("facility_label"),
@@ -1294,12 +1285,10 @@ def send_internal_signatory_reminders():
 				if not internal_user_by_email[email]:
 					continue
 				item = _internal_reminder_item(contract, row)
-				network_key = frappe.utils.cstr(
-					getattr(contract, "optin_network", "")
-					or getattr(contract, "network_slug", "")
-					or (network or {}).get("name", "")
-				).strip()
-				bucket = workloads.setdefault((email, network_key), {"network": network, "items": {}})
+				# One CRM user gets one digest across all networks. Permission checks
+				# still happen in the destination list, while the email avoids a burst
+				# of facility-specific reminders.
+				bucket = workloads.setdefault(email, {"network": network, "items": {}})
 				item_key = (item["contract"], item["role"], email)
 				existing = bucket["items"].get(item_key)
 				if existing:
@@ -1599,7 +1588,7 @@ def _notify_internal_approvers(contract_name, deal_name):
 		pass
 
 	crm_url = frappe.utils.get_url("/crm/deals/%s" % deal_name) if deal_name else frappe.utils.get_url()
-	pending_url = frappe.utils.get_url("/opt-in-submissions?pending_my_action=1")
+	pending_url = frappe.utils.get_url(_PENDING_ACTION_ROUTE)
 
 	for approver_slot, identity in approver_slots:
 		approver_email = identity.get("email", "")

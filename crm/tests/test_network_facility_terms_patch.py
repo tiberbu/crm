@@ -34,24 +34,60 @@ class TestNetworkFacilityTermsPatch(UnitTestCase):
 		self.assertIn("{{ network.display_name }}", payload["terms"])
 		self.assertIn("{{ pricing_table }}", payload["terms"])
 		self.assertIn("Schedule B — Facility-specific pricing", payload["terms"])
-		self.assertIn("CAREVERSEHIMS · INDIVIDUAL FACILITY AGREEMENT", payload["terms"])
+		self.assertIn("Optional Services, Hardware and Software", payload["terms"])
+		self.assertIn("Endpoint Security/User/Year", payload["terms"])
+		self.assertIn("Discounted Unit Price (KES) Excl. VAT", payload["terms"])
+		self.assertIn("Total Price (KES) Excl. VAT", payload["terms"])
+		self.assertIn("Office Management Suite/User/Year", payload["terms"])
+		self.assertIn("Ksh 220,000.00", payload["terms"])
+		self.assertEqual(
+			payload["terms"].count("Endpoint workstations - DELL OPTIPLEX 7010 MT SYSTEM"),
+			2,
+		)
+		self.assertIn("1. CONTRACT INFORMATION", payload["terms"])
+		self.assertIn("2. COMMERCIAL TERMS", payload["terms"])
+		self.assertIn("Appendix A: Schedule A", payload["terms"])
+		self.assertIn("Appendix C: Schedule C", payload["terms"])
+		self.assertIn("Appendix 4: Schedule D", payload["terms"])
+		self.assertIn("Appendix 5: Schedule E", payload["terms"])
+		self.assertIn("Appendix 6: Schedule F", payload["terms"])
+		self.assertIn("Appendix 7: Schedule G", payload["terms"])
+		self.assertIn("G20. Order of Precedence", payload["terms"])
+		self.assertIn("Data Migration and Exit Plan", payload["terms"])
+		self.assertIn("Per Facility Total Year 1 - Monthly", payload["terms"])
+		self.assertIn("LEVEL 2", payload["terms"])
+		self.assertIn("LEVEL 5", payload["terms"])
+		self.assertIn("L5, L6", payload["terms"])
+		self.assertIn("Enterpise", payload["terms"])
 		self.assertIn('{{ price_list or "Quotation price list" }}', payload["terms"])
-		self.assertIn('class="page-break"', payload["terms"])
-		self.assertNotIn("LEVEL 5 |", payload["terms"])
+		self.assertIn('class="source-section"', payload["terms"])
+		self.assertNotIn("[Insert]", payload["terms"])
 		terms_doc.insert.assert_called_once_with(ignore_permissions=True)
 		commit.assert_called_once_with()
 
-	def test_is_idempotent_when_template_already_exists(self):
+	def test_refreshes_existing_seeded_template_without_changing_settings(self):
+		terms_doc = Mock(terms="old template")
+		template = Path(__file__).parents[1] / "setup" / "templates" / "chak_careverse_saas_agreement_v1.html"
 		with (
 			patch(
 				"crm.patches.v1_0.seed_network_facility_terms_v1.frappe.db.exists",
 				side_effect=[True, True],
 			),
-			patch("crm.patches.v1_0.seed_network_facility_terms_v1.frappe.get_doc") as get_doc,
+			patch(
+				"crm.patches.v1_0.seed_network_facility_terms_v1.frappe.get_app_path",
+				return_value=str(template),
+			),
+			patch(
+				"crm.patches.v1_0.seed_network_facility_terms_v1.frappe.get_doc",
+				return_value=terms_doc,
+			),
+			patch("crm.patches.v1_0.seed_network_facility_terms_v1.frappe.db.commit") as commit,
 		):
 			execute()
 
-		get_doc.assert_not_called()
+		self.assertEqual(terms_doc.terms, template.read_text(encoding="utf-8"))
+		terms_doc.save.assert_called_once_with(ignore_permissions=True)
+		commit.assert_called_once_with()
 
 	def test_template_scalar_values_are_escaped_before_jinja(self):
 		self.assertEqual(
