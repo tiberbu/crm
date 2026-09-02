@@ -14,16 +14,19 @@ administrator can review the rendered agreement and select it manually.
   `network.legal_name` and `network.contact_email`.
 - Facility identity is supplied through `facility.name`, `facility.mfl_code`,
   `facility.keph_level` and `customer.email`.
+- The complete body of the reviewed CHAK/Tiberbu agreement is included, including
+  the execution page and Schedules/Appendices A–G. Source tables are rendered as
+  readable print tables rather than being summarised or truncated.
 - Schedule B contains only the accepted submission pricing in `pricing_table`.
   It is generated from the server-side KEPH/Item Price result and includes the
-  configured VAT calculation. No fixed Level 2–6 or “other levels” price table is
-  embedded in the document.
-- Schedule B also includes a clearly separated **Optional services, hardware and
-  software** reference section. It covers implementation/training/support add-ons,
-  endpoint hardware and endpoint/office software, with reference rates shown as
-  exclusive of VAT. These items are explicitly marked as excluded unless selected
-  and itemised in the facility’s accepted quotation or signed order, so they do not
-  turn the individual contract into a generic catalogue.
+  configured VAT calculation. The generic KEPH-level price appendices from the
+  source document are intentionally excluded; they would expose unrelated levels
+  on an individual facility contract.
+- Appendix B retains the complete **Optional Services, Hardware and Software**
+  table from the source agreement. It covers implementation/training/support
+  add-ons, endpoint hardware and endpoint/office software, with reference rates
+  shown as exclusive of VAT. These items remain excluded unless selected and
+  itemised in the facility’s accepted quotation or signed order.
 - The same context is used for the opt-in terms screen, contract generation and
   later contract/quotation PDF rendering, so the accepted facility pricing stays
   consistent.
