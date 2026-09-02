@@ -5,6 +5,7 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from crm.api.optin_admin import (
+	_get_negotiated_price_list,
 	_validate_opted_in_price_list_override,
 	create_sellable_item,
 	duplicate_negotiated_price_list,
@@ -95,6 +96,53 @@ class TestOptInFacilityCsvImport(UnitTestCase):
 
 
 class TestOptInPriceListTools(UnitTestCase):
+	def test_optin_price_list_name_does_not_need_negotiated_prefix(self):
+		price_list = frappe._dict({"name": "Huduma Partner Rates", "selling": 1, "enabled": 1})
+		with patch("crm.api.optin_admin.frappe.get_doc", return_value=price_list):
+			result = _get_negotiated_price_list(price_list.name)
+
+		self.assertIs(result, price_list)
+
+	def test_standard_selling_is_not_an_optin_price_list(self):
+		price_list = frappe._dict({"name": "Standard Selling", "selling": 1, "enabled": 1})
+		with patch("crm.api.optin_admin.frappe.get_doc", return_value=price_list):
+			with self.assertRaises(frappe.ValidationError):
+				_get_negotiated_price_list(price_list.name)
+
+	def test_price_list_listing_excludes_standard_selling_but_keeps_custom_names(self):
+		rows = [
+			frappe._dict(
+				{
+					"name": "Standard Selling",
+					"currency": "KES",
+					"creation": "2026-09-01 10:00:00",
+					"modified": "2026-09-01 11:00:00",
+					"owner": "manager@example.com",
+					"modified_by": "manager@example.com",
+				}
+			),
+			frappe._dict(
+				{
+					"name": "Huduma Partner Rates",
+					"currency": "KES",
+					"creation": "2026-09-01 10:00:00",
+					"modified": "2026-09-01 11:00:00",
+					"owner": "manager@example.com",
+					"modified_by": "manager@example.com",
+				}
+			),
+		]
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_list", return_value=rows),
+			patch("crm.api.optin_admin._price_list_assignments", return_value={}),
+		):
+			result = list_negotiated_price_lists()
+
+		self.assertEqual(
+			[row["name"] if "name" in row else row["value"] for row in result], ["Huduma Partner Rates"]
+		)
+
 	def test_price_list_metadata_counts_effective_facility_assignments(self):
 		price_list = frappe._dict(
 			{

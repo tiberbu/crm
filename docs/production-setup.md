@@ -78,7 +78,8 @@ requests fail.
 
 ### 2.5 Confirm `CRM Opt-In Settings`
 - `default_price_list` — defaults to `Negotiated Year 1`; change if a different
-  negotiated year is current.
+  Opt-In selling price list is current. Custom list names are supported; the
+  generic ERPNext `Standard Selling` list is excluded.
 - `active_tc_document` — auto-set to the shipped default; point at a
   tenant-specific `Terms and Conditions` document if required.
 

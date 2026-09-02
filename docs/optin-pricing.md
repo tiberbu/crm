@@ -2,10 +2,12 @@
 
 ## Price-list templates
 
-Item Catalogue lists the negotiated selling price lists. Select a list and use
-**Duplicate list** to copy every selling Item Price into a new list. Give the
-copy a name beginning with `Negotiated`, then edit any rates inline. The source
-list is never changed. Empty lists can still be created with **New Price List**.
+Item Catalogue lists enabled selling price lists for Opt-In. `Standard Selling`
+is intentionally excluded because it is ERPNext's generic default; all other
+selling lists can be named naturally for the network, facility, or commercial
+arrangement they represent. Select a list and use **Duplicate list** to copy
+every selling Item Price into a new list. The source list is never changed.
+Empty lists can still be created with **New Price List**.
 
 ## Network and facility pricing
 

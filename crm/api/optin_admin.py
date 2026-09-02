@@ -596,13 +596,18 @@ def list_optin_tax_templates():
 # ---------------------------------------------------------------------------
 
 
+def _is_standard_selling_price_list(name):
+	"""Return whether ``name`` is ERPNext's generic selling list."""
+	return frappe.utils.cstr(name or "").strip().casefold() == "standard selling"
+
+
 def _get_negotiated_price_list(name):
 	name = frappe.utils.cstr(name).strip()
 	if not name:
-		frappe.throw(_("A negotiated price list is required."))
+		frappe.throw(_("A price list is required."))
 	price_list = frappe.get_doc("Price List", name)
-	if not price_list.selling or not price_list.enabled or not price_list.name.startswith("Negotiated"):
-		frappe.throw(_("Select an enabled negotiated selling price list."))
+	if _is_standard_selling_price_list(price_list.name) or not price_list.selling or not price_list.enabled:
+		frappe.throw(_("Select an enabled selling price list other than Standard Selling."))
 	return price_list
 
 
@@ -655,16 +660,23 @@ def _price_list_assignments():
 
 @frappe.whitelist()
 def list_negotiated_price_lists():
-	"""Return enabled negotiated selling price lists for opt-in configuration."""
+	"""Return enabled Opt-In selling price lists for configuration."""
 	if not _is_admin():
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	rows = frappe.get_list(
 		"Price List",
-		filters=[["selling", "=", 1], ["enabled", "=", 1], ["name", "like", "Negotiated%"]],
+		filters=[
+			["selling", "=", 1],
+			["enabled", "=", 1],
+			["name", "!=", "Standard Selling"],
+		],
 		fields=["name", "currency", "creation", "modified", "owner", "modified_by"],
 		order_by="name asc",
 		limit_page_length=0,
 	)
+	# Keep the exclusion case-insensitive even on sites whose database collation
+	# treats the ``!=`` filter as case-sensitive.
+	rows = [row for row in rows if not _is_standard_selling_price_list(row.name)]
 
 	assignments = _price_list_assignments()
 
@@ -977,12 +989,12 @@ def create_sellable_item(item_code: Any, item_name: Any, stock_uom: Any = "Nos")
 
 @frappe.whitelist()
 def create_negotiated_price_list(name: Any):
-	"""Create an empty, KES-denominated negotiated selling price list."""
+	"""Create an empty, KES-denominated Opt-In selling price list."""
 	if not _is_admin():
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	name = frappe.utils.cstr(name).strip()
-	if not name.startswith("Negotiated"):
-		frappe.throw(_("Negotiated price lists must begin with 'Negotiated'."))
+	if _is_standard_selling_price_list(name):
+		frappe.throw(_("Standard Selling is reserved for ERPNext defaults. Choose another name."))
 	if frappe.db.exists("Price List", name):
 		frappe.throw(_("A price list with this name already exists."))
 	price_list = frappe.get_doc(
@@ -1002,13 +1014,13 @@ def create_negotiated_price_list(name: Any):
 
 @frappe.whitelist()
 def duplicate_negotiated_price_list(source: Any, name: Any):
-	"""Copy a negotiated selling price list and all of its item prices."""
+	"""Copy an Opt-In selling price list and all of its item prices."""
 	if not _is_admin():
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	source = _get_negotiated_price_list(source)
 	name = frappe.utils.cstr(name).strip()
-	if not name.startswith("Negotiated"):
-		frappe.throw(_("Negotiated price lists must begin with 'Negotiated'."))
+	if _is_standard_selling_price_list(name):
+		frappe.throw(_("Standard Selling is reserved for ERPNext defaults. Choose another name."))
 	if frappe.db.exists("Price List", name):
 		frappe.throw(_("A price list with this name already exists."))
 
