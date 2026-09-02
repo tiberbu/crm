@@ -1257,9 +1257,12 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		self.assertTrue(result)
 		sendmail.assert_called_once()
-		self.assertIn("Test Hospital", sendmail.call_args.kwargs["subject"])
+		self.assertEqual(
+			sendmail.call_args.kwargs["subject"], "[Action needed] Pending contract approvals (1)"
+		)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
 		self.assertIn("Open pending approvals", sendmail.call_args.kwargs["message"])
+		self.assertIn("/crm/opt-in-submissions?pending_my_action=1", sendmail.call_args.kwargs["message"])
 		set_value.assert_called_once()
 		log_event.assert_called_once()
 
@@ -1300,9 +1303,13 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		self.assertTrue(result)
 		sendmail.assert_called_once()
-		self.assertIn("Aga Khan Hospital + 1 more", sendmail.call_args.kwargs["subject"])
+		self.assertEqual(
+			sendmail.call_args.kwargs["subject"], "[Action needed] Pending contract approvals (2)"
+		)
+		self.assertNotIn("Aga Khan Hospital", sendmail.call_args.kwargs["subject"])
 		self.assertIn("Aga Khan Hospital", sendmail.call_args.kwargs["message"])
 		self.assertIn("Lifecare Hospital", sendmail.call_args.kwargs["message"])
+		self.assertIn("/crm/opt-in-submissions?pending_my_action=1", sendmail.call_args.kwargs["message"])
 		self.assertTrue(sendmail.call_args.kwargs["now"])
 		self.assertEqual(set_value.call_count, 2)
 		self.assertEqual(log_event.call_count, 2)
@@ -1345,7 +1352,10 @@ class TestOptInContractAutomation(UnitTestCase):
 				],
 			),
 			patch("crm.api.contracts.frappe.get_doc", side_effect=[first, second, external_contract]),
-			patch("crm.api.contracts._network_for_contract", return_value=None),
+			patch(
+				"crm.api.contracts._network_for_contract",
+				side_effect=[{"name": "network-a"}, {"name": "network-b"}, None],
+			),
 			patch(
 				"crm.api.contracts._is_internal_crm_signatory",
 				side_effect=lambda row: row.signatory_email == "reviewer@example.com",

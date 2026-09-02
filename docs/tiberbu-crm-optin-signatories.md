@@ -115,8 +115,11 @@ CRM-user Network and Tiberbu Signatories follow the same login-only rule. They
 do not receive a contract invitation email, public signing URL, OTP, or signing
 SMS. Once the facility signature unlocks the contract, the first hand-off is
 recorded on the Deal activity timeline and the signer uses the authenticated
-Quote/Opt-In signing action. A scheduler runs every two hours and sends each
-still-pending CRM user a separate, facility-named reminder email linking to the
-permission-scoped `Pending my action` list. The reminder timestamp is stored on
-the signatory row, and every successful reminder is recorded on Deal activity;
-failed sends are logged without advancing the timestamp.
+Quote/Opt-In signing action. A scheduler runs every two hours and sends one
+count-based workload digest per still-pending CRM user across all networks. The
+email lists every pending contract and links to
+`/crm/opt-in-submissions?pending_my_action=1`, the permission-scoped `Pending my
+action` list. The reminder subject does not name a single facility. The reminder
+timestamp is stored on the signatory row, and every successful reminder is
+recorded on Deal activity; failed sends are logged without advancing the
+timestamp.

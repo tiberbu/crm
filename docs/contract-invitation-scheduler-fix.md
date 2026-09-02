@@ -50,13 +50,15 @@ do not receive a contract invitation email, public signing URL, OTP, or signing
 SMS. Once the facility signature unlocks the contract, the first hand-off is
 recorded on the Deal activity timeline and the signer uses the authenticated
 Quote/Opt-In signing action. A scheduler runs every two hours and sends one
-facility-branded workload reminder per pending CRM user and network. The email
-lists every pending contract (facility, role, and reference) and links to the
-permission-scoped `Pending my action` list. Duplicate child rows are collapsed
-for delivery, while each affected signatory row is timestamped and each unique
-contract/role is recorded on its Deal activity timeline. Failed sends are logged
-without advancing any reminder timestamp. Signatories without an enabled CRM
-User account remain on the existing public invitation path.
+workload digest per pending CRM user, across all networks. The email lists every
+pending contract (facility, role, and reference), uses a neutral count-based
+subject (`[Action needed] Pending contract approvals (N)`), and links to
+`/crm/opt-in-submissions?pending_my_action=1`, the permission-scoped `Pending my
+action` list. Duplicate child rows are collapsed for delivery, while each
+affected signatory row is timestamped and each unique contract/role is recorded
+on its Deal activity timeline. Failed sends are logged without advancing any
+reminder timestamp. Signatories without an enabled CRM User account remain on
+the existing public invitation path.
 
 The reminder is registered in both `hooks.scheduler_events` and the idempotent
 migration bootstrap, using `0 */2 * * *` (minute zero, every two hours). The
