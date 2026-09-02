@@ -1,32 +1,72 @@
 <style>
-  .cv-contract { font-family: Arial, sans-serif; color: #1f2937; font-size: 11px; line-height: 1.5; }
-  .cv-contract h1 { color: #12395b; font-size: 20px; margin: 0 0 4px; }
-  .cv-contract h2 { color: #12395b; font-size: 14px; margin: 18px 0 6px; border-bottom: 1px solid #d8e2ec; padding-bottom: 3px; }
-  .cv-contract h3 { color: #234e70; font-size: 11px; margin: 12px 0 4px; }
-  .cv-contract p { margin: 0 0 7px; }
-  .cv-contract ul { margin: 0 0 8px 18px; padding: 0; }
+  .cv-contract { font-family: Arial, Helvetica, sans-serif; color: #1f2937; font-size: 11.2px; line-height: 1.55; }
+  .cv-contract * { box-sizing: border-box; }
+  .cv-contract h1 { color: #12395b; font-size: 21px; letter-spacing: .02em; margin: 0 0 5px; }
+  .cv-contract h2 { color: #12395b; font-size: 14px; margin: 20px 0 7px; border-bottom: 1px solid #cbd8e5; padding-bottom: 4px; page-break-after: avoid; }
+  .cv-contract h3 { color: #234e70; font-size: 11.2px; margin: 13px 0 4px; page-break-after: avoid; }
+  .cv-contract p { margin: 0 0 8px; }
+  .cv-contract ul { margin: 0 0 9px 19px; padding: 0; }
   .cv-contract li { margin: 0 0 3px; }
-  .cv-contract .masthead { border-bottom: 3px solid #12395b; padding-bottom: 10px; margin-bottom: 12px; }
   .cv-contract .muted { color: #64748b; }
+  .cv-contract .cover { border: 1px solid #cbd8e5; border-top: 5px solid #12395b; background: #f8fafc; padding: 16px 18px 13px; margin-bottom: 14px; }
+  .cv-contract .eyebrow { color: #64748b; font-size: 9px; font-weight: 700; letter-spacing: .14em; margin: 0 0 8px; }
+  .cv-contract .subtitle { color: #475569; font-size: 12px; margin: 0 0 12px; }
+  .cv-contract .document-id { color: #64748b; font-size: 9.5px; letter-spacing: .02em; margin: 0; }
   .cv-contract .meta, .cv-contract .summary { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
-  .cv-contract .meta td, .cv-contract .summary td { border: 1px solid #d8e2ec; padding: 5px 7px; vertical-align: top; }
-  .cv-contract .meta td:first-child, .cv-contract .summary td:first-child { width: 28%; background: #f4f7fa; font-weight: 700; }
-  .cv-contract .callout { border-left: 4px solid #12395b; background: #f4f7fa; padding: 8px 10px; margin: 10px 0; }
-  .cv-contract .price-heading { background: #12395b; color: #fff; padding: 7px 9px; font-size: 12px; font-weight: 700; margin-top: 10px; }
-  .cv-contract .signature { width: 100%; border-collapse: collapse; margin-top: 18px; }
-  .cv-contract .signature td { width: 50%; padding: 20px 14px 4px 0; vertical-align: top; }
-  .cv-contract .signature .line { border-top: 1px solid #475569; padding-top: 4px; }
-  .cv-contract .footer { color: #64748b; border-top: 1px solid #d8e2ec; padding-top: 8px; margin-top: 18px; font-size: 9px; }
+  .cv-contract .meta td, .cv-contract .summary td { border: 1px solid #d8e2ec; padding: 6px 8px; vertical-align: top; }
+  .cv-contract .meta td:first-child, .cv-contract .summary td:first-child { width: 30%; background: #f4f7fa; color: #475569; font-weight: 700; }
+  .cv-contract .meta td:nth-child(3) { width: 20%; background: #f4f7fa; color: #475569; font-weight: 700; }
+  .cv-contract .callout { border-left: 4px solid #12395b; background: #f1f5f9; padding: 9px 11px; margin: 10px 0; }
+  .cv-contract .commercial { border: 1px solid #b9ccdc; border-radius: 2px; padding: 0 12px 10px; margin: 0 0 18px; page-break-inside: avoid; }
+  .cv-contract .commercial .price-heading { margin: 0 -12px 9px; }
+  .cv-contract .price-heading { background: #12395b; color: #fff; padding: 8px 10px; font-size: 12px; letter-spacing: .02em; font-weight: 700; }
+  .cv-contract .section-intro { color: #475569; margin-bottom: 8px; }
+  .cv-contract .pricing-table { margin: 0 0 3px; overflow: hidden; }
+  .cv-contract .pricing-table table { margin: 0 !important; }
+  .cv-contract .summary { margin-top: 9px; }
+  .cv-contract .summary td:last-child { text-align: right; white-space: nowrap; }
+  .cv-contract .summary tr:nth-child(3) td, .cv-contract .summary tr:nth-child(6) td { background: #eef5fa; font-size: 12px; }
+  .cv-contract .summary tr:nth-child(4) td { border-top: 2px solid #9fb6ca; }
+  .cv-contract .page-break { page-break-before: always; break-before: page; height: 0; }
+  .cv-contract .no-break { page-break-inside: avoid; break-inside: avoid; }
+  .cv-contract .signature { width: 100%; border-collapse: separate; border-spacing: 12px 0; margin: 20px 0 0; page-break-inside: avoid; }
+  .cv-contract .signature td { width: 50%; padding: 26px 12px 6px; vertical-align: top; border-top: 1px solid #475569; }
+  .cv-contract .signature td strong { color: #12395b; }
+  .cv-contract .signature-note { color: #64748b; font-size: 9.5px; margin-top: 9px; }
+  .cv-contract .footer { color: #64748b; border-top: 1px solid #d8e2ec; padding-top: 8px; margin-top: 20px; font-size: 9px; }
+  @media print {
+    .cv-contract { font-size: 10.5pt; }
+    .cv-contract .cover, .cv-contract .commercial { border-color: #aebdca; }
+  }
 </style>
 
 <div class="cv-contract">
-  <div class="masthead">
+  <div class="cover no-break">
+    <p class="eyebrow">CAREVERSEHIMS · INDIVIDUAL FACILITY AGREEMENT</p>
     <h1>SOFTWARE-AS-A-SERVICE AGREEMENT</h1>
-    <p class="muted">Provision of the CareverseHIMS Hospital Management Information System</p>
-    <p><strong>Network:</strong> {{ network.display_name }}<br/>
-      <strong>Facility:</strong> {{ facility.name }}<br/>
-      <strong>Agreement date:</strong> {{ date }}<br/>
-      <strong>Quotation reference:</strong> {{ quote or "To be confirmed" }}</p>
+    <p class="subtitle">Provision of the CareverseHIMS Hospital Management Information System</p>
+    <p class="document-id">Prepared for {{ facility.name }} · Effective {{ date }} · Quote {{ quote or "To be confirmed" }}</p>
+  </div>
+
+  <table class="meta no-break">
+    <tr><td>Customer / facility</td><td>{{ customer.name }}</td><td>Network</td><td>{{ network.display_name }}</td></tr>
+    <tr><td>Facility level</td><td>{{ facility.keph_level or "Not specified" }}</td><td>MFL code</td><td>{{ facility.mfl_code or "Not specified" }}</td></tr>
+    <tr><td>Customer contact</td><td>{{ customer.email or "Not specified" }}</td><td>Price list</td><td>{{ price_list or "Quotation price list" }}</td></tr>
+  </table>
+
+  <div class="commercial">
+    <div class="price-heading">Schedule B — Facility-specific pricing · All rates exclusive of VAT</div>
+    <p class="section-intro">This commercial summary is part of the individual facility agreement. It contains only the accepted facilities and negotiated rates for this quotation; no unrelated facility-level prices are included.</p>
+    <div class="pricing-table">{{ pricing_table }}</div>
+    <table class="summary">
+      <tr><td>Monthly commitment (exclusive of VAT)</td><td>KES {{ "{:,.2f}".format(subtotal_monthly or 0) }}</td></tr>
+      <tr><td>{{ vat_label }}</td><td>KES {{ "{:,.2f}".format(vat_monthly or 0) }}</td></tr>
+      <tr><td>Monthly commitment (inclusive of VAT)</td><td><strong>KES {{ grand_total_monthly_display }}</strong></td></tr>
+      <tr><td>Annual commitment (exclusive of VAT)</td><td>KES {{ "{:,.2f}".format(subtotal_annual or 0) }}</td></tr>
+      <tr><td>{{ vat_label }} — annual</td><td>KES {{ "{:,.2f}".format(vat_annual or 0) }}</td></tr>
+      <tr><td>Annual commitment (inclusive of VAT)</td><td><strong>KES {{ grand_total_annual_display }}</strong></td></tr>
+    </table>
+    <div class="callout"><strong>Commercial basis:</strong> The amounts above are drawn from the accepted quotation and the configured Taxes and Charges template. VAT is shown separately and added to the exclusive-of-VAT rates.</div>
   </div>
 
   <h2>1. Contract information</h2>
@@ -63,7 +103,7 @@
   <h3>1.4 Order of precedence</h3>
   <p>If documents conflict, the main body of this Agreement prevails, followed by the schedules, then any
     signed quotation, order form or statement of work incorporated by reference. The facility-specific
-    pricing shown in Schedule B prevails on the commercial amounts for this facility.</p>
+    pricing shown in Schedule B above prevails on the commercial amounts for this facility.</p>
 
   <h2>2. Commercial terms</h2>
   <h3>2.1 Scope of Services</h3>
@@ -87,20 +127,10 @@
     sixty (60) days’ written notice of non-renewal.</p>
 
   <h3>2.5 Facility-specific Fees and pricing</h3>
-  <p>Schedule B is the complete pricing schedule for this Agreement. It contains only the facility or
+  <p>Schedule B above is the complete pricing schedule for this Agreement. It contains only the facility or
     facilities covered by this individual contract, their KEPH levels and the negotiated rates drawn from
     the applicable quotation. No prices for unrelated facility levels or other customers form part of this
     Agreement.</p>
-  <div class="price-heading">Schedule B — Facility pricing (all rates exclusive of VAT)</div>
-  {{ pricing_table }}
-  <table class="summary">
-    <tr><td>Monthly commitment (exclusive of VAT)</td><td>KES {{ "{:,.2f}".format(subtotal_monthly or 0) }}</td></tr>
-    <tr><td>{{ vat_label }}</td><td>KES {{ "{:,.2f}".format(vat_monthly or 0) }}</td></tr>
-    <tr><td>Monthly commitment (inclusive of VAT)</td><td><strong>KES {{ grand_total_monthly_display }}</strong></td></tr>
-    <tr><td>Annual commitment (exclusive of VAT)</td><td>KES {{ "{:,.2f}".format(subtotal_annual or 0) }}</td></tr>
-    <tr><td>{{ vat_label }} — annual</td><td>KES {{ "{:,.2f}".format(vat_annual or 0) }}</td></tr>
-    <tr><td>Annual commitment (inclusive of VAT)</td><td><strong>KES {{ grand_total_annual_display }}</strong></td></tr>
-  </table>
 
   <h3>2.6 Taxes</h3>
   <p>All Fees are exclusive of Value Added Tax (VAT), withholding tax and other applicable taxes, levies
@@ -258,13 +288,15 @@
     Arbitrators (Kenya Branch). Kenyan courts have jurisdiction for interim relief and matters not subject to arbitration.
     This Agreement is governed by the laws of the Republic of Kenya.</p>
 
+  <div class="page-break"></div>
   <h2>Schedule A — Facility service profile</h2>
   <table class="meta">
     <tr><td>Facility</td><td>{{ facility.name }}</td></tr>
-    <tr><td>Facility level</td><td>{{ facility.keph_level }}</td></tr>
-    <tr><td>MFL code</td><td>{{ facility.mfl_code }}</td></tr>
+    <tr><td>Facility level</td><td>{{ facility.keph_level or "Not specified" }}</td></tr>
+    <tr><td>MFL code</td><td>{{ facility.mfl_code or "Not specified" }}</td></tr>
     <tr><td>Network</td><td>{{ network.display_name }}</td></tr>
-    <tr><td>Customer contact</td><td>{{ customer.email }}</td></tr>
+    <tr><td>Customer contact</td><td>{{ customer.email or "Not specified" }}</td></tr>
+    <tr><td>Price list</td><td>{{ price_list or "Quotation price list" }}</td></tr>
     <tr><td>Subscribed service</td><td>CareverseHIMS hosted hospital management information system</td></tr>
   </table>
   <p>The Subscription includes cloud hosting, application maintenance and updates, embedded support, security
@@ -312,11 +344,12 @@
     system. Read-only retention is provided for seven (7) years or longer where law requires; data is then securely
     deleted, destroyed or permanently anonymised subject to applicable obligations.</p>
 
+  <div class="page-break"></div>
   <h2>Execution</h2>
   <p>By accepting the Opt-In submission and signing the generated contract, the authorised representatives of the
     Parties confirm that they have read, understood and agreed to this individual facility Agreement, including the
     facility-specific pricing in Schedule B.</p>
-  <table class="signature">
+  <table class="signature no-break">
     <tr>
       <td><div class="line"><strong>For Tiberbu Healthnet Limited</strong><br/>Name and designation recorded electronically</div></td>
       <td><div class="line"><strong>For {{ customer.name }}</strong><br/>Name and designation recorded electronically</div></td>
@@ -326,5 +359,6 @@
       <td><div class="line"><strong>Customer witness</strong><br/>Name and details recorded electronically</div></td>
     </tr>
   </table>
+  <p class="signature-note">Electronic signature records, timestamps and verification details are retained with the corresponding contract record.</p>
   <div class="footer">Private and confidential · {{ network.display_name }} · CareverseHIMS · All amounts are in KES and exclusive of VAT unless expressly stated otherwise.</div>
 </div>

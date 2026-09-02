@@ -7,6 +7,9 @@ administrator can review the rendered agreement and select it manually.
 
 ## Template behaviour
 
+- The rendered agreement opens with a document cover, a compact facility/network
+  summary, and a prominent commercial summary so the parties and accepted amounts
+  are immediately scannable in both the portal and the PDF print format.
 - Network identity is supplied at render time through `network.display_name`,
   `network.legal_name` and `network.contact_email`.
 - Facility identity is supplied through `facility.name`, `facility.mfl_code`,
@@ -18,6 +21,9 @@ administrator can review the rendered agreement and select it manually.
 - The same context is used for the opt-in terms screen, contract generation and
   later contract/quotation PDF rendering, so the accepted facility pricing stays
   consistent.
+- Print-friendly page breaks separate the service schedules and execution block;
+  the signature section remains together and records that electronic verification
+  details are retained with the contract record.
 
 ## Safety and compatibility
 
