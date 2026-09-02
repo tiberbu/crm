@@ -1117,16 +1117,81 @@ def _internal_reminder_due(signatory_row, now=None):
 		return True
 
 
-def _send_internal_signatory_reminder(contract, signatory_row, network=None):
-	"""Send one login-only reminder and record it on the linked Deal timeline."""
-	email = frappe.utils.cstr(getattr(signatory_row, "signatory_email", "") or "").strip()
-	if not email or not _is_internal_crm_signatory(signatory_row):
+def _internal_reminder_item(contract, signatory_row):
+	"""Build one safe workload entry for an internal CRM signatory."""
+	return {
+		"contract_doc": contract,
+		"contract": frappe.utils.cstr(getattr(contract, "name", "") or "").strip(),
+		"deal": frappe.utils.cstr(getattr(contract, "deal", "") or "").strip(),
+		"row": signatory_row,
+		"rows": [signatory_row],
+		"facility_label": _contract_email_subject_label(contract),
+		"role": frappe.utils.cstr(getattr(signatory_row, "signatory_role", "") or "Signatory").strip(),
+		"signatory_name": frappe.utils.cstr(
+			getattr(signatory_row, "signatory_name", "")
+			or getattr(signatory_row, "signatory_email", "")
+			or ""
+		).strip(),
+	}
+
+
+def _send_internal_signatory_reminder(contract, signatory_row, network=None, pending_items=None):
+	"""Send one login-only workload reminder and record each item on its Deal timeline.
+
+	``pending_items`` groups several pending contracts for the same enabled CRM
+	user and network into one email.  The two-argument form remains supported for
+	older callers and tests.
+	"""
+	items = list(pending_items or [_internal_reminder_item(contract, signatory_row)])
+	valid_items = []
+	for item in items:
+		if not isinstance(item, dict):
+			continue
+		row = item.get("row")
+		if not row or not _is_internal_crm_signatory(row):
+			continue
+		if frappe.utils.cstr(getattr(row, "status", "") or "").strip().lower() != "pending":
+			continue
+		email = frappe.utils.cstr(getattr(row, "signatory_email", "") or "").strip().lower()
+		if not email:
+			continue
+		valid_items.append(item)
+	if not valid_items:
 		return False
+
+	emails = {
+		frappe.utils.cstr(getattr(item.get("row"), "signatory_email", "") or "").strip().lower()
+		for item in valid_items
+	}
+	if len(emails) != 1:
+		# A grouped message must never cross recipients, even if a caller supplies
+		# malformed workload data.
+		return False
+	email = next(iter(emails))
 	action_url = frappe.utils.get_url("/opt-in-submissions?pending_my_action=1")
-	facility_label = _contract_email_subject_label(contract)
-	name = frappe.utils.cstr(getattr(signatory_row, "signatory_name", "") or email).strip()
-	role = frappe.utils.cstr(getattr(signatory_row, "signatory_role", "") or "Signatory").strip()
-	subject = "[Action needed] %s — Pending contract approval" % facility_label
+	first = valid_items[0]
+	facility_labels = []
+	for item in valid_items:
+		label = frappe.utils.cstr(item.get("facility_label") or "CareverseHIMS").strip() or "CareverseHIMS"
+		if label not in facility_labels:
+			facility_labels.append(label)
+	if len(facility_labels) == 1:
+		subject_label = facility_labels[0]
+	else:
+		subject_label = "%s + %d more" % (facility_labels[0], len(facility_labels) - 1)
+	name = frappe.utils.cstr(first.get("signatory_name") or email).strip()
+	subject = "[Action needed] %s — Pending contract approval%s" % (
+		subject_label,
+		"s" if len(valid_items) != 1 else "",
+	)
+	message_items = [
+		{
+			"facility_label": item.get("facility_label"),
+			"role": item.get("role"),
+			"contract": item.get("contract"),
+		}
+		for item in valid_items
+	]
 	try:
 		frappe.sendmail(
 			recipients=[email],
@@ -1134,9 +1199,10 @@ def _send_internal_signatory_reminder(contract, signatory_row, network=None):
 			message=internal_signatory_reminder_html(
 				network,
 				signatory_name=name,
-				role=role,
-				facility_label=facility_label,
+				role=first.get("role"),
+				facility_label=first.get("facility_label"),
 				action_url=action_url,
+				pending_items=message_items,
 			),
 			now=True,
 		)
@@ -1151,22 +1217,37 @@ def _send_internal_signatory_reminder(contract, signatory_row, network=None):
 	has_field = False
 	try:
 		has_field = frappe.db.has_column("CRM Contract Signatory", "crm_last_reminder_at")
-		if getattr(signatory_row, "name", None) and has_field:
-			frappe.db.set_value(
-				"CRM Contract Signatory",
-				signatory_row.name,
-				"crm_last_reminder_at",
-				now,
-				update_modified=False,
-			)
 	except Exception:
 		pass
-	if has_field or not getattr(signatory_row, "meta", None):
-		signatory_row.crm_last_reminder_at = now
-	log_deal_event(
-		contract.deal,
-		"Two-hour CRM action reminder sent to %s (%s) for contract %s" % (name, role, contract.name),
-	)
+	for item in valid_items:
+		rows = item.get("rows") or [item.get("row")]
+		for row in rows:
+			if not row:
+				continue
+			if getattr(row, "name", None) and has_field:
+				try:
+					frappe.db.set_value(
+						"CRM Contract Signatory",
+						row.name,
+						"crm_last_reminder_at",
+						now,
+						update_modified=False,
+					)
+				except Exception:
+					pass
+			if has_field or not getattr(row, "meta", None):
+				row.crm_last_reminder_at = now
+		item_contract = item.get("contract_doc") or contract
+		item_name = frappe.utils.cstr(item.get("signatory_name") or name).strip()
+		item_role = frappe.utils.cstr(item.get("role") or "Signatory").strip()
+		item_contract_name = frappe.utils.cstr(
+			item.get("contract") or getattr(item_contract, "name", "")
+		).strip()
+		log_deal_event(
+			item.get("deal") or getattr(item_contract, "deal", None),
+			"Two-hour CRM action reminder sent to %s (%s) for contract %s"
+			% (item_name, item_role, item_contract_name),
+		)
 	return True
 
 
@@ -1181,7 +1262,7 @@ def send_internal_signatory_reminders():
 		contracts = frappe.get_list(
 			"CRM Contract",
 			fields=["name"],
-			filters={"status": ["in", ["Awaiting Remaining Signatures", "Pending", "Awaiting Signatures"]]},
+			filters={"status": ["not in", ["Fully Executed", "Cancelled"]]},
 			limit_page_length=0,
 			ignore_permissions=True,  # SYSTEM-INTERNAL
 		)
@@ -1190,30 +1271,60 @@ def send_internal_signatory_reminders():
 
 	sent = skipped = 0
 	now = frappe.utils.now_datetime()
+	internal_user_by_email = {}
+	workloads = {}
 	for summary in contracts:
 		try:
 			contract = frappe.get_doc("CRM Contract", summary.name)
 			facility = _get_signatory_row(contract, "Facility Signatory")
-			if not facility or facility.status != "Signed":
+			if not facility or frappe.utils.cstr(facility.status or "").strip().lower() != "signed":
 				continue
 			network = _network_for_contract(contract)
 			for row in contract.signatories or []:
+				email = frappe.utils.cstr(getattr(row, "signatory_email", "") or "").strip().lower()
 				if (
-					row.signatory_role not in _COUNTERPARTY_ROLES
-					or row.status != "Pending"
-					or not _is_internal_crm_signatory(row)
+					getattr(row, "signatory_role", "") not in _COUNTERPARTY_ROLES
+					or frappe.utils.cstr(getattr(row, "status", "") or "").strip().lower() != "pending"
+					or not email
 					or not _internal_reminder_due(row, now)
 				):
 					continue
-				if _send_internal_signatory_reminder(contract, row, network):
-					sent += 1
+				if email not in internal_user_by_email:
+					internal_user_by_email[email] = _is_internal_crm_signatory(row)
+				if not internal_user_by_email[email]:
+					continue
+				item = _internal_reminder_item(contract, row)
+				network_key = frappe.utils.cstr(
+					getattr(contract, "optin_network", "")
+					or getattr(contract, "network_slug", "")
+					or (network or {}).get("name", "")
+				).strip()
+				bucket = workloads.setdefault((email, network_key), {"network": network, "items": {}})
+				item_key = (item["contract"], item["role"], email)
+				existing = bucket["items"].get(item_key)
+				if existing:
+					existing["rows"].append(row)
 				else:
-					skipped += 1
+					bucket["items"][item_key] = item
 		except Exception:
 			frappe.log_error(
 				frappe.get_traceback(),
 				"contracts.send_internal_signatory_reminders: contract failed %s" % summary.name,
 			)
+			skipped += 1
+	for bucket in workloads.values():
+		items = list(bucket["items"].values())
+		if not items:
+			continue
+		first = items[0]
+		if _send_internal_signatory_reminder(
+			first["contract_doc"],
+			first["row"],
+			bucket["network"],
+			pending_items=items,
+		):
+			sent += 1
+		else:
 			skipped += 1
 	try:
 		frappe.db.commit()

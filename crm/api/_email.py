@@ -171,24 +171,62 @@ def internal_signatory_reminder_html(
 	role,
 	facility_label,
 	action_url,
+	pending_items=None,
 ):
 	"""Render the login-only reminder sent to CRM-user signatories.
 
 	Internal signatories do not receive a public contract invitation.  This
 	message deliberately links to the permission-scoped CRM queue instead, so a
 	forwarded email cannot expose a contract or bypass the normal CRM session.
+	When several contracts are waiting, ``pending_items`` keeps them in one
+	readable workload email rather than sending one message per contract.
 	"""
 	name = frappe.utils.escape_html(signatory_name or "there")
-	facility = frappe.utils.escape_html(facility_label or "your facility")
-	role_label = frappe.utils.escape_html(role or "signatory")
+	items = list(pending_items or [])
+	if not items:
+		items = [{"facility_label": facility_label, "role": role}]
+
+	rows = []
+	for item in items:
+		if not isinstance(item, dict):
+			continue
+		facility = frappe.utils.escape_html(item.get("facility_label") or facility_label or "your facility")
+		role_label = frappe.utils.escape_html(item.get("role") or role or "signatory")
+		contract = frappe.utils.escape_html(item.get("contract") or "")
+		contract_ref = (
+			"<span style='display:block;color:#9ca3af;font-size:11px;margin-top:2px'>Contract %s</span>"
+			% contract
+			if contract
+			else ""
+		)
+		rows.append(
+			"<li style='margin:0 0 10px;padding:0 0 10px;border-bottom:1px solid #eceef0'>"
+			"<strong style='display:block;color:#111827;font-size:14px'>%s</strong>"
+			"<span style='display:block;color:#6b7280;font-size:12px;margin-top:2px'>%s</span>%s</li>"
+			% (facility, role_label, contract_ref)
+		)
+	if not rows:
+		rows.append(
+			"<li style='margin:0;color:#6b7280'>No pending contract details are available. "
+			"Open CRM to review your queue.</li>"
+		)
+	count = len(rows)
+	plural = "s" if count != 1 else ""
+	workload = (
+		"<div style='margin:18px 0 4px;text-align:left;background:#f8fafc;border:1px solid #eceef0;"
+		"border-radius:10px;padding:14px 16px'>"
+		"<p style='margin:0 0 10px;color:#374151;font-size:12px;font-weight:700;text-transform:uppercase;"
+		"letter-spacing:.04em'>Pending workload</p>"
+		"<ul style='list-style:none;margin:0;padding:0'>%s</ul></div>" % "".join(rows)
+	)
 	return branded_email_html(
 		network,
-		heading="Your approval is waiting",
+		heading="Your approvals are waiting",
 		intro_html=(
 			"<p style='margin:0 0 6px'>Hello %s,</p>"
-			"<p style='margin:0'>A <strong>%s</strong> action is waiting for "
-			"<strong>%s</strong>. Sign in to CRM to review the quote and complete "
-			"your secure signature.</p>" % (name, role_label, facility)
+			"<p style='margin:0'>You have <strong>%d pending contract approval%s</strong> "
+			"in CRM. Sign in to review the quote and complete your secure signature.</p>%s"
+			% (name, count, plural, workload)
 		),
 		cta_label="Open pending approvals",
 		cta_url=action_url,
