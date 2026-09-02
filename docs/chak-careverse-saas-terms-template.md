@@ -18,6 +18,12 @@ administrator can review the rendered agreement and select it manually.
   It is generated from the server-side KEPH/Item Price result and includes the
   configured VAT calculation. No fixed Level 2–6 or “other levels” price table is
   embedded in the document.
+- Schedule B also includes a clearly separated **Optional services, hardware and
+  software** reference section. It covers implementation/training/support add-ons,
+  endpoint hardware and endpoint/office software, with reference rates shown as
+  exclusive of VAT. These items are explicitly marked as excluded unless selected
+  and itemised in the facility’s accepted quotation or signed order, so they do not
+  turn the individual contract into a generic catalogue.
 - The same context is used for the opt-in terms screen, contract generation and
   later contract/quotation PDF rendering, so the accepted facility pricing stays
   consistent.

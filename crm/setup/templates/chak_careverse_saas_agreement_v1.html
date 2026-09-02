@@ -27,6 +27,16 @@
   .cv-contract .summary td:last-child { text-align: right; white-space: nowrap; }
   .cv-contract .summary tr:nth-child(3) td, .cv-contract .summary tr:nth-child(6) td { background: #eef5fa; font-size: 12px; }
   .cv-contract .summary tr:nth-child(4) td { border-top: 2px solid #9fb6ca; }
+  .cv-contract .optional { border: 1px solid #d8e2ec; margin-top: 14px; page-break-inside: avoid; break-inside: avoid; }
+  .cv-contract .optional .price-heading { margin: 0; }
+  .cv-contract .optional-intro { padding: 8px 10px 0; color: #475569; }
+  .cv-contract .optional-table { width: 100%; border-collapse: collapse; margin: 0; font-size: 10.2px; }
+  .cv-contract .optional-table th, .cv-contract .optional-table td { border-bottom: 1px solid #d8e2ec; padding: 6px 8px; text-align: left; vertical-align: top; }
+  .cv-contract .optional-table th { background: #f4f7fa; color: #475569; font-size: 9px; letter-spacing: .04em; text-transform: uppercase; }
+  .cv-contract .optional-table td:first-child { width: 14%; color: #475569; font-weight: 700; }
+  .cv-contract .optional-table td:nth-child(2) { width: 29%; font-weight: 700; }
+  .cv-contract .optional-table td:last-child { width: 19%; text-align: right; white-space: nowrap; }
+  .cv-contract .optional-note { background: #f8fafc; color: #475569; padding: 8px 10px; margin: 0; font-size: 9.5px; }
   .cv-contract .page-break { page-break-before: always; break-before: page; height: 0; }
   .cv-contract .no-break { page-break-inside: avoid; break-inside: avoid; }
   .cv-contract .signature { width: 100%; border-collapse: separate; border-spacing: 12px 0; margin: 20px 0 0; page-break-inside: avoid; }
@@ -67,6 +77,26 @@
       <tr><td>Annual commitment (inclusive of VAT)</td><td><strong>KES {{ grand_total_annual_display }}</strong></td></tr>
     </table>
     <div class="callout"><strong>Commercial basis:</strong> The amounts above are drawn from the accepted quotation and the configured Taxes and Charges template. VAT is shown separately and added to the exclusive-of-VAT rates.</div>
+    <div class="optional">
+      <div class="price-heading">Optional services, hardware and software</div>
+      <p class="optional-intro">These offerings are available to the Customer but are not included in the facility subscription above unless they are expressly selected and itemised in the accepted quotation or another signed ordering document. Reference rates are exclusive of VAT and are charged only when ordered.</p>
+      <table class="optional-table">
+        <thead>
+          <tr><th>Category</th><th>Optional offering</th><th>Description / pricing basis</th><th>Reference rate (KES, excl. VAT)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Services</td><td>Implementation outside Nairobi Metropolis</td><td>Per day per implementor</td><td>14,500.00</td></tr>
+          <tr><td>Services</td><td>Refresher training — virtual</td><td>Per six-hour session</td><td>2,500.00</td></tr>
+          <tr><td>Services</td><td>On-site support engineer</td><td>Five days per week on site, per engineer per month</td><td>220,000.00</td></tr>
+          <tr><td>Services</td><td>Part-time support engineer</td><td>Two days per week on site, per engineer per month</td><td>100,000.00</td></tr>
+          <tr><td>Hardware</td><td>Endpoint workstation — Dell OptiPlex 7010 MT</td><td>Core workstation with monitor, mouse and keyboard</td><td>84,000.00</td></tr>
+          <tr><td>Hardware</td><td>Endpoint tablet</td><td>10.1-inch Android tablet with keyboard</td><td>38,888.89</td></tr>
+          <tr><td>Software</td><td>Endpoint security</td><td>Per user per year</td><td>8,100.00</td></tr>
+          <tr><td>Software</td><td>Office management suite</td><td>Per user per year</td><td>13,885.71</td></tr>
+        </tbody>
+      </table>
+      <p class="optional-note"><strong>Order confirmation:</strong> An optional item becomes part of this Agreement only when it appears in the facility’s accepted quotation or a signed order. The facility-specific subscription and negotiated KEPH pricing above remain the controlling commercial terms for this Agreement.</p>
+    </div>
   </div>
 
   <h2>1. Contract information</h2>
