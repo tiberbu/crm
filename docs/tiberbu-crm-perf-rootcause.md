@@ -140,6 +140,9 @@ session:
    (`registerSW.js` / PWA) cached in that browser, or a device on a slow link doing the
    cold 1.2 MB (gzipped) first paint + lazy chunk fetches. A stale service worker in
    particular can make an SPA appear to hang for tens of seconds.
+   The generated worker now keeps the PWA manifest but does not install Workbox's
+   default `index.html` navigation fallback: this deployment serves multiple Frappe
+   HTML shells, and `index.html` is not a precached navigation target.
 3. **An intermittent origin event not present during testing** — e.g. a gunicorn sync
    worker briefly tied up by a slow outbound `requests.get` (call-recording proxy,
    timeout 30 s) or a burst that momentarily exhausts the 9-worker pool. Low probability

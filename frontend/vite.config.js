@@ -13,6 +13,19 @@ export default defineConfig(async ({ mode }) => {
       vueJsx(),
       VitePWA({
         registerType: 'autoUpdate',
+        // Workbox intentionally skips the few multi-megabyte translation and
+        // route chunks from precaching. They are fetched normally on demand;
+        // do not fail the production build when Workbox reports that choice.
+        showMaximumFileSizeToCacheInBytesWarning: true,
+        // The CRM is served by Frappe's multi-entry shells (crm.html,
+        // finance-cockpit.html, opt-in.html, and sign-contract.html), not by a
+        // single static index.html. Workbox's default navigation fallback
+        // points at index.html, which is not precached in this deployment and
+        // raises `non-precached-url` on navigation. Keep the manifest/PWA
+        // metadata, but let Frappe serve each HTML entry normally.
+        workbox: {
+          navigateFallback: null,
+        },
         devOptions: {
           enabled: true,
         },
