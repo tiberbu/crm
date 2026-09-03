@@ -762,6 +762,22 @@ def _get_negotiated_price_list(name):
 	return price_list
 
 
+def _get_selling_price_list(name):
+	"""Return any selling Price List for catalogue read operations.
+
+	The catalogue can inspect Standard Selling and disabled historical lists, but
+	write operations continue to use ``_get_negotiated_price_list`` so Opt-In
+	pricing cannot accidentally be moved onto ERPNext's generic list.
+	"""
+	name = frappe.utils.cstr(name).strip()
+	if not name:
+		frappe.throw(_("A price list is required."))
+	price_list = frappe.get_doc("Price List", name)
+	if not frappe.utils.cint(price_list.selling):
+		frappe.throw(_("Select a selling price list."))
+	return price_list
+
+
 def _price_list_assignments():
 	"""Return effective price-list assignments for network facility memberships."""
 	membership_fields = ["parent", "network"]
@@ -859,6 +875,42 @@ def list_negotiated_price_lists():
 			"value": row.name,
 			"label": row.name,
 			"currency": row.currency,
+			"creation": row.creation,
+			"modified": row.modified,
+			"owner": row.owner,
+			"modified_by": row.modified_by,
+			"facility_count": len(assignments.get(row.name, {}).get("facilities", set())),
+			"network_count": len(assignments.get(row.name, {}).get("networks", set())),
+		}
+		for row in rows
+	]
+
+
+@frappe.whitelist()
+def list_selling_price_lists():
+	"""Return every selling Price List for the Item Catalogue selector.
+
+	Unlike network Opt-In configuration, catalogue users need to inspect prices
+	from Standard Selling and disabled historical lists as well. Those lists are
+	shown read-only in the UI; write endpoints still require an enabled,
+	non-Standard Selling list.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	rows = frappe.get_list(
+		"Price List",
+		filters=[["selling", "=", 1]],
+		fields=["name", "currency", "enabled", "creation", "modified", "owner", "modified_by"],
+		order_by="name asc",
+		limit_page_length=0,
+	)
+	assignments = _price_list_assignments()
+	return [
+		{
+			"value": row.name,
+			"label": row.name,
+			"currency": row.currency,
+			"enabled": bool(frappe.utils.cint(row.get("enabled"))),
 			"creation": row.creation,
 			"modified": row.modified,
 			"owner": row.owner,
@@ -1026,10 +1078,10 @@ def get_facility_sample_quote(facility: Any, network: Any = None, price_list: An
 
 @frappe.whitelist()
 def list_item_prices(price_list: Any):
-	"""Return all selling item prices configured on a negotiated price list."""
+	"""Return only selling Item Prices linked to the selected Price List."""
 	if not _is_admin():
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
-	price_list = _get_negotiated_price_list(price_list)
+	price_list = _get_selling_price_list(price_list)
 	return frappe.get_list(
 		"Item Price",
 		filters={"price_list": price_list.name, "selling": 1},
