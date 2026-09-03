@@ -801,15 +801,15 @@ usePageMeta(() => {
 const tabs = computed(() => {
   let tabOptions = [
     {
-      name: 'Activity',
-      label: __('Activity'),
-      icon: ActivityIcon,
-    },
-    {
       // Keep the route key stable so existing deep links and saved tab state continue to work.
       name: 'Quoting',
       label: __('Quote'),
       icon: AttachmentIcon,
+    },
+    {
+      name: 'Activity',
+      label: __('Activity'),
+      icon: ActivityIcon,
     },
     {
       name: 'Emails',

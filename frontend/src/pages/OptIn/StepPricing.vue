@@ -72,9 +72,7 @@
             <span class="block font-semibold">{{
               plan.label || `Year ${plan.year_number}`
             }}</span>
-            <span class="mt-0.5 block text-xs opacity-70">{{
-              plan.price_list
-            }}</span>
+            <span class="mt-0.5 block text-xs opacity-70">Contract schedule</span>
             <span class="mt-1 block text-xs font-semibold opacity-90">{{
               fmtKes(plan.grand_total_annual)
             }} / year incl. VAT</span>
@@ -196,7 +194,10 @@
             {{ fmtKes(activePlan.grand_total_annual) }}
           </p>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Annual incl. VAT · {{ activePlan.price_list || 'Configured price list' }}
+            Annual incl. VAT · {{
+              activePlan.label ||
+              `Year ${activePlan.year_number || 1} contract schedule`
+            }}
           </p>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             Each selected year has its own quotation. Optional services are

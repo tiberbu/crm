@@ -101,21 +101,21 @@
 
         <!-- The signer sees the commercial provenance next to the agreement,
              before authorising it. This is read-only and intentionally excludes
-             any internal identifiers beyond the human-readable price-list names. -->
+             internal source identifiers. -->
         <section
           v-if="priceListSummary.initial || priceListSummary.history?.length"
           class="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50"
-          aria-label="Price list history"
+          aria-label="Contract schedule history"
         >
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
-                Price list history
+                Contract schedule history
               </h2>
               <p class="mt-1 text-sm text-gray-700 dark:text-gray-200">
-                Initial: <strong>{{ priceListSummary.initial || '—' }}</strong>
+                Original: <strong>{{ priceListSummary.initial || '—' }}</strong>
                 <span class="mx-1 text-gray-400">→</span>
-                Negotiated:
+                Agreed:
                 <strong>{{ priceListSummary.negotiated || '—' }}</strong>
               </p>
             </div>

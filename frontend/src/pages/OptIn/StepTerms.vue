@@ -33,7 +33,7 @@
       </h2>
     </div>
     <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">
-      Please read the full Terms &amp; Conditions carefully before accepting.
+      Please read the full Terms &amp; Conditions carefully before continuing.
     </p>
 
     <!-- Loading -->
@@ -91,7 +91,7 @@
               : 'text-gray-400 dark:text-gray-600',
           ]"
         >
-          I have read and accept the Terms &amp; Conditions
+          {{ termsAcknowledgement }}
         </span>
       </label>
     </template>
@@ -117,7 +117,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useOptInStore } from './useOptInStore.js'
 
@@ -138,6 +138,12 @@ const termsLoaded = ref(false)
 const scrolledToBottom = ref(false)
 const accepted = ref(false)
 const scrollPanel = ref(null)
+
+const termsAcknowledgement = computed(() =>
+  store.signatoryMode === 'delegate'
+    ? 'I confirm the submitted information is accurate, I am authorised to nominate this signatory, and I have permission to provide their contact details. The nominated signatory will review and accept the agreement.'
+    : 'I confirm I am authorised to submit and sign this agreement for my organisation, and I accept these terms.',
+)
 
 // Reset is handled by onMounted — v-if in parent destroys and recreates this
 // component on every visit, so onMounted fires fresh each time. If this ever

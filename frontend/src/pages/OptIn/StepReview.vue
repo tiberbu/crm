@@ -74,11 +74,198 @@
       </div>
     </div>
 
-    <!-- Facility Witness section — the only section on this screen that asks for
-         input, so it wears the accent-bar + tint treatment (same shell as the
-         Pricing card) to lift it out of the read-only review cards around it.
-         Captured here so it flows straight onto the contract the CRM team
-         generates later (no chasing the facility for it). -->
+    <!-- Signatory choice. The fast self-signing route is the default, but the
+         delegated route stays visible so ICT/support colleagues do not have to
+         infer that they can nominate the authorised signatory. -->
+    <div
+      class="mb-4 flex overflow-hidden rounded-xl border border-gray-200 shadow-sm dark:border-gray-700"
+    >
+      <div
+        class="w-1.5 shrink-0"
+        style="background-color: var(--brand-primary)"
+      />
+      <div
+        class="flex-1 p-5"
+        style="
+          background-color: color-mix(
+            in srgb,
+            var(--brand-primary) 6%,
+            transparent
+          );
+        "
+      >
+        <div class="mb-4">
+          <h3
+            class="text-sm font-bold uppercase tracking-wider"
+            style="color: var(--brand-primary)"
+          >
+            Who will sign the agreement?
+          </h3>
+          <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+            Choose the person authorised to bind your organisation to this
+            agreement.
+          </p>
+        </div>
+
+        <div
+          class="grid gap-3 sm:grid-cols-2"
+          role="radiogroup"
+          aria-label="Who will sign the agreement"
+        >
+          <label
+            :class="[
+              'cursor-pointer rounded-xl border bg-white p-4 transition dark:bg-gray-800',
+              signatoryMode === 'self'
+                ? 'shadow-sm'
+                : 'border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
+            ]"
+            :style="
+              signatoryMode === 'self'
+                ? {
+                    borderColor: 'var(--brand-primary)',
+                    boxShadow:
+                      '0 0 0 1px color-mix(in srgb, var(--brand-primary) 25%, transparent)',
+                  }
+                : undefined
+            "
+          >
+            <span class="flex items-start gap-3">
+              <input
+                v-model="signatoryMode"
+                type="radio"
+                value="self"
+                class="mt-0.5 h-4 w-4 shrink-0 accent-[color:var(--brand-primary)]"
+              />
+              <span>
+                <span
+                  class="block text-sm font-semibold text-gray-900 dark:text-white"
+                >
+                  I am authorised to sign
+                </span>
+                <span
+                  class="mt-1 block text-xs leading-relaxed text-gray-500 dark:text-gray-400"
+                >
+                  Choose this if you can bind your organisation to this
+                  agreement.
+                </span>
+              </span>
+            </span>
+          </label>
+
+          <label
+            :class="[
+              'cursor-pointer rounded-xl border bg-white p-4 transition dark:bg-gray-800',
+              signatoryMode === 'delegate'
+                ? 'shadow-sm'
+                : 'border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
+            ]"
+            :style="
+              signatoryMode === 'delegate'
+                ? {
+                    borderColor: 'var(--brand-primary)',
+                    boxShadow:
+                      '0 0 0 1px color-mix(in srgb, var(--brand-primary) 25%, transparent)',
+                  }
+                : undefined
+            "
+          >
+            <span class="flex items-start gap-3">
+              <input
+                v-model="signatoryMode"
+                type="radio"
+                value="delegate"
+                class="mt-0.5 h-4 w-4 shrink-0 accent-[color:var(--brand-primary)]"
+              />
+              <span>
+                <span
+                  class="block text-sm font-semibold text-gray-900 dark:text-white"
+                >
+                  Someone else is authorised to sign
+                </span>
+                <span
+                  class="mt-1 block text-xs leading-relaxed text-gray-500 dark:text-gray-400"
+                >
+                  Choose this if you are completing the Opt-In for an authorised
+                  colleague.
+                </span>
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div
+          v-if="signatoryMode === 'delegate'"
+          class="mt-4 rounded-xl border border-gray-200 bg-white/70 p-4 dark:border-gray-700 dark:bg-gray-900/40"
+        >
+          <p class="text-sm font-semibold text-gray-900 dark:text-white">
+            Authorised signatory
+          </p>
+          <p
+            class="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400"
+          >
+            We will email this person the Opt-In summary and a secure link to
+            review and sign the agreement.
+          </p>
+          <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label
+                class="mb-1 block text-xs font-semibold text-gray-800 dark:text-gray-200"
+              >
+                Signatory name <span class="text-red-500">*</span>
+              </label>
+              <input
+                v-model="signatoryName"
+                type="text"
+                placeholder="Full legal name"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+                style="--tw-ring-color: var(--brand-primary)"
+              />
+            </div>
+            <div>
+              <label
+                class="mb-1 block text-xs font-semibold text-gray-800 dark:text-gray-200"
+              >
+                Signatory email <span class="text-red-500">*</span>
+              </label>
+              <input
+                v-model="signatoryEmail"
+                type="email"
+                placeholder="signatory@hospital.or.ke"
+                :class="[
+                  'w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500',
+                  signatoryEmailError
+                    ? 'border-red-400 dark:border-red-600'
+                    : 'border-gray-300 dark:border-gray-600',
+                ]"
+                style="--tw-ring-color: var(--brand-primary)"
+              />
+              <p v-if="signatoryEmailError" class="mt-1 text-xs text-red-500">
+                {{ signatoryEmailError }}
+              </p>
+            </div>
+            <div>
+              <label
+                class="mb-1 block text-xs font-semibold text-gray-800 dark:text-gray-200"
+              >
+                Signatory phone
+              </label>
+              <input
+                v-model="signatoryPhone"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="+254 7xx xxx xxx"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+                style="--tw-ring-color: var(--brand-primary)"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Facility Witness section — captured here so it flows straight onto the
+         contract the CRM team generates later (no chasing the facility for it). -->
     <div
       class="mb-4 flex overflow-hidden rounded-xl border border-gray-200 shadow-sm dark:border-gray-700"
     >
@@ -324,7 +511,7 @@
         Back
       </button>
       <button
-        :disabled="!witnessValid"
+        :disabled="!canContinue"
         class="rounded-xl px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         style="background-color: var(--brand-primary)"
         @click="emit('continue')"
@@ -347,6 +534,24 @@ const emit = defineEmits([
 ])
 
 const store = useOptInStore()
+
+const signatoryMode = computed({
+  get: () => store.signatoryMode,
+  set: (val) => store.setSignatoryMode(val),
+})
+
+const signatoryName = computed({
+  get: () => store.signatory.name,
+  set: (val) => store.setSignatory({ name: val }),
+})
+const signatoryEmail = computed({
+  get: () => store.signatory.email,
+  set: (val) => store.setSignatory({ email: val }),
+})
+const signatoryPhone = computed({
+  get: () => store.signatory.phone,
+  set: (val) => store.setSignatory({ phone: val }),
+})
 
 // Witness fields write straight through to the store so the value survives
 // back-nav and rides along in the submit payload (StepCommit).
@@ -373,11 +578,28 @@ const witnessEmailError = computed(() => {
   return validEmail(email) ? '' : 'Please enter a valid email address.'
 })
 
+const signatoryEmailError = computed(() => {
+  if (signatoryMode.value !== 'delegate') return ''
+  const email = (store.signatory.email || '').trim()
+  if (!email) return ''
+  return validEmail(email) ? '' : 'Please enter a valid email address.'
+})
+
 const witnessValid = computed(
   () =>
     (store.witness.name || '').trim() !== '' &&
     validEmail((store.witness.email || '').trim()),
 )
+
+const signatoryValid = computed(() => {
+  if (signatoryMode.value === 'self') return true
+  return (
+    (store.signatory.name || '').trim() !== '' &&
+    validEmail((store.signatory.email || '').trim())
+  )
+})
+
+const canContinue = computed(() => witnessValid.value && signatoryValid.value)
 
 function kephBadgeClass(keph) {
   const level = (keph || '')

@@ -21,7 +21,7 @@
     </div>
 
     <h1 class="mb-2 text-2xl font-extrabold text-gray-900 dark:text-white">
-      You're in!
+      Opt-In submitted
     </h1>
 
     <!-- Reference number -->
@@ -37,8 +37,8 @@
     </div>
 
     <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
-      Your submission is complete. We will email the next contracting step when
-      it is ready. Keep this reference number for your records.
+      Your submission is complete. {{ signingNextStep }} Keep this reference
+      number for your records.
     </p>
 
     <!-- Facility recap -->
@@ -89,13 +89,16 @@
       "
     >
       <p class="text-xs text-gray-500 dark:text-gray-400">
-        Monthly commitment (incl. VAT)
+        Total contract commitment (incl. VAT)
       </p>
       <p
         class="mt-1 text-2xl font-black"
         :style="{ color: 'var(--brand-primary)' }"
       >
-        {{ fmtKes(store.pricing.grand_total_monthly) }}
+        {{ fmtKes(totalCommitment) }}
+      </p>
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        Year 1: {{ fmtKes(yearOneCommitment) }}
       </p>
     </div>
 
@@ -103,8 +106,8 @@
     <div class="text-sm text-gray-400 dark:text-gray-500">
       <p>What happens next:</p>
       <ol class="mt-2 list-decimal space-y-1 pl-5 text-left">
-        <li>Your registration is reviewed and prepared for contracting</li>
-        <li>You receive your contract to sign digitally</li>
+        <li>Your Opt-In has been recorded</li>
+        <li>{{ signingNextStep }}</li>
         <li>Your CareverseHIMS platform is provisioned</li>
       </ol>
     </div>
@@ -112,9 +115,22 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useOptInStore } from './useOptInStore.js'
 
 const store = useOptInStore()
+
+const totalCommitment = computed(
+  () =>
+    store.pricing?.commitment_annual || store.pricing?.grand_total_annual || 0,
+)
+const yearOneCommitment = computed(() => store.pricing?.grand_total_annual || 0)
+const signingNextStep = computed(() => {
+  if (store.signatoryMode !== 'delegate') {
+    return 'Check your email for your secure agreement signing invitation.'
+  }
+  return `${store.signatory?.name || 'Your nominated signatory'} has been sent the Opt-In summary and a secure signing invitation.`
+})
 
 function kephBadgeClass(keph) {
   const level = (keph || '')

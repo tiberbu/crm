@@ -282,7 +282,14 @@ router.beforeEach(async (to, from, next) => {
     next({ name: 'Invalid Page' })
   } else if (['Deal', 'Lead'].includes(to.name) && !to.hash) {
     let storageKey = to.name === 'Deal' ? 'lastDealTab' : 'lastLeadTab'
-    const activeTab = localStorage.getItem(storageKey) || 'activity'
+    // A CRM approver's primary decision surface is the quote. Do not make a
+    // Sales/System Manager visit Activity first simply because it was their
+    // last tab (or because they have no tab history). An explicit hash still
+    // wins, so notification and activity deep links remain intact.
+    const activeTab =
+      to.name === 'Deal' && isManager()
+        ? 'quoting'
+        : localStorage.getItem(storageKey) || 'activity'
     const hash = '#' + activeTab
     next({ ...to, hash })
   } else if (

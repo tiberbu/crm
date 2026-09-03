@@ -37,23 +37,27 @@
           <p class="text-sm text-gray-500 dark:text-gray-400">
             {{ facilityList }}
           </p>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Agreement signer: {{ signatoryLabel }}
+          </p>
         </div>
       </div>
 
       <div class="rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-900">
         <div class="flex items-baseline justify-between">
           <span class="text-sm text-gray-500 dark:text-gray-400"
-            >Monthly commitment (incl. VAT)</span
+            >Total contract commitment (incl. VAT)</span
           >
           <span
             class="text-xl font-black"
             :style="{ color: 'var(--brand-primary)' }"
           >
-            {{ fmtKes(grandTotalMonthly) }}
+            {{ fmtKes(totalCommitment) }}
           </span>
         </div>
         <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-          Rates are locked as agreed at sign-up.
+          Year 1: {{ fmtKes(yearOneCommitment) }} · Rates are locked at
+          submission.
         </p>
       </div>
     </div>
@@ -123,9 +127,15 @@ const facilityCount = computed(() => (store.selectedFacilities || []).length)
 const facilityList = computed(() =>
   (store.selectedFacilities || []).map((f) => f.facility_name).join(', '),
 )
-const grandTotalMonthly = computed(
-  () => store.pricing?.grand_total_monthly || 0,
+const totalCommitment = computed(
+  () =>
+    store.pricing?.commitment_annual || store.pricing?.grand_total_annual || 0,
 )
+const yearOneCommitment = computed(() => store.pricing?.grand_total_annual || 0)
+const signatoryLabel = computed(() => {
+  if (store.signatoryMode !== 'delegate') return 'You'
+  return store.signatory?.name || 'Nominated signatory'
+})
 
 function fmtKes(v) {
   const n = parseFloat(v || 0)
@@ -162,6 +172,8 @@ async function handleCommit(committed) {
 
     const payload = {
       contact: store.contact,
+      signatory_mode: store.signatoryMode,
+      signatory: store.signatory,
       witness: store.witness,
       facilities: store.selectedFacilities,
       pricing: store.pricing?.facilities || [],
