@@ -141,12 +141,12 @@
               :key="priceList.value"
               :value="priceList.value"
             >
-              {{ priceList.label }}
+              {{ priceList.label }}{{ priceList.enabled === false ? __(' (Disabled)') : '' }}
             </option>
           </select>
         </label>
         <Button
-          v-if="selectedPriceList"
+          v-if="selectedPriceList && canEditSelectedPriceList"
           variant="subtle"
           size="sm"
           @click="openDuplicateForm"
@@ -284,23 +284,23 @@
       </div>
 
       <div
-        v-if="selectedPriceList"
+        v-if="selectedPriceList && canEditSelectedPriceList"
         class="mb-4 rounded-lg border border-outline-gray-2 p-4"
       >
         <div class="mb-3">
           <h2 class="text-sm font-semibold text-ink-gray-9">
-            {{ __('Quick price setup') }}
+            {{ __('Add prices to this list') }}
           </h2>
           <p class="mt-1 text-xs text-ink-gray-5">
             {{
               __(
-                'Set prices for several items at once. Item and Item Price records are handled automatically.',
+                'Only items without a price in the selected list are shown. Item and Item Price records are handled automatically.',
               )
             }}
           </p>
         </div>
         <div
-          v-if="sellableItems.length"
+          v-if="unpricedSellableItems.length"
           class="mb-4 overflow-x-auto rounded border border-outline-gray-2"
         >
           <table class="w-full text-sm">
@@ -318,7 +318,7 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-outline-elevation-2">
-              <tr v-for="item in sellableItems" :key="item.value">
+              <tr v-for="item in unpricedSellableItems" :key="item.value">
                 <td class="px-3 py-2">
                   <div class="font-medium text-ink-gray-9">
                     {{ item.item_name }}
@@ -345,7 +345,7 @@
           </table>
         </div>
         <div v-else class="mb-4 text-xs text-ink-gray-5">
-          {{ __('Add a catalogue item to configure a price.') }}
+          {{ __('All sellable items already have a price in this list.') }}
         </div>
         <div class="flex justify-end">
           <Button
@@ -409,6 +409,17 @@
       </div>
 
       <div
+        v-else-if="selectedPriceList && !canEditSelectedPriceList"
+        class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/10 dark:text-amber-200"
+      >
+        {{
+          isStandardSellingPriceList(selectedPriceList)
+            ? __('Standard Selling is view-only here. Use an Opt-In selling price list to change subscription pricing.')
+            : __('This price list is disabled and can only be viewed.')
+        }}
+      </div>
+
+      <div
         v-if="pricesResource.loading"
         class="py-12 text-center text-sm text-ink-gray-5"
       >
@@ -424,6 +435,19 @@
         v-else-if="itemPrices.length"
         class="overflow-x-auto rounded-lg border border-outline-gray-2"
       >
+        <div
+          class="border-b border-outline-gray-2 bg-surface-gray-1 px-4 py-3 dark:bg-surface-gray-2"
+        >
+          <h2 class="text-sm font-semibold text-ink-gray-9">
+            {{ __('Configured item prices') }}
+            <span class="ml-1 text-xs font-normal text-ink-gray-5"
+              >({{ itemPrices.length }})</span
+            >
+          </h2>
+          <p class="mt-1 text-xs text-ink-gray-5">
+            {{ __('Only Item Price records linked to the selected Price List are shown.') }}
+          </p>
+        </div>
         <p
           class="border-b border-outline-gray-2 bg-surface-gray-1 px-4 py-2 text-xs text-ink-gray-5 dark:bg-surface-gray-2"
         >
@@ -469,6 +493,7 @@
               <td class="px-4 py-3 text-right">
                 <input
                   v-model.number="itemPrice.price_list_rate"
+                  :disabled="!canEditSelectedPriceList"
                   min="0"
                   step="0.01"
                   type="number"
@@ -478,6 +503,7 @@
               <td class="px-4 py-3">
                 <select
                   v-model="itemPriceTargets[itemPrice.name]"
+                  :disabled="!canEditSelectedPriceList"
                   class="min-w-52 rounded border border-outline-gray-2 bg-surface-white px-2 py-1 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
                   :aria-label="
                     __('Destination for {0}', [
@@ -502,6 +528,7 @@
                 <Button
                   size="sm"
                   variant="subtle"
+                  :disabled="!canEditSelectedPriceList"
                   :loading="savingItem === itemPrice.name"
                   @click="saveItemPrice(itemPrice)"
                   >{{ itemPriceActionLabel(itemPrice) }}</Button
@@ -616,20 +643,37 @@ const priceListFacilitiesPageSize = 50
 let priceListFacilitiesRequestId = 0
 
 const priceListsResource = createResource({
-  url: 'crm.api.optin_admin.list_negotiated_price_lists',
+  url: 'crm.api.optin_admin.list_selling_price_lists',
   auto: true,
 })
 const priceLists = computed(() => priceListsResource.data ?? [])
-const destinationPriceLists = computed(() =>
-  priceLists.value.filter(
-    (priceList) => priceList.value !== selectedPriceList.value,
-  ),
-)
 const selectedPriceListMeta = computed(
   () =>
     priceLists.value.find(
       (priceList) => priceList.value === selectedPriceList.value,
     ) ?? null,
+)
+
+function isStandardSellingPriceList(name) {
+  return String(name || '').trim().toLowerCase() === 'standard selling'
+}
+
+const canEditSelectedPriceList = computed(() => {
+  const priceList = selectedPriceListMeta.value
+  return Boolean(
+    priceList &&
+      priceList.enabled !== false &&
+      !isStandardSellingPriceList(priceList.value),
+  )
+})
+
+const destinationPriceLists = computed(() =>
+  priceLists.value.filter(
+    (priceList) =>
+      priceList.value !== selectedPriceList.value &&
+      priceList.enabled !== false &&
+      !isStandardSellingPriceList(priceList.value),
+  ),
 )
 const sellableItemsResource = createResource({
   url: 'crm.api.optin_admin.list_sellable_items',
@@ -669,8 +713,17 @@ const duplicateListResource = createResource({
   url: 'crm.api.optin_admin.duplicate_negotiated_price_list',
 })
 
+const configuredItemCodes = computed(
+  () => new Set(itemPrices.value.map((item) => item.item_code)),
+)
+const unpricedSellableItems = computed(() =>
+  sellableItems.value.filter(
+    (item) => !configuredItemCodes.value.has(item.value),
+  ),
+)
+
 const bulkPriceRows = computed(() =>
-  sellableItems.value
+  unpricedSellableItems.value
     .map((item) => ({
       item_code: item.value,
       rate: bulkRates.value[item.value],
@@ -873,7 +926,7 @@ async function createCatalogueItem() {
 }
 
 function openDuplicateForm() {
-  if (!selectedPriceList.value) return
+  if (!canEditSelectedPriceList.value) return
   duplicateListName.value = `${selectedPriceList.value} Copy`
   showNewList.value = false
   showDuplicateList.value = true
@@ -907,6 +960,10 @@ async function duplicatePriceList() {
 }
 
 async function saveItemPrice(itemPrice = null) {
+  if (!canEditSelectedPriceList.value) {
+    toast.error(__('This price list is view-only.'))
+    return
+  }
   const itemCode = itemPrice?.item_code ?? newItemCode.value.trim()
   const rate = itemPrice?.price_list_rate ?? newRate.value
   if (!itemCode || rate === null || rate === '') return
@@ -969,7 +1026,7 @@ function itemPriceActionLabel(itemPrice) {
 }
 
 async function saveAllItemPrices() {
-  if (!selectedPriceList.value || !bulkPriceRows.value.length) return
+  if (!canEditSelectedPriceList.value || !bulkPriceRows.value.length) return
   savingAllItems.value = true
   try {
     const result = await bulkSaveResource.submit({
