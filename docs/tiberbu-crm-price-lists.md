@@ -7,9 +7,11 @@ pricing. It hides the ERPNext `Item` → `Item Price` → `Price List` relations
 - **New Price List** creates an enabled KES selling list. Existing lists can be
   duplicated, including their current prices. Names do not need a `Negotiated`
   prefix; the generic ERPNext `Standard Selling` list is excluded.
-- **Quick price setup** configures several item prices for the selected list in
-  one save. It shows only sellable items that do not already have a price in
-  that list. Prices are entered as monthly KES amounts exclusive of VAT.
+- **Add missing item prices** is a secondary, collapsed setup tool for adding
+  several item prices to the selected list in one save. It shows only sellable
+  items that do not already have a price in that list. The configured Item
+  Prices for the selected list remain the primary view. Prices are entered as
+  monthly KES amounts exclusive of VAT.
 
 The catalogue selector includes every selling Price List, including
 `Standard Selling` and disabled historical lists, so managers can inspect the

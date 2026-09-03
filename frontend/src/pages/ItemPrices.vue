@@ -141,7 +141,8 @@
               :key="priceList.value"
               :value="priceList.value"
             >
-              {{ priceList.label }}{{ priceList.enabled === false ? __(' (Disabled)') : '' }}
+              {{ priceList.label
+              }}{{ priceList.enabled === false ? __(' (Disabled)') : '' }}
             </option>
           </select>
         </label>
@@ -283,130 +284,139 @@
         </div>
       </div>
 
-      <div
+      <details
         v-if="selectedPriceList && canEditSelectedPriceList"
-        class="mb-4 rounded-lg border border-outline-gray-2 p-4"
+        class="group mb-4 rounded-lg border border-outline-gray-2"
       >
-        <div class="mb-3">
-          <h2 class="text-sm font-semibold text-ink-gray-9">
-            {{ __('Add prices to this list') }}
-          </h2>
-          <p class="mt-1 text-xs text-ink-gray-5">
+        <summary
+          class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-ink-gray-9 [&::-webkit-details-marker]:hidden"
+        >
+          <span>{{ __('Add missing item prices') }}</span>
+          <span
+            class="text-xs font-normal text-ink-gray-5 transition-transform group-open:rotate-180"
+            aria-hidden="true"
+            >⌄</span
+          >
+        </summary>
+        <div class="border-t border-outline-gray-2 p-4">
+          <p class="mb-3 text-xs text-ink-gray-5">
             {{
               __(
-                'Only items without a price in the selected list are shown. Item and Item Price records are handled automatically.',
+                'Only sellable items without an Item Price in the selected Price List are shown here.',
               )
             }}
           </p>
-        </div>
-        <div
-          v-if="unpricedSellableItems.length"
-          class="mb-4 overflow-x-auto rounded border border-outline-gray-2"
-        >
-          <table class="w-full text-sm">
-            <thead
-              class="bg-surface-gray-1 text-xs text-ink-gray-5 dark:bg-surface-gray-2"
-            >
-              <tr>
-                <th class="px-3 py-2 text-left font-medium">
-                  {{ __('Item') }}
-                </th>
-                <th class="px-3 py-2 text-left font-medium">{{ __('UOM') }}</th>
-                <th class="px-3 py-2 text-right font-medium">
-                  {{ __('Monthly Price (KES, excl. VAT)') }}
-                </th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-outline-elevation-2">
-              <tr v-for="item in unpricedSellableItems" :key="item.value">
-                <td class="px-3 py-2">
-                  <div class="font-medium text-ink-gray-9">
-                    {{ item.item_name }}
-                  </div>
-                  <div class="font-mono text-xs text-ink-gray-5">
-                    {{ item.value }}
-                  </div>
-                </td>
-                <td class="px-3 py-2 text-ink-gray-6">
-                  {{ item.stock_uom || 'Nos' }}
-                </td>
-                <td class="px-3 py-2 text-right">
-                  <input
-                    v-model.number="bulkRates[item.value]"
-                    min="0"
-                    step="0.01"
-                    type="number"
-                    class="w-40 rounded border border-outline-gray-2 bg-surface-white px-2 py-1 text-right text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-                    :placeholder="__('Enter price')"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-else class="mb-4 text-xs text-ink-gray-5">
-          {{ __('All sellable items already have a price in this list.') }}
-        </div>
-        <div class="flex justify-end">
-          <Button
-            variant="solid"
-            size="sm"
-            :disabled="!bulkPriceRows.length"
-            :loading="savingAllItems"
-            @click="saveAllItemPrices"
+          <div
+            v-if="unpricedSellableItems.length"
+            class="mb-4 overflow-x-auto rounded border border-outline-gray-2"
           >
-            {{ __('Save all prices') }}
-          </Button>
-        </div>
-
-        <div class="my-4 border-t border-outline-gray-2" />
-        <div
-          class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
-        >
-          {{ __('Add one item') }}
-        </div>
-        <div class="flex flex-wrap items-end gap-3">
-          <label
-            class="flex min-w-56 flex-1 flex-col gap-1 text-xs font-medium text-ink-gray-6"
-          >
-            {{ __('Item Code') }}
-            <input
-              v-model="newItemCode"
-              list="sellable-items"
-              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-              :placeholder="__('Search or enter an item code')"
-            />
-            <datalist id="sellable-items">
-              <option
-                v-for="item in sellableItems"
-                :key="item.value"
-                :value="item.value"
+            <table class="w-full text-sm">
+              <thead
+                class="bg-surface-gray-1 text-xs text-ink-gray-5 dark:bg-surface-gray-2"
               >
-                {{ item.item_name }}
-              </option>
-            </datalist>
-          </label>
-          <label
-            class="flex w-40 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+                <tr>
+                  <th class="px-3 py-2 text-left font-medium">
+                    {{ __('Item') }}
+                  </th>
+                  <th class="px-3 py-2 text-left font-medium">
+                    {{ __('UOM') }}
+                  </th>
+                  <th class="px-3 py-2 text-right font-medium">
+                    {{ __('Monthly Price (KES, excl. VAT)') }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-outline-elevation-2">
+                <tr v-for="item in unpricedSellableItems" :key="item.value">
+                  <td class="px-3 py-2">
+                    <div class="font-medium text-ink-gray-9">
+                      {{ item.item_name }}
+                    </div>
+                    <div class="font-mono text-xs text-ink-gray-5">
+                      {{ item.value }}
+                    </div>
+                  </td>
+                  <td class="px-3 py-2 text-ink-gray-6">
+                    {{ item.stock_uom || 'Nos' }}
+                  </td>
+                  <td class="px-3 py-2 text-right">
+                    <input
+                      v-model.number="bulkRates[item.value]"
+                      min="0"
+                      step="0.01"
+                      type="number"
+                      class="w-40 rounded border border-outline-gray-2 bg-surface-white px-2 py-1 text-right text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+                      :placeholder="__('Enter price')"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="mb-4 text-xs text-ink-gray-5">
+            {{ __('All sellable items already have a price in this list.') }}
+          </div>
+          <div class="flex justify-end">
+            <Button
+              variant="solid"
+              size="sm"
+              :disabled="!bulkPriceRows.length"
+              :loading="savingAllItems"
+              @click="saveAllItemPrices"
+            >
+              {{ __('Save all prices') }}
+            </Button>
+          </div>
+
+          <div class="my-4 border-t border-outline-gray-2" />
+          <div
+            class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
           >
-            {{ __('Monthly Price (KES)') }}
-            <input
-              v-model.number="newRate"
-              min="0"
-              step="0.01"
-              type="number"
-              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            />
-          </label>
-          <Button
-            variant="solid"
-            size="sm"
-            :loading="savingItem"
-            @click="saveItemPrice"
-            >{{ __('Save Item Price') }}</Button
-          >
+            {{ __('Add one item') }}
+          </div>
+          <div class="flex flex-wrap items-end gap-3">
+            <label
+              class="flex min-w-56 flex-1 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+            >
+              {{ __('Item Code') }}
+              <input
+                v-model="newItemCode"
+                list="sellable-items"
+                class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+                :placeholder="__('Search or enter an item code')"
+              />
+              <datalist id="sellable-items">
+                <option
+                  v-for="item in sellableItems"
+                  :key="item.value"
+                  :value="item.value"
+                >
+                  {{ item.item_name }}
+                </option>
+              </datalist>
+            </label>
+            <label
+              class="flex w-40 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+            >
+              {{ __('Monthly Price (KES)') }}
+              <input
+                v-model.number="newRate"
+                min="0"
+                step="0.01"
+                type="number"
+                class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+              />
+            </label>
+            <Button
+              variant="solid"
+              size="sm"
+              :loading="savingItem"
+              @click="saveItemPrice"
+              >{{ __('Save Item Price') }}</Button
+            >
+          </div>
         </div>
-      </div>
+      </details>
 
       <div
         v-else-if="selectedPriceList && !canEditSelectedPriceList"
@@ -414,7 +424,9 @@
       >
         {{
           isStandardSellingPriceList(selectedPriceList)
-            ? __('Standard Selling is view-only here. Use an Opt-In selling price list to change subscription pricing.')
+            ? __(
+                'Standard Selling is view-only here. Use an Opt-In selling price list to change subscription pricing.',
+              )
             : __('This price list is disabled and can only be viewed.')
         }}
       </div>
@@ -445,7 +457,11 @@
             >
           </h2>
           <p class="mt-1 text-xs text-ink-gray-5">
-            {{ __('Only Item Price records linked to the selected Price List are shown.') }}
+            {{
+              __(
+                'Only Item Price records linked to the selected Price List are shown.',
+              )
+            }}
           </p>
         </div>
         <p
@@ -655,15 +671,19 @@ const selectedPriceListMeta = computed(
 )
 
 function isStandardSellingPriceList(name) {
-  return String(name || '').trim().toLowerCase() === 'standard selling'
+  return (
+    String(name || '')
+      .trim()
+      .toLowerCase() === 'standard selling'
+  )
 }
 
 const canEditSelectedPriceList = computed(() => {
   const priceList = selectedPriceListMeta.value
   return Boolean(
     priceList &&
-      priceList.enabled !== false &&
-      !isStandardSellingPriceList(priceList.value),
+    priceList.enabled !== false &&
+    !isStandardSellingPriceList(priceList.value),
   )
 })
 
@@ -791,16 +811,16 @@ async function loadPriceListFacilities(append = false) {
       value !== selectedPriceList.value
     )
       return
-    const rows = Array.isArray(response) ? response : response?.rows ?? []
+    const rows = Array.isArray(response) ? response : (response?.rows ?? [])
     priceListFacilities.value = append
       ? [...priceListFacilities.value, ...rows]
       : rows
     priceListFacilitiesTotal.value = Array.isArray(response)
       ? rows.length
-      : response?.total ?? rows.length
+      : (response?.total ?? rows.length)
     priceListFacilitiesPage.value = Array.isArray(response)
       ? 1
-      : response?.page ?? page
+      : (response?.page ?? page)
   } catch (error) {
     if (requestId !== priceListFacilitiesRequestId) return
     toast.error(
@@ -970,7 +990,7 @@ async function saveItemPrice(itemPrice = null) {
   savingItem.value = itemPrice?.name ?? 'new'
   try {
     const destination = itemPrice
-      ? itemPriceTargets.value[itemPrice.name] ?? selectedPriceList.value
+      ? (itemPriceTargets.value[itemPrice.name] ?? selectedPriceList.value)
       : selectedPriceList.value
     if (itemPrice && destination !== selectedPriceList.value) {
       if (
