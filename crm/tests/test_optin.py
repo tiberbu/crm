@@ -1264,6 +1264,10 @@ class TestOptInContractAutomation(UnitTestCase):
 		with (
 			patch("crm.api.contracts._is_internal_crm_signatory", return_value=True),
 			patch("crm.api.contracts._contract_email_subject_label", return_value="Test Hospital"),
+			patch(
+				"crm.api.contracts._generate_reminder_reference",
+				return_value="RMD-20260903120000-ABC123",
+			),
 			patch("crm.api.contracts.frappe.sendmail") as sendmail,
 			patch("crm.api.contracts.frappe.db.has_column", return_value=True),
 			patch("crm.api.contracts.frappe.db.set_value") as set_value,
@@ -1274,7 +1278,8 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertTrue(result)
 		sendmail.assert_called_once()
 		self.assertEqual(
-			sendmail.call_args.kwargs["subject"], "[Action needed] Pending contract approvals (1)"
+			sendmail.call_args.kwargs["subject"],
+			"[Action needed] Pending contract approvals (1) · Reminder RMD-20260903120000-ABC123",
 		)
 		self.assertTrue(sendmail.call_args.kwargs["now"])
 		self.assertIn("Open pending approvals", sendmail.call_args.kwargs["message"])
@@ -1294,6 +1299,10 @@ class TestOptInContractAutomation(UnitTestCase):
 		with (
 			patch("crm.api.contracts._is_internal_crm_signatory", return_value=True),
 			patch("crm.api.contracts._contract_email_subject_label", return_value="Nairobi Area Branch Hospital"),
+			patch(
+				"crm.api.contracts._generate_reminder_reference",
+				return_value="RMD-20260903120000-ABC123",
+			),
 			patch("crm.api.contracts.frappe.utils.get_url", return_value="https://crm.example"),
 			patch("crm.api.contracts.frappe.sendmail") as sendmail,
 			patch("crm.api.contracts.frappe.db.has_column", return_value=False),
@@ -1311,6 +1320,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertIn("CareverseHIMS", message)
 		self.assertNotIn("National Medical Facilities of Kenya", message)
 		self.assertNotIn("Nairobi Area Branch Hospital", sendmail.call_args.kwargs["subject"])
+		self.assertIn("Reminder RMD-20260903120000-ABC123", sendmail.call_args.kwargs["subject"])
 
 	def test_crm_app_url_does_not_duplicate_existing_mount(self):
 		with patch("crm.api.contracts.frappe.utils.get_url", return_value="https://crm.example/crm"):
@@ -1343,6 +1353,10 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._is_internal_crm_signatory", return_value=True),
+			patch(
+				"crm.api.contracts._generate_reminder_reference",
+				return_value="RMD-20260903120000-ABC123",
+			),
 			patch("crm.api.contracts.frappe.sendmail") as sendmail,
 			patch("crm.api.contracts.frappe.db.has_column", return_value=True),
 			patch("crm.api.contracts.frappe.db.set_value") as set_value,
@@ -1357,7 +1371,8 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertTrue(result)
 		sendmail.assert_called_once()
 		self.assertEqual(
-			sendmail.call_args.kwargs["subject"], "[Action needed] Pending contract approvals (2)"
+			sendmail.call_args.kwargs["subject"],
+			"[Action needed] Pending contract approvals (2) · Reminder RMD-20260903120000-ABC123",
 		)
 		self.assertNotIn("Aga Khan Hospital", sendmail.call_args.kwargs["subject"])
 		self.assertIn("Aga Khan Hospital", sendmail.call_args.kwargs["message"])
@@ -1366,6 +1381,9 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertTrue(sendmail.call_args.kwargs["now"])
 		self.assertEqual(set_value.call_count, 2)
 		self.assertEqual(log_event.call_count, 2)
+		self.assertTrue(
+			all("RMD-20260903120000-ABC123" in call.args[1] for call in log_event.call_args_list)
+		)
 
 	def test_internal_reminder_scheduler_groups_same_user_and_skips_external_rows(self):
 		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed")

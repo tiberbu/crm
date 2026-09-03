@@ -86,6 +86,19 @@ def _generate_invitation_email_reference():
 	return frappe.generate_hash(length=12).upper()
 
 
+def _generate_reminder_reference():
+	"""Return a fresh, human-readable identifier for one reminder digest.
+
+	The reference is included in the subject so every scheduled digest starts a
+	new inbox thread instead of being grouped with an earlier reminder. It is
+	not an authentication token and is safe to quote in Deal activity.
+	"""
+	return "RMD-%s-%s" % (
+		frappe.utils.now_datetime().strftime("%Y%m%d%H%M%S"),
+		frappe.generate_hash(length=6).upper(),
+	)
+
+
 def _facility_name_for_contract(contract_doc):
 	"""Return a concise facility label for a contract email subject.
 
@@ -1193,9 +1206,15 @@ def _send_internal_signatory_reminder(contract, signatory_row, network=None, pen
 	action_url = _crm_app_url(_PENDING_ACTION_ROUTE)
 	first = valid_items[0]
 	name = frappe.utils.cstr(first.get("signatory_name") or email).strip()
+	reminder_reference = _generate_reminder_reference()
 	# Keep the subject independent of any one facility. A single message can
 	# contain work from several networks, so the count is the useful inbox cue.
-	subject = "[Action needed] Pending contract approvals (%d)" % len(valid_items)
+	# The unique reference is deliberate: mail clients use the subject when
+	# deciding whether to collapse a reminder into an existing conversation.
+	subject = "[Action needed] Pending contract approvals (%d) · Reminder %s" % (
+		len(valid_items),
+		reminder_reference,
+	)
 	message_items = [
 		{
 			"facility_label": item.get("facility_label"),
@@ -1260,8 +1279,8 @@ def _send_internal_signatory_reminder(contract, signatory_row, network=None, pen
 		).strip()
 		log_deal_event(
 			item.get("deal") or getattr(item_contract, "deal", None),
-			"Two-hour CRM action reminder sent to %s (%s) for contract %s"
-			% (item_name, item_role, item_contract_name),
+			"Two-hour CRM action reminder %s sent to %s (%s) for contract %s"
+			% (reminder_reference, item_name, item_role, item_contract_name),
 		)
 	return True
 
