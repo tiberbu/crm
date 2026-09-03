@@ -113,28 +113,28 @@
         </li>
       </ol>
 
-      <!-- Pricing provenance stays visible while the contract is reviewed and
-           signed. It is read-only; quote changes remain governed by the quote
-           editor's facility-signature guard. -->
+      <!-- Contract-schedule provenance stays visible while the contract is
+           reviewed and signed. It is read-only; quote changes remain governed
+           by the quote editor's facility-signature guard. -->
       <section
         v-if="priceListSnapshot.initial || priceListSnapshot.history.length"
         class="mt-6 mb-8 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
-        aria-label="Price list history"
+        aria-label="Contract schedule history"
       >
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p
               class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
             >
-              {{ __('Price list history') }}
+              {{ __('Contract schedule history') }}
             </p>
             <p class="mt-1 text-sm text-ink-gray-7">
-              {{ __('Initial:') }}
+              {{ __('Original:') }}
               <span class="font-semibold text-ink-gray-9">{{
                 priceListSnapshot.initial || '—'
               }}</span>
               <span class="mx-1 text-ink-gray-4">→</span>
-              {{ __('Negotiated:') }}
+              {{ __('Agreed:') }}
               <span class="font-semibold text-ink-gray-9">{{
                 priceListSnapshot.negotiated || '—'
               }}</span>

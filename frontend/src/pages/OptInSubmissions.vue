@@ -216,6 +216,19 @@
             </td>
             <td class="px-4 py-3">
               <div class="flex flex-col items-start gap-1">
+                <p
+                  v-if="row.facility_signatory_name"
+                  class="text-xs font-medium text-ink-gray-8"
+                >
+                  {{ row.facility_signatory_name }}
+                  <span class="font-normal text-ink-gray-5">
+                    · {{ signatoryModeLabel(row) }}
+                  </span>
+                </p>
+                <p class="text-xs text-ink-gray-5">
+                  {{ __('Submitted by') }}:
+                  {{ row.submitter_name || row.submitter_email || '—' }}
+                </p>
                 <div class="flex items-center gap-1.5">
                   <span class="text-xs text-ink-gray-5">{{
                     __('Signatory')
@@ -509,6 +522,12 @@ function noSignatoryLabel(row) {
   return row.contract ? __('Not configured') : __('Not generated')
 }
 
+function signatoryModeLabel(row) {
+  return row.signatory_mode === 'delegate'
+    ? __('Nominated signatory')
+    : __('Submitter signs')
+}
+
 const retryResource = createResource({ url: 'crm.api.optin.retry_submission' })
 
 async function retry(row) {
@@ -552,6 +571,7 @@ function statusPill(status) {
 
 function emailStatusLabel(status) {
   const map = {
+    'Included in signing package': __('Included in signing package'),
     'Not queued': __('Not queued'),
     'Not tracked': __('Not tracked'),
     'Not Sent': __('Queued'),
@@ -565,6 +585,9 @@ function emailStatusLabel(status) {
 
 function emailStatusHint(status) {
   const map = {
+    'Included in signing package': __(
+      'The submitter and signatory are the same person; the Opt-In summary is included in the signing package.',
+    ),
     'Not queued': __('No email was queued.'),
     'Not tracked': __(
       'This existing contract was created before email delivery tracking was available.',
@@ -585,6 +608,7 @@ function emailStatusHint(status) {
 function emailStatusPill(status) {
   const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
   const map = {
+    'Included in signing package': `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`,
     'Not queued': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
     'Not tracked': `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`,
     'Not Sent': `${base} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400`,

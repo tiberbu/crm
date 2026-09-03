@@ -81,7 +81,7 @@
             </p>
             <p class="mt-2 text-sm text-ink-gray-6">
               {{
-                __('Price list: {0}', [
+                __('Contract schedule: {0}', [
                   networkDoc?.price_list_override || __('Opt-In default'),
                 ])
               }}
@@ -289,7 +289,7 @@
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{
-              __('Price List Override')
+              __('Legacy contract schedule')
             }}</label>
             <select
               v-model="networkForm.price_list_override"
@@ -323,7 +323,7 @@
           />
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{
-              __('Optional services price list')
+              __('Optional services contract schedule')
             }}</label>
             <select
               v-model="networkForm.optional_services_price_list"
@@ -355,7 +355,7 @@
                 <p class="mt-1 text-xs text-ink-gray-5">
                   {{
                     __(
-                      'One yearly quotation per selected price list. Keep the legacy override for older links.',
+                      'One yearly quotation per configured contract schedule. Keep the legacy schedule for older links.',
                     )
                   }}
                 </p>
@@ -368,7 +368,7 @@
               v-if="!networkForm.price_lists.length"
               class="rounded-lg border border-dashed border-outline-gray-2 p-3 text-sm text-ink-gray-5"
             >
-              {{ __('Using the legacy price list override') }}
+              {{ __('Using the legacy contract schedule') }}
             </div>
             <div
               v-for="(plan, index) in networkForm.price_lists"
@@ -383,13 +383,13 @@
               />
               <div class="flex flex-col gap-1">
                 <label class="text-xs font-medium text-ink-gray-6">{{
-                  __('Price list')
+                  __('Contract schedule')
                 }}</label
                 ><select
                   v-model="plan.price_list"
                   class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
                 >
-                  <option value="">{{ __('Select a price list') }}</option>
+                  <option value="">{{ __('Select a contract schedule') }}</option>
                   <option
                     v-for="priceList in negotiatedPriceLists"
                     :key="priceList.value"
@@ -786,7 +786,7 @@
                   {{ row.mfl_code }}
                 </p>
                 <p class="mt-0.5 text-xs text-ink-gray-5">
-                  {{ facilityPriceListLabel(row) }}
+                  {{ facilityContractScheduleLabel(row) }}
                 </p>
               </td>
               <td class="px-4 py-3">
@@ -926,49 +926,86 @@
                 {{ sampleQuote.network }}
               </p>
             </div>
-            <div
-              class="rounded-lg bg-surface-gray-1 p-3 text-sm dark:bg-surface-gray-2"
-            >
-              <div class="flex justify-between gap-4">
-                <span class="text-ink-gray-5">{{ __('Price list') }}</span>
-                <span class="font-medium text-ink-gray-9">{{
-                  sampleQuote.price_list
-                }}</span>
+            <div class="overflow-hidden rounded-lg border border-outline-gray-2">
+              <div
+                class="flex items-start justify-between gap-4 border-b border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 dark:bg-surface-gray-2"
+              >
+                <div>
+                  <p class="text-sm font-semibold text-ink-gray-9">
+                    {{ __('Contract schedules') }}
+                  </p>
+                  <p class="mt-0.5 text-xs text-ink-gray-5">
+                    {{ __('Yearly amounts for this facility, including VAT') }}
+                  </p>
+                </div>
+                <span class="text-right text-xs text-ink-gray-5">
+                  {{ sampleQuote.item_name }}
+                </span>
               </div>
-              <div class="mt-1 flex justify-between gap-4">
-                <span class="text-ink-gray-5">{{ __('Item') }}</span>
-                <span class="text-right text-ink-gray-8">{{
-                  sampleQuote.item_name
-                }}</span>
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead
+                    class="bg-surface-gray-1 text-left text-xs uppercase tracking-wide text-ink-gray-5 dark:bg-surface-gray-2"
+                  >
+                    <tr>
+                      <th class="px-3 py-2 font-medium">{{ __('Year') }}</th>
+                      <th class="px-3 py-2 font-medium">
+                        {{ __('Contract schedule') }}
+                      </th>
+                      <th class="px-3 py-2 text-right font-medium">
+                        {{ __('Monthly total') }}
+                      </th>
+                      <th class="px-3 py-2 text-right font-medium">
+                        {{ __('Annual total') }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-outline-gray-2">
+                    <tr
+                      v-for="yearlyQuote in sampleQuoteYearlyQuotes"
+                      :key="`${yearlyQuote.year_number}-${yearlyQuote.price_list}`"
+                    >
+                      <td class="px-3 py-2.5 font-medium text-ink-gray-9">
+                        {{ yearlyQuote.label || `Year ${yearlyQuote.year_number}` }}
+                      </td>
+                      <td class="px-3 py-2.5 text-ink-gray-7">
+                        {{ yearlyQuote.price_list }}
+                      </td>
+                      <td class="px-3 py-2.5 text-right">
+                        <p class="font-medium text-ink-gray-9">
+                          {{ formatKes(yearlyQuote.monthly_gross) }}
+                        </p>
+                        <p class="text-xs text-ink-gray-5">
+                          {{ formatKes(yearlyQuote.monthly_net) }} {{ __('excl. VAT') }}
+                        </p>
+                      </td>
+                      <td class="px-3 py-2.5 text-right">
+                        <p class="font-medium text-ink-gray-9">
+                          {{ formatKes(yearlyQuote.annual_gross) }}
+                        </p>
+                        <p class="text-xs text-ink-gray-5">
+                          {{ formatKes(yearlyQuote.annual_net) }} {{ __('excl. VAT') }}
+                        </p>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="rounded-lg border border-outline-gray-2 p-3">
+            <div
+              class="flex items-end justify-between gap-4 rounded-lg bg-surface-gray-1 px-3 py-3 dark:bg-surface-gray-2"
+            >
+              <div>
                 <p class="text-xs uppercase tracking-wide text-ink-gray-5">
-                  {{ __('Monthly total') }}
+                  {{ __('Total contract commitment') }}
                 </p>
-                <p class="mt-1 text-base font-semibold text-ink-gray-9">
-                  {{ formatKes(sampleQuote.monthly_gross) }}
-                </p>
-                <p class="text-xs text-ink-gray-5">
-                  {{ formatKes(sampleQuote.monthly_net) }}
-                  {{ __('excl. VAT') }} ·
-                  {{ sampleQuote.vat_label }}
+                <p class="mt-1 text-xs text-ink-gray-5">
+                  {{ formatKes(sampleQuote.contract_total_net) }} {{ __('excl. VAT') }}
                 </p>
               </div>
-              <div class="rounded-lg border border-outline-gray-2 p-3">
-                <p class="text-xs uppercase tracking-wide text-ink-gray-5">
-                  {{ __('Annual total') }}
-                </p>
-                <p class="mt-1 text-base font-semibold text-ink-gray-9">
-                  {{ formatKes(sampleQuote.annual_gross) }}
-                </p>
-                <p class="text-xs text-ink-gray-5">
-                  {{ formatKes(sampleQuote.annual_net) }}
-                  {{ __('excl. VAT') }} ·
-                  {{ sampleQuote.vat_label }}
-                </p>
-              </div>
+              <p class="text-lg font-semibold text-ink-gray-9">
+                {{ formatKes(sampleQuote.contract_total_gross) }}
+              </p>
             </div>
           </div>
         </template>
@@ -1034,12 +1071,9 @@
           </div>
         </div>
         <p class="mb-4 text-xs text-ink-gray-5">
-          <template v-if="editingFacility">
-            {{ facilityPriceListLabel(editingFacility) }} ·
-          </template>
           {{
             __(
-              'Choose a facility-specific negotiated price list before Opt-In. Once the facility opts in, its price list is locked and can only be changed from the quotation workflow before signature.',
+              'Set facility contact details first. Contract schedules are configured below and become locked once the facility has opted in.',
             )
           }}
         </p>
@@ -1057,60 +1091,6 @@
               class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
               @input="organizationEdited = true"
             />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-gray-6">{{
-              __('Facility Price List')
-            }}</label>
-            <select
-              v-model="form.price_list_override"
-              :disabled="!!editingFacility && isOptedIn(editingFacility)"
-              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:cursor-not-allowed disabled:bg-surface-gray-2 disabled:opacity-60 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            >
-              <option value="">{{ __('Use network price list') }}</option>
-              <option
-                v-for="priceList in negotiatedPriceLists"
-                :key="priceList.value"
-                :value="priceList.value"
-              >
-                {{ priceList.label }}
-              </option>
-            </select>
-            <span class="text-[11px] text-ink-gray-5">
-              {{
-                editingFacility && isOptedIn(editingFacility)
-                  ? __('Locked after Opt-In')
-                  : __('Optional facility-specific negotiated rate')
-              }}
-            </span>
-            <div v-if="networkPricePlans.length" class="mt-2 space-y-1">
-              <p class="text-[11px] font-medium text-ink-gray-6">
-                {{ __('Yearly overrides') }}
-              </p>
-              <div
-                v-for="plan in networkPricePlans"
-                :key="plan.year_number"
-                class="flex items-center gap-2"
-              >
-                <span class="w-14 text-[11px] text-ink-gray-5">{{
-                  plan.label || `Year ${plan.year_number}`
-                }}</span>
-                <select
-                  v-model="form.price_list_overrides[plan.year_number]"
-                  :disabled="!!editingFacility && isOptedIn(editingFacility)"
-                  class="h-7 flex-1 rounded border border-outline-gray-2 bg-surface-white px-2 text-xs text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-                >
-                  <option value="">{{ __('Use network year price') }}</option>
-                  <option
-                    v-for="priceList in negotiatedPriceLists"
-                    :key="priceList.value"
-                    :value="priceList.value"
-                  >
-                    {{ priceList.label }}
-                  </option>
-                </select>
-              </div>
-            </div>
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6"
@@ -1159,6 +1139,82 @@
             </select>
           </div>
         </div>
+
+        <section
+          class="mb-4 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-ink-gray-9">
+                {{ __('Facility contract schedules') }}
+              </p>
+              <p class="mt-1 text-xs text-ink-gray-5">
+                {{
+                  __(
+                    'This facility inherits the network schedule for each year. Replace only a year with facility-specific negotiated terms.',
+                  )
+                }}
+              </p>
+            </div>
+            <span
+              v-if="facilityPricingLocked"
+              class="rounded-full bg-surface-amber-2 px-2 py-1 text-xs font-medium text-ink-amber-8 dark:bg-surface-amber-3"
+            >
+              {{ __('Locked after Opt-In') }}
+            </span>
+          </div>
+
+          <div class="mt-3 space-y-2">
+            <div
+              v-for="plan in facilitySchedulePlans"
+              :key="plan.year_number"
+              class="grid grid-cols-1 gap-3 rounded-lg border border-outline-gray-2 bg-surface-white p-3 sm:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end dark:bg-surface-gray-3"
+            >
+              <FormControl
+                :model-value="plan.label || `Year ${plan.year_number}`"
+                :label="__('Year')"
+                disabled
+              />
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-medium text-ink-gray-6">
+                  {{ __('Network contract schedule') }}
+                </span>
+                <p class="min-h-8 rounded border border-outline-gray-2 bg-surface-gray-1 px-2 py-1.5 text-sm text-ink-gray-7 dark:bg-surface-gray-2">
+                  {{ plan.price_list || __('Opt-In default') }}
+                </p>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-ink-gray-6">
+                  {{ __('Facility contract schedule') }}
+                </label>
+                <select
+                  v-model="form.price_list_overrides[plan.year_number]"
+                  :disabled="facilityPricingLocked"
+                  class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 disabled:cursor-not-allowed disabled:bg-surface-gray-2 disabled:opacity-60 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+                >
+                  <option value="">{{ __('Inherit network schedule') }}</option>
+                  <option
+                    v-for="priceList in negotiatedPriceLists"
+                    :key="priceList.value"
+                    :value="priceList.value"
+                  >
+                    {{ priceList.label }}
+                  </option>
+                </select>
+              </div>
+              <Button
+                v-if="form.price_list_overrides[plan.year_number]"
+                variant="ghost"
+                theme="red"
+                icon="lucide-trash-2"
+                :disabled="facilityPricingLocked"
+                :aria-label="__('Remove facility override for {0}', [plan.label || `Year ${plan.year_number}`])"
+                @click="clearFacilityScheduleOverride(plan.year_number)"
+              />
+              <span v-else class="hidden sm:block" aria-hidden="true" />
+            </div>
+          </div>
+        </section>
 
         <p v-if="formError" class="mb-2 text-xs text-red-600">
           {{ formError }}
@@ -1219,7 +1275,7 @@
                   {{ __('Organization') }}
                 </th>
                 <th class="px-3 py-2 text-left font-medium">
-                  {{ __('Price List') }}
+                  {{ __('Contract schedule') }}
                 </th>
                 <th class="px-3 py-2 text-left font-medium">
                   {{ __('Contact Email') }}
@@ -1244,7 +1300,7 @@
                   {{ r.organization || r.facility_name }}
                 </td>
                 <td class="px-3 py-2 text-ink-gray-7">
-                  {{ r.price_list_override || __('Use network price list') }}
+                  {{ r.price_list_override || __('Inherit network schedule') }}
                 </td>
                 <td class="px-3 py-2 text-ink-gray-6">{{ r.contact_email }}</td>
                 <td v-if="r.error" class="px-3 py-2 text-red-600">
@@ -1630,20 +1686,16 @@ function networkMembership(row) {
 
 const showSampleQuote = ref(false)
 const sampleQuote = ref(null)
+const sampleQuoteYearlyQuotes = computed(() => {
+  const yearlyQuotes = sampleQuote.value?.yearly_quotes
+  if (Array.isArray(yearlyQuotes) && yearlyQuotes.length) return yearlyQuotes
+  return sampleQuote.value ? [sampleQuote.value] : []
+})
 const sampleQuoteLoading = ref(false)
 const sampleQuoteFacility = ref(null)
 const sampleQuoteResource = createResource({
   url: 'crm.api.optin_admin.get_facility_sample_quote',
 })
-
-function effectiveFacilityPriceList(row) {
-  const membership = networkMembership(row)
-  return (
-    membership?.price_list_override ||
-    networkDoc.value?.price_list_override ||
-    ''
-  )
-}
 
 function formatKes(value) {
   return `KES ${Number(value || 0).toLocaleString(undefined, {
@@ -1661,7 +1713,6 @@ async function viewSampleQuote(row) {
     sampleQuote.value = await sampleQuoteResource.submit({
       facility: row.name,
       network: props.networkSlug,
-      price_list: effectiveFacilityPriceList(row),
     })
   } catch (error) {
     showSampleQuote.value = false
@@ -1676,11 +1727,15 @@ async function viewSampleQuote(row) {
   }
 }
 
-function facilityPriceListLabel(row) {
-  const membership = networkMembership(row)
-  return membership?.price_list_override
-    ? `${__('Price list')}: ${membership.price_list_override}`
-    : `${__('Price list')}: ${networkDoc.value?.price_list_override || __('Opt-In default')}`
+function facilityContractScheduleLabel() {
+  const count = facilitySchedulePlans.value.length
+  if (count > 1)
+    return __('Contract schedules: {0} yearly schedules', [count])
+  if (count === 1)
+    return __('Contract schedule: {0}', [
+      facilitySchedulePlans.value[0]?.price_list || __('Year 1'),
+    ])
+  return __('Contract schedule: Opt-In default')
 }
 
 function isOptedIn(row) {
@@ -1704,11 +1759,43 @@ const form = reactive({
   contact_name: '',
   contact_email: '',
   contact_phone: '',
-  price_list_override: '',
   price_list_overrides: {},
   status: 'Active',
 })
 const organizationEdited = ref(false)
+const facilitySchedulePlans = computed(() => {
+  if (networkPricePlans.value.length) return networkPricePlans.value
+  return [
+    {
+      year_number: 1,
+      label: 'Year 1',
+      price_list: networkDoc.value?.price_list_override ?? '',
+    },
+  ]
+})
+const facilityPricingLocked = computed(
+  () => !!editingFacility.value && isOptedIn(editingFacility.value),
+)
+
+function facilityScheduleOverrides(membership = {}) {
+  let overrides = {}
+  try {
+    const parsed = JSON.parse(membership.price_list_overrides_json || '{}')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      overrides = parsed
+    }
+  } catch {
+    overrides = {}
+  }
+  if (!overrides[1] && membership.price_list_override) {
+    overrides[1] = membership.price_list_override
+  }
+  return overrides
+}
+
+function clearFacilityScheduleOverride(year) {
+  delete form.price_list_overrides[year]
+}
 
 function resetForm() {
   form.mfl_code = ''
@@ -1718,7 +1805,6 @@ function resetForm() {
   form.contact_name = ''
   form.contact_email = ''
   form.contact_phone = ''
-  form.price_list_override = ''
   form.price_list_overrides = {}
   form.status = 'Active'
   organizationEdited.value = false
@@ -1741,14 +1827,7 @@ function editContact(row) {
     contact_name: m.contact_name ?? '',
     contact_email: m.contact_email ?? '',
     contact_phone: m.contact_phone ?? '',
-    price_list_override: m.price_list_override ?? '',
-    price_list_overrides: (() => {
-      try {
-        return JSON.parse(m.price_list_overrides_json || '{}') || {}
-      } catch {
-        return {}
-      }
-    })(),
+    price_list_overrides: facilityScheduleOverrides(m),
     status: m.status ?? 'Active',
   })
   editingFacility.value = row
@@ -1829,7 +1908,7 @@ async function saveContact() {
   // Opted-in pricing is immutable here. The quotation workflow remains the
   // only place where pricing can be changed before facility signature.
   if (!editingFacility.value || !isOptedIn(editingFacility.value)) {
-    membership.price_list_override = form.price_list_override
+    membership.price_list_override = ''
     membership.price_list_overrides = Object.fromEntries(
       Object.entries(form.price_list_overrides).filter(([, value]) => value),
     )

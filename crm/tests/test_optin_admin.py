@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -333,6 +334,76 @@ class TestOptInPriceListTools(UnitTestCase):
 		self.assertEqual(result["monthly_net"], 100)
 		self.assertEqual(result["monthly_gross"], 116)
 
+	def test_facility_sample_quote_includes_every_yearly_contract_schedule(self):
+		facility = frappe._dict(
+			{
+				"facility_name": "First Clinic",
+				"organization": "Health Group",
+				"mfl_code": "1001",
+				"keph_level": "Level 3",
+				"memberships": [
+					frappe._dict(
+						{
+							"network": "network-a",
+							"price_list_override": "",
+							"price_list_overrides_json": '{"2":"Facility Year 2"}',
+						}
+					)
+				],
+			}
+		)
+		plans = json.dumps(
+			[
+				{"year_number": 1, "label": "Year 1", "price_list": "Negotiated Year 1"},
+				{"year_number": 2, "label": "Year 2", "price_list": "Negotiated Year 2"},
+				{"year_number": 3, "label": "Year 3", "price_list": "Negotiated Year 3"},
+			]
+		)
+
+		def vat(amount):
+			return frappe._dict(
+				{
+					"net_total": amount,
+					"vat_amount": round(amount * 0.16, 2),
+					"grand_total": round(amount * 1.16, 2),
+					"vat_rate": 16,
+					"vat_label": "VAT (16%)",
+				}
+			)
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch(
+				"crm.api.optin_admin.frappe.get_list",
+				return_value=[
+					frappe._dict(
+						{
+							"display_name": "Network A",
+							"price_list_override": "",
+							"price_lists_json": plans,
+						}
+					)
+				],
+			),
+			patch("crm.api.optin_admin.frappe.db.get_single_value", return_value="Negotiated Year 1"),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.get_value", return_value="CareverseHIMS - Level 3"),
+			patch("crm.api.quotes._get_item_price", side_effect=[100, 200, 300]),
+			patch("crm.utils.quotation_tax.calculate_vat_totals", side_effect=vat),
+		):
+			result = get_facility_sample_quote("FAC-1", "network-a")
+
+		self.assertEqual(
+			[(row["year_number"], row["price_list"]) for row in result["yearly_quotes"]],
+			[
+				(1, "Negotiated Year 1"),
+				(2, "Facility Year 2"),
+				(3, "Negotiated Year 3"),
+			],
+		)
+		self.assertEqual(result["contract_total_gross"], 8_352)
+
 	def test_catalogue_item_creation_is_manager_only_and_uses_service_defaults(self):
 		item = frappe._dict(
 			{
@@ -650,6 +721,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
 			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
 			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch("crm.api.optin_admin._network_contract_schedule_years", return_value={1}),
 		):
 			with self.assertRaises(frappe.ValidationError):
 				save_facility(
@@ -696,6 +768,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
 			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
 			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch("crm.api.optin_admin._network_contract_schedule_years", return_value={1, 2}),
 			patch(
 				"crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility._send_membership_invitation"
 			),
@@ -723,6 +796,51 @@ class TestOptInPriceListTools(UnitTestCase):
 			facility.memberships[0].price_list_overrides_json,
 			'{"1":"Negotiated Year 1","2":"Negotiated Year 2"}',
 		)
+
+	def test_save_facility_rejects_an_override_for_a_year_not_on_the_network(self):
+		class FakeFacility:
+			name = "FAC-0001"
+			mfl_code = "1001"
+			facility_name = "First Clinic"
+			keph_level = "Level 3"
+
+			def __init__(self):
+				self.memberships = []
+
+			def is_new(self):
+				return False
+
+			def append(self, _fieldname, values):
+				self.memberships.append(frappe._dict(values))
+
+			def save(self, **_kwargs):
+				return None
+
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=FakeFacility()),
+			patch("crm.api.optin_admin._network_contract_schedule_years", return_value={1, 2}),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				save_facility(
+					{
+						"name": "FAC-0001",
+						"mfl_code": "1001",
+						"facility_name": "First Clinic",
+						"keph_level": "Level 3",
+						"memberships": [
+							{
+								"network": "network-a",
+								"price_list_overrides": {"3": "Negotiated Year 3"},
+								"contact_name": "Jane Doe",
+								"contact_email": "jane@example.com",
+								"contact_phone": "+254700000001",
+							}
+						],
+					}
+				)
 
 	def test_save_facility_rejects_changed_yearly_override_after_optin(self):
 		class FakeFacility:
@@ -757,6 +875,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
 			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
 			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch("crm.api.optin_admin._network_contract_schedule_years", return_value={1}),
 		):
 			with self.assertRaises(frappe.ValidationError):
 				save_facility(

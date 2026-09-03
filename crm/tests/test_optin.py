@@ -41,13 +41,17 @@ from crm.api.contracts import (
 )
 from crm.api.optin import (
 	_KEPH_MAP,
+	_apply_submission_participants,
+	_build_tc_context,
 	_facility_email_subject_label,
 	_facility_signing_state,
 	_facility_witness_signing_state,
 	_generate_contract_for_submission,
 	_get_optin_deal_forecast_fields,
+	_prepare_submission_payload,
 	_process_submission,
 	_queue_confirmation_email,
+	_signatory_package_summary_html,
 	_submission_matches_facility_filter,
 	get_pricing,
 	list_submissions,
@@ -68,6 +72,147 @@ class TestOptInForecastFields(UnitTestCase):
 
 		self.assertEqual(fields["expected_deal_value"], 48_000.5)
 		self.assertEqual(fields["expected_closure_date"], add_days(today(), 30))
+
+
+class TestOptInSignatoryHandoff(UnitTestCase):
+	def _payload(self, **overrides):
+		payload = {
+			"contact": {
+				"first_name": "Ivy",
+				"last_name": "ICT",
+				"email": "ivy@example.com",
+				"mobile_no": "+254700000001",
+			},
+			"witness": {"name": "Wendy Witness", "email": "wendy@example.com", "phone": ""},
+			"facilities": [{"mfl_code": "MFL-001"}],
+			"selected_years": [1],
+			"terms_accepted": True,
+			"tc_doc_name": "Careverse terms",
+			"tc_doc_hash": "terms-hash",
+		}
+		payload.update(overrides)
+		return payload
+
+	def _pricing_result(self):
+		return {
+			"facilities": [
+				{
+					"mfl_code": "MFL-001",
+					"facility_name": "MediCare Hospital",
+					"keph_level": "Level 5",
+					"item_code": "CV-HIMS-KEPH-5",
+				}
+			],
+			"plans": [],
+			"selected_years": [1],
+		}
+
+	def _prepare(self, payload):
+		with (
+			patch("crm.api.optin.get_pricing", return_value=self._pricing_result()),
+			patch("crm.api.optin._get_network_doc", return_value=frappe._dict()),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin.frappe.db.get_single_value", return_value="Tiberbu Healthnet"),
+		):
+			return _prepare_submission_payload(
+				payload, "token", "ivy@example.com", "network-a", 9999999999
+			)
+
+	def test_self_signatory_is_canonicalized_from_verified_submitter(self):
+		payload = self._prepare(self._payload())
+
+		self.assertEqual(payload["signatory_mode"], "self")
+		self.assertEqual(
+			payload["signatory"],
+			{"name": "Ivy ICT", "email": "ivy@example.com", "phone": "+254700000001"},
+		)
+		self.assertEqual(payload["terms_acknowledgement"], "authorised_signatory_acceptance")
+
+	def test_delegated_signatory_is_canonicalized_for_contract_creation(self):
+		payload = self._prepare(
+			self._payload(
+				signatory_mode="delegate",
+				signatory={
+					"name": "  Dr Ada Signer ",
+					"email": " ADA@EXAMPLE.COM ",
+					"phone": " +254700000002 ",
+				},
+			)
+		)
+
+		self.assertEqual(payload["signatory_mode"], "delegate")
+		self.assertEqual(
+			payload["signatory"],
+			{"name": "Dr Ada Signer", "email": "ada@example.com", "phone": "+254700000002"},
+		)
+		self.assertEqual(payload["terms_acknowledgement"], "signatory_nomination")
+
+	def test_delegation_requires_a_valid_signatory_name_and_email(self):
+		with self.assertRaises(frappe.ValidationError):
+			_prepare_submission_payload(
+				self._payload(signatory_mode="delegate", signatory={"name": "", "email": "not-an-email"}),
+				"token",
+				"ivy@example.com",
+				"network-a",
+				9999999999,
+			)
+
+	def test_submission_persists_submitter_and_delegated_signatory_separately(self):
+		submission = SimpleNamespace()
+		_apply_submission_participants(
+			submission,
+			{
+				"contact": {
+					"first_name": "Ivy",
+					"last_name": "ICT",
+					"mobile_no": "+254700000001",
+				},
+				"signatory_mode": "delegate",
+				"signatory": {
+					"name": "Dr Ada Signer",
+					"email": "ada@example.com",
+					"phone": "+254700000002",
+				},
+				"terms_acknowledgement": "signatory_nomination",
+			},
+		)
+
+		self.assertEqual(submission.submitter_name, "Ivy ICT")
+		self.assertEqual(submission.submitter_phone, "+254700000001")
+		self.assertEqual(submission.signatory_mode, "delegate")
+		self.assertEqual(submission.facility_signatory_name, "Dr Ada Signer")
+		self.assertEqual(submission.facility_signatory_email, "ada@example.com")
+		self.assertEqual(submission.terms_acknowledgement, "signatory_nomination")
+
+	def test_signatory_package_has_the_executive_summary_and_no_sensitive_link(self):
+		submission = SimpleNamespace(
+			name="OIS-TEST-00001",
+			network_slug="network-a",
+			raw_json=json.dumps(
+				{
+					"facilities": [
+						{"mfl_code": "MFL-001", "keph_level": "Level 3"},
+						{"mfl_code": "MFL-002", "keph_level": "Level 5"},
+					],
+					"pricing_plans": [
+						{"year_number": 1, "grand_total_annual": 120000},
+						{"year_number": 2, "grand_total_annual": 130000},
+					],
+					"optional_items": [{"item_code": "CV-HARDWARE"}],
+				}
+			),
+		)
+		with patch(
+			"crm.api.optin._get_network_doc", return_value=frappe._dict(first_invoice_offset_months=3)
+		):
+			summary = _signatory_package_summary_html(submission)
+
+		self.assertIn("2 facilities", summary)
+		self.assertIn("Level 3 × 1", summary)
+		self.assertIn("KES 250,000.00", summary)
+		self.assertIn("Year 1: KES 120,000.00", summary)
+		self.assertIn("OIS-TEST-00001", summary)
+		self.assertNotIn("signing_token", summary)
 
 
 class TestSignatoryUserLookup(UnitTestCase):
@@ -227,6 +372,70 @@ class TestOptInNegotiatedPricing(UnitTestCase):
 		self.assertEqual(
 			[row["price_list"] for row in result["facilities"]],
 			["Negotiated Year 1", "Negotiated Year 2"],
+		)
+
+	def test_facility_yearly_override_is_applied_only_to_its_contract_year(self):
+		facilities = [
+			frappe._dict(
+				{
+					"mfl_code": "1001",
+					"facility_name": "Facility-specific Clinic",
+					"keph_level": "Level 3",
+					"price_list_override": "",
+					"price_list_overrides_json": '{"2":"Facility Year 2"}',
+				}
+			)
+		]
+		plans = json.dumps(
+			[
+				{"year_number": 1, "price_list": "Network Year 1", "label": "Year 1"},
+				{"year_number": 2, "price_list": "Network Year 2", "label": "Year 2"},
+			]
+		)
+
+		def item_prices(_doctype, **kwargs):
+			price_list = kwargs["filters"]["price_list"]
+			return [frappe._dict({"price_list_rate": 100 if price_list == "Network Year 1" else 200})]
+
+		def tax_totals(value, tax_template=None):
+			return SimpleNamespace(
+				net_total=value,
+				vat_amount=0,
+				grand_total=value,
+				template=tax_template or "VAT",
+				vat_rate=16,
+				vat_label="VAT",
+			)
+
+		with (
+			patch("crm.api.optin._validate_signing_token"),
+			patch("crm.api.optin._decode_deal_invitation", return_value=None),
+			patch(
+				"crm.api.optin._get_network_doc",
+				return_value=frappe._dict({"price_lists_json": plans, "price_list_override": ""}),
+			),
+			patch(
+				"crm.api.optin.frappe.get_single",
+				return_value=frappe._dict({"default_price_list": "Network Year 1"}),
+			),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin._get_all_memberships", return_value=facilities),
+			patch("crm.api.optin._get_quoted_facility_map", return_value={}),
+			patch("crm.api.optin.frappe.get_list", side_effect=item_prices),
+			patch("crm.api.optin.calculate_vat_totals", side_effect=tax_totals),
+		):
+			result = get_pricing(
+				"token",
+				"jane@example.com",
+				"network-a",
+				9999999999,
+				["1001"],
+				selected_years=[1, 2],
+			)
+
+		self.assertEqual(
+			[plan["facilities"][0]["price_list"] for plan in result["plans"]],
+			["Network Year 1", "Facility Year 2"],
 		)
 
 
@@ -561,6 +770,69 @@ class TestOptInTiberbuContacts(UnitTestCase):
 
 
 class TestOptInTermsPrinting(UnitTestCase):
+	def test_quote_print_context_groups_contract_schedule_keys(self):
+		pricing = [
+			{
+				"facility_name": "Alpha Clinic",
+				"mfl_code": "MFL-1",
+				"keph_level": "Level 3",
+				"year_number": 1,
+				"price_list": "Year 1 Schedule A",
+				"monthly_kes": 100,
+				"annual_kes": 1_200,
+			},
+			{
+				"facility_name": "Beta Hospital",
+				"mfl_code": "MFL-2",
+				"keph_level": "Level 5",
+				"year_number": 1,
+				"price_list": "Year 1 Schedule B",
+				"monthly_kes": 200,
+				"annual_kes": 2_400,
+			},
+			{
+				"facility_name": "Alpha Clinic",
+				"mfl_code": "MFL-1",
+				"keph_level": "Level 3",
+				"year_number": 2,
+				"price_list": "Year 2 Schedule",
+				"monthly_kes": 110,
+				"annual_kes": 1_320,
+			},
+		]
+		tax_totals = {
+			"subtotal_monthly": 0,
+			"vat_monthly": 0,
+			"grand_total_monthly": 0,
+			"subtotal_annual": 0,
+			"vat_annual": 0,
+			"grand_total_annual": 0,
+			"tax_template": "",
+			"vat_label": "VAT",
+		}
+
+		with (
+			patch("crm.api.optin._pricing_tax_context", return_value=tax_totals),
+			patch("crm.api.optin.calculate_vat_totals", return_value=SimpleNamespace(grand_total=0)),
+		):
+			context = _build_tc_context(
+				pricing,
+				{"email": "ict@example.com"},
+				{"display_name": "Test Network", "footer_legal_name": "Test Network"},
+			)
+
+		self.assertEqual(
+			[
+				(plan["year_number"], plan["price_list"], len(plan["facilities"]))
+				for plan in context["pricing_plans"]
+			],
+			[
+				(1, "Year 1 Schedule A", 1),
+				(1, "Year 1 Schedule B", 1),
+				(2, "Year 2 Schedule", 1),
+			],
+		)
+
 	def test_executed_contract_print_uses_immutable_snapshot(self):
 		contract = frappe._dict(
 			{
@@ -746,6 +1018,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertEqual(submission.contract_invitation_queued_at, queued_at)
 		submission.save.assert_called_once_with(ignore_permissions=True)
 		self.assertEqual(generate_contract.call_args.kwargs["commit"], False)
+		self.assertIn("Opt-In summary", generate_contract.call_args.kwargs["invitation_summary_html"])
 
 	def test_contract_generation_requires_a_tracked_invitation_queue(self):
 		submission = SimpleNamespace(

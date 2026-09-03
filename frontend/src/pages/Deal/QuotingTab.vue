@@ -240,7 +240,7 @@
               <span :class="pillClass(q)">{{ __(q.status) }}</span>
             </div>
             <p class="mt-1 truncate text-xs text-ink-gray-5">
-              {{ q.selling_price_list || __('Configured price list') }}
+              {{ quoteContractScheduleSummary(q, index) }}
             </p>
             <p class="mt-2 text-sm font-semibold text-ink-gray-9">
               {{ fmtKes(q.grand_total) }}
@@ -844,6 +844,25 @@ const oisRawJson = computed(() => {
 
 const oisContact = computed(() => oisRawJson.value?.contact ?? null)
 const oisFacilities = computed(() => oisRawJson.value?.facilities ?? [])
+const oisPricingPlans = computed(() => oisRawJson.value?.pricing_plans ?? [])
+
+function quoteContractScheduleSummary(quote, index) {
+  const year = quoteYear(quote, index)
+  const plan = oisPricingPlans.value.find(
+    (item) => Number(item?.year_number) === Number(year),
+  )
+  const schedules = [
+    ...new Set(
+      (plan?.facilities ?? [])
+        .map((facility) => facility?.price_list || plan?.price_list)
+        .filter(Boolean),
+    ),
+  ]
+  if (schedules.length === 1) return schedules[0]
+  if (schedules.length > 1)
+    return __('{0} facility contract schedules', [schedules.length])
+  return quote.selling_price_list || __('Configured contract schedule')
+}
 
 // ── Email applicant ───────────────────────────────────────────────────────────
 

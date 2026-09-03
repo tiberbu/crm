@@ -9,6 +9,10 @@
   "status",
   "network_slug",
   "submitter_email",
+  "submitter_name",
+  "submitter_phone",
+  "signatory_mode",
+  "terms_acknowledgement",
   "facility_signatory_name",
   "facility_signatory_email",
   "facility_signatory_phone",
@@ -59,6 +63,32 @@
    "fieldtype": "Data",
    "label": "Submitter Email",
    "in_list_view": 1
+  },
+  {
+   "fieldname": "submitter_name",
+   "fieldtype": "Data",
+   "label": "Submitter Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitter_phone",
+   "fieldtype": "Data",
+   "label": "Submitter Phone",
+   "read_only": 1
+  },
+  {
+   "default": "self",
+   "fieldname": "signatory_mode",
+   "fieldtype": "Select",
+   "label": "Signatory Mode",
+   "options": "self\ndelegate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "terms_acknowledgement",
+   "fieldtype": "Data",
+   "label": "Terms Acknowledgement",
+   "read_only": 1
   },
   {
    "fieldname": "facility_signatory_name",

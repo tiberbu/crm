@@ -55,6 +55,7 @@ class TestNetworkFacilityTermsPatch(UnitTestCase):
 		self.assertIn("G20. Order of Precedence", payload["terms"])
 		self.assertIn("Data Migration and Exit Plan", payload["terms"])
 		self.assertIn("{{ price_list_display }}", payload["terms"])
+		self.assertIn("Contract schedule", payload["terms"])
 		self.assertIn('class="source-section"', payload["terms"])
 		self.assertNotIn("[Insert]", payload["terms"])
 		terms_doc.insert.assert_called_once_with(ignore_permissions=True)

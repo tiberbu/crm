@@ -903,7 +903,7 @@ def _mark_invitation_sent(signatory_row, sent_at=None, commit=True):
 		frappe.db.commit()
 
 
-def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminder=False):
+def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminder=False, summary_html=""):
 	"""
 	Mint a fresh invitation token on the signatory row, persist it, and email the
 	signatory a branded invitation with a Sign CTA. The caller is responsible for
@@ -920,6 +920,10 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 	`reminder=True` is reserved for an intentional follow-up from the CRM UI
 	(Resend link or a signatory edit that requires a fresh link). It keeps the
 	message distinct in inboxes without changing automatic invitation delivery.
+
+	``summary_html`` is an already-sanitised commercial summary supplied by the
+	Opt-In workflow. It lets a nominated facility signatory see the decision they
+	are being asked to approve without changing invitations generated elsewhere.
 	"""
 	# CRM users sign from the authenticated Quote/Opt-In view.  Never mint or
 	# deliver a public invitation (email or SMS) for this branch, including when
@@ -938,6 +942,7 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 	link = _signing_link(contract_doc.name, role, token)
 	network = _network_for_contract(contract_doc)
 	name = frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
+	summary_html = frappe.utils.cstr(summary_html)
 	invitation_reference = _generate_invitation_email_reference()
 	facility_subject = _contract_email_subject_label(contract_doc)
 
@@ -956,7 +961,8 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 					"<p style='margin:0 0 6px'>Dear %s,</p>"
 					"<p style='margin:0'>You have been asked to review and sign a "
 					"CareverseHIMS contract. Use the button below to open the secure "
-					"signing portal — you'll confirm your identity with a one-time code.</p>" % name
+					"signing portal — you'll confirm your identity with a one-time code.</p>%s"
+					% (name, summary_html)
 				),
 				cta_label="Review & Sign Contract",
 				cta_url=link,
@@ -1920,6 +1926,7 @@ def _generate_contract(
 	commit=True,
 	facility_signatory_phone="",
 	facility_witness_phone="",
+	invitation_summary_html="",
 ):
 	"""
 	Create a CRM Contract for a deal, render contract HTML from active T&C, and
@@ -2101,7 +2108,12 @@ def _generate_contract(
 	signatory_row = _get_signatory_row(contract, "Facility Signatory")
 	invitation_queue = None
 	if signatory_row:
-		invitation_queue = _issue_and_send_invitation(contract, signatory_row, commit=commit)
+		invitation_queue = _issue_and_send_invitation(
+			contract,
+			signatory_row,
+			commit=commit,
+			summary_html=invitation_summary_html,
+		)
 
 	log_deal_event(
 		deal,
@@ -2946,7 +2958,7 @@ def _contract_price_snapshot(contract_doc):
 
 
 def _render_price_list_history(contract_doc):
-	"""Render an auditable, read-only price-list summary for contract/PDF output."""
+	"""Render an auditable, read-only contract-schedule summary for contract/PDF output."""
 	data = _contract_price_snapshot(contract_doc)
 	initial = frappe.utils.cstr(data.get("initial") or "").strip()
 	negotiated = frappe.utils.cstr(data.get("negotiated") or "").strip()
@@ -2969,17 +2981,17 @@ def _render_price_list_history(contract_doc):
 		rows.append(
 			"<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
 			% (
-				frappe.utils.escape_html(frappe.utils.cstr(event.get("event") or "Price list")),
+				frappe.utils.escape_html(frappe.utils.cstr(event.get("event") or "Contract schedule")),
 				frappe.utils.escape_html(frappe.utils.cstr(change)),
 				frappe.utils.escape_html(at or "—"),
 				frappe.utils.escape_html(frappe.utils.cstr(event.get("by") or "System")),
 			)
 		)
 	return """<section class='price-history'>
-  <h2>Price list history</h2>
-  <div class='price-kv'><b>Initial price list</b> {initial}</div>
-  <div class='price-kv'><b>Negotiated price list</b> {negotiated}</div>
-  <table><thead><tr><th>Event</th><th>Price list</th><th>Recorded</th><th>Changed by</th></tr></thead>
+  <h2>Contract schedule history</h2>
+  <div class='price-kv'><b>Original contract schedule</b> {initial}</div>
+  <div class='price-kv'><b>Agreed contract schedule</b> {negotiated}</div>
+  <table><thead><tr><th>Event</th><th>Contract schedule</th><th>Recorded</th><th>Changed by</th></tr></thead>
   <tbody>{rows}</tbody></table>
 </section>""".format(
 		initial=frappe.utils.escape_html(initial or "—"),
@@ -2995,7 +3007,7 @@ def _recipient_safe_price_snapshot(data):
 		"negotiated": data.get("negotiated") or "",
 		"history": [
 			{
-				"event": event.get("event") or "Price list",
+				"event": event.get("event") or "Contract schedule",
 				"from": event.get("from") or "",
 				"to": event.get("to") or "",
 				"at": event.get("at") or "",

@@ -20,6 +20,16 @@ export const useOptInStore = defineStore('optin', {
       email: '',
       phone: '',
     },
+    // The verified wizard user is the submitter. They are the signatory only
+    // when they explicitly keep this default; delegated signatory details are
+    // collected separately so the contract and invitation identify the right
+    // person.
+    signatoryMode: 'self',
+    signatory: {
+      name: '',
+      email: '',
+      phone: '',
+    },
     signingToken: '',
     signingExpiry: 0,
     facilities: [],
@@ -58,6 +68,14 @@ export const useOptInStore = defineStore('optin', {
 
     setWitness(witness) {
       this.witness = { ...this.witness, ...witness }
+    },
+
+    setSignatoryMode(mode) {
+      this.signatoryMode = mode === 'delegate' ? 'delegate' : 'self'
+    },
+
+    setSignatory(signatory) {
+      this.signatory = { ...this.signatory, ...signatory }
     },
 
     setSigningToken(token, expiry) {

@@ -121,6 +121,27 @@ def _normalize_price_list_overrides(value):
 	return result
 
 
+def _network_contract_schedule_years(network):
+	"""Return the contract years a facility is allowed to override for a network."""
+	fields = ["price_list_override"]
+	try:
+		if frappe.db.has_column("CRM Opt-In Network", "price_lists_json"):
+			fields.append("price_lists_json")
+	except Exception:
+		pass
+	rows = frappe.get_list(
+		"CRM Opt-In Network",
+		filters={"name": network},
+		fields=fields,
+		limit=1,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: caller already has network write access
+	)
+	if not rows:
+		return {1}
+	plans = normalize_price_lists(rows[0].get("price_lists_json"), rows[0].get("price_list_override"))
+	return {frappe.utils.cint(plan.get("year_number")) for plan in plans if plan.get("year_number")} or {1}
+
+
 def _require_optin_settings_manager():
 	"""Only system administrators may change the global Opt-In agreement."""
 	if (
@@ -1005,7 +1026,7 @@ def list_price_list_facilities(price_list: Any, page: Any = None, page_length: A
 
 @frappe.whitelist()
 def get_facility_sample_quote(facility: Any, network: Any = None, price_list: Any = None):
-	"""Return a non-persisted quotation preview for a facility and price list."""
+	"""Return a non-persisted quotation preview for one or all contract schedules."""
 	facility = frappe.utils.cstr(facility).strip()
 	network = frappe.utils.cstr(network).strip()
 	if not facility:
@@ -1028,7 +1049,7 @@ def get_facility_sample_quote(facility: Any, network: Any = None, price_list: An
 		network_rows = frappe.get_list(
 			"CRM Opt-In Network",
 			filters={"slug": network, "enabled": 1},
-			fields=["name", "slug", "display_name", "price_list_override"],
+			fields=["name", "slug", "display_name", "price_list_override", "price_lists_json"],
 			limit_page_length=1,
 			ignore_permissions=True,  # SYSTEM-INTERNAL: access was checked above
 		)
@@ -1037,42 +1058,90 @@ def get_facility_sample_quote(facility: Any, network: Any = None, price_list: An
 		network_doc = network_rows[0]
 
 	settings_default = frappe.db.get_single_value("CRM Opt-In Settings", "default_price_list")
-	selected_price_list = (
-		frappe.utils.cstr(price_list).strip()
-		or membership.get("price_list_override")
-		or (network_doc.get("price_list_override") if network_doc else "")
-		or settings_default
-		or "Negotiated Year 1"
-	)
-	if not frappe.db.exists("Price List", {"name": selected_price_list, "selling": 1, "enabled": 1}):
-		frappe.throw(_("The selected price list is not enabled."))
+	requested_price_list = frappe.utils.cstr(price_list).strip()
+	if requested_price_list:
+		# The catalogue's price-list inspector deliberately asks for one explicit
+		# schedule. Keep that focused view compatible while the Prequalified
+		# Contacts action (which omits this argument) previews every contract year.
+		schedules = [{"year_number": 1, "label": "Year 1", "price_list": requested_price_list}]
+	else:
+		network_plans = normalize_price_lists(
+			network_doc.get("price_lists_json") if network_doc else "",
+			network_doc.get("price_list_override") if network_doc else "",
+		)
+		facility_overrides = membership_price_lists(
+			membership.get("price_list_overrides_json"), membership.get("price_list_override")
+		)
+		if network_plans:
+			schedules = [
+				{
+					"year_number": plan["year_number"],
+					"label": plan["label"],
+					"price_list": facility_overrides.get(plan["year_number"]) or plan["price_list"],
+				}
+				for plan in network_plans
+			]
+		else:
+			schedules = [
+				{
+					"year_number": 1,
+					"label": "Year 1",
+					"price_list": facility_overrides.get(1)
+					or settings_default
+					or "Negotiated Year 1",
+				}
+			]
+
+	for schedule in schedules:
+		if not frappe.db.exists(
+			"Price List", {"name": schedule["price_list"], "selling": 1, "enabled": 1}
+		):
+			frappe.throw(
+				_("The contract schedule for year {0} is not enabled.").format(schedule["year_number"])
+			)
 
 	from crm.api.optin import _keph_to_item_code
 	from crm.api.quotes import _get_item_price
 	from crm.utils.quotation_tax import calculate_vat_totals
 
 	item_code = _keph_to_item_code(facility_doc.keph_level)
-	monthly_net = _get_item_price(item_code, selected_price_list)
-	monthly_totals = calculate_vat_totals(monthly_net)
-	annual_net = round(monthly_net * 12, 2)
-	annual_totals = calculate_vat_totals(annual_net)
+	item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
+	yearly_quotes = []
+	for schedule in schedules:
+		monthly_net = _get_item_price(item_code, schedule["price_list"])
+		monthly_totals = calculate_vat_totals(monthly_net)
+		annual_net = round(monthly_net * 12, 2)
+		annual_totals = calculate_vat_totals(annual_net)
+		yearly_quotes.append(
+			{
+				"year_number": schedule["year_number"],
+				"label": schedule["label"],
+				"price_list": schedule["price_list"],
+				"item_code": item_code,
+				"item_name": item_name,
+				"monthly_net": monthly_totals.net_total,
+				"monthly_vat": monthly_totals.vat_amount,
+				"monthly_gross": monthly_totals.grand_total,
+				"annual_net": annual_totals.net_total,
+				"annual_vat": annual_totals.vat_amount,
+				"annual_gross": annual_totals.grand_total,
+				"vat_rate": monthly_totals.vat_rate,
+				"vat_label": monthly_totals.vat_label,
+			}
+		)
+
+	first_schedule = yearly_quotes[0]
 	return {
 		"facility": facility_doc.facility_name,
 		"organization": facility_doc.organization or facility_doc.facility_name,
 		"mfl_code": facility_doc.mfl_code,
 		"keph_level": facility_doc.keph_level,
 		"network": network_doc.display_name if network_doc else network,
-		"price_list": selected_price_list,
-		"item_code": item_code,
-		"item_name": frappe.db.get_value("Item", item_code, "item_name") or item_code,
-		"monthly_net": monthly_totals.net_total,
-		"monthly_vat": monthly_totals.vat_amount,
-		"monthly_gross": monthly_totals.grand_total,
-		"annual_net": annual_totals.net_total,
-		"annual_vat": annual_totals.vat_amount,
-		"annual_gross": annual_totals.grand_total,
-		"vat_rate": monthly_totals.vat_rate,
-		"vat_label": monthly_totals.vat_label,
+		**first_schedule,
+		"yearly_quotes": yearly_quotes,
+		"contract_total_net": round(sum(row["annual_net"] for row in yearly_quotes), 2),
+		"contract_total_vat": round(sum(row["annual_vat"] for row in yearly_quotes), 2),
+		"contract_total_gross": round(sum(row["annual_gross"] for row in yearly_quotes), 2),
 	}
 
 
@@ -1728,13 +1797,25 @@ def save_facility(data: Any):
 		if membership_has_overrides:
 			requested_overrides = mem_data.get("price_list_overrides")
 			if requested_overrides is not None:
+				candidate = _normalize_price_list_overrides(requested_overrides)
+				allowed_years = _network_contract_schedule_years(net)
+				unexpected_years = sorted(
+					frappe.utils.cint(year)
+					for year in candidate
+					if frappe.utils.cint(year) not in allowed_years
+				)
+				if unexpected_years:
+					frappe.throw(
+						_("Facility contract schedules can only be overridden for configured years: {0}.").format(
+							", ".join(str(year) for year in unexpected_years)
+						)
+					)
 				if net in existing_memberships and existing_memberships[net].get("status") == "Opted In":
 					previous = _normalize_price_list_overrides(existing_memberships[net].get("price_list_overrides_json"))
-					candidate = _normalize_price_list_overrides(requested_overrides)
 					if candidate != previous:
 						frappe.throw(_("Facility yearly price lists are locked after Opt-In. Update pricing from the quotation."))
 				membership_values["price_list_overrides_json"] = json.dumps(
-					_normalize_price_list_overrides(requested_overrides), separators=(",", ":")
+					candidate, separators=(",", ":")
 				)
 			elif net in existing_memberships:
 				membership_values["price_list_overrides_json"] = existing_memberships[net].get("price_list_overrides_json") or ""

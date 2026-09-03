@@ -695,6 +695,48 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 			frappe.ValidationError,
 		)
 
+	# The verified wizard user is the submitter. Preserve the existing self-sign
+	# path as the default, but require an explicit, valid identity when that user
+	# nominates somebody else to sign.
+	signatory_mode = frappe.utils.cstr(payload.get("signatory_mode") or "self").strip().lower()
+	if signatory_mode not in ("self", "delegate"):
+		frappe.throw(_("Choose who is authorised to sign the agreement."), frappe.ValidationError)
+	if signatory_mode == "self":
+		signatory = {
+			"name": " ".join(
+				part
+				for part in (
+					frappe.utils.cstr(contact.get("first_name") or "").strip(),
+					frappe.utils.cstr(contact.get("last_name") or "").strip(),
+				)
+				if part
+			).strip(),
+			"email": contact_email,
+			"phone": frappe.utils.cstr(contact.get("mobile_no") or "").strip(),
+		}
+		if not signatory["name"]:
+			frappe.throw(
+				_("Please provide your full legal name before signing the agreement."),
+				frappe.ValidationError,
+			)
+	else:
+		requested_signatory = payload.get("signatory")
+		if not isinstance(requested_signatory, dict):
+			frappe.throw(
+				_("Please provide the authorised signatory's name and email address."),
+				frappe.ValidationError,
+			)
+		signatory = {
+			"name": frappe.utils.cstr(requested_signatory.get("name") or "").strip(),
+			"email": frappe.utils.cstr(requested_signatory.get("email") or "").strip().lower(),
+			"phone": frappe.utils.cstr(requested_signatory.get("phone") or "").strip(),
+		}
+		if not signatory["name"] or frappe.utils.validate_email_address(signatory["email"]) != signatory["email"]:
+			frappe.throw(
+				_("Please provide a valid name and email address for the authorised signatory."),
+				frappe.ValidationError,
+			)
+
 	witness = payload.get("witness")
 	if not isinstance(witness, dict):
 		frappe.throw(_("Please add your facility witness before submitting."), frappe.ValidationError)
@@ -785,6 +827,11 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 
 	# Store canonical facility and price data, never the browser's editable copy.
 	payload["contact"] = contact
+	payload["signatory_mode"] = signatory_mode
+	payload["signatory"] = signatory
+	payload["terms_acknowledgement"] = (
+		"authorised_signatory_acceptance" if signatory_mode == "self" else "signatory_nomination"
+	)
 	payload["witness"] = {"name": witness_name, "email": witness_email, "phone": witness_phone}
 	payload["facilities"] = [
 		{
@@ -799,6 +846,26 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 	payload["selected_years"] = selected_years
 	payload["optional_items"] = optional_items
 	return payload
+
+
+def _apply_submission_participants(submission, payload):
+	"""Persist the canonical submitter and contract participants on an OIS."""
+	contact = payload.get("contact") or {}
+	signatory = payload.get("signatory") or {}
+	submission.submitter_name = " ".join(
+		part
+		for part in (
+			frappe.utils.cstr(contact.get("first_name") or "").strip(),
+			frappe.utils.cstr(contact.get("last_name") or "").strip(),
+		)
+		if part
+	).strip()
+	submission.submitter_phone = frappe.utils.cstr(contact.get("mobile_no") or "").strip()
+	submission.signatory_mode = frappe.utils.cstr(payload.get("signatory_mode") or "self").strip()
+	submission.terms_acknowledgement = frappe.utils.cstr(payload.get("terms_acknowledgement") or "").strip()
+	submission.facility_signatory_name = frappe.utils.cstr(signatory.get("name") or "").strip()
+	submission.facility_signatory_email = frappe.utils.cstr(signatory.get("email") or "").strip().lower()
+	submission.facility_signatory_phone = frappe.utils.cstr(signatory.get("phone") or "").strip()
 
 
 def _get_optin_deal_forecast_fields(pricing, pricing_plans=None):
@@ -1759,6 +1826,14 @@ def _build_tc_context(
 	primary_year_monthly_tax = calculate_vat_totals(
 		primary_year_monthly, tax_template=tax_totals.get("tax_template")
 	)
+	pricing_plan_keys = sorted(
+		{
+			(row.get("year_number"), row.get("price_list"))
+			for row in safe_pricing
+			if row.get("year_number")
+		},
+		key=lambda item: (item[0], item[1] or ""),
+	)
 	return {
 		"contact": {"email": customer_email},
 		"customer": {"name": facility_name, "email": customer_email},
@@ -1776,11 +1851,16 @@ def _build_tc_context(
 		"pricing": safe_pricing,
 		"pricing_plans": [
 			{
-				"year_number": row.get("year_number"),
-				"price_list": row.get("price_list"),
-				"facilities": [item for item in safe_pricing if item.get("year_number") == row.get("year_number")],
+				"year_number": year_number,
+				"price_list": price_list,
+				"facilities": [
+					item
+					for item in safe_pricing
+					if item.get("year_number") == year_number
+					and item.get("price_list") == price_list
+				],
 			}
-			for row in sorted({(r.get("year_number"), r.get("price_list")) for r in safe_pricing if r.get("year_number")}, key=lambda item: item[0])
+			for year_number, price_list in pricing_plan_keys
 		],
 		"facility_count": len(unique_facilities) or len(safe_pricing),
 		"commitment_years": commitment_years,
@@ -1797,7 +1877,7 @@ def _build_tc_context(
 		"optional_items": safe_optional_items,
 		"optional_services_table": _build_optional_services_table(optional_items),
 		"price_list": price_list,
-		"price_list_display": _safe_tc_text(price_list, "Quotation price list"),
+		"price_list_display": _safe_tc_text(price_list, "Selected contract schedule"),
 		"quote_display": _safe_tc_text(quote, "To be confirmed"),
 		**tax_totals,
 		"tax_template": _safe_tc_text(tax_totals.get("tax_template")),
@@ -2080,6 +2160,7 @@ def submit_async(
 	sub.network_slug = network_slug
 	set_network_link(sub, network_slug)
 	sub.submitter_email = email
+	_apply_submission_participants(sub, payload)
 	# Facility witness captured in the wizard — carried here so the contract's
 	# Facility Witness row can be pre-filled at generate() without re-keying.
 	witness = payload.get("witness") or {}
@@ -2396,7 +2477,7 @@ def resume(lead_id: Any, exp: Any, tok: Any):
 	}
 
 
-def _confirmation_email_html(first_name, submission_ref, network, pricing):
+def _confirmation_email_html(first_name, submission_ref, network, pricing, signatory_name=""):
 	"""
 	Build the branded opt-in confirmation email (table-based layout for broad
 	email-client support). Mirrors the OTP email's brand treatment and adds the
@@ -2477,6 +2558,14 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 			"%s</td></tr>" % facilities_table
 		)
 
+	signatory_name = frappe.utils.escape_html(signatory_name or "")
+	signing_step = (
+		"The authorised signatory, <strong>%s</strong>, has been sent the Opt-In summary "
+		"and a secure link to review and sign the agreement." % signatory_name
+		if signatory_name
+		else "You'll receive your contract by email to review and sign online — no printing needed."
+	)
+
 	return """\
 <div style="background:#f4f5f6;margin:0;padding:24px 12px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif">
   <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
@@ -2511,7 +2600,7 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
             <div style="font-size:13px;font-weight:700;color:#111827;margin:0 0 8px">What happens next</div>
             <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;color:#4b5563;line-height:1.5">
               <tr><td style="padding:2px 8px 2px 0;color:%(brand)s;font-weight:700">1.</td><td style="padding:2px 0">Your registration is reviewed and advanced to the contracting step.</td></tr>
-              <tr><td style="padding:2px 8px 2px 0;color:%(brand)s;font-weight:700">2.</td><td style="padding:2px 0">You'll receive your contract by email to review and sign online — no printing needed.</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;color:%(brand)s;font-weight:700">2.</td><td style="padding:2px 0">%(signing_step)s</td></tr>
               <tr><td style="padding:2px 8px 2px 0;color:%(brand)s;font-weight:700">3.</td><td style="padding:2px 0">Once signed and approved, your facilities are activated on CareverseHIMS.</td></tr>
             </table>
           </div>
@@ -2533,19 +2622,22 @@ def _confirmation_email_html(first_name, submission_ref, network, pricing):
 		"ref": frappe.utils.escape_html(submission_ref),
 		"facilities_section": facilities_section,
 		"totals_block": totals_block,
+		"signing_step": signing_step,
 		"help_line": help_line,
 		"footer_line": footer_line,
 	}
 
 
-def _queue_confirmation_email(submission, recipient, first_name, network, pricing):
+def _queue_confirmation_email(submission, recipient, first_name, network, pricing, signatory_name=""):
 	"""Request immediate confirmation delivery and retain its queue record."""
 	brand_name = (network.get("display_name") if network else "") or "CareverseHIMS"
 	facility_subject = _facility_email_subject_label(pricing, brand_name)
 	queue = frappe.sendmail(
 		recipients=[recipient],
 		subject="%s — Opt-In confirmed · Reference %s" % (facility_subject, submission.name),
-		message=_confirmation_email_html(first_name, submission.name, network, pricing),
+		message=_confirmation_email_html(
+			first_name, submission.name, network, pricing, signatory_name=signatory_name
+		),
 		reference_doctype="CRM Opt-In Submission",
 		reference_name=submission.name,
 		now=True,
@@ -2624,6 +2716,112 @@ def _mark_opted_in_facilities(network_slug, facilities):
 		)
 
 
+def _signatory_package_summary_html(submission):
+	"""Build the concise, escaped OIS decision summary for the signing email."""
+	try:
+		payload = json.loads(getattr(submission, "raw_json", "") or "{}")
+	except (TypeError, ValueError):
+		payload = {}
+	if not isinstance(payload, dict):
+		payload = {}
+
+	plans = payload.get("pricing_plans") or []
+	facilities = payload.get("facilities") or payload.get("pricing") or []
+	if not isinstance(plans, list):
+		plans = []
+	if not isinstance(facilities, list):
+		facilities = []
+
+	selected_years = [
+		frappe.utils.cint(plan.get("year_number"))
+		for plan in plans
+		if isinstance(plan, dict) and frappe.utils.cint(plan.get("year_number")) > 0
+	]
+	if not selected_years:
+		selected_years = [
+			frappe.utils.cint(year)
+			for year in payload.get("selected_years") or []
+			if frappe.utils.cint(year) > 0
+		]
+	selected_years = sorted(set(selected_years)) or [1]
+	year_labels = ["Year %s" % year for year in selected_years]
+	term_label = ", ".join(year_labels)
+
+	commitment = sum(
+		frappe.utils.flt(plan.get("grand_total_annual"))
+		for plan in plans
+		if isinstance(plan, dict)
+	)
+	if not commitment:
+		annual_total = sum(
+			frappe.utils.flt(row.get("annual_kes"))
+			for row in facilities
+			if isinstance(row, dict)
+		)
+		commitment = calculate_vat_totals(annual_total).grand_total
+	first_year = next(
+		(
+			frappe.utils.flt(plan.get("grand_total_annual"))
+			for plan in plans
+			if isinstance(plan, dict) and frappe.utils.cint(plan.get("year_number")) == selected_years[0]
+		),
+		commitment,
+	)
+
+	seen_facilities = set()
+	level_counts = defaultdict(int)
+	for facility in facilities:
+		if not isinstance(facility, dict):
+			continue
+		identity = frappe.utils.cstr(
+			facility.get("mfl_code") or facility.get("facility_name") or ""
+		).strip()
+		if not identity or identity in seen_facilities:
+			continue
+		seen_facilities.add(identity)
+		level = frappe.utils.cstr(facility.get("keph_level") or "").strip()
+		if level:
+			level_counts[level] += 1
+	facility_count = len(seen_facilities) or len(facilities)
+	level_summary = " · ".join(
+		"%s × %s" % (frappe.utils.escape_html(level), count)
+		for level, count in sorted(level_counts.items())
+	)
+	network = _get_network_doc(getattr(submission, "network_slug", "") or "") or {}
+	first_invoice_offset = frappe.utils.cint(network.get("first_invoice_offset_months") or 3) or 3
+	optional_items = payload.get("optional_items") or []
+	optional_note = (
+		"Optional services are quoted separately and are not included in this subscription total."
+		if optional_items
+		else ""
+	)
+
+	return """
+<div style='margin:18px 0 0;padding:16px;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb'>
+  <div style='font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6b7280'>Opt-In summary</div>
+  <div style='margin-top:8px;font-size:14px;color:#111827'><strong>%s facilities</strong>%s</div>
+  <div style='margin-top:4px;font-size:13px;color:#4b5563'>Contract term: %s</div>
+  <div style='margin-top:8px;font-size:13px;color:#4b5563'>Total contract commitment (incl. VAT)</div>
+  <div style='font-size:20px;font-weight:700;color:#111827'>KES %s</div>
+  <div style='margin-top:4px;font-size:13px;color:#4b5563'>Year 1: KES %s · billed quarterly; first invoice in %s month%s.</div>
+  %s
+  <div style='margin-top:8px;font-size:12px;color:#6b7280'>OIS reference: %s</div>
+</div>""" % (
+		facility_count,
+		" · " + level_summary if level_summary else "",
+		frappe.utils.escape_html(term_label),
+		_fmt_kes(commitment),
+		_fmt_kes(first_year),
+		first_invoice_offset,
+		"" if first_invoice_offset == 1 else "s",
+		"<div style='margin-top:8px;font-size:12px;color:#6b7280'>%s</div>"
+		% frappe.utils.escape_html(optional_note)
+		if optional_note
+		else "",
+		frappe.utils.escape_html(getattr(submission, "name", "") or ""),
+	)
+
+
 def _generate_contract_for_submission(submission, quote_name):
 	"""Create the configured contract inside the active Opt-In transaction.
 
@@ -2643,6 +2841,7 @@ def _generate_contract_for_submission(submission, quote_name):
 		facility_witness_name=submission.facility_witness_name,
 		facility_witness_email=submission.facility_witness_email,
 		facility_witness_phone=getattr(submission, "facility_witness_phone", "") or "",
+		invitation_summary_html=_signatory_package_summary_html(submission),
 		commit=False,
 	)
 	submission.contract = result["contract"]
@@ -3026,13 +3225,7 @@ def _process_deal_invitation_submission(sub, payload):
 	_update_job_step(sub.name, "deal", "in_progress", "Updating your account...")
 	contact = payload.get("contact") or {}
 	sub.deal = deal_name
-	sub.facility_signatory_name = (
-		frappe.utils.cstr(contact.get("first_name") or "").strip()
-		+ " "
-		+ frappe.utils.cstr(contact.get("last_name") or "").strip()
-	).strip()
-	sub.facility_signatory_email = frappe.utils.cstr(contact.get("email") or "").strip().lower()
-	sub.facility_signatory_phone = frappe.utils.cstr(contact.get("mobile_no") or "").strip()
+	_apply_submission_participants(sub, payload)
 	sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	deal.optin_submission = sub.name
 	deal.save(ignore_permissions=True)  # SYSTEM-INTERNAL
@@ -3099,17 +3292,29 @@ def _process_deal_invitation_submission(sub, payload):
 		_store_submission_bundle(sub, payload, quote, pricing_plans)
 	_update_job_step(sub.name, "quote", "done", "Quote ready")
 
+	contract_invitation_queued = False
 	if _should_auto_generate_contract():
 		_update_job_step(sub.name, "contract", "in_progress", "Preparing your contract...")
 		_generate_contract_for_submission(sub, quote.name)
 		_update_job_step(sub.name, "contract", "done", "Contract ready — signing invitation sending")
+		contract_invitation_queued = True
 
 	recipient = sub.submitter_email
 	if not recipient:
 		frappe.throw(_("A submitter email is required to send the Opt-In confirmation."))
 	network = _get_network_doc(sub.network_slug)
-	_queue_confirmation_email(sub, recipient, contact.get("first_name") or "", network, pricing)
-	_update_job_step(sub.name, "email", "done", "Confirmation email sending")
+	if contract_invitation_queued and sub.facility_signatory_email == recipient:
+		_update_job_step(sub.name, "email", "done", "Signing package sending")
+	else:
+		_queue_confirmation_email(
+			sub,
+			recipient,
+			contact.get("first_name") or "",
+			network,
+			pricing,
+			signatory_name=sub.facility_signatory_name if contract_invitation_queued else "",
+		)
+		_update_job_step(sub.name, "email", "done", "Confirmation email sending")
 	_mark_opted_in_facilities(sub.network_slug, payload.get("facilities") or [])
 	sub.status = "Processed"
 	sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
@@ -3266,14 +3471,7 @@ def _process_submission(submission_ref):
 				)
 
 		sub.deal = deal_name
-		# Persist signatory contact for exec pre-fill (oh-s2-2)
-		sub.facility_signatory_name = (
-			frappe.utils.cstr(contact.get("first_name", "")).strip()
-			+ " "
-			+ frappe.utils.cstr(contact.get("last_name", "")).strip()
-		).strip()
-		sub.facility_signatory_email = frappe.utils.cstr(contact.get("email", "")).strip().lower()
-		sub.facility_signatory_phone = frappe.utils.cstr(contact.get("mobile_no", "")).strip()
+		_apply_submission_participants(sub, payload)
 		sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 
 		# Forward back-link Deal -> Opt-In Submission for traceability (oh-s1-1).
@@ -3443,12 +3641,14 @@ def _process_submission(submission_ref):
 
 		_update_job_step(submission_ref, "quote", "done", "Draft quote ready")
 
+		contract_invitation_queued = False
 		if _should_auto_generate_contract():
 			_update_job_step(submission_ref, "contract", "in_progress", "Preparing your contract...")
 			_generate_contract_for_submission(sub, q.name if pricing else "")
 			_update_job_step(
 				submission_ref, "contract", "done", "Contract ready — signing invitation sending"
 			)
+			contract_invitation_queued = True
 
 		# ── Step 4: Send confirmation email ──────────────────────────────────
 		_update_job_step(submission_ref, "email", "in_progress", "Sending confirmation...")
@@ -3457,8 +3657,18 @@ def _process_submission(submission_ref):
 		if not recipient:
 			frappe.throw(_("A submitter email is required to send the Opt-In confirmation."))
 		network = _get_network_doc(sub.network_slug)
-		_queue_confirmation_email(sub, recipient, lead.first_name, network, pricing)
-		_update_job_step(submission_ref, "email", "done", "Confirmation email sending")
+		if contract_invitation_queued and sub.facility_signatory_email == recipient:
+			_update_job_step(submission_ref, "email", "done", "Signing package sending")
+		else:
+			_queue_confirmation_email(
+				sub,
+				recipient,
+				lead.first_name,
+				network,
+				pricing,
+				signatory_name=sub.facility_signatory_name if contract_invitation_queued else "",
+			)
+			_update_job_step(submission_ref, "email", "done", "Confirmation email sending")
 		_mark_opted_in_facilities(sub.network_slug, facilities)
 
 		# ── Mark submission complete ──────────────────────────────────────────
@@ -3574,6 +3784,13 @@ def list_submissions(
 		"status",
 		"network_slug",
 		"submitter_email",
+		"submitter_name",
+		"submitter_phone",
+		"signatory_mode",
+		"facility_signatory_name",
+		"facility_signatory_email",
+		"facility_witness_name",
+		"facility_witness_email",
 		"submitted_at",
 		"lead",
 		"deal",
@@ -3886,10 +4103,18 @@ def _submission_list_row(row, queue_statuses, contract, contract_signatories):
 		# Contracts created before Opt-In delivery tracking cannot be reliably
 		# correlated to an Email Queue record, so do not present them as failures.
 		contract_email_status = "Not tracked" if contract and not row.contract else "Not queued"
+	confirmation_email_status = queue_statuses.get(row.confirmation_email_queue)
+	if not confirmation_email_status:
+		is_self_signing = (
+			frappe.utils.cstr(row.get("signatory_mode") or "self").strip() == "self"
+			and frappe.utils.cstr(row.get("submitter_email") or "").strip().lower()
+			== frappe.utils.cstr(row.get("facility_signatory_email") or "").strip().lower()
+		)
+		confirmation_email_status = "Included in signing package" if is_self_signing else "Not queued"
 	return {
 		**{key: value for key, value in row.items() if key != "raw_json"},
 		"contract": contract.name if contract else row.contract,
-		"confirmation_email_status": queue_statuses.get(row.confirmation_email_queue, "Not queued"),
+		"confirmation_email_status": confirmation_email_status,
 		"contract_invitation_email_status": contract_email_status,
 		"facility_signing_status": signing_status,
 		"facility_signatory_signed_at": signed_at,

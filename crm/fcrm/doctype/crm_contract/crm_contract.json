@@ -58,13 +58,13 @@
   {
    "fieldname": "pricing_section",
    "fieldtype": "Section Break",
-   "label": "Price List History",
+   "label": "Contract Schedule History",
    "collapsible": 0
   },
   {
    "fieldname": "initial_price_list",
    "fieldtype": "Data",
-   "label": "Initial Price List",
+   "label": "Original Contract Schedule",
    "read_only": 1,
    "no_copy": 1,
    "in_list_view": 1
@@ -72,7 +72,7 @@
   {
    "fieldname": "negotiated_price_list",
    "fieldtype": "Data",
-   "label": "Negotiated Price List",
+   "label": "Agreed Contract Schedule",
    "read_only": 1,
    "no_copy": 1,
    "in_list_view": 1
@@ -80,7 +80,7 @@
   {
    "fieldname": "price_list_history",
    "fieldtype": "Long Text",
-   "label": "Price List History",
+   "label": "Contract Schedule History",
    "read_only": 1,
    "no_copy": 1
   },
