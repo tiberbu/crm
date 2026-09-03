@@ -46,6 +46,13 @@
               class="text-xs text-ink-gray-5 hover:text-ink-gray-7"
               >← {{ __('Back to Networks') }}</router-link
             >
+            <Button
+              variant="subtle"
+              size="sm"
+              :loading="syncPricingResource.loading"
+              @click="syncConfiguredPricing"
+              >{{ __('Sync configured pricing') }}</Button
+            >
             <Button variant="subtle" size="sm" @click="startEditNetwork">{{
               __('Edit Network')
             }}</Button>
@@ -76,6 +83,36 @@
               {{
                 __('Price list: {0}', [
                   networkDoc?.price_list_override || __('Opt-In default'),
+                ])
+              }}
+            </p>
+            <div
+              v-if="networkDoc?.price_lists_json"
+              class="mt-2 text-sm text-ink-gray-6"
+            >
+              <span class="font-medium">{{ __('Subscription years:') }}</span>
+              <span
+                v-for="(plan, index) in parsePricePlans(
+                  networkDoc.price_lists_json,
+                )"
+                :key="plan.year_number"
+                >{{ index ? ', ' : ' '
+                }}{{ plan.label || `Year ${plan.year_number}` }} ·
+                {{ plan.price_list }}</span
+              >
+            </div>
+            <p class="mt-1 text-xs text-ink-gray-5">
+              {{
+                __('First invoice {0} months after Opt-In', [
+                  networkDoc?.first_invoice_offset_months || 3,
+                ])
+              }}
+            </p>
+            <p class="mt-2 text-sm text-ink-gray-6">
+              {{
+                __('Optional services: {0}', [
+                  networkDoc?.optional_services_price_list ||
+                    __('Opt-In default'),
                 ])
               }}
             </p>
@@ -277,6 +314,98 @@
               :label="__('Enabled')"
               size="sm"
             />
+          </div>
+          <FormControl
+            v-model="networkForm.first_invoice_offset_months"
+            :label="__('First invoice after (months)')"
+            type="number"
+            min="1"
+          />
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-ink-gray-6">{{
+              __('Optional services price list')
+            }}</label>
+            <select
+              v-model="networkForm.optional_services_price_list"
+              class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+            >
+              <option value="">{{ __('Use Opt-In default') }}</option>
+              <option
+                v-for="priceList in optionalServicesPriceLists"
+                :key="priceList.value"
+                :value="priceList.value"
+              >
+                {{ priceList.label }}
+              </option>
+            </select>
+            <p class="text-[11px] text-ink-gray-5">
+              {{
+                __('Choices are shown in the portal; they are informational only.')
+              }}
+            </p>
+          </div>
+          <div class="flex flex-col gap-2 sm:col-span-2 lg:col-span-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <p
+                  class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
+                >
+                  {{ __('Subscription years') }}
+                </p>
+                <p class="mt-1 text-xs text-ink-gray-5">
+                  {{
+                    __(
+                      'One yearly quotation per selected price list. Keep the legacy override for older links.',
+                    )
+                  }}
+                </p>
+              </div>
+              <Button size="sm" variant="subtle" @click="addPricePlan">{{
+                __('Add year')
+              }}</Button>
+            </div>
+            <div
+              v-if="!networkForm.price_lists.length"
+              class="rounded-lg border border-dashed border-outline-gray-2 p-3 text-sm text-ink-gray-5"
+            >
+              {{ __('Using the legacy price list override') }}
+            </div>
+            <div
+              v-for="(plan, index) in networkForm.price_lists"
+              :key="plan.key"
+              class="grid grid-cols-[4rem_1fr_auto] items-end gap-2 rounded-lg border border-outline-gray-2 p-3"
+            >
+              <FormControl
+                v-model="plan.year_number"
+                :label="__('Year')"
+                type="number"
+                min="1"
+              />
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-ink-gray-6">{{
+                  __('Price list')
+                }}</label
+                ><select
+                  v-model="plan.price_list"
+                  class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+                >
+                  <option value="">{{ __('Select a price list') }}</option>
+                  <option
+                    v-for="priceList in negotiatedPriceLists"
+                    :key="priceList.value"
+                    :value="priceList.value"
+                  >
+                    {{ priceList.label }}
+                  </option>
+                </select>
+              </div>
+              <Button
+                variant="ghost"
+                theme="red"
+                icon="lucide-trash-2"
+                @click="networkForm.price_lists.splice(index, 1)"
+              />
+            </div>
           </div>
           <FormControl
             v-model="networkForm.custom_header_copy"
@@ -954,6 +1083,34 @@
                   : __('Optional facility-specific negotiated rate')
               }}
             </span>
+            <div v-if="networkPricePlans.length > 1" class="mt-2 space-y-1">
+              <p class="text-[11px] font-medium text-ink-gray-6">
+                {{ __('Yearly overrides') }}
+              </p>
+              <div
+                v-for="plan in networkPricePlans"
+                :key="plan.year_number"
+                class="flex items-center gap-2"
+              >
+                <span class="w-14 text-[11px] text-ink-gray-5">{{
+                  plan.label || `Year ${plan.year_number}`
+                }}</span>
+                <select
+                  v-model="form.price_list_overrides[plan.year_number]"
+                  :disabled="!!editingFacility && isOptedIn(editingFacility)"
+                  class="h-7 flex-1 rounded border border-outline-gray-2 bg-surface-white px-2 text-xs text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+                >
+                  <option value="">{{ __('Use network year price') }}</option>
+                  <option
+                    v-for="priceList in negotiatedPriceLists"
+                    :key="priceList.value"
+                    :value="priceList.value"
+                  >
+                    {{ priceList.label }}
+                  </option>
+                </select>
+              </div>
+            </div>
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6"
@@ -1167,6 +1324,9 @@ const networkResource = createResource({
 })
 
 const networkDoc = computed(() => networkResource.data ?? null)
+const networkPricePlans = computed(() =>
+  parsePricePlans(networkDoc.value?.price_lists_json),
+)
 const optInUrl = computed(
   () => `/opt-in?network=${encodeURIComponent(props.networkSlug)}`,
 )
@@ -1184,6 +1344,9 @@ const networkForm = reactive({
   logo_url: '',
   primary_colour: '#e53e3e',
   price_list_override: '',
+  first_invoice_offset_months: 3,
+  optional_services_price_list: '',
+  price_lists: [],
   custom_header_copy: '',
   partner_logos: [],
   coordinators: [],
@@ -1201,6 +1364,18 @@ function startEditNetwork() {
     logo_url: doc?.logo_url ?? '',
     primary_colour: doc?.primary_colour ?? '#e53e3e',
     price_list_override: doc?.price_list_override ?? '',
+    first_invoice_offset_months: doc?.first_invoice_offset_months || 3,
+    optional_services_price_list: doc?.optional_services_price_list ?? '',
+    price_lists: (() => {
+      try {
+        const rows = JSON.parse(doc?.price_lists_json || '[]')
+        return Array.isArray(rows)
+          ? rows.map((row) => ({ ...row, key: newRowKey() }))
+          : []
+      } catch {
+        return []
+      }
+    })(),
     custom_header_copy: doc?.custom_header_copy ?? '',
     partner_logos: (doc?.partner_logos ?? []).map((row) => ({
       ...row,
@@ -1243,6 +1418,42 @@ const negotiatedPriceListsResource = createResource({
 const negotiatedPriceLists = computed(
   () => negotiatedPriceListsResource.data ?? [],
 )
+const optionalServicesPriceListsResource = createResource({
+  url: 'crm.api.optin_admin.list_optional_services_price_lists',
+  auto: true,
+})
+const optionalServicesPriceLists = computed(
+  () => optionalServicesPriceListsResource.data ?? [],
+)
+const syncPricingResource = createResource({
+  url: 'crm.api.optin_admin.sync_configured_pricing',
+})
+
+async function syncConfiguredPricing() {
+  if (
+    !window.confirm(
+      __('Add missing yearly quotations for processed Opt-Ins in this network? Existing quotes and signed contracts will not be changed.'),
+    )
+  ) {
+    return
+  }
+  try {
+    const result = await syncPricingResource.submit({ network: props.networkSlug })
+    const summary = [
+      __('{0} updated', [result?.updated ?? 0]),
+      __('{0} already current', [result?.unchanged ?? 0]),
+      __('{0} locked', [result?.locked ?? 0]),
+    ].join(' · ')
+    toast.success(summary)
+    networkResource.reload()
+  } catch (error) {
+    toast.error(
+      error?.messages?.[0] ??
+        error?.message ??
+        __('Could not sync configured pricing'),
+    )
+  }
+}
 
 async function saveNetwork() {
   if (isNewNetwork.value && !networkForm.slug.trim()) {
@@ -1256,6 +1467,7 @@ async function saveNetwork() {
   networkFormError.value = ''
   const data = {
     ...networkForm,
+    price_lists: networkForm.price_lists.map(({ key, ...row }) => row),
   }
   if (!isNewNetwork.value) {
     data.name = props.networkSlug
@@ -1284,6 +1496,15 @@ function newRowKey() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function parsePricePlans(value) {
+  try {
+    const rows = JSON.parse(value || '[]')
+    return Array.isArray(rows) ? rows : []
+  } catch {
+    return []
+  }
+}
+
 function addPartner() {
   networkForm.partner_logos.push({
     key: newRowKey(),
@@ -1303,6 +1524,17 @@ function addSigner() {
     full_name: '',
     email: '',
     phone: '',
+  })
+}
+
+function addPricePlan() {
+  const next = networkForm.price_lists.length + 1
+  networkForm.price_lists.push({
+    key: newRowKey(),
+    year_number: next,
+    price_list: '',
+    label: `Year ${next}`,
+    enabled: true,
   })
 }
 
@@ -1473,6 +1705,7 @@ const form = reactive({
   contact_email: '',
   contact_phone: '',
   price_list_override: '',
+  price_list_overrides: {},
   status: 'Active',
 })
 const organizationEdited = ref(false)
@@ -1486,6 +1719,7 @@ function resetForm() {
   form.contact_email = ''
   form.contact_phone = ''
   form.price_list_override = ''
+  form.price_list_overrides = {}
   form.status = 'Active'
   organizationEdited.value = false
   formError.value = ''
@@ -1508,6 +1742,13 @@ function editContact(row) {
     contact_email: m.contact_email ?? '',
     contact_phone: m.contact_phone ?? '',
     price_list_override: m.price_list_override ?? '',
+    price_list_overrides: (() => {
+      try {
+        return JSON.parse(m.price_list_overrides_json || '{}') || {}
+      } catch {
+        return {}
+      }
+    })(),
     status: m.status ?? 'Active',
   })
   editingFacility.value = row
@@ -1589,6 +1830,9 @@ async function saveContact() {
   // only place where pricing can be changed before facility signature.
   if (!editingFacility.value || !isOptedIn(editingFacility.value)) {
     membership.price_list_override = form.price_list_override
+    membership.price_list_overrides = Object.fromEntries(
+      Object.entries(form.price_list_overrides).filter(([, value]) => value),
+    )
   }
   const data = {
     mfl_code: form.mfl_code,

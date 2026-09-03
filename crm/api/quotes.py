@@ -69,7 +69,9 @@ def _item_uom(item_code):
 def _get_item_price(item_code, price_list):
 	"""
 	Return the selling price_list_rate for an Item on a given Price List, honouring
-	Item Price validity dates. Falls back to the default Standard Selling list, then 0.
+	Item Price validity dates. A requested list is strict: it never silently pulls
+	a Standard Selling rate into a negotiated quote. The default list is used only
+	when no list was requested.
 	This is the single source of default line pricing (ERPNext Item Price architecture).
 	"""
 	if not item_code:
@@ -96,9 +98,7 @@ def _get_item_price(item_code, price_list):
 		# no date-valid row → fall back to the newest row regardless of dates
 		return float(rows[0].price_list_rate) if rows else None
 
-	rate = _lookup(price_list) if price_list else None
-	if rate is None and price_list != DEFAULT_PRICE_LIST:
-		rate = _lookup(DEFAULT_PRICE_LIST)
+	rate = _lookup(price_list) if price_list else _lookup(DEFAULT_PRICE_LIST)
 	return float(rate or 0)
 
 
@@ -343,23 +343,27 @@ def create_quote(deal, price_list=None):
 @frappe.whitelist()
 def list_quotes(deal):
 	"""Return all Quotations for a given CRM Deal, shaped for the QuotingTab."""
+	fields = [
+		"name",
+		"transaction_date as quote_date",
+		"valid_till as valid_until",
+		"contract_start_date",
+		"grand_total",
+		"docstatus",
+		"crm_sent",
+		"crm_payment_terms as payment_terms",
+		"contract_term_yrs",
+		"previous_version",
+		"currency",
+		"creation",
+	]
+	for fieldname in ("selling_price_list", "crm_optin_submission", "crm_optin_year", "crm_optin_bundle_key"):
+		if frappe.db.has_column("Quotation", fieldname):
+			fields.append(fieldname)
 	rows = frappe.get_list(
 		"Quotation",
 		filters=[["crm_deal", "=", deal]],
-		fields=[
-			"name",
-			"transaction_date as quote_date",
-			"valid_till as valid_until",
-			"contract_start_date",
-			"grand_total",
-			"docstatus",
-			"crm_sent",
-			"crm_payment_terms as payment_terms",
-			"contract_term_yrs",
-			"previous_version",
-			"currency",
-			"creation",
-		],
+		fields=fields,
 		order_by="creation desc",
 	)
 	invoice_by_quotation = _invoices_for_quotations([r.name for r in rows])
@@ -367,6 +371,10 @@ def list_quotes(deal):
 	for r in rows:
 		r["status"] = _derive_status(r)
 		r["erpnext_sales_invoice"] = invoice_by_quotation.get(r["name"])
+	# Bundle quotes are presented in contractual year order even though native
+	# quotation creation timestamps put later-year records after Year 1.
+	if any(frappe.utils.cint(r.get("crm_optin_year")) for r in rows):
+		rows.sort(key=lambda r: (frappe.utils.cint(r.get("crm_optin_year")) or 999, r.get("creation") or ""))
 	return rows
 
 
@@ -593,11 +601,15 @@ def list_price_lists():
 	"""Selling price lists offered in the quote editor's price-list selector."""
 	rows = frappe.get_list(
 		"Price List",
-		filters=[["selling", "=", 1], ["enabled", "=", 1]],
+	filters=[["selling", "=", 1], ["enabled", "=", 1], ["name", "!=", DEFAULT_PRICE_LIST]],
 		fields=["name", "currency"],
 		order_by="name asc",
 	)
-	return [{"value": r.name, "label": r.name, "currency": r.currency} for r in rows]
+	return [
+		{"value": r.name, "label": r.name, "currency": r.currency}
+		for r in rows
+		if frappe.utils.cstr(r.name).strip().casefold() != DEFAULT_PRICE_LIST.casefold()
+	]
 
 
 @frappe.whitelist()
@@ -625,14 +637,18 @@ def set_quote_price_list(quote, price_list):
 		frappe.throw("Could not verify the facility signature status. Please try again.")
 
 	price_list = frappe.utils.cstr(price_list or "").strip()
-	if not price_list or not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
+	if (
+		not price_list
+		or price_list.casefold() == DEFAULT_PRICE_LIST.casefold()
+		or not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1})
+	):
 		frappe.throw("Select an enabled selling price list")
 
 	previous_price_list = doc.get("selling_price_list") or DEFAULT_PRICE_LIST
 	ensure_initial(doc, previous_price_list)
 	doc.selling_price_list = price_list
 	# Re-baseline every line to the new list's Item Price. A true miss resolves to
-	# 0 (via _get_item_price's Standard-Selling fallback) so the exec re-enters it.
+	# 0 and remains visible for the exec to price explicitly from this list.
 	baseline_rates = [_get_item_price(row.item_code, price_list) for row in (doc.items or [])]
 
 	doc.flags.ignore_permissions = True  # SYSTEM-INTERNAL
@@ -801,7 +817,7 @@ def list_catalogue_items(search=None, price_list=None):
 	item's default rate comes from Item Price — the exec then negotiates it.
 	Any sellable Item with a price is quotable, not just the 15 CRM Products.
 	"""
-	price_list = price_list or DEFAULT_PRICE_LIST
+	price_list = frappe.utils.cstr(price_list or "").strip() or DEFAULT_PRICE_LIST
 
 	item_filters = [["disabled", "=", 0], ["is_sales_item", "=", 1]]
 	if search:
@@ -833,20 +849,19 @@ def list_catalogue_items(search=None, price_list=None):
 
 
 def _catalogue_item_rates(item_codes, price_list):
-	"""Resolve catalogue item rates in bulk while preserving price-list fallback.
+	"""Resolve catalogue item rates in bulk for one selected price list.
 
 	The former picker performed one or two Item Price queries for every catalogue
 	item. The quote editor can expose 100 items, so opening it could issue hundreds
-	of database reads. This batches the same valid-date and Standard Selling fallback
-	rules into one Item Price query.
+	of database reads. This batches valid-date resolution into one Item Price query.
 	"""
 	item_codes = [item_code for item_code in item_codes if item_code]
 	if not item_codes:
 		return {}
 
+	# A selected negotiated list is strict. Including Standard Selling here was
+	# the source of the catalogue showing unrelated items after a list switch.
 	price_lists = [price_list]
-	if price_list != DEFAULT_PRICE_LIST:
-		price_lists.append(DEFAULT_PRICE_LIST)
 
 	price_rows = frappe.get_list(
 		"Item Price",
@@ -876,8 +891,6 @@ def _catalogue_item_rates(item_codes, price_list):
 	rates = {}
 	for item_code in item_codes:
 		rate = best_rate(rows_by_item_and_list.get((item_code, price_list), []))
-		if rate is None and price_list != DEFAULT_PRICE_LIST:
-			rate = best_rate(rows_by_item_and_list.get((item_code, DEFAULT_PRICE_LIST), []))
 		rates[item_code] = float(rate or 0)
 	return rates
 

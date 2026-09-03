@@ -34,61 +34,174 @@
 
     <!-- Pricing table -->
     <template v-else-if="pricing">
-      <!-- Hero total: the number that matters, made unmissable. Brand-tinted surface +
-           accent bar keep it high-contrast on any network brand hue. -->
-      <div
-        class="mb-5 flex overflow-hidden rounded-2xl border border-gray-200 shadow-sm dark:border-gray-700"
+      <section
+        v-if="availablePlans.length > 1"
+        class="mb-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900"
       >
-        <div
-          class="w-1.5 shrink-0"
-          style="background-color: var(--brand-primary)"
-        />
-        <div
-          class="flex-1 p-5"
-          style="
-            background-color: color-mix(
-              in srgb,
-              var(--brand-primary) 6%,
-              transparent
-            );
-          "
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p
-                class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
-              >
-                Total Monthly · incl. VAT
-              </p>
-              <p
-                class="mt-0.5 text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white"
-              >
-                {{ fmtKes(pricing.grand_total_monthly) }}
-              </p>
-            </div>
-            <span
-              class="mt-1 shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
-              style="
-                background-color: color-mix(
-                  in srgb,
-                  var(--brand-primary) 14%,
-                  transparent
-                );
-                color: var(--brand-primary);
-              "
-            >
-              {{ pricing.facilities.length }}
-              {{ pricing.facilities.length === 1 ? 'facility' : 'facilities' }}
-            </span>
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold text-gray-900 dark:text-white">
+              Choose your subscription term
+            </p>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Each selected year has its own quotation. Your contract remains
+              one agreement.
+            </p>
           </div>
-          <div class="mt-2 flex items-baseline gap-2 text-sm">
-            <span class="text-gray-500 dark:text-gray-400"
-              >Annual (incl. VAT)</span
-            >
-            <span class="font-semibold text-gray-800 dark:text-gray-200">{{
-              fmtKes(pricing.grand_total_annual)
+          <span
+            class="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+          >
+            {{ selectedYears.length }} year{{
+              selectedYears.length === 1 ? '' : 's'
+            }}
+          </span>
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <button
+            v-for="plan in availablePlans"
+            :key="plan.year_number"
+            type="button"
+            :class="[
+              'rounded-xl border px-3 py-2 text-left text-sm transition',
+              selectedYears.includes(plan.year_number)
+                ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
+                : 'border-gray-200 text-gray-600 hover:border-gray-400 dark:border-gray-700 dark:text-gray-300',
+            ]"
+            @click="toggleYear(plan.year_number)"
+          >
+            <span class="block font-semibold">{{
+              plan.label || `Year ${plan.year_number}`
             }}</span>
+            <span class="mt-0.5 block text-xs opacity-70">{{
+              plan.price_list
+            }}</span>
+            <span class="mt-1 block text-xs font-semibold opacity-90">{{
+              fmtKes(plan.grand_total_annual)
+            }} / year incl. VAT</span>
+          </button>
+        </div>
+        <p
+          v-if="availablePlans.length >= 3 && selectedYears.length < 3"
+          class="mt-2 text-xs text-amber-600"
+        >
+          Select at least three years to continue.
+        </p>
+      </section>
+
+      <section
+        v-if="optionalServices.length"
+        class="mb-5 rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50"
+      >
+        <div>
+          <p class="text-sm font-semibold text-gray-900 dark:text-white">
+            Optional services and hardware
+          </p>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Select anything you would like our team to quote separately. These
+            are not part of the subscription total.
+          </p>
+        </div>
+        <div class="mt-3 grid gap-2 sm:grid-cols-2">
+          <label
+            v-for="item in optionalServices"
+            :key="item.item_code"
+            class="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-200 bg-white p-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+          >
+            <input
+              v-model="selectedOptionalCodes"
+              type="checkbox"
+              :value="item.item_code"
+              class="mt-0.5"
+            />
+            <span
+              ><span class="block font-medium text-gray-900 dark:text-white">{{
+                item.item_name
+              }}</span
+              ><span class="block text-xs text-gray-500">{{
+                item.description
+              }}</span></span
+            >
+          </label>
+        </div>
+      </section>
+
+      <!-- Hero total: selected-term commitment is the number that matters. -->
+      <div class="mb-5 grid gap-3 sm:grid-cols-2">
+        <div
+          class="flex overflow-hidden rounded-2xl border border-gray-200 shadow-sm dark:border-gray-700"
+        >
+          <div
+            class="w-1.5 shrink-0"
+            style="background-color: var(--brand-primary)"
+          />
+          <div
+            class="flex-1 p-5"
+            style="
+              background-color: color-mix(
+                in srgb,
+                var(--brand-primary) 6%,
+                transparent
+              );
+            "
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p
+                  class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+                >
+                  Total contract commitment · incl. VAT
+                </p>
+                <p
+                  class="mt-0.5 text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white"
+                >
+                  {{ fmtKes(commitmentAnnual) }}
+                </p>
+              </div>
+              <span
+                class="mt-1 shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
+                style="
+                  background-color: color-mix(
+                    in srgb,
+                    var(--brand-primary) 14%,
+                    transparent
+                  );
+                  color: var(--brand-primary);
+                "
+              >
+                {{ selectedYears.length }}
+                {{ selectedYears.length === 1 ? 'year' : 'years' }}
+              </span>
+            </div>
+            <div class="mt-2 flex flex-wrap items-baseline gap-2 text-sm">
+              <span class="text-gray-500 dark:text-gray-400">
+                Selected term · {{ selectedYears.length }} year{{
+                  selectedYears.length === 1 ? '' : 's'
+                }}
+              </span>
+              <span class="font-semibold text-gray-800 dark:text-gray-200">
+                {{ fmtKes(commitmentNetAnnual) }} net
+              </span>
+            </div>
           </div>
+        </div>
+        <div
+          class="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-800/50"
+        >
+          <p
+            class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+          >
+            Active year · Year {{ activePlan.year_number || 1 }}
+          </p>
+          <p class="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
+            {{ fmtKes(activePlan.grand_total_annual) }}
+          </p>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Annual incl. VAT · {{ activePlan.price_list || 'Configured price list' }}
+          </p>
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            Each selected year has its own quotation. Optional services are
+            shown separately and are not included in this total.
+          </p>
         </div>
       </div>
 
@@ -122,7 +235,7 @@
           </thead>
           <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
             <tr
-              v-for="fac in pricing.facilities"
+              v-for="fac in activePlan.facilities"
               :key="fac.mfl_code"
               class="bg-white dark:bg-gray-900"
             >
@@ -168,12 +281,12 @@
               <td
                 class="px-4 py-2 text-right text-sm text-gray-700 dark:text-gray-300"
               >
-                {{ fmtKes(pricing.subtotal_monthly) }}
+                {{ fmtKes(activePlan.subtotal_monthly) }}
               </td>
               <td
                 class="px-4 py-2 text-right text-sm text-gray-700 dark:text-gray-300"
               >
-                {{ fmtKes(pricing.subtotal_annual) }}
+                {{ fmtKes(activePlan.subtotal_annual) }}
               </td>
             </tr>
             <tr>
@@ -186,12 +299,12 @@
               <td
                 class="px-4 py-2 text-right text-sm text-gray-700 dark:text-gray-300"
               >
-                {{ fmtKes(pricing.vat_monthly) }}
+                {{ fmtKes(activePlan.vat_monthly) }}
               </td>
               <td
                 class="px-4 py-2 text-right text-sm text-gray-700 dark:text-gray-300"
               >
-                {{ fmtKes(pricing.vat_annual) }}
+                {{ fmtKes(activePlan.vat_annual) }}
               </td>
             </tr>
             <tr class="border-t-2 border-gray-200 dark:border-gray-600">
@@ -205,13 +318,13 @@
                 class="px-4 py-3 text-right text-base font-bold"
                 :style="{ color: 'var(--brand-primary)' }"
               >
-                {{ fmtKes(pricing.grand_total_monthly) }}
+                {{ fmtKes(activePlan.grand_total_monthly) }}
               </td>
               <td
                 class="px-4 py-3 text-right text-base font-bold"
                 :style="{ color: 'var(--brand-primary)' }"
               >
-                {{ fmtKes(pricing.grand_total_annual) }}
+                {{ fmtKes(activePlan.grand_total_annual) }}
               </td>
             </tr>
           </tfoot>
@@ -245,7 +358,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useOptInStore } from './useOptInStore.js'
 
@@ -260,9 +373,59 @@ const store = useOptInStore()
 const loading = ref(false)
 const errorMsg = ref('')
 const pricing = ref(store.pricing || null)
-const canContinue = computed(() => (pricing.value?.facilities || []).length > 0)
+const availablePlans = computed(
+  () => store.networkConfig?.price_plans || pricing.value?.plans || [],
+)
+const selectedYears = ref(
+  (store.pricing?.selected_years?.length
+    ? [...store.pricing.selected_years]
+    : availablePlans.value.length >= 3
+      ? availablePlans.value.slice(0, 3).map((plan) => plan.year_number)
+      : availablePlans.value.map((plan) => plan.year_number)) || [1],
+)
+const selectedOptionalCodes = ref(
+  (store.optionalItems || []).map((item) => item.item_code),
+)
+const optionalServices = computed(
+  () =>
+    store.networkConfig?.optional_services ||
+    pricing.value?.optional_services ||
+    [],
+)
+const activePlan = computed(() => {
+  const year = selectedYears.value[0]
+  return (
+    (pricing.value?.plans || []).find((plan) => plan.year_number === year) ||
+    pricing.value || { facilities: [] }
+  )
+})
+const commitmentAnnual = computed(() =>
+  Number(pricing.value?.commitment_annual ?? activePlan.value.grand_total_annual ?? 0),
+)
+const commitmentNetAnnual = computed(() =>
+  Number(
+    pricing.value?.commitment_net_annual ??
+      activePlan.value.subtotal_annual ??
+      0,
+  ),
+)
+const canContinue = computed(
+  () =>
+    activePlan.value.facilities?.length > 0 &&
+    (availablePlans.value.length < 3 || selectedYears.value.length >= 3),
+)
 
 const pricingResource = createResource({ url: 'crm.api.optin.get_pricing' })
+
+watch(
+  selectedOptionalCodes,
+  (codes) => {
+    store.setOptionalItems(
+      optionalServices.value.filter((item) => codes.includes(item.item_code)),
+    )
+  },
+  { deep: true },
+)
 
 async function loadPricing() {
   loading.value = true
@@ -276,6 +439,7 @@ async function loadPricing() {
       expiry: store.signingExpiry,
       selected_mfl_codes: JSON.stringify(mflCodes),
       deal_invitation: props.dealInvitation,
+      selected_years: JSON.stringify(selectedYears.value),
     })
     if (!(data?.facilities || []).length) {
       pricing.value = null
@@ -286,6 +450,11 @@ async function loadPricing() {
     }
     pricing.value = data
     store.setPricing(data)
+    store.setOptionalItems(
+      optionalServices.value.filter((item) =>
+        selectedOptionalCodes.value.includes(item.item_code),
+      ),
+    )
   } catch (err) {
     errorMsg.value =
       err && err.message
@@ -294,6 +463,16 @@ async function loadPricing() {
   } finally {
     loading.value = false
   }
+}
+
+function toggleYear(year) {
+  if (selectedYears.value.includes(year)) {
+    if (selectedYears.value.length === 1) return
+    selectedYears.value = selectedYears.value.filter((value) => value !== year)
+  } else {
+    selectedYears.value = [...selectedYears.value, year].sort((a, b) => a - b)
+  }
+  loadPricing()
 }
 
 onMounted(() => {

@@ -251,7 +251,12 @@ onMounted(async () => {
       network_slug: props.networkSlug,
       deal_invitation: props.dealInvitation,
     })
-    store.setNetworkConfig(data.network_config || null)
+    store.setNetworkConfig({
+      ...(data.network_config || {}),
+      price_plans: data.price_plans || [],
+      optional_services: data.optional_services || [],
+      first_invoice_offset_months: data.first_invoice_offset_months || 3,
+    })
     if (data.deal_invitation?.contact) {
       store.setContact(data.deal_invitation.contact)
     }

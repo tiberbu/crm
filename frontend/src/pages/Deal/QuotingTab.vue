@@ -195,8 +195,64 @@
       </div>
     </div>
 
-    <!-- ═══ OIS DEALS: inline quote (auto-built) ═══ -->
+    <!-- ═══ OIS DEALS: yearly quotation bundle ═══ -->
     <template v-if="isOis">
+      <section
+        v-if="quotes.length > 1"
+        class="mt-4 rounded-xl border border-outline-gray-2 bg-surface-white p-4 dark:bg-surface-gray-1"
+      >
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p class="text-sm font-semibold text-ink-gray-9">
+              {{ __('Yearly quotations') }}
+            </p>
+            <p class="mt-0.5 text-xs text-ink-gray-5">
+              {{
+                __(
+                  'Each year has its own subscription quotation. The contract and signing process remain one agreement.',
+                )
+              }}
+            </p>
+          </div>
+          <span
+            class="rounded-full bg-surface-gray-2 px-2 py-1 text-xs font-semibold text-ink-gray-6"
+          >
+            {{ __('{0} years', [quotes.length]) }}
+          </span>
+        </div>
+        <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <button
+            v-for="(q, index) in quotes"
+            :key="`ois-year-${q.name}`"
+            type="button"
+            class="rounded-lg border px-3 py-3 text-left transition-colors"
+            :class="
+              primaryQuoteName === q.name
+                ? 'border-outline-red-4 bg-surface-gray-1 dark:bg-surface-gray-2'
+                : 'border-outline-gray-2 hover:bg-surface-gray-1 dark:hover:bg-surface-gray-2'
+            "
+            @click="selectedOisQuote = q.name"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm font-semibold text-ink-gray-9">
+                {{ __('Year {0}', [quoteYear(q, index)]) }}
+              </span>
+              <span :class="pillClass(q)">{{ __(q.status) }}</span>
+            </div>
+            <p class="mt-1 truncate text-xs text-ink-gray-5">
+              {{ q.selling_price_list || __('Configured price list') }}
+            </p>
+            <p class="mt-2 text-sm font-semibold text-ink-gray-9">
+              {{ fmtKes(q.grand_total) }}
+              <span class="text-xs font-normal text-ink-gray-5">{{
+                __('incl. VAT')
+              }}</span>
+            </p>
+            <p class="mt-1 text-[11px] text-ink-gray-5">{{ q.name }}</p>
+          </button>
+        </div>
+      </section>
+
       <!-- Quote exists → edit negotiated pricing inline, right here -->
       <QuotePanel
         v-if="primaryQuoteName"
@@ -729,8 +785,15 @@ const dealDoc = computed(() => dealDocResource.data ?? null)
 
 // OIS-sourced deals render the quote inline (no wizard overlay)
 const isOis = computed(() => !!dealDoc.value?.optin_submission)
+const selectedOisQuote = ref(null)
 const primaryQuoteName = computed(
-  () => quotes.value[0]?.name ?? lifecycle.value?.quotation?.name ?? null,
+  () =>
+    (selectedOisQuote.value &&
+    quotes.value.some((q) => q.name === selectedOisQuote.value)
+      ? selectedOisQuote.value
+      : quotes.value[0]?.name) ??
+    lifecycle.value?.quotation?.name ??
+    null,
 )
 
 function onQuoteSaved() {
@@ -803,6 +866,24 @@ const quotesResource = createResource({
   auto: true,
 })
 const quotes = computed(() => quotesResource.data ?? [])
+
+watch(
+  [isOis, quotes],
+  ([ois, list]) => {
+    if (!ois) {
+      selectedOisQuote.value = null
+      return
+    }
+    if (!list.some((quote) => quote.name === selectedOisQuote.value)) {
+      selectedOisQuote.value = list[0]?.name ?? null
+    }
+  },
+  { immediate: true },
+)
+
+function quoteYear(quote, index) {
+  return Number(quote?.crm_optin_year || index + 1)
+}
 
 const acceptedQuote = computed(() =>
   quotes.value.find((q) => q.status === 'Accepted' && q.erpnext_sales_invoice),
@@ -956,39 +1037,39 @@ async function submitOptInSummary() {
   } finally {
     submittingSummary.value = false
   }
+}
 
-  const showInvitationDialog = ref(false)
-  const invitationPriceList = ref('')
-  const invitationError = ref('')
-  const sendingInvitation = ref(false)
-  const sendInvitationResource = createResource({
-    url: 'crm.api.optin.send_deal_optin_invitation',
-  })
+const showInvitationDialog = ref(false)
+const invitationPriceList = ref('')
+const invitationError = ref('')
+const sendingInvitation = ref(false)
+const sendInvitationResource = createResource({
+  url: 'crm.api.optin.send_deal_optin_invitation',
+})
 
-  function openInvitationDialog() {
-    invitationPriceList.value = linkedNetwork.value?.price_list_override || ''
-    invitationError.value = ''
-    showInvitationDialog.value = true
-  }
+function openInvitationDialog() {
+  invitationPriceList.value = linkedNetwork.value?.price_list_override || ''
+  invitationError.value = ''
+  showInvitationDialog.value = true
+}
 
-  async function sendInvitation() {
-    sendingInvitation.value = true
-    invitationError.value = ''
-    try {
-      const result = await sendInvitationResource.submit({
-        deal: props.dealId,
-        price_list: invitationPriceList.value,
-      })
-      showInvitationDialog.value = false
-      toast.success(__('Opt-In invitation sent to {0}', [result.sent_to]))
-    } catch (error) {
-      invitationError.value =
-        error?.messages?.[0] ??
-        error?.message ??
-        __('Could not send Opt-In invitation')
-    } finally {
-      sendingInvitation.value = false
-    }
+async function sendInvitation() {
+  sendingInvitation.value = true
+  invitationError.value = ''
+  try {
+    const result = await sendInvitationResource.submit({
+      deal: props.dealId,
+      price_list: invitationPriceList.value,
+    })
+    showInvitationDialog.value = false
+    toast.success(__('Opt-In invitation sent to {0}', [result.sent_to]))
+  } catch (error) {
+    invitationError.value =
+      error?.messages?.[0] ??
+      error?.message ??
+      __('Could not send Opt-In invitation')
+  } finally {
+    sendingInvitation.value = false
   }
 }
 

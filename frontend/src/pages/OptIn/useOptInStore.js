@@ -25,6 +25,9 @@ export const useOptInStore = defineStore('optin', {
     facilities: [],
     selectedFacilities: [],
     pricing: null,
+    pricingPlans: [],
+    selectedYears: [],
+    optionalItems: [],
     termsHtml: '',
     termsDocName: '',
     termsDocHash: '',
@@ -72,6 +75,12 @@ export const useOptInStore = defineStore('optin', {
 
     setPricing(pricing) {
       this.pricing = pricing
+      this.pricingPlans = pricing?.plans || []
+      this.selectedYears = pricing?.selected_years || []
+    },
+
+    setOptionalItems(items) {
+      this.optionalItems = items || []
     },
 
     setTerms(html, docName, docHash) {

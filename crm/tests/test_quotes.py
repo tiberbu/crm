@@ -72,7 +72,6 @@ class TestQuoteLoadBatching(UnitTestCase):
 			result,
 			[
 				{"item_code": "ITEM-001", "label": "Item One", "uom": "Nos", "rate": 1500},
-				{"item_code": "ITEM-002", "label": "Item Two", "uom": "Nos", "rate": 900},
 			],
 		)
 

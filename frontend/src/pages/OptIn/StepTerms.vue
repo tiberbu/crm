@@ -160,6 +160,8 @@ async function loadTerms() {
       network_slug: props.networkSlug,
       expiry: store.signingExpiry,
       selected_mfl_codes: JSON.stringify(mflCodes),
+      selected_years: JSON.stringify(store.pricing?.selected_years || []),
+      optional_items: JSON.stringify(store.optionalItems || []),
       deal_invitation: props.dealInvitation,
     })
     store.setTerms(data.html, data.doc_name, data.doc_hash)

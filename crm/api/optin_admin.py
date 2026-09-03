@@ -21,13 +21,32 @@ from frappe import _
 from frappe.utils.jinja import get_jenv
 from jinja2.exceptions import TemplateSyntaxError
 
+from crm.utils.optin_bundles import membership_price_lists, normalize_price_lists
+
 _OPTIN_TERMS_EXPRESSIONS = {
 	"network.display_name",
 	"date",
 	"contact.email",
+	"customer_name",
+	"customer_email_display",
+	"facility_name",
+	"facility_keph_level_display",
+	"facility_mfl_code_display",
+	"price_list_display",
+	"quote_display",
 	"pricing_table",
+	"optional_services_table",
+	"vat_label",
 	"grand_total_monthly_display",
 	"grand_total_annual_display",
+	"commitment_years",
+	"commitment_years_label",
+	"contract_commitment_excl_vat",
+	"contract_commitment_incl_vat",
+	"contract_commitment_incl_vat_display",
+	"first_invoice_offset_months",
+	"first_invoice_offset_label",
+	"year_one_grand_total_monthly_display",
 }
 
 
@@ -77,6 +96,29 @@ def _validate_opted_in_price_list_override(existing_membership, requested_overri
 			),
 			frappe.ValidationError,
 		)
+
+
+def _normalize_price_list_overrides(value):
+	"""Validate a year -> selling Price List map for facility overrides."""
+	if isinstance(value, str):
+		try:
+			value = json.loads(value or "{}")
+		except (TypeError, ValueError, json.JSONDecodeError):
+			value = {}
+	if isinstance(value, list):
+		value = {row.get("year_number"): row.get("price_list") for row in value if isinstance(row, dict)}
+	if not isinstance(value, dict):
+		return {}
+	result = {}
+	for year, price_list in value.items():
+		year = frappe.utils.cint(year)
+		price_list = frappe.utils.cstr(price_list or "").strip()
+		if not year or not price_list:
+			continue
+		if not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
+			frappe.throw(_("Select an enabled selling price list for year {0}.").format(year))
+		result[str(year)] = price_list
+	return result
 
 
 def _require_optin_settings_manager():
@@ -299,6 +341,36 @@ def save_network(data: Any):
 	):
 		frappe.throw(_("Select an enabled selling price list."))
 	data["price_list_override"] = price_list_override
+	if "first_invoice_offset_months" in data:
+		data["first_invoice_offset_months"] = max(frappe.utils.cint(data.get("first_invoice_offset_months")) or 3, 1)
+	for price_field in ("optional_services_price_list",):
+		value = frappe.utils.cstr(data.get(price_field) or "").strip()
+		if value and not frappe.db.exists("Price List", {"name": value, "selling": 1, "enabled": 1}):
+			frappe.throw(_("Select an enabled selling price list for {0}.").format(price_field.replace("_", " ")))
+		data[price_field] = value
+	if "price_lists" in data:
+		plans = data.get("price_lists") or []
+		if not isinstance(plans, list):
+			frappe.throw(_("Yearly price lists must be a list."))
+		normalized_plans = []
+		seen_years = set()
+		for index, row in enumerate(plans, 1):
+			if not isinstance(row, dict):
+				frappe.throw(_("Yearly price list rows must be objects."))
+			year = max(frappe.utils.cint(row.get("year_number")) or index, 1)
+			value = frappe.utils.cstr(row.get("price_list") or "").strip()
+			if year in seen_years or not value:
+				continue
+			if not frappe.db.exists("Price List", {"name": value, "selling": 1, "enabled": 1}):
+				frappe.throw(_("Select an enabled selling price list for year {0}.").format(year))
+			seen_years.add(year)
+			normalized_plans.append({
+				"year_number": year,
+				"price_list": value,
+				"label": frappe.utils.cstr(row.get("label") or "Year %s" % year).strip(),
+				"enabled": bool(row.get("enabled", True)),
+			})
+		data["price_lists_json"] = json.dumps(sorted(normalized_plans, key=lambda row: row["year_number"]))
 
 	name = data.get("name")
 	if name and frappe.db.exists("CRM Opt-In Network", name):
@@ -315,6 +387,9 @@ def save_network(data: Any):
 		"logo_url",
 		"primary_colour",
 		"price_list_override",
+		"price_lists_json",
+		"first_invoice_offset_months",
+		"optional_services_price_list",
 		"custom_header_copy",
 	):
 		if field in data:
@@ -349,6 +424,72 @@ def save_network(data: Any):
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 	return {"name": doc.name}
+
+
+@frappe.whitelist()
+def sync_configured_pricing(network: Any, submission: Any = None):
+	"""Add missing yearly quotes for processed Opt-Ins in one network.
+
+	Only Sales Managers/System Managers can run reconciliation. Each submission
+	uses its own savepoint, so one stale facility or missing price cannot leave
+	partial quotations on another submission. Fully executed contracts are reported
+	(as locked) and never rewritten.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	network = frappe.utils.cstr(network or "").strip()
+	if not network:
+		frappe.throw(_("A network is required."), frappe.ValidationError)
+	submission_name = frappe.utils.cstr(submission or "").strip()
+	if submission_name:
+		rows = [{"name": submission_name}]
+	else:
+		rows = frappe.get_list(
+			"CRM Opt-In Submission",
+			filters={"network_slug": network, "status": "Processed"},
+			fields=["name"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: manager reconciliation
+		)
+	from crm.api.optin import sync_submission_configured_pricing
+
+	result = {
+		"network": network,
+		"total": len(rows),
+		"updated": 0,
+		"unchanged": 0,
+		"locked": 0,
+		"skipped": 0,
+		"failed": 0,
+		"details": [],
+	}
+	for row in rows:
+		name = frappe.utils.cstr(row.get("name") or "").strip()
+		if not name:
+			continue
+		save_point = "optin_sync_%s" % re.sub(r"[^a-zA-Z0-9_]", "_", name)
+		frappe.db.savepoint(save_point)
+		try:
+			item = sync_submission_configured_pricing(name)
+			status = item.get("status")
+			if status == "updated":
+				result["updated"] += 1
+			elif status == "unchanged":
+				result["unchanged"] += 1
+			elif status == "locked":
+				result["locked"] += 1
+			else:
+				result["skipped"] += 1
+			result["details"].append({"submission": name, **item})
+		except Exception as exc:
+			frappe.db.rollback(save_point=save_point)
+			result["failed"] += 1
+			result["details"].append(
+				{"submission": name, "status": "failed", "reason": frappe.utils.cstr(exc)[:500]}
+			)
+			frappe.log_error(frappe.get_traceback(), "optin_admin.sync_configured_pricing: %s" % name)
+	frappe.db.commit()
+	return result
 
 
 @frappe.whitelist()
@@ -468,6 +609,7 @@ def get_optin_settings():
 	settings = frappe.get_single("CRM Opt-In Settings")
 	return {
 		"default_price_list": settings.default_price_list or "",
+		"optional_services_price_list": settings.get("optional_services_price_list") or "",
 		"sales_tax_template": settings.sales_tax_template or "",
 		"active_tc_document": settings.active_tc_document or "",
 		"default_lead_owner": settings.default_lead_owner or "",
@@ -499,6 +641,9 @@ def update_optin_settings(settings: Any):
 		settings = json.loads(settings)
 
 	default_price_list = frappe.utils.cstr(settings.get("default_price_list")).strip()
+	optional_services_price_list = frappe.utils.cstr(
+		settings.get("optional_services_price_list")
+	).strip()
 	sales_tax_template = frappe.utils.cstr(settings.get("sales_tax_template")).strip()
 	active_tc_document = frappe.utils.cstr(settings.get("active_tc_document")).strip()
 	default_lead_owner = frappe.utils.cstr(settings.get("default_lead_owner")).strip()
@@ -541,6 +686,10 @@ def update_optin_settings(settings: Any):
 		"Price List", {"name": default_price_list, "selling": 1, "enabled": 1}
 	):
 		frappe.throw(_("Select an enabled selling price list."))
+	if optional_services_price_list and not frappe.db.exists(
+		"Price List", {"name": optional_services_price_list, "selling": 1, "enabled": 1}
+	):
+		frappe.throw(_("Select an enabled selling price list for optional services."))
 	if sales_tax_template:
 		from crm.utils.quotation_tax import get_vat_tax_configuration
 
@@ -563,6 +712,8 @@ def update_optin_settings(settings: Any):
 
 	doc = frappe.get_single("CRM Opt-In Settings")
 	doc.default_price_list = default_price_list
+	if frappe.get_meta("CRM Opt-In Settings").has_field("optional_services_price_list"):
+		doc.optional_services_price_list = optional_services_price_list
 	doc.sales_tax_template = sales_tax_template
 	doc.active_tc_document = active_tc_document
 	doc.default_lead_owner = default_lead_owner
@@ -617,6 +768,8 @@ def _price_list_assignments():
 	try:
 		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
 			membership_fields.append("price_list_override")
+		if frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json"):
+			membership_fields.append("price_list_overrides_json")
 	except Exception:
 		pass
 	memberships = frappe.get_list(
@@ -626,9 +779,15 @@ def _price_list_assignments():
 		limit_page_length=0,
 		ignore_permissions=True,  # SYSTEM-INTERNAL: scope metadata for managers
 	)
+	network_fields = ["name", "slug", "price_list_override"]
+	try:
+		if frappe.db.has_column("CRM Opt-In Network", "price_lists_json"):
+			network_fields.append("price_lists_json")
+	except Exception:
+		pass
 	networks = frappe.get_list(
 		"CRM Opt-In Network",
-		fields=["name", "slug", "price_list_override"],
+		fields=network_fields,
 		limit_page_length=0,
 		ignore_permissions=True,  # SYSTEM-INTERNAL: scope metadata for managers
 	)
@@ -636,6 +795,13 @@ def _price_list_assignments():
 		network.name: {
 			"slug": network.get("slug") or network.name,
 			"price_list": network.get("price_list_override") or "",
+			"price_lists": [
+				row["price_list"]
+				for row in normalize_price_lists(
+					network.get("price_lists_json"), network.get("price_list_override") or ""
+				)
+				if row.get("price_list")
+			],
 		}
 		for network in networks
 	}
@@ -645,16 +811,24 @@ def _price_list_assignments():
 	assignments = {}
 	for membership in memberships:
 		network = network_lists.get(membership.network, {})
-		price_list = membership.get("price_list_override") or network.get("price_list") or default_price_list
-		if not price_list or not membership.parent:
-			continue
-		assignment = assignments.setdefault(
-			price_list,
-			{"facilities": set(), "networks": set(), "facility_networks": set()},
+		configured_lists = set(network.get("price_lists") or [])
+		configured_lists.update(
+			membership_price_lists(
+				membership.get("price_list_overrides_json"), membership.get("price_list_override") or ""
+			).values()
 		)
-		assignment["facilities"].add(membership.parent)
-		assignment["networks"].add(network.get("slug") or membership.network)
-		assignment["facility_networks"].add((membership.parent, network.get("slug") or membership.network))
+		if not configured_lists:
+			configured_lists.add(network.get("price_list") or default_price_list)
+		if not configured_lists or not membership.parent:
+			continue
+		for price_list in configured_lists:
+			assignment = assignments.setdefault(
+				price_list,
+				{"facilities": set(), "networks": set(), "facility_networks": set()},
+			)
+			assignment["facilities"].add(membership.parent)
+			assignment["networks"].add(network.get("slug") or membership.network)
+			assignment["facility_networks"].add((membership.parent, network.get("slug") or membership.network))
 	return assignments
 
 
@@ -694,6 +868,26 @@ def list_negotiated_price_lists():
 		}
 		for row in rows
 	]
+
+
+@frappe.whitelist()
+def list_optional_services_price_lists():
+	"""Return every enabled selling list for the optional-services catalogue.
+
+	Unlike subscription pricing, Standard Selling is a valid source for optional
+	hardware and services, so this deliberately does not use the negotiated-list
+	filter.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	rows = frappe.get_list(
+		"Price List",
+		filters=[["selling", "=", 1], ["enabled", "=", 1]],
+		fields=["name", "currency"],
+		order_by="name asc",
+		limit_page_length=0,
+	)
+	return [{"value": row.name, "label": row.name, "currency": row.currency} for row in rows]
 
 
 @frappe.whitelist()
@@ -1241,6 +1435,8 @@ def list_facilities(
 	try:
 		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
 			membership_fields.insert(3, "price_list_override")
+		if frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json"):
+			membership_fields.insert(4, "price_list_overrides_json")
 	except Exception:
 		pass
 
@@ -1355,6 +1551,7 @@ def list_facilities(
 						"network": m.network,
 						"name": m.name,
 						"price_list_override": m.get("price_list_override") or "",
+						"price_list_overrides_json": m.get("price_list_overrides_json") or "{}",
 						"status": m.status,
 						"contact_name": m.contact_name,
 						"contact_email": m.contact_email,
@@ -1446,8 +1643,10 @@ def save_facility(data: Any):
 	doc.memberships = [m for m in (doc.memberships or []) if m.network not in new_network_set]
 	try:
 		membership_has_override = frappe.db.has_column("CRM Facility Membership", "price_list_override")
+		membership_has_overrides = frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json")
 	except Exception:
 		membership_has_override = False
+		membership_has_overrides = False
 	for mem_data in memberships:
 		net = frappe.utils.cstr(mem_data.get("network") or "").strip()
 		if not net:
@@ -1474,6 +1673,19 @@ def save_facility(data: Any):
 				membership_values["price_list_override"] = frappe.utils.cstr(
 					existing_memberships[net].get("price_list_override") or ""
 				).strip()
+		if membership_has_overrides:
+			requested_overrides = mem_data.get("price_list_overrides")
+			if requested_overrides is not None:
+				if net in existing_memberships and existing_memberships[net].get("status") == "Opted In":
+					previous = _normalize_price_list_overrides(existing_memberships[net].get("price_list_overrides_json"))
+					candidate = _normalize_price_list_overrides(requested_overrides)
+					if candidate != previous:
+						frappe.throw(_("Facility yearly price lists are locked after Opt-In. Update pricing from the quotation."))
+				membership_values["price_list_overrides_json"] = json.dumps(
+					_normalize_price_list_overrides(requested_overrides), separators=(",", ":")
+				)
+			elif net in existing_memberships:
+				membership_values["price_list_overrides_json"] = existing_memberships[net].get("price_list_overrides_json") or ""
 		doc.append(
 			"memberships",
 			membership_values,

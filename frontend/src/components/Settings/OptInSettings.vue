@@ -54,6 +54,19 @@
             @update:modelValue="markDirty"
           />
           <FormControl
+            v-model="form.optional_services_price_list"
+            class="mt-4"
+            :label="__('Optional services price list')"
+            :options="optionalServicesPriceListOptions"
+            type="select"
+            :description="
+              __(
+                'Items from this selling list appear as selectable optional services. They are informational and are not added to subscription quotations.',
+              )
+            "
+            @update:modelValue="markDirty"
+          />
+          <FormControl
             v-model="form.sales_tax_template"
             class="mt-4"
             :label="__('VAT taxes and charges template')"
@@ -366,6 +379,7 @@ const saving = ref(false)
 const saveError = ref('')
 const form = reactive({
   default_price_list: '',
+  optional_services_price_list: '',
   sales_tax_template: '',
   active_tc_document: '',
   default_lead_owner: '',
@@ -402,6 +416,10 @@ const termsResource = createResource({
   url: 'crm.api.optin_admin.list_optin_terms',
   auto: true,
 })
+const optionalServicesPriceListsResource = createResource({
+  url: 'crm.api.optin_admin.list_optional_services_price_lists',
+  auto: true,
+})
 const taxTemplatesResource = createResource({
   url: 'crm.api.optin_admin.list_optin_tax_templates',
   auto: true,
@@ -425,6 +443,10 @@ const saveResource = createResource({
 const priceListOptions = computed(() => [
   { label: __('Select a price list'), value: '' },
   ...(priceListsResource.data ?? []),
+])
+const optionalServicesPriceListOptions = computed(() => [
+  { label: __('Use Standard Selling / configured default'), value: '' },
+  ...(optionalServicesPriceListsResource.data ?? []),
 ])
 const termsOptions = computed(() => [
   { label: __('Select Terms & Conditions'), value: '' },

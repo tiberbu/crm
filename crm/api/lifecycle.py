@@ -49,16 +49,22 @@ def get_deal_lifecycle(deal: str) -> dict:
 	if not frappe.has_permission("CRM Deal", "read", deal):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
+	submission = _resolve_submission(deal)
 	quotation = _resolve_quotation(deal)
 	contract = _resolve_contract(deal, quotation)
+	quotations = _resolve_quotations(deal)
 
 	return {
-		"submission": _resolve_submission(deal),
+		"submission": submission,
 		"quotation": quotation,
+		"quotations": quotations,
 		"contract": contract,
 		"signatories": _resolve_signatories(contract["name"] if contract else None),
 		"onboarding": _resolve_onboarding(deal),
-		"sales_invoice": _resolve_sales_invoice(quotation["name"] if quotation else None),
+		"sales_invoice": _resolve_sales_invoice(
+			quotation["name"] if quotation else None, submission
+		),
+		"sales_invoices": _resolve_sales_invoices(quotations, submission),
 	}
 
 
@@ -117,6 +123,32 @@ def _resolve_quotation(deal: str) -> dict | None:
 	}
 
 
+def _resolve_quotations(deal: str) -> list[dict]:
+	"""Return every yearly quotation while retaining the singular legacy field."""
+	if not _can_read("Quotation"):
+		return []
+	fields = ["name", "status", "docstatus", "grand_total", "selling_price_list", "creation"]
+	for fieldname in ("crm_initial_price_list", "crm_price_list_history", "crm_optin_year", "crm_optin_submission"):
+		if frappe.db.has_column("Quotation", fieldname):
+			fields.append(fieldname)
+	rows = frappe.get_list(
+		"Quotation", filters={"crm_deal": deal}, fields=fields, order_by="creation asc", limit_page_length=0
+	)
+	return [
+		{
+			"name": row.name,
+			"year_number": frappe.utils.cint(row.get("crm_optin_year") or index),
+			"status": row.status,
+			"docstatus": row.docstatus,
+			"grand_total": row.grand_total,
+			"price_list": row.get("selling_price_list") or "Standard Selling",
+			"initial_price_list": row.get("crm_initial_price_list") or row.get("selling_price_list") or "Standard Selling",
+			"price_list_history": read_history(row),
+		}
+		for index, row in enumerate(rows, 1)
+	]
+
+
 def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
 	if not _can_read("CRM Contract"):
 		return None
@@ -127,6 +159,7 @@ def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
 		"price_list_history",
 		"tiberbu_signing_requirement",
 		"excluded_signatories",
+		"quote_names_json",
 	):
 		if frappe.db.has_column("CRM Contract", fieldname):
 			fields.append(fieldname)
@@ -168,7 +201,16 @@ def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
 			"negotiated": negotiated or initial,
 			"history": price_history or (quotation or {}).get("price_list_history", []),
 		},
+		"quotation_names": _parse_names(r.get("quote_names_json")),
 	}
+
+
+def _parse_names(value):
+	try:
+		parsed = json.loads(value or "[]")
+	except (TypeError, ValueError, json.JSONDecodeError):
+		return []
+	return [frappe.utils.cstr(item).strip() for item in parsed if frappe.utils.cstr(item).strip()] if isinstance(parsed, list) else []
 
 
 def _resolve_signatories(contract: str | None) -> list:
@@ -223,17 +265,52 @@ def _resolve_onboarding(deal: str) -> dict | None:
 	}
 
 
-def _resolve_sales_invoice(quotation: str | None) -> dict | None:
-	if not quotation or not _can_read("Sales Invoice"):
+def _resolve_sales_invoice(quotation: str | None, submission: dict | None = None) -> dict | None:
+	if not _can_read("Sales Invoice"):
 		return None
-	rows = frappe.get_list(
-		"Sales Invoice",
-		filters={"crm_quotation": quotation},
-		fields=["name", "docstatus", "outstanding_amount"],
-		order_by="creation desc",
-		limit=1,
-	)
+	filter_candidates = []
+	if submission and submission.get("ref") and frappe.db.has_column(
+		"Sales Invoice", "crm_optin_submission"
+	):
+		filter_candidates.append({"crm_optin_submission": submission["ref"]})
+	if quotation and frappe.db.has_column("Sales Invoice", "crm_optin_quotation"):
+		filter_candidates.append({"crm_optin_quotation": quotation})
+	if quotation and frappe.db.has_column("Sales Invoice", "crm_quotation"):
+		filter_candidates.append({"crm_quotation": quotation})
+	if not filter_candidates:
+		return None
+	rows = []
+	for filters in filter_candidates:
+		rows = frappe.get_list(
+			"Sales Invoice",
+			filters=filters,
+			fields=["name", "docstatus", "outstanding_amount"],
+			order_by="creation desc",
+			limit=1,
+		)
+		if rows:
+			break
 	if not rows:
 		return None
 	r = rows[0]
 	return {"name": r.name, "docstatus": r.docstatus, "outstanding": r.outstanding_amount}
+
+
+def _resolve_sales_invoices(quotations: list[dict], submission: dict | None = None) -> list[dict]:
+	if not _can_read("Sales Invoice") or not quotations:
+		return []
+	quote_names = [row["name"] for row in quotations]
+	fields = ["name", "docstatus", "outstanding_amount", "creation"]
+	if frappe.db.has_column("Sales Invoice", "crm_optin_submission") and submission and submission.get("ref"):
+		filters = {"crm_optin_submission": submission["ref"]}
+	elif frappe.db.has_column("Sales Invoice", "crm_quotation"):
+		filters = {"crm_quotation": ["in", quote_names]}
+	else:
+		filters = None
+	if not filters:
+		return []
+	rows = frappe.get_list("Sales Invoice", filters=filters, fields=fields, order_by="creation asc", limit_page_length=0)
+	return [
+		{"name": row.name, "docstatus": row.docstatus, "outstanding": row.outstanding_amount}
+		for row in rows
+	]

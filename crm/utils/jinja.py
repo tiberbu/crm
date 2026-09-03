@@ -80,7 +80,16 @@ def render_current_terms_for_quote(quote: Any) -> Markup:
 
 
 def render_current_terms_for_contract(contract: Any) -> Markup:
-	"""Render the contract's selected Terms document for the standard print format."""
+	"""Render terms for the standard print format without changing executed history."""
+	# Fully executed agreements are immutable.  The standard print format calls
+	# this helper directly, so it must make the same snapshot-vs-live decision as
+	# the API/PDF path instead of always re-rendering the current default T&C.
+	if frappe.utils.cstr(contract.get("status") or "").strip() == "Fully Executed":
+		return Markup(
+			frappe.utils.cstr(
+				contract.get("contract_html_snapshot") or contract.get("contract_html") or ""
+			)
+		)
 	from crm.api.contracts import _regenerate_contract_body
 
-	return Markup(_regenerate_contract_body(contract))
+	return Markup(_regenerate_contract_body(contract) or frappe.utils.cstr(contract.get("contract_html") or ""))

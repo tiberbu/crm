@@ -38,9 +38,6 @@
 .cv-contract .table-wrap th { background: #eaf1f6; color: #12395b; font-size: 8.7px; letter-spacing: .035em; text-transform: uppercase; }
 .cv-contract .table-wrap .group-row td { background: #eef5fa; color: #12395b; font-weight: 700; }
 .cv-contract .optional-table table { font-size: 9px; }
-.cv-contract .reference-pricing table { font-size: 8.6px; }
-.cv-contract .reference-pricing th, .cv-contract .reference-pricing td { padding: 4px 5px; }
-.cv-contract .reference-pricing .numeric { text-align: right; white-space: nowrap; }
 .cv-contract .signature-table td { min-height: 90px; padding: 20px 10px; }
 .cv-contract .optional-table th { background: #12395b; color: #fff; }
 .cv-contract .optional-table .group-row td { background: #eef5fa; color: #12395b; text-transform: uppercase; letter-spacing: .04em; }
@@ -63,7 +60,7 @@
   <p class="cover-line">("Tiberbu" or the "Provider")</p>
   <p class="cover-line">AND</p>
   <p class="cover-line">
-<strong>{{ customer.name }}</strong>
+<strong>{{ customer_name }}</strong>
 </p>
   <p class="cover-line">(the "Customer")</p>
   <p class="cover-line">AND</p>
@@ -72,26 +69,26 @@
 </p>
   <p class="cover-line">("CBSL" or the "Technology Delivery Partner")</p>
   <p class="cover-line confidential">CONFIDENTIAL</p>
-  <p class="document-id">Facility {{ facility.name }} · Network {{ network.display_name }} · Effective {{ date }} · Quote {{ quote or "To be confirmed" }}</p>
+  <p class="document-id">Facility {{ facility_name }} · Network {{ network.display_name }} · Effective {{ date }} · Quote {{ quote_display }}</p>
 </div>
 <table class="meta">
   <tr>
 <td>Customer / facility</td>
-<td>{{ customer.name }}</td>
+<td>{{ customer_name }}</td>
 <td>Network</td>
 <td>{{ network.display_name }}</td>
 </tr>
   <tr>
 <td>Facility level</td>
-<td>{{ facility.keph_level or "Not specified" }}</td>
+<td>{{ facility_keph_level_display }}</td>
 <td>MFL code</td>
-<td>{{ facility.mfl_code or "Not specified" }}</td>
+<td>{{ facility_mfl_code_display }}</td>
 </tr>
   <tr>
 <td>Customer contact</td>
-<td>{{ customer.email or "Not specified" }}</td>
+<td>{{ customer_email_display }}</td>
 <td>Price list</td>
-<td>{{ price_list or "Quotation price list" }}</td>
+<td>{{ price_list_display }}</td>
 </tr>
 </table>
 <div class="commercial">
@@ -100,29 +97,29 @@
   <div class="pricing-table">{{ pricing_table }}</div>
   <table class="summary">
     <tr>
-<td>Monthly commitment (exclusive of VAT)</td>
-<td>KES {{ "{:,.2f}".format(subtotal_monthly or 0) }}</td>
+<td>Year 1 monthly subscription (exclusive of VAT)</td>
+<td>KES {{ subtotal_monthly_display }}</td>
 </tr>
     <tr>
 <td>{{ vat_label }}</td>
-<td>KES {{ "{:,.2f}".format(vat_monthly or 0) }}</td>
+<td>KES {{ vat_monthly_display }}</td>
 </tr>
     <tr>
-<td>Monthly commitment (inclusive of VAT)</td>
+<td>Year 1 monthly subscription (inclusive of VAT)</td>
 <td>
 <strong>KES {{ grand_total_monthly_display }}</strong>
 </td>
 </tr>
     <tr>
-<td>Annual commitment (exclusive of VAT)</td>
-<td>KES {{ "{:,.2f}".format(subtotal_annual or 0) }}</td>
+<td>Total selected-term commitment (exclusive of VAT)</td>
+<td>KES {{ subtotal_annual_display }}</td>
 </tr>
     <tr>
-<td>{{ vat_label }} — annual</td>
-<td>KES {{ "{:,.2f}".format(vat_annual or 0) }}</td>
+<td>{{ vat_label }} — selected term</td>
+<td>KES {{ vat_annual_display }}</td>
 </tr>
     <tr>
-<td>Annual commitment (inclusive of VAT)</td>
+<td>Total selected-term commitment (inclusive of VAT)</td>
 <td>
 <strong>KES {{ grand_total_annual_display }}</strong>
 </td>
@@ -136,7 +133,7 @@
 <h3>1.1 Parties</h3>
 <p>TIBERBU HEALTHNET LIMITED, a company duly incorporated and registered in the Republic of Kenya under registration number PVT-XYU8GBD3, having its registered office and principal place of business at 4th Avenue Towers, 18th Floor, 4th Ngong Avenue off Ngong Road, and of P. O. Box 7744 – 00610 Nairobi, hereinafter referred to as “Tiberbu”, the “Provider” or the “Service Provider”, which expression shall, where the context so admits, include its successors and permitted assigns;</p>
 <p>BETWEEN:</p>
-<p>{{ customer.name }}, a healthcare facility or other legal entity duly incorporated, registered, licensed or otherwise established under the laws of the Republic of Kenya under registration number To be completed by the Customer, having its registered office and principal place of business at To be completed by the Customer, and of {{ customer.email or "To be completed by the Customer" }} and To be completed by the Customer, hereinafter referred to as the “Customer”, which expression shall, where the context so admits, include its successors and permitted assigns.</p>
+<p>{{ customer_name }}, a healthcare facility or other legal entity duly incorporated, registered, licensed or otherwise established under the laws of the Republic of Kenya under registration number To be completed by the Customer, having its registered office and principal place of business at To be completed by the Customer, and of {{ customer_email_display }} and To be completed by the Customer, hereinafter referred to as the “Customer”, which expression shall, where the context so admits, include its successors and permitted assigns.</p>
 <p>CHAK BUSINESS SERVICES LIMITED, a company affiliated with or designated by the Christian Health Association of Kenya to support the delivery of technology-enabled services to CHAK Member Health Facilities, having its principal place of business at Musa Gitau Road, Off Waiyaki Way, Lavington, Nairobi, Kenya, hereinafter referred to as “CBSL” or the “Technology Delivery Partner”, which expression shall, where the context so admits, include its successors and permitted assigns.</p>
 <p>AND</p>
 <p>Tiberbu, the Customer, and CBSL are hereinafter referred to individually as a "Party" and collectively as the "Parties".</p>
@@ -221,13 +218,13 @@
 <h3>2.5 Customer Affiliates and Authorized Users</h3>
 <p>Where agreed in writing, the Customer may extend access to CareverseHIMS to its Affiliates, provided that the Customer shall remain fully responsible for such Affiliates' compliance with this Agreement, and any reference to the "Customer" in relation to obligations of use, payment, and data protection shall be read to include such Affiliates unless the Parties agree a separate direct agreement.</p>
 <h3>2.6 Subscription Term</h3>
-<p>This Agreement shall commence on the Effective Date and continue for an initial subscription term of Sixty (60) months (the "Initial Term"), unless terminated earlier in accordance with Clause 15.</p>
+<p>This Agreement shall commence on the Effective Date and continue for an initial subscription term of {{ commitment_years_label }} (the "Initial Term"), unless terminated earlier in accordance with Clause 15.</p>
 <h3>2.7 Renewal Terms</h3>
-<p>Upon expiry of the Initial Term, this Agreement shall automatically renew for successive periods of Sixty (60) months each (each a "Renewal Term"), unless either Party gives the other not less than Sixty (60) days' written notice of non-renewal prior to the end of the then-current term. Fees applicable to any Renewal Term shall be as set out in Schedule B, subject to any agreed annual adjustment.</p>
+<p>Upon expiry of the Initial Term, this Agreement shall automatically renew for successive periods of twelve (12) months each (each a "Renewal Term"), unless either Party gives the other not less than Sixty (60) days' written notice of non-renewal prior to the end of the then-current term. Fees applicable to any Renewal Term shall be agreed in writing before renewal.</p>
 <h3>2.8 Pricing and Fees</h3>
 <p>The Fees payable by the Customer shall be as set out in Schedule B (Pricing Schedule), which shall constitute and already negotiated and agreed formal priced quotation forming part of this Agreement. Pricing is determined by the CareverseHIMS tier selected (Core, Advanced, or Enterprise), the implementation scope, optional on-site support requirements, and any optional hardware, productivity, or endpoint security items procured by the Customer. Support is embedded within the SaaS subscription Fee and is not separately itemized unless dedicated on-site support is expressly agreed.</p>
 <h3>2.9 Annual SaaS Pricing and Automatic Renewal</h3>
-<p>The SaaS subscription pricing set out in Schedule B is provided on an annual basis for each subscribed facility and reflects the pricing negotiated between Tiberbu and the Christian Health Association of Kenya (CHAK) under the applicable Memorandum of Understanding. Unless otherwise expressly agreed in writing, the applicable annual SaaS subscription Fees shall be payable in advance and shall automatically renew on each anniversary of the Go-Live date for successive twelve (12) month periods. The Customer shall remain liable for the renewed annual SaaS subscription Fees unless either Party gives written notice of non-renewal in accordance with the notice period set out in Clause 2.7.</p>
+<p>The SaaS subscription pricing set out in the facility-specific summary above is provided on an annual basis for each selected subscription year and reflects the pricing agreed between the Parties. Each selected year has a separate quotation within this single Agreement. Unless otherwise expressly agreed in writing, each annual subscription amount is billed in four quarterly instalments; the first invoice is issued {{ first_invoice_offset_label }} after the Opt-In submission date and each invoice is payable within thirty (30) days of its invoice date.</p>
 <h3>2.10 Framework Purchasing for Additional Facilities</h3>
 <p>The Customer may, during the Subscription Term, procure CareverseHIMS subscriptions, implementation services, support services, integrations, hardware, endpoint security, training, or other related Services for additional facilities under the framework purchasing mechanism set out in the applicable Schedule. Such additional facilities may be onboarded by issuance of an agreed order form, quotation, purchase order, statement of work, or other written ordering document referencing this Agreement and the relevant Schedule, without requiring execution of a new master agreement. Unless expressly varied in the applicable ordering document, all such additional facility purchases shall be governed by the terms of this Agreement, including the applicable pricing, service scope, implementation assumptions, support entitlements, data protection obligations, and change management procedures set out in the Schedules. Each additional facility shall become a licensed facility only upon written acceptance by Tiberbu and payment or commitment to pay the applicable Fees.</p>
 <h3>2.11 Package Utilization Audit and Alignment</h3>
@@ -575,7 +572,7 @@
 <p>The following Schedules are attached to and form an integral part of this Agreement:</p>
 <ul>
 <li>Schedule A – Service Description (CareverseHIMS tier, modules, and facility profile selected by the Customer)</li>
-<li>Schedule B – Pricing Schedule (subscription fees, implementation and training fees, and optional hardware/security pricing)</li>
+<li>Schedule B – Pricing Schedule (facility-specific subscription fees and any selected services)</li>
 <li>Schedule C – Service Level Agreement (severity matrix, support channels, and embedded support entitlement)</li>
 <li>Schedule D – Data Processing Addendum (roles, processing instructions, and cross-border transfer terms)</li>
 <li>Schedule E – Security Requirements (technical and organizational measures)</li>
@@ -589,7 +586,7 @@
 <tbody>
 <tr>
 <td>SIGNED for and on behalf of<br>TIBERBU HEALTHNET LIMITED<br>Signature: ___________________________<br>Name: ___________________________<br>Designation: ___________________________<br>Date: ___________________________</td>
-<td>SIGNED for and on behalf of<br>{{ customer.name }}<br>Signature: ___________________________<br>Name: ___________________________<br>Designation: ___________________________<br>Date: ___________________________</td>
+<td>SIGNED for and on behalf of<br>{{ customer_name }}<br>Signature: ___________________________<br>Name: ___________________________<br>Designation: ___________________________<br>Date: ___________________________</td>
 </tr>
 <tr>
 <td colspan="2">SIGNED for and on behalf of<br>CHAK BUSINESS SERVICES LIMITED<br>Signature: ___________________________<br>Name: ___________________________<br>Designation: ___________________________<br>Date: ___________________________</td>
@@ -609,7 +606,7 @@
 </table>
 </div>
 <h2>Appendix A: Schedule A – Service Description</h2>
-<h3>A1. Customer Information for {{ facility.name }}</h3>
+<h3>A1. Customer Information for {{ facility_name }}</h3>
 <div class="table-wrap source-table">
 <table>
 <thead>
@@ -621,11 +618,11 @@
 <tbody>
 <tr>
 <td>Customer Legal Name</td>
-<td>{{ customer.name }}</td>
+<td>{{ customer_name }}</td>
 </tr>
 <tr>
 <td>Facility Name</td>
-<td>{{ facility.name }}</td>
+<td>{{ facility_name }}</td>
 </tr>
 <tr>
 <td>SHA Registration Number</td>
@@ -637,7 +634,7 @@
 </tr>
 <tr>
 <td>Facility Level</td>
-<td>{{ facility.keph_level or "Not specified" }}</td>
+<td>{{ facility_keph_level_display }}</td>
 </tr>
 <tr>
 <td>Facility Type</td>
@@ -850,243 +847,14 @@
 <h3>A8. Accepted Service Scope</h3>
 <p>The Parties acknowledge that this Schedule A constitutes the definitive statement of the Customer's subscribed CareverseHIMS modules, facilities, integrations and implementation scope and shall be used as the baseline for implementation, support and change management activities under the Agreement. Any variation shall be processed in accordance with Clause 14 (Change Management).</p>
 <h2>Appendix B: Schedule B – Pricing Schedule</h2>
-<h3>Framework Pricing for additional facilities:</h3>
-<p class="section-intro">The following framework price references are reproduced from the source agreement for completeness. The facility-specific pricing summary at the beginning of this document is the negotiated commercial basis for this individual Agreement.</p>
-<div class="table-wrap reference-pricing">
-<table>
-<thead>
-<tr>
-<th>Keph Level</th>
-<th>Package</th>
-<th>Per Facility Total Year 1 - Monthly</th>
-<th>Per Facility Total Year 2  - Monthly</th>
-<th>Per Facility Total Year 3  - Monthly</th>
-<th>Per Facility Total Year 4  - Monthly</th>
-<th>Per Facility Total Year 5  - Monthly</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>LEVEL 2</td>
-<td>Core</td>
-<td class="numeric">28,425.93</td>
-<td class="numeric">28,425.93</td>
-<td class="numeric">22,239.23</td>
-<td class="numeric">23,351.19</td>
-<td class="numeric">24,518.75</td>
-</tr>
-<tr>
-<td>LEVEL 3</td>
-<td>Core</td>
-<td class="numeric">28,425.93</td>
-<td class="numeric">28,425.93</td>
-<td class="numeric">22,239.23</td>
-<td class="numeric">23,351.19</td>
-<td class="numeric">24,518.75</td>
-</tr>
-<tr>
-<td>LEVEL 3B</td>
-<td>Core</td>
-<td class="numeric">28,425.93</td>
-<td class="numeric">28,425.93</td>
-<td class="numeric">22,239.23</td>
-<td class="numeric">23,351.19</td>
-<td class="numeric">24,518.75</td>
-</tr>
-<tr>
-<td>LEVEL 3A</td>
-<td>Advanced</td>
-<td class="numeric">101,161.82</td>
-<td class="numeric">101,161.82</td>
-<td class="numeric">83,668.26</td>
-<td class="numeric">87,851.67</td>
-<td class="numeric">92,244.25</td>
-</tr>
-<tr>
-<td>LEVEL 4</td>
-<td>Advanced</td>
-<td class="numeric">101,161.82</td>
-<td class="numeric">101,161.82</td>
-<td class="numeric">83,668.26</td>
-<td class="numeric">87,851.67</td>
-<td class="numeric">92,244.25</td>
-</tr>
-<tr>
-<td>LEVEL 4B</td>
-<td>Enterprise</td>
-<td class="numeric">101,161.82</td>
-<td class="numeric">101,161.82</td>
-<td class="numeric">83,668.26</td>
-<td class="numeric">87,851.67</td>
-<td class="numeric">92,244.25</td>
-</tr>
-<tr>
-<td>LEVEL 5</td>
-<td>Enterprise</td>
-<td class="numeric">335,412.65</td>
-<td class="numeric">335,412.65</td>
-<td class="numeric">277,682.26</td>
-<td class="numeric">291,566.38</td>
-<td class="numeric">306,144.69</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="table-wrap reference-pricing">
-<table>
-<thead>
-<tr>
-<th>Package</th>
-<th>Facility Level</th>
-<th>Per Facility Total Year 1 - Monthly</th>
-<th>Per Facility Total Year 2  - Monthly</th>
-<th>Per Facility Total Year 3  - Monthly</th>
-<th>Per Facility Total Year 4  - Monthly</th>
-<th>Per Facility Total Year 5  - Monthly</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Core</td>
-<td>L2,L3,L3B</td>
-<td class="numeric">28,425.93</td>
-<td class="numeric">28,425.93</td>
-<td class="numeric">22,239.23</td>
-<td class="numeric">23,351.19</td>
-<td class="numeric">24,518.75</td>
-</tr>
-<tr>
-<td>Advanced</td>
-<td>L3A, L4, L4B</td>
-<td class="numeric">101,161.82</td>
-<td class="numeric">101,161.82</td>
-<td class="numeric">83,668.26</td>
-<td class="numeric">87,851.67</td>
-<td class="numeric">92,244.25</td>
-</tr>
-<tr>
-<td>Enterpise</td>
-<td>L5, L6</td>
-<td class="numeric">335,412.65</td>
-<td class="numeric">335,412.65</td>
-<td class="numeric">277,682.26</td>
-<td class="numeric">291,566.38</td>
-<td class="numeric">306,144.69</td>
-</tr>
-</tbody>
-</table>
-</div>
+<p class="section-intro">The facility-specific pricing summary at the beginning
+of this document is the complete commercial basis for this individual Agreement.
+No general or reference price table forms part of this contract.</p>
 <h3>Optional Services, Hardware and Software</h3>
-<div class="table-wrap optional-table">
-<table>
-<thead>
-<tr>
-<th>No.</th>
-<th>Item</th>
-<th>Description</th>
-<th>Package</th>
-<th>Qty</th>
-<th>Discounted Unit Price (KES) Excl. VAT</th>
-<th>Total Price (KES) Excl. VAT</th>
-</tr>
-</thead>
-<tbody>
-<tr class="group-row">
-<td colspan="7">Services</td>
-</tr>
-<tr>
-<td>1</td>
-<td>Implementation costs Outside Nairobi Metropolis</td>
-<td>Per Day Per Implementor</td>
-<td>1</td>
-<td>1</td>
-<td>Ksh 14,500.00</td>
-<td>Ksh 14,500.00</td>
-</tr>
-<tr>
-<td>2</td>
-<td>Refresher Training Sessions - Virtual</td>
-<td>Per Session (6 Hours)</td>
-<td>1</td>
-<td>1</td>
-<td>Ksh 2,500.00</td>
-<td>Ksh 2,500.00</td>
-</tr>
-<tr>
-<td>3</td>
-<td>On-Site Support Engineer</td>
-<td>5 days per week on site per Engineer per Month (Select # of Months)</td>
-<td>1</td>
-<td>1</td>
-<td>Ksh 220,000.00</td>
-<td>Ksh 220,000.00</td>
-</tr>
-<tr>
-<td>4</td>
-<td>Part-Time Support Engineer</td>
-<td>2 days per week on site per Engineer per Month (Select # of Months)</td>
-<td>1</td>
-<td>1</td>
-<td>Ksh 100,000.00</td>
-<td>Ksh 100,000.00</td>
-</tr>
-<tr class="group-row">
-<td colspan="7">Hardware</td>
-</tr>
-<tr>
-<td>5</td>
-<td>Hardware Products</td>
-<td>Endpoint workstations - DELL OPTIPLEX 7010 MT SYSTEM (CI3-13100/ 8GB/ 256GB/ DVDRW/ UBUNTU/ MONITOR/ MOUSE/ KEYBOARD)</td>
-<td>
-</td>
-<td>1</td>
-<td>Ksh 84,000.00</td>
-<td>Ksh 84,000.00</td>
-</tr>
-<tr>
-<td>6</td>
-<td>Hardware Products</td>
-<td>Endpoint workstations - DELL OPTIPLEX 7010 MT SYSTEM (CI3-13100/ 8GB/ 256GB/ DVDRW/ UBUNTU/ MONITOR/ MOUSE/ KEYBOARD)</td>
-<td>
-</td>
-<td>1</td>
-<td>Ksh 84,000.00</td>
-<td>Ksh 84,000.00</td>
-</tr>
-<tr>
-<td>7</td>
-<td>Hardware Products</td>
-<td>Endpoint Tablet - 10.1 Inch Display, 12GB RAM, 512GB Storage, Dual SIM, Android, 6000 mAh, keyboard,</td>
-<td>
-</td>
-<td>1</td>
-<td>Ksh 38,888.89</td>
-<td>Ksh 38,888.89</td>
-</tr>
-<tr class="group-row">
-<td colspan="7">Software</td>
-</tr>
-<tr>
-<td>8</td>
-<td>Software Subscriptions</td>
-<td>Endpoint Security/User/Year</td>
-<td>1</td>
-<td>1</td>
-<td>Ksh 8,100.00</td>
-<td>Ksh 8,100.00</td>
-</tr>
-<tr>
-<td>9</td>
-<td>Software Subscriptions</td>
-<td>Office Management Suite/User/Year</td>
-<td>1</td>
-<td>1</td>
-<td>Ksh 13,885.71</td>
-<td>Ksh 13,885.71</td>
-</tr>
-</tbody>
-</table>
-</div>
+<p class="section-intro">Only optional services or hardware selected by the
+Customer are listed here. They are informational, excluded from subscription
+quotations and totals, and will be quoted or invoiced separately if requested.</p>
+<div class="table-wrap optional-table">{{ optional_services_table }}</div>
 <h2>Appendix C: Schedule C – Service Level Agreement</h2>
 <h3>C1. Purpose</h3>
 <p>This Service Level Agreement ("SLA") forms part of the CareverseHIMS SaaS Agreement and defines the support services, service commitments, incident management process, escalation procedures and support entitlements applicable to the Services provided by Tiberbu.</p>
@@ -2517,5 +2285,5 @@
 <h3>G20. Order of Precedence</h3>
 <p>In the event of a conflict between this Schedule G and any provisions relating to data migration, retention, export or transition assistance elsewhere in the Agreement, this Schedule G shall prevail solely in relation to migration and exit activities, except that mandatory requirements under applicable Kenyan law shall take precedence.</p>
 </div>
-<div class="footer">Private and confidential · {{ network.display_name }} · CareverseHIMS · All amounts are in KES; subscription rates are exclusive of VAT unless expressly stated otherwise.</div>
+<div class="footer">Private and confidential · {{ network.display_name }} · CareverseHIMS · All amounts are in KES; subscription rates are exclusive of VAT and VAT is shown separately.</div>
 </div>

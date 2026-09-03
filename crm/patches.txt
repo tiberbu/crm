@@ -54,3 +54,5 @@ crm.patches.v1_0.add_price_list_history_fields
 crm.patches.v1_0.add_tiberbu_contact_settings
 crm.patches.v1_0.link_optin_records_to_network
 crm.patches.v1_0.ensure_contract_invitation_delivery
+crm.patches.v1_0.add_optin_multi_year_fields
+crm.patches.v1_0.configure_optin_optional_services
