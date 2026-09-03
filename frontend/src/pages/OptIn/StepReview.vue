@@ -266,6 +266,52 @@
         <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
           Rates locked at time of submission.
         </p>
+        <div
+          v-if="store.pricing.plans?.length > 1"
+          class="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700"
+        >
+          <p
+            class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+          >
+            Yearly quotations
+          </p>
+          <div class="mt-2 grid gap-2 sm:grid-cols-2">
+            <div
+              v-for="plan in store.pricing.plans"
+              :key="plan.year_number"
+              class="flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 text-sm dark:bg-gray-900/50"
+            >
+              <span class="font-medium text-gray-800 dark:text-gray-200">{{
+                plan.label || `Year ${plan.year_number}`
+              }}</span>
+              <span class="font-semibold text-gray-900 dark:text-white">{{
+                fmtKes(plan.grand_total_annual)
+              }}</span>
+            </div>
+          </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Total commitment:
+            <span class="font-semibold text-gray-800 dark:text-gray-200">{{
+              fmtKes(store.pricing.commitment_annual)
+            }}</span>
+          </p>
+        </div>
+        <div
+          v-if="store.optionalItems?.length"
+          class="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700"
+        >
+          <p
+            class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+          >
+            Optional services noted
+          </p>
+          <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+            {{ store.optionalItems.map((item) => item.item_name).join(', ') }}
+          </p>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Our team will quote these separately.
+          </p>
+        </div>
       </div>
     </div>
 

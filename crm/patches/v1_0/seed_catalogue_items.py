@@ -124,6 +124,11 @@ def _seed_item_prices():
 		).insert(ignore_permissions=True)  # SYSTEM-INTERNAL
 
 	for item_code, _item_name, _item_group, rate in SKUS:
+		# Subscription pricing is owned by the negotiated KEPH price lists. Keeping
+		# those SKUs out of Standard Selling prevents them leaking into the optional
+		# services picker while retaining the Item records for history.
+		if _item_name.casefold().startswith("careverse hmis subscription"):
+			continue
 		if frappe.db.exists("Item Price", {"item_code": item_code, "price_list": PRICE_LIST}):
 			continue
 		frappe.get_doc(

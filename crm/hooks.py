@@ -265,6 +265,7 @@ scheduler_events = {
 		"crm.fcrm.doctype.crm_view_settings.crm_view_settings.clear_old_versions",
 		"crm.telemetry.capture_feature_state",
 		"crm.api.quotes.check_quote_expiry",
+		"crm.automation.optin_billing.process_due_optin_billing",
 	],
 	"weekly": ["crm.api.event.trigger_weekly_event_notifications"],
 	"daily_long": ["crm.lead_syncing.background_sync.sync_leads_from_sources_daily"],

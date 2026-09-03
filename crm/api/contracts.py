@@ -86,6 +86,19 @@ def _generate_invitation_email_reference():
 	return frappe.generate_hash(length=12).upper()
 
 
+def _generate_reminder_reference():
+	"""Return a fresh, human-readable identifier for one reminder digest.
+
+	The reference is included in the subject so every scheduled digest starts a
+	new inbox thread instead of being grouped with an earlier reminder. It is
+	not an authentication token and is safe to quote in Deal activity.
+	"""
+	return "RMD-%s-%s" % (
+		frappe.utils.now_datetime().strftime("%Y%m%d%H%M%S"),
+		frappe.generate_hash(length=6).upper(),
+	)
+
+
 def _facility_name_for_contract(contract_doc):
 	"""Return a concise facility label for a contract email subject.
 
@@ -998,6 +1011,27 @@ _INTERNAL_REMINDER_INTERVAL_SECONDS = 2 * 60 * 60
 _PENDING_ACTION_ROUTE = "/crm/opt-in-submissions?pending_my_action=1"
 
 
+def _crm_app_url(route):
+	"""Build an absolute URL for a CRM frontend route.
+
+	Frappe's ``get_url`` joins paths against the site root.  The CRM Vue app is
+	mounted below ``/crm``; keeping that mount in one helper prevents reminders
+	from linking to the site-level 404 page when a deployment's host setting or
+	reverse proxy omits the application prefix.  Absolute URLs remain untouched
+	for callers that already provide one.
+	"""
+	route = frappe.utils.cstr(route or "").strip()
+	if route.startswith(("http://", "https://")):
+		return route
+	path = "/" + route.lstrip("/")
+	if path != "/crm" and not path.startswith("/crm/"):
+		path = "/crm" + path
+	base = frappe.utils.get_url().rstrip("/")
+	if base.endswith("/crm"):
+		return base + path[len("/crm") :]
+	return base + path
+
+
 def _is_internal_crm_signatory(signatory_row):
 	"""Return whether a counterparty signer should act inside the CRM session."""
 	return bool(
@@ -1169,12 +1203,18 @@ def _send_internal_signatory_reminder(contract, signatory_row, network=None, pen
 		# malformed workload data.
 		return False
 	email = next(iter(emails))
-	action_url = frappe.utils.get_url(_PENDING_ACTION_ROUTE)
+	action_url = _crm_app_url(_PENDING_ACTION_ROUTE)
 	first = valid_items[0]
 	name = frappe.utils.cstr(first.get("signatory_name") or email).strip()
+	reminder_reference = _generate_reminder_reference()
 	# Keep the subject independent of any one facility. A single message can
 	# contain work from several networks, so the count is the useful inbox cue.
-	subject = "[Action needed] Pending contract approvals (%d)" % len(valid_items)
+	# The unique reference is deliberate: mail clients use the subject when
+	# deciding whether to collapse a reminder into an existing conversation.
+	subject = "[Action needed] Pending contract approvals (%d) · Reminder %s" % (
+		len(valid_items),
+		reminder_reference,
+	)
 	message_items = [
 		{
 			"facility_label": item.get("facility_label"),
@@ -1188,7 +1228,10 @@ def _send_internal_signatory_reminder(contract, signatory_row, network=None, pen
 			recipients=[email],
 			subject=subject,
 			message=internal_signatory_reminder_html(
-				network,
+				# Internal reminders are intentionally generic.  Workload rows retain
+				# facility context, but the header must not look like a network-specific
+				# invitation or imply that only one facility needs attention.
+				None,
 				signatory_name=name,
 				role=first.get("role"),
 				facility_label=first.get("facility_label"),
@@ -1236,8 +1279,8 @@ def _send_internal_signatory_reminder(contract, signatory_row, network=None, pen
 		).strip()
 		log_deal_event(
 			item.get("deal") or getattr(item_contract, "deal", None),
-			"Two-hour CRM action reminder sent to %s (%s) for contract %s"
-			% (item_name, item_role, item_contract_name),
+			"Two-hour CRM action reminder %s sent to %s (%s) for contract %s"
+			% (reminder_reference, item_name, item_role, item_contract_name),
 		)
 	return True
 
@@ -1587,8 +1630,8 @@ def _notify_internal_approvers(contract_name, deal_name):
 	except Exception:
 		pass
 
-	crm_url = frappe.utils.get_url("/crm/deals/%s" % deal_name) if deal_name else frappe.utils.get_url()
-	pending_url = frappe.utils.get_url(_PENDING_ACTION_ROUTE)
+	crm_url = _crm_app_url("/crm/deals/%s" % deal_name) if deal_name else frappe.utils.get_url()
+	pending_url = _crm_app_url(_PENDING_ACTION_ROUTE)
 
 	for approver_slot, identity in approver_slots:
 		approver_email = identity.get("email", "")
@@ -1966,8 +2009,14 @@ def _generate_contract(
 	contract.status = "Awaiting Signatures"
 	contract.workflow_state = "Awaiting Facility Signature"
 	contract.contract_html = contract_html
+	if contract.meta.has_field("contract_html_snapshot"):
+		# Keep the accepted copy separate from the live preview body. This is the
+		# immutable source used for fully executed PDFs after a T&C update.
+		contract.contract_html_snapshot = contract_html
 	contract.tc_document = tc_document
 	contract.tc_document_hash = tc_document_hash
+	if contract.meta.has_field("current_tc_document_hash"):
+		contract.current_tc_document_hash = tc_document_hash
 	network_slug = _resolve_network_slug(deal)
 	contract.network_slug = network_slug
 	set_network_link(contract, network_slug)
@@ -2713,7 +2762,7 @@ def get_authenticated_contract(contract: Any, role: Any):
 	_ensure_pending_signatory(row)
 	_ensure_contract_signing_open(doc)
 	return {
-		"contract_html": frappe.utils.cstr(doc.contract_html or ""),
+		"contract_html": _contract_body_for_view(doc),
 		"signatory_name": frappe.utils.cstr(row.signatory_name or ""),
 		"signatory_role": frappe.utils.cstr(row.signatory_role or ""),
 		"contract_date": frappe.utils.cstr(doc.contract_date or ""),
@@ -2765,12 +2814,18 @@ def _build_contract_document_html(contract_doc):
 	brand = _network_branding(contract_doc)
 	accent = brand["accent"]
 
-	# 1. Contract body. Always render the selected Terms document at print time so
-	#    an authorised Terms & Conditions edit is visible in the next PDF. The saved
-	#    snapshot and hash remain the immutable acceptance evidence in the audit page.
-	body = _regenerate_contract_body(contract_doc)
-	if not body:
-		body = frappe.utils.cstr(contract_doc.contract_html or "").strip()
+	# 1. Unsigned contracts follow the current default T&C. Once fully executed,
+	#    the accepted snapshot is legally immutable and is the only body used for a
+	#    PDF or signer view. This makes T&C updates visible to pending contracts
+	#    without rewriting executed agreements.
+	if frappe.utils.cstr(getattr(contract_doc, "status", "") or "").strip() == "Fully Executed":
+		body = frappe.utils.cstr(
+			getattr(contract_doc, "contract_html_snapshot", None) or contract_doc.contract_html or ""
+		).strip()
+	else:
+		body = _regenerate_contract_body(contract_doc)
+		if not body:
+			body = frappe.utils.cstr(contract_doc.contract_html or "").strip()
 	if not body:
 		body = (
 			"<p style='color:#991b1b'>The terms for this contract are unavailable. "
@@ -2953,11 +3008,17 @@ def _recipient_safe_price_snapshot(data):
 
 def _regenerate_contract_body(contract_doc):
 	"""Render the contract's current selected Terms document for a print/PDF."""
-	tc_name = contract_doc.tc_document
-	if not tc_name and frappe.db.exists("CRM Opt-In Settings", "CRM Opt-In Settings"):
+	# Pending contracts intentionally use the currently active document. The
+	# contract's original ``tc_document`` remains available as historical
+	# provenance and is used once execution is complete.
+	tc_name = ""
+	if frappe.db.exists("CRM Opt-In Settings", "CRM Opt-In Settings"):
 		tc_name = frappe.get_single("CRM Opt-In Settings").active_tc_document
+	if not tc_name:
+		tc_name = contract_doc.tc_document
 	if not tc_name or not frappe.db.exists("Terms and Conditions", tc_name):
 		return ""
+
 	try:
 		tc_doc = frappe.get_doc("Terms and Conditions", tc_name)
 		signatory = _get_signatory_row(contract_doc, "Facility Signatory")
@@ -2979,6 +3040,20 @@ def _regenerate_contract_body(contract_doc):
 			"contracts.download_pdf: T&C re-render failed for %s" % contract_doc.name,
 		)
 		return ""
+
+
+def _contract_body_for_view(contract_doc):
+	"""Return live terms for pending contracts and immutable terms when executed."""
+	if frappe.utils.cstr(getattr(contract_doc, "status", "") or "").strip() == "Fully Executed":
+		return frappe.utils.cstr(
+			getattr(contract_doc, "contract_html_snapshot", None) or contract_doc.contract_html or ""
+		)
+	# Lightweight legacy/test-shaped documents may only carry the stored HTML.
+	# Without the deal provenance there is no safe context for a live re-render,
+	# so preserve the existing body rather than turning a read into an error.
+	if not getattr(contract_doc, "deal", None) or not getattr(contract_doc, "tc_document", None):
+		return frappe.utils.cstr(getattr(contract_doc, "contract_html", "") or "")
+	return _regenerate_contract_body(contract_doc) or frappe.utils.cstr(contract_doc.contract_html or "")
 
 
 def _render_signature_block(contract_doc, accent):
@@ -3288,7 +3363,7 @@ def get_contract(signing_token: Any, contract: Any, role: Any):
 	price_snapshot = _contract_price_snapshot(contract_doc)
 
 	return {
-		"contract_html": frappe.utils.cstr(contract_doc.contract_html or ""),
+		"contract_html": _contract_body_for_view(contract_doc),
 		"signatory_name": frappe.utils.cstr(signatory_row.signatory_name or ""),
 		"signatory_role": role,
 		"contract_date": frappe.utils.cstr(contract_doc.contract_date or ""),

@@ -708,7 +708,11 @@ def _default_terms_template():
 	Render context (all supplied by crm.api.optin.get_terms_text):
 	  network.display_name, date, contact.email,
 	  pricing_table (safe HTML <table>), grand_total_monthly_display,
-	  grand_total_annual_display (preformatted strings).
+	  grand_total_annual_display (preformatted strings), commitment_years,
+	  commitment_years_label, contract_commitment_incl_vat_display,
+	  first_invoice_offset_label, year_one_grand_total_monthly_display,
+	  optional_services_table (safe HTML table of
+	  the customer's informational selections).
 	"""
 	return """
 <h3>{{ network.display_name }} — CareverseHIMS Subscription Agreement</h3>
@@ -725,21 +729,29 @@ CareverseHIMS health information management service.</p>
 	to the net rates in accordance with the configured Taxes and Charges template
 	and added to the invoice.</p>
 <div>{{ pricing_table }}</div>
-<p><strong>Total monthly commitment (incl. VAT): KES
-{{ grand_total_monthly_display }}</strong><br/>
-<strong>Total annual commitment (incl. VAT): KES
-{{ grand_total_annual_display }}</strong></p>
+<p><strong>Year 1 monthly subscription (incl. VAT): KES
+{{ year_one_grand_total_monthly_display }}</strong><br/>
+<strong>Total selected-term commitment (incl. VAT): KES
+{{ contract_commitment_incl_vat_display }}</strong></p>
+
+<h4>Optional services and hardware</h4>
+<p>The following items were requested for separate follow-up. They are
+informational only, are not included in the subscription quotations, and will
+be quoted or invoiced separately if requested.</p>
+<div>{{ optional_services_table }}</div>
 
 <h4>2. Subscription Term and Price Lock</h4>
-<p>The subscription runs for an initial term of twelve (12) months from the
-activation date and renews for successive twelve (12) month terms unless either
-party gives thirty (30) days' written notice. The rates shown above are locked
-for the initial term.</p>
+<p>The subscription term selected above is {{ commitment_years_label }} from the
+activation date. Each selected year is represented by its own quotation, while
+this Agreement remains one commitment. The rates shown above are locked for the
+selected term unless amended in writing by both parties.</p>
 
 <h4>3. Payment</h4>
-<p>Fees are invoiced in Kenya Shillings (KES). Invoices are payable within thirty
-(30) days of the invoice date. Late payments may attract suspension of service
-after a fourteen (14) day cure period.</p>
+<p>Fees are invoiced quarterly in Kenya Shillings (KES). The first invoice is
+issued {{ first_invoice_offset_label }} after the Opt-In submission date; each
+invoice is payable within thirty (30) days
+of its invoice date. Late payments may attract suspension of service after a
+fourteen (14) day cure period.</p>
 
 <h4>4. Data Protection and Privacy</h4>
 <p>The Provider processes personal and health data in accordance with the Kenya
