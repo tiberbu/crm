@@ -8,13 +8,16 @@ pricing. It hides the ERPNext `Item` → `Item Price` → `Price List` relations
   duplicated, including their current prices. Names do not need a `Negotiated`
   prefix; the generic ERPNext `Standard Selling` list is excluded.
 - **Quick price setup** configures several item prices for the selected list in
-  one save. Prices are entered as monthly KES amounts exclusive of VAT.
+  one save. It shows only sellable items that do not already have a price in
+  that list. Prices are entered as monthly KES amounts exclusive of VAT.
 
-The backend still uses native ERPNext records so quotations, network overrides,
-and facility overrides resolve through the standard Item Price lookup. The API
-accepts only enabled selling lists other than `Standard Selling` and requires Sales Manager,
-System Manager, or Administrator access. The Item Catalogue route and sidebar
-entry are also hidden from users without the manager role.
+The catalogue selector includes every selling Price List, including
+`Standard Selling` and disabled historical lists, so managers can inspect the
+actual ERPNext Item Prices without mixing records from another list. Those
+lists are explicitly read-only in the catalogue. Changes can be written only to
+an enabled, non-`Standard Selling` list, and the API still requires Sales
+Manager, System Manager, or Administrator access. The Item Catalogue route and
+sidebar entry are also hidden from users without the manager role.
 
 ## Catalogue context and quote previews
 
@@ -48,12 +51,15 @@ entry are committed together, so a failed audit cannot leave an unlogged price
 change.
 
 The facility contact form exposes a facility-specific override for new and
-pre-Opt-In contacts, including an option to use the network price list. Once a
-facility opts in, the selector is visibly locked and its value is preserved when
-the contact is edited. The server also rejects direct/API attempts to change an
-Opted-In override. Sales Managers change the price list or negotiated rates from
-the Deal's Quotation panel instead; the server allows that only while the
-facility has not signed and records the quotation change in the Deal timeline.
+pre-Opt-In contacts, including an option to use the network price list. When a
+network has yearly price lists configured, the form exposes one override per
+configured year (including Year 1); each row can fall back to that year's
+network list. Once a facility opts in, all yearly selectors are visibly locked
+and their values are preserved when the contact is edited. The server also
+rejects direct/API attempts to change an Opted-In override map. Sales Managers
+change the price list or negotiated rates from the Deal's Quotation panel
+instead; the server allows that only while the facility has not signed and
+records the quotation change in the Deal timeline.
 CSV/admin payloads may still send an explicit `price_list_override` for
 controlled imports and backward-compatible data maintenance, subject to the
 same Opt-In lock.

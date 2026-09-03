@@ -12,9 +12,11 @@ from crm.api.optin_admin import (
 	get_facility_sample_quote,
 	import_facilities_csv,
 	list_facilities,
+	list_item_prices,
 	list_negotiated_price_lists,
 	list_networks,
 	list_price_list_facilities,
+	list_selling_price_lists,
 	save_facility,
 	save_item_prices,
 	update_item_price,
@@ -141,6 +143,59 @@ class TestOptInPriceListTools(UnitTestCase):
 
 		self.assertEqual(
 			[row["name"] if "name" in row else row["value"] for row in result], ["Huduma Partner Rates"]
+		)
+
+	def test_catalogue_price_list_listing_includes_every_selling_list(self):
+		rows = [
+			frappe._dict(
+				{
+					"name": "Standard Selling",
+					"currency": "KES",
+					"enabled": 1,
+					"creation": "2026-09-01 10:00:00",
+					"modified": "2026-09-01 11:00:00",
+					"owner": "manager@example.com",
+					"modified_by": "manager@example.com",
+				}
+			),
+			frappe._dict(
+				{
+					"name": "Legacy Selling",
+					"currency": "KES",
+					"enabled": 0,
+					"creation": "2026-08-01 10:00:00",
+					"modified": "2026-08-01 11:00:00",
+					"owner": "manager@example.com",
+					"modified_by": "manager@example.com",
+				}
+			),
+		]
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_list", return_value=rows) as get_list,
+			patch("crm.api.optin_admin._price_list_assignments", return_value={}),
+		):
+			result = list_selling_price_lists()
+
+		self.assertEqual([row["value"] for row in result], ["Standard Selling", "Legacy Selling"])
+		self.assertTrue(result[0]["enabled"])
+		self.assertFalse(result[1]["enabled"])
+		self.assertEqual(get_list.call_args.kwargs["filters"], [["selling", "=", 1]])
+
+	def test_catalogue_item_prices_are_scoped_to_selected_selling_list(self):
+		price_list = frappe._dict({"name": "Standard Selling", "selling": 1, "enabled": 1})
+		rows = [frappe._dict({"name": "IP-1", "item_code": "ITEM-1", "price_list": price_list.name})]
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._get_selling_price_list", return_value=price_list),
+			patch("crm.api.optin_admin.frappe.get_list", return_value=rows) as get_list,
+		):
+			result = list_item_prices(price_list.name)
+
+		self.assertEqual(result, rows)
+		self.assertEqual(
+			get_list.call_args.kwargs["filters"],
+			{"price_list": "Standard Selling", "selling": 1},
 		)
 
 	def test_price_list_metadata_counts_effective_facility_assignments(self):
@@ -608,6 +663,115 @@ class TestOptInPriceListTools(UnitTestCase):
 								"network": "network-a",
 								"status": "Opted In",
 								"price_list_override": "Negotiated Facility B",
+								"contact_name": "Jane Doe",
+								"contact_email": "jane@example.com",
+								"contact_phone": "+254700000001",
+							}
+						],
+					}
+				)
+
+	def test_save_facility_accepts_yearly_override_before_optin(self):
+		class FakeFacility:
+			name = "FAC-0001"
+			mfl_code = "1001"
+			facility_name = "First Clinic"
+			keph_level = "Level 3"
+
+			def __init__(self):
+				self.memberships = []
+
+			def is_new(self):
+				return False
+
+			def append(self, _fieldname, values):
+				self.memberships.append(frappe._dict(values))
+
+			def save(self, **_kwargs):
+				return None
+
+		facility = FakeFacility()
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch(
+				"crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility._send_membership_invitation"
+			),
+		):
+			save_facility(
+				{
+					"name": facility.name,
+					"mfl_code": facility.mfl_code,
+					"facility_name": facility.facility_name,
+					"keph_level": facility.keph_level,
+					"memberships": [
+						{
+							"network": "network-a",
+							"status": "Active",
+							"price_list_overrides": {"1": "Negotiated Year 1", "2": "Negotiated Year 2"},
+							"contact_name": "Jane Doe",
+							"contact_email": "jane@example.com",
+							"contact_phone": "+254700000001",
+						}
+					],
+				}
+			)
+
+		self.assertEqual(
+			facility.memberships[0].price_list_overrides_json,
+			'{"1":"Negotiated Year 1","2":"Negotiated Year 2"}',
+		)
+
+	def test_save_facility_rejects_changed_yearly_override_after_optin(self):
+		class FakeFacility:
+			name = "FAC-0001"
+			mfl_code = "1001"
+			facility_name = "First Clinic"
+			keph_level = "Level 3"
+
+			def __init__(self):
+				self.memberships = [
+					frappe._dict(
+						{
+							"network": "network-a",
+							"status": "Opted In",
+							"price_list_overrides_json": '{"1":"Negotiated Year 1"}',
+						}
+					)
+				]
+
+			def is_new(self):
+				return False
+
+			def append(self, _fieldname, values):
+				self.memberships.append(frappe._dict(values))
+
+			def save(self, **_kwargs):
+				return None
+
+		facility = FakeFacility()
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				save_facility(
+					{
+						"name": facility.name,
+						"mfl_code": facility.mfl_code,
+						"facility_name": facility.facility_name,
+						"keph_level": facility.keph_level,
+						"memberships": [
+							{
+								"network": "network-a",
+								"status": "Opted In",
+								"price_list_overrides": {
+									"1": "Negotiated Year 2",
+								},
 								"contact_name": "Jane Doe",
 								"contact_email": "jane@example.com",
 								"contact_phone": "+254700000001",

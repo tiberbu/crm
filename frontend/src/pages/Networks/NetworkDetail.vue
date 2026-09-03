@@ -1083,7 +1083,7 @@
                   : __('Optional facility-specific negotiated rate')
               }}
             </span>
-            <div v-if="networkPricePlans.length > 1" class="mt-2 space-y-1">
+            <div v-if="networkPricePlans.length" class="mt-2 space-y-1">
               <p class="text-[11px] font-medium text-ink-gray-6">
                 {{ __('Yearly overrides') }}
               </p>
