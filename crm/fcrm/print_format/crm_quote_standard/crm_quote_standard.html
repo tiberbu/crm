@@ -208,6 +208,9 @@
 <div class="qt-pricing-title">
   PRICING FOR TIBERBU CAREVERSEHIMS SAAS SOLUTION — {{ payment_label | upper }}
 </div>
+<div style="margin:-2px 0 8px;color:#475569;font-size:10px;">
+  All line-item rates and totals before tax are exclusive of VAT. VAT is shown separately below.
+</div>
 
 {# ── MAIN ITEMS TABLE ── #}
 <table class="qt-table">
@@ -340,7 +343,7 @@
       <td class="value">{{ "{:,.0f}".format(doc.vat_amount or 0) }}</td>
     </tr>
     <tr class="grand">
-      <td class="label" style="color:#fff;font-weight:700;">Grand Total in KES (Incl. VAT) — Year 1</td>
+      <td class="label" style="color:#fff;font-weight:700;">Year 1 payable in KES (Incl. VAT)</td>
       <td class="value" style="color:#fff;font-weight:700;">{{ "{:,.0f}".format(doc.grand_total or 0) }}</td>
     </tr>
   </table>
@@ -380,7 +383,7 @@
     {% set tco_incl.total = tco_incl.total + (row.grand_total_incl_vat or 0) %}
   {% endfor %}
   <tr class="tco-row">
-    <td colspan="2">5 Years Total Cost of Ownership</td>
+    <td colspan="2">Total selected-term commitment</td>
     <td>{{ "{:,.0f}".format(tco_excl.total) }}</td>
     <td>{{ "{:,.0f}".format(tco_incl.total) }}</td>
     {% if doc.payment_terms == "Monthly" %}<td>—</td>{% endif %}

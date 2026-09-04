@@ -422,7 +422,7 @@
           <h3
             class="text-sm font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
           >
-            Pricing Summary
+            Commitment Summary
           </h3>
           <button
             class="text-xs underline"
@@ -435,23 +435,41 @@
         <p
           class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
         >
-          Total Monthly · incl. VAT
+          Total contract commitment · incl. VAT
         </p>
         <p
-          class="mt-0.5 text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white"
+          class="mt-0.5 text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white"
         >
-          {{ fmtKes(store.pricing.grand_total_monthly) }}
+          {{
+            fmtKes(
+              store.pricing.commitment_annual ??
+                store.pricing.grand_total_annual,
+            )
+          }}
         </p>
-        <div class="mt-1.5 flex items-baseline gap-2 text-sm">
+        <div
+          class="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
+        >
           <span class="text-gray-500 dark:text-gray-400"
-            >Annual (incl. VAT)</span
+            >{{ store.pricing.selected_years?.length || 1 }}-year selected
+            term</span
           >
           <span class="font-semibold text-gray-800 dark:text-gray-200">
-            {{ fmtKes(store.pricing.grand_total_annual) }}
+            {{ fmtKes(store.pricing.commitment_net_annual) }} excl. VAT
+          </span>
+          <span class="text-gray-500 dark:text-gray-400">
+            VAT
+            {{
+              fmtKes(
+                (store.pricing.commitment_annual ?? 0) -
+                  (store.pricing.commitment_net_annual ?? 0),
+              )
+            }}
           </span>
         </div>
         <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-          Rates locked at time of submission.
+          Year 1: {{ fmtKes(store.pricing.grand_total_annual) }} incl. VAT ·
+          rates are locked at submission.
         </p>
         <div
           v-if="store.pricing.plans?.length > 1"
@@ -477,10 +495,8 @@
             </div>
           </div>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            Total commitment:
-            <span class="font-semibold text-gray-800 dark:text-gray-200">{{
-              fmtKes(store.pricing.commitment_annual)
-            }}</span>
+            Each amount above is an annual figure. The commitment above is the
+            sum of all selected years, inclusive of VAT.
           </p>
         </div>
         <div
