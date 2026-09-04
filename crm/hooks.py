@@ -216,6 +216,11 @@ doc_events = {
 			"crm.automation.support_journey.on_deal_update",
 		],
 	},
+	"CRM Opt-In Submission": {
+		# Direct imports/CRM inserts receive the same asynchronous hand-off as the
+		# public wizard. The public endpoint opts out and processes synchronously.
+		"after_insert": ["crm.api.optin.enqueue_submission_processing"],
+	},
 	# E7: missed-call recovery — seed a callback task for a missed inbound Avaya call.
 	"CRM Call Log": {
 		"after_insert": ["crm.automation.support_journey.on_call_log_update"],
@@ -377,6 +382,7 @@ after_migrate = [
 	"crm.install.add_web_form_custom_fields",
 	"crm.setup.optin.ensure_signing_key",
 	"crm.setup.optin.ensure_default_terms",
+	"crm.setup.optin.ensure_contract_print_format",
 	"crm.setup.optin.ensure_lead_source",
 ]
 

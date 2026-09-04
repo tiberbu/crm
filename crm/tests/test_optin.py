@@ -42,6 +42,7 @@ from crm.api.contracts import (
 from crm.api.optin import (
 	_KEPH_MAP,
 	_apply_submission_participants,
+	_auto_generate_contract_if_ready,
 	_build_tc_context,
 	_facility_email_subject_label,
 	_facility_signing_state,
@@ -51,14 +52,16 @@ from crm.api.optin import (
 	_prepare_submission_payload,
 	_process_submission,
 	_queue_confirmation_email,
+	_should_auto_generate_contract,
 	_signatory_package_summary_html,
 	_submission_matches_facility_filter,
+	enqueue_submission_processing,
 	get_pricing,
 	list_submissions,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
 from crm.setup.optin import ensure_internal_signatory_reminder_job
-from crm.utils.jinja import render_current_terms_for_contract
+from crm.utils.jinja import get_contract_network_for_print, render_current_terms_for_contract
 
 
 class TestOptInForecastFields(UnitTestCase):
@@ -114,9 +117,7 @@ class TestOptInSignatoryHandoff(UnitTestCase):
 			patch("crm.api.optin.frappe.db.exists", return_value=True),
 			patch("crm.api.optin.frappe.db.get_single_value", return_value="Tiberbu Healthnet"),
 		):
-			return _prepare_submission_payload(
-				payload, "token", "ivy@example.com", "network-a", 9999999999
-			)
+			return _prepare_submission_payload(payload, "token", "ivy@example.com", "network-a", 9999999999)
 
 	def test_self_signatory_is_canonicalized_from_verified_submitter(self):
 		payload = self._prepare(self._payload())
@@ -770,6 +771,35 @@ class TestOptInTiberbuContacts(UnitTestCase):
 
 
 class TestOptInTermsPrinting(UnitTestCase):
+	def test_contract_print_network_context_uses_configured_partner_identity(self):
+		brand = {
+			"accent": "#123456",
+			"display_name": "Covenant Health Network",
+			"logo": "/files/network.png",
+			"contact_email": "network@example.com",
+			"footer_legal_name": "Covenant Health Network Limited",
+			"technology_delivery_partner_name": "CHAK BUSINESS SERVICES LIMITED",
+			"technology_delivery_partner_short_name": "CBSL",
+			"technology_delivery_partner_role": "Technology Delivery Partner",
+		}
+		with patch("crm.api.contracts._network_branding", return_value=brand):
+			context = get_contract_network_for_print(SimpleNamespace(network_slug="covenant-health"))
+
+		self.assertEqual(context["display_name"], "Covenant Health Network")
+		self.assertEqual(context["technology_delivery_partner_name"], "CHAK BUSINESS SERVICES LIMITED")
+		self.assertEqual(context["technology_delivery_partner_short_name"], "CBSL")
+
+	def test_contract_print_network_context_does_not_use_chak_for_other_networks(self):
+		brand = {
+			"display_name": "Apex Medical Network",
+			"footer_legal_name": "Apex Medical Network Limited",
+		}
+		with patch("crm.api.contracts._network_branding", return_value=brand):
+			context = get_contract_network_for_print(SimpleNamespace(network_slug="apex-medical"))
+
+		self.assertEqual(context["technology_delivery_partner_name"], "Apex Medical Network Limited")
+		self.assertEqual(context["technology_delivery_partner_short_name"], "Apex Medical Network Limited")
+
 	def test_quote_print_context_groups_contract_schedule_keys(self):
 		pricing = [
 			{
@@ -833,6 +863,34 @@ class TestOptInTermsPrinting(UnitTestCase):
 			],
 		)
 
+	def test_terms_context_falls_back_to_the_current_network_identity(self):
+		tax_totals = {
+			"subtotal_monthly": 0,
+			"vat_monthly": 0,
+			"grand_total_monthly": 0,
+			"subtotal_annual": 0,
+			"vat_annual": 0,
+			"grand_total_annual": 0,
+			"tax_template": "",
+			"vat_label": "VAT",
+		}
+		with (
+			patch("crm.api.optin._pricing_tax_context", return_value=tax_totals),
+			patch("crm.api.optin.calculate_vat_totals", return_value=SimpleNamespace(grand_total=0)),
+		):
+			context = _build_tc_context(
+				[],
+				{"email": "ict@example.com"},
+				{"display_name": "Apex Medical Network", "footer_legal_name": "Apex Medical Network Limited"},
+			)
+
+		self.assertEqual(
+			context["network"]["technology_delivery_partner_name"], "Apex Medical Network Limited"
+		)
+		self.assertEqual(
+			context["network"]["technology_delivery_partner_short_name"], "Apex Medical Network Limited"
+		)
+
 	def test_executed_contract_print_uses_immutable_snapshot(self):
 		contract = frappe._dict(
 			{
@@ -872,8 +930,104 @@ class TestOptInTermsPrinting(UnitTestCase):
 		self.assertIn("Updated terms", html)
 		self.assertNotIn("Old terms", html)
 
+	def test_legacy_contract_pdf_fallback_omits_price_list_history(self):
+		"""Commercial provenance remains stored, but is not customer-facing PDF content."""
+		contract = SimpleNamespace(
+			contract_html="<p>Contract terms</p>",
+			contract_date="2026-08-30",
+			name="CONT-TEST-00002",
+			initial_price_list="Original schedule",
+			negotiated_price_list="Agreed schedule",
+			price_list_history=json.dumps(
+				[
+					{
+						"event": "Price list changed",
+						"from": "Original schedule",
+						"to": "Agreed schedule",
+						"at": "2026-08-30 10:00:00",
+						"by": "Administrator",
+					}
+				]
+			),
+		)
+		brand = {
+			"accent": "#bc1823",
+			"display_name": "Test Network",
+			"logo": "",
+			"contact_email": "",
+			"footer_legal_name": "",
+		}
+
+		with (
+			patch("crm.api.contracts._network_branding", return_value=brand),
+			patch("crm.api.contracts._regenerate_contract_body", return_value="<p>Contract terms</p>"),
+			patch("crm.api.contracts._render_signature_block", return_value=""),
+			patch("crm.api.contracts._render_certificate_page", return_value=""),
+		):
+			html = _build_contract_document_html(contract)
+
+		self.assertIn("Contract terms", html)
+		self.assertNotIn("Contract schedule history", html)
+		self.assertNotIn("Original contract schedule", html)
+		self.assertNotIn("Agreed contract schedule", html)
+
+	def test_pending_contract_repairs_legacy_unrendered_totals(self):
+		contract = frappe._dict(
+			{
+				"status": "Awaiting Signatures",
+				"deal": "DEAL-TEST-00001",
+				"contract_html": "KES {{ subtotal_monthly_display }} / {{ vat_annual_display }}",
+			}
+		)
+		with (
+			patch("crm.api.contracts._regenerate_contract_body", return_value=""),
+			patch(
+				"crm.api.optin.build_tc_context_for_deal",
+				return_value={"subtotal_monthly": 100_000, "vat_annual": 80_000},
+			),
+		):
+			body = render_current_terms_for_contract(contract)
+
+		self.assertEqual(str(body), "KES 100,000.00 / 80,000.00")
+
 
 class TestOptInContractAutomation(UnitTestCase):
+	def test_auto_contract_setting_defaults_on_for_legacy_settings_rows(self):
+		with patch(
+			"crm.api.optin.frappe.get_single",
+			return_value=frappe._dict({"default_price_list": "Negotiated Year 1"}),
+		):
+			self.assertTrue(_should_auto_generate_contract())
+
+	def test_direct_ois_insert_is_queued_after_commit(self):
+		doc = SimpleNamespace(
+			name="OIS-2026-00001",
+			status="Pending",
+			flags=SimpleNamespace(skip_auto_processing=False),
+		)
+		with patch("crm.api.optin.frappe.enqueue") as enqueue:
+			enqueue_submission_processing(doc)
+
+		enqueue.assert_called_once_with(
+			"crm.api.optin._process_submission",
+			queue="short",
+			job_id="ois-process-OIS-2026-00001",
+			deduplicate=True,
+			enqueue_after_commit=True,
+			submission_ref="OIS-2026-00001",
+		)
+
+	def test_processed_ois_without_prerequisites_is_left_valid_for_reconciliation(self):
+		submission = SimpleNamespace(
+			name="OIS-2026-00002",
+			deal="DEAL-2026-00002",
+			contract=None,
+			facility_signatory_email="",
+			facility_witness_email="",
+		)
+		with patch("crm.api.optin._should_auto_generate_contract", return_value=True):
+			self.assertEqual(_auto_generate_contract_if_ready(submission), "")
+
 	def test_contract_generation_is_idempotent_for_an_existing_deal_contract(self):
 		existing = frappe._dict({"name": "CONT-EXISTING-00001", "status": "Awaiting Signatures"})
 		with (
@@ -1571,7 +1725,9 @@ class TestOptInContractAutomation(UnitTestCase):
 		)
 		with (
 			patch("crm.api.contracts._is_internal_crm_signatory", return_value=True),
-			patch("crm.api.contracts._contract_email_subject_label", return_value="Nairobi Area Branch Hospital"),
+			patch(
+				"crm.api.contracts._contract_email_subject_label", return_value="Nairobi Area Branch Hospital"
+			),
 			patch(
 				"crm.api.contracts._generate_reminder_reference",
 				return_value="RMD-20260903120000-ABC123",
@@ -1654,9 +1810,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertTrue(sendmail.call_args.kwargs["now"])
 		self.assertEqual(set_value.call_count, 2)
 		self.assertEqual(log_event.call_count, 2)
-		self.assertTrue(
-			all("RMD-20260903120000-ABC123" in call.args[1] for call in log_event.call_args_list)
-		)
+		self.assertTrue(all("RMD-20260903120000-ABC123" in call.args[1] for call in log_event.call_args_list))
 
 	def test_internal_reminder_scheduler_groups_same_user_and_skips_external_rows(self):
 		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed")

@@ -39,6 +39,7 @@ from typing import Any
 import frappe
 from frappe import _
 
+from crm.utils.jinja import render_terms_template
 from crm.utils.optin_bundles import (
 	billing_schedule,
 	decode_json,
@@ -251,6 +252,15 @@ def _get_network_doc(network_slug):
 		"footer_legal_name",
 		"price_list_override",
 	]
+	# Partner identity is network-owned. Keep the lookup compatible with sites
+	# that have not migrated the optional fields yet; the render context derives
+	# a network-specific fallback for those legacy rows.
+	for field in ("technology_delivery_partner_name", "technology_delivery_partner_short_name"):
+		try:
+			if frappe.db.has_column("CRM Opt-In Network", field):
+				fields.append(field)
+		except Exception:
+			pass
 	for field in ("price_lists_json", "first_invoice_offset_months", "optional_services_price_list"):
 		try:
 			if frappe.db.has_column("CRM Opt-In Network", field):
@@ -525,10 +535,12 @@ def _get_all_memberships(email, network_slug):
 		for row in mem_rows
 	}
 	return [
-		frappe._dict({
-			**row,
-			**price_list_by_parent.get(row.name, {}),
-		})
+		frappe._dict(
+			{
+				**row,
+				**price_list_by_parent.get(row.name, {}),
+			}
+		)
 		for row in fac_rows
 	]
 
@@ -731,7 +743,10 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 			"email": frappe.utils.cstr(requested_signatory.get("email") or "").strip().lower(),
 			"phone": frappe.utils.cstr(requested_signatory.get("phone") or "").strip(),
 		}
-		if not signatory["name"] or frappe.utils.validate_email_address(signatory["email"]) != signatory["email"]:
+		if (
+			not signatory["name"]
+			or frappe.utils.validate_email_address(signatory["email"]) != signatory["email"]
+		):
 			frappe.throw(
 				_("Please provide a valid name and email address for the authorised signatory."),
 				frappe.ValidationError,
@@ -1153,7 +1168,9 @@ def get_settings(network_slug: Any, deal_invitation: Any = None):
 			else network_doc.get("price_list_override") or default_price_list
 		)
 		price_plans = _configured_price_plans(network_doc, invitation)
-		first_invoice_offset_months = frappe.utils.cint(network_doc.get("first_invoice_offset_months") or 3) or 3
+		first_invoice_offset_months = (
+			frappe.utils.cint(network_doc.get("first_invoice_offset_months") or 3) or 3
+		)
 	else:
 		network_config = {
 			"display_name": "CareverseHIMS",
@@ -1401,7 +1418,9 @@ def get_pricing(
 	network_doc = _get_network_doc(network_slug)
 	plans = _configured_price_plans(network_doc, invitation)
 	if not plans:
-		frappe.throw(_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError)
+		frappe.throw(
+			_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError
+		)
 	if isinstance(selected_years, str):
 		try:
 			selected_years = json.loads(selected_years)
@@ -1418,7 +1437,9 @@ def get_pricing(
 		frappe.throw(_("Select at least one configured subscription year."), frappe.ValidationError)
 	for plan in selected_plans:
 		if not frappe.db.exists("Price List", {"name": plan["price_list"], "selling": 1, "enabled": 1}):
-			frappe.throw(_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError)
+			frappe.throw(
+				_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError
+			)
 
 	# Build MFL → facility info map from pre-qualified records via membership child table
 	all_records = (
@@ -1462,15 +1483,20 @@ def _price_plan_from_facilities(plan, selected_plans, facility_map, selected_mfl
 		fac = facility_map.get(mfl_code)
 		if not fac or quoted_map.get(mfl_code):
 			continue
-		price_list = effective_year_price_list(
-			plan["year_number"],
-			selected_plans,
-			fac.get("price_list_overrides_json"),
-			fac.get("price_list_override"),
-		) or plan["price_list"]
+		price_list = (
+			effective_year_price_list(
+				plan["year_number"],
+				selected_plans,
+				fac.get("price_list_overrides_json"),
+				fac.get("price_list_override"),
+			)
+			or plan["price_list"]
+		)
 		if not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
 			frappe.throw(
-				_("Pricing is temporarily unavailable for one or more selected facilities. Please contact support."),
+				_(
+					"Pricing is temporarily unavailable for one or more selected facilities. Please contact support."
+				),
 				frappe.ConfigurationError,
 			)
 		item_code = _keph_to_item_code(fac.get("keph_level"))
@@ -1483,7 +1509,9 @@ def _price_plan_from_facilities(plan, selected_plans, facility_map, selected_mfl
 		)
 		if not price_rows:
 			frappe.throw(
-				_("Pricing is temporarily unavailable for one or more selected facilities. Please contact support."),
+				_(
+					"Pricing is temporarily unavailable for one or more selected facilities. Please contact support."
+				),
 				frappe.ConfigurationError,
 			)
 		monthly_kes = float(price_rows[0].price_list_rate)
@@ -1565,7 +1593,11 @@ def _build_pricing_table(facilities):
 		# no trailing .format() (which would bind only to the last literal group).
 		row_html = (
 			"<tr>"
-			+ (f'<td style="{cell}font-weight:600">Year {frappe.utils.cint(f.get("year_number"))}</td>' if show_year else "")
+			+ (
+				f'<td style="{cell}font-weight:600">Year {frappe.utils.cint(f.get("year_number"))}</td>'
+				if show_year
+				else ""
+			)
 			+ f'<td style="{cell}font-weight:600">{name}</td>'
 			f'<td style="{cell}opacity:.7">{mfl}</td>'
 			f'<td style="{cell}">{keph}</td>'
@@ -1584,13 +1616,25 @@ def _build_pricing_table(facilities):
 		'<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0 4px">'
 		+ "<thead><tr>"
 		+ year_header
-		+ '<th align="left" style="' + th + '">Facility</th>'
-		+ '<th align="left" style="' + th + '">MFL Code</th>'
-		+ '<th align="left" style="' + th + '">KEPH Level</th>'
-		+ '<th align="right" style="' + th + '">Monthly (KES, excl. VAT)</th>'
-		+ '<th align="right" style="' + th + '">Annual (KES, excl. VAT)</th>'
+		+ '<th align="left" style="'
+		+ th
+		+ '">Facility</th>'
+		+ '<th align="left" style="'
+		+ th
+		+ '">MFL Code</th>'
+		+ '<th align="left" style="'
+		+ th
+		+ '">KEPH Level</th>'
+		+ '<th align="right" style="'
+		+ th
+		+ '">Monthly (KES, excl. VAT)</th>'
+		+ '<th align="right" style="'
+		+ th
+		+ '">Annual (KES, excl. VAT)</th>'
 		+ "</tr></thead>"
-		+ "<tbody>" + body + "</tbody>"
+		+ "<tbody>"
+		+ body
+		+ "</tbody>"
 		+ "</table>"
 	)
 
@@ -1748,7 +1792,9 @@ def _build_optional_services_table(optional_items):
 				cell,
 				row["description"] or "—",
 				cell,
-				"KES " + _fmt_kes(row["indicative_price"]) if row["indicative_price"] else "Quoted separately",
+				"KES " + _fmt_kes(row["indicative_price"])
+				if row["indicative_price"]
+				else "Quoted separately",
 			)
 		)
 	if not rows:
@@ -1769,9 +1815,7 @@ def _build_optional_services_table(optional_items):
 	)
 
 
-def _build_tc_context(
-	pricing, contact, network_doc, deal=None, quote=None, date=None, optional_items=None
-):
+def _build_tc_context(pricing, contact, network_doc, deal=None, quote=None, date=None, optional_items=None):
 	"""Build the single, escaped context used by portal, contract and print renders."""
 	pricing = pricing or []
 	contact = contact if isinstance(contact, dict) else {}
@@ -1787,6 +1831,16 @@ def _build_tc_context(
 	)
 	network_legal = _safe_tc_text(network_legal_raw)
 	network_email = _safe_tc_text(network_doc.get("contact_email"))
+	partner_name_raw = (
+		frappe.utils.cstr(network_doc.get("technology_delivery_partner_name") or "").strip()
+		or network_legal_raw
+		or network_display_raw
+	)
+	partner_short_name_raw = (
+		frappe.utils.cstr(network_doc.get("technology_delivery_partner_short_name") or "").strip()
+		or partner_name_raw
+	)
+	partner_role_raw = "Technology Delivery Partner"
 	facility_name = first.get("facility_name") or "Selected facility"
 	facility = {
 		"name": facility_name,
@@ -1806,9 +1860,7 @@ def _build_tc_context(
 		}
 	)
 	commitment_years = max(year_numbers) if year_numbers else 1
-	first_invoice_offset_months = frappe.utils.cint(
-		network_doc.get("first_invoice_offset_months") or 3
-	) or 3
+	first_invoice_offset_months = frappe.utils.cint(network_doc.get("first_invoice_offset_months") or 3) or 3
 	unique_facilities = {
 		frappe.utils.cstr(row.get("mfl_code") or row.get("facility_name") or "").strip()
 		for row in safe_pricing
@@ -1827,11 +1879,7 @@ def _build_tc_context(
 		primary_year_monthly, tax_template=tax_totals.get("tax_template")
 	)
 	pricing_plan_keys = sorted(
-		{
-			(row.get("year_number"), row.get("price_list"))
-			for row in safe_pricing
-			if row.get("year_number")
-		},
+		{(row.get("year_number"), row.get("price_list")) for row in safe_pricing if row.get("year_number")},
 		key=lambda item: (item[0], item[1] or ""),
 	)
 	return {
@@ -1843,9 +1891,7 @@ def _build_tc_context(
 		"customer_email_display": customer_email or "Not specified",
 		"facility": facility,
 		"facility_name": _safe_tc_text(facility_name, "Selected facility"),
-		"facility_keph_level_display": _safe_tc_text(
-			facility.get("keph_level"), "Not specified"
-		),
+		"facility_keph_level_display": _safe_tc_text(facility.get("keph_level"), "Not specified"),
 		"facility_mfl_code_display": _safe_tc_text(facility.get("mfl_code"), "Not specified"),
 		"facilities": safe_pricing,
 		"pricing": safe_pricing,
@@ -1856,8 +1902,7 @@ def _build_tc_context(
 				"facilities": [
 					item
 					for item in safe_pricing
-					if item.get("year_number") == year_number
-					and item.get("price_list") == price_list
+					if item.get("year_number") == year_number and item.get("price_list") == price_list
 				],
 			}
 			for year_number, price_list in pricing_plan_keys
@@ -1888,6 +1933,16 @@ def _build_tc_context(
 		"vat_monthly_display": _fmt_kes(tax_totals["vat_monthly"]),
 		"subtotal_annual_display": _fmt_kes(tax_totals["subtotal_annual"]),
 		"vat_annual_display": _fmt_kes(tax_totals["vat_annual"]),
+		# Namespaced aliases make the contract-facing API self-documenting while
+		# keeping the flat names above backwards-compatible with existing templates.
+		"contract_totals": {
+			"monthly_exclusive_vat_display": _fmt_kes(tax_totals["subtotal_monthly"]),
+			"monthly_vat_display": _fmt_kes(tax_totals["vat_monthly"]),
+			"monthly_inclusive_vat_display": _fmt_kes(tax_totals["grand_total_monthly"]),
+			"selected_term_exclusive_vat_display": _fmt_kes(tax_totals["subtotal_annual"]),
+			"selected_term_vat_display": _fmt_kes(tax_totals["vat_annual"]),
+			"selected_term_inclusive_vat_display": _fmt_kes(tax_totals["grand_total_annual"]),
+		},
 		"date": date or frappe.utils.format_date(frappe.utils.today()),
 		"deal": _safe_tc_text(deal),
 		"quote": _safe_tc_text(quote),
@@ -1898,7 +1953,13 @@ def _build_tc_context(
 			"contact_email": network_email,
 			"footer_legal_name": network_legal,
 			"header_copy": _safe_tc_text(network_doc.get("custom_header_copy")),
+			"technology_delivery_partner_name": _safe_tc_text(partner_name_raw),
+			"technology_delivery_partner_short_name": _safe_tc_text(partner_short_name_raw),
+			"technology_delivery_partner_role": _safe_tc_text(partner_role_raw),
 		},
+		"technology_delivery_partner_name": _safe_tc_text(partner_name_raw),
+		"technology_delivery_partner_short_name": _safe_tc_text(partner_short_name_raw),
+		"technology_delivery_partner_role": _safe_tc_text(partner_role_raw),
 	}
 
 
@@ -1947,7 +2008,11 @@ def build_tc_context_for_deal(deal):
 		pricing_plans = data.get("pricing_plans") or []
 	if pricing_plans:
 		pricing = [
-			{**row, "year_number": plan.get("year_number"), "price_list": row.get("price_list") or plan.get("price_list")}
+			{
+				**row,
+				"year_number": plan.get("year_number"),
+				"price_list": row.get("price_list") or plan.get("price_list"),
+			}
 			for plan in pricing_plans
 			for row in plan.get("facilities") or []
 		]
@@ -2056,7 +2121,7 @@ def get_terms_text(
 		pricing_result.get("optional_services") or []
 	)
 
-	rendered_html = frappe.render_template(tc_doc.terms or "", context)
+	rendered_html = str(render_terms_template(tc_doc.terms or "", context))
 	# Content-integrity fingerprint of the rendered T&C — NOT a credential.
 	# Stored alongside the acceptance so we can prove the terms the user
 	# accepted match what was displayed. SHA-256 is the correct primitive for
@@ -2172,6 +2237,9 @@ def submit_async(
 		sub.deal = invitation["deal"]
 	sub.raw_json = payload_json
 	sub.has_duplicate_mfl = 1 if has_duplicate else 0
+	# This endpoint deliberately runs the processor synchronously below; the
+	# after_insert hook covers imports/direct CRM inserts without racing this call.
+	sub.flags.skip_auto_processing = True
 	sub.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 
@@ -2655,11 +2723,15 @@ def _should_auto_generate_contract():
 	"""Return whether completed Opt-In submissions should generate contracts."""
 	try:
 		settings = frappe.get_single("CRM Opt-In Settings")
-		return bool(frappe.utils.cint(settings.auto_generate_contract_on_submission))
+		# Sites upgraded before the automation field existed should still receive
+		# the contract hand-off. An explicit 0 remains an administrator opt-out;
+		# missing/blank values use the product default (enabled).
+		configured = getattr(settings, "auto_generate_contract_on_submission", None)
+		return True if configured in (None, "") else bool(frappe.utils.cint(configured))
 	except Exception:
-		# Contract automation is opt-in. A transient settings read failure must not
-		# change the established submission flow into a failed submission.
-		return False
+		# A transient settings read failure must not turn a completed OIS into a
+		# record with no contract. The default product behavior is automatic.
+		return True
 
 
 def _mark_opted_in_facilities(network_slug, facilities):
@@ -2748,15 +2820,11 @@ def _signatory_package_summary_html(submission):
 	term_label = ", ".join(year_labels)
 
 	commitment = sum(
-		frappe.utils.flt(plan.get("grand_total_annual"))
-		for plan in plans
-		if isinstance(plan, dict)
+		frappe.utils.flt(plan.get("grand_total_annual")) for plan in plans if isinstance(plan, dict)
 	)
 	if not commitment:
 		annual_total = sum(
-			frappe.utils.flt(row.get("annual_kes"))
-			for row in facilities
-			if isinstance(row, dict)
+			frappe.utils.flt(row.get("annual_kes")) for row in facilities if isinstance(row, dict)
 		)
 		commitment = calculate_vat_totals(annual_total).grand_total
 	first_year = next(
@@ -2773,9 +2841,7 @@ def _signatory_package_summary_html(submission):
 	for facility in facilities:
 		if not isinstance(facility, dict):
 			continue
-		identity = frappe.utils.cstr(
-			facility.get("mfl_code") or facility.get("facility_name") or ""
-		).strip()
+		identity = frappe.utils.cstr(facility.get("mfl_code") or facility.get("facility_name") or "").strip()
 		if not identity or identity in seen_facilities:
 			continue
 		seen_facilities.add(identity)
@@ -2784,8 +2850,7 @@ def _signatory_package_summary_html(submission):
 			level_counts[level] += 1
 	facility_count = len(seen_facilities) or len(facilities)
 	level_summary = " · ".join(
-		"%s × %s" % (frappe.utils.escape_html(level), count)
-		for level, count in sorted(level_counts.items())
+		"%s × %s" % (frappe.utils.escape_html(level), count) for level, count in sorted(level_counts.items())
 	)
 	network = _get_network_doc(getattr(submission, "network_slug", "") or "") or {}
 	first_invoice_offset = frappe.utils.cint(network.get("first_invoice_offset_months") or 3) or 3
@@ -2852,7 +2917,9 @@ def _generate_contract_for_submission(submission, quote_name):
 			if not quote_names:
 				quote_names = [quote_name] if quote_name else []
 			contract_doc.quote_names_json = json.dumps(quote_names)
-		if contract_doc.meta.has_field("contract_html_snapshot") and not contract_doc.get("contract_html_snapshot"):
+		if contract_doc.meta.has_field("contract_html_snapshot") and not contract_doc.get(
+			"contract_html_snapshot"
+		):
 			contract_doc.contract_html_snapshot = contract_doc.get("contract_html") or ""
 		contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	except Exception:
@@ -2870,6 +2937,79 @@ def _generate_contract_for_submission(submission, quote_name):
 	submission.contract_invitation_queued_at = frappe.utils.now_datetime()
 	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	return result
+
+
+def _auto_generate_contract_if_ready(submission):
+	"""Reconcile a processed OIS with its contract and invitation.
+
+	Normal public submissions generate the contract during processing. This
+	best-effort reconciliation covers legacy/CRM-created OIS rows and quote repair
+	jobs without marking a valid submission failed when the signatory details or
+	quotation are not available yet.
+	"""
+	if not submission or not _should_auto_generate_contract():
+		return ""
+	if getattr(submission, "contract", None) and frappe.db.exists("CRM Contract", submission.contract):
+		return submission.contract
+	if not getattr(submission, "deal", None):
+		return ""
+	if not (
+		frappe.utils.cstr(getattr(submission, "facility_signatory_email", "") or "").strip()
+		and frappe.utils.cstr(getattr(submission, "facility_witness_email", "") or "").strip()
+	):
+		return ""
+	quote_name = ""
+	try:
+		quote_names = decode_json(getattr(submission, "quote_names_json", None), [])
+		quote_name = quote_names[0] if quote_names else ""
+		if not quote_name:
+			quote_name = frappe.db.get_value(
+				"Quotation", {"crm_deal": submission.deal}, "name", order_by="creation asc"
+			)
+		if not quote_name:
+			return ""
+		result = _generate_contract_for_submission(submission, quote_name)
+		return result.get("contract") or ""
+	except Exception:
+		# This path is intentionally non-blocking for already-processed OIS rows;
+		# the next retry/build/sync will reconcile it once its prerequisites exist.
+		frappe.log_error(
+			frappe.get_traceback(),
+			"optin: automatic contract reconciliation failed for %s" % getattr(submission, "name", ""),
+		)
+		return ""
+
+
+def enqueue_submission_processing(doc, method=None):
+	"""Queue processing for OIS rows inserted outside the public submit endpoint.
+
+	The public endpoint marks its insert with ``skip_auto_processing`` and runs the
+	processor synchronously so it can return a definitive status. Direct imports or
+	CRM inserts still receive the same Lead → Deal → Quote → Contract hand-off after
+	commit, with a stable job id preventing duplicate workers.
+	"""
+	if (
+		not doc
+		or getattr(doc, "status", "") != "Pending"
+		or getattr(doc.flags, "skip_auto_processing", False)
+	):
+		return
+	try:
+		frappe.enqueue(
+			"crm.api.optin._process_submission",
+			queue="short",
+			job_id="ois-process-%s" % doc.name,
+			deduplicate=True,
+			enqueue_after_commit=True,
+			submission_ref=doc.name,
+		)
+	except Exception:
+		# Queue setup must never make an otherwise valid insert fail. The CRM retry
+		# action remains available if the worker infrastructure is unavailable.
+		frappe.log_error(
+			frappe.get_traceback(),
+			"optin: could not queue automatic processing for %s" % doc.name,
+		)
 
 
 def _set_doc_value_if_available(doc, fieldname, value):
@@ -2913,14 +3053,15 @@ def _quote_for_year(base_quote, plan, deal_name, submission):
 			{
 				"item_code": frappe.utils.cstr(product.get("item_code") or ""),
 				"item_name": "CareverseHIMS - %s" % frappe.utils.cstr(product.get("facility_name") or ""),
-				"description": "KEPH %s - Annual Subscription" % frappe.utils.cstr(product.get("keph_level") or ""),
+				"description": "KEPH %s - Annual Subscription"
+				% frappe.utils.cstr(product.get("keph_level") or ""),
 				"qty": 1,
 				"price_list_rate": annual_rate,
 				"rate": annual_rate,
 				"discount_percentage": 0,
 				"uom": "Nos",
 				"facility_name": frappe.utils.cstr(product.get("facility_name") or ""),
-			}
+			},
 		)
 	_set_doc_value_if_available(quote, "crm_optin_submission", submission.name)
 	_set_doc_value_if_available(quote, "crm_optin_year", frappe.utils.cint(plan.get("year_number")))
@@ -2946,7 +3087,13 @@ def _quote_for_year(base_quote, plan, deal_name, submission):
 def _store_submission_bundle(submission, payload, primary_quote, plans):
 	"""Persist multi-year metadata without making it mandatory for old records."""
 	if not plans:
-		plans = [{"year_number": 1, "price_list": primary_quote.get("selling_price_list"), "facilities": payload.get("pricing") or []}]
+		plans = [
+			{
+				"year_number": 1,
+				"price_list": primary_quote.get("selling_price_list"),
+				"facilities": payload.get("pricing") or [],
+			}
+		]
 	quote_names = [primary_quote.name]
 	_set_doc_value_if_available(primary_quote, "crm_optin_submission", submission.name)
 	_set_doc_value_if_available(
@@ -3153,7 +3300,9 @@ def sync_submission_configured_pricing(submission_name):
 	quote_names = decode_json(submission.get("quote_names_json"), [])
 	primary_quote_name = quote_names[0] if quote_names else ""
 	if not primary_quote_name:
-		primary_quote_name = frappe.db.get_value("Quotation", {"crm_deal": submission.deal}, "name", order_by="creation asc")
+		primary_quote_name = frappe.db.get_value(
+			"Quotation", {"crm_deal": submission.deal}, "name", order_by="creation asc"
+		)
 	if not primary_quote_name or not frappe.db.exists("Quotation", primary_quote_name):
 		return {"status": "failed", "reason": "Primary quotation is missing", "created": 0}
 	primary_quote = frappe.get_doc("Quotation", primary_quote_name)
@@ -3176,6 +3325,10 @@ def sync_submission_configured_pricing(submission_name):
 			if contract.meta.has_field("current_tc_document_hash"):
 				contract.current_tc_document_hash = hashlib.sha256(body.encode()).hexdigest()
 		contract.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	else:
+		# If the OIS was processed before automation was enabled, quote-bundle
+		# repair is also a safe opportunity to issue its missing signing package.
+		_auto_generate_contract_if_ready(submission)
 	from crm.api._timeline import log_deal_event
 
 	log_deal_event(
@@ -3349,6 +3502,10 @@ def _process_submission(submission_ref):
 		if set_network_link(sub, sub.network_slug):
 			sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 		if status == "Processed":
+			# Older/CRM-created OIS rows can be marked processed before contract
+			# automation was enabled. Reconcile them without changing their status.
+			if _auto_generate_contract_if_ready(sub):
+				frappe.db.commit()
 			progress = _get_job_progress(submission_ref) or {}
 			progress["overall"] = "complete"
 			progress["lead_id"] = sub.lead or None
@@ -4955,7 +5112,17 @@ def retry_public_submission(
 
 
 @frappe.whitelist()
-def submit_deal_optin_summary(deal: Any, quote: Any, network_slug: Any):
+def submit_deal_optin_summary(
+	deal: Any,
+	quote: Any,
+	network_slug: Any,
+	facility_signatory_name: Any = "",
+	facility_signatory_email: Any = "",
+	facility_signatory_phone: Any = "",
+	facility_witness_name: Any = "",
+	facility_witness_email: Any = "",
+	facility_witness_phone: Any = "",
+):
 	"""
 	Record the finalized quote as an Opt-In summary for an existing Deal.
 
@@ -5015,6 +5182,18 @@ def submit_deal_optin_summary(deal: Any, quote: Any, network_slug: Any):
 	submission.network_slug = network_slug
 	set_network_link(submission, network_slug)
 	submission.submitter_email = contact["email"]
+	submission.facility_signatory_name = frappe.utils.cstr(
+		facility_signatory_name or contact["first_name"] + " " + contact["last_name"]
+	).strip()
+	submission.facility_signatory_email = (
+		frappe.utils.cstr(facility_signatory_email or contact["email"]).strip().lower()
+	)
+	submission.facility_signatory_phone = frappe.utils.cstr(
+		facility_signatory_phone or contact["mobile_no"]
+	).strip()
+	submission.facility_witness_name = frappe.utils.cstr(facility_witness_name or "").strip()
+	submission.facility_witness_email = frappe.utils.cstr(facility_witness_email or "").strip().lower()
+	submission.facility_witness_phone = frappe.utils.cstr(facility_witness_phone or "").strip()
 	submission.submitted_at = frappe.utils.now_datetime()
 	submission.deal = deal
 	submission.raw_json = json.dumps(payload)
@@ -5026,6 +5205,10 @@ def submit_deal_optin_summary(deal: Any, quote: Any, network_slug: Any):
 	deal_doc.optin_submission = submission.name
 	set_network_link(deal_doc, network_slug)
 	deal_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	# Generate immediately when the CRM user supplied both facility parties. If a
+	# witness is still outstanding, the OIS remains valid and can be reconciled by
+	# the contracting panel once those details are captured.
+	_auto_generate_contract_if_ready(submission)
 	frappe.db.commit()
 
 	return {"submission_ref": submission.name, "quote": quotation.name}
@@ -5068,7 +5251,8 @@ def build_ois_quote(deal: Any):
 		quote = frappe.get_doc("Quotation", existing[0].name)
 		if set_network_link(quote, sub.network_slug):
 			quote.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-			frappe.db.commit()
+		_auto_generate_contract_if_ready(sub)
+		frappe.db.commit()
 		return {"quote": existing[0].name}
 
 	if not pricing:
@@ -5122,6 +5306,7 @@ def build_ois_quote(deal: Any):
 	# configured ERPNext template and compute item, tax, and grand totals here.
 	apply_quotation_taxes(q)
 	q.insert(ignore_mandatory=True)
+	_auto_generate_contract_if_ready(sub)
 	frappe.db.commit()
 
 	return {"quote": q.name}

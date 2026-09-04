@@ -30,13 +30,51 @@ the Quote tab where the commercial decision is made.
   selected-term total first, Year 1 second, then yearly detail. Quote and
   contract PDFs state that source rates are exclusive of VAT and show net, VAT,
   and inclusive commitment totals without mixing yearly and full-term figures.
+- A completed OIS is reconciled to one CRM Contract and one tracked Facility
+  Signatory invitation. Direct OIS inserts are queued after commit; the public
+  submission path remains synchronous so the user receives a definitive status.
+  Once a Deal has a contract, CRM shows **Download PDF** only.
+- **CRM Contract Standard** is maintained from a shared template, borrows the
+  active/default Terms & Conditions document, and is selected as the DocType
+  default by migration. The Download PDF endpoint explicitly uses this format,
+  with a network-owned name, logo, contact, footer, and delivery-partner identity.
+- The Contract body source of truth is the active Terms & Conditions document while
+  the contract is pending. Its Jinja variables are supplied by the server-side
+  deal/network/facility context. Once every required signature is captured, the
+  generated `contract_html_snapshot` is the immutable legal source for later views
+  and PDFs; changing the active Terms & Conditions document does not rewrite an
+  executed agreement. The print-format shell (branding, metadata and signatures)
+  remains separate from that body.
+- Contract PDFs intentionally omit the internal price-list/contract-schedule
+  history panel. The quotation and contract snapshot fields are still retained for
+  audit, reconciliation and CRM review; only the customer-facing print output is
+  suppressed.
+
+## Contract template placeholders
+
+Use the namespaced display aliases below in editable Terms and Conditions
+templates. They are preformatted in KES and are safe to place directly in HTML:
+
+- `{{ contract_totals.monthly_exclusive_vat_display }}`
+- `{{ contract_totals.monthly_vat_display }}`
+- `{{ contract_totals.monthly_inclusive_vat_display }}`
+- `{{ contract_totals.selected_term_exclusive_vat_display }}`
+- `{{ contract_totals.selected_term_vat_display }}`
+- `{{ contract_totals.selected_term_inclusive_vat_display }}`
+
+The earlier flat aliases remain supported for existing templates. Pending
+contract/PDF renders repair only these fixed numeric aliases when an older
+stored body still contains them; arbitrary Jinja is never evaluated a second
+time.
 
 ## Data and migration impact
 
 - Adds the Opt-In signatory mode and nominated-signatory fields to the Opt-In
   Submission model and related contract data.
 - Includes patches to backfill existing submissions to the safe self-signing
-  mode and to refresh network/facility terms data.
+  mode, refresh network/facility terms data, and update system-owned contract
+  templates with the canonical totals aliases. The migration also repairs the
+  optional-services bootstrap for the Single Opt-In Settings record.
 - Keeps legacy single-schedule fields compatible while persisting yearly
   facility overrides as a year-to-schedule map.
 - Existing opted-in facility pricing remains locked; changes must continue
@@ -48,6 +86,9 @@ the Quote tab where the commercial decision is made.
 ## Configuration requirements
 
 - Network yearly contract schedules must be configured and enabled.
+- Network records may provide a Technology Delivery Partner name and short name;
+  legacy rows fall back to the network's legal/display name. The CHAK-affiliated
+  network is seeded with **CHAK BUSINESS SERVICES LIMITED (CBSL)** explicitly.
 - A nominated signatory needs a name and work email; phone is optional for SMS
   delivery where configured.
 - CRM approver landing behavior applies to **Sales Manager** and **System
@@ -55,7 +96,8 @@ the Quote tab where the commercial decision is made.
 
 ## Verification
 
-- `bench --site crm.io run-tests --module crm.tests.test_optin` — 63 passed
+- `bench --site crm.io run-tests --module crm.tests.test_optin` — 70 passed
+- `bench --site crm.io run-tests --module crm.tests.test_contract_print_format_patch` — passed
 - `bench --site crm.io run-tests --module crm.tests.test_optin_admin` — 30 passed
 - `bench --site crm.io run-tests --module crm.tests.test_optin_bundles` — 3 passed
 - `yarn test:run` — 135 passed

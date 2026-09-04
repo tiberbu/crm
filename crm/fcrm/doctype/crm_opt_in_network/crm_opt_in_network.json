@@ -17,6 +17,9 @@
   "col_break_2",
   "custom_header_copy",
   "footer_legal_name",
+  "section_break_technology_delivery_partner",
+  "technology_delivery_partner_name",
+  "technology_delivery_partner_short_name",
   "section_break_partners",
   "partner_logos",
   "section_break_coordinators",
@@ -90,6 +93,21 @@
    "fieldname": "footer_legal_name",
    "fieldtype": "Data",
    "label": "Footer Legal Name"
+  },
+  {
+   "fieldname": "section_break_technology_delivery_partner",
+   "fieldtype": "Section Break",
+   "label": "Technology Delivery Partner Legal Name"
+  },
+  {
+   "fieldname": "technology_delivery_partner_name",
+   "fieldtype": "Data",
+   "label": "Technology Delivery Partner"
+  },
+  {
+   "fieldname": "technology_delivery_partner_short_name",
+   "fieldtype": "Data",
+   "label": "Technology Delivery Partner Short Name / Acronym"
   },
   {
    "fieldname": "section_break_partners",

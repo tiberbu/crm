@@ -36,6 +36,7 @@ from frappe import _
 
 from crm.api._email import branded_email_html, internal_signatory_reminder_html, otp_code_block
 from crm.api._timeline import log_deal_event
+from crm.utils.jinja import render_terms_template, resolve_terms_placeholders
 from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import contract_snapshot, set_snapshot, snapshot
 
@@ -1998,7 +1999,7 @@ def _generate_contract(
 			context.setdefault("quote", quote)
 			context.setdefault("facility_signatory_name", facility_signatory_name)
 			context.setdefault("date", frappe.utils.format_date(frappe.utils.today()))
-			contract_html = frappe.render_template(tc_doc.terms or "", context)
+			contract_html = str(render_terms_template(tc_doc.terms or "", context))
 			tc_document = tc_name
 			tc_document_hash = hashlib.sha256(contract_html.encode()).hexdigest()
 	except Exception:
@@ -2714,19 +2715,34 @@ def download_pdf(contract: Any):
 		frappe.throw(_("Contract not found."), frappe.DoesNotExistError)
 
 	contract_doc = frappe.get_doc("CRM Contract", contract)
-	html = _build_contract_document_html(contract_doc)
-
 	try:
-		from frappe.utils.pdf import get_pdf
-
-		pdf_bytes = get_pdf(html)
+		# CRM's Download PDF action and the fully executed e-mail must use the same
+		# network-aware default print format. The explicit name also protects the
+		# endpoint from a user's last-selected format in the print dialog.
+		pdf_bytes = frappe.get_print(
+			"CRM Contract",
+			contract_doc.name,
+			print_format="CRM Contract Standard",
+			as_pdf=True,
+			no_letterhead=1,
+		)
+		if not pdf_bytes:
+			raise ValueError("CRM Contract Standard returned an empty PDF")
 		return {"pdf_b64": base64.b64encode(pdf_bytes).decode("utf-8")}
 	except Exception:
-		frappe.log_error(
-			frappe.get_traceback(),
-			"contracts.download_pdf: PDF generation failed for %s" % contract,
-		)
-		frappe.throw(_("PDF generation failed."))
+		# Keep legacy sites printable while their migration catches up. The
+		# fallback still uses the same current-T&C/network resolver as the format.
+		try:
+			from frappe.utils.pdf import get_pdf
+
+			pdf_bytes = get_pdf(_build_contract_document_html(contract_doc))
+			return {"pdf_b64": base64.b64encode(pdf_bytes).decode("utf-8")}
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"contracts.download_pdf: PDF generation failed for %s" % contract,
+			)
+			frappe.throw(_("PDF generation failed."))
 
 
 @frappe.whitelist()
@@ -2838,6 +2854,14 @@ def _build_contract_document_html(contract_doc):
 		body = _regenerate_contract_body(contract_doc)
 		if not body:
 			body = frappe.utils.cstr(contract_doc.contract_html or "").strip()
+			deal = frappe.utils.cstr(getattr(contract_doc, "deal", "") or "").strip()
+			if body and deal:
+				try:
+					from crm.api.optin import build_tc_context_for_deal
+
+					body = resolve_terms_placeholders(body, build_tc_context_for_deal(deal) or {})
+				except Exception:
+					pass
 	if not body:
 		body = (
 			"<p style='color:#991b1b'>The terms for this contract are unavailable. "
@@ -2866,8 +2890,6 @@ def _build_contract_document_html(contract_doc):
 		if brand["footer_legal_name"]
 		else ""
 	)
-	price_history = _render_price_list_history(contract_doc)
-
 	return """<!doctype html>
 <html><head><meta charset="utf-8"><style>
   @page {{ margin: 22mm 18mm; }}
@@ -2884,15 +2906,6 @@ def _build_contract_document_html(contract_doc):
   .doc-contact {{ color: {accent}; font-size: 11px; margin-top: 5px; font-weight: 600; }}
   .doc-footer {{ margin-top: 30px; padding-top: 12px; border-top: 1px solid #e5e7eb;
           text-align: center; color: #9ca3af; font-size: 10px; }}
-  .price-history {{ margin: 0 0 22px; padding: 12px 14px; border: 1px solid #dbe3ef;
-          border-left: 4px solid {accent}; border-radius: 7px; background: #f8fafc; }}
-  .price-history h2 {{ margin: 0 0 8px; font-size: 13px; }}
-  .price-kv {{ margin: 3px 0; font-size: 11px; }}
-  .price-kv b {{ display: inline-block; min-width: 135px; color: #6b7280; font-weight: 600; }}
-  .price-history table {{ width: 100%; border-collapse: collapse; margin-top: 9px; }}
-  .price-history th, .price-history td {{ padding: 5px 6px; border-bottom: 1px solid #e5e7eb;
-          text-align: left; font-size: 10px; vertical-align: top; }}
-  .price-history th {{ color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }}
   .contract-body {{ margin-bottom: 8px; text-align: justify; }}
   .sig-section {{ margin-top: 28px; padding-top: 14px; border-top: 1px solid #e5e7eb; }}
   .sig-section h2 {{ font-size: 14px; margin-bottom: 12px; text-align: center; }}
@@ -2922,11 +2935,10 @@ def _build_contract_document_html(contract_doc):
   <div class="doc-header">
     {logo}
     <div class="brand">{network}</div>
-    <h1>CareverseHIMS Subscription Agreement</h1>
+    <h1>Contract</h1>
     <div class="doc-meta">{ref}{date_bit}</div>
     {contact}
   </div>
-  {price_history}
   <div class="contract-body">{body}</div>
   {signatures}
   {footer}
@@ -2939,7 +2951,6 @@ def _build_contract_document_html(contract_doc):
 		date_bit=(" &middot; " + frappe.utils.escape_html(date_str)) if date_str else "",
 		contact=contact_html,
 		footer=footer_html,
-		price_history=price_history,
 		body=body,
 		signatures=signatures,
 		certificate=certificate,
@@ -2955,49 +2966,6 @@ def _contract_price_snapshot(contract_doc):
 		except Exception:
 			quote = None
 	return contract_snapshot(contract_doc, quote)
-
-
-def _render_price_list_history(contract_doc):
-	"""Render an auditable, read-only contract-schedule summary for contract/PDF output."""
-	data = _contract_price_snapshot(contract_doc)
-	initial = frappe.utils.cstr(data.get("initial") or "").strip()
-	negotiated = frappe.utils.cstr(data.get("negotiated") or "").strip()
-	history = data.get("history") or []
-	if not initial and not negotiated and not history:
-		return ""
-
-	rows = []
-	for event in history:
-		at = frappe.utils.cstr(event.get("at") or "")
-		try:
-			at = frappe.utils.format_datetime(at) if at else ""
-		except Exception:
-			pass
-		change = (
-			"%s → %s" % (event.get("from") or "—", event.get("to") or "—")
-			if event.get("from")
-			else event.get("to") or "—"
-		)
-		rows.append(
-			"<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-			% (
-				frappe.utils.escape_html(frappe.utils.cstr(event.get("event") or "Contract schedule")),
-				frappe.utils.escape_html(frappe.utils.cstr(change)),
-				frappe.utils.escape_html(at or "—"),
-				frappe.utils.escape_html(frappe.utils.cstr(event.get("by") or "System")),
-			)
-		)
-	return """<section class='price-history'>
-  <h2>Contract schedule history</h2>
-  <div class='price-kv'><b>Original contract schedule</b> {initial}</div>
-  <div class='price-kv'><b>Agreed contract schedule</b> {negotiated}</div>
-  <table><thead><tr><th>Event</th><th>Contract schedule</th><th>Recorded</th><th>Changed by</th></tr></thead>
-  <tbody>{rows}</tbody></table>
-</section>""".format(
-		initial=frappe.utils.escape_html(initial or "—"),
-		negotiated=frappe.utils.escape_html(negotiated or "—"),
-		rows="".join(rows),
-	)
 
 
 def _recipient_safe_price_snapshot(data):
@@ -3045,7 +3013,7 @@ def _regenerate_contract_body(contract_doc):
 		context.setdefault(
 			"date", frappe.utils.format_date(contract_doc.contract_date or frappe.utils.today())
 		)
-		return frappe.render_template(tc_doc.terms or "", context)
+		return str(render_terms_template(tc_doc.terms or "", context))
 	except Exception:
 		frappe.log_error(
 			frappe.get_traceback(),
@@ -3181,6 +3149,16 @@ def _network_branding(contract_doc):
 		accent = "#bc1823"
 
 	display = frappe.utils.cstr((doc.get("display_name") if doc else "") or "").strip() or "CareverseHIMS"
+	footer_legal_name = frappe.utils.cstr((doc.get("footer_legal_name") if doc else "") or "").strip()
+	partner_name = (
+		frappe.utils.cstr((doc.get("technology_delivery_partner_name") if doc else "") or "").strip()
+		or footer_legal_name
+		or display
+	)
+	partner_short_name = (
+		frappe.utils.cstr((doc.get("technology_delivery_partner_short_name") if doc else "") or "").strip()
+		or partner_name
+	)
 
 	logo = frappe.utils.cstr((doc.get("logo_url") if doc else "") or "").strip()
 	if logo and not logo.startswith("http"):
@@ -3191,7 +3169,10 @@ def _network_branding(contract_doc):
 		"display_name": display,
 		"logo": logo,
 		"contact_email": frappe.utils.cstr((doc.get("contact_email") if doc else "") or "").strip(),
-		"footer_legal_name": frappe.utils.cstr((doc.get("footer_legal_name") if doc else "") or "").strip(),
+		"footer_legal_name": footer_legal_name,
+		"technology_delivery_partner_name": partner_name,
+		"technology_delivery_partner_short_name": partner_short_name,
+		"technology_delivery_partner_role": "Technology Delivery Partner",
 	}
 
 
