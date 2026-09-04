@@ -207,3 +207,37 @@ def render_current_terms_for_contract(contract: Any) -> Markup:
 		except Exception:
 			pass
 	return Markup(fallback)
+
+
+def get_contract_network_for_print(contract: Any) -> dict:
+	"""Return the network-owned print header and partner identity.
+
+	The Contract Standard print format is shared by every network.  Keep network
+	name, logo, contact, legal footer, and delivery-partner wording in one
+	server-side resolver so the PDF never bakes a particular partner into its
+	markup.  Legacy rows fall back to the network's legal/display name.
+	"""
+	try:
+		from crm.api.contracts import _network_branding
+
+		brand = _network_branding(contract)
+	except Exception:
+		brand = {}
+	partner_name = (
+		brand.get("technology_delivery_partner_name")
+		or brand.get("footer_legal_name")
+		or brand.get("display_name")
+		or "CareverseHIMS"
+	)
+	partner_short_name = brand.get("technology_delivery_partner_short_name") or partner_name
+	return {
+		"accent": brand.get("accent") or "#bc1823",
+		"display_name": brand.get("display_name") or "CareverseHIMS",
+		"logo": brand.get("logo") or "",
+		"contact_email": brand.get("contact_email") or "",
+		"footer_legal_name": brand.get("footer_legal_name") or "",
+		"technology_delivery_partner_name": partner_name,
+		"technology_delivery_partner_short_name": partner_short_name,
+		"technology_delivery_partner_role": brand.get("technology_delivery_partner_role")
+		or "Technology Delivery Partner",
+	}

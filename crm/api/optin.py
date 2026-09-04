@@ -252,6 +252,15 @@ def _get_network_doc(network_slug):
 		"footer_legal_name",
 		"price_list_override",
 	]
+	# Partner identity is network-owned. Keep the lookup compatible with sites
+	# that have not migrated the optional fields yet; the render context derives
+	# a network-specific fallback for those legacy rows.
+	for field in ("technology_delivery_partner_name", "technology_delivery_partner_short_name"):
+		try:
+			if frappe.db.has_column("CRM Opt-In Network", field):
+				fields.append(field)
+		except Exception:
+			pass
 	for field in ("price_lists_json", "first_invoice_offset_months", "optional_services_price_list"):
 		try:
 			if frappe.db.has_column("CRM Opt-In Network", field):
@@ -1822,6 +1831,16 @@ def _build_tc_context(pricing, contact, network_doc, deal=None, quote=None, date
 	)
 	network_legal = _safe_tc_text(network_legal_raw)
 	network_email = _safe_tc_text(network_doc.get("contact_email"))
+	partner_name_raw = (
+		frappe.utils.cstr(network_doc.get("technology_delivery_partner_name") or "").strip()
+		or network_legal_raw
+		or network_display_raw
+	)
+	partner_short_name_raw = (
+		frappe.utils.cstr(network_doc.get("technology_delivery_partner_short_name") or "").strip()
+		or partner_name_raw
+	)
+	partner_role_raw = "Technology Delivery Partner"
 	facility_name = first.get("facility_name") or "Selected facility"
 	facility = {
 		"name": facility_name,
@@ -1934,7 +1953,13 @@ def _build_tc_context(pricing, contact, network_doc, deal=None, quote=None, date
 			"contact_email": network_email,
 			"footer_legal_name": network_legal,
 			"header_copy": _safe_tc_text(network_doc.get("custom_header_copy")),
+			"technology_delivery_partner_name": _safe_tc_text(partner_name_raw),
+			"technology_delivery_partner_short_name": _safe_tc_text(partner_short_name_raw),
+			"technology_delivery_partner_role": _safe_tc_text(partner_role_raw),
 		},
+		"technology_delivery_partner_name": _safe_tc_text(partner_name_raw),
+		"technology_delivery_partner_short_name": _safe_tc_text(partner_short_name_raw),
+		"technology_delivery_partner_role": _safe_tc_text(partner_role_raw),
 	}
 
 
@@ -2212,6 +2237,9 @@ def submit_async(
 		sub.deal = invitation["deal"]
 	sub.raw_json = payload_json
 	sub.has_duplicate_mfl = 1 if has_duplicate else 0
+	# This endpoint deliberately runs the processor synchronously below; the
+	# after_insert hook covers imports/direct CRM inserts without racing this call.
+	sub.flags.skip_auto_processing = True
 	sub.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 
@@ -2695,11 +2723,15 @@ def _should_auto_generate_contract():
 	"""Return whether completed Opt-In submissions should generate contracts."""
 	try:
 		settings = frappe.get_single("CRM Opt-In Settings")
-		return bool(frappe.utils.cint(settings.auto_generate_contract_on_submission))
+		# Sites upgraded before the automation field existed should still receive
+		# the contract hand-off. An explicit 0 remains an administrator opt-out;
+		# missing/blank values use the product default (enabled).
+		configured = getattr(settings, "auto_generate_contract_on_submission", None)
+		return True if configured in (None, "") else bool(frappe.utils.cint(configured))
 	except Exception:
-		# Contract automation is opt-in. A transient settings read failure must not
-		# change the established submission flow into a failed submission.
-		return False
+		# A transient settings read failure must not turn a completed OIS into a
+		# record with no contract. The default product behavior is automatic.
+		return True
 
 
 def _mark_opted_in_facilities(network_slug, facilities):
@@ -2905,6 +2937,79 @@ def _generate_contract_for_submission(submission, quote_name):
 	submission.contract_invitation_queued_at = frappe.utils.now_datetime()
 	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	return result
+
+
+def _auto_generate_contract_if_ready(submission):
+	"""Reconcile a processed OIS with its contract and invitation.
+
+	Normal public submissions generate the contract during processing. This
+	best-effort reconciliation covers legacy/CRM-created OIS rows and quote repair
+	jobs without marking a valid submission failed when the signatory details or
+	quotation are not available yet.
+	"""
+	if not submission or not _should_auto_generate_contract():
+		return ""
+	if getattr(submission, "contract", None) and frappe.db.exists("CRM Contract", submission.contract):
+		return submission.contract
+	if not getattr(submission, "deal", None):
+		return ""
+	if not (
+		frappe.utils.cstr(getattr(submission, "facility_signatory_email", "") or "").strip()
+		and frappe.utils.cstr(getattr(submission, "facility_witness_email", "") or "").strip()
+	):
+		return ""
+	quote_name = ""
+	try:
+		quote_names = decode_json(getattr(submission, "quote_names_json", None), [])
+		quote_name = quote_names[0] if quote_names else ""
+		if not quote_name:
+			quote_name = frappe.db.get_value(
+				"Quotation", {"crm_deal": submission.deal}, "name", order_by="creation asc"
+			)
+		if not quote_name:
+			return ""
+		result = _generate_contract_for_submission(submission, quote_name)
+		return result.get("contract") or ""
+	except Exception:
+		# This path is intentionally non-blocking for already-processed OIS rows;
+		# the next retry/build/sync will reconcile it once its prerequisites exist.
+		frappe.log_error(
+			frappe.get_traceback(),
+			"optin: automatic contract reconciliation failed for %s" % getattr(submission, "name", ""),
+		)
+		return ""
+
+
+def enqueue_submission_processing(doc, method=None):
+	"""Queue processing for OIS rows inserted outside the public submit endpoint.
+
+	The public endpoint marks its insert with ``skip_auto_processing`` and runs the
+	processor synchronously so it can return a definitive status. Direct imports or
+	CRM inserts still receive the same Lead → Deal → Quote → Contract hand-off after
+	commit, with a stable job id preventing duplicate workers.
+	"""
+	if (
+		not doc
+		or getattr(doc, "status", "") != "Pending"
+		or getattr(doc.flags, "skip_auto_processing", False)
+	):
+		return
+	try:
+		frappe.enqueue(
+			"crm.api.optin._process_submission",
+			queue="short",
+			job_id="ois-process-%s" % doc.name,
+			deduplicate=True,
+			enqueue_after_commit=True,
+			submission_ref=doc.name,
+		)
+	except Exception:
+		# Queue setup must never make an otherwise valid insert fail. The CRM retry
+		# action remains available if the worker infrastructure is unavailable.
+		frappe.log_error(
+			frappe.get_traceback(),
+			"optin: could not queue automatic processing for %s" % doc.name,
+		)
 
 
 def _set_doc_value_if_available(doc, fieldname, value):
@@ -3220,6 +3325,10 @@ def sync_submission_configured_pricing(submission_name):
 			if contract.meta.has_field("current_tc_document_hash"):
 				contract.current_tc_document_hash = hashlib.sha256(body.encode()).hexdigest()
 		contract.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	else:
+		# If the OIS was processed before automation was enabled, quote-bundle
+		# repair is also a safe opportunity to issue its missing signing package.
+		_auto_generate_contract_if_ready(submission)
 	from crm.api._timeline import log_deal_event
 
 	log_deal_event(
@@ -3393,6 +3502,10 @@ def _process_submission(submission_ref):
 		if set_network_link(sub, sub.network_slug):
 			sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 		if status == "Processed":
+			# Older/CRM-created OIS rows can be marked processed before contract
+			# automation was enabled. Reconcile them without changing their status.
+			if _auto_generate_contract_if_ready(sub):
+				frappe.db.commit()
 			progress = _get_job_progress(submission_ref) or {}
 			progress["overall"] = "complete"
 			progress["lead_id"] = sub.lead or None
@@ -4999,7 +5112,17 @@ def retry_public_submission(
 
 
 @frappe.whitelist()
-def submit_deal_optin_summary(deal: Any, quote: Any, network_slug: Any):
+def submit_deal_optin_summary(
+	deal: Any,
+	quote: Any,
+	network_slug: Any,
+	facility_signatory_name: Any = "",
+	facility_signatory_email: Any = "",
+	facility_signatory_phone: Any = "",
+	facility_witness_name: Any = "",
+	facility_witness_email: Any = "",
+	facility_witness_phone: Any = "",
+):
 	"""
 	Record the finalized quote as an Opt-In summary for an existing Deal.
 
@@ -5059,6 +5182,18 @@ def submit_deal_optin_summary(deal: Any, quote: Any, network_slug: Any):
 	submission.network_slug = network_slug
 	set_network_link(submission, network_slug)
 	submission.submitter_email = contact["email"]
+	submission.facility_signatory_name = frappe.utils.cstr(
+		facility_signatory_name or contact["first_name"] + " " + contact["last_name"]
+	).strip()
+	submission.facility_signatory_email = (
+		frappe.utils.cstr(facility_signatory_email or contact["email"]).strip().lower()
+	)
+	submission.facility_signatory_phone = frappe.utils.cstr(
+		facility_signatory_phone or contact["mobile_no"]
+	).strip()
+	submission.facility_witness_name = frappe.utils.cstr(facility_witness_name or "").strip()
+	submission.facility_witness_email = frappe.utils.cstr(facility_witness_email or "").strip().lower()
+	submission.facility_witness_phone = frappe.utils.cstr(facility_witness_phone or "").strip()
 	submission.submitted_at = frappe.utils.now_datetime()
 	submission.deal = deal
 	submission.raw_json = json.dumps(payload)
@@ -5070,6 +5205,10 @@ def submit_deal_optin_summary(deal: Any, quote: Any, network_slug: Any):
 	deal_doc.optin_submission = submission.name
 	set_network_link(deal_doc, network_slug)
 	deal_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	# Generate immediately when the CRM user supplied both facility parties. If a
+	# witness is still outstanding, the OIS remains valid and can be reconciled by
+	# the contracting panel once those details are captured.
+	_auto_generate_contract_if_ready(submission)
 	frappe.db.commit()
 
 	return {"submission_ref": submission.name, "quote": quotation.name}
@@ -5112,7 +5251,8 @@ def build_ois_quote(deal: Any):
 		quote = frappe.get_doc("Quotation", existing[0].name)
 		if set_network_link(quote, sub.network_slug):
 			quote.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-			frappe.db.commit()
+		_auto_generate_contract_if_ready(sub)
+		frappe.db.commit()
 		return {"quote": existing[0].name}
 
 	if not pricing:
@@ -5166,6 +5306,7 @@ def build_ois_quote(deal: Any):
 	# configured ERPNext template and compute item, tax, and grand totals here.
 	apply_quotation_taxes(q)
 	q.insert(ignore_mandatory=True)
+	_auto_generate_contract_if_ready(sub)
 	frappe.db.commit()
 
 	return {"quote": q.name}

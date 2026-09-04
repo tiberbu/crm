@@ -2715,19 +2715,34 @@ def download_pdf(contract: Any):
 		frappe.throw(_("Contract not found."), frappe.DoesNotExistError)
 
 	contract_doc = frappe.get_doc("CRM Contract", contract)
-	html = _build_contract_document_html(contract_doc)
-
 	try:
-		from frappe.utils.pdf import get_pdf
-
-		pdf_bytes = get_pdf(html)
+		# CRM's Download PDF action and the fully executed e-mail must use the same
+		# network-aware default print format. The explicit name also protects the
+		# endpoint from a user's last-selected format in the print dialog.
+		pdf_bytes = frappe.get_print(
+			"CRM Contract",
+			contract_doc.name,
+			print_format="CRM Contract Standard",
+			as_pdf=True,
+			no_letterhead=1,
+		)
+		if not pdf_bytes:
+			raise ValueError("CRM Contract Standard returned an empty PDF")
 		return {"pdf_b64": base64.b64encode(pdf_bytes).decode("utf-8")}
 	except Exception:
-		frappe.log_error(
-			frappe.get_traceback(),
-			"contracts.download_pdf: PDF generation failed for %s" % contract,
-		)
-		frappe.throw(_("PDF generation failed."))
+		# Keep legacy sites printable while their migration catches up. The
+		# fallback still uses the same current-T&C/network resolver as the format.
+		try:
+			from frappe.utils.pdf import get_pdf
+
+			pdf_bytes = get_pdf(_build_contract_document_html(contract_doc))
+			return {"pdf_b64": base64.b64encode(pdf_bytes).decode("utf-8")}
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"contracts.download_pdf: PDF generation failed for %s" % contract,
+			)
+			frappe.throw(_("PDF generation failed."))
 
 
 @frappe.whitelist()
@@ -3190,6 +3205,16 @@ def _network_branding(contract_doc):
 		accent = "#bc1823"
 
 	display = frappe.utils.cstr((doc.get("display_name") if doc else "") or "").strip() or "CareverseHIMS"
+	footer_legal_name = frappe.utils.cstr((doc.get("footer_legal_name") if doc else "") or "").strip()
+	partner_name = (
+		frappe.utils.cstr((doc.get("technology_delivery_partner_name") if doc else "") or "").strip()
+		or footer_legal_name
+		or display
+	)
+	partner_short_name = (
+		frappe.utils.cstr((doc.get("technology_delivery_partner_short_name") if doc else "") or "").strip()
+		or partner_name
+	)
 
 	logo = frappe.utils.cstr((doc.get("logo_url") if doc else "") or "").strip()
 	if logo and not logo.startswith("http"):
@@ -3200,7 +3225,10 @@ def _network_branding(contract_doc):
 		"display_name": display,
 		"logo": logo,
 		"contact_email": frappe.utils.cstr((doc.get("contact_email") if doc else "") or "").strip(),
-		"footer_legal_name": frappe.utils.cstr((doc.get("footer_legal_name") if doc else "") or "").strip(),
+		"footer_legal_name": footer_legal_name,
+		"technology_delivery_partner_name": partner_name,
+		"technology_delivery_partner_short_name": partner_short_name,
+		"technology_delivery_partner_role": "Technology Delivery Partner",
 	}
 
 

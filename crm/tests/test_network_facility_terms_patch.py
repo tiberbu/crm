@@ -32,6 +32,8 @@ class TestNetworkFacilityTermsPatch(UnitTestCase):
 		payload = get_doc.call_args.args[0]
 		self.assertEqual(payload["title"], TITLE)
 		self.assertIn("{{ network.display_name }}", payload["terms"])
+		self.assertIn("{{ technology_delivery_partner_name }}", payload["terms"])
+		self.assertIn("{{ technology_delivery_partner_short_name }}", payload["terms"])
 		self.assertIn("{{ pricing_table }}", payload["terms"])
 		self.assertIn("Schedule B — Facility and yearly contract schedules", payload["terms"])
 		self.assertIn("Optional Services, Hardware and Software", payload["terms"])
@@ -60,6 +62,9 @@ class TestNetworkFacilityTermsPatch(UnitTestCase):
 		self.assertIn("Data Migration and Exit Plan", payload["terms"])
 		self.assertIn("{{ price_list_display }}", payload["terms"])
 		self.assertIn("Contract schedule", payload["terms"])
+		self.assertIn('"Network" means {{ network.display_name }}', payload["terms"])
+		self.assertNotIn("CHAK BUSINESS SERVICES LIMITED", payload["terms"])
+		self.assertNotIn('"CHAK" means', payload["terms"])
 		self.assertIn('class="source-section"', payload["terms"])
 		self.assertNotIn("[Insert]", payload["terms"])
 		terms_doc.insert.assert_called_once_with(ignore_permissions=True)

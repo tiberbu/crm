@@ -10,9 +10,12 @@ import frappe
 
 
 def execute():
-	if frappe.db.exists("DocType", "CRM Opt-In Settings") and frappe.db.has_column(
-		"CRM Opt-In Settings", "optional_services_price_list"
-	):
+	# CRM Opt-In Settings is a Single DocType, so its fields live in tabSingles
+	# rather than a tabCRM Opt-In Settings table. Use metadata instead of
+	# Database.has_column, which raises TableMissingError on a valid Single.
+	if frappe.db.exists("DocType", "CRM Opt-In Settings") and frappe.get_meta(
+		"CRM Opt-In Settings"
+	).has_field("optional_services_price_list"):
 		settings = frappe.get_single("CRM Opt-In Settings")
 		if not settings.get("optional_services_price_list") and frappe.db.exists(
 			"Price List", {"name": "Standard Selling", "selling": 1, "enabled": 1}
@@ -34,9 +37,7 @@ def execute():
 	subscription_codes = [
 		row.name
 		for row in item_rows
-		if frappe.utils.cstr(row.item_name or "")
-		.casefold()
-		.startswith("careverse hmis subscription")
+		if frappe.utils.cstr(row.item_name or "").casefold().startswith("careverse hmis subscription")
 	]
 	if subscription_codes:
 		prices = frappe.get_list(

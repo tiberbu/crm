@@ -1156,6 +1156,7 @@
           {{ __('Download PDF') }}
         </Button>
         <Button
+          v-if="!contractExists"
           variant="solid"
           :disabled="generateDisabled"
           :loading="isGenerating"

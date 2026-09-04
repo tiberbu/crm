@@ -7,10 +7,13 @@ Auto-called by after_migrate hook and as a lazy bootstrap in _get_signing_key.
 from __future__ import annotations
 
 import secrets
+from pathlib import Path
 
 import frappe
 
 DEFAULT_TC_TITLE = "CareverseHIMS Opt-In Terms and Conditions"
+CONTRACT_PRINT_FORMAT = "CRM Contract Standard"
+CONTRACT_PRINT_TEMPLATE_FILENAME = "crm_contract_standard.html"
 OPTIN_LEAD_SOURCE = "Self Opt-In Portal"
 INTERNAL_REMINDER_METHOD = "crm.api.contracts.send_internal_signatory_reminders"
 INTERNAL_REMINDER_CRON = "0 */2 * * *"
@@ -252,6 +255,9 @@ def ensure_optin_networks(networks=None):
 		doc.enabled = 1
 		doc.contact_email = net.get("contact_email")
 		doc.footer_legal_name = net.get("footer_legal_name")
+		for fieldname in ("technology_delivery_partner_name", "technology_delivery_partner_short_name"):
+			if doc.meta.has_field(fieldname):
+				setattr(doc, fieldname, net.get(fieldname) or "")
 		doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 		touched.append(doc.name)
 
@@ -313,6 +319,8 @@ DEMO_NETWORKS = [
 		"slug": "covenant-health",
 		"display_name": "Covenant Health Network",
 		"footer_legal_name": "Covenant Health Network (CHAK Affiliate)",
+		"technology_delivery_partner_name": "CHAK BUSINESS SERVICES LIMITED",
+		"technology_delivery_partner_short_name": "CBSL",
 		"contact_email": "mmokua@chak.or.ke",
 		"_contact": {
 			"contact_name": "Moses Mokua",
@@ -695,6 +703,83 @@ def ensure_default_terms():
 		frappe.log_error(frappe.get_traceback(), "ensure_default_terms: failed to seed T&C document")
 
 
+def ensure_contract_print_format():
+	"""Keep the CRM Contract Standard format current and selected by default.
+
+	The format is maintained from a template file so migrations can repair
+	existing sites and fresh installs converge on the same network-aware T&C and
+	Download PDF output.
+	"""
+	try:
+		if not frappe.db.exists("DocType", "CRM Contract"):
+			return
+		template_path = Path(
+			frappe.get_app_path("crm", "setup", "templates", CONTRACT_PRINT_TEMPLATE_FILENAME)
+		)
+		html = template_path.read_text(encoding="utf-8")
+		if not html.strip():
+			return
+
+		if frappe.db.exists("Print Format", CONTRACT_PRINT_FORMAT):
+			print_format = frappe.get_doc("Print Format", CONTRACT_PRINT_FORMAT)
+			changed = False
+			for fieldname, value in {
+				"print_format_for": "DocType",
+				"doc_type": "CRM Contract",
+				"custom_format": 1,
+				"print_format_type": "Jinja",
+				"standard": "No",
+				"html": html,
+			}.items():
+				if print_format.get(fieldname) != value:
+					setattr(print_format, fieldname, value)
+					changed = True
+			if changed:
+				print_format.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		else:
+			frappe.get_doc(
+				{
+					"doctype": "Print Format",
+					"name": CONTRACT_PRINT_FORMAT,
+					"print_format_for": "DocType",
+					"doc_type": "CRM Contract",
+					"custom_format": 1,
+					"print_format_type": "Jinja",
+					"standard": "No",
+					"html": html,
+				}
+			).insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+
+		property_setter = frappe.db.get_value(
+			"Property Setter",
+			{
+				"doctype_or_field": "DocType",
+				"doc_type": "CRM Contract",
+				"property": "default_print_format",
+			},
+			"name",
+		)
+		if property_setter:
+			frappe.db.set_value(
+				"Property Setter", property_setter, "value", CONTRACT_PRINT_FORMAT, update_modified=False
+			)
+		else:
+			frappe.make_property_setter(
+				{
+					"doctype_or_field": "DocType",
+					"doctype": "CRM Contract",
+					"property": "default_print_format",
+					"value": CONTRACT_PRINT_FORMAT,
+					"property_type": "Data",
+				},
+				validate_fields_for_doctype=False,
+			)
+		frappe.clear_cache(doctype="CRM Contract")
+		frappe.db.commit()
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "ensure_contract_print_format: failed to seed format")
+
+
 def _default_terms_template():
 	"""
 	Jinja source for the default opt-in T&C. Rendered by crm.api.optin.get_terms_text.
@@ -707,6 +792,8 @@ def _default_terms_template():
 
 	Render context (all supplied by crm.api.optin.get_terms_text):
 	  network.display_name, date, contact.email,
+	  technology_delivery_partner_name, technology_delivery_partner_short_name,
+	  technology_delivery_partner_role,
 	  pricing_table (safe HTML <table>), contract_totals.*_display aliases,
 	  commitment_years, commitment_years_label,
 	  first_invoice_offset_label, year_one_grand_total_monthly_display,
@@ -721,6 +808,10 @@ def _default_terms_template():
 ("<strong>Provider</strong>") and the facility contact identified below
 ("<strong>Customer</strong>", {{ contact.email }}), for the provision of the
 CareverseHIMS health information management service.</p>
+<p>{{ technology_delivery_partner_name }} ("{{ technology_delivery_partner_short_name }}" or the
+"{{ technology_delivery_partner_role }}") is the technology delivery partner appointed
+by {{ network.display_name }} to support coordination, onboarding, training logistics,
+facility engagement, and implementation follow-up under this Agreement.</p>
 
 <h4>1. Facilities and Fees</h4>
 <p>The Customer subscribes the following facilities. Fees are computed from each

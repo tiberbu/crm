@@ -42,6 +42,7 @@ from crm.api.contracts import (
 from crm.api.optin import (
 	_KEPH_MAP,
 	_apply_submission_participants,
+	_auto_generate_contract_if_ready,
 	_build_tc_context,
 	_facility_email_subject_label,
 	_facility_signing_state,
@@ -51,14 +52,16 @@ from crm.api.optin import (
 	_prepare_submission_payload,
 	_process_submission,
 	_queue_confirmation_email,
+	_should_auto_generate_contract,
 	_signatory_package_summary_html,
 	_submission_matches_facility_filter,
+	enqueue_submission_processing,
 	get_pricing,
 	list_submissions,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
 from crm.setup.optin import ensure_internal_signatory_reminder_job
-from crm.utils.jinja import render_current_terms_for_contract
+from crm.utils.jinja import get_contract_network_for_print, render_current_terms_for_contract
 
 
 class TestOptInForecastFields(UnitTestCase):
@@ -768,6 +771,35 @@ class TestOptInTiberbuContacts(UnitTestCase):
 
 
 class TestOptInTermsPrinting(UnitTestCase):
+	def test_contract_print_network_context_uses_configured_partner_identity(self):
+		brand = {
+			"accent": "#123456",
+			"display_name": "Covenant Health Network",
+			"logo": "/files/network.png",
+			"contact_email": "network@example.com",
+			"footer_legal_name": "Covenant Health Network Limited",
+			"technology_delivery_partner_name": "CHAK BUSINESS SERVICES LIMITED",
+			"technology_delivery_partner_short_name": "CBSL",
+			"technology_delivery_partner_role": "Technology Delivery Partner",
+		}
+		with patch("crm.api.contracts._network_branding", return_value=brand):
+			context = get_contract_network_for_print(SimpleNamespace(network_slug="covenant-health"))
+
+		self.assertEqual(context["display_name"], "Covenant Health Network")
+		self.assertEqual(context["technology_delivery_partner_name"], "CHAK BUSINESS SERVICES LIMITED")
+		self.assertEqual(context["technology_delivery_partner_short_name"], "CBSL")
+
+	def test_contract_print_network_context_does_not_use_chak_for_other_networks(self):
+		brand = {
+			"display_name": "Apex Medical Network",
+			"footer_legal_name": "Apex Medical Network Limited",
+		}
+		with patch("crm.api.contracts._network_branding", return_value=brand):
+			context = get_contract_network_for_print(SimpleNamespace(network_slug="apex-medical"))
+
+		self.assertEqual(context["technology_delivery_partner_name"], "Apex Medical Network Limited")
+		self.assertEqual(context["technology_delivery_partner_short_name"], "Apex Medical Network Limited")
+
 	def test_quote_print_context_groups_contract_schedule_keys(self):
 		pricing = [
 			{
@@ -831,6 +863,34 @@ class TestOptInTermsPrinting(UnitTestCase):
 			],
 		)
 
+	def test_terms_context_falls_back_to_the_current_network_identity(self):
+		tax_totals = {
+			"subtotal_monthly": 0,
+			"vat_monthly": 0,
+			"grand_total_monthly": 0,
+			"subtotal_annual": 0,
+			"vat_annual": 0,
+			"grand_total_annual": 0,
+			"tax_template": "",
+			"vat_label": "VAT",
+		}
+		with (
+			patch("crm.api.optin._pricing_tax_context", return_value=tax_totals),
+			patch("crm.api.optin.calculate_vat_totals", return_value=SimpleNamespace(grand_total=0)),
+		):
+			context = _build_tc_context(
+				[],
+				{"email": "ict@example.com"},
+				{"display_name": "Apex Medical Network", "footer_legal_name": "Apex Medical Network Limited"},
+			)
+
+		self.assertEqual(
+			context["network"]["technology_delivery_partner_name"], "Apex Medical Network Limited"
+		)
+		self.assertEqual(
+			context["network"]["technology_delivery_partner_short_name"], "Apex Medical Network Limited"
+		)
+
 	def test_executed_contract_print_uses_immutable_snapshot(self):
 		contract = frappe._dict(
 			{
@@ -891,6 +951,42 @@ class TestOptInTermsPrinting(UnitTestCase):
 
 
 class TestOptInContractAutomation(UnitTestCase):
+	def test_auto_contract_setting_defaults_on_for_legacy_settings_rows(self):
+		with patch(
+			"crm.api.optin.frappe.get_single",
+			return_value=frappe._dict({"default_price_list": "Negotiated Year 1"}),
+		):
+			self.assertTrue(_should_auto_generate_contract())
+
+	def test_direct_ois_insert_is_queued_after_commit(self):
+		doc = SimpleNamespace(
+			name="OIS-2026-00001",
+			status="Pending",
+			flags=SimpleNamespace(skip_auto_processing=False),
+		)
+		with patch("crm.api.optin.frappe.enqueue") as enqueue:
+			enqueue_submission_processing(doc)
+
+		enqueue.assert_called_once_with(
+			"crm.api.optin._process_submission",
+			queue="short",
+			job_id="ois-process-OIS-2026-00001",
+			deduplicate=True,
+			enqueue_after_commit=True,
+			submission_ref="OIS-2026-00001",
+		)
+
+	def test_processed_ois_without_prerequisites_is_left_valid_for_reconciliation(self):
+		submission = SimpleNamespace(
+			name="OIS-2026-00002",
+			deal="DEAL-2026-00002",
+			contract=None,
+			facility_signatory_email="",
+			facility_witness_email="",
+		)
+		with patch("crm.api.optin._should_auto_generate_contract", return_value=True):
+			self.assertEqual(_auto_generate_contract_if_ready(submission), "")
+
 	def test_contract_generation_is_idempotent_for_an_existing_deal_contract(self):
 		existing = frappe._dict({"name": "CONT-EXISTING-00001", "status": "Awaiting Signatures"})
 		with (
