@@ -12,7 +12,7 @@ from crm.api.quotes import (
 	list_quotes,
 	set_quote_price_list,
 )
-from crm.utils.jinja import get_quotation_tax_summary
+from crm.utils.jinja import get_quotation_tax_summary, render_terms_template
 from crm.utils.quotation_tax import calculate_vat_totals, quotation_tax_summary
 
 
@@ -104,6 +104,34 @@ class TestConfiguredQuotationVAT(UnitTestCase):
 		self.assertEqual(result.template, "Kenya Tax - TB")
 		self.assertEqual(result.vat_amount, 4_548.15)
 		self.assertEqual(result.grand_total, 32_974.08)
+
+	def test_terms_template_resolves_vat_aware_contract_totals(self):
+		context = {
+			"contract_totals": {
+				"monthly_exclusive_vat_display": "100,000.00",
+				"monthly_vat_display": "16,000.00",
+				"monthly_inclusive_vat_display": "116,000.00",
+				"selected_term_exclusive_vat_display": "500,000.00",
+				"selected_term_vat_display": "80,000.00",
+				"selected_term_inclusive_vat_display": "580,000.00",
+			},
+		}
+		rendered = render_terms_template(
+			"{{ contract_totals.monthly_exclusive_vat_display }} | "
+			"{{ contract_totals.monthly_vat_display }} | "
+			"{{ contract_totals.selected_term_inclusive_vat_display }}",
+			context,
+		)
+
+		self.assertEqual(str(rendered), "100,000.00 | 16,000.00 | 580,000.00")
+
+	def test_terms_template_repairs_legacy_flat_display_aliases(self):
+		rendered = render_terms_template(
+			"KES {{ subtotal_monthly_display }} / KES {{ vat_annual_display }}",
+			{"subtotal_monthly": 100_000, "vat_annual": 80_000},
+		)
+
+		self.assertEqual(str(rendered), "KES 100,000.00 / KES 80,000.00")
 
 	def test_legacy_quote_summary_repairs_a_missing_native_grand_total(self):
 		quote = frappe._dict(

@@ -2,10 +2,67 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import frappe
 from markupsafe import Markup
+
+_TERMS_DISPLAY_PLACEHOLDER_RE = re.compile(
+	r"{{\s*(subtotal_monthly_display|vat_monthly_display|grand_total_monthly_display|"
+	r"subtotal_annual_display|vat_annual_display|grand_total_annual_display|"
+	r"contract_commitment_incl_vat_display)\s*}}"
+)
+
+
+def _format_kes(value: Any) -> str:
+	"""Format a numeric Terms value without relying on template method calls."""
+	try:
+		return "{:,.2f}".format(float(value or 0))
+	except (TypeError, ValueError):
+		return "0.00"
+
+
+def resolve_terms_placeholders(rendered: Any, context: dict | None = None) -> str:
+	"""Repair known display placeholders that survived an older T&C render.
+
+	Some contracts were stored while a template contained the display aliases before
+	the aliases were added to the render context.  Re-rendering an executed snapshot
+	is intentionally out of scope, but pending contract/PDF paths can safely replace
+	these seven fixed numeric aliases.  The replacement is deliberately allow-listed;
+	we never evaluate arbitrary Jinja a second time or execute user-entered content.
+	"""
+	rendered = frappe.utils.cstr(rendered or "")
+	context = context or {}
+	if "{{" not in rendered:
+		return rendered
+
+	raw_fields = {
+		"subtotal_monthly_display": "subtotal_monthly",
+		"vat_monthly_display": "vat_monthly",
+		"grand_total_monthly_display": "grand_total_monthly",
+		"subtotal_annual_display": "subtotal_annual",
+		"vat_annual_display": "vat_annual",
+		"grand_total_annual_display": "grand_total_annual",
+		"contract_commitment_incl_vat_display": "contract_commitment_incl_vat",
+	}
+	replacements = {}
+	for display_field, raw_field in raw_fields.items():
+		value = context.get(display_field)
+		if value is None and raw_field in context:
+			value = _format_kes(context.get(raw_field))
+		if value is not None:
+			replacements[display_field] = frappe.utils.cstr(value)
+
+	return _TERMS_DISPLAY_PLACEHOLDER_RE.sub(
+		lambda match: replacements.get(match.group(1), match.group(0)), rendered
+	)
+
+
+def render_terms_template(template: Any, context: dict | None = None) -> Markup:
+	"""Render Terms and Conditions once, then repair only known numeric aliases."""
+	rendered = frappe.render_template(frappe.utils.cstr(template or ""), context or {})
+	return Markup(resolve_terms_placeholders(rendered, context))
 
 
 def get_quotation_tax_summary(quote: Any) -> frappe._dict:
@@ -123,9 +180,7 @@ def render_current_terms_for_quote(quote: Any) -> Markup:
 	if not context:
 		return Markup(frappe.utils.cstr(quote.get("terms") or ""))
 	context.setdefault("quote", quote)
-	return Markup(
-		frappe.render_template(frappe.get_doc("Terms and Conditions", tc_name).terms or "", context)
-	)
+	return render_terms_template(frappe.get_doc("Terms and Conditions", tc_name).terms or "", context)
 
 
 def render_current_terms_for_contract(contract: Any) -> Markup:
@@ -139,6 +194,16 @@ def render_current_terms_for_contract(contract: Any) -> Markup:
 		)
 	from crm.api.contracts import _regenerate_contract_body
 
-	return Markup(
-		_regenerate_contract_body(contract) or frappe.utils.cstr(contract.get("contract_html") or "")
-	)
+	body = _regenerate_contract_body(contract)
+	if body:
+		return Markup(body)
+	fallback = frappe.utils.cstr(contract.get("contract_html") or "")
+	deal = frappe.utils.cstr(contract.get("deal") or "").strip()
+	if fallback and deal:
+		try:
+			from crm.api.optin import build_tc_context_for_deal
+
+			fallback = resolve_terms_placeholders(fallback, build_tc_context_for_deal(deal) or {})
+		except Exception:
+			pass
+	return Markup(fallback)

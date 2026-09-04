@@ -36,6 +36,7 @@ from frappe import _
 
 from crm.api._email import branded_email_html, internal_signatory_reminder_html, otp_code_block
 from crm.api._timeline import log_deal_event
+from crm.utils.jinja import render_terms_template, resolve_terms_placeholders
 from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import contract_snapshot, set_snapshot, snapshot
 
@@ -1998,7 +1999,7 @@ def _generate_contract(
 			context.setdefault("quote", quote)
 			context.setdefault("facility_signatory_name", facility_signatory_name)
 			context.setdefault("date", frappe.utils.format_date(frappe.utils.today()))
-			contract_html = frappe.render_template(tc_doc.terms or "", context)
+			contract_html = str(render_terms_template(tc_doc.terms or "", context))
 			tc_document = tc_name
 			tc_document_hash = hashlib.sha256(contract_html.encode()).hexdigest()
 	except Exception:
@@ -2838,6 +2839,14 @@ def _build_contract_document_html(contract_doc):
 		body = _regenerate_contract_body(contract_doc)
 		if not body:
 			body = frappe.utils.cstr(contract_doc.contract_html or "").strip()
+			deal = frappe.utils.cstr(getattr(contract_doc, "deal", "") or "").strip()
+			if body and deal:
+				try:
+					from crm.api.optin import build_tc_context_for_deal
+
+					body = resolve_terms_placeholders(body, build_tc_context_for_deal(deal) or {})
+				except Exception:
+					pass
 	if not body:
 		body = (
 			"<p style='color:#991b1b'>The terms for this contract are unavailable. "
@@ -3045,7 +3054,7 @@ def _regenerate_contract_body(contract_doc):
 		context.setdefault(
 			"date", frappe.utils.format_date(contract_doc.contract_date or frappe.utils.today())
 		)
-		return frappe.render_template(tc_doc.terms or "", context)
+		return str(render_terms_template(tc_doc.terms or "", context))
 	except Exception:
 		frappe.log_error(
 			frappe.get_traceback(),

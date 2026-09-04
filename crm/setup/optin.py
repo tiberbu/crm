@@ -707,9 +707,8 @@ def _default_terms_template():
 
 	Render context (all supplied by crm.api.optin.get_terms_text):
 	  network.display_name, date, contact.email,
-	  pricing_table (safe HTML <table>), grand_total_monthly_display,
-	  grand_total_annual_display (preformatted strings), commitment_years,
-	  commitment_years_label, contract_commitment_incl_vat_display,
+	  pricing_table (safe HTML <table>), contract_totals.*_display aliases,
+	  commitment_years, commitment_years_label,
 	  first_invoice_offset_label, year_one_grand_total_monthly_display,
 	  optional_services_table (safe HTML table of
 	  the customer's informational selections).
@@ -729,10 +728,18 @@ CareverseHIMS health information management service.</p>
 	to the net rates in accordance with the configured Taxes and Charges template
 	and added to the invoice.</p>
 <div>{{ pricing_table }}</div>
-<p><strong>Year 1 monthly subscription (incl. VAT): KES
-{{ year_one_grand_total_monthly_display }}</strong><br/>
-<strong>Total selected-term commitment (incl. VAT): KES
-{{ contract_commitment_incl_vat_display }}</strong></p>
+<p><strong>Year 1 monthly subscription (exclusive of VAT): KES
+{{ contract_totals.monthly_exclusive_vat_display }}</strong><br/>
+<strong>{{ vat_label }}: KES
+{{ contract_totals.monthly_vat_display }}</strong><br/>
+<strong>Year 1 monthly subscription (inclusive of VAT): KES
+{{ contract_totals.monthly_inclusive_vat_display }}</strong><br/>
+<strong>Total selected-term commitment (exclusive of VAT): KES
+{{ contract_totals.selected_term_exclusive_vat_display }}</strong><br/>
+<strong>{{ vat_label }} — selected term: KES
+{{ contract_totals.selected_term_vat_display }}</strong><br/>
+<strong>Total selected-term commitment (inclusive of VAT): KES
+{{ contract_totals.selected_term_inclusive_vat_display }}</strong></p>
 
 <h4>Optional services and hardware</h4>
 <p>The following items were requested for separate follow-up. They are

@@ -70,7 +70,7 @@
   <p class="cover-line">("CBSL" or the "Technology Delivery Partner")</p>
   <p class="cover-line confidential">CONFIDENTIAL</p>
   <p class="document-id">{{ facility_count }} {% if facility_count == 1 %}facility{% else %}facilities{% endif %} · Network {{ network.display_name }} · Effective {{ date }} · Quote {{ quote_display }}</p>
-  <p class="cover-line"><strong>Total selected-term commitment (incl. VAT): KES {{ contract_commitment_incl_vat_display }}</strong></p>
+  <p class="cover-line"><strong>Total selected-term commitment (incl. VAT): KES {{ contract_totals.selected_term_inclusive_vat_display }}</strong></p>
 </div>
 <table class="meta">
   <tr>
@@ -99,30 +99,30 @@
   <table class="summary">
     <tr>
 <td>Year 1 monthly subscription (exclusive of VAT)</td>
-<td>KES {{ subtotal_monthly_display }}</td>
+<td>KES {{ contract_totals.monthly_exclusive_vat_display }}</td>
 </tr>
     <tr>
 <td>{{ vat_label }}</td>
-<td>KES {{ vat_monthly_display }}</td>
+<td>KES {{ contract_totals.monthly_vat_display }}</td>
 </tr>
     <tr>
 <td>Year 1 monthly subscription (inclusive of VAT)</td>
 <td>
-<strong>KES {{ grand_total_monthly_display }}</strong>
+<strong>KES {{ contract_totals.monthly_inclusive_vat_display }}</strong>
 </td>
 </tr>
     <tr>
 <td>Total selected-term commitment (exclusive of VAT)</td>
-<td>KES {{ subtotal_annual_display }}</td>
+<td>KES {{ contract_totals.selected_term_exclusive_vat_display }}</td>
 </tr>
     <tr>
 <td>{{ vat_label }} — selected term</td>
-<td>KES {{ vat_annual_display }}</td>
+<td>KES {{ contract_totals.selected_term_vat_display }}</td>
 </tr>
     <tr>
 <td>Total selected-term commitment (inclusive of VAT)</td>
 <td>
-<strong>KES {{ grand_total_annual_display }}</strong>
+<strong>KES {{ contract_totals.selected_term_inclusive_vat_display }}</strong>
 </td>
 </tr>
   </table>

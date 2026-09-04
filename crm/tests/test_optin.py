@@ -114,9 +114,7 @@ class TestOptInSignatoryHandoff(UnitTestCase):
 			patch("crm.api.optin.frappe.db.exists", return_value=True),
 			patch("crm.api.optin.frappe.db.get_single_value", return_value="Tiberbu Healthnet"),
 		):
-			return _prepare_submission_payload(
-				payload, "token", "ivy@example.com", "network-a", 9999999999
-			)
+			return _prepare_submission_payload(payload, "token", "ivy@example.com", "network-a", 9999999999)
 
 	def test_self_signatory_is_canonicalized_from_verified_submitter(self):
 		payload = self._prepare(self._payload())
@@ -872,6 +870,25 @@ class TestOptInTermsPrinting(UnitTestCase):
 		self.assertIn("Updated terms", html)
 		self.assertNotIn("Old terms", html)
 
+	def test_pending_contract_repairs_legacy_unrendered_totals(self):
+		contract = frappe._dict(
+			{
+				"status": "Awaiting Signatures",
+				"deal": "DEAL-TEST-00001",
+				"contract_html": "KES {{ subtotal_monthly_display }} / {{ vat_annual_display }}",
+			}
+		)
+		with (
+			patch("crm.api.contracts._regenerate_contract_body", return_value=""),
+			patch(
+				"crm.api.optin.build_tc_context_for_deal",
+				return_value={"subtotal_monthly": 100_000, "vat_annual": 80_000},
+			),
+		):
+			body = render_current_terms_for_contract(contract)
+
+		self.assertEqual(str(body), "KES 100,000.00 / 80,000.00")
+
 
 class TestOptInContractAutomation(UnitTestCase):
 	def test_contract_generation_is_idempotent_for_an_existing_deal_contract(self):
@@ -1571,7 +1588,9 @@ class TestOptInContractAutomation(UnitTestCase):
 		)
 		with (
 			patch("crm.api.contracts._is_internal_crm_signatory", return_value=True),
-			patch("crm.api.contracts._contract_email_subject_label", return_value="Nairobi Area Branch Hospital"),
+			patch(
+				"crm.api.contracts._contract_email_subject_label", return_value="Nairobi Area Branch Hospital"
+			),
 			patch(
 				"crm.api.contracts._generate_reminder_reference",
 				return_value="RMD-20260903120000-ABC123",
@@ -1654,9 +1673,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertTrue(sendmail.call_args.kwargs["now"])
 		self.assertEqual(set_value.call_count, 2)
 		self.assertEqual(log_event.call_count, 2)
-		self.assertTrue(
-			all("RMD-20260903120000-ABC123" in call.args[1] for call in log_event.call_args_list)
-		)
+		self.assertTrue(all("RMD-20260903120000-ABC123" in call.args[1] for call in log_event.call_args_list))
 
 	def test_internal_reminder_scheduler_groups_same_user_and_skips_external_rows(self):
 		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed")

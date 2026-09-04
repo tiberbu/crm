@@ -31,12 +31,30 @@ the Quote tab where the commercial decision is made.
   contract PDFs state that source rates are exclusive of VAT and show net, VAT,
   and inclusive commitment totals without mixing yearly and full-term figures.
 
+## Contract template placeholders
+
+Use the namespaced display aliases below in editable Terms and Conditions
+templates. They are preformatted in KES and are safe to place directly in HTML:
+
+- `{{ contract_totals.monthly_exclusive_vat_display }}`
+- `{{ contract_totals.monthly_vat_display }}`
+- `{{ contract_totals.monthly_inclusive_vat_display }}`
+- `{{ contract_totals.selected_term_exclusive_vat_display }}`
+- `{{ contract_totals.selected_term_vat_display }}`
+- `{{ contract_totals.selected_term_inclusive_vat_display }}`
+
+The earlier flat aliases remain supported for existing templates. Pending
+contract/PDF renders repair only these fixed numeric aliases when an older
+stored body still contains them; arbitrary Jinja is never evaluated a second
+time.
+
 ## Data and migration impact
 
 - Adds the Opt-In signatory mode and nominated-signatory fields to the Opt-In
   Submission model and related contract data.
 - Includes patches to backfill existing submissions to the safe self-signing
-  mode and to refresh network/facility terms data.
+  mode, refresh network/facility terms data, and update system-owned contract
+  templates with the canonical totals aliases.
 - Keeps legacy single-schedule fields compatible while persisting yearly
   facility overrides as a year-to-schedule map.
 - Existing opted-in facility pricing remains locked; changes must continue

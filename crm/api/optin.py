@@ -39,6 +39,7 @@ from typing import Any
 import frappe
 from frappe import _
 
+from crm.utils.jinja import render_terms_template
 from crm.utils.optin_bundles import (
 	billing_schedule,
 	decode_json,
@@ -525,10 +526,12 @@ def _get_all_memberships(email, network_slug):
 		for row in mem_rows
 	}
 	return [
-		frappe._dict({
-			**row,
-			**price_list_by_parent.get(row.name, {}),
-		})
+		frappe._dict(
+			{
+				**row,
+				**price_list_by_parent.get(row.name, {}),
+			}
+		)
 		for row in fac_rows
 	]
 
@@ -731,7 +734,10 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 			"email": frappe.utils.cstr(requested_signatory.get("email") or "").strip().lower(),
 			"phone": frappe.utils.cstr(requested_signatory.get("phone") or "").strip(),
 		}
-		if not signatory["name"] or frappe.utils.validate_email_address(signatory["email"]) != signatory["email"]:
+		if (
+			not signatory["name"]
+			or frappe.utils.validate_email_address(signatory["email"]) != signatory["email"]
+		):
 			frappe.throw(
 				_("Please provide a valid name and email address for the authorised signatory."),
 				frappe.ValidationError,
@@ -1153,7 +1159,9 @@ def get_settings(network_slug: Any, deal_invitation: Any = None):
 			else network_doc.get("price_list_override") or default_price_list
 		)
 		price_plans = _configured_price_plans(network_doc, invitation)
-		first_invoice_offset_months = frappe.utils.cint(network_doc.get("first_invoice_offset_months") or 3) or 3
+		first_invoice_offset_months = (
+			frappe.utils.cint(network_doc.get("first_invoice_offset_months") or 3) or 3
+		)
 	else:
 		network_config = {
 			"display_name": "CareverseHIMS",
@@ -1401,7 +1409,9 @@ def get_pricing(
 	network_doc = _get_network_doc(network_slug)
 	plans = _configured_price_plans(network_doc, invitation)
 	if not plans:
-		frappe.throw(_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError)
+		frappe.throw(
+			_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError
+		)
 	if isinstance(selected_years, str):
 		try:
 			selected_years = json.loads(selected_years)
@@ -1418,7 +1428,9 @@ def get_pricing(
 		frappe.throw(_("Select at least one configured subscription year."), frappe.ValidationError)
 	for plan in selected_plans:
 		if not frappe.db.exists("Price List", {"name": plan["price_list"], "selling": 1, "enabled": 1}):
-			frappe.throw(_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError)
+			frappe.throw(
+				_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError
+			)
 
 	# Build MFL → facility info map from pre-qualified records via membership child table
 	all_records = (
@@ -1462,15 +1474,20 @@ def _price_plan_from_facilities(plan, selected_plans, facility_map, selected_mfl
 		fac = facility_map.get(mfl_code)
 		if not fac or quoted_map.get(mfl_code):
 			continue
-		price_list = effective_year_price_list(
-			plan["year_number"],
-			selected_plans,
-			fac.get("price_list_overrides_json"),
-			fac.get("price_list_override"),
-		) or plan["price_list"]
+		price_list = (
+			effective_year_price_list(
+				plan["year_number"],
+				selected_plans,
+				fac.get("price_list_overrides_json"),
+				fac.get("price_list_override"),
+			)
+			or plan["price_list"]
+		)
 		if not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
 			frappe.throw(
-				_("Pricing is temporarily unavailable for one or more selected facilities. Please contact support."),
+				_(
+					"Pricing is temporarily unavailable for one or more selected facilities. Please contact support."
+				),
 				frappe.ConfigurationError,
 			)
 		item_code = _keph_to_item_code(fac.get("keph_level"))
@@ -1483,7 +1500,9 @@ def _price_plan_from_facilities(plan, selected_plans, facility_map, selected_mfl
 		)
 		if not price_rows:
 			frappe.throw(
-				_("Pricing is temporarily unavailable for one or more selected facilities. Please contact support."),
+				_(
+					"Pricing is temporarily unavailable for one or more selected facilities. Please contact support."
+				),
 				frappe.ConfigurationError,
 			)
 		monthly_kes = float(price_rows[0].price_list_rate)
@@ -1565,7 +1584,11 @@ def _build_pricing_table(facilities):
 		# no trailing .format() (which would bind only to the last literal group).
 		row_html = (
 			"<tr>"
-			+ (f'<td style="{cell}font-weight:600">Year {frappe.utils.cint(f.get("year_number"))}</td>' if show_year else "")
+			+ (
+				f'<td style="{cell}font-weight:600">Year {frappe.utils.cint(f.get("year_number"))}</td>'
+				if show_year
+				else ""
+			)
 			+ f'<td style="{cell}font-weight:600">{name}</td>'
 			f'<td style="{cell}opacity:.7">{mfl}</td>'
 			f'<td style="{cell}">{keph}</td>'
@@ -1584,13 +1607,25 @@ def _build_pricing_table(facilities):
 		'<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0 4px">'
 		+ "<thead><tr>"
 		+ year_header
-		+ '<th align="left" style="' + th + '">Facility</th>'
-		+ '<th align="left" style="' + th + '">MFL Code</th>'
-		+ '<th align="left" style="' + th + '">KEPH Level</th>'
-		+ '<th align="right" style="' + th + '">Monthly (KES, excl. VAT)</th>'
-		+ '<th align="right" style="' + th + '">Annual (KES, excl. VAT)</th>'
+		+ '<th align="left" style="'
+		+ th
+		+ '">Facility</th>'
+		+ '<th align="left" style="'
+		+ th
+		+ '">MFL Code</th>'
+		+ '<th align="left" style="'
+		+ th
+		+ '">KEPH Level</th>'
+		+ '<th align="right" style="'
+		+ th
+		+ '">Monthly (KES, excl. VAT)</th>'
+		+ '<th align="right" style="'
+		+ th
+		+ '">Annual (KES, excl. VAT)</th>'
 		+ "</tr></thead>"
-		+ "<tbody>" + body + "</tbody>"
+		+ "<tbody>"
+		+ body
+		+ "</tbody>"
 		+ "</table>"
 	)
 
@@ -1748,7 +1783,9 @@ def _build_optional_services_table(optional_items):
 				cell,
 				row["description"] or "—",
 				cell,
-				"KES " + _fmt_kes(row["indicative_price"]) if row["indicative_price"] else "Quoted separately",
+				"KES " + _fmt_kes(row["indicative_price"])
+				if row["indicative_price"]
+				else "Quoted separately",
 			)
 		)
 	if not rows:
@@ -1769,9 +1806,7 @@ def _build_optional_services_table(optional_items):
 	)
 
 
-def _build_tc_context(
-	pricing, contact, network_doc, deal=None, quote=None, date=None, optional_items=None
-):
+def _build_tc_context(pricing, contact, network_doc, deal=None, quote=None, date=None, optional_items=None):
 	"""Build the single, escaped context used by portal, contract and print renders."""
 	pricing = pricing or []
 	contact = contact if isinstance(contact, dict) else {}
@@ -1806,9 +1841,7 @@ def _build_tc_context(
 		}
 	)
 	commitment_years = max(year_numbers) if year_numbers else 1
-	first_invoice_offset_months = frappe.utils.cint(
-		network_doc.get("first_invoice_offset_months") or 3
-	) or 3
+	first_invoice_offset_months = frappe.utils.cint(network_doc.get("first_invoice_offset_months") or 3) or 3
 	unique_facilities = {
 		frappe.utils.cstr(row.get("mfl_code") or row.get("facility_name") or "").strip()
 		for row in safe_pricing
@@ -1827,11 +1860,7 @@ def _build_tc_context(
 		primary_year_monthly, tax_template=tax_totals.get("tax_template")
 	)
 	pricing_plan_keys = sorted(
-		{
-			(row.get("year_number"), row.get("price_list"))
-			for row in safe_pricing
-			if row.get("year_number")
-		},
+		{(row.get("year_number"), row.get("price_list")) for row in safe_pricing if row.get("year_number")},
 		key=lambda item: (item[0], item[1] or ""),
 	)
 	return {
@@ -1843,9 +1872,7 @@ def _build_tc_context(
 		"customer_email_display": customer_email or "Not specified",
 		"facility": facility,
 		"facility_name": _safe_tc_text(facility_name, "Selected facility"),
-		"facility_keph_level_display": _safe_tc_text(
-			facility.get("keph_level"), "Not specified"
-		),
+		"facility_keph_level_display": _safe_tc_text(facility.get("keph_level"), "Not specified"),
 		"facility_mfl_code_display": _safe_tc_text(facility.get("mfl_code"), "Not specified"),
 		"facilities": safe_pricing,
 		"pricing": safe_pricing,
@@ -1856,8 +1883,7 @@ def _build_tc_context(
 				"facilities": [
 					item
 					for item in safe_pricing
-					if item.get("year_number") == year_number
-					and item.get("price_list") == price_list
+					if item.get("year_number") == year_number and item.get("price_list") == price_list
 				],
 			}
 			for year_number, price_list in pricing_plan_keys
@@ -1888,6 +1914,16 @@ def _build_tc_context(
 		"vat_monthly_display": _fmt_kes(tax_totals["vat_monthly"]),
 		"subtotal_annual_display": _fmt_kes(tax_totals["subtotal_annual"]),
 		"vat_annual_display": _fmt_kes(tax_totals["vat_annual"]),
+		# Namespaced aliases make the contract-facing API self-documenting while
+		# keeping the flat names above backwards-compatible with existing templates.
+		"contract_totals": {
+			"monthly_exclusive_vat_display": _fmt_kes(tax_totals["subtotal_monthly"]),
+			"monthly_vat_display": _fmt_kes(tax_totals["vat_monthly"]),
+			"monthly_inclusive_vat_display": _fmt_kes(tax_totals["grand_total_monthly"]),
+			"selected_term_exclusive_vat_display": _fmt_kes(tax_totals["subtotal_annual"]),
+			"selected_term_vat_display": _fmt_kes(tax_totals["vat_annual"]),
+			"selected_term_inclusive_vat_display": _fmt_kes(tax_totals["grand_total_annual"]),
+		},
 		"date": date or frappe.utils.format_date(frappe.utils.today()),
 		"deal": _safe_tc_text(deal),
 		"quote": _safe_tc_text(quote),
@@ -1947,7 +1983,11 @@ def build_tc_context_for_deal(deal):
 		pricing_plans = data.get("pricing_plans") or []
 	if pricing_plans:
 		pricing = [
-			{**row, "year_number": plan.get("year_number"), "price_list": row.get("price_list") or plan.get("price_list")}
+			{
+				**row,
+				"year_number": plan.get("year_number"),
+				"price_list": row.get("price_list") or plan.get("price_list"),
+			}
 			for plan in pricing_plans
 			for row in plan.get("facilities") or []
 		]
@@ -2056,7 +2096,7 @@ def get_terms_text(
 		pricing_result.get("optional_services") or []
 	)
 
-	rendered_html = frappe.render_template(tc_doc.terms or "", context)
+	rendered_html = str(render_terms_template(tc_doc.terms or "", context))
 	# Content-integrity fingerprint of the rendered T&C — NOT a credential.
 	# Stored alongside the acceptance so we can prove the terms the user
 	# accepted match what was displayed. SHA-256 is the correct primitive for
@@ -2748,15 +2788,11 @@ def _signatory_package_summary_html(submission):
 	term_label = ", ".join(year_labels)
 
 	commitment = sum(
-		frappe.utils.flt(plan.get("grand_total_annual"))
-		for plan in plans
-		if isinstance(plan, dict)
+		frappe.utils.flt(plan.get("grand_total_annual")) for plan in plans if isinstance(plan, dict)
 	)
 	if not commitment:
 		annual_total = sum(
-			frappe.utils.flt(row.get("annual_kes"))
-			for row in facilities
-			if isinstance(row, dict)
+			frappe.utils.flt(row.get("annual_kes")) for row in facilities if isinstance(row, dict)
 		)
 		commitment = calculate_vat_totals(annual_total).grand_total
 	first_year = next(
@@ -2773,9 +2809,7 @@ def _signatory_package_summary_html(submission):
 	for facility in facilities:
 		if not isinstance(facility, dict):
 			continue
-		identity = frappe.utils.cstr(
-			facility.get("mfl_code") or facility.get("facility_name") or ""
-		).strip()
+		identity = frappe.utils.cstr(facility.get("mfl_code") or facility.get("facility_name") or "").strip()
 		if not identity or identity in seen_facilities:
 			continue
 		seen_facilities.add(identity)
@@ -2784,8 +2818,7 @@ def _signatory_package_summary_html(submission):
 			level_counts[level] += 1
 	facility_count = len(seen_facilities) or len(facilities)
 	level_summary = " · ".join(
-		"%s × %s" % (frappe.utils.escape_html(level), count)
-		for level, count in sorted(level_counts.items())
+		"%s × %s" % (frappe.utils.escape_html(level), count) for level, count in sorted(level_counts.items())
 	)
 	network = _get_network_doc(getattr(submission, "network_slug", "") or "") or {}
 	first_invoice_offset = frappe.utils.cint(network.get("first_invoice_offset_months") or 3) or 3
@@ -2852,7 +2885,9 @@ def _generate_contract_for_submission(submission, quote_name):
 			if not quote_names:
 				quote_names = [quote_name] if quote_name else []
 			contract_doc.quote_names_json = json.dumps(quote_names)
-		if contract_doc.meta.has_field("contract_html_snapshot") and not contract_doc.get("contract_html_snapshot"):
+		if contract_doc.meta.has_field("contract_html_snapshot") and not contract_doc.get(
+			"contract_html_snapshot"
+		):
 			contract_doc.contract_html_snapshot = contract_doc.get("contract_html") or ""
 		contract_doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	except Exception:
@@ -2913,14 +2948,15 @@ def _quote_for_year(base_quote, plan, deal_name, submission):
 			{
 				"item_code": frappe.utils.cstr(product.get("item_code") or ""),
 				"item_name": "CareverseHIMS - %s" % frappe.utils.cstr(product.get("facility_name") or ""),
-				"description": "KEPH %s - Annual Subscription" % frappe.utils.cstr(product.get("keph_level") or ""),
+				"description": "KEPH %s - Annual Subscription"
+				% frappe.utils.cstr(product.get("keph_level") or ""),
 				"qty": 1,
 				"price_list_rate": annual_rate,
 				"rate": annual_rate,
 				"discount_percentage": 0,
 				"uom": "Nos",
 				"facility_name": frappe.utils.cstr(product.get("facility_name") or ""),
-			}
+			},
 		)
 	_set_doc_value_if_available(quote, "crm_optin_submission", submission.name)
 	_set_doc_value_if_available(quote, "crm_optin_year", frappe.utils.cint(plan.get("year_number")))
@@ -2946,7 +2982,13 @@ def _quote_for_year(base_quote, plan, deal_name, submission):
 def _store_submission_bundle(submission, payload, primary_quote, plans):
 	"""Persist multi-year metadata without making it mandatory for old records."""
 	if not plans:
-		plans = [{"year_number": 1, "price_list": primary_quote.get("selling_price_list"), "facilities": payload.get("pricing") or []}]
+		plans = [
+			{
+				"year_number": 1,
+				"price_list": primary_quote.get("selling_price_list"),
+				"facilities": payload.get("pricing") or [],
+			}
+		]
 	quote_names = [primary_quote.name]
 	_set_doc_value_if_available(primary_quote, "crm_optin_submission", submission.name)
 	_set_doc_value_if_available(
@@ -3153,7 +3195,9 @@ def sync_submission_configured_pricing(submission_name):
 	quote_names = decode_json(submission.get("quote_names_json"), [])
 	primary_quote_name = quote_names[0] if quote_names else ""
 	if not primary_quote_name:
-		primary_quote_name = frappe.db.get_value("Quotation", {"crm_deal": submission.deal}, "name", order_by="creation asc")
+		primary_quote_name = frappe.db.get_value(
+			"Quotation", {"crm_deal": submission.deal}, "name", order_by="creation asc"
+		)
 	if not primary_quote_name or not frappe.db.exists("Quotation", primary_quote_name):
 		return {"status": "failed", "reason": "Primary quotation is missing", "created": 0}
 	primary_quote = frappe.get_doc("Quotation", primary_quote_name)
