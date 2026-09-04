@@ -6,7 +6,6 @@
   .crm-contract-header { border-bottom: 3px solid {{ network.accent }}; padding-bottom: 14px; margin-bottom: 18px; }
   .crm-contract-logo { max-height: 58px; max-width: 210px; display: block; margin-bottom: 8px; }
   .crm-contract-network { color: {{ network.accent }}; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-  .crm-contract-title { color: #111827; font-size: 21px; font-weight: 700; margin: 4px 0; }
   .crm-contract-meta { color: #6b7280; font-size: 10px; }
   .crm-contract-body { margin-bottom: 18px; }
   .crm-contract-signatures { border-top: 1px solid #e5e7eb; padding-top: 12px; page-break-inside: avoid; }
@@ -23,15 +22,14 @@
   <div class="crm-contract-header">
     {% if network.logo %}<img class="crm-contract-logo" src="{{ network.logo|e }}" alt="{{ network.display_name|e }}">{% endif %}
     <div class="crm-contract-network">{{ network.display_name|e }}</div>
-    <div class="crm-contract-title">CareverseHIMS Subscription Agreement</div>
     <div class="crm-contract-meta">
       Contract {{ doc.name|e }}{% if doc.contract_date %} · {{ frappe.utils.format_date(doc.contract_date)|e }}{% endif %}
       {% if doc.deal %} · Deal {{ doc.deal|e }}{% endif %} · {{ doc.status|e }}
     </div>
-    <div class="crm-contract-meta">{{ network.technology_delivery_partner_name|e }} ({{ network.technology_delivery_partner_short_name|e }} — the {{ network.technology_delivery_partner_role|e }})</div>
     {% if network.contact_email %}<div class="crm-contract-meta">{{ network.contact_email|e }}</div>{% endif %}
   </div>
 
+  {# All legal and commercial content comes from the selected Terms and Conditions document. #}
   <div class="crm-contract-body">{{ render_current_terms_for_contract(doc) }}</div>
 
   <div class="crm-contract-signatures">
@@ -52,6 +50,6 @@
   </div>
 
   <div class="crm-contract-footer">
-    {{ (network.footer_legal_name or network.display_name)|e }} · {{ network.technology_delivery_partner_name|e }} · Rates in the contract schedules are exclusive of VAT; VAT is shown separately.
+    {{ (network.footer_legal_name or network.display_name)|e }}
   </div>
 </div>

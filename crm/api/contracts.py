@@ -2935,7 +2935,7 @@ def _build_contract_document_html(contract_doc):
   <div class="doc-header">
     {logo}
     <div class="brand">{network}</div>
-    <h1>CareverseHIMS Subscription Agreement</h1>
+    <h1>Contract</h1>
     <div class="doc-meta">{ref}{date_bit}</div>
     {contact}
   </div>
