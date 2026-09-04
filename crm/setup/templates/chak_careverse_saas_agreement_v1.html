@@ -50,7 +50,7 @@
 </style>
 <div class="cv-contract">
 <div class="cover">
-  <p class="eyebrow">CAREVERSEHIMS · INDIVIDUAL FACILITY AGREEMENT</p>
+  <p class="eyebrow">CAREVERSEHIMS · FACILITY AGREEMENT</p>
   <h1>SOFTWARE-AS-A-SERVICE AGREEMENT</h1>
   <p class="subtitle">FOR THE PROVISION OF THE CAREVERSEHIMS HOSPITAL MANAGEMENT INFORMATION SYSTEM</p>
   <p class="cover-line">BETWEEN</p>
@@ -69,7 +69,8 @@
 </p>
   <p class="cover-line">("CBSL" or the "Technology Delivery Partner")</p>
   <p class="cover-line confidential">CONFIDENTIAL</p>
-  <p class="document-id">Facility {{ facility_name }} · Network {{ network.display_name }} · Effective {{ date }} · Quote {{ quote_display }}</p>
+  <p class="document-id">{{ facility_count }} {% if facility_count == 1 %}facility{% else %}facilities{% endif %} · Network {{ network.display_name }} · Effective {{ date }} · Quote {{ quote_display }}</p>
+  <p class="cover-line"><strong>Total selected-term commitment (incl. VAT): KES {{ contract_commitment_incl_vat_display }}</strong></p>
 </div>
 <table class="meta">
   <tr>
@@ -92,8 +93,8 @@
 </tr>
 </table>
 <div class="commercial">
-  <div class="price-heading">Schedule B — Facility-specific pricing · All rates exclusive of VAT</div>
-  <p class="section-intro">This commercial summary is the accepted facility pricing for this individual Agreement. It is rendered from the submitted quotation and contains only the selected facility or facilities.</p>
+  <div class="price-heading">Schedule B — Facility and yearly contract schedules · All rates exclusive of VAT</div>
+  <p class="section-intro">This commercial summary is the accepted pricing for the facility or facilities in this Agreement. Each selected year retains its applicable contract schedule and the commitment below sums those yearly schedules.</p>
   <div class="pricing-table">{{ pricing_table }}</div>
   <table class="summary">
     <tr>

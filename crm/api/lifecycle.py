@@ -25,6 +25,7 @@ import json
 import frappe
 from frappe import _
 
+from crm.api.quotes import _normalise_quote_totals
 from crm.utils.price_list_history import read_history
 
 
@@ -35,7 +36,9 @@ def get_deal_lifecycle(deal: str) -> dict:
 
 	    {
 	      "submission":    {"ref", "status"} | None,
-	      "quotation":     {"name", "status", "docstatus", "grand_total", "price_list", "initial_price_list", "price_list_history"} | None,
+	      "quotation":     {"name", "status", "docstatus", "net_total", "vat_amount", "grand_total", "price_list", "initial_price_list", "price_list_history"} | None,
+	      "quotations":    [{"name", "year_number", "net_total", "vat_amount", "grand_total", ...}],
+	      "quotation_commitment": {"year_count", "net_total", "vat_amount", "grand_total"},
 	      "contract":      {"name", "status", "workflow_state", "price_list", "excluded_signatories"} | None,
 	      "signatories":   [{"row_name", "role", "status", "signed_at", "name", "email"}],
 	      "onboarding":    {"name", "approval_status", "n1", "n2", "tiberbu"} | None,
@@ -53,17 +56,17 @@ def get_deal_lifecycle(deal: str) -> dict:
 	quotation = _resolve_quotation(deal)
 	contract = _resolve_contract(deal, quotation)
 	quotations = _resolve_quotations(deal)
+	quotation_commitment = _quotation_commitment(quotations)
 
 	return {
 		"submission": submission,
 		"quotation": quotation,
 		"quotations": quotations,
+		"quotation_commitment": quotation_commitment,
 		"contract": contract,
 		"signatories": _resolve_signatories(contract["name"] if contract else None),
 		"onboarding": _resolve_onboarding(deal),
-		"sales_invoice": _resolve_sales_invoice(
-			quotation["name"] if quotation else None, submission
-		),
+		"sales_invoice": _resolve_sales_invoice(quotation["name"] if quotation else None, submission),
 		"sales_invoices": _resolve_sales_invoices(quotations, submission),
 	}
 
@@ -96,7 +99,18 @@ def _resolve_submission(deal: str) -> dict | None:
 def _resolve_quotation(deal: str) -> dict | None:
 	if not _can_read("Quotation"):
 		return None
-	fields = ["name", "status", "docstatus", "grand_total", "selling_price_list"]
+	fields = [
+		"name",
+		"status",
+		"docstatus",
+		"net_total",
+		"total_taxes_and_charges",
+		"grand_total",
+		"selling_price_list",
+	]
+	for fieldname in ("vat_amount", "company", "taxes_and_charges"):
+		if frappe.db.has_column("Quotation", fieldname):
+			fields.append(fieldname)
 	for fieldname in ("crm_initial_price_list", "crm_price_list_history"):
 		if frappe.db.has_column("Quotation", fieldname):
 			fields.append(fieldname)
@@ -110,10 +124,13 @@ def _resolve_quotation(deal: str) -> dict | None:
 	if not rows:
 		return None
 	r = rows[0]
+	_normalise_quote_totals(r)
 	return {
 		"name": r.name,
 		"status": r.status,
 		"docstatus": r.docstatus,
+		"net_total": r.get("net_total") or 0,
+		"vat_amount": r.get("vat_amount") or r.get("total_taxes_and_charges") or 0,
 		"grand_total": r.grand_total,
 		"price_list": r.get("selling_price_list") or "Standard Selling",
 		"initial_price_list": r.get("crm_initial_price_list")
@@ -127,26 +144,59 @@ def _resolve_quotations(deal: str) -> list[dict]:
 	"""Return every yearly quotation while retaining the singular legacy field."""
 	if not _can_read("Quotation"):
 		return []
-	fields = ["name", "status", "docstatus", "grand_total", "selling_price_list", "creation"]
-	for fieldname in ("crm_initial_price_list", "crm_price_list_history", "crm_optin_year", "crm_optin_submission"):
+	fields = [
+		"name",
+		"status",
+		"docstatus",
+		"net_total",
+		"total_taxes_and_charges",
+		"grand_total",
+		"selling_price_list",
+		"creation",
+	]
+	for fieldname in (
+		"crm_initial_price_list",
+		"crm_price_list_history",
+		"crm_optin_year",
+		"crm_optin_submission",
+	):
+		if frappe.db.has_column("Quotation", fieldname):
+			fields.append(fieldname)
+	for fieldname in ("vat_amount", "company", "taxes_and_charges"):
 		if frappe.db.has_column("Quotation", fieldname):
 			fields.append(fieldname)
 	rows = frappe.get_list(
 		"Quotation", filters={"crm_deal": deal}, fields=fields, order_by="creation asc", limit_page_length=0
 	)
-	return [
-		{
-			"name": row.name,
-			"year_number": frappe.utils.cint(row.get("crm_optin_year") or index),
-			"status": row.status,
-			"docstatus": row.docstatus,
-			"grand_total": row.grand_total,
-			"price_list": row.get("selling_price_list") or "Standard Selling",
-			"initial_price_list": row.get("crm_initial_price_list") or row.get("selling_price_list") or "Standard Selling",
-			"price_list_history": read_history(row),
-		}
-		for index, row in enumerate(rows, 1)
-	]
+	return [_normalised_quotation_row(row, index) for index, row in enumerate(rows, 1)]
+
+
+def _normalised_quotation_row(row, index):
+	_normalise_quote_totals(row)
+	return {
+		"name": row.name,
+		"year_number": frappe.utils.cint(row.get("crm_optin_year") or index),
+		"status": row.status,
+		"docstatus": row.docstatus,
+		"net_total": row.get("net_total") or 0,
+		"vat_amount": row.get("vat_amount") or row.get("total_taxes_and_charges") or 0,
+		"grand_total": row.grand_total,
+		"price_list": row.get("selling_price_list") or "Standard Selling",
+		"initial_price_list": row.get("crm_initial_price_list")
+		or row.get("selling_price_list")
+		or "Standard Selling",
+		"price_list_history": read_history(row),
+	}
+
+
+def _quotation_commitment(quotations: list[dict]) -> dict:
+	"""Sum the current yearly quotation totals for CRM approval surfaces."""
+	return {
+		"year_count": len(quotations),
+		"net_total": round(sum(float(row.get("net_total") or 0) for row in quotations), 2),
+		"vat_amount": round(sum(float(row.get("vat_amount") or 0) for row in quotations), 2),
+		"grand_total": round(sum(float(row.get("grand_total") or 0) for row in quotations), 2),
+	}
 
 
 def _resolve_contract(deal: str, quotation: dict | None = None) -> dict | None:
@@ -210,7 +260,11 @@ def _parse_names(value):
 		parsed = json.loads(value or "[]")
 	except (TypeError, ValueError, json.JSONDecodeError):
 		return []
-	return [frappe.utils.cstr(item).strip() for item in parsed if frappe.utils.cstr(item).strip()] if isinstance(parsed, list) else []
+	return (
+		[frappe.utils.cstr(item).strip() for item in parsed if frappe.utils.cstr(item).strip()]
+		if isinstance(parsed, list)
+		else []
+	)
 
 
 def _resolve_signatories(contract: str | None) -> list:
@@ -269,9 +323,7 @@ def _resolve_sales_invoice(quotation: str | None, submission: dict | None = None
 	if not _can_read("Sales Invoice"):
 		return None
 	filter_candidates = []
-	if submission and submission.get("ref") and frappe.db.has_column(
-		"Sales Invoice", "crm_optin_submission"
-	):
+	if submission and submission.get("ref") and frappe.db.has_column("Sales Invoice", "crm_optin_submission"):
 		filter_candidates.append({"crm_optin_submission": submission["ref"]})
 	if quotation and frappe.db.has_column("Sales Invoice", "crm_optin_quotation"):
 		filter_candidates.append({"crm_optin_quotation": quotation})
@@ -309,8 +361,9 @@ def _resolve_sales_invoices(quotations: list[dict], submission: dict | None = No
 		filters = None
 	if not filters:
 		return []
-	rows = frappe.get_list("Sales Invoice", filters=filters, fields=fields, order_by="creation asc", limit_page_length=0)
+	rows = frappe.get_list(
+		"Sales Invoice", filters=filters, fields=fields, order_by="creation asc", limit_page_length=0
+	)
 	return [
-		{"name": row.name, "docstatus": row.docstatus, "outstanding": row.outstanding_amount}
-		for row in rows
+		{"name": row.name, "docstatus": row.docstatus, "outstanding": row.outstanding_amount} for row in rows
 	]

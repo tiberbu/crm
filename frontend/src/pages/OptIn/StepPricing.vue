@@ -1,5 +1,5 @@
 <template>
-  <div class="mx-auto w-full max-w-2xl px-4 py-6">
+  <div class="mx-auto w-full max-w-5xl px-4 py-6">
     <h2 class="mb-1 text-xl font-bold text-gray-900 dark:text-white">
       Your Package Pricing
     </h2>
@@ -56,7 +56,7 @@
             }}
           </span>
         </div>
-        <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <button
             v-for="plan in availablePlans"
             :key="plan.year_number"
@@ -72,17 +72,18 @@
             <span class="block font-semibold">{{
               plan.label || `Year ${plan.year_number}`
             }}</span>
-            <span class="mt-0.5 block text-xs opacity-70">Contract schedule</span>
-            <span class="mt-1 block text-xs font-semibold opacity-90">{{
-              fmtKes(plan.grand_total_annual)
-            }} / year incl. VAT</span>
+            <span class="mt-0.5 block text-xs opacity-70"
+              >Contract schedule</span
+            >
+            <span class="mt-1 block text-xs font-semibold opacity-90"
+              >{{ fmtKes(plan.grand_total_annual) }} / year incl. VAT</span
+            >
           </button>
         </div>
-        <p
-          v-if="availablePlans.length >= 3 && selectedYears.length < 3"
-          class="mt-2 text-xs text-amber-600"
-        >
-          Select at least three years to continue.
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          {{ selectedYears.length }} of {{ availablePlans.length }} years
+          selected. You can choose between three and five years; each selected
+          year is included in the total commitment below.
         </p>
       </section>
 
@@ -194,7 +195,8 @@
             {{ fmtKes(activePlan.grand_total_annual) }}
           </p>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Annual incl. VAT · {{
+            Annual incl. VAT ·
+            {{
               activePlan.label ||
               `Year ${activePlan.year_number || 1} contract schedule`
             }}
@@ -374,15 +376,22 @@ const store = useOptInStore()
 const loading = ref(false)
 const errorMsg = ref('')
 const pricing = ref(store.pricing || null)
-const availablePlans = computed(
-  () => store.networkConfig?.price_plans || pricing.value?.plans || [],
-)
+const pricedPlans = ref([...(store.pricing?.plans || [])])
+const availablePlans = computed(() => {
+  const configured = store.networkConfig?.price_plans || []
+  const pricedByYear = new Map(
+    pricedPlans.value.map((plan) => [Number(plan.year_number), plan]),
+  )
+  if (!configured.length) return pricedPlans.value
+  return configured.map((plan) => ({
+    ...plan,
+    ...(pricedByYear.get(Number(plan.year_number)) || {}),
+  }))
+})
 const selectedYears = ref(
   (store.pricing?.selected_years?.length
     ? [...store.pricing.selected_years]
-    : availablePlans.value.length >= 3
-      ? availablePlans.value.slice(0, 3).map((plan) => plan.year_number)
-      : availablePlans.value.map((plan) => plan.year_number)) || [1],
+    : availablePlans.value.map((plan) => plan.year_number)) || [1],
 )
 const selectedOptionalCodes = ref(
   (store.optionalItems || []).map((item) => item.item_code),
@@ -401,7 +410,11 @@ const activePlan = computed(() => {
   )
 })
 const commitmentAnnual = computed(() =>
-  Number(pricing.value?.commitment_annual ?? activePlan.value.grand_total_annual ?? 0),
+  Number(
+    pricing.value?.commitment_annual ??
+      activePlan.value.grand_total_annual ??
+      0,
+  ),
 )
 const commitmentNetAnnual = computed(() =>
   Number(
@@ -450,6 +463,15 @@ async function loadPricing() {
       return
     }
     pricing.value = data
+    const mergedPlans = new Map(
+      pricedPlans.value.map((plan) => [Number(plan.year_number), plan]),
+    )
+    for (const plan of data.plans || []) {
+      mergedPlans.set(Number(plan.year_number), plan)
+    }
+    pricedPlans.value = [...mergedPlans.values()].sort(
+      (a, b) => Number(a.year_number) - Number(b.year_number),
+    )
     store.setPricing(data)
     store.setOptionalItems(
       optionalServices.value.filter((item) =>
@@ -495,7 +517,8 @@ function kephBadgeClass(keph) {
 }
 
 function fmtKes(v) {
-  const n = parseFloat(v || 0)
+  if (v === null || v === undefined || v === '') return '—'
+  const n = parseFloat(v)
   return new Intl.NumberFormat('en-KE', {
     style: 'currency',
     currency: 'KES',

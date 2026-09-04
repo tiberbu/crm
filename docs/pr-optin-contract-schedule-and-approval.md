@@ -26,6 +26,10 @@ the Quote tab where the commercial decision is made.
 - Sales Managers and System Managers opening a Deal without an explicit tab
   URL land on **Quote**. Quote is also the first desktop tab; explicit links
   such as `#activity` remain unchanged.
+- The wizard and CRM quoting panel use one VAT-aware commitment hierarchy:
+  selected-term total first, Year 1 second, then yearly detail. Quote and
+  contract PDFs state that source rates are exclusive of VAT and show net, VAT,
+  and inclusive commitment totals without mixing yearly and full-term figures.
 
 ## Data and migration impact
 
@@ -37,6 +41,9 @@ the Quote tab where the commercial decision is made.
   facility overrides as a year-to-schedule map.
 - Existing opted-in facility pricing remains locked; changes must continue
   through the quotation workflow before signature.
+- Quote list and Deal lifecycle responses now expose normalized net, VAT, and
+  inclusive totals. Legacy net-only quotation totals are repaired for display
+  without changing the stored quotation or signed contract.
 
 ## Configuration requirements
 
@@ -53,6 +60,8 @@ the Quote tab where the commercial decision is made.
 - `bench --site crm.io run-tests --module crm.tests.test_optin_bundles` — 3 passed
 - `yarn test:run` — 135 passed
 - `yarn build` — completed successfully
+- Quote and contract print formats were checked for selected-term commitment,
+  Year 1 payable amount, and explicit exclusive/inclusive VAT labels.
 
 The production build retains its existing warnings for the unavailable Lucide
 GitHub icon, dynamic/static NotPermitted import, and large non-precached
@@ -65,6 +74,8 @@ bundles; none are introduced by this change.
   quote, including a mixed override case.
 - Verify a Sales or System Manager opens a Deal on Quote, while an explicit
   Activity deep link still opens Activity.
+- Verify the CRM commitment card equals the sum of the current yearly quote
+  totals and matches the selected-term amount in the wizard and both PDFs.
 
 ## Product specification
 

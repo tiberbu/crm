@@ -70,7 +70,7 @@ combined message rather than two overlapping emails.
 | --- | --- | --- | --- |
 | UX-01 | The contract identifies the first facility as an individual facility while its schedule can contain several facilities. | The agreement scope is legally and commercially unclear. | P0 |
 | UX-02 | Term selection is global and accepts non-contiguous years; independent facility terms of 3, 4, and 5 years are not modelled. | The displayed term can misrepresent the selected commercial commitment. | P0 |
-| UX-03 | Pricing, review, confirmation, and success screens foreground a primary-year monthly amount rather than the selected-term commitment. | A health executive must reconcile figures across screens. | P0 |
+| UX-03 | Pricing, review, confirmation, and success screens foreground a primary-year monthly amount rather than the selected-term commitment, and CRM/PDF totals can drift from the yearly quote bundle. | A health executive must reconcile figures across screens and may see conflicting VAT-inclusive amounts. | P0 |
 | UX-04 | The wizard always makes the submitter the Facility Signatory. | ICT/support users are incorrectly assigned legal authority. | P0 |
 | UX-05 | The OIS receipt goes to the submitter and the signing invitation is a separate, summary-free message. | The nominated signatory lacks decision context; a self-signing user receives noisy duplicate communication. | P0 |
 | UX-06 | The public completion state says “You’re in!” while signing and provisioning remain outstanding. | It overstates progress and creates avoidable follow-up. | P1 |
@@ -314,6 +314,10 @@ multiple figures.
 3. Facility schedules and optional services are detail-on-demand.
 4. The completion page accurately says whether the submitter or a nominated
    signatory must act next.
+5. The selected-term total is calculated from the same yearly amounts on the
+   wizard, CRM quoting panel, Quote PDF, and contract PDF. Every surface labels
+   line-item rates and commitment values as exclusive or inclusive of VAT;
+   VAT is never silently included in an exclusive amount.
 
 ## 7. Verification matrix
 

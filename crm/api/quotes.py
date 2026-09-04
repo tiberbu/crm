@@ -48,6 +48,38 @@ _STATUS_DRAFT = "Draft"
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
+def _normalise_quote_totals(row):
+	"""Expose one accurate, VAT-aware total shape to every quote surface.
+
+	Quotation records created before native tax rows were enabled can contain a
+	``grand_total`` that is net-only.  When the accounting fields are present,
+	derive the display values through the configured VAT template.  Older test
+	fixtures and installations without those fields retain their stored values.
+	"""
+	if not any(fieldname in row for fieldname in ("net_total", "vat_amount", "total_taxes_and_charges")):
+		return row
+	try:
+		summary = quotation_tax_summary(row)
+		row["net_total"] = summary.net_total
+		row["vat_amount"] = summary.vat_amount
+		row["grand_total"] = summary.grand_total
+		row["vat_label"] = summary.vat_label
+		return row
+	except Exception:
+		# A missing/misconfigured tax template must not make a quote list
+		# unavailable.  Repair the common legacy net-only shape when a VAT amount
+		# is already stored; otherwise preserve the native grand total.
+		net_total = float(row.get("net_total") or 0)
+		vat_amount = float(row.get("vat_amount") or row.get("total_taxes_and_charges") or 0)
+		grand_total = float(row.get("grand_total") or 0)
+		if vat_amount and grand_total <= net_total:
+			grand_total = round(net_total + vat_amount, 2)
+		row["net_total"] = net_total
+		row["vat_amount"] = vat_amount
+		row["grand_total"] = grand_total
+		return row
+
+
 def _is_admin(roles):
 	return "System Manager" in roles or frappe.session.user == "Administrator"
 
@@ -348,6 +380,8 @@ def list_quotes(deal):
 		"transaction_date as quote_date",
 		"valid_till as valid_until",
 		"contract_start_date",
+		"net_total",
+		"total_taxes_and_charges",
 		"grand_total",
 		"docstatus",
 		"crm_sent",
@@ -357,7 +391,15 @@ def list_quotes(deal):
 		"currency",
 		"creation",
 	]
-	for fieldname in ("selling_price_list", "crm_optin_submission", "crm_optin_year", "crm_optin_bundle_key"):
+	for fieldname in (
+		"selling_price_list",
+		"crm_optin_submission",
+		"crm_optin_year",
+		"crm_optin_bundle_key",
+		"vat_amount",
+		"company",
+		"taxes_and_charges",
+	):
 		if frappe.db.has_column("Quotation", fieldname):
 			fields.append(fieldname)
 	rows = frappe.get_list(
@@ -369,6 +411,7 @@ def list_quotes(deal):
 	invoice_by_quotation = _invoices_for_quotations([r.name for r in rows])
 	# Derive frontend status from docstatus + crm_sent
 	for r in rows:
+		_normalise_quote_totals(r)
 		r["status"] = _derive_status(r)
 		r["erpnext_sales_invoice"] = invoice_by_quotation.get(r["name"])
 	# Bundle quotes are presented in contractual year order even though native
@@ -452,24 +495,30 @@ def list_all_quotes(status=None, from_date=None, to_date=None, search=None, page
 	if search:
 		filters.append(["name", "like", "%%%s%%" % search])
 
+	global_fields = [
+		"name",
+		"crm_deal as deal",
+		"party_name as customer",
+		"crm_partner as partner",
+		"transaction_date as quote_date",
+		"valid_till as valid_until",
+		"net_total",
+		"total_taxes_and_charges",
+		"grand_total",
+		"docstatus",
+		"crm_sent",
+		"crm_payment_terms as payment_terms",
+		"contract_term_yrs",
+		"owner",
+		"creation",
+	]
+	for fieldname in ("vat_amount", "company", "taxes_and_charges"):
+		if frappe.db.has_column("Quotation", fieldname):
+			global_fields.append(fieldname)
 	rows = frappe.get_list(
 		"Quotation",
 		filters=filters,
-		fields=[
-			"name",
-			"crm_deal as deal",
-			"party_name as customer",
-			"crm_partner as partner",
-			"transaction_date as quote_date",
-			"valid_till as valid_until",
-			"grand_total",
-			"docstatus",
-			"crm_sent",
-			"crm_payment_terms as payment_terms",
-			"contract_term_yrs",
-			"owner",
-			"creation",
-		],
+		fields=global_fields,
 		order_by="transaction_date desc",
 		limit_page_length=int(page_size),
 		limit_start=int(page) * int(page_size),
@@ -477,6 +526,7 @@ def list_all_quotes(status=None, from_date=None, to_date=None, search=None, page
 
 	invoice_by_quotation = _invoices_for_quotations([r.name for r in rows])
 	for r in rows:
+		_normalise_quote_totals(r)
 		r["status"] = _derive_status(r)
 		r["erpnext_sales_invoice"] = invoice_by_quotation.get(r["name"])
 
@@ -601,7 +651,7 @@ def list_price_lists():
 	"""Selling price lists offered in the quote editor's price-list selector."""
 	rows = frappe.get_list(
 		"Price List",
-	filters=[["selling", "=", 1], ["enabled", "=", 1], ["name", "!=", DEFAULT_PRICE_LIST]],
+		filters=[["selling", "=", 1], ["enabled", "=", 1], ["name", "!=", DEFAULT_PRICE_LIST]],
 		fields=["name", "currency"],
 		order_by="name asc",
 	)

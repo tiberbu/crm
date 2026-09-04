@@ -98,7 +98,8 @@
         {{ fmtKes(totalCommitment) }}
       </p>
       <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        Year 1: {{ fmtKes(yearOneCommitment) }}
+        Year 1: {{ fmtKes(yearOneCommitment) }} incl. VAT ·
+        {{ fmtKes(commitmentNet) }} excl. VAT
       </p>
     </div>
 
@@ -122,9 +123,12 @@ const store = useOptInStore()
 
 const totalCommitment = computed(
   () =>
-    store.pricing?.commitment_annual || store.pricing?.grand_total_annual || 0,
+    store.pricing?.commitment_annual ?? store.pricing?.grand_total_annual ?? 0,
 )
-const yearOneCommitment = computed(() => store.pricing?.grand_total_annual || 0)
+const yearOneCommitment = computed(() => store.pricing?.grand_total_annual ?? 0)
+const commitmentNet = computed(
+  () => store.pricing?.commitment_net_annual ?? totalCommitment.value,
+)
 const signingNextStep = computed(() => {
   if (store.signatoryMode !== 'delegate') {
     return 'Check your email for your secure agreement signing invitation.'

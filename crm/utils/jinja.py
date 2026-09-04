@@ -48,6 +48,55 @@ def get_quotation_tax_summary(quote: Any) -> frappe._dict:
 		)
 
 
+def get_contract_quote_summary(quote: Any) -> frappe._dict:
+	"""Return the quote-year total and, for Opt-In bundles, the full commitment.
+
+	The Quote PDF is generated from one yearly Quotation while its terms belong to
+	the single multi-year agreement.  Expose both figures explicitly so a reader
+	can distinguish the amount payable for this quote from the selected-term
+	commitment shown in the contract.
+	"""
+	tax_summary = get_quotation_tax_summary(quote)
+	result = frappe._dict(
+		{
+			"quote_net_total": tax_summary.net_total,
+			"quote_vat_amount": tax_summary.vat_amount,
+			"quote_grand_total": tax_summary.grand_total,
+			"vat_label": tax_summary.vat_label,
+			"has_multi_year": False,
+			"commitment_years_label": "",
+			"commitment_net_total": tax_summary.net_total,
+			"commitment_vat_amount": tax_summary.vat_amount,
+			"commitment_grand_total": tax_summary.grand_total,
+		}
+	)
+	deal = frappe.utils.cstr(quote.get("crm_deal") or "").strip()
+	if not deal:
+		return result
+	try:
+		from crm.api.optin import build_tc_context_for_deal
+
+		context = build_tc_context_for_deal(deal) or {}
+		years = frappe.utils.cint(context.get("commitment_years") or 1)
+		if years > 1:
+			result.update(
+				{
+					"has_multi_year": True,
+					"commitment_years_label": context.get("commitment_years_label") or "%s years" % years,
+					"commitment_net_total": context.get("contract_commitment_excl_vat") or 0,
+					"commitment_grand_total": context.get("contract_commitment_incl_vat") or 0,
+				}
+			)
+			result["commitment_vat_amount"] = round(
+				result["commitment_grand_total"] - result["commitment_net_total"], 2
+			)
+	except Exception:
+		# Printing the quote must remain available when an old deal has no stored
+		# Opt-In pricing payload. The yearly totals above are still authoritative.
+		pass
+	return result
+
+
 def render_current_terms_for_quote(quote: Any) -> Markup:
 	"""Render the latest selected Terms document for an Opt-In quotation print.
 
@@ -86,10 +135,10 @@ def render_current_terms_for_contract(contract: Any) -> Markup:
 	# the API/PDF path instead of always re-rendering the current default T&C.
 	if frappe.utils.cstr(contract.get("status") or "").strip() == "Fully Executed":
 		return Markup(
-			frappe.utils.cstr(
-				contract.get("contract_html_snapshot") or contract.get("contract_html") or ""
-			)
+			frappe.utils.cstr(contract.get("contract_html_snapshot") or contract.get("contract_html") or "")
 		)
 	from crm.api.contracts import _regenerate_contract_body
 
-	return Markup(_regenerate_contract_body(contract) or frappe.utils.cstr(contract.get("contract_html") or ""))
+	return Markup(
+		_regenerate_contract_body(contract) or frappe.utils.cstr(contract.get("contract_html") or "")
+	)

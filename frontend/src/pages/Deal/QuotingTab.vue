@@ -197,6 +197,63 @@
 
     <!-- ═══ OIS DEALS: yearly quotation bundle ═══ -->
     <template v-if="isOis">
+      <!-- The approval number is the sum of the current yearly quotations. It
+           intentionally sits above the detail cards so the CRM reviewer sees
+           one VAT-aware commitment before comparing individual years. -->
+      <section
+        v-if="oisCommitment.yearCount"
+        class="mt-4 rounded-xl border-2 border-outline-red-4 bg-surface-white p-5 dark:bg-surface-gray-1"
+      >
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p
+              class="text-xs font-semibold uppercase tracking-wider text-ink-gray-5"
+            >
+              {{ __('Total contract commitment · incl. VAT') }}
+            </p>
+            <p class="mt-1 text-3xl font-black tracking-tight text-ink-gray-9">
+              {{ fmtKes(oisCommitment.grandTotal) }}
+            </p>
+            <p class="mt-1 text-sm text-ink-gray-5">
+              {{
+                __('Current total across {0} yearly quotation(s).', [
+                  oisCommitment.yearCount,
+                ])
+              }}
+            </p>
+          </div>
+          <div
+            class="min-w-[210px] rounded-lg bg-surface-gray-1 px-3 py-2 text-sm dark:bg-surface-gray-2"
+          >
+            <div class="flex justify-between gap-4">
+              <span class="text-ink-gray-5">{{ __('Excl. VAT') }}</span>
+              <span class="font-semibold text-ink-gray-8">{{
+                fmtKes(oisCommitment.netTotal)
+              }}</span>
+            </div>
+            <div class="mt-1 flex justify-between gap-4">
+              <span class="text-ink-gray-5">{{ __('VAT') }}</span>
+              <span class="font-semibold text-ink-gray-8">{{
+                fmtKes(oisCommitment.vatAmount)
+              }}</span>
+            </div>
+            <div
+              class="mt-1 border-t border-outline-elevation-2 pt-1 text-xs text-ink-gray-5"
+            >
+              {{ __('Year 1 incl. VAT') }}:
+              {{ fmtKes(oisCommitment.yearOneGrandTotal) }}
+            </div>
+          </div>
+        </div>
+        <p class="mt-3 text-xs text-ink-gray-5">
+          {{
+            __(
+              'Line-item rates are exclusive of VAT. VAT is shown separately and totals are recalculated from the current quotation bundle.',
+            )
+          }}
+        </p>
+      </section>
+
       <section
         v-if="quotes.length > 1"
         class="mt-4 rounded-xl border border-outline-gray-2 bg-surface-white p-4 dark:bg-surface-gray-1"
@@ -247,6 +304,9 @@
               <span class="text-xs font-normal text-ink-gray-5">{{
                 __('incl. VAT')
               }}</span>
+            </p>
+            <p class="mt-0.5 text-xs text-ink-gray-5">
+              {{ fmtKes(q.net_total) }} {{ __('excl. VAT') }}
             </p>
             <p class="mt-1 text-[11px] text-ink-gray-5">{{ q.name }}</p>
           </button>
@@ -522,9 +582,14 @@
             <div
               class="mt-3 flex items-center justify-between gap-3 border-t border-outline-elevation-2 pt-2"
             >
-              <span class="text-sm font-semibold text-ink-gray-9">
-                {{ fmtKes(q.grand_total) }}
-              </span>
+              <div>
+                <span class="block text-sm font-semibold text-ink-gray-9">
+                  {{ fmtKes(q.grand_total) }} {{ __('incl. VAT') }}
+                </span>
+                <span class="block text-xs text-ink-gray-5">
+                  {{ fmtKes(q.net_total) }} {{ __('excl. VAT') }}
+                </span>
+              </div>
               <div class="flex flex-wrap justify-end gap-1.5" @click.stop>
                 <Button size="sm" variant="ghost" @click="selectQuote(q.name)">
                   {{ __('Edit') }}
@@ -657,11 +722,11 @@
           <FormControl
             v-model="invitationPriceList"
             type="select"
-            :label="__('Negotiated price list')"
+            :label="__('Contract schedule')"
             :options="priceListOptions"
             :description="
               __(
-                'The recipient sees this price list. It is locked into their invitation and does not change the Network default.',
+                'The recipient sees this contract schedule. It is locked into their invitation and does not change the Network default.',
               )
             "
           />
@@ -707,7 +772,7 @@
             :options="networkOptions"
             :description="
               __(
-                'The network determines the portal branding, contracted price list, and network signatories.',
+                'The network determines the portal branding, contract schedule, and network signatories.',
               )
             "
           />
@@ -885,6 +950,63 @@ const quotesResource = createResource({
   auto: true,
 })
 const quotes = computed(() => quotesResource.data ?? [])
+
+const oisCommitment = computed(() => {
+  const yearlyQuotes = quotes.value.filter(
+    (quote) => quote.crm_optin_year || isOis.value,
+  )
+  if (yearlyQuotes.length) {
+    const netTotal = yearlyQuotes.reduce(
+      (total, quote) => total + Number(quote.net_total ?? 0),
+      0,
+    )
+    const vatAmount = yearlyQuotes.reduce(
+      (total, quote) => total + Number(quote.vat_amount ?? 0),
+      0,
+    )
+    const grandTotal = yearlyQuotes.reduce(
+      (total, quote) => total + Number(quote.grand_total ?? 0),
+      0,
+    )
+    return {
+      yearCount: yearlyQuotes.length,
+      netTotal,
+      vatAmount,
+      grandTotal,
+      yearOneGrandTotal: Number(yearlyQuotes[0]?.grand_total ?? 0),
+    }
+  }
+
+  const commitment = lifecycle.value?.quotation_commitment
+  if (commitment?.year_count) {
+    const plans = oisPricingPlans.value
+    return {
+      yearCount: Number(commitment.year_count),
+      netTotal: Number(commitment.net_total ?? 0),
+      vatAmount: Number(commitment.vat_amount ?? 0),
+      grandTotal: Number(commitment.grand_total ?? 0),
+      yearOneGrandTotal: Number(plans[0]?.grand_total_annual ?? 0),
+    }
+  }
+
+  const plans = oisPricingPlans.value
+  return {
+    yearCount: plans.length,
+    netTotal: plans.reduce(
+      (total, plan) => total + Number(plan.subtotal_annual ?? 0),
+      0,
+    ),
+    vatAmount: plans.reduce(
+      (total, plan) => total + Number(plan.vat_annual ?? 0),
+      0,
+    ),
+    grandTotal: plans.reduce(
+      (total, plan) => total + Number(plan.grand_total_annual ?? 0),
+      0,
+    ),
+    yearOneGrandTotal: Number(plans[0]?.grand_total_annual ?? 0),
+  }
+})
 
 watch(
   [isOis, quotes],
