@@ -2890,8 +2890,6 @@ def _build_contract_document_html(contract_doc):
 		if brand["footer_legal_name"]
 		else ""
 	)
-	price_history = _render_price_list_history(contract_doc)
-
 	return """<!doctype html>
 <html><head><meta charset="utf-8"><style>
   @page {{ margin: 22mm 18mm; }}
@@ -2908,15 +2906,6 @@ def _build_contract_document_html(contract_doc):
   .doc-contact {{ color: {accent}; font-size: 11px; margin-top: 5px; font-weight: 600; }}
   .doc-footer {{ margin-top: 30px; padding-top: 12px; border-top: 1px solid #e5e7eb;
           text-align: center; color: #9ca3af; font-size: 10px; }}
-  .price-history {{ margin: 0 0 22px; padding: 12px 14px; border: 1px solid #dbe3ef;
-          border-left: 4px solid {accent}; border-radius: 7px; background: #f8fafc; }}
-  .price-history h2 {{ margin: 0 0 8px; font-size: 13px; }}
-  .price-kv {{ margin: 3px 0; font-size: 11px; }}
-  .price-kv b {{ display: inline-block; min-width: 135px; color: #6b7280; font-weight: 600; }}
-  .price-history table {{ width: 100%; border-collapse: collapse; margin-top: 9px; }}
-  .price-history th, .price-history td {{ padding: 5px 6px; border-bottom: 1px solid #e5e7eb;
-          text-align: left; font-size: 10px; vertical-align: top; }}
-  .price-history th {{ color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }}
   .contract-body {{ margin-bottom: 8px; text-align: justify; }}
   .sig-section {{ margin-top: 28px; padding-top: 14px; border-top: 1px solid #e5e7eb; }}
   .sig-section h2 {{ font-size: 14px; margin-bottom: 12px; text-align: center; }}
@@ -2950,7 +2939,6 @@ def _build_contract_document_html(contract_doc):
     <div class="doc-meta">{ref}{date_bit}</div>
     {contact}
   </div>
-  {price_history}
   <div class="contract-body">{body}</div>
   {signatures}
   {footer}
@@ -2963,7 +2951,6 @@ def _build_contract_document_html(contract_doc):
 		date_bit=(" &middot; " + frappe.utils.escape_html(date_str)) if date_str else "",
 		contact=contact_html,
 		footer=footer_html,
-		price_history=price_history,
 		body=body,
 		signatures=signatures,
 		certificate=certificate,
@@ -2979,49 +2966,6 @@ def _contract_price_snapshot(contract_doc):
 		except Exception:
 			quote = None
 	return contract_snapshot(contract_doc, quote)
-
-
-def _render_price_list_history(contract_doc):
-	"""Render an auditable, read-only contract-schedule summary for contract/PDF output."""
-	data = _contract_price_snapshot(contract_doc)
-	initial = frappe.utils.cstr(data.get("initial") or "").strip()
-	negotiated = frappe.utils.cstr(data.get("negotiated") or "").strip()
-	history = data.get("history") or []
-	if not initial and not negotiated and not history:
-		return ""
-
-	rows = []
-	for event in history:
-		at = frappe.utils.cstr(event.get("at") or "")
-		try:
-			at = frappe.utils.format_datetime(at) if at else ""
-		except Exception:
-			pass
-		change = (
-			"%s → %s" % (event.get("from") or "—", event.get("to") or "—")
-			if event.get("from")
-			else event.get("to") or "—"
-		)
-		rows.append(
-			"<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-			% (
-				frappe.utils.escape_html(frappe.utils.cstr(event.get("event") or "Contract schedule")),
-				frappe.utils.escape_html(frappe.utils.cstr(change)),
-				frappe.utils.escape_html(at or "—"),
-				frappe.utils.escape_html(frappe.utils.cstr(event.get("by") or "System")),
-			)
-		)
-	return """<section class='price-history'>
-  <h2>Contract schedule history</h2>
-  <div class='price-kv'><b>Original contract schedule</b> {initial}</div>
-  <div class='price-kv'><b>Agreed contract schedule</b> {negotiated}</div>
-  <table><thead><tr><th>Event</th><th>Contract schedule</th><th>Recorded</th><th>Changed by</th></tr></thead>
-  <tbody>{rows}</tbody></table>
-</section>""".format(
-		initial=frappe.utils.escape_html(initial or "—"),
-		negotiated=frappe.utils.escape_html(negotiated or "—"),
-		rows="".join(rows),
-	)
 
 
 def _recipient_safe_price_snapshot(data):

@@ -930,6 +930,47 @@ class TestOptInTermsPrinting(UnitTestCase):
 		self.assertIn("Updated terms", html)
 		self.assertNotIn("Old terms", html)
 
+	def test_legacy_contract_pdf_fallback_omits_price_list_history(self):
+		"""Commercial provenance remains stored, but is not customer-facing PDF content."""
+		contract = SimpleNamespace(
+			contract_html="<p>Contract terms</p>",
+			contract_date="2026-08-30",
+			name="CONT-TEST-00002",
+			initial_price_list="Original schedule",
+			negotiated_price_list="Agreed schedule",
+			price_list_history=json.dumps(
+				[
+					{
+						"event": "Price list changed",
+						"from": "Original schedule",
+						"to": "Agreed schedule",
+						"at": "2026-08-30 10:00:00",
+						"by": "Administrator",
+					}
+				]
+			),
+		)
+		brand = {
+			"accent": "#bc1823",
+			"display_name": "Test Network",
+			"logo": "",
+			"contact_email": "",
+			"footer_legal_name": "",
+		}
+
+		with (
+			patch("crm.api.contracts._network_branding", return_value=brand),
+			patch("crm.api.contracts._regenerate_contract_body", return_value="<p>Contract terms</p>"),
+			patch("crm.api.contracts._render_signature_block", return_value=""),
+			patch("crm.api.contracts._render_certificate_page", return_value=""),
+		):
+			html = _build_contract_document_html(contract)
+
+		self.assertIn("Contract terms", html)
+		self.assertNotIn("Contract schedule history", html)
+		self.assertNotIn("Original contract schedule", html)
+		self.assertNotIn("Agreed contract schedule", html)
+
 	def test_pending_contract_repairs_legacy_unrendered_totals(self):
 		contract = frappe._dict(
 			{

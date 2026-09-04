@@ -38,6 +38,17 @@ the Quote tab where the commercial decision is made.
   active/default Terms & Conditions document, and is selected as the DocType
   default by migration. The Download PDF endpoint explicitly uses this format,
   with a network-owned name, logo, contact, footer, and delivery-partner identity.
+- The Contract body source of truth is the active Terms & Conditions document while
+  the contract is pending. Its Jinja variables are supplied by the server-side
+  deal/network/facility context. Once every required signature is captured, the
+  generated `contract_html_snapshot` is the immutable legal source for later views
+  and PDFs; changing the active Terms & Conditions document does not rewrite an
+  executed agreement. The print-format shell (branding, metadata and signatures)
+  remains separate from that body.
+- Contract PDFs intentionally omit the internal price-list/contract-schedule
+  history panel. The quotation and contract snapshot fields are still retained for
+  audit, reconciliation and CRM review; only the customer-facing print output is
+  suppressed.
 
 ## Contract template placeholders
 
