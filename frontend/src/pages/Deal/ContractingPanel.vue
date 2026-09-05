@@ -1123,6 +1123,68 @@
         </p>
       </div>
 
+      <Dialog
+        v-model="showDispatchDialog"
+        :options="{ title: __('Dispatch contract'), size: 'md' }"
+      >
+        <template #body-content>
+          <div class="space-y-4">
+            <p class="text-sm text-ink-gray-6">
+              {{
+                __(
+                  'Send a PDF copy of this contract to any email address. This does not change the configured signatory or signing link.',
+                )
+              }}
+            </p>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+                {{ __('Recipient email') }}<span class="text-red-500">*</span>
+              </label>
+              <input
+                v-model="dispatchEmail"
+                type="email"
+                autocomplete="email"
+                :placeholder="__('name@organisation.org')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2"
+                @keyup.enter="dispatchContract"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+                {{ __('Recipient name') }}
+              </label>
+              <input
+                v-model="dispatchName"
+                type="text"
+                autocomplete="name"
+                :placeholder="__('Optional')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2"
+              />
+            </div>
+            <p v-if="dispatchError" class="text-sm text-ink-red-6">
+              {{ dispatchError }}
+            </p>
+          </div>
+        </template>
+        <template #actions>
+          <Button
+            variant="subtle"
+            :disabled="dispatching"
+            @click="showDispatchDialog = false"
+          >
+            {{ __('Cancel') }}
+          </Button>
+          <Button
+            variant="solid"
+            :disabled="!dispatchEmail.trim()"
+            :loading="dispatching"
+            @click="dispatchContract"
+          >
+            {{ __('Send PDF copy') }}
+          </Button>
+        </template>
+      </Dialog>
+
       <!-- Action row -->
       <div class="flex flex-wrap items-center justify-end gap-3">
         <span
@@ -1156,6 +1218,14 @@
           {{ __('Download PDF') }}
         </Button>
         <Button
+          v-if="contractExists && canGenerate"
+          variant="solid"
+          icon="lucide-send"
+          @click="openDispatchDialog"
+        >
+          {{ __('Dispatch contract') }}
+        </Button>
+        <Button
           v-if="!contractExists"
           variant="solid"
           :disabled="generateDisabled"
@@ -1185,7 +1255,7 @@ const props = defineProps({
   lifecycle: { type: Object, default: null },
 })
 
-const emit = defineEmits(['lifecycle-reload'])
+const emit = defineEmits(['lifecycle-reload', 'email-dispatched'])
 
 // ---------------------------------------------------------------------------
 // Stores — mirrors AppSidebar.vue lines 444-445 exactly
@@ -1573,6 +1643,51 @@ const generateDisabled = computed(
 // ---------------------------------------------------------------------------
 const successMsg = ref(null)
 const errorMsg = ref(null)
+
+// ---------------------------------------------------------------------------
+// Dispatch contract PDF to an arbitrary recipient
+// ---------------------------------------------------------------------------
+const showDispatchDialog = ref(false)
+const dispatchEmail = ref('')
+const dispatchName = ref('')
+const dispatchError = ref('')
+const dispatching = ref(false)
+const dispatchResource = createResource({
+  url: 'crm.api.contracts.dispatch_contract',
+})
+
+function openDispatchDialog() {
+  const facility = facilitySignatories.value[0] ?? {}
+  dispatchEmail.value = facility.email || dealDoc.value?.email || ''
+  dispatchName.value = facility.name || ''
+  dispatchError.value = ''
+  showDispatchDialog.value = true
+}
+
+async function dispatchContract() {
+  const email = dispatchEmail.value.trim()
+  if (!email || dispatching.value || !contractExists.value) return
+  dispatching.value = true
+  dispatchError.value = ''
+  try {
+    const result = await dispatchResource.submit({
+      contract: lc.value.contract?.name ?? '',
+      recipient_email: email,
+      recipient_name: dispatchName.value.trim(),
+    })
+    showDispatchDialog.value = false
+    toast.success(__('Contract PDF sent to {0}', [result?.email || email]))
+    emit('email-dispatched')
+    emit('lifecycle-reload')
+  } catch (err) {
+    dispatchError.value =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('Could not dispatch the contract.')
+  } finally {
+    dispatching.value = false
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Generate contract

@@ -95,6 +95,7 @@
             :tabs="tabs"
             @beforeSave="beforeStatusChange"
             @afterSave="reloadResources"
+            @email-dispatched="reload = true"
           />
         </template>
       </Tabs>

@@ -822,6 +822,7 @@
       :ois-doc="oisResource.data ?? null"
       :lifecycle="lifecycle"
       @lifecycle-reload="onLifecycleReload"
+      @email-dispatched="emit('email-dispatched')"
     />
   </div>
 </template>
@@ -836,6 +837,8 @@ import QuotePanel from './QuotePanel.vue'
 const props = defineProps({
   dealId: { type: String, required: true },
 })
+
+const emit = defineEmits(['email-dispatched'])
 
 const route = useRoute()
 
@@ -1204,6 +1207,7 @@ async function sendInvitation() {
     })
     showInvitationDialog.value = false
     toast.success(__('Opt-In invitation sent to {0}', [result.sent_to]))
+    emit('email-dispatched')
   } catch (error) {
     invitationError.value =
       error?.messages?.[0] ??
@@ -1228,6 +1232,7 @@ async function sendQuote(name) {
   try {
     await sendResource.submit({ quote_name: name })
     quotesResource.reload()
+    emit('email-dispatched')
   } finally {
     sendingName.value = null
   }

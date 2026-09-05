@@ -282,12 +282,11 @@ router.beforeEach(async (to, from, next) => {
     next({ name: 'Invalid Page' })
   } else if (['Deal', 'Lead'].includes(to.name) && !to.hash) {
     let storageKey = to.name === 'Deal' ? 'lastDealTab' : 'lastLeadTab'
-    // A CRM approver's primary decision surface is the quote. Do not make a
-    // Sales/System Manager visit Activity first simply because it was their
-    // last tab (or because they have no tab history). An explicit hash still
-    // wins, so notification and activity deep links remain intact.
+    // The Quote is the primary decision surface for every Deal, including
+    // Opt-In requests. An explicit hash still wins, so notification and
+    // activity deep links remain intact.
     const activeTab =
-      to.name === 'Deal' && isManager()
+      to.name === 'Deal'
         ? 'quoting'
         : localStorage.getItem(storageKey) || 'activity'
     const hash = '#' + activeTab
