@@ -49,6 +49,9 @@ the Quote tab where the commercial decision is made.
   history panel. The quotation and contract snapshot fields are still retained for
   audit, reconciliation and CRM review; only the customer-facing print output is
   suppressed.
+- When enabled on the network, the accepted T&C includes
+  `{{ invoice_issue_timing_label }}` and the first scheduled invoice is anchored
+  to full contract signature.
 
 ## Contract template placeholders
 
@@ -61,6 +64,7 @@ templates. They are preformatted in KES and are safe to place directly in HTML:
 - `{{ contract_totals.selected_term_exclusive_vat_display }}`
 - `{{ contract_totals.selected_term_vat_display }}`
 - `{{ contract_totals.selected_term_inclusive_vat_display }}`
+- `{{ invoice_issue_timing_label }}`
 
 The earlier flat aliases remain supported for existing templates. Pending
 contract/PDF renders repair only these fixed numeric aliases when an older
@@ -93,6 +97,9 @@ time.
   delivery where configured.
 - CRM approver landing behavior applies to **Sales Manager** and **System
   Manager** roles.
+- Network invoice timing defaults to the existing Opt-In submission schedule.
+  Enable **Issue the first invoice on contract signature** when the first invoice
+  should be eligible as soon as all required signatures are complete.
 
 ## Verification
 

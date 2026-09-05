@@ -1135,6 +1135,22 @@ def _transition(contract_name):
 	# "At Least One" while facility, witness, and network rows remain mandatory.
 	if _required_signatures_complete(contract):
 		_set_contract_state(contract, "Fully Executed", status="Fully Executed")
+		# Re-anchor any signature-based invoice rule only after every required
+		# signature is complete. The helper is deliberately best-effort: a billing
+		# worker failure must not roll back a legally completed contract.
+		try:
+			from crm.automation.optin_billing import (
+				activate_contract_billing_schedule,
+				enqueue_due_optin_billing,
+			)
+
+			if activate_contract_billing_schedule(contract.name, frappe.utils.now_datetime()):
+				enqueue_due_optin_billing()
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"contracts._transition: invoice timing activation failed for %s" % contract.name,
+			)
 		_send_fully_executed_contract(contract)
 		# Internal approvers are notified only after every external signatory has
 		# completed the contract. The notifier sends both immediate email and SMS.

@@ -32,8 +32,11 @@ quotations without changing accepted line values or executed contracts.
    pair per quarter) in the native ERPNext flow. A five-year selection therefore
    produces five yearly quotations and twenty order/invoice pairs.
 6. The first invoice date is configured per network. The default is three months
-   after the Opt-In Submission date. Every invoice's due date is 30 days after
-   its invoice date. Subsequent quarters follow the same three-month cadence.
+   after the Opt-In Submission date. A network may instead make the first invoice
+   eligible when the contract is fully signed. That checkbox is snapshotted into
+   the OIS schedule and applied at signature; unchecked networks keep the legacy
+   submission-date schedule. Every invoice's due date is 30 days after its invoice
+   date. Subsequent quarters follow the same three-month cadence.
 7. Existing Opt-Ins are represented as a truthful Year 1 bundle. A later sync
    action may add missing years without changing existing signatures.
 

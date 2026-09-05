@@ -14,7 +14,7 @@ from typing import Any
 
 
 def decode_json(value: Any, default: Any):
-	if isinstance(value, (dict, list)):
+	if isinstance(value, dict | list):
 		return value
 	if not value:
 		return default
@@ -99,6 +99,31 @@ def add_months(value: date | datetime, months: int) -> date:
 	year, month = value.year + month // 12, month % 12 + 1
 	# Clamp to the last day of the target month (31 Jan + 1 month = 28 Feb).
 	return date(year, month, min(value.day, calendar.monthrange(year, month)[1]))
+
+
+def _is_checked(value: Any) -> bool:
+	"""Handle Frappe Check values and JSON/string values consistently."""
+	if isinstance(value, bool):
+		return value
+	return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def invoice_issue_timing(network: Any, legacy_offset_months: int = 3) -> dict[str, Any]:
+	"""Resolve the network checkbox into the one phrase shown in the agreement."""
+	network = network if isinstance(network, dict) else {}
+	try:
+		legacy_months = max(int(network.get("first_invoice_offset_months") or legacy_offset_months), 1)
+	except (TypeError, ValueError):
+		legacy_months = max(int(legacy_offset_months or 3), 1)
+	if _is_checked(network.get("invoice_on_contract_signature")):
+		return {
+			"mode": "contract_signature",
+			"label": "on contract signature",
+		}
+	return {
+		"mode": "submission_offset",
+		"label": "%s month%s after Opt-In submission" % (legacy_months, "" if legacy_months == 1 else "s"),
+	}
 
 
 def billing_schedule(

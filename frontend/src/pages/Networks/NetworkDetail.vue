@@ -102,11 +102,7 @@
               >
             </div>
             <p class="mt-1 text-xs text-ink-gray-5">
-              {{
-                __('First invoice {0} months after Opt-In', [
-                  networkDoc?.first_invoice_offset_months || 3,
-                ])
-              }}
+              {{ invoiceTimingSummary }}
             </p>
             <p class="mt-2 text-sm text-ink-gray-6">
               {{
@@ -321,6 +317,18 @@
             type="number"
             min="1"
           />
+          <div
+            class="flex flex-col gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 sm:col-span-2 lg:col-span-3"
+          >
+            <Switch
+              v-model="networkForm.invoice_on_contract_signature"
+              :label="__('Issue the first invoice on contract signature')"
+              size="sm"
+            />
+            <p class="text-[11px] text-ink-gray-5">
+              {{ __('Enabled: invoice on full signature. Disabled: existing Opt-In timing. The choice appears in the T&C.') }}
+            </p>
+          </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{
               __('Optional services contract schedule')
@@ -1380,6 +1388,20 @@ const networkResource = createResource({
 })
 
 const networkDoc = computed(() => networkResource.data ?? null)
+const invoiceTimingSummary = computed(() => {
+  const doc = networkDoc.value
+  if (!doc) return ''
+  if (
+    doc.invoice_on_contract_signature === true ||
+    doc.invoice_on_contract_signature === 1 ||
+    doc.invoice_on_contract_signature === '1'
+  ) {
+    return __('First invoice eligible on contract signature')
+  }
+  return __('First invoice {0} months after Opt-In submission', [
+    doc.first_invoice_offset_months || 3,
+  ])
+})
 const networkPricePlans = computed(() =>
   parsePricePlans(networkDoc.value?.price_lists_json),
 )
@@ -1401,6 +1423,7 @@ const networkForm = reactive({
   primary_colour: '#e53e3e',
   price_list_override: '',
   first_invoice_offset_months: 3,
+  invoice_on_contract_signature: false,
   optional_services_price_list: '',
   price_lists: [],
   custom_header_copy: '',
@@ -1421,6 +1444,10 @@ function startEditNetwork() {
     primary_colour: doc?.primary_colour ?? '#e53e3e',
     price_list_override: doc?.price_list_override ?? '',
     first_invoice_offset_months: doc?.first_invoice_offset_months || 3,
+    invoice_on_contract_signature:
+      doc?.invoice_on_contract_signature === true ||
+      doc?.invoice_on_contract_signature === 1 ||
+      doc?.invoice_on_contract_signature === '1',
     optional_services_price_list: doc?.optional_services_price_list ?? '',
     price_lists: (() => {
       try {

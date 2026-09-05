@@ -881,7 +881,11 @@ class TestOptInTermsPrinting(UnitTestCase):
 			context = _build_tc_context(
 				[],
 				{"email": "ict@example.com"},
-				{"display_name": "Apex Medical Network", "footer_legal_name": "Apex Medical Network Limited"},
+				{
+					"display_name": "Apex Medical Network",
+					"footer_legal_name": "Apex Medical Network Limited",
+					"invoice_on_contract_signature": 1,
+				},
 			)
 
 		self.assertEqual(
@@ -890,6 +894,7 @@ class TestOptInTermsPrinting(UnitTestCase):
 		self.assertEqual(
 			context["network"]["technology_delivery_partner_short_name"], "Apex Medical Network Limited"
 		)
+		self.assertEqual(context["invoice_issue_timing_label"], "on contract signature")
 
 	def test_executed_contract_print_uses_immutable_snapshot(self):
 		contract = frappe._dict(

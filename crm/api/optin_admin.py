@@ -46,6 +46,7 @@ _OPTIN_TERMS_EXPRESSIONS = {
 	"contract_commitment_incl_vat_display",
 	"first_invoice_offset_months",
 	"first_invoice_offset_label",
+	"invoice_issue_timing_label",
 	"year_one_grand_total_monthly_display",
 }
 
@@ -303,6 +304,8 @@ def list_networks(
 			"logo_url",
 			"primary_colour",
 			"price_list_override",
+			"first_invoice_offset_months",
+			"invoice_on_contract_signature",
 		],
 		or_filters=search_or_filters,
 		order_by="display_name asc",
@@ -364,6 +367,13 @@ def save_network(data: Any):
 	data["price_list_override"] = price_list_override
 	if "first_invoice_offset_months" in data:
 		data["first_invoice_offset_months"] = max(frappe.utils.cint(data.get("first_invoice_offset_months")) or 3, 1)
+	if "invoice_on_contract_signature" in data:
+		raw_signature_rule = data.get("invoice_on_contract_signature")
+		data["invoice_on_contract_signature"] = int(
+			raw_signature_rule is True
+			or frappe.utils.cint(raw_signature_rule) == 1
+			or frappe.utils.cstr(raw_signature_rule).strip().lower() in {"true", "yes", "on"}
+		)
 	for price_field in ("optional_services_price_list",):
 		value = frappe.utils.cstr(data.get(price_field) or "").strip()
 		if value and not frappe.db.exists("Price List", {"name": value, "selling": 1, "enabled": 1}):
@@ -410,6 +420,7 @@ def save_network(data: Any):
 		"price_list_override",
 		"price_lists_json",
 		"first_invoice_offset_months",
+		"invoice_on_contract_signature",
 		"optional_services_price_list",
 		"custom_header_copy",
 	):

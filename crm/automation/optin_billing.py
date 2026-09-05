@@ -12,7 +12,9 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, nowdate
+from frappe.utils import getdate, now_datetime, nowdate
+
+from crm.utils.optin_bundles import add_months
 
 
 def _json(value, default):
@@ -228,6 +230,62 @@ def _create_order_and_invoice(schedule, quotation, submission, issue_date):
 	invoice.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
 	invoice.submit()
 	return order.name, invoice.name
+
+
+def activate_contract_billing_schedule(contract_name, signed_at=None):
+	"""Anchor the first invoice to the signature date when the network opted in."""
+	if (
+		not contract_name
+		or not frappe.db.exists("DocType", "CRM Opt-In Submission")
+		or not frappe.db.has_column("CRM Opt-In Submission", "billing_schedule_json")
+	):
+		return False
+	submissions = frappe.get_list(
+		"CRM Opt-In Submission",
+		filters={"contract": contract_name},
+		fields=["name", "billing_schedule_json"],
+		limit=1,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: contract state transition
+	)
+	if not submissions:
+		return False
+	submission = frappe.get_doc("CRM Opt-In Submission", submissions[0].name)
+	schedules = _json(submission.billing_schedule_json, [])
+	if not schedules:
+		return False
+	first = schedules[0] if isinstance(schedules[0], dict) else {}
+	mode = frappe.utils.cstr(first.get("invoice_issue_timing") or "submission_offset").strip()
+	if mode != "contract_signature":
+		return False
+	anchor = getdate(signed_at or now_datetime())
+	for row in schedules:
+		if not isinstance(row, dict):
+			continue
+		if row.get("status") != "Scheduled" or row.get("sales_invoice"):
+			continue
+		year_number = max(frappe.utils.cint(row.get("year_number")) or 1, 1)
+		quarter_number = min(max(frappe.utils.cint(row.get("quarter_number")) or 1, 1), 4)
+		issue = add_months(anchor, (year_number - 1) * 12 + (quarter_number - 1) * 3)
+		row["scheduled_order_date"] = issue.isoformat()
+		row["invoice_date"] = issue.isoformat()
+		row["invoice_due_date"] = frappe.utils.add_days(issue, 30)
+	submission.billing_schedule_json = json.dumps(schedules, default=str)
+	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+	return True
+
+
+def enqueue_due_optin_billing():
+	"""Ask the short queue to issue any invoice made due by a signature."""
+	try:
+		frappe.enqueue(
+			"crm.automation.optin_billing.process_due_optin_billing",
+			queue="short",
+		)
+		return True
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "optin billing: immediate queue could not be scheduled")
+		return False
 
 
 def process_due_optin_billing():
