@@ -33,6 +33,7 @@ from frappe.utils import add_days, date_diff, getdate, nowdate
 
 from crm.api._email import create_transactional_communication
 from crm.api._timeline import log_deal_event
+from crm.utils.optin_bundles import split_period_amount
 from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import append_change, ensure_initial, snapshot
 from crm.utils.quotation_tax import apply_quotation_taxes, quotation_tax_summary
@@ -409,12 +410,72 @@ def list_quotes(deal):
 		fields=fields,
 		order_by="creation desc",
 	)
+	# OIS billing dates are persisted on the submission after processing. Attach
+	# the relevant year's rows so the CRM Quote surface can present the same
+	# authoritative schedule as the portal without recalculating dates in Vue.
+	_schedule_by_year = {}
+	if any("crm_optin_submission" in row for row in rows) and frappe.db.exists(
+		"DocType", "CRM Opt-In Submission"
+	):
+		try:
+			submission_names = sorted(
+				{
+					frappe.utils.cstr(row.get("crm_optin_submission") or "").strip()
+					for row in rows
+					if frappe.utils.cstr(row.get("crm_optin_submission") or "").strip()
+				}
+			)
+			if submission_names and frappe.db.has_column("CRM Opt-In Submission", "billing_schedule_json"):
+				submissions = frappe.get_list(
+					"CRM Opt-In Submission",
+					filters=[["name", "in", submission_names]],
+					fields=["name", "billing_schedule_json"],
+					limit_page_length=0,
+					ignore_permissions=True,  # SYSTEM-INTERNAL: quote presentation
+				)
+				for submission in submissions:
+					try:
+						schedules = json.loads(submission.get("billing_schedule_json") or "[]")
+					except (TypeError, ValueError, json.JSONDecodeError):
+						schedules = []
+					_schedule_by_year[submission.name] = {
+						int(item.get("year_number")): [item for item in schedules if isinstance(item, dict)]
+						for item in schedules
+						if isinstance(item, dict) and int(item.get("year_number") or 0) > 0
+					}
+		except Exception:
+			# Schedule presentation is additive; a legacy/mid-migration site should
+			# still be able to load its Quote list.
+			_schedule_by_year = {}
 	invoice_by_quotation = _invoices_for_quotations([r.name for r in rows])
 	# Derive frontend status from docstatus + crm_sent
 	for r in rows:
 		_normalise_quote_totals(r)
 		r["status"] = _derive_status(r)
 		r["erpnext_sales_invoice"] = invoice_by_quotation.get(r["name"])
+		submission_name = frappe.utils.cstr(r.get("crm_optin_submission") or "").strip()
+		year_number = frappe.utils.cint(r.get("crm_optin_year") or 1) or 1
+		schedule = (
+			_schedule_by_year.get(submission_name, {}).get(year_number, []) if submission_name else []
+		)
+		for schedule_row in schedule:
+			# Rows created before amount fields were introduced still have reliable
+			# dates. Fill their display amounts from this year's VAT-aware quote totals.
+			if "amount_incl_vat" in schedule_row:
+				continue
+			quarter = frappe.utils.cint(schedule_row.get("quarter_number")) or 1
+			schedule_row.update(
+				{
+					"period_label": "Quarter %s" % quarter,
+					"amount_excl_vat": split_period_amount(r.get("net_total"), quarter),
+					"amount_vat": split_period_amount(r.get("vat_amount"), quarter),
+					"amount_incl_vat": split_period_amount(r.get("grand_total"), quarter),
+					"monthly_excl_vat": round(float(r.get("net_total") or 0) / 12, 2),
+					"monthly_vat": round(float(r.get("vat_amount") or 0) / 12, 2),
+					"monthly_incl_vat": round(float(r.get("grand_total") or 0) / 12, 2),
+				}
+			)
+		r["invoice_schedule"] = schedule
 	# Bundle quotes are presented in contractual year order even though native
 	# quotation creation timestamps put later-year records after Year 1.
 	if any(frappe.utils.cint(r.get("crm_optin_year")) for r in rows):

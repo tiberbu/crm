@@ -51,6 +51,7 @@ from crm.utils.optin_bundles import (
 	effective_year_price_list,
 	invoice_issue_timing,
 	normalize_price_lists,
+	split_period_amount,
 )
 from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import ensure_initial
@@ -1500,6 +1501,40 @@ def get_pricing(
 		_price_plan_from_facilities(plan, selected_plans, facility_map, selected_mfl_codes, quoted_map)
 		for plan in selected_plans
 	]
+	# The portal needs to explain when each invoice is expected, but it must not
+	# implement its own date or rounding rules. Build the same four-quarter
+	# schedule used by the billing worker and attach the VAT-aware amounts here.
+	offset_months = frappe.utils.cint(network_doc.get("first_invoice_offset_months") or 3) or 3
+	invoice_timing = invoice_issue_timing(network_doc, offset_months)
+	preview_anchor = frappe.utils.getdate(frappe.utils.today())
+	preview_schedule = billing_schedule(
+		preview_anchor,
+		[plan["year_number"] for plan in plan_results],
+		offset_months,
+	)
+	for plan in plan_results:
+		plan["invoice_schedule"] = _invoice_schedule_for_plan(
+			plan,
+			[row for row in preview_schedule if row.get("year_number") == plan.get("year_number")],
+			invoice_timing,
+			preview=True,
+			offset_months=offset_months,
+		)
+		plan["invoice_schedule_frequency"] = "Quarterly"
+		plan["invoice_schedule_anchor"] = preview_anchor.isoformat()
+		plan["invoice_schedule_anchor_label"] = "Projected from submission date"
+		plan["invoice_issue_timing"] = invoice_timing["mode"]
+		plan["invoice_issue_timing_label"] = invoice_timing["label"]
+		plan["first_invoice_relative_label"] = (
+			"On contract signature"
+			if invoice_timing["mode"] == "contract_signature"
+			else "%s month%s after submission (about %s days)"
+			% (
+				offset_months,
+				"" if offset_months == 1 else "s",
+				offset_months * 30,
+			)
+		)
 	primary = plan_results[0]
 	response = {
 		**primary,
@@ -1510,6 +1545,75 @@ def get_pricing(
 		"optional_services": _configured_optional_services(network_doc),
 	}
 	return response
+
+
+def _invoice_schedule_for_plan(plan, schedule_rows, timing, preview=False, offset_months=3):
+	"""Add display amounts and plain-language timing to billing schedule rows.
+
+	The billing worker remains the source of truth for issue/due dates. This helper
+	only allocates an annual plan's already-calculated VAT totals across the four
+	quarter rows, carrying any rounding remainder into Q4 so the displayed rows
+	reconcile exactly to the annual quotation.
+	"""
+	plan = plan if isinstance(plan, dict) else {}
+	annual_net = frappe.utils.flt(plan.get("subtotal_annual")) or round(
+		sum(frappe.utils.flt(row.get("annual_kes")) for row in plan.get("facilities") or []),
+		2,
+	)
+	annual_vat = frappe.utils.flt(plan.get("vat_annual"))
+	if not annual_vat and annual_net:
+		annual_tax = calculate_vat_totals(annual_net)
+		annual_vat = annual_tax.vat_amount
+		annual_gross = frappe.utils.flt(plan.get("grand_total_annual")) or annual_tax.grand_total
+	else:
+		annual_gross = frappe.utils.flt(plan.get("grand_total_annual")) or annual_net + annual_vat
+	monthly_net = frappe.utils.flt(plan.get("subtotal_monthly")) or round(annual_net / 12, 2)
+	monthly_vat = frappe.utils.flt(plan.get("vat_monthly"))
+	if not monthly_vat and monthly_net:
+		monthly_tax = calculate_vat_totals(monthly_net)
+		monthly_vat = monthly_tax.vat_amount
+		monthly_gross = frappe.utils.flt(plan.get("grand_total_monthly")) or monthly_tax.grand_total
+	else:
+		monthly_gross = frappe.utils.flt(plan.get("grand_total_monthly")) or monthly_net + monthly_vat
+
+	rows = []
+	for source in schedule_rows or []:
+		row = dict(source)
+		quarter = max(min(frappe.utils.cint(row.get("quarter_number")) or 1, 4), 1)
+		net = split_period_amount(annual_net, quarter)
+		vat = split_period_amount(annual_vat, quarter)
+		gross = split_period_amount(annual_gross, quarter)
+		# Keep the three figures mathematically consistent if a legacy quote only
+		# stored net and grand totals without a VAT column.
+		if not annual_vat and annual_gross:
+			vat = round(gross - net, 2)
+		row.update(
+			{
+				"period_label": "Quarter %s" % quarter,
+				"amount_excl_vat": net,
+				"amount_vat": vat,
+				"amount_incl_vat": gross,
+				"monthly_excl_vat": monthly_net,
+				"monthly_vat": monthly_vat,
+				"monthly_incl_vat": monthly_gross,
+				"invoice_issue_timing": timing.get("mode"),
+				"invoice_issue_timing_label": timing.get("label"),
+				"preview": bool(preview),
+			}
+		)
+		if quarter == 1:
+			row["first_invoice_relative_label"] = (
+				"On contract signature"
+				if timing.get("mode") == "contract_signature"
+				else "%s month%s after submission (about %s days)"
+				% (
+					max(int(offset_months or 3), 1),
+					"" if max(int(offset_months or 3), 1) == 1 else "s",
+					max(int(offset_months or 3), 1) * 30,
+				)
+			)
+		rows.append(row)
+	return rows
 
 
 def _price_plan_from_facilities(plan, selected_plans, facility_map, selected_mfl_codes, quoted_map=None):
@@ -3219,12 +3323,19 @@ def _store_submission_bundle(submission, payload, primary_quote, plans):
 			offset,
 			key_prefix=submission.name,
 		)
+		plans_by_year = {
+			frappe.utils.cint(plan.get("year_number")): plan
+			for plan in plans
+			if isinstance(plan, dict) and frappe.utils.cint(plan.get("year_number")) > 0
+		}
 		for row in schedule:
-			row.update(
-				{
-					"invoice_issue_timing": timing["mode"],
-				}
-			)
+			plan = plans_by_year.get(frappe.utils.cint(row.get("year_number"))) or {}
+			enriched = _invoice_schedule_for_plan(plan, [row], timing, offset_months=offset)
+			if enriched:
+				row.update(enriched[0])
+			row["invoice_schedule_frequency"] = "Quarterly"
+			row["invoice_schedule_anchor"] = frappe.utils.getdate(submitted_at).isoformat()
+			row["invoice_schedule_anchor_label"] = "From Opt-In submission date"
 		submission.billing_schedule_json = json.dumps(schedule, default=str)
 	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	return quote_names

@@ -101,6 +101,19 @@ def add_months(value: date | datetime, months: int) -> date:
 	return date(year, month, min(value.day, calendar.monthrange(year, month)[1]))
 
 
+def split_period_amount(total: Any, period_number: int, period_count: int = 4) -> float:
+	"""Split a rounded total into periods while carrying the remainder to the last."""
+	try:
+		total = float(total or 0)
+	except (TypeError, ValueError):
+		total = 0.0
+	period_count = max(int(period_count or 4), 1)
+	period_number = max(min(int(period_number or 1), period_count), 1)
+	if period_number == period_count:
+		return round(total - (round(total / period_count, 2) * (period_count - 1)), 2)
+	return round(total / period_count, 2)
+
+
 def _is_checked(value: Any) -> bool:
 	"""Handle Frappe Check values and JSON/string values consistently."""
 	if isinstance(value, bool):
