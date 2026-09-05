@@ -8,6 +8,7 @@ from crm.utils.optin_bundles import (
 	effective_year_price_list,
 	invoice_issue_timing,
 	normalize_price_lists,
+	split_period_amount,
 )
 
 
@@ -66,3 +67,6 @@ class TestOptInBundleHelpers(UnitTestCase):
 			invoice_issue_timing({"first_invoice_offset_months": 2})["label"],
 			"2 months after Opt-In submission",
 		)
+
+	def test_split_period_amount_carries_rounding_remainder_to_last_period(self):
+		self.assertEqual([split_period_amount(100.01, quarter) for quarter in range(1, 5)], [25, 25, 25, 25.01])

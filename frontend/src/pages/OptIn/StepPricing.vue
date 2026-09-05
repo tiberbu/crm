@@ -57,34 +57,149 @@
           </span>
         </div>
         <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <button
+          <div
             v-for="plan in availablePlans"
             :key="plan.year_number"
-            type="button"
-            :class="[
-              'rounded-xl border px-3 py-2 text-left text-sm transition',
-              selectedYears.includes(plan.year_number)
-                ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
-                : 'border-gray-200 text-gray-600 hover:border-gray-400 dark:border-gray-700 dark:text-gray-300',
-            ]"
-            @click="toggleYear(plan.year_number)"
+            class="min-w-0"
           >
-            <span class="block font-semibold">{{
-              plan.label || `Year ${plan.year_number}`
-            }}</span>
-            <span class="mt-0.5 block text-xs opacity-70"
-              >Contract schedule</span
+            <button
+              type="button"
+              :class="[
+                'w-full rounded-xl border px-3 py-2 text-left text-sm transition',
+                selectedYears.includes(plan.year_number)
+                  ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-400 dark:border-gray-700 dark:text-gray-300',
+              ]"
+              :aria-pressed="selectedYears.includes(plan.year_number)"
+              @click="toggleYear(plan.year_number)"
             >
-            <span class="mt-1 block text-xs font-semibold opacity-90"
-              >{{ fmtKes(plan.grand_total_annual) }} / year incl. VAT</span
+              <span class="block font-semibold">{{
+                plan.label || `Year ${plan.year_number}`
+              }}</span>
+              <span class="mt-0.5 block text-xs opacity-70"
+                >Contract schedule</span
+              >
+              <span class="mt-1 block text-xs font-semibold opacity-90"
+                >{{ fmtKes(plan.grand_total_annual) }} / year incl. VAT</span
+              >
+              <span class="mt-2 block text-[11px] font-medium opacity-80">
+                {{
+                  selectedYears.includes(plan.year_number)
+                    ? 'Selected'
+                    : 'Not selected'
+                }}
+              </span>
+            </button>
+            <button
+              type="button"
+              class="mt-1 flex w-full items-center justify-between px-2 text-left text-[11px] font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+              :aria-expanded="expandedScheduleYear === plan.year_number"
+              :aria-controls="`invoice-schedule-${plan.year_number}`"
+              @click="toggleSchedule(plan.year_number)"
             >
-          </button>
+              <span>{{
+                expandedScheduleYear === plan.year_number
+                  ? 'Hide invoice breakdown'
+                  : 'View invoice breakdown'
+              }}</span>
+              <span aria-hidden="true">{{
+                expandedScheduleYear === plan.year_number ? '⌃' : '⌄'
+              }}</span>
+            </button>
+          </div>
         </div>
         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
           {{ selectedYears.length }} of {{ availablePlans.length }} years
           selected. You can choose between three and five years; each selected
           year is included in the total commitment below.
         </p>
+        <div
+          v-if="expandedPlan"
+          :id="`invoice-schedule-${expandedPlan.year_number}`"
+          class="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                {{ expandedPlan.label || `Year ${expandedPlan.year_number}` }}
+                invoice breakdown
+              </p>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                Quarterly billing · each invoice is due 30 days after its
+                invoice date.
+              </p>
+            </div>
+            <span
+              class="text-xs font-semibold text-gray-600 dark:text-gray-300"
+            >
+              {{ fmtKes(expandedPlan.grand_total_annual) }} incl. VAT / year
+            </span>
+          </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            First invoice:
+            {{
+              expandedPlan.first_invoice_relative_label ||
+              'about 90 days after submission'
+            }}. Dates below are
+            {{
+              expandedPlan.invoice_schedule_anchor_label ||
+              'projected from submission date'
+            }}.
+          </p>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Monthly equivalent:
+            {{ fmtKes(expandedPlan.grand_total_monthly) }} incl. VAT.
+          </p>
+          <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <article
+              v-for="row in expandedPlan.invoice_schedule || []"
+              :key="
+                row.billing_key ||
+                `${expandedPlan.year_number}-${row.quarter_number}`
+              "
+              class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span
+                  class="text-xs font-semibold text-gray-900 dark:text-white"
+                  >{{
+                    row.period_label || `Quarter ${row.quarter_number}`
+                  }}</span
+                >
+                <span class="text-[11px] text-gray-500 dark:text-gray-400"
+                  >Invoice</span
+                >
+              </div>
+              <p class="mt-2 text-sm font-bold text-gray-900 dark:text-white">
+                {{ fmtKes(row.amount_incl_vat) }}
+              </p>
+              <p class="text-[11px] text-gray-500 dark:text-gray-400">
+                {{ fmtKes(row.amount_excl_vat) }} excl. VAT
+              </p>
+              <dl
+                class="mt-2 space-y-1 text-[11px] text-gray-500 dark:text-gray-400"
+              >
+                <div class="flex justify-between gap-2">
+                  <dt>Invoice date</dt>
+                  <dd class="font-medium text-gray-700 dark:text-gray-200">
+                    {{ formatScheduleDate(row.invoice_date) }}
+                  </dd>
+                </div>
+                <div class="flex justify-between gap-2">
+                  <dt>Due</dt>
+                  <dd
+                    class="text-right font-medium text-gray-700 dark:text-gray-200"
+                  >
+                    {{ formatScheduleDate(row.invoice_due_date)
+                    }}<span class="block font-normal text-gray-400"
+                      >30 days later</span
+                    >
+                  </dd>
+                </div>
+              </dl>
+            </article>
+          </div>
+        </div>
       </section>
 
       <section
@@ -393,6 +508,7 @@ const selectedYears = ref(
     ? [...store.pricing.selected_years]
     : availablePlans.value.map((plan) => plan.year_number)) || [1],
 )
+const expandedScheduleYear = ref(null)
 const selectedOptionalCodes = ref(
   (store.optionalItems || []).map((item) => item.item_code),
 )
@@ -489,6 +605,11 @@ async function loadPricing() {
 }
 
 function toggleYear(year) {
+  // Keep the year card useful for both decisions: it selects/deselects the
+  // term and opens the same year's schedule so the financial impact is visible
+  // immediately. The explicit disclosure below remains available for keyboard
+  // users who only want to inspect a term.
+  expandedScheduleYear.value = year
   if (selectedYears.value.includes(year)) {
     if (selectedYears.value.length === 1) return
     selectedYears.value = selectedYears.value.filter((value) => value !== year)
@@ -497,6 +618,16 @@ function toggleYear(year) {
   }
   loadPricing()
 }
+
+function toggleSchedule(year) {
+  expandedScheduleYear.value = expandedScheduleYear.value === year ? null : year
+}
+
+const expandedPlan = computed(() =>
+  availablePlans.value.find(
+    (plan) => Number(plan.year_number) === Number(expandedScheduleYear.value),
+  ),
+)
 
 onMounted(() => {
   if (!store.pricing) {
@@ -525,5 +656,16 @@ function fmtKes(v) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(n)
+}
+
+function formatScheduleDate(value) {
+  if (!value) return '—'
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 </script>

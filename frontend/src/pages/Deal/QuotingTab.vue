@@ -255,7 +255,7 @@
       </section>
 
       <section
-        v-if="quotes.length > 1"
+        v-if="quotes.length"
         class="mt-4 rounded-xl border border-outline-gray-2 bg-surface-white p-4 dark:bg-surface-gray-1"
       >
         <div class="flex flex-wrap items-start justify-between gap-2">
@@ -278,38 +278,126 @@
           </span>
         </div>
         <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          <button
+          <div
             v-for="(q, index) in quotes"
             :key="`ois-year-${q.name}`"
-            type="button"
-            class="rounded-lg border px-3 py-3 text-left transition-colors"
-            :class="
-              primaryQuoteName === q.name
-                ? 'border-outline-red-4 bg-surface-gray-1 dark:bg-surface-gray-2'
-                : 'border-outline-gray-2 hover:bg-surface-gray-1 dark:hover:bg-surface-gray-2'
-            "
-            @click="selectedOisQuote = q.name"
+            class="min-w-0"
           >
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-sm font-semibold text-ink-gray-9">
-                {{ __('Year {0}', [quoteYear(q, index)]) }}
-              </span>
-              <span :class="pillClass(q)">{{ __(q.status) }}</span>
-            </div>
-            <p class="mt-1 truncate text-xs text-ink-gray-5">
-              {{ quoteContractScheduleSummary(q, index) }}
-            </p>
-            <p class="mt-2 text-sm font-semibold text-ink-gray-9">
-              {{ fmtKes(q.grand_total) }}
-              <span class="text-xs font-normal text-ink-gray-5">{{
-                __('incl. VAT')
+            <button
+              type="button"
+              class="w-full rounded-lg border px-3 py-3 text-left transition-colors"
+              :class="
+                primaryQuoteName === q.name
+                  ? 'border-outline-red-4 bg-surface-gray-1 dark:bg-surface-gray-2'
+                  : 'border-outline-gray-2 hover:bg-surface-gray-1 dark:hover:bg-surface-gray-2'
+              "
+              :aria-pressed="primaryQuoteName === q.name"
+              @click="selectOisQuote(q.name)"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-ink-gray-9">
+                  {{ __('Year {0}', [quoteYear(q, index)]) }}
+                </span>
+                <span :class="pillClass(q)">{{ __(q.status) }}</span>
+              </div>
+              <p class="mt-1 truncate text-xs text-ink-gray-5">
+                {{ quoteContractScheduleSummary(q, index) }}
+              </p>
+              <p class="mt-2 text-sm font-semibold text-ink-gray-9">
+                {{ fmtKes(q.grand_total) }}
+                <span class="text-xs font-normal text-ink-gray-5">{{
+                  __('incl. VAT')
+                }}</span>
+              </p>
+              <p class="mt-0.5 text-xs text-ink-gray-5">
+                {{ fmtKes(q.net_total) }} {{ __('excl. VAT') }}
+              </p>
+              <p class="mt-1 text-[11px] text-ink-gray-5">{{ q.name }}</p>
+            </button>
+            <button
+              type="button"
+              class="mt-1 flex w-full items-center justify-between px-2 text-left text-[11px] font-medium text-ink-gray-5 hover:text-ink-gray-9"
+              :aria-expanded="expandedOisSchedule === q.name"
+              :aria-controls="`quote-invoice-schedule-${q.name}`"
+              @click="toggleOisSchedule(q.name)"
+            >
+              <span>{{
+                expandedOisSchedule === q.name
+                  ? __('Hide invoice breakdown')
+                  : __('View invoice breakdown')
               }}</span>
-            </p>
-            <p class="mt-0.5 text-xs text-ink-gray-5">
-              {{ fmtKes(q.net_total) }} {{ __('excl. VAT') }}
-            </p>
-            <p class="mt-1 text-[11px] text-ink-gray-5">{{ q.name }}</p>
-          </button>
+              <span aria-hidden="true">{{
+                expandedOisSchedule === q.name ? '⌃' : '⌄'
+              }}</span>
+            </button>
+            <div
+              v-if="expandedOisSchedule === q.name"
+              :id="`quote-invoice-schedule-${q.name}`"
+              class="mt-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+            >
+              <p class="text-xs text-ink-gray-6">
+                {{
+                  __(
+                    'Quarterly billing · each invoice is due 30 days after its invoice date.',
+                  )
+                }}
+              </p>
+              <p class="mt-1 text-xs text-ink-gray-5">
+                {{ __('First invoice:') }}
+                {{ firstInvoiceLabel(q) }}.
+              </p>
+              <p
+                v-if="q.invoice_schedule?.[0]?.monthly_incl_vat"
+                class="mt-1 text-xs text-ink-gray-5"
+              >
+                {{ __('Monthly equivalent:') }}
+                {{ fmtKes(q.invoice_schedule[0].monthly_incl_vat) }}
+                {{ __('incl. VAT') }}
+              </p>
+              <div class="mt-2 space-y-2">
+                <div
+                  v-for="row in q.invoice_schedule || []"
+                  :key="row.billing_key || `${q.name}-${row.quarter_number}`"
+                  class="rounded-md border border-outline-gray-2 bg-surface-white p-2 dark:bg-surface-gray-1"
+                >
+                  <div class="flex items-center justify-between gap-2 text-xs">
+                    <span class="font-semibold text-ink-gray-8">{{
+                      row.period_label ||
+                      __('Quarter {0}', [row.quarter_number])
+                    }}</span>
+                    <span class="font-semibold text-ink-gray-9">{{
+                      fmtKes(row.amount_incl_vat)
+                    }}</span>
+                  </div>
+                  <div
+                    class="mt-1 flex flex-wrap justify-between gap-x-3 gap-y-1 text-[11px] text-ink-gray-5"
+                  >
+                    <span>{{
+                      __('Invoice {0}', [formatDate(row.invoice_date)])
+                    }}</span>
+                    <span>{{
+                      __('Due {0} · 30 days later', [
+                        formatDate(row.invoice_due_date),
+                      ])
+                    }}</span>
+                  </div>
+                  <div class="mt-1 text-[11px] text-ink-gray-5">
+                    {{ fmtKes(row.amount_excl_vat) }} {{ __('excl. VAT') }}
+                  </div>
+                </div>
+                <p
+                  v-if="!(q.invoice_schedule || []).length"
+                  class="text-[11px] text-ink-gray-5"
+                >
+                  {{
+                    __(
+                      'Invoice dates will appear after the Opt-In schedule is created.',
+                    )
+                  }}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -854,6 +942,7 @@ const dealDoc = computed(() => dealDocResource.data ?? null)
 // OIS-sourced deals render the quote inline (no wizard overlay)
 const isOis = computed(() => !!dealDoc.value?.optin_submission)
 const selectedOisQuote = ref(null)
+const expandedOisSchedule = ref(null)
 const primaryQuoteName = computed(
   () =>
     (selectedOisQuote.value &&
@@ -930,6 +1019,35 @@ function quoteContractScheduleSummary(quote, index) {
   if (schedules.length > 1)
     return __('{0} facility contract schedules', [schedules.length])
   return quote.selling_price_list || __('Configured contract schedule')
+}
+
+function toggleOisSchedule(quoteName) {
+  expandedOisSchedule.value =
+    expandedOisSchedule.value === quoteName ? null : quoteName
+}
+
+function selectOisQuote(quoteName) {
+  selectedOisQuote.value = quoteName
+  expandedOisSchedule.value = quoteName
+}
+
+function firstInvoiceLabel(quote) {
+  const first = (quote?.invoice_schedule || [])[0]
+  if (!first) return __('about 90 days after submission')
+  if (first.first_invoice_relative_label) {
+    return first.first_invoice_relative_label
+  }
+  if (first.invoice_issue_timing === 'contract_signature') {
+    return __('on contract signature')
+  }
+  const anchor = oisResource.data?.submitted_at || first.invoice_schedule_anchor
+  if (anchor && first.invoice_date) {
+    const start = new Date(`${String(anchor).slice(0, 10)}T00:00:00`)
+    const issue = new Date(`${first.invoice_date}T00:00:00`)
+    const days = Math.max(0, Math.round((issue - start) / 86400000))
+    if (days) return `${days} ${__('days after submission')}`
+  }
+  return __('about 90 days after submission')
 }
 
 // ── Email applicant ───────────────────────────────────────────────────────────
@@ -1020,6 +1138,9 @@ watch(
     }
     if (!list.some((quote) => quote.name === selectedOisQuote.value)) {
       selectedOisQuote.value = list[0]?.name ?? null
+    }
+    if (!list.some((quote) => quote.name === expandedOisSchedule.value)) {
+      expandedOisSchedule.value = null
     }
   },
   { immediate: true },
@@ -1279,7 +1400,11 @@ function downloadPdf(name) {
 
 function formatDate(d) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-GB', {
+  const raw = String(d)
+  const parsed = new Date(
+    /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw,
+  )
+  return parsed.toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import UnitTestCase
-from frappe.utils import add_days, random_string, today
+from frappe.utils import add_days, getdate, random_string, today
 
 from crm.api.contracts import (
 	_build_contract_document_html,
@@ -49,6 +49,7 @@ from crm.api.optin import (
 	_facility_witness_signing_state,
 	_generate_contract_for_submission,
 	_get_optin_deal_forecast_fields,
+	_invoice_schedule_for_plan,
 	_prepare_submission_payload,
 	_process_submission,
 	_queue_confirmation_email,
@@ -62,6 +63,7 @@ from crm.api.optin import (
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
 from crm.setup.optin import ensure_internal_signatory_reminder_job
 from crm.utils.jinja import get_contract_network_for_print, render_current_terms_for_contract
+from crm.utils.optin_bundles import billing_schedule
 
 
 class TestOptInForecastFields(UnitTestCase):
@@ -75,6 +77,29 @@ class TestOptInForecastFields(UnitTestCase):
 
 		self.assertEqual(fields["expected_deal_value"], 48_000.5)
 		self.assertEqual(fields["expected_closure_date"], add_days(today(), 30))
+
+	def test_invoice_schedule_exposes_reconciled_quarter_amounts(self):
+		plan = {
+			"year_number": 1,
+			"subtotal_monthly": 1000,
+			"vat_monthly": 160,
+			"grand_total_monthly": 1160,
+			"subtotal_annual": 12000,
+			"vat_annual": 1920,
+			"grand_total_annual": 13920,
+		}
+		rows = _invoice_schedule_for_plan(
+			plan,
+			billing_schedule(getdate(today()), [1], 3),
+			{"mode": "submission_offset", "label": "3 months after Opt-In submission"},
+		)
+
+		self.assertEqual(len(rows), 4)
+		self.assertEqual(sum(row["amount_excl_vat"] for row in rows), 12000)
+		self.assertEqual(sum(row["amount_vat"] for row in rows), 1920)
+		self.assertEqual(sum(row["amount_incl_vat"] for row in rows), 13920)
+		self.assertEqual(rows[0]["amount_incl_vat"], 3480)
+		self.assertEqual(rows[0]["invoice_issue_timing"], "submission_offset")
 
 
 class TestOptInSignatoryHandoff(UnitTestCase):
