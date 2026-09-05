@@ -85,6 +85,66 @@ def _gen_token():
 	return frappe.generate_hash(length=_TOKEN_LENGTH)
 
 
+def _request_public_ip():
+	"""Return the client IP resolved by Frappe's trusted proxy handling.
+
+	``frappe.local.request_ip`` is populated from the configured forwarded
+	headers (falling back to the socket address), so it represents the public
+	client address when the app is behind a reverse proxy. Never accept an IP
+	from the browser payload: it is trivial for a client to forge.
+	"""
+	try:
+		request_ip = (
+			frappe.utils.cstr(getattr(frappe.local, "request_ip", "") or "")
+			.replace("\r", " ")
+			.replace("\n", " ")
+			.strip()[:140]
+		)
+		if request_ip:
+			return request_ip
+	except Exception:
+		pass
+	try:
+		request = getattr(frappe.local, "request", None) or getattr(frappe, "request", None)
+		return (
+			frappe.utils.cstr(getattr(request, "remote_addr", "") or "")
+			.replace("\r", " ")
+			.replace("\n", " ")
+			.strip()[:140]
+		)
+	except Exception:
+		return ""
+
+
+def _signature_audit_metadata(value):
+	"""Normalise the small, non-contract device context sent by the browser.
+
+	Only coarse, useful context is retained. This is an audit signal, not a
+	fingerprint: no cookies, canvas hashes, or arbitrary client-supplied keys are
+	stored. Bounds also keep CRM list views and child rows manageable.
+	"""
+	if isinstance(value, str):
+		try:
+			value = json.loads(value)
+		except (TypeError, ValueError, json.JSONDecodeError):
+			value = {}
+	if not isinstance(value, dict):
+		value = {}
+
+	def clean(key, limit):
+		return frappe.utils.cstr(value.get(key) or "").replace("\r", " ").replace("\n", " ").strip()[:limit]
+
+	device = clean("device", 140)
+	if not device:
+		device = " · ".join(
+			part for part in (clean("browser", 40), clean("platform", 80), clean("screen", 32)) if part
+		)[:140]
+	return {
+		"device": device,
+		"user_agent": clean("user_agent", 512),
+	}
+
+
 def _generate_invitation_email_reference():
 	"""Return a non-secret identifier for one invitation email issuance.
 
@@ -648,6 +708,8 @@ def _invalidate_signature(row):
 	"""
 	row.signature_data = None
 	row.signature_ip = None
+	row.signature_device = None
+	row.signature_user_agent = None
 	row.signed_at = None
 	row.otp_hash = None
 	row.otp_expiry = None
@@ -2994,7 +3056,7 @@ def get_authenticated_contract(contract: Any, role: Any):
 
 
 @frappe.whitelist()
-def sign_authenticated(contract: Any, role: Any, signature_b64: Any):
+def sign_authenticated(contract: Any, role: Any, signature_b64: Any, device_info: Any = None):
 	"""Capture a signature from a matching, logged-in Network/Tiberbu signer.
 
 	No email OTP is requested on this branch because the user has already proved
@@ -3011,14 +3073,12 @@ def sign_authenticated(contract: Any, role: Any, signature_b64: Any):
 		frappe.throw(_("You are not assigned to sign this contract."), frappe.PermissionError)
 	_ensure_contract_signing_open(doc)
 	_ensure_pending_signatory(row)
-	remote_addr = ""
-	try:
-		remote_addr = frappe.local.request.environ.get("REMOTE_ADDR", "")
-	except AttributeError:
-		pass
+	audit = _signature_audit_metadata(device_info)
 	row.signature_data = signature_b64
 	row.signed_at = frappe.utils.now_datetime()
-	row.signature_ip = remote_addr
+	row.signature_ip = _request_public_ip()
+	row.signature_device = audit["device"]
+	row.signature_user_agent = audit["user_agent"]
 	row.status = "Signed"
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
@@ -3231,8 +3291,12 @@ def _contract_body_for_view(contract_doc):
 
 
 def _render_signature_block(contract_doc, accent):
-	"""One card per signatory: rendered signature image + audit line, or a wet-ink
-	line for signatories still pending (so a printed copy can be hand-signed)."""
+	"""One card per signatory: rendered signature image + signing time, or a
+	wet-ink line for signatories still pending (so a printed copy can be hand-signed).
+
+	Private IP and device audit context is deliberately kept out of the contract
+	body and PDF; it is available only to authorised CRM review surfaces.
+	"""
 	cards = []
 	for s in contract_doc.signatories or []:
 		role = frappe.utils.escape_html(s.signatory_role or "")
@@ -3243,8 +3307,6 @@ def _render_signature_block(contract_doc, accent):
 			meta = "Signed electronically"
 			if when:
 				meta += " on %s" % frappe.utils.escape_html(when)
-			if s.signature_ip:
-				meta += " &middot; IP %s" % frappe.utils.escape_html(frappe.utils.cstr(s.signature_ip))
 		else:
 			mark = "<div class='sig-line'></div>"
 			meta = "Awaiting signature"
@@ -3261,15 +3323,13 @@ def _render_certificate_page(contract_doc, accent, date_str, brand=None):
 	rows = []
 	for s in contract_doc.signatories or []:
 		when = frappe.utils.format_datetime(s.signed_at) if s.signed_at else "—"
-		ip = frappe.utils.escape_html(frappe.utils.cstr(s.signature_ip or "—"))
 		rows.append(
-			"<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+			"<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
 			% (
 				frappe.utils.escape_html(s.signatory_name or ""),
 				frappe.utils.escape_html(s.signatory_role or ""),
 				frappe.utils.escape_html(s.status or ""),
 				frappe.utils.escape_html(when),
-				ip,
 			)
 		)
 	executed = getattr(contract_doc, "status", "") == "Fully Executed" or _required_signatures_complete(
@@ -3298,7 +3358,7 @@ def _render_certificate_page(contract_doc, accent, date_str, brand=None):
     {contact}
     <div class="cert-kv"><b>Status</b> <span class="badge">{status}</span></div>
     <table class="cert"><thead><tr>
-      <th>Signatory</th><th>Role</th><th>Status</th><th>Signed At</th><th>IP Address</th>
+      <th>Signatory</th><th>Role</th><th>Status</th><th>Signed At</th>
     </tr></thead><tbody>{rows}</tbody></table>
 	<div class="cert-kv" style="margin-top:18px"><b>Accepted T&amp;C Snapshot Integrity</b></div>
     <div class="hash">{hash}</div>
@@ -3309,7 +3369,7 @@ def _render_certificate_page(contract_doc, accent, date_str, brand=None):
 		deal=frappe.utils.escape_html(frappe.utils.cstr(contract_doc.deal or "—")),
 		contact=contact_line,
 		status=frappe.utils.escape_html(status_label),
-		rows="".join(rows) or "<tr><td colspan='5'>No signatories.</td></tr>",
+		rows="".join(rows) or "<tr><td colspan='4'>No signatories.</td></tr>",
 		hash=tc_hash,
 	)
 
@@ -3570,7 +3630,7 @@ def get_contract(signing_token: Any, contract: Any, role: Any):
 
 # nosemgrep: guest-whitelisted-method -- short-lived signing-token validation and per-IP rate limit are enforced below.
 @frappe.whitelist(allow_guest=True)
-def sign(signing_token: Any, contract: Any, role: Any, signature_b64: Any):
+def sign(signing_token: Any, contract: Any, role: Any, signature_b64: Any, device_info: Any = None):
 	"""
 	Record the signature on the signatory row and advance the workflow via _transition().
 
@@ -3586,17 +3646,14 @@ def sign(signing_token: Any, contract: Any, role: Any, signature_b64: Any):
 
 	_ensure_pending_signatory(signatory_row)
 
-	# Capture client IP
-	remote_addr = ""
-	try:
-		remote_addr = frappe.local.request.environ.get("REMOTE_ADDR", "")
-	except AttributeError:
-		pass
+	audit = _signature_audit_metadata(device_info)
 
 	# Record signature
 	signatory_row.signature_data = frappe.utils.cstr(signature_b64)
 	signatory_row.signed_at = frappe.utils.now_datetime()
-	signatory_row.signature_ip = remote_addr
+	signatory_row.signature_ip = _request_public_ip()
+	signatory_row.signature_device = audit["device"]
+	signatory_row.signature_user_agent = audit["user_agent"]
 	signatory_row.status = "Signed"
 	# Consume the signing-session token so it can't be replayed
 	signatory_row.signing_token = ""

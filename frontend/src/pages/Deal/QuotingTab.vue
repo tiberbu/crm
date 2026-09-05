@@ -317,89 +317,131 @@
             <button
               type="button"
               class="mt-1 flex w-full items-center justify-between px-2 text-left text-[11px] font-medium text-ink-gray-5 hover:text-ink-gray-9"
-              :aria-expanded="expandedOisSchedule === q.name"
-              :aria-controls="`quote-invoice-schedule-${q.name}`"
+              :aria-expanded="
+                showOisInvoiceDialog && expandedOisSchedule === q.name
+              "
+              aria-controls="quote-invoice-breakdown-dialog"
               @click="toggleOisSchedule(q.name)"
             >
               <span>{{
-                expandedOisSchedule === q.name
-                  ? __('Hide invoice breakdown')
+                showOisInvoiceDialog && expandedOisSchedule === q.name
+                  ? __('Close invoice breakdown')
                   : __('View invoice breakdown')
               }}</span>
               <span aria-hidden="true">{{
-                expandedOisSchedule === q.name ? '⌃' : '⌄'
+                showOisInvoiceDialog && expandedOisSchedule === q.name
+                  ? '×'
+                  : '↗'
               }}</span>
             </button>
-            <div
-              v-if="expandedOisSchedule === q.name"
-              :id="`quote-invoice-schedule-${q.name}`"
-              class="mt-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
-            >
-              <p class="text-xs text-ink-gray-6">
-                {{
-                  __(
-                    'Quarterly billing · each invoice is due 30 days after its invoice date.',
-                  )
-                }}
-              </p>
-              <p class="mt-1 text-xs text-ink-gray-5">
-                {{ __('First invoice:') }}
-                {{ firstInvoiceLabel(q) }}.
-              </p>
-              <p
-                v-if="q.invoice_schedule?.[0]?.monthly_incl_vat"
-                class="mt-1 text-xs text-ink-gray-5"
-              >
-                {{ __('Monthly equivalent:') }}
-                {{ fmtKes(q.invoice_schedule[0].monthly_incl_vat) }}
-                {{ __('incl. VAT') }}
-              </p>
-              <div class="mt-2 space-y-2">
-                <div
-                  v-for="row in q.invoice_schedule || []"
-                  :key="row.billing_key || `${q.name}-${row.quarter_number}`"
-                  class="rounded-md border border-outline-gray-2 bg-surface-white p-2 dark:bg-surface-gray-1"
-                >
-                  <div class="flex items-center justify-between gap-2 text-xs">
-                    <span class="font-semibold text-ink-gray-8">{{
-                      row.period_label ||
-                      __('Quarter {0}', [row.quarter_number])
-                    }}</span>
-                    <span class="font-semibold text-ink-gray-9">{{
-                      fmtKes(row.amount_incl_vat)
-                    }}</span>
-                  </div>
-                  <div
-                    class="mt-1 flex flex-wrap justify-between gap-x-3 gap-y-1 text-[11px] text-ink-gray-5"
-                  >
-                    <span>{{
-                      __('Invoice {0}', [formatDate(row.invoice_date)])
-                    }}</span>
-                    <span>{{
-                      __('Due {0} · 30 days later', [
-                        formatDate(row.invoice_due_date),
-                      ])
-                    }}</span>
-                  </div>
-                  <div class="mt-1 text-[11px] text-ink-gray-5">
-                    {{ fmtKes(row.amount_excl_vat) }} {{ __('excl. VAT') }}
-                  </div>
-                </div>
-                <p
-                  v-if="!(q.invoice_schedule || []).length"
-                  class="text-[11px] text-ink-gray-5"
-                >
+          </div>
+        </div>
+      </section>
+
+      <Dialog
+        v-model="showOisInvoiceDialog"
+        :options="{ title: invoiceBreakdownTitle, size: 'lg' }"
+      >
+        <template #body-content>
+          <div
+            v-if="expandedOisScheduleQuote"
+            id="quote-invoice-breakdown-dialog"
+            class="max-h-[65vh] overflow-y-auto"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="text-sm text-ink-gray-6">
                   {{
                     __(
-                      'Invoice dates will appear after the Opt-In schedule is created.',
+                      'Quarterly billing · each invoice is due 30 days after its invoice date.',
+                    )
+                  }}
+                </p>
+                <p class="mt-1 text-xs text-ink-gray-5">
+                  {{ __('First invoice:') }}
+                  {{ firstInvoiceLabel(expandedOisScheduleQuote) }}.
+                </p>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-semibold text-ink-gray-9">
+                  {{ fmtKes(expandedOisScheduleQuote.grand_total) }}
+                  {{ __('incl. VAT') }}
+                </p>
+                <p
+                  v-if="
+                    expandedOisScheduleQuote.invoice_schedule?.[0]
+                      ?.monthly_incl_vat
+                  "
+                  class="mt-0.5 text-xs text-ink-gray-5"
+                >
+                  {{ __('Monthly equivalent:') }}
+                  {{
+                    fmtKes(
+                      expandedOisScheduleQuote.invoice_schedule[0]
+                        .monthly_incl_vat,
                     )
                   }}
                 </p>
               </div>
             </div>
+
+            <div class="mt-4 space-y-2">
+              <div
+                v-for="row in expandedOisScheduleQuote.invoice_schedule || []"
+                :key="
+                  row.billing_key ||
+                  `${expandedOisScheduleQuote.name}-${row.quarter_number}`
+                "
+                class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-sm font-semibold text-ink-gray-8">
+                    {{
+                      row.period_label ||
+                      __('Quarter {0}', [row.quarter_number])
+                    }}
+                  </span>
+                  <span class="text-sm font-semibold text-ink-gray-9">
+                    {{ fmtKes(row.amount_incl_vat) }}
+                  </span>
+                </div>
+                <div
+                  class="mt-2 grid gap-1 text-xs text-ink-gray-5 sm:grid-cols-2"
+                >
+                  <span>{{
+                    __('Invoice date: {0}', [formatDate(row.invoice_date)])
+                  }}</span>
+                  <span class="sm:text-right">
+                    {{
+                      __('Due: {0} · 30 days later', [
+                        formatDate(row.invoice_due_date),
+                      ])
+                    }}
+                  </span>
+                </div>
+                <p class="mt-1 text-xs text-ink-gray-5">
+                  {{ fmtKes(row.amount_excl_vat) }} {{ __('excl. VAT') }}
+                </p>
+              </div>
+              <p
+                v-if="!(expandedOisScheduleQuote.invoice_schedule || []).length"
+                class="text-xs text-ink-gray-5"
+              >
+                {{
+                  __(
+                    'Invoice dates will appear after the Opt-In schedule is created.',
+                  )
+                }}
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
+        </template>
+        <template #actions>
+          <Button variant="subtle" @click="showOisInvoiceDialog = false">
+            {{ __('Close') }}
+          </Button>
+        </template>
+      </Dialog>
 
       <!-- Quote exists → edit negotiated pricing inline, right here -->
       <QuotePanel
@@ -943,6 +985,7 @@ const dealDoc = computed(() => dealDocResource.data ?? null)
 const isOis = computed(() => !!dealDoc.value?.optin_submission)
 const selectedOisQuote = ref(null)
 const expandedOisSchedule = ref(null)
+const showOisInvoiceDialog = ref(false)
 const primaryQuoteName = computed(
   () =>
     (selectedOisQuote.value &&
@@ -1022,14 +1065,31 @@ function quoteContractScheduleSummary(quote, index) {
 }
 
 function toggleOisSchedule(quoteName) {
-  expandedOisSchedule.value =
-    expandedOisSchedule.value === quoteName ? null : quoteName
+  if (showOisInvoiceDialog.value && expandedOisSchedule.value === quoteName) {
+    showOisInvoiceDialog.value = false
+    return
+  }
+  expandedOisSchedule.value = quoteName
+  showOisInvoiceDialog.value = true
 }
 
 function selectOisQuote(quoteName) {
   selectedOisQuote.value = quoteName
-  expandedOisSchedule.value = quoteName
 }
+
+const expandedOisScheduleQuote = computed(
+  () =>
+    quotes.value.find((quote) => quote.name === expandedOisSchedule.value) ??
+    null,
+)
+const invoiceBreakdownTitle = computed(() => {
+  const quote = expandedOisScheduleQuote.value
+  return quote
+    ? __('Year {0} invoice breakdown', [
+        quoteYear(quote, quotes.value.indexOf(quote)),
+      ])
+    : __('Invoice breakdown')
+})
 
 function firstInvoiceLabel(quote) {
   const first = (quote?.invoice_schedule || [])[0]
@@ -1134,6 +1194,8 @@ watch(
   ([ois, list]) => {
     if (!ois) {
       selectedOisQuote.value = null
+      expandedOisSchedule.value = null
+      showOisInvoiceDialog.value = false
       return
     }
     if (!list.some((quote) => quote.name === selectedOisQuote.value)) {
@@ -1141,6 +1203,7 @@ watch(
     }
     if (!list.some((quote) => quote.name === expandedOisSchedule.value)) {
       expandedOisSchedule.value = null
+      showOisInvoiceDialog.value = false
     }
   },
   { immediate: true },

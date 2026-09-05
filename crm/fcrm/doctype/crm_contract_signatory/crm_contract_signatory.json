@@ -14,6 +14,8 @@
   "col_break_1",
   "signature_data",
   "signature_ip",
+  "signature_device",
+  "signature_user_agent",
   "signed_at",
   "section_break_tokens",
   "invite_token",
@@ -85,7 +87,23 @@
   {
    "fieldname": "signature_ip",
    "fieldtype": "Data",
-   "label": "Signature IP"
+   "label": "Signature Public IP",
+   "read_only": 1,
+   "description": "Client IP resolved by the server and configured reverse proxy."
+  },
+  {
+   "fieldname": "signature_device",
+   "fieldtype": "Data",
+   "label": "Signature Device",
+   "read_only": 1,
+   "description": "Coarse browser, platform, and screen context captured at signing."
+  },
+  {
+   "fieldname": "signature_user_agent",
+   "fieldtype": "Small Text",
+   "label": "Signature User Agent",
+   "read_only": 1,
+   "description": "Browser user-agent string captured at signing for audit review."
   },
   {
    "fieldname": "signed_at",

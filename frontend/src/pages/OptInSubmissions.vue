@@ -21,6 +21,7 @@
             ? 'border-red-600 bg-red-600 text-white'
             : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300',
         ]"
+        :aria-pressed="pendingMyAction"
         @click="togglePendingMyAction"
       >
         {{ __('Pending my action') }}
@@ -244,6 +245,24 @@
                   class="text-xs text-ink-gray-5"
                   >{{ formatDate(row.facility_signatory_signed_at) }}</span
                 >
+                <span
+                  v-if="
+                    row.facility_signatory_signature_ip ||
+                    row.facility_signatory_signature_device
+                  "
+                  class="max-w-56 truncate text-[11px] text-ink-gray-5"
+                  :title="
+                    row.facility_signatory_signature_user_agent || undefined
+                  "
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{
+                    row.facility_signatory_signature_ip || __('Not captured')
+                  }}
+                  <template v-if="row.facility_signatory_signature_device">
+                    · {{ row.facility_signatory_signature_device }}
+                  </template>
+                </span>
                 <div class="flex items-center gap-1.5">
                   <span class="text-xs text-ink-gray-5">{{
                     __('Witness')
@@ -261,6 +280,22 @@
                   class="text-xs text-ink-gray-5"
                   >{{ formatDate(row.facility_witness_signed_at) }}</span
                 >
+                <span
+                  v-if="
+                    row.facility_witness_signature_ip ||
+                    row.facility_witness_signature_device
+                  "
+                  class="max-w-56 truncate text-[11px] text-ink-gray-5"
+                  :title="
+                    row.facility_witness_signature_user_agent || undefined
+                  "
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ row.facility_witness_signature_ip || __('Not captured') }}
+                  <template v-if="row.facility_witness_signature_device">
+                    · {{ row.facility_witness_signature_device }}
+                  </template>
+                </span>
               </div>
             </td>
             <td class="px-4 py-3 align-top">
@@ -284,6 +319,17 @@
                     class="w-full text-xs text-ink-gray-5"
                   >
                     {{ formatDate(signatory.signed_at) }}
+                  </span>
+                  <span
+                    v-if="signatory.signature_ip || signatory.signature_device"
+                    class="w-full truncate text-[11px] text-ink-gray-5"
+                    :title="signatory.signature_user_agent || undefined"
+                  >
+                    {{ __('Audit') }} · {{ __('Public IP') }}:
+                    {{ signatory.signature_ip || __('Not captured') }}
+                    <template v-if="signatory.signature_device">
+                      · {{ signatory.signature_device }}
+                    </template>
                   </span>
                 </div>
                 <span class="text-xs font-medium text-ink-gray-6">
@@ -312,6 +358,22 @@
                   class="text-xs text-ink-gray-5"
                 >
                   {{ formatDate(row.tiberbu_signatory.signed_at) }}
+                </span>
+                <span
+                  v-if="
+                    row.tiberbu_signatory.signature_ip ||
+                    row.tiberbu_signatory.signature_device
+                  "
+                  class="max-w-56 truncate text-[11px] text-ink-gray-5"
+                  :title="
+                    row.tiberbu_signatory.signature_user_agent || undefined
+                  "
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ row.tiberbu_signatory.signature_ip || __('Not captured') }}
+                  <template v-if="row.tiberbu_signatory.signature_device">
+                    · {{ row.tiberbu_signatory.signature_device }}
+                  </template>
                 </span>
               </div>
               <span v-else class="text-xs text-ink-gray-5">
@@ -422,6 +484,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { createResource, Button } from 'frappe-ui'
+import { useStorage } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -432,7 +495,16 @@ const selectedStatus = ref('All')
 const selectedNetwork = ref('')
 const selectedFacilityLevel = ref('')
 const facilitySearch = ref('')
-const pendingMyAction = ref(route.query.pending_my_action === '1')
+const pendingMyAction = useStorage(
+  'crm:opt-in-submissions:pending-my-action',
+  false,
+)
+const pendingMyActionQuery = route.query.pending_my_action
+if (pendingMyActionQuery === '1' || pendingMyActionQuery === '0') {
+  // Explicit links (for example from an approval email) take precedence over
+  // the browser preference and become the new preference for this browser.
+  pendingMyAction.value = pendingMyActionQuery === '1'
+}
 const page = ref(0)
 const pageSize = 20
 const retrying = ref(null)
@@ -491,6 +563,17 @@ function applyFilters() {
   }
   listResource.reload()
 }
+
+watch(
+  () => route.query.pending_my_action,
+  (value, previousValue) => {
+    if (value === previousValue || (value !== '1' && value !== '0')) {
+      return
+    }
+    pendingMyAction.value = value === '1'
+    applyFilters()
+  },
+)
 
 onBeforeUnmount(() => {
   if (searchTimer) clearTimeout(searchTimer)

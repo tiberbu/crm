@@ -113,61 +113,6 @@
         </li>
       </ol>
 
-      <!-- Contract-schedule provenance stays visible while the contract is
-           reviewed and signed. It is read-only; quote changes remain governed
-           by the quote editor's facility-signature guard. -->
-      <section
-        v-if="priceListSnapshot.initial || priceListSnapshot.history.length"
-        class="mt-6 mb-8 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
-        aria-label="Contract schedule history"
-      >
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p
-              class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
-            >
-              {{ __('Contract schedule history') }}
-            </p>
-            <p class="mt-1 text-sm text-ink-gray-7">
-              {{ __('Original:') }}
-              <span class="font-semibold text-ink-gray-9">{{
-                priceListSnapshot.initial || '—'
-              }}</span>
-              <span class="mx-1 text-ink-gray-4">→</span>
-              {{ __('Agreed:') }}
-              <span class="font-semibold text-ink-gray-9">{{
-                priceListSnapshot.negotiated || '—'
-              }}</span>
-            </p>
-          </div>
-          <span
-            class="rounded-full bg-surface-white px-2.5 py-1 text-xs font-medium text-ink-gray-6 shadow-sm dark:bg-surface-gray-3"
-          >
-            {{ __('Read-only audit') }}
-          </span>
-        </div>
-        <ol
-          v-if="priceListSnapshot.history.length"
-          class="mt-3 space-y-2 border-l border-outline-gray-2 pl-3"
-        >
-          <li
-            v-for="(event, index) in priceListSnapshot.history"
-            :key="`${event.at}-${index}`"
-            class="text-xs text-ink-gray-6"
-          >
-            <span class="font-medium text-ink-gray-8">{{
-              event.from ? `${event.from} → ${event.to}` : event.to
-            }}</span>
-            <span v-if="event.at" class="ml-2 text-ink-gray-4">{{
-              event.at
-            }}</span>
-            <span v-if="event.by" class="ml-2 text-ink-gray-5">
-              · {{ __('Changed by {0}', [event.by]) }}
-            </span>
-          </li>
-        </ol>
-      </section>
-
       <!-- A network/Tiberbu signatory who is also a CRM user can act from the
            protected Quote page. This is a separate authenticated branch: the
            existing public invitation + OTP pathway remains unchanged. -->
@@ -336,6 +281,20 @@
                   {{ __('SMS: {0}', [smsDelivery(s).status]) }}
                   <template v-if="smsDelivery(s).attempts">
                     · {{ __('{0} attempt(s)', [smsDelivery(s).attempts]) }}
+                  </template>
+                </p>
+                <p
+                  v-if="
+                    isSignedStatus(s.status) &&
+                    (s.signature_ip || s.signature_device)
+                  "
+                  class="mt-0.5 truncate text-[11px] text-ink-gray-5"
+                  :title="s.signature_user_agent || undefined"
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ s.signature_ip || __('Not captured') }}
+                  <template v-if="s.signature_device">
+                    · {{ s.signature_device }}
                   </template>
                 </p>
               </div>
@@ -704,6 +663,21 @@
                   {{ __('SMS: {0}', [smsDelivery(item).status]) }}
                   <template v-if="smsDelivery(item).attempts">
                     · {{ __('{0} attempt(s)', [smsDelivery(item).attempts]) }}
+                  </template>
+                </p>
+                <p
+                  v-if="
+                    item.onContract &&
+                    isSignedStatus(item.status) &&
+                    (item.signature_ip || item.signature_device)
+                  "
+                  class="mt-0.5 truncate text-[11px] text-ink-gray-5"
+                  :title="item.signature_user_agent || undefined"
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ item.signature_ip || __('Not captured') }}
+                  <template v-if="item.signature_device">
+                    · {{ item.signature_device }}
                   </template>
                 </p>
               </div>
@@ -1244,6 +1218,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { createResource, toast, Button, Dialog } from 'frappe-ui'
 import { usersStore } from '@/stores/users'
 import { sessionStore } from '@/stores/session'
+import { collectSigningDeviceInfo } from '@/utils/signingAudit'
 import SignatureCanvas from '../ContractSigning/SignatureCanvas.vue'
 
 // ---------------------------------------------------------------------------
@@ -1365,6 +1340,7 @@ async function submitAuthenticatedSignature() {
       contract,
       role,
       signature_b64: signature,
+      device_info: JSON.stringify(collectSigningDeviceInfo()),
     })
     toast.success(__('Your signature has been recorded.'))
     closeAuthenticatedSigning()
@@ -1376,26 +1352,6 @@ async function submitAuthenticatedSignature() {
     authenticatedSigning.value = false
   }
 }
-
-const priceListSnapshot = computed(() => {
-  const contractPrice = lc.value.contract?.price_list ?? {}
-  const quotation = lc.value.quotation ?? {}
-  return {
-    initial:
-      contractPrice.initial ||
-      quotation.initial_price_list ||
-      quotation.price_list ||
-      '',
-    negotiated:
-      contractPrice.negotiated ||
-      quotation.price_list ||
-      quotation.initial_price_list ||
-      '',
-    history: contractPrice.history?.length
-      ? contractPrice.history
-      : quotation.price_list_history || [],
-  }
-})
 
 // ---------------------------------------------------------------------------
 // Deal doc — for exec_notes pre-fill only
@@ -1995,6 +1951,9 @@ const coSignatoryItems = computed(() => {
     email: r.email,
     phone: r.phone,
     status: r.status,
+    signature_ip: r.signature_ip,
+    signature_device: r.signature_device,
+    signature_user_agent: r.signature_user_agent,
     onContract: true,
   }))
   for (const cs of coSigners.value) {
