@@ -17,6 +17,148 @@ import frappe
 
 DEFAULT_BRAND_COLOUR = "#b91c1c"  # Tiberbu red — used when a network has no colour set
 
+OTP_QUEUE_REDACTION = "OTP email content redacted after delivery."
+
+
+def create_transactional_communication(
+	reference_doctype,
+	reference_name,
+	*,
+	subject,
+	content,
+	recipients,
+	links=None,
+	attachments=None,
+):
+	"""Create a CRM-visible communication and link it to related records.
+
+	``frappe.sendmail`` creates an Email Queue row but does not create a
+	Communication.  Transactional messages therefore disappear from CRM's Email
+	tab unless callers create the communication explicitly.  The primary
+	reference is the Deal; optional timeline links make the same message visible
+	on the Contract and its Opt-In Submission as well.
+
+	This helper is best-effort so email delivery is never blocked by an optional
+	activity log on older sites or mocked test documents.
+	"""
+	reference_doctype = frappe.utils.cstr(reference_doctype or "").strip()
+	reference_name = frappe.utils.cstr(reference_name or "").strip()
+	if not reference_doctype or not reference_name:
+		return ""
+	try:
+		if not frappe.db.exists(reference_doctype, reference_name):
+			return ""
+		comm = frappe.new_doc("Communication")
+		comm.update(
+			{
+				"communication_type": "Automated Message",
+				"communication_medium": "Email",
+				"sent_or_received": "Sent",
+				"subject": subject,
+				"content": content,
+				"sender": frappe.session.user,
+				"recipients": ", ".join(recipients or []),
+				"reference_doctype": reference_doctype,
+				"reference_name": reference_name,
+				"has_attachment": 1 if attachments else 0,
+			}
+		)
+		seen = {(reference_doctype, reference_name)}
+		for link_doctype, link_name in links or []:
+			link_doctype = frappe.utils.cstr(link_doctype or "").strip()
+			link_name = frappe.utils.cstr(link_name or "").strip()
+			if not link_doctype or not link_name or (link_doctype, link_name) in seen:
+				continue
+			comm.append(
+				"timeline_links",
+				{
+					"link_doctype": link_doctype,
+					"link_name": link_name,
+					"communication_date": frappe.utils.now_datetime(),
+				},
+			)
+			seen.add((link_doctype, link_name))
+		comm.insert(ignore_permissions=True)  # SYSTEM-INTERNAL: transactional audit
+		if attachments:
+			from frappe.core.doctype.communication.email import add_attachments
+
+			add_attachments(comm.name, attachments)
+		return comm.name
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"crm transactional email: communication log failed for %s %s"
+			% (reference_doctype, reference_name),
+		)
+		return ""
+
+
+def schedule_email_queue_redaction(queue, replacement=OTP_QUEUE_REDACTION):
+	"""Scrub a delivered OTP's MIME body from Email Queue after send.
+
+	The recipient must receive the real code, but CRM operators should never be
+	able to recover it from Email Queue. Frappe's queue sender commits while it is
+	preparing and finalising SMTP delivery, so a plain second ``after_commit``
+	callback would run before the message is sent. Replace the queue sender's
+	callback with a wrapper so redaction always happens after delivery (or a send
+	failure).
+	"""
+	queue_doc = queue if callable(getattr(queue, "send", None)) else None
+	queue_name = getattr(queue, "name", queue) if queue is not None else ""
+	if not isinstance(queue_name, str):
+		return
+	queue_name = queue_name.strip()
+	if not queue_name:
+		return
+
+	def redact():
+		try:
+			if frappe.db.exists("Email Queue", queue_name):
+				frappe.db.set_value("Email Queue", queue_name, "message", replacement)
+				frappe.db.commit()
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"crm transactional email: OTP queue redaction failed for %s" % queue_name,
+			)
+
+	def send_then_redact():
+		try:
+			queue_doc.send()
+		finally:
+			redact()
+
+	try:
+		if queue_doc:
+			callbacks = getattr(frappe.db.after_commit, "_functions", None)
+			if callbacks is not None:
+				for index, callback in enumerate(callbacks):
+					if (
+						getattr(callback, "__self__", None) is queue_doc
+						and getattr(callback, "__name__", "") == "send"
+					):
+						callbacks[index] = send_then_redact
+						break
+				else:
+					callbacks.append(send_then_redact)
+			else:
+				frappe.db.after_commit.add(send_then_redact)
+		else:
+			frappe.db.after_commit.add(redact)
+	except Exception:
+		# Background/test contexts may not expose CallbackManager. Redact directly
+		# where possible rather than retaining a secret in the queue.
+		try:
+			if queue_doc:
+				frappe.db.after_commit.add(send_then_redact)
+			else:
+				redact()
+		except Exception:
+			if queue_doc:
+				send_then_redact()
+			else:
+				redact()
+
 
 def hex_to_rgba(hex_colour, alpha):
 	"""Convert '#RRGGBB' / '#RGB' to 'rgba(r,g,b,alpha)'. Falls back to the brand red."""

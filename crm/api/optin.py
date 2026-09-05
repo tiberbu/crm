@@ -39,6 +39,11 @@ from typing import Any
 import frappe
 from frappe import _
 
+from crm.api._email import (
+	OTP_QUEUE_REDACTION,
+	create_transactional_communication,
+	schedule_email_queue_redaction,
+)
 from crm.utils.jinja import render_terms_template
 from crm.utils.optin_bundles import (
 	billing_schedule,
@@ -1055,15 +1060,33 @@ def _otp_email_html(otp, network):
 	}
 
 
-def _send_otp_email(contact_email, otp, network=None):
-	"""Send the branded Opt-In OTP email with its network-first subject."""
-	frappe.sendmail(
+def _send_otp_email(
+	contact_email,
+	otp,
+	network=None,
+	reference_doctype="",
+	reference_name="",
+):
+	"""Send the branded Opt-In OTP email, redacting its queued body afterward."""
+	brand_name = _facility_email_subject_label([], (network or {}).get("display_name") or "CareverseHIMS")
+	subject = "%s — Opt-In verification code" % brand_name
+	communication_name = ""
+	if reference_doctype and reference_name:
+		communication_name = create_transactional_communication(
+			reference_doctype,
+			reference_name,
+			subject=subject,
+			content="OTP content redacted from CRM email history.",
+			recipients=[contact_email],
+		)
+	queue = frappe.sendmail(
 		recipients=[contact_email],
-		subject="%s — Opt-In verification code · %s"
-		% (_facility_email_subject_label([], (network or {}).get("display_name") or "CareverseHIMS"), otp),
+		subject=subject,
 		message=_otp_email_html(otp, network),
+		**({"communication": communication_name} if communication_name else {}),
 		now=True,
 	)
+	schedule_email_queue_redaction(queue, OTP_QUEUE_REDACTION)
 
 
 def _sms_gateway_configured():
@@ -1083,7 +1106,15 @@ def _send_otp_sms(contact_phone, otp, brand_name="CareverseHIMS"):
 	send_sms([contact_phone], msg, success_msg=False)
 
 
-def _dispatch_otp(channel, contact_email, contact_phone, otp, network_slug=None):
+def _dispatch_otp(
+	channel,
+	contact_email,
+	contact_phone,
+	otp,
+	network_slug=None,
+	reference_doctype="",
+	reference_name="",
+):
 	"""
 	Background OTP dispatcher. Delivers via the requested channel, falling back to
 	email so a code is never silently dropped:
@@ -1105,7 +1136,13 @@ def _dispatch_otp(channel, contact_email, contact_phone, otp, network_slug=None)
 				"optin._dispatch_otp: SMS send failed, falling back to email",
 			)
 	if contact_email:
-		_send_otp_email(contact_email, otp, network)
+		_send_otp_email(
+			contact_email,
+			otp,
+			network,
+			reference_doctype=reference_doctype,
+			reference_name=reference_name,
+		)
 
 
 def _require_optin_manager():
@@ -1285,6 +1322,8 @@ def verify_prequalified(email: Any, network_slug: Any, channel: Any = "email", d
 		contact_phone=contact_phone,
 		otp=otp,
 		network_slug=network_slug,
+		reference_doctype="CRM Deal" if invitation else "",
+		reference_name=invitation.get("deal") if invitation else "",
 		queue="short",
 		timeout=30,
 	)
@@ -2318,24 +2357,33 @@ def send_deal_optin_invitation(deal: Any, price_list: Any = None):
 		" ".join(part for part in (deal_doc.get("first_name"), deal_doc.get("last_name")) if part) or "there"
 	)
 	network_name = frappe.utils.escape_html(network.get("display_name") or network_slug)
+	subject = "%s — Complete Opt-In · %s" % (
+		_facility_email_subject_label(invited_facilities, network.get("display_name") or "CareverseHIMS"),
+		network.get("display_name") or "CareverseHIMS",
+	)
+	message = (
+		"<p>Dear %s,</p>"
+		"<p>Please review your facility details, pricing, and agreement for "
+		"<strong>%s</strong>.</p>"
+		'<p style="margin:24px 0"><a href="%s" '
+		'style="background:#b91c1c;color:#fff;padding:12px 24px;border-radius:6px;'
+		'text-decoration:none;font-weight:600">Complete Opt-In</a></p>'
+		"<p>If the button does not work, paste this link into your browser:<br>"
+		'<a href="%s">%s</a></p><p>This invitation expires in seven days.</p>'
+	) % (recipient_name, network_name, url, url, url)
+	communication_name = create_transactional_communication(
+		"CRM Deal",
+		deal,
+		subject=subject,
+		content="Opt-In invitation sent to %s. The private invitation link is omitted from CRM email history."
+		% frappe.utils.escape_html(email),
+		recipients=[email],
+	)
 	frappe.sendmail(
 		recipients=[email],
-		subject="%s — Complete Opt-In · %s"
-		% (
-			_facility_email_subject_label(invited_facilities, network.get("display_name") or "CareverseHIMS"),
-			network.get("display_name") or "CareverseHIMS",
-		),
-		message=(
-			"<p>Dear %s,</p>"
-			"<p>Please review your facility details, pricing, and agreement for "
-			"<strong>%s</strong>.</p>"
-			'<p style="margin:24px 0"><a href="%s" '
-			'style="background:#b91c1c;color:#fff;padding:12px 24px;border-radius:6px;'
-			'text-decoration:none;font-weight:600">Complete Opt-In</a></p>'
-			"<p>If the button does not work, paste this link into your browser:<br>"
-			'<a href="%s">%s</a></p><p>This invitation expires in seven days.</p>'
-		)
-		% (recipient_name, network_name, url, url, url),
+		subject=subject,
+		message=message,
+		**({"communication": communication_name} if communication_name else {}),
 		now=True,
 	)
 	return {"sent_to": email, "price_list": price_list}
@@ -2708,12 +2756,28 @@ def _queue_confirmation_email(submission, recipient, first_name, network, pricin
 	"""Request immediate confirmation delivery and retain its queue record."""
 	brand_name = (network.get("display_name") if network else "") or "CareverseHIMS"
 	facility_subject = _facility_email_subject_label(pricing, brand_name)
+	subject = "%s — Opt-In confirmed · Reference %s" % (facility_subject, submission.name)
+	message = _confirmation_email_html(
+		first_name, submission.name, network, pricing, signatory_name=signatory_name
+	)
+	links = []
+	if getattr(submission, "deal", None):
+		links.append(("CRM Deal", submission.deal))
+	if getattr(submission, "contract", None):
+		links.append(("CRM Contract", submission.contract))
+	communication_name = create_transactional_communication(
+		"CRM Opt-In Submission",
+		submission.name,
+		subject=subject,
+		content=message,
+		recipients=[recipient],
+		links=links,
+	)
 	queue = frappe.sendmail(
 		recipients=[recipient],
-		subject="%s — Opt-In confirmed · Reference %s" % (facility_subject, submission.name),
-		message=_confirmation_email_html(
-			first_name, submission.name, network, pricing, signatory_name=signatory_name
-		),
+		subject=subject,
+		message=message,
+		**({"communication": communication_name} if communication_name else {}),
 		reference_doctype="CRM Opt-In Submission",
 		reference_name=submission.name,
 		now=True,

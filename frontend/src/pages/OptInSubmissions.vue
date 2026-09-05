@@ -542,11 +542,9 @@ async function retry(row) {
 
 function openDeal(row) {
   if (!row.deal) return
-  // An Opt-In review should open on the lightweight Deal activity view. Respecting
-  // the last-used Deal tab here could immediately mount the quote editor, which
-  // loads quote lines, price lists, and the catalogue before the reviewer asks
-  // for them.
-  router.push({ name: 'Deal', params: { dealId: row.deal }, hash: '#activity' })
+  // Opt-In review starts at the same Quote decision surface as a direct Deal
+  // open. Explicit links from other CRM surfaces can still request Activity.
+  router.push({ name: 'Deal', params: { dealId: row.deal }, hash: '#quoting' })
 }
 
 function formatDate(d) {

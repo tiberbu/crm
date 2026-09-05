@@ -31,6 +31,7 @@ import json
 import frappe
 from frappe.utils import add_days, date_diff, getdate, nowdate
 
+from crm.api._email import create_transactional_communication
 from crm.api._timeline import log_deal_event
 from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import append_change, ensure_initial, snapshot
@@ -595,13 +596,42 @@ def send_quote(quote_name):
 	pdf_data = frappe.get_print("Quotation", quote_name, "Careverse Quote Standard", as_pdf=True)
 
 	if recipient_email:
+		subject = "Quotation %s — Tiberbu CareVerse HMIS" % quote_name
+		message = "Please find attached the quotation %s from Tiberbu Healthnet Solutions." % quote_name
+		communication_name = ""
+		if deal_name:
+			links = [("Quotation", quote_name)]
+			try:
+				ois_rows = frappe.get_list(
+					"CRM Opt-In Submission",
+					filters={"deal": deal_name},
+					fields=["name"],
+					order_by="creation desc",
+					limit=1,
+					ignore_permissions=True,  # SYSTEM-INTERNAL: activity linking
+				)
+				if ois_rows:
+					links.append(("CRM Opt-In Submission", ois_rows[0].get("name")))
+			except Exception:
+				pass
+			communication_name = create_transactional_communication(
+				"CRM Deal",
+				deal_name,
+				subject=subject,
+				content=message,
+				recipients=[recipient_email],
+				links=links,
+				attachments=[{"fname": "%s.pdf" % quote_name, "fcontent": pdf_data}],
+			)
 		frappe.sendmail(
 			recipients=[recipient_email],
-			subject="Quotation %s — Tiberbu CareVerse HMIS" % quote_name,
-			message="Please find attached the quotation %s from Tiberbu Healthnet Solutions." % quote_name,
+			subject=subject,
+			message=message,
 			attachments=[{"fname": "%s.pdf" % quote_name, "fcontent": pdf_data}],
 			sender=frappe.db.get_single_value("Email Account", "email_id") or "sales@tiberbu.com",
 			sender_full_name=rep_name,
+			**({"communication": communication_name} if communication_name else {}),
+			**({"reference_doctype": "CRM Deal", "reference_name": deal_name} if deal_name else {}),
 			now=True,
 		)
 
@@ -971,13 +1001,26 @@ def check_quote_expiry():
 
 		owner_email = frappe.db.get_value("User", deal_owner, "email")
 		if owner_email:
+			subject = "Quotation %s has expired" % q.name
+			message = (
+				"Quotation %s for customer %s expired on %s. "
+				"Please create a new version or follow up with the customer."
+				% (q.name, q.customer, q.valid_until)
+			)
+			communication_name = create_transactional_communication(
+				"CRM Deal",
+				q.crm_deal,
+				subject=subject,
+				content=message,
+				recipients=[owner_email],
+				links=[("Quotation", q.name)],
+			)
 			frappe.sendmail(
 				recipients=[owner_email],
-				subject="Quotation %s has expired" % q.name,
-				message=(
-					"Quotation %s for customer %s expired on %s. "
-					"Please create a new version or follow up with the customer."
-					% (q.name, q.customer, q.valid_until)
-				),
+				subject=subject,
+				message=message,
+				**({"communication": communication_name} if communication_name else {}),
+				reference_doctype="CRM Deal",
+				reference_name=q.crm_deal,
 				now=True,
 			)

@@ -34,7 +34,14 @@ from typing import Any
 import frappe
 from frappe import _
 
-from crm.api._email import branded_email_html, internal_signatory_reminder_html, otp_code_block
+from crm.api._email import (
+	OTP_QUEUE_REDACTION,
+	branded_email_html,
+	create_transactional_communication,
+	internal_signatory_reminder_html,
+	otp_code_block,
+	schedule_email_queue_redaction,
+)
 from crm.api._timeline import log_deal_event
 from crm.utils.jinja import render_terms_template, resolve_terms_placeholders
 from crm.utils.optin_network import set_network_link
@@ -145,6 +152,44 @@ def _contract_email_subject_label(contract_doc):
 	# Subject values are plain text; line breaks from user-supplied facility names
 	# must not be allowed to alter MIME headers.
 	return frappe.utils.cstr(label).replace("\r", " ").replace("\n", " ").strip() or "CareverseHIMS"
+
+
+def _contract_email_links(contract_doc):
+	"""Return the Deal, Contract, and latest Opt-In Submission links for email logs."""
+	deal = frappe.utils.cstr(getattr(contract_doc, "deal", "") or "").strip()
+	contract = frappe.utils.cstr(getattr(contract_doc, "name", "") or "").strip()
+	links = []
+	if contract:
+		links.append(("CRM Contract", contract))
+	if deal:
+		try:
+			rows = frappe.get_list(
+				"CRM Opt-In Submission",
+				filters={"deal": deal},
+				fields=["name"],
+				order_by="creation desc",
+				limit=1,
+				ignore_permissions=True,  # SYSTEM-INTERNAL: activity linking
+			)
+			if rows:
+				links.append(("CRM Opt-In Submission", rows[0].get("name")))
+		except Exception:
+			pass
+	return deal, links
+
+
+def _log_contract_email(contract_doc, subject, content, recipients, attachments=None):
+	"""Create one CRM-visible communication for a contract email."""
+	deal, links = _contract_email_links(contract_doc)
+	return create_transactional_communication(
+		"CRM Deal",
+		deal,
+		subject=subject,
+		content=content,
+		recipients=recipients,
+		links=links,
+		attachments=attachments,
+	)
 
 
 def _network_for_contract(contract_doc):
@@ -951,27 +996,40 @@ def _issue_and_send_invitation(contract_doc, signatory_row, commit=True, reminde
 	email_sent = False
 	try:
 		subject_prefix = "[Reminder] " if reminder else ""
+		subject = "%s%s — Contract ready for signature · Invitation ID %s" % (
+			subject_prefix,
+			facility_subject,
+			invitation_reference,
+		)
+		message = branded_email_html(
+			network,
+			heading="Contract ready for your signature",
+			intro_html=(
+				"<p style='margin:0 0 6px'>Dear %s,</p>"
+				"<p style='margin:0'>You have been asked to review and sign a "
+				"CareverseHIMS contract. Use the button below to open the secure "
+				"signing portal — you'll confirm your identity with a one-time code.</p>%s"
+				% (name, summary_html)
+			),
+			cta_label="Review & Sign Contract",
+			cta_url=link,
+			note_html=(
+				"This link expires in 7 days and is unique to you — please don't share it. "
+				"Invitation reference: <strong>%s</strong>." % invitation_reference
+			),
+		)
+		communication_name = _log_contract_email(
+			contract_doc,
+			subject,
+			"Contract invitation sent to %s. The private signing link is omitted from CRM email history."
+			% frappe.utils.escape_html(name),
+			[signatory_row.signatory_email],
+		)
 		queue = frappe.sendmail(
 			recipients=[signatory_row.signatory_email],
-			subject="%s%s — Contract ready for signature · Invitation ID %s"
-			% (subject_prefix, facility_subject, invitation_reference),
-			message=branded_email_html(
-				network,
-				heading="Contract ready for your signature",
-				intro_html=(
-					"<p style='margin:0 0 6px'>Dear %s,</p>"
-					"<p style='margin:0'>You have been asked to review and sign a "
-					"CareverseHIMS contract. Use the button below to open the secure "
-					"signing portal — you'll confirm your identity with a one-time code.</p>%s"
-					% (name, summary_html)
-				),
-				cta_label="Review & Sign Contract",
-				cta_url=link,
-				note_html=(
-					"This link expires in 7 days and is unique to you — please don't share it. "
-					"Invitation reference: <strong>%s</strong>." % invitation_reference
-				),
-			),
+			subject=subject,
+			message=message,
+			**({"communication": communication_name} if communication_name else {}),
 			now=True,
 		)
 		email_sent = True
@@ -1566,21 +1624,31 @@ def _send_fully_executed_contract(contract):
 
 			pdf_bytes = get_pdf(_build_contract_document_html(contract))
 		facility_label = _contract_email_subject_label(contract)
+		subject = "%s — Fully executed contract" % facility_label
+		message = branded_email_html(
+			_network_for_contract(contract),
+			heading="Your fully executed contract",
+			intro_html=(
+				"<p style='margin:0'>All required signatories have completed the "
+				"<strong>%s</strong> agreement. The signed PDF is attached for your records.</p>"
+				% frappe.utils.escape_html(facility_label)
+			),
+		)
+		communication_name = _log_contract_email(
+			contract,
+			subject,
+			message,
+			[recipient],
+			attachments=[{"fname": "%s-fully-executed.pdf" % contract.name, "fcontent": pdf_bytes}],
+		)
 		frappe.sendmail(
 			recipients=[recipient],
-			subject="%s — Fully executed contract" % facility_label,
-			message=branded_email_html(
-				_network_for_contract(contract),
-				heading="Your fully executed contract",
-				intro_html=(
-					"<p style='margin:0'>All required signatories have completed the "
-					"<strong>%s</strong> agreement. The signed PDF is attached for your records.</p>"
-					% frappe.utils.escape_html(facility_label)
-				),
-			),
+			subject=subject,
+			message=message,
 			attachments=[{"fname": "%s-fully-executed.pdf" % contract.name, "fcontent": pdf_bytes}],
-			reference_doctype="CRM Contract",
-			reference_name=contract.name,
+			**({"communication": communication_name} if communication_name else {}),
+			reference_doctype="CRM Deal" if contract.deal else "CRM Contract",
+			reference_name=contract.deal or contract.name,
 			now=True,
 		)
 		contract.executed_contract_sent_at = frappe.utils.now_datetime()
@@ -1678,19 +1746,23 @@ def _notify_internal_approvers(contract_name, deal_name):
 		approval_intro = approval_intro % frappe.utils.escape_html(contract_name)
 		if approver_email:
 			try:
+				subject = "%s — Contract approval required · %s" % (
+					_contract_email_subject_label(contract_doc),
+					contract_name,
+				)
+				message = branded_email_html(
+					network,
+					heading="Contract awaiting your approval",
+					intro_html=approval_intro,
+					cta_label="Sign in to review" if is_crm_user else "Open in CRM",
+					cta_url=action_url,
+				)
+				communication_name = _log_contract_email(contract_doc, subject, message, [approver_email])
 				frappe.sendmail(
 					recipients=[approver_email],
-					subject=(
-						"%s — Contract approval required · %s"
-						% (_contract_email_subject_label(contract_doc), contract_name)
-					),
-					message=branded_email_html(
-						network,
-						heading="Contract awaiting your approval",
-						intro_html=approval_intro,
-						cta_label="Sign in to review" if is_crm_user else "Open in CRM",
-						cta_url=action_url,
-					),
+					subject=subject,
+					message=message,
+					**({"communication": communication_name} if communication_name else {}),
 					now=True,
 				)
 			except Exception:
@@ -2178,6 +2250,112 @@ def generate(
 		commit=True,
 	)
 	return {"contract": result["contract"]}
+
+
+@frappe.whitelist()
+def dispatch_contract(contract: Any, recipient_email: Any, recipient_name: Any = ""):
+	"""Send a PDF copy of an existing contract to an arbitrary email address.
+
+	This is deliberately separate from ``resend_invitation``: a copied contract
+	does not rotate or expose a signatory's private signing token. The existing
+	per-signatory resend action remains the only way to issue a signing link.
+
+	Requires: Sales Manager, System Manager, or Administrator.
+	Returns: {status: "sent", email, contract, queue, communication}.
+	"""
+	_check_crm_role()
+	contract_name = frappe.utils.cstr(contract or "").strip()
+	recipient_email = frappe.utils.cstr(recipient_email or "").strip().lower()
+	recipient_name = frappe.utils.cstr(recipient_name or "").strip()
+	if not contract_name:
+		frappe.throw(_("Contract is required."), frappe.ValidationError)
+	if not recipient_email:
+		frappe.throw(_("A recipient email address is required."), frappe.ValidationError)
+	frappe.utils.validate_email_address(recipient_email, throw=True)
+	if not frappe.db.exists("CRM Contract", contract_name):
+		frappe.throw(_("Contract not found."), frappe.DoesNotExistError)
+
+	contract_doc = frappe.get_doc("CRM Contract", contract_name)
+	if getattr(contract_doc, "status", "") == "Cancelled":
+		frappe.throw(_("Cancelled contracts cannot be dispatched."), frappe.ValidationError)
+
+	try:
+		pdf_bytes = frappe.get_print(
+			"CRM Contract",
+			contract_name,
+			print_format="CRM Contract Standard",
+			as_pdf=True,
+			no_letterhead=1,
+		)
+		if not pdf_bytes:
+			raise ValueError("CRM Contract Standard returned an empty PDF")
+	except Exception:
+		try:
+			from frappe.utils.pdf import get_pdf
+
+			pdf_bytes = get_pdf(_build_contract_document_html(contract_doc))
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"contracts.dispatch_contract: PDF generation failed for %s" % contract_name,
+			)
+			frappe.throw(_("PDF generation failed."))
+
+	network = _network_for_contract(contract_doc)
+	facility_label = _contract_email_subject_label(contract_doc)
+	subject = "%s — Contract document" % facility_label
+	greeting = frappe.utils.escape_html(recipient_name or "there")
+	message = branded_email_html(
+		network,
+		heading="Contract document",
+		intro_html=(
+			"<p style='margin:0 0 6px'>Hello %s,</p>"
+			"<p style='margin:0'>Attached is the current contract document for "
+			"<strong>%s</strong>. This PDF copy does not change the contract's "
+			"configured signatories or signing links.</p>"
+			% (greeting, frappe.utils.escape_html(facility_label))
+		),
+		note_html="To sign, use the secure invitation sent to the configured signatory.",
+	)
+	attachment = {"fname": "%s.pdf" % contract_name, "fcontent": pdf_bytes}
+	communication_name = _log_contract_email(
+		contract_doc,
+		subject,
+		message,
+		[recipient_email],
+		attachments=[attachment],
+	)
+	try:
+		queue = frappe.sendmail(
+			recipients=[recipient_email],
+			subject=subject,
+			message=message,
+			attachments=[attachment],
+			**({"communication": communication_name} if communication_name else {}),
+			reference_doctype="CRM Deal" if contract_doc.deal else "CRM Contract",
+			reference_name=contract_doc.deal or contract_name,
+			now=True,
+		)
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"contracts.dispatch_contract: email failed for %s" % contract_name,
+		)
+		frappe.throw(_("The contract could not be dispatched."))
+
+	if not queue:
+		frappe.throw(_("The contract could not be queued."))
+	log_deal_event(
+		contract_doc.deal,
+		"Contract %s dispatched to %s" % (contract_name, recipient_email),
+	)
+	return {
+		"status": "sent",
+		"email": recipient_email,
+		"contract": contract_name,
+		"queue": getattr(queue, "name", ""),
+		"communication": communication_name,
+	}
 
 
 @frappe.whitelist()
@@ -3239,27 +3417,36 @@ def request_otp(contract: Any, role: Any, token: Any):
 	network = _network_for_contract(contract_doc)
 	otp_reference = _generate_invitation_email_reference()
 	facility_subject = _contract_email_subject_label(contract_doc)
+	subject = "%s — Contract verification code · OTP ID %s" % (facility_subject, otp_reference)
+	communication_name = _log_contract_email(
+		contract_doc,
+		subject,
+		"OTP content redacted from CRM email history.",
+		[signatory_row.signatory_email],
+	)
+	message = branded_email_html(
+		network,
+		heading="Verify your identity",
+		intro_html=(
+			"<p style='margin:0 0 6px'>Dear %s,</p>"
+			"<p style='margin:0'>Use the code below to sign your CareverseHIMS "
+			"contract.</p>" % frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
+		),
+		highlight_html=otp_code_block(otp, network),
+		note_html=(
+			"This code expires in 10 minutes. Do not share it with anyone. "
+			"OTP reference: <strong>%s</strong>." % otp_reference
+		),
+	)
 	try:
-		frappe.sendmail(
+		queue = frappe.sendmail(
 			recipients=[signatory_row.signatory_email],
-			subject="%s — Contract verification code · OTP ID %s" % (facility_subject, otp_reference),
-			message=branded_email_html(
-				network,
-				heading="Verify your identity",
-				intro_html=(
-					"<p style='margin:0 0 6px'>Dear %s,</p>"
-					"<p style='margin:0'>Use the code below to sign your CareverseHIMS "
-					"contract.</p>"
-					% frappe.utils.escape_html(frappe.utils.cstr(signatory_row.signatory_name))
-				),
-				highlight_html=otp_code_block(otp, network),
-				note_html=(
-					"This code expires in 10 minutes. Do not share it with anyone. "
-					"OTP reference: <strong>%s</strong>." % otp_reference
-				),
-			),
+			subject=subject,
+			message=message,
+			**({"communication": communication_name} if communication_name else {}),
 			now=True,
 		)
+		schedule_email_queue_redaction(queue, OTP_QUEUE_REDACTION)
 	except Exception:
 		frappe.log_error(
 			frappe.get_traceback(),

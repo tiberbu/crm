@@ -387,7 +387,10 @@
       />
     </div>
     <div v-else-if="title == 'Quoting'" class="h-full">
-      <QuotingTab :deal-id="docname" />
+      <QuotingTab
+        :deal-id="docname"
+        @email-dispatched="emit('email-dispatched')"
+      />
     </div>
     <EmptyState
       v-else
@@ -510,7 +513,7 @@ const props = defineProps({
   tabs: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['beforeSave', 'afterSave'])
+const emit = defineEmits(['beforeSave', 'afterSave', 'email-dispatched'])
 
 const route = useRoute()
 

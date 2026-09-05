@@ -230,6 +230,7 @@
           :tabs="tabs"
           @beforeSave="beforeStatusChange"
           @afterSave="reloadAssignees"
+          @email-dispatched="reload = true"
         />
       </template>
     </Tabs>
