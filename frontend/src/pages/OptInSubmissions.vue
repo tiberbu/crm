@@ -21,6 +21,7 @@
             ? 'border-red-600 bg-red-600 text-white'
             : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300',
         ]"
+        :aria-pressed="pendingMyAction"
         @click="togglePendingMyAction"
       >
         {{ __('Pending my action') }}
@@ -483,6 +484,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { createResource, Button } from 'frappe-ui'
+import { useStorage } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -493,7 +495,16 @@ const selectedStatus = ref('All')
 const selectedNetwork = ref('')
 const selectedFacilityLevel = ref('')
 const facilitySearch = ref('')
-const pendingMyAction = ref(route.query.pending_my_action === '1')
+const pendingMyAction = useStorage(
+  'crm:opt-in-submissions:pending-my-action',
+  false,
+)
+const pendingMyActionQuery = route.query.pending_my_action
+if (pendingMyActionQuery === '1' || pendingMyActionQuery === '0') {
+  // Explicit links (for example from an approval email) take precedence over
+  // the browser preference and become the new preference for this browser.
+  pendingMyAction.value = pendingMyActionQuery === '1'
+}
 const page = ref(0)
 const pageSize = 20
 const retrying = ref(null)
@@ -552,6 +563,17 @@ function applyFilters() {
   }
   listResource.reload()
 }
+
+watch(
+  () => route.query.pending_my_action,
+  (value, previousValue) => {
+    if (value === previousValue || (value !== '1' && value !== '0')) {
+      return
+    }
+    pendingMyAction.value = value === '1'
+    applyFilters()
+  },
+)
 
 onBeforeUnmount(() => {
   if (searchTimer) clearTimeout(searchTimer)
