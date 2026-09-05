@@ -40,7 +40,7 @@ def get_deal_lifecycle(deal: str) -> dict:
 	      "quotations":    [{"name", "year_number", "net_total", "vat_amount", "grand_total", ...}],
 	      "quotation_commitment": {"year_count", "net_total", "vat_amount", "grand_total"},
 	      "contract":      {"name", "status", "workflow_state", "price_list", "excluded_signatories"} | None,
-	      "signatories":   [{"row_name", "role", "status", "signed_at", "name", "email"}],
+	      "signatories":   [{"row_name", "role", "status", "signed_at", "name", "email", "signature_ip", "signature_device", "signature_user_agent"}],
 	      "onboarding":    {"name", "approval_status", "n1", "n2", "tiberbu"} | None,
 	      "sales_invoice": {"name", "docstatus", "outstanding"} | None,
 	    }
@@ -286,6 +286,9 @@ def _resolve_signatories(contract: str | None) -> list:
 			"name": r.signatory_name,
 			"email": r.signatory_email,
 			"phone": r.signatory_phone,
+			"signature_ip": getattr(r, "signature_ip", "") or "",
+			"signature_device": getattr(r, "signature_device", "") or "",
+			"signature_user_agent": getattr(r, "signature_user_agent", "") or "",
 		}
 		for r in doc.signatories
 	]

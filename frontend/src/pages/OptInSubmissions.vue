@@ -244,6 +244,24 @@
                   class="text-xs text-ink-gray-5"
                   >{{ formatDate(row.facility_signatory_signed_at) }}</span
                 >
+                <span
+                  v-if="
+                    row.facility_signatory_signature_ip ||
+                    row.facility_signatory_signature_device
+                  "
+                  class="max-w-56 truncate text-[11px] text-ink-gray-5"
+                  :title="
+                    row.facility_signatory_signature_user_agent || undefined
+                  "
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{
+                    row.facility_signatory_signature_ip || __('Not captured')
+                  }}
+                  <template v-if="row.facility_signatory_signature_device">
+                    · {{ row.facility_signatory_signature_device }}
+                  </template>
+                </span>
                 <div class="flex items-center gap-1.5">
                   <span class="text-xs text-ink-gray-5">{{
                     __('Witness')
@@ -261,6 +279,22 @@
                   class="text-xs text-ink-gray-5"
                   >{{ formatDate(row.facility_witness_signed_at) }}</span
                 >
+                <span
+                  v-if="
+                    row.facility_witness_signature_ip ||
+                    row.facility_witness_signature_device
+                  "
+                  class="max-w-56 truncate text-[11px] text-ink-gray-5"
+                  :title="
+                    row.facility_witness_signature_user_agent || undefined
+                  "
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ row.facility_witness_signature_ip || __('Not captured') }}
+                  <template v-if="row.facility_witness_signature_device">
+                    · {{ row.facility_witness_signature_device }}
+                  </template>
+                </span>
               </div>
             </td>
             <td class="px-4 py-3 align-top">
@@ -284,6 +318,17 @@
                     class="w-full text-xs text-ink-gray-5"
                   >
                     {{ formatDate(signatory.signed_at) }}
+                  </span>
+                  <span
+                    v-if="signatory.signature_ip || signatory.signature_device"
+                    class="w-full truncate text-[11px] text-ink-gray-5"
+                    :title="signatory.signature_user_agent || undefined"
+                  >
+                    {{ __('Audit') }} · {{ __('Public IP') }}:
+                    {{ signatory.signature_ip || __('Not captured') }}
+                    <template v-if="signatory.signature_device">
+                      · {{ signatory.signature_device }}
+                    </template>
                   </span>
                 </div>
                 <span class="text-xs font-medium text-ink-gray-6">
@@ -312,6 +357,22 @@
                   class="text-xs text-ink-gray-5"
                 >
                   {{ formatDate(row.tiberbu_signatory.signed_at) }}
+                </span>
+                <span
+                  v-if="
+                    row.tiberbu_signatory.signature_ip ||
+                    row.tiberbu_signatory.signature_device
+                  "
+                  class="max-w-56 truncate text-[11px] text-ink-gray-5"
+                  :title="
+                    row.tiberbu_signatory.signature_user_agent || undefined
+                  "
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ row.tiberbu_signatory.signature_ip || __('Not captured') }}
+                  <template v-if="row.tiberbu_signatory.signature_device">
+                    · {{ row.tiberbu_signatory.signature_device }}
+                  </template>
                 </span>
               </div>
               <span v-else class="text-xs text-ink-gray-5">

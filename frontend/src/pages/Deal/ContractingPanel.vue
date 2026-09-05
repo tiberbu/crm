@@ -338,6 +338,20 @@
                     · {{ __('{0} attempt(s)', [smsDelivery(s).attempts]) }}
                   </template>
                 </p>
+                <p
+                  v-if="
+                    isSignedStatus(s.status) &&
+                    (s.signature_ip || s.signature_device)
+                  "
+                  class="mt-0.5 truncate text-[11px] text-ink-gray-5"
+                  :title="s.signature_user_agent || undefined"
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ s.signature_ip || __('Not captured') }}
+                  <template v-if="s.signature_device">
+                    · {{ s.signature_device }}
+                  </template>
+                </p>
               </div>
               <span
                 class="ml-auto text-xs font-medium"
@@ -704,6 +718,21 @@
                   {{ __('SMS: {0}', [smsDelivery(item).status]) }}
                   <template v-if="smsDelivery(item).attempts">
                     · {{ __('{0} attempt(s)', [smsDelivery(item).attempts]) }}
+                  </template>
+                </p>
+                <p
+                  v-if="
+                    item.onContract &&
+                    isSignedStatus(item.status) &&
+                    (item.signature_ip || item.signature_device)
+                  "
+                  class="mt-0.5 truncate text-[11px] text-ink-gray-5"
+                  :title="item.signature_user_agent || undefined"
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ item.signature_ip || __('Not captured') }}
+                  <template v-if="item.signature_device">
+                    · {{ item.signature_device }}
                   </template>
                 </p>
               </div>
@@ -1244,6 +1273,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { createResource, toast, Button, Dialog } from 'frappe-ui'
 import { usersStore } from '@/stores/users'
 import { sessionStore } from '@/stores/session'
+import { collectSigningDeviceInfo } from '@/utils/signingAudit'
 import SignatureCanvas from '../ContractSigning/SignatureCanvas.vue'
 
 // ---------------------------------------------------------------------------
@@ -1365,6 +1395,7 @@ async function submitAuthenticatedSignature() {
       contract,
       role,
       signature_b64: signature,
+      device_info: JSON.stringify(collectSigningDeviceInfo()),
     })
     toast.success(__('Your signature has been recorded.'))
     closeAuthenticatedSigning()
@@ -1995,6 +2026,9 @@ const coSignatoryItems = computed(() => {
     email: r.email,
     phone: r.phone,
     status: r.status,
+    signature_ip: r.signature_ip,
+    signature_device: r.signature_device,
+    signature_user_agent: r.signature_user_agent,
     onContract: true,
   }))
   for (const cs of coSigners.value) {

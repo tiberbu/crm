@@ -278,6 +278,7 @@
 import { computed, ref } from 'vue'
 import { createResource } from 'frappe-ui'
 import { getContractSigningError } from '@/utils/contractSigningErrors'
+import { collectSigningDeviceInfo } from '@/utils/signingAudit'
 
 import ContractOtpGate from './ContractOtpGate.vue'
 import ContractView from './ContractView.vue'
@@ -363,6 +364,7 @@ async function handleSign() {
       contract: contract.value,
       role: role.value,
       signature_b64: signatureB64,
+      device_info: JSON.stringify(collectSigningDeviceInfo()),
     })
     screen.value = 'done'
   } catch (err) {

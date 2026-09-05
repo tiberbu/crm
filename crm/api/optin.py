@@ -4258,6 +4258,9 @@ def list_submissions(
 				"signatory_role",
 				"status",
 				"signed_at",
+				"signature_ip",
+				"signature_device",
+				"signature_user_agent",
 				"invite_token",
 				"invite_expiry",
 			],
@@ -4427,21 +4430,41 @@ def _submission_list_row(row, queue_statuses, contract, contract_signatories):
 	network_signatories = []
 	for signatory in contract_roles.get("Network Signatory", []):
 		network_status, network_signed_at = _counterparty_signing_state(signatory, facility_signed)
+		audit_fields = {
+			key: value
+			for key, value in {
+				"signature_ip": getattr(signatory, "signature_ip", "") or "",
+				"signature_device": getattr(signatory, "signature_device", "") or "",
+				"signature_user_agent": getattr(signatory, "signature_user_agent", "") or "",
+			}.items()
+			if value
+		}
 		network_signatories.append(
 			{
 				"name": getattr(signatory, "signatory_name", None) or _("Network signatory"),
 				"status": network_status,
 				"signed_at": network_signed_at,
+				**audit_fields,
 			}
 		)
 	tiberbu_row = (contract_roles.get("Tiberbu Signatory") or [None])[0]
 	tiberbu_signatory = None
 	if tiberbu_row:
 		tiberbu_status, tiberbu_signed_at = _counterparty_signing_state(tiberbu_row, facility_signed)
+		audit_fields = {
+			key: value
+			for key, value in {
+				"signature_ip": getattr(tiberbu_row, "signature_ip", "") or "",
+				"signature_device": getattr(tiberbu_row, "signature_device", "") or "",
+				"signature_user_agent": getattr(tiberbu_row, "signature_user_agent", "") or "",
+			}.items()
+			if value
+		}
 		tiberbu_signatory = {
 			"name": getattr(tiberbu_row, "signatory_name", None) or _("Tiberbu signatory"),
 			"status": tiberbu_status,
 			"signed_at": tiberbu_signed_at,
+			**audit_fields,
 		}
 	contract_email_status = queue_statuses.get(row.contract_invitation_email_queue)
 	if not contract_email_status:
@@ -4463,8 +4486,15 @@ def _submission_list_row(row, queue_statuses, contract, contract_signatories):
 		"contract_invitation_email_status": contract_email_status,
 		"facility_signing_status": signing_status,
 		"facility_signatory_signed_at": signed_at,
+		"facility_signatory_signature_ip": getattr(facility_signatory, "signature_ip", "") or "",
+		"facility_signatory_signature_device": getattr(facility_signatory, "signature_device", "") or "",
+		"facility_signatory_signature_user_agent": getattr(facility_signatory, "signature_user_agent", "")
+		or "",
 		"facility_witness_signing_status": witness_status,
 		"facility_witness_signed_at": witness_signed_at,
+		"facility_witness_signature_ip": getattr(facility_witness, "signature_ip", "") or "",
+		"facility_witness_signature_device": getattr(facility_witness, "signature_device", "") or "",
+		"facility_witness_signature_user_agent": getattr(facility_witness, "signature_user_agent", "") or "",
 		"network_signatories": network_signatories,
 		"tiberbu_signatory": tiberbu_signatory,
 		"facility_name": primary_facility.get("facility_name") or _("Facility not recorded"),

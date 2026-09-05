@@ -19,11 +19,15 @@ from crm.api.contracts import (
 	_issue_and_send_invitation,
 	_network_signers,
 	_notify_internal_approvers,
+	_render_certificate_page,
+	_render_signature_block,
+	_request_public_ip,
 	_required_signatures_complete,
 	_save_otp_state,
 	_send_contract_sms,
 	_send_fully_executed_contract,
 	_send_internal_signatory_reminder,
+	_signature_audit_metadata,
 	_tiberbu_signer,
 	_tiberbu_signers,
 	_transition,
@@ -1019,6 +1023,61 @@ class TestOptInTermsPrinting(UnitTestCase):
 			body = render_current_terms_for_contract(contract)
 
 		self.assertEqual(str(body), "KES 100,000.00 / 80,000.00")
+
+
+class TestSignatureAuditContext(UnitTestCase):
+	def test_public_ip_uses_frappe_resolved_request_ip(self):
+		with patch.object(frappe.local, "request_ip", "198.51.100.24", create=True):
+			self.assertEqual(_request_public_ip(), "198.51.100.24")
+
+	def test_device_context_is_bounded_and_newline_safe(self):
+		metadata = _signature_audit_metadata(
+			json.dumps(
+				{
+					"device": "Chrome\nmacOS",
+					"user_agent": "UA\r\n" + ("x" * 600),
+				}
+			)
+		)
+
+		self.assertEqual(metadata["device"], "Chrome macOS")
+		self.assertEqual(len(metadata["user_agent"]), 512)
+		self.assertNotIn("\n", metadata["user_agent"])
+		self.assertNotIn("\r", metadata["user_agent"])
+
+	def test_signature_audit_context_is_not_rendered_in_contract(self):
+		signatory = SimpleNamespace(
+			signatory_role="Facility Signatory",
+			signatory_name="Jane Signatory",
+			status="Signed",
+			signature_data="data:image/png;base64,signature",
+			signed_at=None,
+			signature_ip="203.0.113.8",
+			signature_device="Chrome · macOS · 1440×900",
+		)
+		contract = SimpleNamespace(
+			name="CONT-TEST-00003",
+			deal="DEAL-TEST-00003",
+			status="Fully Executed",
+			workflow_state="Fully Executed",
+			tc_document_hash="hash",
+			signatories=[signatory],
+		)
+
+		with patch(
+			"crm.api.contracts._network_branding",
+			return_value={
+				"display_name": "Test Network",
+				"contact_email": "",
+			},
+		):
+			body = _render_signature_block(contract, "#bc1823")
+			certificate = _render_certificate_page(contract, "#bc1823", "2026-09-05")
+
+		self.assertIn("Signed electronically", body)
+		self.assertNotIn("203.0.113.8", body + certificate)
+		self.assertNotIn("Chrome · macOS", body + certificate)
+		self.assertNotIn("IP Address", certificate)
 
 
 class TestOptInContractAutomation(UnitTestCase):
