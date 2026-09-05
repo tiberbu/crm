@@ -21,6 +21,7 @@ from frappe import _
 from frappe.utils.jinja import get_jenv
 from jinja2.exceptions import TemplateSyntaxError
 
+from crm.api._email import create_transactional_communication
 from crm.utils.optin_bundles import membership_price_lists, normalize_price_lists
 
 _OPTIN_TERMS_EXPRESSIONS = {
@@ -48,6 +49,11 @@ _OPTIN_TERMS_EXPRESSIONS = {
 	"first_invoice_offset_label",
 	"invoice_issue_timing_label",
 	"year_one_grand_total_monthly_display",
+	"bank_account_name",
+	"bank_name",
+	"bank_account_number",
+	"bank_branch",
+	"bank_gl_account",
 }
 
 
@@ -2109,3 +2115,94 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 def csv_template():
 	"""Return the CSV template as a string for download."""
 	return "mfl_code,facility_name,organization,price_list_override,keph_level,contact_name,contact_email,contact_phone\n22999,Example Hospital,Example Hospital Group,,Level 4,Jane Wanjiku,jane@hospital.co.ke,0722000000\n"
+
+
+def _submission_for_facility(network, mfl_code):
+	"""Find the newest processed OIS containing a facility MFL code."""
+	if not frappe.db.exists("DocType", "CRM Opt-In Submission"):
+		return None
+	rows = frappe.get_list(
+		"CRM Opt-In Submission",
+		filters={"network_slug": network, "status": "Processed"},
+		fields=["name", "raw_json", "deal", "contract", "submitted_at"],
+		order_by="submitted_at desc, creation desc",
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: coordinator action is scoped above
+	)
+	mfl_code = frappe.utils.cstr(mfl_code or "").strip()
+	for row in rows:
+		try:
+			payload = frappe.parse_json(row.raw_json or "{}")
+		except Exception:
+			continue
+		if not isinstance(payload, dict):
+			continue
+		facilities = payload.get("pricing") or payload.get("facilities") or payload.get("selected_facilities") or []
+		# Pricing can be a yearly-plan list; flatten its facility rows before matching.
+		if isinstance(facilities, list) and facilities and isinstance(facilities[0], dict) and facilities[0].get("facilities"):
+			facilities = [item for plan in facilities for item in (plan.get("facilities") or [])]
+		for facility in facilities if isinstance(facilities, list) else []:
+			if frappe.utils.cstr((facility or {}).get("mfl_code") or "").strip() == mfl_code:
+				return row
+	return None
+
+
+@frappe.whitelist()
+def send_payment_link(facility_name: Any, membership_name: Any = None):
+	"""Email the public invoice checkout link to an opted-in facility contact."""
+	facility_name = frappe.utils.cstr(facility_name or "").strip()
+	membership_name = frappe.utils.cstr(membership_name or "").strip()
+	if not facility_name:
+		frappe.throw(_("Facility is required."), frappe.ValidationError)
+	if membership_name:
+		membership = frappe.get_doc("CRM Facility Membership", membership_name)
+		if membership.parent != facility_name:
+			frappe.throw(_("The membership does not belong to this facility."), frappe.ValidationError)
+	else:
+		rows = frappe.get_list(
+			"CRM Facility Membership",
+			filters={"parent": facility_name, "parenttype": "CRM Pre-Qualified Facility"},
+			fields=["name"],
+			limit_page_length=1,
+			ignore_permissions=True,
+		)
+		if not rows:
+			frappe.throw(_("No network membership was found for this facility."), frappe.ValidationError)
+		membership = frappe.get_doc("CRM Facility Membership", rows[0].name)
+	_assert_network_access(membership.network)
+	if membership.status != "Opted In":
+		frappe.throw(_("A payment link is available after Opt-In is complete."), frappe.ValidationError)
+	recipient = frappe.utils.cstr(membership.contact_email or "").strip().lower()
+	if not recipient:
+		frappe.throw(_("Add a contact email before sending a payment link."), frappe.ValidationError)
+	facility = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
+	submission = _submission_for_facility(membership.network, facility.mfl_code)
+	if not submission:
+		frappe.throw(_("No processed Opt-In with open invoices was found for this facility."), frappe.ValidationError)
+	url = "%s/payment-checkout?ois=%s" % (frappe.utils.get_url(), submission.name)
+	network = frappe.db.get_value("CRM Opt-In Network", membership.network, ["display_name"], as_dict=True) or {}
+	brand = frappe.utils.escape_html(network.get("display_name") or membership.network)
+	subject = "%s — secure invoice payment link" % (network.get("display_name") or "CareverseHIMS")
+	message = (
+		"<p>Hello %s,</p><p>Use the secure link below to review and pay outstanding invoices for <strong>%s</strong>.</p>"
+		"<p><a href=\"%s\" style=\"background:#b91c1c;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none\">Review invoices and pay</a></p>"
+		"<p>The link is protected by a one-time code sent to the facility signatory.</p>"
+	) % (frappe.utils.escape_html(membership.contact_name or "there"), brand, url)
+	communication = create_transactional_communication(
+		"CRM Opt-In Submission",
+		submission.name,
+		subject=subject,
+		content="Secure invoice payment link sent to %s." % frappe.utils.escape_html(recipient),
+		recipients=[recipient],
+		links=[("CRM Deal", submission.deal)] if submission.deal else None,
+	)
+	frappe.sendmail(
+		recipients=[recipient],
+		subject=subject,
+		message=message,
+		**({"communication": communication} if communication else {}),
+		reference_doctype="CRM Opt-In Submission",
+		reference_name=submission.name,
+		now=True,
+	)
+	return {"sent_to": recipient, "submission": submission.name}

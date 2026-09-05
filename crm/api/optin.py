@@ -1966,6 +1966,18 @@ def _build_optional_services_table(optional_items):
 
 def _build_tc_context(pricing, contact, network_doc, deal=None, quote=None, date=None, optional_items=None):
 	"""Build the single, escaped context used by portal, contract and print renders."""
+	try:
+		from crm.api.checkout import _bank_details
+
+		bank_details = _bank_details()
+	except Exception:
+		bank_details = {
+			"account_name": "TIBERBU HEALTHNET LIMITED",
+			"bank": "Gulf African Bank",
+			"account_number": "0300163301",
+			"branch": "UpperHill",
+			"gl_account": "",
+		}
 	pricing = pricing or []
 	contact = contact if isinstance(contact, dict) else {}
 	network_doc = network_doc or {}
@@ -2039,6 +2051,17 @@ def _build_tc_context(pricing, contact, network_doc, deal=None, quote=None, date
 		# allowing arbitrary Jinja filters, calls, or fallback expressions.
 		"customer_name": _safe_tc_text(facility_name, "Selected facility"),
 		"customer_email_display": customer_email or "Not specified",
+		"bank_account_name": _safe_tc_text(bank_details.get("account_name"), "TIBERBU HEALTHNET LIMITED"),
+		"bank_name": _safe_tc_text(bank_details.get("bank"), "Gulf African Bank"),
+		"bank_account_number": _safe_tc_text(bank_details.get("account_number"), "0300163301"),
+		"bank_branch": _safe_tc_text(bank_details.get("branch"), "UpperHill"),
+		"bank_gl_account": _safe_tc_text(bank_details.get("gl_account")),
+		"payment_bank_details": {
+			"account_name": _safe_tc_text(bank_details.get("account_name"), "TIBERBU HEALTHNET LIMITED"),
+			"bank": _safe_tc_text(bank_details.get("bank"), "Gulf African Bank"),
+			"account_number": _safe_tc_text(bank_details.get("account_number"), "0300163301"),
+			"branch": _safe_tc_text(bank_details.get("branch"), "UpperHill"),
+		},
 		"facility": facility,
 		"facility_name": _safe_tc_text(facility_name, "Selected facility"),
 		"facility_keph_level_display": _safe_tc_text(facility.get("keph_level"), "Not specified"),
@@ -2892,6 +2915,47 @@ def _queue_confirmation_email(submission, recipient, first_name, network, pricin
 	submission.confirmation_email_queue = queue.name
 	submission.confirmation_email_queued_at = frappe.utils.now_datetime()
 	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	return queue
+
+
+def _queue_payment_link_email(submission, network):
+	"""Send the processed OIS signatory a protected link to outstanding invoices."""
+	network = network or {}
+	recipient = frappe.utils.cstr(getattr(submission, "facility_signatory_email", "") or "").strip().lower()
+	if not recipient:
+		return None
+	if getattr(submission, "payment_link_email_queue", None):
+		return None
+	url = "%s/payment-checkout?ois=%s" % (frappe.utils.get_url(), submission.name)
+	brand = frappe.utils.escape_html((network or {}).get("display_name") or "CareverseHIMS")
+	subject = "%s — secure invoice payment link · %s" % (network.get("display_name") or "CareverseHIMS", submission.name)
+	message = (
+		"<p>Hello %s,</p>"
+		"<p>Your Opt-In is complete. Use the secure link below to review any submitted invoices and choose Paystack or bank transfer.</p>"
+		"<p><a href=\"%s\" style=\"background:#b91c1c;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600\">Review invoices and pay</a></p>"
+		"<p>You will verify access with a one-time code sent to this signatory email. Bank transfers remain pending until finance reconciles them.</p>"
+	) % (brand, url)
+	communication = create_transactional_communication(
+		"CRM Opt-In Submission",
+		submission.name,
+		subject=subject,
+		content="Secure invoice payment link sent to the facility signatory.",
+		recipients=[recipient],
+		links=[("CRM Deal", submission.deal)] if getattr(submission, "deal", None) else None,
+	)
+	queue = frappe.sendmail(
+		recipients=[recipient],
+		subject=subject,
+		message=message,
+		**({"communication": communication} if communication else {}),
+		reference_doctype="CRM Opt-In Submission",
+		reference_name=submission.name,
+		now=True,
+	)
+	if queue and frappe.db.has_column("CRM Opt-In Submission", "payment_link_email_queue"):
+		submission.payment_link_email_queue = queue.name
+		submission.payment_link_email_queued_at = frappe.utils.now_datetime()
+		submission.save(ignore_permissions=True)
 	return queue
 
 
@@ -4019,6 +4083,9 @@ def _process_submission(submission_ref):
 		# ── Mark submission complete ──────────────────────────────────────────
 		sub.status = "Processed"
 		sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		# Give the facility signatory a direct path to invoices. The link itself is
+		# harmless without the OTP, which is sent only to the stored signatory email.
+		_queue_payment_link_email(sub, network)
 		frappe.db.commit()
 
 		data = _get_job_progress(submission_ref) or {}

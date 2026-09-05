@@ -1,0 +1,13 @@
+<!doctype html>
+<html class="h-full" lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CareverseHIMS — Invoice Payment</title>
+    <script>window.csrf_token = {{ (csrf_token or '') | tojson }};</script>
+    {{ checkout_head | safe }}
+  </head>
+  <body class="h-full">
+    <div id="payment-checkout-app" class="h-full" data-ois="{{ checkout_ois }}"></div>
+  </body>
+</html>

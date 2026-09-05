@@ -151,6 +151,7 @@ export default defineConfig(async ({ mode }) => {
     'finance-cockpit': path.resolve(__dirname, 'finance-cockpit.html'),
     'opt-in': path.resolve(__dirname, 'opt-in.html'),
     'sign-contract': path.resolve(__dirname, 'sign-contract.html'),
+    'payment-checkout': path.resolve(__dirname, 'payment-checkout.html'),
   }
 
   return config
