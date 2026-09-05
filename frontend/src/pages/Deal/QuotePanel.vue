@@ -50,60 +50,6 @@
       </div>
     </div>
 
-    <!-- Commercial provenance is kept separate from editable line items so the
-         original and negotiated lists remain obvious after a switch. -->
-    <section
-      v-if="data?.initial_price_list || data?.price_list_history?.length"
-      class="mb-8 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2"
-      aria-label="Price list history"
-    >
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p
-            class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
-          >
-            {{ __('Price list history') }}
-          </p>
-          <p class="mt-1 text-sm text-ink-gray-7">
-            {{ __('Initial:') }}
-            <span class="font-semibold text-ink-gray-9">{{
-              data.initial_price_list || '—'
-            }}</span>
-            <span class="mx-1 text-ink-gray-4">→</span>
-            {{ __('Negotiated:') }}
-            <span class="font-semibold text-ink-gray-9">{{
-              data.price_list || '—'
-            }}</span>
-          </p>
-        </div>
-        <span
-          class="rounded-full bg-surface-white px-2.5 py-1 text-xs font-medium text-ink-gray-6 shadow-sm dark:bg-surface-gray-3"
-        >
-          {{ __('Read-only audit') }}
-        </span>
-      </div>
-      <ol
-        v-if="data.price_list_history?.length"
-        class="mt-3 space-y-2 border-l border-outline-gray-2 pl-3"
-      >
-        <li
-          v-for="(event, index) in data.price_list_history"
-          :key="`${event.at}-${index}`"
-          class="text-xs text-ink-gray-6"
-        >
-          <span class="font-medium text-ink-gray-8">{{
-            event.from ? `${event.from} → ${event.to}` : event.to
-          }}</span>
-          <span v-if="event.at" class="ml-2 text-ink-gray-4">{{
-            event.at
-          }}</span>
-          <span v-if="event.by" class="ml-2 text-ink-gray-5">
-            · {{ __('Changed by {0}', [event.by]) }}
-          </span>
-        </li>
-      </ol>
-    </section>
-
     <!-- Card -->
     <div
       class="overflow-hidden rounded-xl border border-outline-gray-2 bg-surface-white dark:bg-surface-gray-1"

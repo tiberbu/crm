@@ -99,51 +99,6 @@
           @loaded="onContractLoaded"
         />
 
-        <!-- The signer sees the commercial provenance next to the agreement,
-             before authorising it. This is read-only and intentionally excludes
-             internal source identifiers. -->
-        <section
-          v-if="priceListSummary.initial || priceListSummary.history?.length"
-          class="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50"
-          aria-label="Contract schedule history"
-        >
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
-                Contract schedule history
-              </h2>
-              <p class="mt-1 text-sm text-gray-700 dark:text-gray-200">
-                Original: <strong>{{ priceListSummary.initial || '—' }}</strong>
-                <span class="mx-1 text-gray-400">→</span>
-                Agreed:
-                <strong>{{ priceListSummary.negotiated || '—' }}</strong>
-              </p>
-            </div>
-            <span
-              class="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300"
-            >
-              Read-only record
-            </span>
-          </div>
-          <ol
-            v-if="priceListSummary.history?.length"
-            class="mt-3 space-y-2 border-l border-gray-200 pl-3 dark:border-gray-700"
-          >
-            <li
-              v-for="(event, index) in priceListSummary.history"
-              :key="`${event.at}-${index}`"
-              class="text-xs text-gray-600 dark:text-gray-300"
-            >
-              <span class="font-medium text-gray-800 dark:text-gray-100">{{
-                event.from ? `${event.from} → ${event.to}` : event.to
-              }}</span>
-              <span v-if="event.at" class="ml-2 text-gray-400">{{
-                event.at
-              }}</span>
-            </li>
-          </ol>
-        </section>
-
         <!-- Read & authorisation checkbox -->
         <div class="mt-5 flex items-start gap-3">
           <input
@@ -304,7 +259,6 @@ const signatoryName = ref('')
 
 // Data carried from ContractView to success screen
 const contractDate = ref('')
-const priceListSummary = ref({ initial: '', negotiated: '', history: [] })
 const signingProgress = ref([])
 const signedProgressCount = computed(
   () =>
@@ -339,17 +293,11 @@ function onContractLoaded({
   signatoryName: sn,
   contractDate: cd,
   signingProgress: progress,
-  priceListSummary: pricing,
 }) {
   // ContractView may provide richer name/date than OTP verify
   if (sn) signatoryName.value = sn
   if (cd) contractDate.value = cd
   signingProgress.value = Array.isArray(progress) ? progress : []
-  priceListSummary.value = {
-    initial: pricing?.initial || '',
-    negotiated: pricing?.negotiated || '',
-    history: Array.isArray(pricing?.history) ? pricing.history : [],
-  }
 }
 
 async function handleSign() {
