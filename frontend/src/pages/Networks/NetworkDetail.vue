@@ -844,6 +844,15 @@
                     >{{ __('Sample quote') }}</Button
                   >
                   <Button
+                    v-if="isOptedIn(row)"
+                    size="sm"
+                    variant="subtle"
+                    :loading="sendingPaymentLink === row.name"
+                    :disabled="!networkMembership(row)?.contact_email"
+                    @click="sendPaymentLink(row)"
+                    >{{ __('Send payment link') }}</Button
+                  >
+                  <Button
                     size="sm"
                     variant="subtle"
                     :loading="
@@ -1723,6 +1732,10 @@ const sampleQuoteFacility = ref(null)
 const sampleQuoteResource = createResource({
   url: 'crm.api.optin_admin.get_facility_sample_quote',
 })
+const sendPaymentLinkResource = createResource({
+  url: 'crm.api.optin_admin.send_payment_link',
+})
+const sendingPaymentLink = ref(null)
 
 function formatKes(value) {
   return `KES ${Number(value || 0).toLocaleString(undefined, {
@@ -1767,6 +1780,27 @@ function facilityContractScheduleLabel() {
 
 function isOptedIn(row) {
   return networkMembership(row)?.status === 'Opted In'
+}
+
+async function sendPaymentLink(row) {
+  const membership = networkMembership(row)
+  if (!membership?.contact_email) return
+  sendingPaymentLink.value = row.name
+  try {
+    const result = await sendPaymentLinkResource.submit({
+      facility_name: row.name,
+      membership_name: membership.name,
+    })
+    toast.success(__('Payment link sent to {0}', [result?.sent_to || membership.contact_email]))
+  } catch (error) {
+    toast.error(
+      error?.messages?.[0] ??
+        error?.message ??
+        __('Could not send payment link'),
+    )
+  } finally {
+    sendingPaymentLink.value = null
+  }
 }
 
 // ── Add / Edit contact form ────────────────────────────────────────────────

@@ -14,7 +14,10 @@ def execute():
 		"Email Queue",
 		filters=[
 			["status", "in", ["Sent", "Partially Sent", "Error"]],
-			["subject", "like", "%verification code%"],
+			# Email Queue stores the rendered subject inside ``message`` on Frappe
+			# 17; it has no subject column. Keep this migration compatible with both
+			# schemas while targeting the existing OTP wording.
+			["message", "like", "%verification code%"],
 		],
 		fields=["name"],
 		limit_page_length=0,

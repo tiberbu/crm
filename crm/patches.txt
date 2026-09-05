@@ -62,3 +62,5 @@ crm.patches.v1_0.refresh_contract_totals_placeholders_v1
 crm.patches.v1_0.configure_contract_print_format_v1
 crm.patches.v1_0.configure_network_invoice_timing_v1
 crm.patches.v1_0.redact_otp_email_queue
+crm.patches.v1_0.seed_checkout_payment_settings
+crm.patches.v1_0.refresh_checkout_bank_details_terms_v1
