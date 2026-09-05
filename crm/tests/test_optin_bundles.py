@@ -6,6 +6,7 @@ from crm.utils.optin_bundles import (
 	add_months,
 	billing_schedule,
 	effective_year_price_list,
+	invoice_issue_timing,
 	normalize_price_lists,
 )
 
@@ -52,3 +53,16 @@ class TestOptInBundleHelpers(UnitTestCase):
 		prefixed = billing_schedule(date(2026, 1, 31), [1], 3, key_prefix="OIS-1")
 		self.assertEqual(prefixed[0]["billing_key"], "OIS-1-Y1-Q1")
 		self.assertEqual(add_months(date(2028, 2, 29), 12), date(2029, 2, 28))
+
+	def test_invoice_issue_timing_prefers_signature_rule_and_keeps_legacy_fallback(self):
+		self.assertEqual(
+			invoice_issue_timing({"invoice_on_contract_signature": 1}),
+			{
+				"mode": "contract_signature",
+				"label": "on contract signature",
+			},
+		)
+		self.assertEqual(
+			invoice_issue_timing({"first_invoice_offset_months": 2})["label"],
+			"2 months after Opt-In submission",
+		)

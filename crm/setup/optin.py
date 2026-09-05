@@ -796,7 +796,8 @@ def _default_terms_template():
 	  technology_delivery_partner_role,
 	  pricing_table (safe HTML <table>), contract_totals.*_display aliases,
 	  commitment_years, commitment_years_label,
-	  first_invoice_offset_label, year_one_grand_total_monthly_display,
+	  first_invoice_offset_label, invoice_issue_timing_label,
+	  year_one_grand_total_monthly_display,
 	  optional_services_table (safe HTML table of
 	  the customer's informational selections).
 	"""
@@ -846,7 +847,7 @@ selected term unless amended in writing by both parties.</p>
 
 <h4>3. Payment</h4>
 <p>Fees are invoiced quarterly in Kenya Shillings (KES). The first invoice is
-issued {{ first_invoice_offset_label }} after the Opt-In submission date; each
+issued {{ invoice_issue_timing_label }}; each
 invoice is payable within thirty (30) days
 of its invoice date. Late payments may attract suspension of service after a
 fourteen (14) day cure period.</p>

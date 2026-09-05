@@ -44,6 +44,7 @@ from crm.utils.optin_bundles import (
 	billing_schedule,
 	decode_json,
 	effective_year_price_list,
+	invoice_issue_timing,
 	normalize_price_lists,
 )
 from crm.utils.optin_network import set_network_link
@@ -261,7 +262,12 @@ def _get_network_doc(network_slug):
 				fields.append(field)
 		except Exception:
 			pass
-	for field in ("price_lists_json", "first_invoice_offset_months", "optional_services_price_list"):
+	for field in (
+		"price_lists_json",
+		"first_invoice_offset_months",
+		"invoice_on_contract_signature",
+		"optional_services_price_list",
+	):
 		try:
 			if frappe.db.has_column("CRM Opt-In Network", field):
 				fields.append(field)
@@ -1861,6 +1867,7 @@ def _build_tc_context(pricing, contact, network_doc, deal=None, quote=None, date
 	)
 	commitment_years = max(year_numbers) if year_numbers else 1
 	first_invoice_offset_months = frappe.utils.cint(network_doc.get("first_invoice_offset_months") or 3) or 3
+	invoice_timing = invoice_issue_timing(network_doc, first_invoice_offset_months)
 	unique_facilities = {
 		frappe.utils.cstr(row.get("mfl_code") or row.get("facility_name") or "").strip()
 		for row in safe_pricing
@@ -1916,6 +1923,7 @@ def _build_tc_context(pricing, contact, network_doc, deal=None, quote=None, date
 		"first_invoice_offset_months": first_invoice_offset_months,
 		"first_invoice_offset_label": "%s month%s"
 		% (first_invoice_offset_months, "" if first_invoice_offset_months == 1 else "s"),
+		"invoice_issue_timing_label": invoice_timing["label"],
 		"year_one_grand_total_monthly_display": _fmt_kes(primary_year_monthly_tax.grand_total),
 		"pricing_table": _build_pricing_table(pricing),
 		"optional_services": safe_optional_items,
@@ -3139,16 +3147,21 @@ def _store_submission_bundle(submission, payload, primary_quote, plans):
 	if frappe.db.has_column("CRM Opt-In Submission", "billing_schedule_json"):
 		network = _get_network_doc(submission.network_slug) or {}
 		offset = frappe.utils.cint(network.get("first_invoice_offset_months") or 3) or 3
+		timing = invoice_issue_timing(network, offset)
 		submitted_at = submission.submitted_at or frappe.utils.now_datetime()
-		submission.billing_schedule_json = json.dumps(
-			billing_schedule(
-				submitted_at,
-				[p.get("year_number") for p in plans],
-				offset,
-				key_prefix=submission.name,
-			),
-			default=str,
+		schedule = billing_schedule(
+			submitted_at,
+			[p.get("year_number") for p in plans],
+			offset,
+			key_prefix=submission.name,
 		)
+		for row in schedule:
+			row.update(
+				{
+					"invoice_issue_timing": timing["mode"],
+				}
+			)
+		submission.billing_schedule_json = json.dumps(schedule, default=str)
 	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	return quote_names
 
