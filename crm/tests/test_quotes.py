@@ -6,6 +6,7 @@ from frappe.tests import UnitTestCase
 
 from crm.api.quotes import (
 	_facility_signatory_has_signed,
+	_group_billing_schedule_by_year,
 	_normalise_quote_totals,
 	get_quote_lines,
 	list_catalogue_items,
@@ -17,6 +18,27 @@ from crm.utils.quotation_tax import calculate_vat_totals, quotation_tax_summary
 
 
 class TestQuoteLoadBatching(UnitTestCase):
+	def test_billing_schedule_is_grouped_by_year(self):
+		schedule = [
+			{"year_number": 1, "quarter_number": 1},
+			{"year_number": 2, "quarter_number": 1},
+			{"year_number": 1, "quarter_number": 2},
+			{"year_number": "invalid", "quarter_number": 3},
+		]
+
+		result = _group_billing_schedule_by_year(schedule)
+
+		self.assertEqual(
+			result,
+			{
+				1: [
+					{"year_number": 1, "quarter_number": 1},
+					{"year_number": 1, "quarter_number": 2},
+				],
+				2: [{"year_number": 2, "quarter_number": 1}],
+			},
+		)
+
 	def test_quote_totals_repair_a_legacy_net_only_grand_total(self):
 		row = frappe._dict({"net_total": 100_000, "vat_amount": 16_000, "grand_total": 100_000})
 		with patch("crm.api.quotes.quotation_tax_summary", side_effect=Exception("legacy quote")):

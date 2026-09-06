@@ -292,7 +292,7 @@
                   : 'border-outline-gray-2 hover:bg-surface-gray-1 dark:hover:bg-surface-gray-2'
               "
               :aria-pressed="primaryQuoteName === q.name"
-              @click="selectOisQuote(q.name)"
+              @click="openOisSchedule(q.name)"
             >
               <div class="flex items-center justify-between gap-2">
                 <span class="text-sm font-semibold text-ink-gray-9">
@@ -325,8 +325,8 @@
             >
               <span>{{
                 showOisInvoiceDialog && expandedOisSchedule === q.name
-                  ? __('Close invoice breakdown')
-                  : __('View invoice breakdown')
+                  ? __('Close schedule')
+                  : __('View schedule & invoices')
               }}</span>
               <span aria-hidden="true">{{
                 showOisInvoiceDialog && expandedOisSchedule === q.name
@@ -340,39 +340,160 @@
 
       <Dialog
         v-model="showOisInvoiceDialog"
-        :options="{ title: invoiceBreakdownTitle, size: 'lg' }"
+        :options="{ title: invoiceBreakdownTitle, size: '4xl' }"
       >
         <template #body-content>
           <div
             v-if="expandedOisScheduleQuote"
             id="quote-invoice-breakdown-dialog"
-            class="max-h-[65vh] overflow-y-auto"
+            class="max-h-[78vh] overflow-y-auto pr-1"
           >
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p class="text-sm text-ink-gray-6">
-                  {{
-                    __(
-                      'Quarterly billing · each invoice is due 30 days after its invoice date.',
-                    )
-                  }}
-                </p>
-                <p class="mt-1 text-xs text-ink-gray-5">
-                  {{ __('First invoice:') }}
-                  {{ firstInvoiceLabel(expandedOisScheduleQuote) }}.
-                </p>
+            <div
+              class="rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-4 dark:bg-surface-gray-2 sm:p-5"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p
+                    class="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-gray-5"
+                  >
+                    {{ __('Contract timeline') }}
+                  </p>
+                  <div class="mt-1 flex flex-wrap items-center gap-2">
+                    <h3
+                      class="text-2xl font-bold tracking-tight text-ink-gray-9"
+                    >
+                      {{
+                        __('Year {0}', [
+                          quoteYear(
+                            expandedOisScheduleQuote,
+                            quotes.indexOf(expandedOisScheduleQuote),
+                          ),
+                        ])
+                      }}
+                    </h3>
+                    <span :class="pillClass(expandedOisScheduleQuote)">
+                      {{ __(expandedOisScheduleQuote.status) }}
+                    </span>
+                  </div>
+                  <p class="mt-1 text-sm text-ink-gray-6">
+                    {{
+                      __(
+                        'Four quarterly invoices · each due 30 days after issue.',
+                      )
+                    }}
+                  </p>
+                </div>
+                <div class="min-w-[180px] text-left sm:text-right">
+                  <p
+                    class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
+                  >
+                    {{ __('Year total · incl. VAT') }}
+                  </p>
+                  <p class="mt-1 text-xl font-bold text-ink-gray-9">
+                    {{ fmtKes(expandedOisScheduleQuote.grand_total) }}
+                  </p>
+                </div>
               </div>
-              <div class="text-right">
-                <p class="text-sm font-semibold text-ink-gray-9">
-                  {{ fmtKes(expandedOisScheduleQuote.grand_total) }}
-                  {{ __('incl. VAT') }}
-                </p>
+
+              <div
+                class="mt-4 grid gap-3 border-t border-outline-elevation-2 pt-4 sm:grid-cols-[1fr_auto] sm:items-end"
+              >
+                <div>
+                  <p
+                    class="text-[11px] font-semibold uppercase tracking-wide text-ink-gray-5"
+                  >
+                    {{ __('Quotation reference') }}
+                  </p>
+                  <div class="mt-1 flex items-center gap-2">
+                    <code
+                      class="rounded bg-surface-white px-2 py-1 text-sm font-semibold text-ink-gray-8 dark:bg-surface-gray-1"
+                    >
+                      {{ expandedOisScheduleQuote.name }}
+                    </code>
+                    <button
+                      type="button"
+                      class="inline-flex h-7 items-center gap-1 rounded-md border border-outline-gray-2 bg-surface-white px-2 text-xs font-medium text-ink-gray-6 transition-colors hover:border-outline-gray-4 hover:text-ink-gray-9 dark:bg-surface-gray-1"
+                      :aria-label="__('Copy quotation reference')"
+                      @click="copyToClipboard(expandedOisScheduleQuote.name)"
+                    >
+                      <span aria-hidden="true">⧉</span>
+                      {{ __('Copy') }}
+                    </button>
+                  </div>
+                </div>
+                <div class="text-left sm:text-right">
+                  <p
+                    class="text-[11px] font-semibold uppercase tracking-wide text-ink-gray-5"
+                  >
+                    {{ __('First invoice') }}
+                  </p>
+                  <p class="mt-1 text-sm font-medium text-ink-gray-8">
+                    {{ firstInvoiceLabel(expandedOisScheduleQuote) }}
+                  </p>
+                </div>
+              </div>
+
+              <div
+                v-if="quotes.length > 1"
+                class="mt-5 border-t border-outline-elevation-2 pt-4"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <p
+                    class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+                  >
+                    {{ __('Agreement years') }}
+                  </p>
+                  <p class="text-xs text-ink-gray-5">
+                    {{ __('Select a year to compare its billing schedule.') }}
+                  </p>
+                </div>
+                <div class="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <button
+                    v-for="(yearQuote, yearIndex) in quotes"
+                    :key="`schedule-year-${yearQuote.name}`"
+                    type="button"
+                    class="rounded-lg border px-3 py-2 text-left transition-colors"
+                    :class="
+                      expandedOisSchedule === yearQuote.name
+                        ? 'border-outline-red-4 bg-surface-white dark:bg-surface-gray-1'
+                        : 'border-outline-gray-2 hover:bg-surface-white dark:hover:bg-surface-gray-1'
+                    "
+                    :aria-pressed="expandedOisSchedule === yearQuote.name"
+                    @click="openOisSchedule(yearQuote.name)"
+                  >
+                    <span class="block text-sm font-semibold text-ink-gray-9">
+                      {{ __('Year {0}', [quoteYear(yearQuote, yearIndex)]) }}
+                    </span>
+                    <span
+                      class="mt-0.5 block truncate text-[11px] text-ink-gray-5"
+                    >
+                      {{ yearQuote.name }}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-5">
+              <div class="flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <p class="text-sm font-semibold text-ink-gray-9">
+                    {{ __('Months covered') }}
+                  </p>
+                  <p class="mt-0.5 text-xs text-ink-gray-5">
+                    {{
+                      __(
+                        'Each quarter owns a distinct three-month window in this contract year.',
+                      )
+                    }}
+                  </p>
+                </div>
                 <p
                   v-if="
                     expandedOisScheduleQuote.invoice_schedule?.[0]
                       ?.monthly_incl_vat
                   "
-                  class="mt-0.5 text-xs text-ink-gray-5"
+                  class="text-xs text-ink-gray-5"
                 >
                   {{ __('Monthly equivalent:') }}
                   {{
@@ -383,56 +504,145 @@
                   }}
                 </p>
               </div>
-            </div>
-
-            <div class="mt-4 space-y-2">
               <div
-                v-for="row in expandedOisScheduleQuote.invoice_schedule || []"
-                :key="
-                  row.billing_key ||
-                  `${expandedOisScheduleQuote.name}-${row.quarter_number}`
-                "
-                class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+                class="mt-3 grid overflow-hidden rounded-xl border border-outline-gray-2 bg-surface-white dark:bg-surface-gray-1 sm:grid-cols-4"
               >
-                <div class="flex items-center justify-between gap-3">
-                  <span class="text-sm font-semibold text-ink-gray-8">
+                <div
+                  v-for="(
+                    row, rowIndex
+                  ) in expandedOisScheduleQuote.invoice_schedule || []"
+                  :key="`month-${row.billing_key || rowIndex}`"
+                  class="border-b border-outline-elevation-2 p-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
+                >
+                  <p class="text-xs font-bold text-ink-gray-9">
                     {{
                       row.period_label ||
                       __('Quarter {0}', [row.quarter_number])
                     }}
-                  </span>
-                  <span class="text-sm font-semibold text-ink-gray-9">
-                    {{ fmtKes(row.amount_incl_vat) }}
-                  </span>
+                  </p>
+                  <p class="mt-1 text-xs font-medium text-ink-blue-6">
+                    {{ scheduleMonthLabel(row) }}
+                  </p>
                 </div>
-                <div
-                  class="mt-2 grid gap-1 text-xs text-ink-gray-5 sm:grid-cols-2"
-                >
-                  <span>{{
-                    __('Invoice date: {0}', [formatDate(row.invoice_date)])
-                  }}</span>
-                  <span class="sm:text-right">
+              </div>
+            </div>
+
+            <div class="mt-5">
+              <div class="flex items-end justify-between gap-2">
+                <div>
+                  <p class="text-sm font-semibold text-ink-gray-9">
+                    {{ __('Quarterly billing schedule') }}
+                  </p>
+                  <p class="mt-0.5 text-xs text-ink-gray-5">
                     {{
-                      __('Due: {0} · 30 days later', [
-                        formatDate(row.invoice_due_date),
-                      ])
+                      __(
+                        'Invoice IDs appear as billing is issued. Copy an ID for finance follow-up.',
+                      )
                     }}
-                  </span>
+                  </p>
                 </div>
-                <p class="mt-1 text-xs text-ink-gray-5">
-                  {{ fmtKes(row.amount_excl_vat) }} {{ __('excl. VAT') }}
+                <span class="text-xs font-medium text-ink-gray-5">
+                  {{ (expandedOisScheduleQuote.invoice_schedule || []).length }}
+                  {{ __('quarters') }}
+                </span>
+              </div>
+
+              <div
+                class="mt-3 overflow-hidden rounded-xl border border-outline-gray-2 bg-surface-white dark:bg-surface-gray-1"
+              >
+                <article
+                  v-for="(
+                    row, rowIndex
+                  ) in expandedOisScheduleQuote.invoice_schedule || []"
+                  :key="
+                    row.billing_key ||
+                    `${expandedOisScheduleQuote.name}-${row.quarter_number}`
+                  "
+                  class="grid gap-4 border-b border-outline-elevation-2 p-4 last:border-b-0 sm:grid-cols-[150px_1fr_190px]"
+                >
+                  <div
+                    class="sm:border-r sm:border-outline-elevation-2 sm:pr-4"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="flex h-7 w-7 items-center justify-center rounded-full bg-surface-gray-2 text-xs font-bold text-ink-gray-7 dark:bg-surface-gray-3"
+                      >
+                        {{ row.quarter_number || rowIndex + 1 }}
+                      </span>
+                      <span class="text-sm font-semibold text-ink-gray-9">
+                        {{
+                          row.period_label ||
+                          __('Quarter {0}', [row.quarter_number])
+                        }}
+                      </span>
+                    </div>
+                    <p class="mt-2 text-xs font-medium text-ink-blue-6">
+                      {{ scheduleMonthLabel(row) }}
+                    </p>
+                  </div>
+                  <div>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <span class="text-base font-bold text-ink-gray-9">
+                        {{ fmtKes(row.amount_incl_vat) }}
+                      </span>
+                      <span class="text-xs text-ink-gray-5">
+                        {{ fmtKes(row.amount_excl_vat) }} {{ __('excl. VAT') }}
+                      </span>
+                    </div>
+                    <div
+                      class="mt-2 grid gap-1 text-xs text-ink-gray-5 sm:grid-cols-2"
+                    >
+                      <span>{{
+                        __('Issue: {0}', [formatDate(row.invoice_date)])
+                      }}</span>
+                      <span class="sm:text-right">{{
+                        __('Due: {0}', [formatDate(row.invoice_due_date)])
+                      }}</span>
+                    </div>
+                  </div>
+                  <div class="sm:text-right">
+                    <p
+                      class="text-[11px] font-semibold uppercase tracking-wide text-ink-gray-5"
+                    >
+                      {{ __('Invoice ID') }}
+                    </p>
+                    <div
+                      v-if="invoiceId(row)"
+                      class="mt-1 flex items-center gap-2 sm:justify-end"
+                    >
+                      <code
+                        class="truncate rounded bg-surface-gray-1 px-2 py-1 text-xs font-semibold text-ink-gray-8 dark:bg-surface-gray-2"
+                      >
+                        {{ invoiceId(row) }}
+                      </code>
+                      <button
+                        type="button"
+                        class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-outline-gray-2 bg-surface-white px-2 text-xs font-medium text-ink-gray-6 transition-colors hover:border-outline-gray-4 hover:text-ink-gray-9 dark:bg-surface-gray-1"
+                        :aria-label="__('Copy invoice ID')"
+                        @click="copyToClipboard(invoiceId(row))"
+                      >
+                        <span aria-hidden="true">⧉</span>
+                        {{ __('Copy') }}
+                      </button>
+                    </div>
+                    <span v-else class="mt-1 block text-xs text-ink-gray-4">
+                      {{ __('Not issued yet') }}
+                    </span>
+                  </div>
+                </article>
+                <p
+                  v-if="
+                    !(expandedOisScheduleQuote.invoice_schedule || []).length
+                  "
+                  class="p-5 text-sm text-ink-gray-5"
+                >
+                  {{
+                    __(
+                      'Invoice dates will appear after the Opt-In schedule is created.',
+                    )
+                  }}
                 </p>
               </div>
-              <p
-                v-if="!(expandedOisScheduleQuote.invoice_schedule || []).length"
-                class="text-xs text-ink-gray-5"
-              >
-                {{
-                  __(
-                    'Invoice dates will appear after the Opt-In schedule is created.',
-                  )
-                }}
-              </p>
             </div>
           </div>
         </template>
@@ -963,6 +1173,7 @@ import { useRoute } from 'vue-router'
 import { createResource, Button, Dialog, FormControl, toast } from 'frappe-ui'
 import ContractingPanel from './ContractingPanel.vue'
 import QuotePanel from './QuotePanel.vue'
+import { copyToClipboard } from '@/utils'
 
 const props = defineProps({
   dealId: { type: String, required: true },
@@ -1069,6 +1280,11 @@ function toggleOisSchedule(quoteName) {
     showOisInvoiceDialog.value = false
     return
   }
+  openOisSchedule(quoteName)
+}
+
+function openOisSchedule(quoteName) {
+  selectOisQuote(quoteName)
   expandedOisSchedule.value = quoteName
   showOisInvoiceDialog.value = true
 }
@@ -1108,6 +1324,26 @@ function firstInvoiceLabel(quote) {
     if (days) return `${days} ${__('days after submission')}`
   }
   return __('about 90 days after submission')
+}
+
+function invoiceId(row) {
+  return row?.sales_invoice || row?.invoice_name || row?.invoice_id || ''
+}
+
+function scheduleMonthLabel(row) {
+  const raw = String(row?.invoice_date || '').trim()
+  const start = new Date(
+    /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw,
+  )
+  if (Number.isNaN(start.getTime())) return __('Months not scheduled')
+
+  const end = new Date(start)
+  end.setMonth(end.getMonth() + 2)
+  const month = new Intl.DateTimeFormat('en-GB', { month: 'short' })
+  const year = new Intl.DateTimeFormat('en-GB', { year: 'numeric' })
+  const startYear = year.format(start)
+  const endYear = year.format(end)
+  return `${month.format(start)}–${month.format(end)}${startYear === endYear ? ` ${startYear}` : ` ${startYear}/${endYear}`}`
 }
 
 // ── Email applicant ───────────────────────────────────────────────────────────

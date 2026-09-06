@@ -60,6 +60,7 @@ def _normalise_quote_totals(row):
 	"""
 	if not any(fieldname in row for fieldname in ("net_total", "vat_amount", "total_taxes_and_charges")):
 		return row
+
 	try:
 		summary = quotation_tax_summary(row)
 		row["net_total"] = summary.net_total
@@ -80,6 +81,21 @@ def _normalise_quote_totals(row):
 		row["vat_amount"] = vat_amount
 		row["grand_total"] = grand_total
 		return row
+
+
+def _group_billing_schedule_by_year(schedules):
+	"""Keep each quotation's schedule limited to its contractual year."""
+	grouped = {}
+	for item in schedules or []:
+		if not isinstance(item, dict):
+			continue
+		try:
+			year = int(item.get("year_number") or 0)
+		except (TypeError, ValueError):
+			continue
+		if year > 0:
+			grouped.setdefault(year, []).append(item)
+	return grouped
 
 
 def _is_admin(roles):
@@ -438,11 +454,7 @@ def list_quotes(deal):
 						schedules = json.loads(submission.get("billing_schedule_json") or "[]")
 					except (TypeError, ValueError, json.JSONDecodeError):
 						schedules = []
-					_schedule_by_year[submission.name] = {
-						int(item.get("year_number")): [item for item in schedules if isinstance(item, dict)]
-						for item in schedules
-						if isinstance(item, dict) and int(item.get("year_number") or 0) > 0
-					}
+					_schedule_by_year[submission.name] = _group_billing_schedule_by_year(schedules)
 		except Exception:
 			# Schedule presentation is additive; a legacy/mid-migration site should
 			# still be able to load its Quote list.
