@@ -20,9 +20,16 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
-from crm.api._email import OTP_QUEUE_REDACTION, create_transactional_communication, schedule_email_queue_redaction
+from crm.api._email import (
+	OTP_QUEUE_REDACTION,
+	branded_email_html,
+	create_transactional_communication,
+	otp_code_block,
+	schedule_email_queue_redaction,
+)
 
 OTP_TTL_SECONDS = 10 * 60
+OTP_RESEND_COOLDOWN_SECONDS = 60
 SESSION_TTL_SECONDS = 30 * 60
 MAX_OTP_ATTEMPTS = 5
 
@@ -91,27 +98,36 @@ def _network_for_submission(submission) -> dict:
 	rows = frappe.get_list(
 		"CRM Opt-In Network",
 		filters={"name": submission.network_slug},
-		fields=["name", "display_name", "primary_colour", "logo_url"],
+		fields=["name", "display_name", "primary_colour", "logo_url", "contact_email", "footer_legal_name"],
 		limit_page_length=1,
 		ignore_permissions=True,
 	)
 	return rows[0] if rows else {}
 
 
-def _send_payment_otp(submission, otp):
+def _send_payment_otp(submission, otp, request_id=None):
 	recipient = _submission_email(submission)
 	if not recipient:
 		return False
 	network = _network_for_submission(submission)
-	brand = frappe.utils.escape_html(network.get("display_name") or "CareverseHIMS")
-	message = (
-		"<div style='font-family:Arial,sans-serif;max-width:560px;margin:auto'>"
-		"<h2>%s payment verification</h2>"
-		"<p>Your one-time code is <strong style='font-size:24px;letter-spacing:4px'>%s</strong>.</p>"
-		"<p>This code expires in 10 minutes. If you did not request invoice access, ignore this email.</p>"
-		"</div>"
-	) % (brand, frappe.utils.escape_html(otp))
-	subject = "%s — invoice payment verification code" % (network.get("display_name") or "CareverseHIMS")
+	brand = network.get("display_name") or "CareverseHIMS"
+	request_id = _normalise(request_id) or secrets.token_hex(4).upper()
+	message = branded_email_html(
+		network,
+		heading="Your secure payment code",
+		intro_html=(
+			"<p style='margin:0'>Use this six-digit code to securely review invoices and make a payment. "
+			"It is valid for 10 minutes.</p>"
+		),
+		highlight_html=otp_code_block(otp, network),
+		note_html=(
+			"For your security, do not share this code. If you did not request access to invoice payment, "
+			"you can safely ignore this email."
+		),
+	)
+	# The request id deliberately prevents mail clients from grouping separate OTPs
+	# into one conversation, without exposing the OTP itself in notification previews.
+	subject = "%s — secure payment code · %s · %s" % (brand, submission.name, request_id)
 	communication = create_transactional_communication(
 		"CRM Opt-In Submission",
 		submission.name,
@@ -239,15 +255,38 @@ def request_payment_otp(ois_number: Any):
 	count = int(frappe.cache().get_value(rate_key) or 0)
 	if count >= 5:
 		return {"sent": True, "message": _("If the OIS is eligible, a code was sent to its facility signatory.")}
-	frappe.cache().set_value(rate_key, count + 1, expires_in_sec=10 * 60)
 	submission = _get_submission(ois)
 	email = _submission_email(submission) if submission else ""
 	if submission and email and getattr(submission, "status", "") == "Processed":
+		now = int(time.time())
+		otp_key = _cache_key("otp", "%s:%s" % (submission.name, email))
+		existing = frappe.cache().get_value(otp_key)
+		if existing:
+			try:
+				state = frappe.parse_json(existing)
+			except Exception:
+				state = {}
+			# A duplicate click or retry must keep the original code usable instead
+			# of delivering two competing codes to the same inbox.
+			if (
+				int(state.get("expires_at") or 0) > now
+				and now - int(state.get("sent_at") or 0) < OTP_RESEND_COOLDOWN_SECONDS
+			):
+				return {"sent": True, "message": _("If the OIS is eligible, a code was sent to its facility signatory.")}
+	frappe.cache().set_value(rate_key, count + 1, expires_in_sec=10 * 60)
+	if submission and email and getattr(submission, "status", "") == "Processed":
 		otp = "%06d" % secrets.randbelow(1_000_000)
-		payload = {"ois_number": submission.name, "email": email, "otp_hash": _hash_otp(otp), "expires_at": int(time.time()) + OTP_TTL_SECONDS, "attempts": 0}
-		frappe.cache().set_value(_cache_key("otp", "%s:%s" % (submission.name, email)), json.dumps(payload), expires_in_sec=OTP_TTL_SECONDS)
+		payload = {
+			"ois_number": submission.name,
+			"email": email,
+			"otp_hash": _hash_otp(otp),
+			"expires_at": now + OTP_TTL_SECONDS,
+			"sent_at": now,
+			"attempts": 0,
+		}
+		frappe.cache().set_value(otp_key, json.dumps(payload), expires_in_sec=OTP_TTL_SECONDS)
 		try:
-			_send_payment_otp(submission, otp)
+			_send_payment_otp(submission, otp, request_id=secrets.token_hex(4).upper())
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "CRM checkout OTP delivery failed")
 	return {"sent": True, "message": _("If the OIS is eligible, a code was sent to its facility signatory.")}

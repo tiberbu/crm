@@ -21,7 +21,7 @@ from frappe import _
 from frappe.utils.jinja import get_jenv
 from jinja2.exceptions import TemplateSyntaxError
 
-from crm.api._email import create_transactional_communication
+from crm.api._email import branded_email_html, create_transactional_communication
 from crm.utils.optin_bundles import membership_price_lists, normalize_price_lists
 
 _OPTIN_TERMS_EXPRESSIONS = {
@@ -2178,16 +2178,38 @@ def send_payment_link(facility_name: Any, membership_name: Any = None):
 	facility = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
 	submission = _submission_for_facility(membership.network, facility.mfl_code)
 	if not submission:
-		frappe.throw(_("No processed Opt-In with open invoices was found for this facility."), frappe.ValidationError)
+		frappe.throw(_("No completed Opt-In was found for this facility."), frappe.ValidationError)
 	url = "%s/payment-checkout?ois=%s" % (frappe.utils.get_url(), submission.name)
-	network = frappe.db.get_value("CRM Opt-In Network", membership.network, ["display_name"], as_dict=True) or {}
-	brand = frappe.utils.escape_html(network.get("display_name") or membership.network)
-	subject = "%s — secure invoice payment link" % (network.get("display_name") or "CareverseHIMS")
-	message = (
-		"<p>Hello %s,</p><p>Use the secure link below to review and pay outstanding invoices for <strong>%s</strong>.</p>"
-		"<p><a href=\"%s\" style=\"background:#b91c1c;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none\">Review invoices and pay</a></p>"
-		"<p>The link is protected by a one-time code sent to the facility signatory.</p>"
-	) % (frappe.utils.escape_html(membership.contact_name or "there"), brand, url)
+	network = (
+		frappe.db.get_value(
+			"CRM Opt-In Network",
+			membership.network,
+			["display_name", "primary_colour", "logo_url", "contact_email", "footer_legal_name"],
+			as_dict=True,
+		)
+		or {}
+	)
+	brand = network.get("display_name") or membership.network or "CareverseHIMS"
+	subject = "%s — secure invoice payment link · %s" % (brand, submission.name)
+	message = branded_email_html(
+		network,
+		heading="Your secure invoice payment link",
+		intro_html=(
+			"<p style='margin:0 0 8px'>Hello %s,</p>"
+			"<p style='margin:0'>Use this protected link to review invoices for <strong>%s</strong>. "
+			"You will verify access with a one-time code sent to the facility signatory.</p>"
+		)
+		% (
+			frappe.utils.escape_html(membership.contact_name or "there"),
+			frappe.utils.escape_html(facility.facility_name or "your facility"),
+		),
+		cta_label="Review invoices and pay",
+		cta_url=url,
+		note_html=(
+			"The link is safe to keep. Payment options appear only after a submitted invoice is ready; "
+			"bank transfers remain pending until finance reconciles them."
+		),
+	)
 	communication = create_transactional_communication(
 		"CRM Opt-In Submission",
 		submission.name,

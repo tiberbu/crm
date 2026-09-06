@@ -3,7 +3,10 @@
 The public `/payment-checkout` page accepts an OIS reference, sends a one-time
 code to the facility signatory stored on that OIS, and only then lists submitted
 Sales Invoices with an outstanding balance. The page supports hosted Paystack
-checkout and manual bank transfer.
+checkout and manual bank transfer. Duplicate OTP requests reuse the existing
+code during the one-minute resend cooldown, so a double click cannot deliver two
+competing codes. Each OTP email also has a unique mail subject and uses the
+network-branded transactional email layout.
 
 Paystack is server-authoritative: the browser is redirected to Paystack and the
 transaction is verified (and also accepted through the signed webhook) before a
@@ -26,9 +29,12 @@ seeds ERPNext's native accounting records where installed:
 - KES bank account and Bank Transfer/Paystack modes of payment
 
 Paystack keys are intentionally blank and must be configured by a System
-Manager. The Network Detail → Prequalified Contacts table can send the same
-protected link to the stored opted-in contact, and completed OIS submissions
-automatically send it to the facility signatory.
+Manager. The Network Detail → Prequalified Contacts table always shows the
+**Send payment link** action: it becomes available after Opt-In and a contact
+email are present. The action is intentionally not gated on an invoice. It sends
+the protected link now, while clearly explaining that payment options appear
+only after a submitted invoice is ready. Completed OIS submissions also
+automatically send the link to the facility signatory.
 
 The same seeded destination is available to Terms & Conditions and contract
 renderers as `{{ bank_account_name }}`, `{{ bank_name }}`,

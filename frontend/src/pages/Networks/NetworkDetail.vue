@@ -843,15 +843,23 @@
                     @click="viewSampleQuote(row)"
                     >{{ __('Sample quote') }}</Button
                   >
-                  <Button
-                    v-if="isOptedIn(row)"
-                    size="sm"
-                    variant="subtle"
-                    :loading="sendingPaymentLink === row.name"
-                    :disabled="!networkMembership(row)?.contact_email"
-                    @click="sendPaymentLink(row)"
-                    >{{ __('Send payment link') }}</Button
-                  >
+                  <div class="flex max-w-[13rem] flex-col items-end gap-1">
+                    <Button
+                      size="sm"
+                      variant="subtle"
+                      :loading="sendingPaymentLink === row.name"
+                      :disabled="!canSendPaymentLink(row)"
+                      :title="paymentLinkHelp(row)"
+                      @click="sendPaymentLink(row)"
+                      >{{ __('Send payment link') }}</Button
+                    >
+                    <p
+                      class="text-right text-[11px] leading-4 text-ink-gray-5"
+                      :class="{ 'text-ink-amber-7': isOptedIn(row) }"
+                    >
+                      {{ paymentLinkHelp(row) }}
+                    </p>
+                  </div>
                   <Button
                     size="sm"
                     variant="subtle"
@@ -1782,9 +1790,23 @@ function isOptedIn(row) {
   return networkMembership(row)?.status === 'Opted In'
 }
 
+function canSendPaymentLink(row) {
+  return isOptedIn(row) && Boolean(networkMembership(row)?.contact_email)
+}
+
+function paymentLinkHelp(row) {
+  if (!isOptedIn(row)) {
+    return __('Complete Opt-In before a protected payment link can be sent.')
+  }
+  if (!networkMembership(row)?.contact_email) {
+    return __('Add a contact email before sending the payment link.')
+  }
+  return __('The link can be sent now. Payment unlocks when a submitted invoice is ready.')
+}
+
 async function sendPaymentLink(row) {
   const membership = networkMembership(row)
-  if (!membership?.contact_email) return
+  if (!canSendPaymentLink(row)) return
   sendingPaymentLink.value = row.name
   try {
     const result = await sendPaymentLinkResource.submit({

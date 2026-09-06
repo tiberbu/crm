@@ -41,6 +41,7 @@ from frappe import _
 
 from crm.api._email import (
 	OTP_QUEUE_REDACTION,
+	branded_email_html,
 	create_transactional_communication,
 	schedule_email_queue_redaction,
 )
@@ -2927,14 +2928,22 @@ def _queue_payment_link_email(submission, network):
 	if getattr(submission, "payment_link_email_queue", None):
 		return None
 	url = "%s/payment-checkout?ois=%s" % (frappe.utils.get_url(), submission.name)
-	brand = frappe.utils.escape_html((network or {}).get("display_name") or "CareverseHIMS")
-	subject = "%s — secure invoice payment link · %s" % (network.get("display_name") or "CareverseHIMS", submission.name)
-	message = (
-		"<p>Hello %s,</p>"
-		"<p>Your Opt-In is complete. Use the secure link below to review any submitted invoices and choose Paystack or bank transfer.</p>"
-		"<p><a href=\"%s\" style=\"background:#b91c1c;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600\">Review invoices and pay</a></p>"
-		"<p>You will verify access with a one-time code sent to this signatory email. Bank transfers remain pending until finance reconciles them.</p>"
-	) % (brand, url)
+	brand = (network or {}).get("display_name") or "CareverseHIMS"
+	subject = "%s — secure invoice payment link · %s" % (brand, submission.name)
+	message = branded_email_html(
+		network,
+		heading="Your secure invoice payment link",
+		intro_html=(
+			"<p style='margin:0'>Your Opt-In is complete. Use this protected link to review any submitted "
+			"invoices and choose online payment or bank transfer.</p>"
+		),
+		cta_label="Review invoices and pay",
+		cta_url=url,
+		note_html=(
+			"You will verify access with a one-time code sent to this signatory email. Payment options "
+			"appear when a submitted invoice is ready; bank transfers remain pending until finance reconciles them."
+		),
+	)
 	communication = create_transactional_communication(
 		"CRM Opt-In Submission",
 		submission.name,
