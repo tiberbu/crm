@@ -24,6 +24,40 @@
     </header>
 
     <div class="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 sm:py-12">
+      <nav class="mx-auto mb-8 max-w-xl" aria-label="Payment steps">
+        <ol
+          class="grid grid-cols-3 gap-2 border-y border-outline-gray-2 py-4 text-xs"
+        >
+          <li
+            v-for="step in checkoutSteps"
+            :key="step.key"
+            class="flex items-center gap-2"
+            :class="[
+              stepStatus(step.key) === 'done'
+                ? 'font-medium text-ink-green-8'
+                : stepStatus(step.key) === 'active'
+                  ? 'font-semibold text-ink-gray-9'
+                  : 'text-ink-gray-5',
+            ]"
+          >
+            <span
+              class="flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold"
+              :class="[
+                stepStatus(step.key) === 'done'
+                  ? 'border-green-200 bg-green-50 text-green-700'
+                  : stepStatus(step.key) === 'active'
+                    ? 'border-ink-gray-8 bg-ink-gray-9 text-white'
+                    : 'border-outline-gray-3 bg-surface-white text-ink-gray-5',
+              ]"
+              aria-hidden="true"
+            >
+              {{ stepStatus(step.key) === 'done' ? '✓' : step.index }}
+            </span>
+            <span>{{ step.label }}</span>
+          </li>
+        </ol>
+      </nav>
+
       <section v-if="!sessionToken && !otpSent" class="mx-auto max-w-xl">
         <p
           class="text-xs font-semibold uppercase tracking-[0.16em] text-ink-gray-5"
@@ -38,19 +72,8 @@
           code to the facility signatory before showing payment details.
         </p>
 
-        <ol
-          class="mt-8 grid grid-cols-3 gap-2 border-y border-outline-gray-2 py-4 text-xs text-ink-gray-5"
-          aria-label="Payment steps"
-        >
-          <li class="font-medium text-ink-gray-8">
-            <span class="mr-1.5 text-ink-gray-4">1</span>Reference
-          </li>
-          <li><span class="mr-1.5 text-ink-gray-4">2</span>Verify</li>
-          <li><span class="mr-1.5 text-ink-gray-4">3</span>Pay</li>
-        </ol>
-
         <form
-          class="mt-8 border border-outline-gray-2 bg-surface-white p-5 shadow-sm sm:p-7"
+          class="border border-outline-gray-2 bg-surface-white p-5 shadow-sm sm:p-7"
           @submit.prevent="requestOtp"
         >
           <div class="flex items-start gap-3">
@@ -98,6 +121,11 @@
             class="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-ink-gray-9 px-4 py-3 text-sm font-semibold text-white transition hover:bg-ink-gray-8 focus:outline-none focus:ring-2 focus:ring-ink-gray-5 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             :disabled="requestingOtp || !oisNumber.trim()"
           >
+            <span
+              v-if="requestingOtp"
+              class="mr-2 size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+              aria-hidden="true"
+            />
             {{
               requestingOtp
                 ? 'Sending secure code…'
@@ -107,7 +135,12 @@
         </form>
       </section>
 
-      <section v-else-if="!sessionToken && otpSent" class="mx-auto max-w-xl">
+      <section
+        v-else-if="
+          !sessionToken && otpSent && !verifyingOtp && !checkoutLoading
+        "
+        class="mx-auto max-w-xl"
+      >
         <button
           type="button"
           class="text-sm font-medium text-ink-gray-6 underline underline-offset-4 hover:text-ink-gray-9"
@@ -165,8 +198,19 @@
               maxlength="6"
               autocomplete="one-time-code"
               placeholder="000000"
+              :disabled="verifyingOtp"
+              :aria-busy="verifyingOtp"
               @input="sanitizeOtp"
             />
+            <p
+              class="mt-3 text-center text-xs text-ink-gray-5"
+              :class="otpExpiresIn === 0 ? 'text-ink-red-6' : ''"
+            >
+              <template v-if="otpExpiresIn > 0">
+                Code expires in {{ formatCountdown(otpExpiresIn) }}
+              </template>
+              <template v-else>Code expired. Request a new code.</template>
+            </p>
             <p
               v-if="errorMessage"
               class="mt-4 rounded-lg border border-outline-red-2 bg-surface-red-1 px-3 py-2.5 text-sm text-ink-red-7"
@@ -177,9 +221,14 @@
             <button
               type="submit"
               class="mt-5 inline-flex w-full items-center justify-center rounded-lg bg-ink-gray-9 px-4 py-3 text-sm font-semibold text-white transition hover:bg-ink-gray-8 focus:outline-none focus:ring-2 focus:ring-ink-gray-5 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="verifyingOtp || otp.length < 6"
+              :disabled="verifyingOtp || otp.length < 6 || otpExpiresIn === 0"
             >
-              {{ verifyingOtp ? 'Verifying…' : 'View invoices' }}
+              <span
+                v-if="verifyingOtp"
+                class="mr-2 size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                aria-hidden="true"
+              />
+              {{ verifyingOtp ? 'Verifying securely…' : 'View invoices' }}
             </button>
           </form>
 
@@ -194,11 +243,61 @@
               <template v-if="resendIn > 0"
                 >Request another code in {{ resendIn }}s</template
               >
-              <template v-else>{{
-                requestingOtp ? 'Sending code…' : 'Request another code'
-              }}</template>
+              <template v-else>
+                <span
+                  v-if="requestingOtp"
+                  class="mr-1 inline-block size-3 animate-spin rounded-full border border-ink-gray-3 border-t-ink-gray-8 align-[-1px]"
+                  aria-hidden="true"
+                />
+                {{ requestingOtp ? 'Sending code…' : 'Request another code' }}
+              </template>
             </button>
           </div>
+        </div>
+      </section>
+
+      <section
+        v-else-if="verifyingOtp || checkoutLoading"
+        class="mx-auto max-w-xl"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <div
+          class="border border-outline-gray-2 bg-surface-white px-6 py-12 text-center shadow-sm sm:px-10"
+        >
+          <div
+            class="mx-auto flex size-14 items-center justify-center rounded-full bg-surface-gray-2"
+            aria-hidden="true"
+          >
+            <span
+              class="size-7 animate-spin rounded-full border-2 border-outline-gray-3 border-t-ink-gray-8"
+            />
+          </div>
+          <p
+            class="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-ink-gray-5"
+          >
+            {{ verifyingOtp ? 'Step 2 of 3' : 'Step 3 of 3' }}
+          </p>
+          <h1 class="mt-2 text-2xl font-semibold tracking-tight">
+            {{ verifyingOtp ? 'Verifying your code' : 'Loading your invoices' }}
+          </h1>
+          <p class="mx-auto mt-3 max-w-md text-sm leading-6 text-ink-gray-6">
+            {{
+              verifyingOtp
+                ? 'We’re checking the code and unlocking your protected payment record.'
+                : 'Your secure payment session is ready. We’re loading the latest invoice details.'
+            }}
+          </p>
+          <div
+            class="mx-auto mt-7 h-1.5 max-w-xs overflow-hidden rounded-full bg-surface-gray-2"
+          >
+            <div
+              class="h-full w-2/3 animate-pulse rounded-full bg-ink-gray-8"
+            />
+          </div>
+          <p class="mt-3 text-xs text-ink-gray-5">
+            Please keep this window open.
+          </p>
         </div>
       </section>
 
@@ -313,10 +412,15 @@
               <button
                 v-if="paystack.enabled"
                 type="button"
-                class="inline-flex justify-center rounded-lg bg-ink-gray-9 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-gray-8 disabled:cursor-not-allowed disabled:opacity-50"
+                class="inline-flex items-center justify-center rounded-lg bg-ink-gray-9 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-gray-8 disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="Boolean(paying)"
                 @click="payWithPaystack(invoice)"
               >
+                <span
+                  v-if="paying === invoice.name"
+                  class="mr-2 size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                  aria-hidden="true"
+                />
                 {{
                   paying === invoice.name
                     ? 'Opening secure payment…'
@@ -406,9 +510,14 @@
                 />
                 <button
                   type="submit"
-                  class="rounded-lg bg-ink-gray-9 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-gray-8 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="inline-flex items-center justify-center rounded-lg bg-ink-gray-9 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-gray-8 disabled:cursor-not-allowed disabled:opacity-50"
                   :disabled="reportingTransfer || !transferReference.trim()"
                 >
+                  <span
+                    v-if="reportingTransfer"
+                    class="mr-2 size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                    aria-hidden="true"
+                  />
                   {{
                     reportingTransfer
                       ? 'Submitting…'
@@ -434,10 +543,16 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createResource } from 'frappe-ui'
 
 const OTP_RESEND_COOLDOWN_SECONDS = 60
+const OTP_EXPIRES_SECONDS = 10 * 60
+const checkoutSteps = [
+  { key: 'reference', label: 'Reference', index: 1 },
+  { key: 'verify', label: 'Verify', index: 2 },
+  { key: 'pay', label: 'Pay', index: 3 },
+]
 
 const props = defineProps({ initialOis: { type: String, default: '' } })
 const oisNumber = ref(
@@ -451,16 +566,19 @@ const sessionToken = ref('')
 const checkout = ref(null)
 const requestingOtp = ref(false)
 const verifyingOtp = ref(false)
+const checkoutLoading = ref(false)
 const reportingTransfer = ref(false)
 const paying = ref('')
 const errorMessage = ref('')
 const callbackMessage = ref('')
 const otpStatusMessage = ref('')
 const resendIn = ref(0)
+const otpExpiresIn = ref(0)
 const transferInvoice = ref(null)
 const transferReference = ref('')
 
 let resendTimer
+let otpExpiryTimer
 
 const requestOtpResource = createResource({
   url: 'crm.api.checkout.request_payment_otp',
@@ -490,6 +608,21 @@ const brandColor = computed(() => {
   const colour = network.value.primary_colour
   return /^#[0-9a-f]{6}$/i.test(colour || '') ? colour : '#b91c1c'
 })
+
+const checkoutStage = computed(() => {
+  if (sessionToken.value && !verifyingOtp.value) return 'pay'
+  return otpSent.value ? 'verify' : 'reference'
+})
+
+function stepStatus(stepKey) {
+  const order = { reference: 0, verify: 1, pay: 2 }
+  const current = order[checkoutStage.value]
+  const step = order[stepKey]
+  if (step < current) return 'done'
+  if (step === current) return 'active'
+  return 'pending'
+}
+
 function friendlyError(error) {
   return (
     error?.messages?.[0] ||
@@ -507,8 +640,24 @@ function startResendCountdown() {
   }, 1000)
 }
 
+function startOtpExpiryCountdown() {
+  window.clearInterval(otpExpiryTimer)
+  otpExpiresIn.value = OTP_EXPIRES_SECONDS
+  otpExpiryTimer = window.setInterval(() => {
+    otpExpiresIn.value = Math.max(otpExpiresIn.value - 1, 0)
+    if (!otpExpiresIn.value) window.clearInterval(otpExpiryTimer)
+  }, 1000)
+}
+
+function formatCountdown(seconds) {
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return minutes + ':' + String(remainder).padStart(2, '0')
+}
+
 function sanitizeOtp() {
   otp.value = otp.value.replace(/\D/g, '').slice(0, 6)
+  errorMessage.value = ''
 }
 
 async function requestOtp() {
@@ -527,6 +676,9 @@ async function requestOtp() {
     otpSent.value = true
     otpStatusMessage.value = 'A verification code was requested.'
     startResendCountdown()
+    startOtpExpiryCountdown()
+    await nextTick()
+    document.getElementById('payment-otp')?.focus()
   } catch (error) {
     errorMessage.value = friendlyError(error)
   } finally {
@@ -536,6 +688,11 @@ async function requestOtp() {
 
 async function verifyOtp() {
   if (verifyingOtp.value || otp.value.length < 6) return
+  if (!otpExpiresIn.value) {
+    errorMessage.value =
+      'This code has expired. Request a new code to continue.'
+    return
+  }
 
   verifyingOtp.value = true
   errorMessage.value = ''
@@ -550,28 +707,38 @@ async function verifyOtp() {
       sessionToken.value,
     )
     checkout.value = result
-    await loadCheckout()
+    await loadCheckout({ showLoading: true })
   } catch (error) {
+    sessionStorage.removeItem('crm-checkout:' + oisNumber.value.trim())
+    sessionToken.value = ''
+    checkout.value = null
     errorMessage.value = friendlyError(error)
   } finally {
     verifyingOtp.value = false
   }
 }
 
-async function loadCheckout() {
-  const result = await checkoutResource.submit({
-    session_token: sessionToken.value,
-  })
-  checkout.value = result
-  const reference = new URLSearchParams(window.location.search).get('reference')
-  if (reference) {
-    const payment = await verifyPaystackResource.submit({
+async function loadCheckout({ showLoading = false } = {}) {
+  if (showLoading) checkoutLoading.value = true
+  try {
+    const result = await checkoutResource.submit({
       session_token: sessionToken.value,
-      reference,
     })
-    callbackMessage.value = payment.paid
-      ? `Payment received for ${payment.invoice}.`
-      : 'Payment is still being confirmed. Refresh shortly.'
+    checkout.value = result
+    const reference = new URLSearchParams(window.location.search).get(
+      'reference',
+    )
+    if (reference) {
+      const payment = await verifyPaystackResource.submit({
+        session_token: sessionToken.value,
+        reference,
+      })
+      callbackMessage.value = payment.paid
+        ? `Payment received for ${payment.invoice}.`
+        : 'Payment is still being confirmed. Refresh shortly.'
+    }
+  } finally {
+    if (showLoading) checkoutLoading.value = false
   }
 }
 
@@ -626,6 +793,7 @@ async function reportTransfer(invoice) {
 function reset() {
   sessionStorage.removeItem(`crm-checkout:${oisNumber.value.trim()}`)
   window.clearInterval(resendTimer)
+  window.clearInterval(otpExpiryTimer)
   sessionToken.value = ''
   otpSent.value = false
   checkout.value = null
@@ -634,6 +802,7 @@ function reset() {
   callbackMessage.value = ''
   otpStatusMessage.value = ''
   resendIn.value = 0
+  otpExpiresIn.value = 0
   transferInvoice.value = null
   transferReference.value = ''
 }
@@ -661,13 +830,19 @@ onMounted(async () => {
   const saved = sessionStorage.getItem(`crm-checkout:${oisNumber.value.trim()}`)
   if (!saved || !oisNumber.value.trim()) return
   sessionToken.value = saved
+  checkoutLoading.value = true
   try {
     await loadCheckout()
   } catch {
     sessionStorage.removeItem(`crm-checkout:${oisNumber.value.trim()}`)
     sessionToken.value = ''
+  } finally {
+    checkoutLoading.value = false
   }
 })
 
-onBeforeUnmount(() => window.clearInterval(resendTimer))
+onBeforeUnmount(() => {
+  window.clearInterval(resendTimer)
+  window.clearInterval(otpExpiryTimer)
+})
 </script>
