@@ -4708,7 +4708,7 @@ def _dashboard_facilities(payload):
 			continue
 		# MFL is the stable identity. Older submissions did not always retain it,
 		# so use a conservative name + KEPH fallback rather than dropping history.
-		identity = mfl_code or "%s|%s" % (facility_name.lower(), level.lower())
+		identity = _dashboard_facility_identity(mfl_code, facility_name, level)
 		rows.append(
 			{
 				"identity": identity,
@@ -4719,6 +4719,17 @@ def _dashboard_facilities(payload):
 			}
 		)
 	return rows
+
+
+def _dashboard_facility_identity(mfl_code, facility_name, level):
+	"""Return the facility identity shared by roster and submission aggregates."""
+	mfl_code = frappe.utils.cstr(mfl_code or "").strip()
+	if mfl_code:
+		return mfl_code
+	return "%s|%s" % (
+		frappe.utils.cstr(facility_name or "").strip().lower(),
+		frappe.utils.cstr(level or "Unspecified").strip().lower(),
+	)
 
 
 def _dashboard_datetime(value):
@@ -4878,10 +4889,17 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 	# memberships are read, so this remains safe for Sales User visibility.
 	prequalified_facilities = frappe.get_list(
 		"CRM Pre-Qualified Facility",
-		fields=["name"],
+		fields=["name", "mfl_code", "facility_name", "keph_level"],
 		limit_page_length=0,
 	)
 	prequalified_names = [row.name for row in prequalified_facilities if row.name]
+	roster_identity_by_facility = {
+		row.name: _dashboard_facility_identity(
+			row.get("mfl_code"), row.get("facility_name"), row.get("keph_level")
+		)
+		for row in prequalified_facilities
+		if row.name
+	}
 	membership_rows = []
 	if prequalified_names:
 		membership_filters = {
@@ -4890,10 +4908,16 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 		}
 		if network_slug:
 			membership_filters["network"] = network_slug
+		membership_fields = ["parent", "network"]
+		try:
+			if frappe.db.has_column("CRM Facility Membership", "go_live"):
+				membership_fields.append("go_live")
+		except Exception:
+			pass
 		membership_rows = frappe.get_list(
 			"CRM Facility Membership",
 			filters=membership_filters,
-			fields=["parent", "network"],
+			fields=membership_fields,
 			ignore_permissions=True,  # SYSTEM-INTERNAL: parent facilities were permission scoped above
 			limit_page_length=0,
 		)
@@ -4978,10 +5002,15 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 		status_counts[submission.status] = status_counts.get(submission.status, 0) + 1
 
 	eligible_facilities_by_network = defaultdict(set)
+	go_live_facilities_by_network = defaultdict(set)
 	for membership in membership_rows:
 		network = frappe.utils.cstr(membership.network or "").strip()
 		if network and membership.parent:
 			eligible_facilities_by_network[network].add(membership.parent)
+			if frappe.utils.cint(membership.get("go_live")):
+				identity = roster_identity_by_facility.get(membership.parent)
+				if identity:
+					go_live_facilities_by_network[network].add(identity)
 
 	signing_counts = {
 		"No contract": 0,
@@ -4993,7 +5022,9 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 		"Fully executed": 0,
 	}
 	trend = {}
-	facility_levels = defaultdict(lambda: {"facilities": 0, "annual_value": 0.0})
+	facility_levels = defaultdict(
+		lambda: {"facilities": 0, "signed_facilities": 0, "annual_value": 0.0}
+	)
 	networks = defaultdict(
 		lambda: {"submissions": 0, "processed": 0, "facilities": 0, "annual_value": 0.0, "signed": 0}
 	)
@@ -5085,6 +5116,8 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 		for facility in facilities:
 			level = facility["level"]
 			facility_levels[level]["facilities"] += 1
+			if contract_progress["facility"]["complete"]:
+				facility_levels[level]["signed_facilities"] += 1
 			facility_levels[level]["annual_value"] += facility["annual_value"]
 			networks[network]["facilities"] += 1
 			network_facility_sets[network]["opted_in"].add(facility["identity"])
@@ -5175,6 +5208,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 				"network_signatories": contract_progress["network"],
 				"tiberbu_signatories": contract_progress["tiberbu"],
 				"fully_executed": contract_progress["fully_executed"],
+				"go_live": facility["identity"] in go_live_facilities_by_network[network],
 				"completed_at": all_signed_at,
 				"end_to_end_hours": end_to_end_hours,
 			}
@@ -5210,6 +5244,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 		{
 			"level": level,
 			"facilities": values["facilities"],
+			"signed_facilities": values["signed_facilities"],
 			"annual_value": round(values["annual_value"], 2),
 			"share": round(values["facilities"] / total_facilities * 100, 1) if total_facilities else 0,
 		}
@@ -5246,10 +5281,12 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 			if values["processed"]
 			else 0,
 			"eligible_facilities": len(eligible_facilities_by_network[network]),
+			"invited_facilities": len(eligible_facilities_by_network[network]),
 			"submitted_facilities": len(network_facility_sets[network]["submitted"]),
 			"opted_in_facilities": len(network_facility_sets[network]["opted_in"]),
 			"facility_signed_facilities": len(network_facility_sets[network]["facility_signed"]),
 			"fully_executed_facilities": len(network_facility_sets[network]["fully_executed"]),
+			"go_live_facilities": len(go_live_facilities_by_network[network]),
 			"submitted_rate": _dashboard_percentage(
 				len(network_facility_sets[network]["submitted"]),
 				len(eligible_facilities_by_network[network]),
@@ -5266,6 +5303,8 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 		for network, values in networks.items()
 	]
 	network_rows.sort(key=lambda row: (-row["opted_in_facilities"], -row["annual_value"], row["network"]))
+	total_invited_facilities = sum(len(eligible_facilities_by_network[network]) for network in all_networks)
+	total_go_live_facilities = sum(len(go_live_facilities_by_network[network]) for network in all_networks)
 	attention.sort(key=lambda row: str(row["submitted_at"] or ""), reverse=True)
 	facility_progress = list(facility_progress_by_key.values())
 	facility_progress.sort(
@@ -5324,6 +5363,8 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 			"signed": signed_count,
 			"fully_executed": fully_executed_count,
 			"signature_rate": round(signed_count / contract_count * 100, 1) if contract_count else 0,
+			"go_live_facilities": total_go_live_facilities,
+			"go_live_rate": _dashboard_percentage(total_go_live_facilities, total_invited_facilities),
 		},
 		"funnel": [
 			{"label": "Processed submissions", "value": status_counts["Processed"]},

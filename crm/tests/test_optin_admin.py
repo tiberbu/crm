@@ -20,6 +20,7 @@ from crm.api.optin_admin import (
 	list_selling_price_lists,
 	save_facility,
 	save_item_prices,
+	set_facility_go_live,
 	update_item_price,
 )
 
@@ -944,6 +945,7 @@ class TestOptInFacilityList(UnitTestCase):
 					"contact_name": "Jane Doe",
 					"contact_email": "jane@example.com",
 					"contact_phone": "+254700000001",
+					"go_live": 1,
 					"invite_email_queue": None,
 					"invite_sent_at": None,
 				}
@@ -974,6 +976,7 @@ class TestOptInFacilityList(UnitTestCase):
 
 		with (
 			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
 			patch(
 				"crm.api.optin_admin.frappe.get_list",
 				side_effect=[
@@ -987,6 +990,7 @@ class TestOptInFacilityList(UnitTestCase):
 
 		self.assertEqual(result["total"], 1)
 		self.assertEqual(result["rows"][0]["name"], "FAC-0001")
+		self.assertTrue(result["rows"][0]["memberships"][0]["go_live"])
 		self.assertEqual(get_list.call_args_list[0].kwargs["filters"]["network"], ["in", ["network-a"]])
 
 	def test_network_contacts_can_be_filtered_by_facility_and_contact_details(self):
@@ -1049,3 +1053,22 @@ class TestOptInFacilityList(UnitTestCase):
 			result["rows"][0]["memberships"][0]["price_list_override"],
 			"Negotiated Year 2",
 		)
+
+
+class TestOptInGoLive(UnitTestCase):
+	def test_marking_an_opted_in_contact_ready_for_go_live_updates_its_membership(self):
+		membership = frappe._dict({"network": "network-a", "status": "Opted In", "go_live": 0})
+		facility = SimpleNamespace(memberships=[membership], save=lambda **_kwargs: None)
+
+		with (
+			patch("crm.api.optin_admin._assert_network_access") as assert_access,
+			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch("crm.api.optin_admin.frappe.db.commit") as commit,
+		):
+			result = set_facility_go_live("FAC-0001", "network-a", 1)
+
+		assert_access.assert_called_once_with("network-a")
+		commit.assert_called_once()
+		self.assertTrue(result["go_live"])
+		self.assertEqual(membership.go_live, 1)

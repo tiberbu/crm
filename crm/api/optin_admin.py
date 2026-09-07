@@ -1575,6 +1575,8 @@ def list_facilities(
 			membership_fields.insert(3, "price_list_override")
 		if frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json"):
 			membership_fields.insert(4, "price_list_overrides_json")
+		if frappe.db.has_column("CRM Facility Membership", "go_live"):
+			membership_fields.append("go_live")
 	except Exception:
 		pass
 
@@ -1697,6 +1699,7 @@ def list_facilities(
 						"invite_email_queue": m.invite_email_queue,
 						"invite_sent_at": m.invite_sent_at,
 						"invite_status": invitation_status(m),
+						"go_live": bool(frappe.utils.cint(m.get("go_live"))),
 					}
 					for m in mem_by_parent[fac.name]
 				],
@@ -1782,9 +1785,11 @@ def save_facility(data: Any):
 	try:
 		membership_has_override = frappe.db.has_column("CRM Facility Membership", "price_list_override")
 		membership_has_overrides = frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json")
+		membership_has_go_live = frappe.db.has_column("CRM Facility Membership", "go_live")
 	except Exception:
 		membership_has_override = False
 		membership_has_overrides = False
+		membership_has_go_live = False
 	for mem_data in memberships:
 		net = frappe.utils.cstr(mem_data.get("network") or "").strip()
 		if not net:
@@ -1836,6 +1841,11 @@ def save_facility(data: Any):
 				)
 			elif net in existing_memberships:
 				membership_values["price_list_overrides_json"] = existing_memberships[net].get("price_list_overrides_json") or ""
+		if membership_has_go_live:
+			if "go_live" in mem_data:
+				membership_values["go_live"] = frappe.utils.cint(mem_data.get("go_live"))
+			elif net in existing_memberships:
+				membership_values["go_live"] = frappe.utils.cint(existing_memberships[net].get("go_live"))
 		doc.append(
 			"memberships",
 			membership_values,
@@ -1862,6 +1872,30 @@ def save_facility(data: Any):
 					)
 
 	return {"name": doc.name}
+
+
+@frappe.whitelist()
+def set_facility_go_live(facility_name: Any, network: Any, go_live: Any):
+	"""Mark one opted-in facility contact as implemented and ready to go live."""
+	facility_name = frappe.utils.cstr(facility_name).strip()
+	network = frappe.utils.cstr(network).strip()
+	if not facility_name or not network:
+		frappe.throw(_("Facility and network are required."), frappe.ValidationError)
+	if not frappe.db.has_column("CRM Facility Membership", "go_live"):
+		frappe.throw(_("Go Live is unavailable until the site is migrated."), frappe.ValidationError)
+
+	_assert_network_access(network)
+	doc = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
+	membership = next((row for row in doc.memberships or [] if row.network == network), None)
+	if not membership:
+		frappe.throw(_("This facility is not a contact for the selected network."), frappe.DoesNotExistError)
+	if membership.status != "Opted In":
+		frappe.throw(_("Complete Opt-In before marking a facility ready for Go Live."), frappe.ValidationError)
+
+	membership.go_live = frappe.utils.cint(go_live)
+	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL: network access was checked above
+	frappe.db.commit()
+	return {"go_live": bool(membership.go_live)}
 
 
 @frappe.whitelist()

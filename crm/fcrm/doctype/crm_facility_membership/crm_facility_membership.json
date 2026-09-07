@@ -12,6 +12,7 @@
   "contact_name",
   "contact_email",
   "contact_phone",
+  "go_live",
   "section_break_invitation",
   "invite_email_queue",
   "invite_sent_at",
@@ -62,6 +63,13 @@
    "fieldtype": "Data",
    "label": "Contact Phone",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Set by the implementer when this facility is ready to go live in this network.",
+   "fieldname": "go_live",
+   "fieldtype": "Check",
+   "label": "Go Live"
   },
   {
    "fieldname": "section_break_invitation",
