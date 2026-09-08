@@ -15,12 +15,18 @@ class TestOptInDashboard(UnitTestCase):
 			frappe._dict({"name": "network-b"}),
 		]
 		prequalified_facilities = [
-			frappe._dict({"name": "FAC-0001"}),
-			frappe._dict({"name": "FAC-0002"}),
-			frappe._dict({"name": "FAC-0003"}),
+			frappe._dict(
+				{"name": "FAC-0001", "mfl_code": "1001", "facility_name": "First Clinic", "keph_level": "Level 2"}
+			),
+			frappe._dict(
+				{"name": "FAC-0002", "mfl_code": "1002", "facility_name": "Second Clinic", "keph_level": "Level 3A"}
+			),
+			frappe._dict(
+				{"name": "FAC-0003", "mfl_code": "2001", "facility_name": "Third Clinic", "keph_level": "Level 3A"}
+			),
 		]
 		memberships = [
-			frappe._dict({"parent": "FAC-0001", "network": "network-a"}),
+			frappe._dict({"parent": "FAC-0001", "network": "network-a", "go_live": 1}),
 			frappe._dict({"parent": "FAC-0002", "network": "network-a"}),
 			frappe._dict({"parent": "FAC-0003", "network": "network-b"}),
 		]
@@ -243,6 +249,7 @@ class TestOptInDashboard(UnitTestCase):
 		self.assertEqual(result["summary"]["signature_rate"], 50.0)
 		self.assertEqual(result["facility_levels"][1]["level"], "Level 3A")
 		self.assertEqual(result["facility_levels"][1]["facilities"], 2)
+		self.assertEqual(result["facility_levels"][1]["signed_facilities"], 1)
 		self.assertEqual(result["signing_breakdown"][0]["value"], 1)
 		self.assertEqual(result["signing_breakdown"][1]["value"], 1)
 		self.assertEqual(result["attention"][0]["issue"], "Submission failed")
@@ -251,6 +258,8 @@ class TestOptInDashboard(UnitTestCase):
 		self.assertEqual(network_a["eligible_facilities"], 2)
 		self.assertEqual(network_a["submitted_facilities"], 2)
 		self.assertEqual(network_a["opted_in_facilities"], 2)
+		self.assertEqual(network_a["invited_facilities"], 2)
+		self.assertEqual(network_a["go_live_facilities"], 1)
 		self.assertEqual(network_a["fully_executed_facilities"], 2)
 		self.assertEqual(network_a["opt_in_rate"], 100.0)
 		self.assertEqual(network_a["full_execution_rate"], 100.0)
@@ -262,6 +271,8 @@ class TestOptInDashboard(UnitTestCase):
 		self.assertTrue(first_clinic["network_signatories"]["complete"])
 		self.assertTrue(first_clinic["tiberbu_signatories"]["complete"])
 		self.assertTrue(first_clinic["fully_executed"])
+		self.assertTrue(first_clinic["go_live"])
+		self.assertEqual(result["summary"]["go_live_facilities"], 1)
 
 		self.assertEqual(result["signatory_leaderboard"][0]["name"], "Network Champion")
 		self.assertEqual(result["signatory_leaderboard"][0]["signed"], 1)

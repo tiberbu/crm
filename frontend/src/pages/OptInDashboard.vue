@@ -107,15 +107,15 @@
               <p
                 class="text-xs font-medium uppercase tracking-[0.12em] text-ink-gray-5"
               >
-                {{ __('Pipeline coverage') }}
+                {{ __('Invitation progress') }}
               </p>
               <h2 class="mt-1 text-base font-semibold text-ink-gray-9">
-                {{ __('Network contacts to Opt-In') }}
+                {{ __('Invited facilities to Opt-In') }}
               </h2>
               <p class="mt-1 text-sm text-ink-gray-5">
                 {{
                   __(
-                    'The eligible-facility roster compared with processed Opt-Ins in this view.',
+                    'Invitation coverage compared with processed Opt-Ins in this view.',
                   )
                 }}
               </p>
@@ -141,16 +141,16 @@
               <p
                 class="text-xs font-medium uppercase tracking-[0.1em] text-ink-gray-5"
               >
-                {{ __('Network contact facilities') }}
+                {{ __('Invited facilities') }}
               </p>
               <p
                 class="mt-2 text-3xl font-semibold tracking-tight text-ink-gray-9"
               >
-                {{ formatNumber(coverage.networkFacilities) }}
+                {{ formatNumber(coverage.invitedFacilities) }}
               </p>
               <p class="mt-1 text-xs text-ink-gray-5">
                 {{
-                  __('Eligible facilities across the selected network roster')
+                  __('Facilities invited across the selected network roster')
                 }}
               </p>
             </div>
@@ -177,12 +177,12 @@
               <p
                 class="text-xs font-medium uppercase tracking-[0.1em] text-ink-gray-5"
               >
-                {{ __('Still to opt in') }}
+                {{ __('Awaiting Opt-In') }}
               </p>
               <p
                 class="mt-2 text-3xl font-semibold tracking-tight text-ink-gray-9"
               >
-                {{ formatNumber(coverage.remainingFacilities) }}
+                {{ formatNumber(coverage.awaitingOptInFacilities) }}
               </p>
               <div
                 class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-gray-2 dark:bg-surface-gray-3"
@@ -200,7 +200,7 @@
         </section>
 
         <section
-          class="grid divide-y divide-outline-gray-2 border-b border-outline-gray-2 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
+          class="grid divide-y divide-outline-gray-2 border-b border-outline-gray-2 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5"
         >
           <div
             v-for="metric in metrics"
@@ -366,14 +366,10 @@
           <div>
             <div class="mb-5">
               <h2 class="text-base font-semibold text-ink-gray-9">
-                {{ __('Facility profile') }}
+                {{ __('KEPH level breakdown') }}
               </h2>
               <p class="mt-1 text-sm text-ink-gray-5">
-                {{
-                  __(
-                    'Opted-in facilities by KEPH level, based on canonical submission data.',
-                  )
-                }}
+                {{ __('Opted-in and facility-signed rollout by KEPH level.') }}
               </p>
             </div>
             <G2Chart
@@ -392,35 +388,69 @@
             >
               <div>
                 <h2 class="text-base font-semibold text-ink-gray-9">
-                  {{ __('Facility-level value') }}
+                  {{ __('KEPH rollout by level') }}
                 </h2>
                 <p class="mt-0.5 text-xs text-ink-gray-5">
-                  {{ __('Annual subscription before VAT') }}
+                  {{ __('Opt-In, signatures, and annual subscription value') }}
                 </p>
               </div>
               <span class="text-xs font-medium text-ink-gray-5"
-                >{{ dashboard.summary.facilities }} {{ __('facilities') }}</span
+                >{{ dashboard.summary.facilities }} {{ __('opted in') }}</span
               >
             </div>
-            <div
-              v-if="dashboard.facility_levels.length"
-              class="divide-y divide-outline-elevation-2"
-            >
+            <div v-if="dashboard.facility_levels.length">
               <div
-                v-for="row in dashboard.facility_levels"
-                :key="row.level"
-                class="grid grid-cols-[minmax(70px,0.8fr)_0.75fr_1fr] items-center gap-3 px-5 py-3 text-sm"
+                class="grid grid-cols-[minmax(68px,0.8fr)_0.7fr_0.7fr_1fr] items-center gap-3 border-b border-outline-gray-2 bg-surface-gray-1 px-5 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-gray-5 dark:bg-surface-gray-2"
               >
-                <span class="font-medium text-ink-gray-8">{{ row.level }}</span>
-                <span class="text-right text-ink-gray-5"
-                  >{{ row.facilities }} {{ __('sites') }}</span
+                <span>{{ __('KEPH') }}</span>
+                <span class="text-right">{{ __('Opted in') }}</span>
+                <span class="text-right">{{ __('Signed') }}</span>
+                <span class="text-right">{{ __('Annual value') }}</span>
+              </div>
+              <div class="divide-y divide-outline-elevation-2">
+                <div
+                  v-for="row in dashboard.facility_levels"
+                  :key="row.level"
+                  class="grid grid-cols-[minmax(68px,0.8fr)_0.7fr_0.7fr_1fr] items-center gap-3 px-5 py-3 text-sm"
                 >
-                <div class="text-right">
-                  <p class="font-medium text-ink-gray-8">
-                    {{ formatKes(row.annual_value) }}
-                  </p>
-                  <p class="mt-0.5 text-xs text-ink-gray-4">{{ row.share }}%</p>
+                  <span class="font-medium text-ink-gray-8">{{
+                    row.level
+                  }}</span>
+                  <span class="text-right text-ink-gray-5">{{
+                    formatNumber(row.facilities)
+                  }}</span>
+                  <span
+                    class="text-right font-medium text-emerald-700 dark:text-emerald-300"
+                    >{{ formatNumber(row.signed_facilities) }}</span
+                  >
+                  <div class="text-right">
+                    <p class="font-medium text-ink-gray-8">
+                      {{ formatKes(row.annual_value) }}
+                    </p>
+                    <p class="mt-0.5 text-xs text-ink-gray-4">
+                      {{ row.share }}%
+                    </p>
+                  </div>
                 </div>
+              </div>
+              <div
+                class="grid grid-cols-[minmax(68px,0.8fr)_0.7fr_0.7fr_1fr] items-center gap-3 border-t border-outline-gray-2 bg-surface-gray-1 px-5 py-3 text-sm dark:bg-surface-gray-2"
+              >
+                <span class="font-semibold text-ink-gray-9">{{
+                  __('Total')
+                }}</span>
+                <span class="text-right font-semibold text-ink-gray-9">{{
+                  formatNumber(facilityLevelTotals.facilities)
+                }}</span>
+                <span
+                  class="text-right font-semibold text-emerald-700 dark:text-emerald-300"
+                  >{{
+                    formatNumber(facilityLevelTotals.signedFacilities)
+                  }}</span
+                >
+                <span class="text-right font-semibold text-ink-gray-9">{{
+                  formatKes(facilityLevelTotals.annualValue)
+                }}</span>
               </div>
             </div>
             <div
@@ -441,7 +471,7 @@
               <p class="mt-1 text-sm text-ink-gray-5">
                 {{
                   __(
-                    'See the current facility, network, and Tiberbu approval state for each submitted facility.',
+                    'Track facility, network, and Tiberbu sign-off alongside Go Live readiness.',
                   )
                 }}
               </p>
@@ -458,7 +488,7 @@
             <button
               v-for="row in dashboard.facility_progress"
               :key="`${row.network}-${row.mfl_code || row.facility_name}`"
-              class="grid w-full gap-3 border-b border-outline-elevation-2 px-5 py-4 text-left last:border-b-0 transition-colors hover:bg-surface-gray-1 dark:hover:bg-surface-gray-2 lg:grid-cols-[minmax(180px,1.15fr)_minmax(230px,1fr)_auto] lg:items-center"
+              class="grid w-full gap-3 border-b border-outline-elevation-2 px-5 py-4 text-left last:border-b-0 transition-colors hover:bg-surface-gray-1 dark:hover:bg-surface-gray-2 lg:grid-cols-[minmax(180px,1.15fr)_minmax(280px,1fr)_auto] lg:items-center"
               @click="openFacility(row)"
             >
               <div class="min-w-0">
@@ -470,7 +500,7 @@
                   <template v-if="row.mfl_code"> · {{ row.mfl_code }}</template>
                 </p>
               </div>
-              <div class="grid grid-cols-3 gap-2 text-xs">
+              <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                 <div>
                   <p class="text-ink-gray-4">{{ __('Facility sign-off') }}</p>
                   <span :class="roleProgressClass(row.facility)">
@@ -487,6 +517,12 @@
                   <p class="text-ink-gray-4">{{ __('Tiberbu sign-off') }}</p>
                   <span :class="roleProgressClass(row.tiberbu_signatories)">
                     {{ roleProgress(row.tiberbu_signatories) }}
+                  </span>
+                </div>
+                <div>
+                  <p class="text-ink-gray-4">{{ __('Go Live') }}</p>
+                  <span :class="goLiveProgressClass(row.go_live)">
+                    {{ goLiveProgress(row.go_live) }}
                   </span>
                 </div>
               </div>
@@ -650,12 +686,12 @@
             <div class="mb-4 flex items-end justify-between gap-3">
               <div>
                 <h2 class="text-base font-semibold text-ink-gray-9">
-                  {{ __('Network adoption') }}
+                  {{ __('Network rollout') }}
                 </h2>
                 <p class="mt-1 text-sm text-ink-gray-5">
                   {{
                     __(
-                      'Eligible facilities, Opt-Ins, and fully signed agreements.',
+                      'Compare invitation coverage, sign-off, and Go Live readiness by network.',
                     )
                   }}
                 </p>
@@ -666,53 +702,81 @@
             </div>
             <div
               v-if="dashboard.networks.length"
-              class="divide-y divide-outline-elevation-2 border-y border-outline-gray-2"
+              class="overflow-hidden rounded-xl border border-outline-gray-2 bg-surface-white dark:bg-surface-gray-1"
             >
-              <div class="px-1 py-4 sm:px-2">
-                <p class="mb-2 text-xs font-medium text-ink-gray-5">
-                  {{ __('Opted-in facility distribution') }}
-                </p>
-                <G2Chart
-                  :options="networkDistributionOptions"
-                  :has-data="networkDistribution.length > 0"
-                  :height="networkDistributionHeight"
-                  :empty-label="__('No opted-in facilities in this period')"
-                />
-              </div>
-              <div
-                v-for="row in dashboard.networks"
-                :key="row.network"
-                class="py-3.5"
-              >
-                <div class="flex items-center justify-between gap-4 text-sm">
-                  <span class="font-medium text-ink-gray-8">{{
-                    row.network
-                  }}</span>
-                  <span class="text-xs font-medium text-ink-gray-6">
-                    {{ formatPercent(row.opt_in_rate) }} {{ __('opted in') }}
-                  </span>
-                </div>
-                <div class="mt-2 flex items-center gap-3">
-                  <div
-                    class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-gray-2 dark:bg-surface-gray-3"
+              <div class="overflow-x-auto">
+                <table class="w-full min-w-[620px] text-sm">
+                  <thead
+                    class="bg-surface-gray-1 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-ink-gray-5 dark:bg-surface-gray-2"
                   >
-                    <div
-                      class="h-full rounded-full bg-emerald-500 transition-all duration-500"
-                      :style="{ width: `${progressWidth(row.opt_in_rate)}%` }"
-                    />
-                  </div>
-                  <span
-                    class="w-10 text-right text-xs font-medium text-ink-gray-6"
-                    >{{ row.opted_in_facilities }} /
-                    {{ row.eligible_facilities }}</span
-                  >
-                </div>
-                <p class="mt-1.5 text-xs text-ink-gray-5">
-                  {{ row.submitted_facilities }} {{ __('submitted') }} ·
-                  {{ row.fully_executed_facilities }}
-                  {{ __('fully executed') }} ·
-                  {{ formatKes(row.annual_value) }}
-                </p>
+                    <tr>
+                      <th class="px-4 py-3">{{ __('Network') }}</th>
+                      <th class="px-3 py-3 text-right">{{ __('Invited') }}</th>
+                      <th class="px-3 py-3 text-right">{{ __('Opted in') }}</th>
+                      <th class="px-3 py-3 text-right">{{ __('Signed') }}</th>
+                      <th class="px-3 py-3 text-right">{{ __('Go Live') }}</th>
+                      <th class="px-4 py-3 text-right">
+                        {{ __('Invitation progress') }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-outline-elevation-2">
+                    <tr v-for="row in dashboard.networks" :key="row.network">
+                      <td class="px-4 py-3.5">
+                        <p class="font-medium text-ink-gray-8">
+                          {{ row.network }}
+                        </p>
+                        <p class="mt-0.5 text-xs text-ink-gray-5">
+                          {{ formatKes(row.annual_value) }}
+                          {{ __('annual value') }}
+                        </p>
+                      </td>
+                      <td
+                        class="px-3 py-3.5 text-right font-medium text-ink-gray-7"
+                      >
+                        {{
+                          formatNumber(
+                            row.invited_facilities ?? row.eligible_facilities,
+                          )
+                        }}
+                      </td>
+                      <td
+                        class="px-3 py-3.5 text-right font-medium text-ink-gray-7"
+                      >
+                        {{ formatNumber(row.opted_in_facilities) }}
+                      </td>
+                      <td
+                        class="px-3 py-3.5 text-right font-medium text-emerald-700 dark:text-emerald-300"
+                      >
+                        {{ formatNumber(row.facility_signed_facilities) }}
+                      </td>
+                      <td
+                        class="px-3 py-3.5 text-right font-medium text-blue-700 dark:text-blue-300"
+                      >
+                        {{ formatNumber(row.go_live_facilities) }}
+                      </td>
+                      <td class="px-4 py-3.5">
+                        <div class="ml-auto max-w-32">
+                          <div
+                            class="flex items-center justify-end gap-2 text-xs text-ink-gray-5"
+                          >
+                            <span>{{ formatPercent(row.opt_in_rate) }}</span>
+                          </div>
+                          <div
+                            class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-gray-2 dark:bg-surface-gray-3"
+                          >
+                            <div
+                              class="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                              :style="{
+                                width: `${progressWidth(row.opt_in_rate)}%`,
+                              }"
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
             <div
@@ -836,6 +900,8 @@ const emptyDashboard = {
     signed: 0,
     fully_executed: 0,
     signature_rate: 0,
+    go_live_facilities: 0,
+    go_live_rate: null,
   },
   funnel: [],
   trend: [],
@@ -857,24 +923,39 @@ const signingTotal = computed(() =>
   dashboard.value.signing_breakdown.reduce((sum, row) => sum + row.value, 0),
 )
 const coverage = computed(() => {
-  const networkFacilities = dashboard.value.networks.reduce(
-    (sum, row) => sum + Number(row.eligible_facilities || 0),
+  const invitedFacilities = dashboard.value.networks.reduce(
+    (sum, row) =>
+      sum + Number(row.invited_facilities ?? row.eligible_facilities ?? 0),
     0,
   )
   const optedInFacilities = dashboard.value.networks.reduce(
     (sum, row) => sum + Number(row.opted_in_facilities || 0),
     0,
   )
-  const remainingFacilities = Math.max(networkFacilities - optedInFacilities, 0)
+  const awaitingOptInFacilities = Math.max(
+    invitedFacilities - optedInFacilities,
+    0,
+  )
   return {
-    networkFacilities,
+    invitedFacilities,
     optedInFacilities,
-    remainingFacilities,
-    rate: networkFacilities
-      ? Math.min(100, (optedInFacilities / networkFacilities) * 100)
+    awaitingOptInFacilities,
+    rate: invitedFacilities
+      ? Math.min(100, (optedInFacilities / invitedFacilities) * 100)
       : null,
   }
 })
+const facilityLevelTotals = computed(() =>
+  dashboard.value.facility_levels.reduce(
+    (totals, row) => ({
+      facilities: totals.facilities + Number(row.facilities || 0),
+      signedFacilities:
+        totals.signedFacilities + Number(row.signed_facilities || 0),
+      annualValue: totals.annualValue + Number(row.annual_value || 0),
+    }),
+    { facilities: 0, signedFacilities: 0, annualValue: 0 },
+  ),
+)
 const periodLabel = computed(
   () => periods.find((option) => option.value === period.value)?.label ?? '',
 )
@@ -900,6 +981,13 @@ const metrics = computed(() => [
     detail: `${formatNumber(dashboard.value.summary.signed)} facility signatures completed`,
     icon: FileSignature,
     iconClass: 'text-blue-600',
+  },
+  {
+    label: 'Go Live ready',
+    value: formatNumber(dashboard.value.summary.go_live_facilities),
+    detail: `${formatCoveragePercent(dashboard.value.summary.go_live_rate)} of invited facilities`,
+    icon: CheckCircle2,
+    iconClass: 'text-emerald-600',
   },
   {
     label: 'Needs attention',
@@ -973,45 +1061,6 @@ const facilityChartOptions = computed(() => ({
   tooltip: { title: 'level', items: [{ channel: 'y', name: 'Facilities' }] },
 }))
 
-const networkDistribution = computed(() =>
-  dashboard.value.networks.filter((row) => row.opted_in_facilities > 0),
-)
-
-const networkDistributionHeight = computed(() =>
-  Math.max(180, Math.min(360, networkDistribution.value.length * 34 + 44)),
-)
-
-const networkDistributionOptions = computed(() => ({
-  type: 'interval',
-  data: networkDistribution.value,
-  padding: [8, 18, 26, 92],
-  coordinate: { transform: [{ type: 'transpose' }] },
-  encode: { x: 'network', y: 'opted_in_facilities', color: 'network' },
-  scale: {
-    y: { nice: true },
-    color: {
-      range: [
-        '#d92d20',
-        '#f04438',
-        '#175cd3',
-        '#1570ef',
-        '#039855',
-        '#12b76a',
-        '#f79009',
-        '#7a5af8',
-      ],
-    },
-  },
-  legend: false,
-  axis: { x: { title: false }, y: { title: false, grid: true } },
-  style: { radiusTopRight: 5, radiusBottomRight: 5 },
-  animate: { enter: { type: 'growInX', duration: 500 } },
-  tooltip: {
-    title: 'network',
-    items: [{ channel: 'y', name: 'Opted-in facilities' }],
-  },
-}))
-
 function lineMark(key, color) {
   return {
     type: 'line',
@@ -1067,6 +1116,17 @@ function roleProgressClass(progress) {
   if (progress.complete) return `${base} text-emerald-700 dark:text-emerald-300`
   if (progress.declined) return `${base} text-red-700 dark:text-red-300`
   return `${base} text-amber-700 dark:text-amber-300`
+}
+
+function goLiveProgress(value) {
+  return value ? __('Ready') : __('Not ready')
+}
+
+function goLiveProgressClass(value) {
+  const base = 'mt-1 inline-block text-xs font-medium'
+  return value
+    ? `${base} text-emerald-700 dark:text-emerald-300`
+    : `${base} text-ink-gray-4`
 }
 
 function signoffPill(row) {

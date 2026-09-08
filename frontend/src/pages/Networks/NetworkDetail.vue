@@ -769,6 +769,9 @@
                 {{ __('Opt-in') }}
               </th>
               <th class="px-4 py-2.5 text-left font-medium">
+                {{ __('Go Live') }}
+              </th>
+              <th class="px-4 py-2.5 text-left font-medium">
                 {{ __('Contact') }}
               </th>
               <th class="px-4 py-2.5 text-left font-medium">
@@ -807,6 +810,20 @@
                 <span :class="optInPill(isOptedIn(row))">
                   {{ isOptedIn(row) ? __('Opted in') : __('Not opted in') }}
                 </span>
+              </td>
+              <td class="px-4 py-3" @click.stop>
+                <div class="flex min-w-28 flex-col items-start gap-1">
+                  <Switch
+                    size="sm"
+                    :model-value="isGoLive(row)"
+                    :disabled="!isOptedIn(row) || togglingGoLive === row.name"
+                    :label="isGoLive(row) ? __('Ready') : __('Not ready')"
+                    @update:model-value="setGoLive(row, $event)"
+                  />
+                  <p v-if="!isOptedIn(row)" class="text-[11px] text-ink-gray-5">
+                    {{ __('Complete Opt-In first') }}
+                  </p>
+                </div>
               </td>
               <td class="px-4 py-3">
                 <p class="text-xs font-medium text-ink-gray-7">
@@ -1788,6 +1805,41 @@ function facilityContractScheduleLabel() {
 
 function isOptedIn(row) {
   return networkMembership(row)?.status === 'Opted In'
+}
+
+function isGoLive(row) {
+  return Boolean(networkMembership(row)?.go_live)
+}
+
+const setFacilityGoLiveResource = createResource({
+  url: 'crm.api.optin_admin.set_facility_go_live',
+})
+const togglingGoLive = ref(null)
+
+async function setGoLive(row, goLive) {
+  const membership = networkMembership(row)
+  if (!membership || !isOptedIn(row)) return
+
+  const previousValue = Boolean(membership.go_live)
+  membership.go_live = Boolean(goLive)
+  togglingGoLive.value = row.name
+  try {
+    const result = await setFacilityGoLiveResource.submit({
+      facility_name: row.name,
+      network: props.networkSlug,
+      go_live: goLive ? 1 : 0,
+    })
+    membership.go_live = Boolean(result?.go_live)
+  } catch (error) {
+    membership.go_live = previousValue
+    toast.error(
+      error?.messages?.[0] ??
+        error?.message ??
+        __('Could not update Go Live readiness'),
+    )
+  } finally {
+    togglingGoLive.value = null
+  }
 }
 
 function canSendPaymentLink(row) {
