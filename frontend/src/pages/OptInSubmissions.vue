@@ -450,9 +450,7 @@
                   :disabled="row.has_submitted_invoice"
                   :title="
                     row.has_submitted_invoice
-                      ? __(
-                          'A submitted or cancelled invoice prevents teardown.',
-                        )
+                      ? __('A submitted invoice prevents teardown.')
                       : undefined
                   "
                   @click="openTeardown(row)"
@@ -506,14 +504,14 @@
           <p>
             {{
               __(
-                'This permanently removes the Opt-In request, its generated contract, draft quotations and invoices, Deal, and delivery records.',
+                'This permanently removes the Opt-In request, its generated contract, quotations, billing records, Deal, and delivery records.',
               )
             }}
           </p>
           <p class="text-xs text-ink-gray-5">
             {{
               __(
-                'A submitted or cancelled invoice prevents teardown; only eligible draft billing records are removed.',
+                'A submitted invoice prevents teardown; eligible billing records are removed.',
               )
             }}
           </p>
