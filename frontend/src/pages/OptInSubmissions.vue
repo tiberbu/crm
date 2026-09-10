@@ -443,7 +443,7 @@
                   >{{ __('Retry') }}</Button
                 >
                 <Button
-                  v-if="row.status !== 'Processing'"
+                  v-if="isAdministrator() && row.status !== 'Processing'"
                   size="sm"
                   variant="subtle"
                   theme="red"
@@ -559,9 +559,11 @@ import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { createResource, Button, Dialog, toast } from 'frappe-ui'
 import { useStorage } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
+import { useBoot } from './FinanceCockpit/composables/useBoot.js'
 
 const router = useRouter()
 const route = useRoute()
+const { isAdministrator } = useBoot()
 
 const statuses = ['All', 'Pending', 'Processing', 'Processed', 'Failed']
 const selectedStatus = ref('All')
