@@ -2269,7 +2269,7 @@ class TestOptInTeardown(UnitTestCase):
 
 		delete_doc.assert_not_called()
 
-	def test_signed_contract_is_protected_before_teardown(self):
+	def test_signed_contract_is_not_a_teardown_blocker(self):
 		submission = SimpleNamespace(name="OIS-TEST-00001", contract="CONT-TEST-00001")
 		contract_rows = [
 			frappe._dict(
@@ -2277,22 +2277,21 @@ class TestOptInTeardown(UnitTestCase):
 					"name": submission.contract,
 					"deal": "DEAL-TEST-00001",
 					"quote": "QTN-TEST-00001",
-					"status": "Awaiting Signatures",
-					"workflow_state": "Awaiting Facility Signature",
+					"status": "Fully Executed",
+					"workflow_state": "Fully Executed",
 				}
 			)
-		]
-		signed_rows = [
-			frappe._dict({"parent": submission.contract, "status": "Signed", "signed_at": today()})
 		]
 
 		with (
 			patch("crm.api.optin._teardown_has_field", return_value=False),
-			patch("crm.api.optin._teardown_rows", side_effect=[contract_rows, signed_rows]),
+			patch("crm.api.optin._teardown_rows", return_value=contract_rows),
 			patch("crm.api.optin.frappe.db.exists", return_value=True),
 		):
-			with self.assertRaises(frappe.ValidationError):
-				_teardown_contracts(submission, "DEAL-TEST-00001")
+			contract_names, resolved_rows = _teardown_contracts(submission, "DEAL-TEST-00001")
+
+		self.assertEqual(contract_names, [submission.contract])
+		self.assertEqual(resolved_rows, contract_rows)
 
 	def test_teardown_deletes_only_the_scoped_pipeline_in_dependency_order(self):
 		submission = SimpleNamespace(
