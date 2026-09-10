@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import frappe
 from frappe.tests import UnitTestCase
@@ -59,10 +59,14 @@ from crm.api.optin import (
 	_queue_confirmation_email,
 	_should_auto_generate_contract,
 	_signatory_package_summary_html,
+	_submission_invoice_flags,
 	_submission_matches_facility_filter,
+	_teardown_contracts,
+	_teardown_financial_records,
 	enqueue_submission_processing,
 	get_pricing,
 	list_submissions,
+	teardown_submission,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
 from crm.setup.optin import ensure_internal_signatory_reminder_job
@@ -2183,21 +2187,26 @@ class TestOptInSubmissionList(UnitTestCase):
 			),
 		]
 
-		with patch(
-			"crm.api.optin.frappe.get_list",
-			side_effect=[
-				[submission],
-				[frappe._dict({"name": submission.name})],
-				email_queues,
-				[contract],
-				contract_signatories,
-			],
+		with (
+			patch(
+				"crm.api.optin.frappe.get_list",
+				side_effect=[
+					[submission],
+					[frappe._dict({"name": submission.name})],
+					email_queues,
+					[contract],
+					contract_signatories,
+				],
+			),
+			patch("crm.api.optin._submission_invoice_flags", return_value={}),
 		):
 			result = list_submissions()
 
 		self.assertEqual(result["total"], 1)
 		self.assertEqual(result["rows"][0]["confirmation_email_status"], "Sent")
 		self.assertEqual(result["rows"][0]["contract_invitation_email_status"], "Sending")
+		self.assertFalse(result["rows"][0]["has_linked_invoice"])
+		self.assertFalse(result["rows"][0]["has_submitted_invoice"])
 		self.assertEqual(result["rows"][0]["facility_signing_status"], "Awaiting signature")
 		self.assertEqual(
 			result["rows"][0]["facility_witness_signing_status"],
@@ -2221,3 +2230,203 @@ class TestOptInSubmissionList(UnitTestCase):
 				"signed_at": "2026-08-29 11:00:00",
 			},
 		)
+
+	def test_submission_list_marks_a_linked_submitted_invoice(self):
+		submission = frappe._dict({"name": "OIS-TEST-00001", "deal": "DEAL-TEST-00001"})
+		invoice_rows = [
+			frappe._dict(
+				{
+					"name": "SINV-TEST-00001",
+					"crm_optin_submission": submission.name,
+					"docstatus": 1,
+				}
+			)
+		]
+
+		with (
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin.frappe.get_list", return_value=invoice_rows),
+		):
+			flags = _submission_invoice_flags([submission])
+
+		self.assertEqual(
+			flags[submission.name],
+			{"has_linked_invoice": True, "has_submitted_invoice": True},
+		)
+
+
+class TestOptInTeardown(UnitTestCase):
+	def test_processing_submission_cannot_be_torn_down(self):
+		with (
+			patch("crm.api.optin._require_optin_manager"),
+			patch("crm.api.optin.frappe.has_permission", return_value=True),
+			patch("crm.api.optin.frappe.db.get_value", return_value="Processing"),
+			patch("crm.api.optin.frappe.delete_doc") as delete_doc,
+		):
+			with self.assertRaises(frappe.ValidationError):
+				teardown_submission("OIS-TEST-00001")
+
+		delete_doc.assert_not_called()
+
+	def test_signed_contract_is_protected_before_teardown(self):
+		submission = SimpleNamespace(name="OIS-TEST-00001", contract="CONT-TEST-00001")
+		contract_rows = [
+			frappe._dict(
+				{
+					"name": submission.contract,
+					"deal": "DEAL-TEST-00001",
+					"quote": "QTN-TEST-00001",
+					"status": "Awaiting Signatures",
+					"workflow_state": "Awaiting Facility Signature",
+				}
+			)
+		]
+		signed_rows = [
+			frappe._dict({"parent": submission.contract, "status": "Signed", "signed_at": today()})
+		]
+
+		with (
+			patch("crm.api.optin._teardown_has_field", return_value=False),
+			patch("crm.api.optin._teardown_rows", side_effect=[contract_rows, signed_rows]),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				_teardown_contracts(submission, "DEAL-TEST-00001")
+
+	def test_teardown_deletes_only_the_scoped_pipeline_in_dependency_order(self):
+		submission = SimpleNamespace(
+			name="OIS-TEST-00001",
+			deal="DEAL-TEST-00001",
+			raw_json="{}",
+		)
+		delete_doc = Mock()
+
+		with (
+			patch("crm.api.optin._require_optin_manager"),
+			patch("crm.api.optin.frappe.has_permission", return_value=True),
+			patch("crm.api.optin.frappe.db.get_value", return_value="Processed"),
+			patch("crm.api.optin.frappe.get_doc", return_value=submission),
+			patch("crm.api.optin._teardown_rows", return_value=[]),
+			patch("crm.api.optin._teardown_contracts", return_value=(["CONT-TEST-00001"], [])),
+			patch("crm.api.optin._teardown_quotes", return_value=["QTN-TEST-00001"]),
+			patch(
+				"crm.api.optin._teardown_financial_records",
+				return_value={
+					"Payment Entry": {"PE-TEST-00001"},
+					"Sales Invoice": {"SINV-TEST-00001"},
+					"Sales Order": {"SO-TEST-00001"},
+				},
+			),
+			patch("crm.api.optin._teardown_downstream_records"),
+			patch("crm.api.optin._teardown_lead_candidate", return_value=""),
+			patch(
+				"crm.api.optin._teardown_email_records",
+				return_value=(
+					["Email Queue-TEST-00001"],
+					["COMM-TEST-00001"],
+					["SMS-TEST-00001"],
+				),
+			),
+			patch("crm.api.optin._teardown_mfl_codes", return_value=set()),
+			patch("crm.api.optin._teardown_clear_links"),
+			patch("crm.api.optin._teardown_restore_memberships"),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin.frappe.delete_doc", delete_doc),
+			patch("crm.api.optin.frappe.db.commit"),
+		):
+			result = teardown_submission(submission.name)
+
+		self.assertEqual(result["status"], "deleted")
+		self.assertEqual(
+			delete_doc.call_args_list,
+			[
+				call("Email Queue", "Email Queue-TEST-00001", ignore_permissions=True),
+				call("Communication", "COMM-TEST-00001", ignore_permissions=True),
+				call("CRM Contract SMS Delivery", "SMS-TEST-00001", ignore_permissions=True),
+				call("Payment Entry", "PE-TEST-00001", ignore_permissions=True),
+				call("Sales Invoice", "SINV-TEST-00001", ignore_permissions=True),
+				call("Sales Order", "SO-TEST-00001", ignore_permissions=True),
+				call("CRM Contract", "CONT-TEST-00001", ignore_permissions=True),
+				call("Quotation", "QTN-TEST-00001", ignore_permissions=True),
+				call("CRM Deal", "DEAL-TEST-00001", ignore_permissions=True),
+				call("CRM Opt-In Submission", "OIS-TEST-00001", ignore_permissions=True),
+			],
+		)
+
+	def test_submitted_invoice_blocks_teardown(self):
+		def has_field(doctype, fieldname):
+			return doctype == "Sales Invoice" and fieldname == "crm_optin_submission"
+
+		def rows(doctype, filters, fields):
+			if doctype == "Sales Invoice" and filters == {"crm_optin_submission": "OIS-TEST-00001"}:
+				return [frappe._dict({"name": "SINV-TEST-00001", "docstatus": 1})]
+			return []
+
+		with (
+			patch("crm.api.optin._teardown_doctype_exists", return_value=True),
+			patch("crm.api.optin._teardown_has_field", side_effect=has_field),
+			patch("crm.api.optin._teardown_rows", side_effect=rows),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				_teardown_financial_records("OIS-TEST-00001", "DEAL-TEST-00001", set())
+
+	def test_draft_invoice_is_collected_for_teardown(self):
+		def has_field(doctype, fieldname):
+			return doctype == "Sales Invoice" and fieldname == "crm_optin_submission"
+
+		def rows(doctype, filters, fields):
+			if doctype == "Sales Invoice" and filters == {"crm_optin_submission": "OIS-TEST-00001"}:
+				return [frappe._dict({"name": "SINV-TEST-00001", "docstatus": 0})]
+			return []
+
+		with (
+			patch("crm.api.optin._teardown_doctype_exists", return_value=True),
+			patch("crm.api.optin._teardown_has_field", side_effect=has_field),
+			patch("crm.api.optin._teardown_rows", side_effect=rows),
+		):
+			financial_records = _teardown_financial_records("OIS-TEST-00001", "DEAL-TEST-00001", set())
+
+		self.assertEqual(financial_records["Sales Invoice"], {"SINV-TEST-00001"})
+
+	def test_teardown_removes_a_real_submission_and_deal(self):
+		marker = random_string(10)
+		organization = frappe.get_doc(
+			{
+				"doctype": "CRM Organization",
+				"organization_name": "Teardown Test %s" % marker,
+			}
+		).insert(ignore_permissions=True)
+		deal = frappe.get_doc(
+			{
+				"doctype": "CRM Deal",
+				"organization": organization.name,
+				"status": "Qualification",
+			}
+		).insert(ignore_permissions=True)
+		submission = frappe.get_doc(
+			{
+				"doctype": "CRM Opt-In Submission",
+				"naming_series": "OIS-.YYYY.-",
+				"status": "Processed",
+				"network_slug": "teardown-test",
+				"submitter_email": "teardown-%s@example.test" % marker,
+				"deal": deal.name,
+				"raw_json": json.dumps({"facilities": []}),
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("CRM Deal", deal.name, "optin_submission", submission.name)
+		frappe.db.commit()
+
+		try:
+			result = teardown_submission(submission.name)
+
+			self.assertEqual(result["status"], "deleted")
+			self.assertFalse(frappe.db.exists("CRM Opt-In Submission", submission.name))
+			self.assertFalse(frappe.db.exists("CRM Deal", deal.name))
+			self.assertTrue(frappe.db.exists("CRM Organization", organization.name))
+		finally:
+			frappe.db.delete("CRM Opt-In Submission", {"name": submission.name})
+			frappe.db.delete("CRM Deal", {"name": deal.name})
+			frappe.db.delete("CRM Organization", {"name": organization.name})
+			frappe.db.commit()

@@ -4143,7 +4143,7 @@ def _process_submission(submission_ref):
 # ---------------------------------------------------------------------------
 # Internal Opt-In submission review API — CRM staff, NOT guest (oh-s2-1)
 #
-# Unlike every public wizard endpoint above (allow_guest=True), these two are
+# Unlike every public wizard endpoint above (allow_guest=True), these endpoints are
 # for internal CRM staff, so they are plain @frappe.whitelist() and rely on the
 # CRM Opt-In Submission permission model (System Manager r/w/c, Sales User r).
 # ---------------------------------------------------------------------------
@@ -4290,6 +4290,8 @@ def list_submissions(
 		)
 		queue_statuses = {queue.name: queue.status for queue in email_queues}
 
+	invoice_flags = _submission_invoice_flags(rows)
+
 	# A contract may have been generated automatically (stored directly on the
 	# submission) or later by a CRM executive (linked through the Deal). Resolve
 	# both paths so the review list presents one reliable facility-signing state.
@@ -4354,6 +4356,7 @@ def list_submissions(
 			queue_statuses,
 			contracts_by_name.get(row.contract) or contracts_by_deal.get(row.deal),
 			contract_signatories,
+			invoice_flags.get(row.name),
 		)
 		for row in rows
 	]
@@ -4493,7 +4496,53 @@ def _submission_pending_for_current_user(
 	return row.get("deal") in context.get("approver_deals", set())
 
 
-def _submission_list_row(row, queue_statuses, contract, contract_signatories):
+def _submission_invoice_flags(rows):
+	"""Return invoice presence/status flags for the Opt-In review list."""
+	flags = {
+		row.name: {"has_linked_invoice": False, "has_submitted_invoice": False} for row in rows if row.name
+	}
+	if not flags or not frappe.db.exists("DocType", "Sales Invoice"):
+		return flags
+
+	def mark(submission_names, invoice_row):
+		for submission_name in submission_names:
+			if submission_name not in flags:
+				continue
+			flags[submission_name]["has_linked_invoice"] = True
+			if int(invoice_row.get("docstatus") or 0) != 0:
+				flags[submission_name]["has_submitted_invoice"] = True
+
+	submission_names = list(flags)
+	if frappe.db.has_column("Sales Invoice", "crm_optin_submission"):
+		invoice_rows = frappe.get_list(
+			"Sales Invoice",
+			filters={"crm_optin_submission": ["in", submission_names]},
+			fields=["name", "crm_optin_submission", "docstatus"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: expose only linked invoice state
+		)
+		for invoice in invoice_rows:
+			mark([invoice.get("crm_optin_submission")], invoice)
+
+	rows_by_deal = defaultdict(list)
+	for row in rows:
+		if row.name and row.get("deal"):
+			rows_by_deal[row.deal].append(row.name)
+	if rows_by_deal and frappe.db.has_column("Sales Invoice", "crm_deal"):
+		invoice_rows = frappe.get_list(
+			"Sales Invoice",
+			filters={"crm_deal": ["in", list(rows_by_deal)]},
+			fields=["name", "crm_deal", "docstatus"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: expose only linked invoice state
+		)
+		for invoice in invoice_rows:
+			mark(rows_by_deal.get(invoice.get("crm_deal"), []), invoice)
+
+	return flags
+
+
+def _submission_list_row(row, queue_statuses, contract, contract_signatories, invoice_flags=None):
 	"""Build a permission-safe Opt-In review row with concise delivery/signing state."""
 	facilities = _dashboard_facilities(_dashboard_payload(row.get("raw_json")))
 	primary_facility = facilities[0] if facilities else {}
@@ -4557,6 +4606,8 @@ def _submission_list_row(row, queue_statuses, contract, contract_signatories):
 		confirmation_email_status = "Included in signing package" if is_self_signing else "Not queued"
 	return {
 		**{key: value for key, value in row.items() if key != "raw_json"},
+		"has_linked_invoice": bool((invoice_flags or {}).get("has_linked_invoice")),
+		"has_submitted_invoice": bool((invoice_flags or {}).get("has_submitted_invoice")),
 		"contract": contract.name if contract else row.contract,
 		"confirmation_email_status": confirmation_email_status,
 		"contract_invitation_email_status": contract_email_status,
@@ -5022,9 +5073,7 @@ def get_optin_dashboard(period: Any = "30d", network_slug: Any = None):
 		"Fully executed": 0,
 	}
 	trend = {}
-	facility_levels = defaultdict(
-		lambda: {"facilities": 0, "signed_facilities": 0, "annual_value": 0.0}
-	)
+	facility_levels = defaultdict(lambda: {"facilities": 0, "signed_facilities": 0, "annual_value": 0.0})
 	networks = defaultdict(
 		lambda: {"submissions": 0, "processed": 0, "facilities": 0, "annual_value": 0.0, "signed": 0}
 	)
@@ -5407,6 +5456,559 @@ def retry_submission(submission_ref: Any):
 
 	status = frappe.db.get_value("CRM Opt-In Submission", submission_ref, "status")
 	return {"status": "processed" if status == "Processed" else "failed"}
+
+
+def _teardown_doctype_exists(doctype):
+	return bool(frappe.db.exists("DocType", doctype))
+
+
+def _teardown_has_field(doctype, fieldname):
+	if not _teardown_doctype_exists(doctype):
+		return False
+	return frappe.get_meta(doctype).has_field(fieldname)
+
+
+def _teardown_rows(doctype, filters, fields):
+	if not _teardown_doctype_exists(doctype):
+		return []
+	return frappe.get_list(
+		doctype,
+		filters=filters,
+		fields=fields,
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: scoped manager teardown
+	)
+
+
+def _teardown_submission_payload(submission):
+	payload = decode_json(getattr(submission, "raw_json", None), {})
+	return payload if isinstance(payload, dict) else {}
+
+
+def _teardown_mfl_codes(raw_json):
+	payload = decode_json(raw_json, {})
+	if not isinstance(payload, dict):
+		return set()
+	rows = payload.get("facilities") or payload.get("pricing") or []
+	return {
+		frappe.utils.cstr(row.get("mfl_code") or "").strip()
+		for row in rows
+		if isinstance(row, dict) and frappe.utils.cstr(row.get("mfl_code") or "").strip()
+	}
+
+
+def _teardown_contracts(submission, deal_name):
+	"""Resolve only the contracts belonging to this OIS pipeline."""
+	linked_contract = frappe.utils.cstr(getattr(submission, "contract", None) or "").strip()
+	contract_fields = ["name", "deal", "quote", "status", "workflow_state"]
+	if _teardown_has_field("CRM Contract", "quote_names_json"):
+		contract_fields.append("quote_names_json")
+
+	rows = []
+	if deal_name:
+		rows = _teardown_rows("CRM Contract", {"deal": deal_name}, contract_fields)
+	contract_names = {row.name for row in rows if row.name}
+	if linked_contract and frappe.db.exists("CRM Contract", linked_contract):
+		contract_names.add(linked_contract)
+
+	# A Deal can be referenced by an unrelated contract. Deleting that contract just
+	# because it shares the Deal would be broader than this action's scope.
+	unlinked = contract_names - ({linked_contract} if linked_contract else set())
+	if linked_contract and unlinked:
+		frappe.throw(
+			_("This Deal has another contract and cannot be torn down safely."),
+			frappe.ValidationError,
+		)
+	if not linked_contract and len(contract_names) > 1:
+		frappe.throw(
+			_("This Deal has multiple contracts and cannot be torn down safely."),
+			frappe.ValidationError,
+		)
+
+	if not contract_names:
+		return [], []
+
+	contract_rows = [row for row in rows if row.name in contract_names]
+	if linked_contract and not any(row.name == linked_contract for row in contract_rows):
+		contract_rows.append(
+			frappe._dict(
+				{
+					"name": linked_contract,
+					"status": frappe.db.get_value("CRM Contract", linked_contract, "status"),
+				}
+			)
+		)
+
+	for row in contract_rows:
+		status = frappe.utils.cstr(row.get("status") or row.get("workflow_state") or "").strip()
+		if status == "Fully Executed" or row.get("workflow_state") == "Fully Executed":
+			frappe.throw(
+				_("This Opt-In cannot be torn down because its contract is fully executed."),
+				frappe.ValidationError,
+			)
+
+	signed_rows = _teardown_rows(
+		"CRM Contract Signatory",
+		{"parent": ["in", list(contract_names)], "parenttype": "CRM Contract"},
+		["parent", "status", "signed_at"],
+	)
+	if any(
+		frappe.utils.cstr(row.get("status") or "").strip() == "Signed" or row.get("signed_at")
+		for row in signed_rows
+	):
+		frappe.throw(
+			_("This Opt-In cannot be torn down because a contract signature has been recorded."),
+			frappe.ValidationError,
+		)
+	return list(contract_names), contract_rows
+
+
+def _teardown_quotes(submission, deal_name, payload, contract_rows):
+	"""Resolve the OIS quote bundle, including legacy single-quote records."""
+	quote_names = set()
+	quote_names.update(
+		name
+		for name in decode_json(getattr(submission, "quote_names_json", None), [])
+		if isinstance(name, str) and name.strip()
+	)
+	quote_names.update(name for name in (payload.get("quote"),) if isinstance(name, str) and name.strip())
+	for row in contract_rows:
+		if row.get("quote"):
+			quote_names.add(row.quote)
+		quote_names.update(
+			name
+			for name in decode_json(row.get("quote_names_json"), [])
+			if isinstance(name, str) and name.strip()
+		)
+
+	if _teardown_has_field("Quotation", "crm_optin_submission"):
+		rows = _teardown_rows(
+			"Quotation",
+			{"crm_optin_submission": submission.name},
+			["name", "docstatus", "crm_optin_submission"],
+		)
+		quote_names.update(row.name for row in rows if row.name)
+
+	if not deal_name:
+		quote_rows = _teardown_rows(
+			"Quotation",
+			{"name": ["in", list(quote_names)]},
+			["name", "docstatus"],
+		)
+		if any(int(row.get("docstatus") or 0) != 0 for row in quote_rows):
+			frappe.throw(
+				_("This Opt-In cannot be torn down because one of its quotations is no longer a draft."),
+				frappe.ValidationError,
+			)
+		return list(quote_names)
+
+	deal_quote_fields = ["name", "docstatus"]
+	if _teardown_has_field("Quotation", "crm_optin_submission"):
+		deal_quote_fields.append("crm_optin_submission")
+	deal_quotes = _teardown_rows("Quotation", {"crm_deal": deal_name}, deal_quote_fields)
+	for row in deal_quotes:
+		provenance = frappe.utils.cstr(row.get("crm_optin_submission") or "").strip()
+		if provenance and provenance != submission.name:
+			frappe.throw(
+				_("This Deal has a quotation belonging to another Opt-In submission."),
+				frappe.ValidationError,
+			)
+
+	# The Deal cannot be deleted while a quotation still points to it. Include one
+	# unprovenanced legacy quote, but stop when multiple such quotes make ownership
+	# ambiguous instead of deleting unrelated commercial data.
+	untracked = [
+		row for row in deal_quotes if row.name not in quote_names and not row.get("crm_optin_submission")
+	]
+	if untracked and (quote_names - {row.name for row in untracked} or len(untracked) > 1):
+		frappe.throw(
+			_("This Deal has untracked quotations and cannot be torn down safely."),
+			frappe.ValidationError,
+		)
+	quote_names.update(row.name for row in deal_quotes if row.name)
+
+	quote_rows = _teardown_rows(
+		"Quotation",
+		{"name": ["in", list(quote_names)]},
+		["name", "docstatus"],
+	)
+	if any(int(row.get("docstatus") or 0) != 0 for row in quote_rows):
+		frappe.throw(
+			_("This Opt-In cannot be torn down because one of its quotations is no longer a draft."),
+			frappe.ValidationError,
+		)
+	return list(quote_names)
+
+
+def _teardown_financial_records(submission_name, deal_name, quote_names):
+	"""Collect draft financial records and reject submitted downstream records."""
+	draft_names = {
+		"Payment Entry": set(),
+		"Sales Invoice": set(),
+		"Sales Order": set(),
+	}
+	invoices = set()
+
+	def collect(doctype, rows):
+		for row in rows:
+			if not row.name:
+				continue
+			if int(row.get("docstatus") or 0) != 0:
+				frappe.throw(
+					_(
+						"This Opt-In cannot be torn down because submitted or cancelled financial records exist."
+					),
+					frappe.ValidationError,
+				)
+			draft_names[doctype].add(row.name)
+			if doctype == "Sales Invoice":
+				invoices.add(row.name)
+
+	for doctype in ("Sales Order", "Sales Invoice"):
+		if not _teardown_doctype_exists(doctype):
+			continue
+		field_names = []
+		if _teardown_has_field(doctype, "crm_optin_submission"):
+			field_names.append(("crm_optin_submission", submission_name))
+		if deal_name and _teardown_has_field(doctype, "crm_deal"):
+			field_names.append(("crm_deal", deal_name))
+		for fieldname, value in field_names:
+			rows = _teardown_rows(doctype, {fieldname: value}, ["name", "docstatus"])
+			collect(doctype, rows)
+
+		for fieldname in ("crm_optin_quotation", "crm_quotation", "quotation"):
+			if not quote_names or not _teardown_has_field(doctype, fieldname):
+				continue
+			rows = _teardown_rows(
+				doctype,
+				{fieldname: ["in", list(quote_names)]},
+				["name", "docstatus"],
+			)
+			collect(doctype, rows)
+
+	if _teardown_doctype_exists("Payment Entry"):
+		if _teardown_has_field("Payment Entry", "crm_optin_submission"):
+			rows = _teardown_rows(
+				"Payment Entry",
+				{"crm_optin_submission": submission_name},
+				["name", "docstatus"],
+			)
+			collect("Payment Entry", rows)
+
+	# A draft invoice with a submitted payment entry is still downstream financial
+	# activity. Resolve Payment Entry references before the invoice is deleted.
+	if invoices and _teardown_doctype_exists("Payment Entry Reference"):
+		reference_rows = _teardown_rows(
+			"Payment Entry Reference",
+			{"reference_name": ["in", list(invoices)]},
+			["parent"],
+		)
+		payment_entry_names = {row.parent for row in reference_rows if row.parent}
+		if payment_entry_names:
+			payment_entry_rows = _teardown_rows(
+				"Payment Entry",
+				{"name": ["in", list(payment_entry_names)]},
+				["name", "docstatus"],
+			)
+			collect("Payment Entry", payment_entry_rows)
+
+	return draft_names
+
+
+def _teardown_downstream_records(deal_name):
+	for doctype in ("CRM Onboarding Request", "CRM Partner Rebate Voucher", "CRM Sales Commission"):
+		rows = _teardown_rows(doctype, {"deal": deal_name}, ["name"])
+		if rows:
+			frappe.throw(
+				_("This Deal has downstream records and cannot be torn down safely."),
+				frappe.ValidationError,
+			)
+
+
+def _teardown_lead_candidate(submission, deal_name):
+	"""Return an OIS-created Lead only when no other pipeline uses it."""
+	lead_name = frappe.utils.cstr(getattr(submission, "lead", None) or "").strip()
+	if not lead_name or not frappe.db.exists("CRM Lead", lead_name):
+		return ""
+	if not _teardown_has_field("CRM Lead", "optin_network_slug") or not _teardown_has_field(
+		"CRM Lead", "tc_accepted"
+	):
+		return ""
+	lead = frappe.get_doc("CRM Lead", lead_name)
+	if (
+		frappe.utils.cstr(lead.get("optin_network_slug") or "").strip()
+		!= frappe.utils.cstr(submission.network_slug or "").strip()
+	):
+		return ""
+	if not frappe.utils.cint(lead.get("tc_accepted")):
+		return ""
+	if (
+		frappe.utils.cstr(lead.get("email") or "").strip().lower()
+		!= frappe.utils.cstr(submission.submitter_email or "").strip().lower()
+	):
+		return ""
+
+	other_deals = _teardown_rows("CRM Deal", {"lead": lead_name}, ["name"])
+	if any(row.name != deal_name for row in other_deals):
+		return ""
+	other_submissions = _teardown_rows("CRM Opt-In Submission", {"lead": lead_name}, ["name"])
+	if any(row.name != submission.name for row in other_submissions):
+		return ""
+	return lead_name
+
+
+def _teardown_email_records(submission, target_docs, contract_names):
+	queue_names = {
+		frappe.utils.cstr(getattr(submission, fieldname, None) or "").strip()
+		for fieldname in (
+			"confirmation_email_queue",
+			"contract_invitation_email_queue",
+			"payment_link_email_queue",
+		)
+		if frappe.utils.cstr(getattr(submission, fieldname, None) or "").strip()
+	}
+	communication_names = set()
+	queue_rows = []
+	# A Deal usually has unrelated sales history. Restrict primary Communication
+	# cleanup to the OIS, its Contract, and its Quotations; Deal-only activity is
+	# retained unless it is explicitly linked to one of those records.
+	scoped_docs = [(doctype, name) for doctype, name in target_docs if doctype != "CRM Deal"]
+	for doctype, name in scoped_docs:
+		queue_rows.extend(
+			_teardown_rows(
+				"Email Queue",
+				{"reference_doctype": doctype, "reference_name": name},
+				["name", "status", "communication"],
+			)
+		)
+	if queue_names:
+		queue_rows.extend(
+			_teardown_rows(
+				"Email Queue",
+				{"name": ["in", list(queue_names)]},
+				["name", "status", "communication"],
+			)
+		)
+	for row in queue_rows:
+		if row.name:
+			queue_names.add(row.name)
+		if row.get("communication"):
+			communication_names.add(row.communication)
+
+	for doctype, name in scoped_docs:
+		communication_names.update(
+			row.name
+			for row in _teardown_rows(
+				"Communication",
+				{"reference_doctype": doctype, "reference_name": name},
+				["name"],
+			)
+			if row.name
+		)
+		communication_names.update(
+			row.parent
+			for row in _teardown_rows(
+				"Communication Link",
+				{"link_doctype": doctype, "link_name": name},
+				["parent"],
+			)
+			if row.parent
+		)
+	if communication_names:
+		linked_queue_rows = _teardown_rows(
+			"Email Queue",
+			{"communication": ["in", list(communication_names)]},
+			["name", "status", "communication"],
+		)
+		queue_rows.extend(linked_queue_rows)
+		for row in linked_queue_rows:
+			if row.name:
+				queue_names.add(row.name)
+			if row.get("communication"):
+				communication_names.add(row.communication)
+	if any(frappe.utils.cstr(row.get("status") or "").strip() == "Sending" for row in queue_rows):
+		frappe.throw(
+			_("An email for this Opt-In is currently being sent. Try again after it finishes."),
+			frappe.ValidationError,
+		)
+
+	sms_delivery_names = set()
+	if contract_names:
+		for row in _teardown_rows(
+			"CRM Contract SMS Delivery",
+			{"contract": ["in", list(contract_names)]},
+			["name"],
+		):
+			if row.name:
+				sms_delivery_names.add(row.name)
+	return list(queue_names), list(communication_names), list(sms_delivery_names)
+
+
+def _teardown_restore_memberships(submission, mfl_codes):
+	if not mfl_codes or not submission.network_slug:
+		return
+	remaining_rows = _teardown_rows(
+		"CRM Opt-In Submission",
+		{
+			"network_slug": submission.network_slug,
+			"status": ["in", ["Processed", "Processing"]],
+		},
+		["name", "raw_json"],
+	)
+	remaining_mfl_codes = set()
+	for row in remaining_rows:
+		if row.name != submission.name:
+			remaining_mfl_codes.update(_teardown_mfl_codes(row.get("raw_json")))
+	available_codes = mfl_codes - remaining_mfl_codes
+	if not available_codes:
+		return
+
+	facility_rows = _teardown_rows(
+		"CRM Pre-Qualified Facility",
+		{"mfl_code": ["in", list(available_codes)]},
+		["name"],
+	)
+	parent_names = [row.name for row in facility_rows if row.name]
+	if not parent_names:
+		return
+	memberships = _teardown_rows(
+		"CRM Facility Membership",
+		{
+			"parenttype": "CRM Pre-Qualified Facility",
+			"parent": ["in", parent_names],
+			"network": submission.network_slug,
+			"status": "Opted In",
+		},
+		["name"],
+	)
+	for membership in memberships:
+		frappe.db.set_value(
+			"CRM Facility Membership",
+			membership.name,
+			{
+				"status": "Active",
+				"otp_hash": "",
+				"otp_expiry": None,
+				"otp_attempts": 0,
+			},
+			update_modified=False,
+		)
+
+
+def _teardown_clear_links(submission, deal_name):
+	for fieldname in (
+		"confirmation_email_queue",
+		"contract_invitation_email_queue",
+		"payment_link_email_queue",
+		"contract",
+		"lead",
+		"deal",
+	):
+		if _teardown_has_field("CRM Opt-In Submission", fieldname):
+			frappe.db.set_value(
+				"CRM Opt-In Submission",
+				submission.name,
+				fieldname,
+				None,
+				update_modified=False,
+			)
+	if (
+		deal_name
+		and frappe.db.exists("CRM Deal", deal_name)
+		and _teardown_has_field("CRM Deal", "optin_submission")
+	):
+		frappe.db.set_value("CRM Deal", deal_name, "optin_submission", None, update_modified=False)
+
+
+@frappe.whitelist()
+def teardown_submission(submission_ref: Any):
+	"""Delete one unexecuted Opt-In pipeline so the request can be submitted again.
+
+	Only the OIS, its clearly-owned draft quotations/contracts, delivery records, the
+	OIS-created Lead (when provably orphaned), and its Deal are removed. Shared CRM
+	identity records are deliberately preserved. Signed, billed, or downstream Deals
+	are rejected before any mutation is made.
+	"""
+	_require_optin_manager()
+	submission_ref = frappe.utils.cstr(submission_ref).strip()
+	if not submission_ref:
+		frappe.throw(_("An Opt-In submission is required."), frappe.ValidationError)
+	if not frappe.has_permission("CRM Opt-In Submission", "read", submission_ref):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	status = frappe.db.get_value("CRM Opt-In Submission", submission_ref, "status", for_update=True)
+	if not status:
+		frappe.throw(_("Opt-In submission not found."), frappe.DoesNotExistError)
+	if status == "Processing":
+		frappe.throw(
+			_("This Opt-In is still processing. Try again after processing finishes."),
+			frappe.ValidationError,
+		)
+
+	submission = frappe.get_doc("CRM Opt-In Submission", submission_ref)
+	deal_name = frappe.utils.cstr(getattr(submission, "deal", None) or "").strip()
+	if deal_name:
+		other_submissions = _teardown_rows("CRM Opt-In Submission", {"deal": deal_name}, ["name"])
+		if any(row.name != submission.name for row in other_submissions):
+			frappe.throw(
+				_("This Deal has another Opt-In submission and cannot be torn down safely."),
+				frappe.ValidationError,
+			)
+	payload = _teardown_submission_payload(submission)
+	contract_names, contract_rows = _teardown_contracts(submission, deal_name)
+	quote_names = _teardown_quotes(submission, deal_name, payload, contract_rows)
+	financial_records = _teardown_financial_records(submission.name, deal_name, quote_names) or {}
+	if deal_name:
+		_teardown_downstream_records(deal_name)
+	lead_name = _teardown_lead_candidate(submission, deal_name)
+	target_docs = [("CRM Opt-In Submission", submission.name)]
+	if deal_name:
+		target_docs.append(("CRM Deal", deal_name))
+	target_docs.extend(("CRM Contract", name) for name in contract_names)
+	target_docs.extend(("Quotation", name) for name in quote_names)
+	queue_names, communication_names, sms_delivery_names = _teardown_email_records(
+		submission, target_docs, contract_names
+	)
+	mfl_codes = _teardown_mfl_codes(submission.raw_json)
+	_teardown_clear_links(submission, deal_name)
+
+	# Delete in dependency order. Every deletion uses normal Frappe link checks; force
+	# is intentionally not used, so an unexpected reference rolls the transaction back.
+	for name in queue_names:
+		if frappe.db.exists("Email Queue", name):
+			frappe.delete_doc("Email Queue", name, ignore_permissions=True)  # SYSTEM-INTERNAL
+	for name in communication_names:
+		if frappe.db.exists("Communication", name):
+			frappe.delete_doc("Communication", name, ignore_permissions=True)  # SYSTEM-INTERNAL
+	for name in sms_delivery_names:
+		if frappe.db.exists("CRM Contract SMS Delivery", name):
+			frappe.delete_doc("CRM Contract SMS Delivery", name, ignore_permissions=True)  # SYSTEM-INTERNAL
+	for doctype in ("Payment Entry", "Sales Invoice", "Sales Order"):
+		for name in financial_records.get(doctype, set()):
+			if frappe.db.exists(doctype, name):
+				frappe.delete_doc(doctype, name, ignore_permissions=True)  # SYSTEM-INTERNAL
+	for doctype, names in (("CRM Contract", contract_names), ("Quotation", quote_names)):
+		for name in names:
+			if frappe.db.exists(doctype, name):
+				frappe.delete_doc(doctype, name, ignore_permissions=True)  # SYSTEM-INTERNAL
+	if deal_name and frappe.db.exists("CRM Deal", deal_name):
+		frappe.delete_doc("CRM Deal", deal_name, ignore_permissions=True)  # SYSTEM-INTERNAL
+	if lead_name and frappe.db.exists("CRM Lead", lead_name):
+		frappe.delete_doc("CRM Lead", lead_name, ignore_permissions=True)  # SYSTEM-INTERNAL
+	if frappe.db.exists("CRM Opt-In Submission", submission.name):
+		frappe.delete_doc(
+			"CRM Opt-In Submission", submission.name, ignore_permissions=True
+		)  # SYSTEM-INTERNAL
+
+	_teardown_restore_memberships(submission, mfl_codes)
+	frappe.db.commit()
+	return {
+		"status": "deleted",
+		"submission_ref": submission.name,
+		"deal": deal_name or None,
+		"contracts": len(contract_names),
+		"quotations": len(quote_names),
+	}
 
 
 # nosemgrep: guest-whitelisted-method -- verified submitters may retry only their own failed submissions.

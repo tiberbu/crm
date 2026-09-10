@@ -433,14 +433,32 @@
               </div>
             </td>
             <td class="px-4 py-3" @click.stop>
-              <Button
-                v-if="row.status === 'Failed'"
-                size="sm"
-                variant="subtle"
-                :loading="retrying === row.name"
-                @click="retry(row)"
-                >{{ __('Retry') }}</Button
-              >
+              <div class="flex flex-wrap gap-2">
+                <Button
+                  v-if="row.status === 'Failed'"
+                  size="sm"
+                  variant="subtle"
+                  :loading="retrying === row.name"
+                  @click="retry(row)"
+                  >{{ __('Retry') }}</Button
+                >
+                <Button
+                  v-if="row.status !== 'Processing'"
+                  size="sm"
+                  variant="subtle"
+                  theme="red"
+                  :disabled="row.has_submitted_invoice"
+                  :title="
+                    row.has_submitted_invoice
+                      ? __(
+                          'A submitted or cancelled invoice prevents teardown.',
+                        )
+                      : undefined
+                  "
+                  @click="openTeardown(row)"
+                  >{{ __('Tear down') }}</Button
+                >
+              </div>
             </td>
           </tr>
         </tbody>
@@ -478,12 +496,67 @@
         </div>
       </div>
     </div>
+
+    <Dialog
+      v-model:open="showTeardownDialog"
+      :title="__('Tear down Opt-In request?')"
+    >
+      <template #default>
+        <div class="flex flex-col gap-3 text-sm text-ink-gray-7">
+          <p>
+            {{
+              __(
+                'This permanently removes the Opt-In request, its generated contract, draft quotations and invoices, Deal, and delivery records.',
+              )
+            }}
+          </p>
+          <p class="text-xs text-ink-gray-5">
+            {{
+              __(
+                'A submitted or cancelled invoice prevents teardown; only eligible draft billing records are removed.',
+              )
+            }}
+          </p>
+          <p>
+            {{
+              __(
+                'The associated facility memberships will be made available for a fresh Opt-In submission. Shared CRM contacts and organisations are preserved.',
+              )
+            }}
+          </p>
+          <p class="font-medium text-ink-red-6">
+            {{
+              __(
+                'This cannot be undone, and an email that was already sent cannot be recalled.',
+              )
+            }}
+          </p>
+        </div>
+      </template>
+      <template #actions>
+        <div class="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            :disabled="tearingDown === teardownRow?.name"
+            @click="closeTeardown"
+            >{{ __('Cancel') }}</Button
+          >
+          <Button
+            variant="solid"
+            theme="red"
+            :loading="tearingDown === teardownRow?.name"
+            @click="teardown"
+            >{{ __('Tear down') }}</Button
+          >
+        </div>
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { createResource, Button } from 'frappe-ui'
+import { createResource, Button, Dialog, toast } from 'frappe-ui'
 import { useStorage } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -508,6 +581,9 @@ if (pendingMyActionQuery === '1' || pendingMyActionQuery === '0') {
 const page = ref(0)
 const pageSize = 20
 const retrying = ref(null)
+const tearingDown = ref(null)
+const showTeardownDialog = ref(false)
+const teardownRow = ref(null)
 
 function setStatus(s) {
   selectedStatus.value = s
@@ -620,6 +696,44 @@ async function retry(row) {
     listResource.reload()
   } finally {
     retrying.value = null
+  }
+}
+
+const teardownResource = createResource({
+  url: 'crm.api.optin.teardown_submission',
+})
+
+function openTeardown(row) {
+  teardownRow.value = row
+  showTeardownDialog.value = true
+}
+
+function closeTeardown() {
+  if (tearingDown.value) return
+  showTeardownDialog.value = false
+  teardownRow.value = null
+}
+
+async function teardown() {
+  const row = teardownRow.value
+  if (!row || tearingDown.value) return
+  tearingDown.value = row.name
+  try {
+    await teardownResource.submit({ submission_ref: row.name })
+    showTeardownDialog.value = false
+    teardownRow.value = null
+    toast.success(
+      __('Opt-In request torn down. It can now be submitted again.'),
+    )
+    listResource.reload()
+  } catch (error) {
+    toast.error(
+      error?.messages?.[0] ||
+        error?.message ||
+        __('Could not tear down this Opt-In request.'),
+    )
+  } finally {
+    tearingDown.value = null
   }
 }
 
