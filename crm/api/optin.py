@@ -4509,7 +4509,7 @@ def _submission_invoice_flags(rows):
 			if submission_name not in flags:
 				continue
 			flags[submission_name]["has_linked_invoice"] = True
-			if int(invoice_row.get("docstatus") or 0) != 0:
+			if int(invoice_row.get("docstatus") or 0) == 1:
 				flags[submission_name]["has_submitted_invoice"] = True
 
 	submission_names = list(flags)
@@ -5480,6 +5480,110 @@ def _teardown_rows(doctype, filters, fields):
 	)
 
 
+_TEARDOWN_ACTIVITY_LINK_FIELDS = {
+	"Event": (("reference_doctype", "reference_docname"),),
+	"FCRM Note": (("reference_doctype", "reference_docname"),),
+	"CRM Task": (("reference_doctype", "reference_docname"),),
+	"CRM Call Log": (("reference_doctype", "reference_docname"),),
+	"CRM Notification": (
+		("reference_doctype", "reference_name"),
+		("notification_type_doctype", "notification_type_doc"),
+	),
+	"ToDo": (("reference_type", "reference_name"),),
+	"Comment": (("reference_doctype", "reference_name"),),
+}
+_TEARDOWN_ACTIVITY_DOCTYPES = tuple(_TEARDOWN_ACTIVITY_LINK_FIELDS)
+
+
+def _teardown_activity_records(target_docs):
+	"""Collect activity records that would otherwise keep scoped documents linked."""
+	activity_names = {doctype: set() for doctype in _TEARDOWN_ACTIVITY_DOCTYPES}
+	seen = set(target_docs)
+	pending = list(target_docs)
+
+	def add_record(doctype, name):
+		name = frappe.utils.cstr(name or "").strip()
+		if not name or doctype not in activity_names:
+			return
+		pair = (doctype, name)
+		if pair in seen:
+			return
+		seen.add(pair)
+		activity_names[doctype].add(name)
+		pending.append(pair)
+
+	while pending:
+		reference_doctype, reference_name = pending.pop()
+		if not reference_name:
+			continue
+
+		for doctype, link_fields in _TEARDOWN_ACTIVITY_LINK_FIELDS.items():
+			if not _teardown_doctype_exists(doctype):
+				continue
+			for doctype_field, name_field in link_fields:
+				if not _teardown_has_field(doctype, doctype_field) or not _teardown_has_field(
+					doctype, name_field
+				):
+					continue
+				rows = _teardown_rows(
+					doctype,
+					{doctype_field: reference_doctype, name_field: reference_name},
+					["name"],
+				)
+				for row in rows:
+					add_record(doctype, row.name)
+
+		# Event and CRM call logs can store additional Dynamic Link rows rather
+		# than using their primary reference fields. Only activity parents are
+		# collected here; an arbitrary business document must never be purged just
+		# because it has a Dynamic Link to the teardown scope.
+		if _teardown_doctype_exists("Dynamic Link"):
+			rows = _teardown_rows(
+				"Dynamic Link",
+				{
+					"parenttype": ["in", list(_TEARDOWN_ACTIVITY_DOCTYPES)],
+					"link_doctype": reference_doctype,
+					"link_name": reference_name,
+				},
+				["parent", "parenttype"],
+			)
+			for row in rows:
+				add_record(row.parenttype, row.parent)
+
+		if _teardown_doctype_exists("Event Participants"):
+			rows = _teardown_rows(
+				"Event Participants",
+				{
+					"parenttype": "Event",
+					"reference_doctype": reference_doctype,
+					"reference_docname": reference_name,
+				},
+				["parent", "parenttype"],
+			)
+			for row in rows:
+				add_record(row.parenttype, row.parent)
+
+		if reference_doctype == "CRM Call Log" and _teardown_doctype_exists("CRM Call Log"):
+			rows = _teardown_rows(
+				"CRM Call Log",
+				{"name": reference_name},
+				["name", "note"],
+			)
+			for row in rows:
+				add_record("FCRM Note", row.get("note"))
+
+		if reference_doctype == "CRM Notification" and _teardown_doctype_exists("CRM Notification"):
+			rows = _teardown_rows(
+				"CRM Notification",
+				{"name": reference_name},
+				["name", "comment"],
+			)
+			for row in rows:
+				add_record("Comment", row.get("comment"))
+
+	return {doctype: sorted(names) for doctype, names in activity_names.items() if names}
+
+
 def _teardown_submission_payload(submission):
 	payload = decode_json(getattr(submission, "raw_json", None), {})
 	return payload if isinstance(payload, dict) else {}
@@ -5569,22 +5673,14 @@ def _teardown_quotes(submission, deal_name, payload, contract_rows):
 		quote_names.update(row.name for row in rows if row.name)
 
 	if not deal_name:
-		quote_rows = _teardown_rows(
-			"Quotation",
-			{"name": ["in", list(quote_names)]},
-			["name", "docstatus"],
-		)
-		if any(int(row.get("docstatus") or 0) != 0 for row in quote_rows):
-			frappe.throw(
-				_("This Opt-In cannot be torn down because one of its quotations is no longer a draft."),
-				frappe.ValidationError,
-			)
-		return list(quote_names)
+		return _teardown_follow_version_links("Quotation", quote_names, ("previous_version", "amended_from"))
 
 	deal_quote_fields = ["name", "docstatus"]
 	if _teardown_has_field("Quotation", "crm_optin_submission"):
 		deal_quote_fields.append("crm_optin_submission")
-	deal_quotes = _teardown_rows("Quotation", {"crm_deal": deal_name}, deal_quote_fields)
+	deal_quotes = []
+	if _teardown_has_field("Quotation", "crm_deal"):
+		deal_quotes = _teardown_rows("Quotation", {"crm_deal": deal_name}, deal_quote_fields)
 	for row in deal_quotes:
 		provenance = frappe.utils.cstr(row.get("crm_optin_submission") or "").strip()
 		if provenance and provenance != submission.name:
@@ -5605,43 +5701,105 @@ def _teardown_quotes(submission, deal_name, payload, contract_rows):
 			frappe.ValidationError,
 		)
 	quote_names.update(row.name for row in deal_quotes if row.name)
+	return _teardown_follow_version_links("Quotation", quote_names, ("previous_version", "amended_from"))
 
-	quote_rows = _teardown_rows(
-		"Quotation",
-		{"name": ["in", list(quote_names)]},
-		["name", "docstatus"],
-	)
-	if any(int(row.get("docstatus") or 0) != 0 for row in quote_rows):
-		frappe.throw(
-			_("This Opt-In cannot be torn down because one of its quotations is no longer a draft."),
-			frappe.ValidationError,
-		)
-	return list(quote_names)
+
+def _teardown_follow_version_links(doctype, names, fieldnames):
+	"""Include every later version that points back to a scoped document."""
+	names = set(names)
+	if not names or not _teardown_doctype_exists(doctype):
+		return sorted(names)
+	available_fields = [fieldname for fieldname in fieldnames if _teardown_has_field(doctype, fieldname)]
+	fields = ["name", *available_fields]
+	for fieldname in available_fields:
+		while True:
+			rows = _teardown_rows(
+				doctype,
+				{fieldname: ["in", list(names)]},
+				fields,
+			)
+			new_names = {row.name for row in rows if row.name} - names
+			if not new_names:
+				break
+			names.update(new_names)
+	return sorted(names)
+
+
+def _teardown_crm_quotes(deal_name):
+	"""Collect CRM Quote versions attached to the Deal, including older versions."""
+	if not deal_name or not _teardown_doctype_exists("CRM Quote"):
+		return []
+	fields = ["name"]
+	if _teardown_has_field("CRM Quote", "previous_version"):
+		fields.append("previous_version")
+	rows = _teardown_rows("CRM Quote", {"deal": deal_name}, fields)
+	quote_names = {row.name for row in rows if row.name}
+	return _teardown_follow_version_links("CRM Quote", quote_names, ("previous_version",))
 
 
 def _teardown_financial_records(submission_name, deal_name, quote_names):
-	"""Collect draft financial records and reject submitted downstream records."""
-	draft_names = {
+	"""Collect linked financial records; only a submitted invoice blocks teardown."""
+	teardown_names = {
+		"Delivery Note": set(),
 		"Payment Entry": set(),
 		"Sales Invoice": set(),
 		"Sales Order": set(),
 	}
 	invoices = set()
+	sales_orders = set()
+	delivery_notes = set()
+	payment_entries = set()
 
 	def collect(doctype, rows):
 		for row in rows:
 			if not row.name:
 				continue
-			if int(row.get("docstatus") or 0) != 0:
+			if doctype == "Sales Invoice" and int(row.get("docstatus") or 0) == 1:
 				frappe.throw(
-					_(
-						"This Opt-In cannot be torn down because submitted or cancelled financial records exist."
-					),
+					_("This Opt-In cannot be torn down because a submitted invoice exists."),
 					frappe.ValidationError,
 				)
-			draft_names[doctype].add(row.name)
+			teardown_names[doctype].add(row.name)
 			if doctype == "Sales Invoice":
 				invoices.add(row.name)
+			elif doctype == "Sales Order":
+				sales_orders.add(row.name)
+			elif doctype == "Delivery Note":
+				delivery_notes.add(row.name)
+			elif doctype == "Payment Entry":
+				payment_entries.add(row.name)
+
+	def collect_child_parents(child_doctype, link_field, values, parent_doctype):
+		if (
+			not values
+			or not _teardown_doctype_exists(child_doctype)
+			or not _teardown_has_field(child_doctype, link_field)
+		):
+			return set()
+		rows = _teardown_rows(
+			child_doctype,
+			{link_field: ["in", list(values)]},
+			["parent", "parenttype"],
+		)
+		return {
+			row.parent
+			for row in rows
+			if row.get("parent") and row.get("parenttype") in (None, parent_doctype)
+		}
+
+	def collect_child_values(child_doctype, parent_names, value_field, parent_doctype):
+		if (
+			not parent_names
+			or not _teardown_doctype_exists(child_doctype)
+			or not _teardown_has_field(child_doctype, value_field)
+		):
+			return set()
+		rows = _teardown_rows(
+			child_doctype,
+			{"parent": ["in", list(parent_names)], "parenttype": parent_doctype},
+			[value_field],
+		)
+		return {row.get(value_field) for row in rows if row.get(value_field)}
 
 	for doctype in ("Sales Order", "Sales Invoice"):
 		if not _teardown_doctype_exists(doctype):
@@ -5665,6 +5823,26 @@ def _teardown_financial_records(submission_name, deal_name, quote_names):
 			)
 			collect(doctype, rows)
 
+	# A quotation can be converted to a Sales Order without retaining an Opt-In
+	# field. Resolve that standard ERPNext chain before deleting the Deal.
+	if quote_names and _teardown_doctype_exists("Sales Order Item"):
+		if _teardown_has_field("Sales Order Item", "prevdoc_docname"):
+			rows = _teardown_rows(
+				"Sales Order Item",
+				{"prevdoc_docname": ["in", list(quote_names)]},
+				["parent", "parenttype"],
+			)
+			for row in rows:
+				if row.get("parenttype") in (None, "Sales Order") and row.get("parent"):
+					sales_orders.add(row.parent)
+		if sales_orders:
+			order_rows = _teardown_rows(
+				"Sales Order",
+				{"name": ["in", list(sales_orders)]},
+				["name", "docstatus"],
+			)
+			collect("Sales Order", order_rows)
+
 	if _teardown_doctype_exists("Payment Entry"):
 		if _teardown_has_field("Payment Entry", "crm_optin_submission"):
 			rows = _teardown_rows(
@@ -5674,34 +5852,109 @@ def _teardown_financial_records(submission_name, deal_name, quote_names):
 			)
 			collect("Payment Entry", rows)
 
-	# A draft invoice with a submitted payment entry is still downstream financial
-	# activity. Resolve Payment Entry references before the invoice is deleted.
-	if invoices and _teardown_doctype_exists("Payment Entry Reference"):
-		reference_rows = _teardown_rows(
-			"Payment Entry Reference",
-			{"reference_name": ["in", list(invoices)]},
-			["parent"],
+	# Resolve standard ERPNext document chains. The loop is deliberately bounded by
+	# set growth rather than document status: it covers both directions of the
+	# Quotation → Sales Order → Delivery Note/Sales Invoice → Payment Entry graph.
+	while True:
+		previous_scope = (len(sales_orders), len(delivery_notes), len(invoices), len(payment_entries))
+
+		invoices.update(
+			collect_child_parents("Sales Invoice Item", "sales_order", sales_orders, "Sales Invoice")
 		)
-		payment_entry_names = {row.parent for row in reference_rows if row.parent}
-		if payment_entry_names:
-			payment_entry_rows = _teardown_rows(
-				"Payment Entry",
-				{"name": ["in", list(payment_entry_names)]},
+		if invoices and _teardown_doctype_exists("Sales Invoice"):
+			invoice_rows = _teardown_rows(
+				"Sales Invoice",
+				{"name": ["in", list(invoices)]},
 				["name", "docstatus"],
 			)
-			collect("Payment Entry", payment_entry_rows)
+			collect("Sales Invoice", invoice_rows)
+		delivery_notes.update(
+			collect_child_parents("Delivery Note Item", "against_sales_order", sales_orders, "Delivery Note")
+		)
+		delivery_notes.update(
+			collect_child_parents("Delivery Note Item", "against_sales_invoice", invoices, "Delivery Note")
+		)
+		delivery_notes.update(
+			collect_child_values("Sales Invoice Item", invoices, "delivery_note", "Sales Invoice")
+		)
 
-	return draft_names
+		if delivery_notes and _teardown_doctype_exists("Delivery Note"):
+			delivery_rows = _teardown_rows(
+				"Delivery Note",
+				{"name": ["in", list(delivery_notes)]},
+				["name", "docstatus"],
+			)
+			collect("Delivery Note", delivery_rows)
+
+		invoice_names = set()
+		if delivery_notes:
+			invoice_names.update(
+				collect_child_values(
+					"Delivery Note Item", delivery_notes, "against_sales_invoice", "Delivery Note"
+				)
+			)
+		if invoice_names and _teardown_doctype_exists("Sales Invoice"):
+			invoice_rows = _teardown_rows(
+				"Sales Invoice",
+				{"name": ["in", list(invoice_names)]},
+				["name", "docstatus"],
+			)
+			collect("Sales Invoice", invoice_rows)
+
+		if invoices and _teardown_doctype_exists("Payment Entry Reference"):
+			reference_rows = _teardown_rows(
+				"Payment Entry Reference",
+				{"reference_name": ["in", list(invoices)], "reference_doctype": "Sales Invoice"},
+				["parent", "parenttype"],
+			)
+			payment_entries.update(
+				row.parent
+				for row in reference_rows
+				if row.get("parent") and row.get("parenttype") in (None, "Payment Entry")
+			)
+		if payment_entries and _teardown_doctype_exists("Payment Entry Reference"):
+			reference_rows = _teardown_rows(
+				"Payment Entry Reference",
+				{"parent": ["in", list(payment_entries)], "parenttype": "Payment Entry"},
+				["reference_doctype", "reference_name"],
+			)
+			payment_invoice_names = {
+				row.reference_name
+				for row in reference_rows
+				if row.get("reference_doctype") == "Sales Invoice" and row.get("reference_name")
+			}
+			if payment_invoice_names and _teardown_doctype_exists("Sales Invoice"):
+				invoice_rows = _teardown_rows(
+					"Sales Invoice",
+					{"name": ["in", list(payment_invoice_names)]},
+					["name", "docstatus"],
+				)
+				collect("Sales Invoice", invoice_rows)
+
+		current_scope = (len(sales_orders), len(delivery_notes), len(invoices), len(payment_entries))
+		if current_scope == previous_scope:
+			break
+
+	if payment_entries and _teardown_doctype_exists("Payment Entry"):
+		payment_entry_rows = _teardown_rows(
+			"Payment Entry",
+			{"name": ["in", list(payment_entries)]},
+			["name", "docstatus"],
+		)
+		collect("Payment Entry", payment_entry_rows)
+
+	return teardown_names
 
 
 def _teardown_downstream_records(deal_name):
+	"""Collect downstream records owned by the Deal for deletion."""
+	if not deal_name:
+		return {}
+	records = {}
 	for doctype in ("CRM Onboarding Request", "CRM Partner Rebate Voucher", "CRM Sales Commission"):
 		rows = _teardown_rows(doctype, {"deal": deal_name}, ["name"])
-		if rows:
-			frappe.throw(
-				_("This Deal has downstream records and cannot be torn down safely."),
-				frappe.ValidationError,
-			)
+		records[doctype] = {row.name for row in rows if row.name}
+	return records
 
 
 def _teardown_lead_candidate(submission, deal_name):
@@ -5734,6 +5987,54 @@ def _teardown_lead_candidate(submission, deal_name):
 	if any(row.name != submission.name for row in other_submissions):
 		return ""
 	return lead_name
+
+
+_TEARDOWN_CANCELLABLE_DOCTYPES = {
+	"Delivery Note",
+	"Payment Entry",
+	"Quotation",
+	"Sales Order",
+}
+
+
+def _teardown_cancel_submitted_document(doctype, name):
+	"""Cancel an owned submitted non-invoice document before deleting it."""
+	if doctype not in _TEARDOWN_CANCELLABLE_DOCTYPES:
+		return
+	docstatus = frappe.utils.cint(frappe.db.get_value(doctype, name, "docstatus"))
+	if docstatus != 1:
+		return
+	doc = frappe.get_doc(doctype, name)
+	if not doc.meta.is_submittable:
+		return
+	doc.flags.ignore_permissions = True  # SYSTEM-INTERNAL: manager teardown
+	doc.cancel()
+
+
+def _teardown_delete_documents(documents):
+	"""Delete scoped documents, retrying records blocked by another scoped record."""
+	pending = list(dict.fromkeys(documents))
+	while pending:
+		next_pending = []
+		deleted = False
+		last_link_error = None
+		for doctype, name in pending:
+			if not name or not frappe.db.exists(doctype, name):
+				deleted = True
+				continue
+			try:
+				_teardown_cancel_submitted_document(doctype, name)
+				frappe.delete_doc(doctype, name, ignore_permissions=True)  # SYSTEM-INTERNAL
+			except frappe.LinkExistsError as error:
+				next_pending.append((doctype, name))
+				last_link_error = error
+			else:
+				deleted = True
+		if not next_pending:
+			return
+		if not deleted:
+			raise last_link_error
+		pending = next_pending
 
 
 def _teardown_email_records(submission, target_docs, contract_names):
@@ -5901,12 +6202,12 @@ def _teardown_clear_links(submission, deal_name):
 
 @frappe.whitelist()
 def teardown_submission(submission_ref: Any):
-	"""Delete one unexecuted Opt-In pipeline so the request can be submitted again.
+	"""Delete one Opt-In pipeline so the request can be submitted again.
 
-	Only the OIS, its clearly-owned draft quotations/contracts, delivery records, the
-	OIS-created Lead (when provably orphaned), and its Deal are removed. Shared CRM
-	identity records are deliberately preserved. A submitted or cancelled invoice
-	blocks the teardown before any mutation is made.
+	The OIS, its clearly-owned quotations/contracts, activity records, downstream
+	records, billing records, the OIS-created Lead (when provably orphaned), and its
+	Deal are removed. Shared CRM identity records are deliberately preserved. A
+	submitted invoice blocks the teardown before any mutation is made.
 	"""
 	_require_optin_manager()
 	submission_ref = frappe.utils.cstr(submission_ref).strip()
@@ -5936,48 +6237,63 @@ def teardown_submission(submission_ref: Any):
 	payload = _teardown_submission_payload(submission)
 	contract_names, contract_rows = _teardown_contracts(submission, deal_name)
 	quote_names = _teardown_quotes(submission, deal_name, payload, contract_rows)
+	crm_quote_names = _teardown_crm_quotes(deal_name)
 	financial_records = _teardown_financial_records(submission.name, deal_name, quote_names) or {}
-	if deal_name:
-		_teardown_downstream_records(deal_name)
+	downstream_records = _teardown_downstream_records(deal_name) or {}
+	if not isinstance(downstream_records, dict):
+		downstream_records = {}
 	lead_name = _teardown_lead_candidate(submission, deal_name)
 	target_docs = [("CRM Opt-In Submission", submission.name)]
 	if deal_name:
 		target_docs.append(("CRM Deal", deal_name))
 	target_docs.extend(("CRM Contract", name) for name in contract_names)
 	target_docs.extend(("Quotation", name) for name in quote_names)
+	target_docs.extend(("CRM Quote", name) for name in crm_quote_names)
+	for doctype, names in downstream_records.items():
+		target_docs.extend((doctype, name) for name in names)
+	for doctype in ("Payment Entry", "Delivery Note", "Sales Invoice", "Sales Order"):
+		target_docs.extend((doctype, name) for name in financial_records.get(doctype, set()))
+	if lead_name:
+		target_docs.append(("CRM Lead", lead_name))
 	queue_names, communication_names, sms_delivery_names = _teardown_email_records(
 		submission, target_docs, contract_names
 	)
+	activity_records = _teardown_activity_records(target_docs)
 	mfl_codes = _teardown_mfl_codes(submission.raw_json)
 	_teardown_clear_links(submission, deal_name)
 
 	# Delete in dependency order. Every deletion uses normal Frappe link checks; force
-	# is intentionally not used, so an unexpected reference rolls the transaction back.
-	for name in queue_names:
-		if frappe.db.exists("Email Queue", name):
-			frappe.delete_doc("Email Queue", name, ignore_permissions=True)  # SYSTEM-INTERNAL
-	for name in communication_names:
-		if frappe.db.exists("Communication", name):
-			frappe.delete_doc("Communication", name, ignore_permissions=True)  # SYSTEM-INTERNAL
-	for name in sms_delivery_names:
-		if frappe.db.exists("CRM Contract SMS Delivery", name):
-			frappe.delete_doc("CRM Contract SMS Delivery", name, ignore_permissions=True)  # SYSTEM-INTERNAL
-	for doctype in ("Payment Entry", "Sales Invoice", "Sales Order"):
-		for name in financial_records.get(doctype, set()):
-			if frappe.db.exists(doctype, name):
-				frappe.delete_doc(doctype, name, ignore_permissions=True)  # SYSTEM-INTERNAL
-	for doctype, names in (("CRM Contract", contract_names), ("Quotation", quote_names)):
-		for name in names:
-			if frappe.db.exists(doctype, name):
-				frappe.delete_doc(doctype, name, ignore_permissions=True)  # SYSTEM-INTERNAL
-	if deal_name and frappe.db.exists("CRM Deal", deal_name):
-		frappe.delete_doc("CRM Deal", deal_name, ignore_permissions=True)  # SYSTEM-INTERNAL
-	if lead_name and frappe.db.exists("CRM Lead", lead_name):
-		frappe.delete_doc("CRM Lead", lead_name, ignore_permissions=True)  # SYSTEM-INTERNAL
-	if frappe.db.exists("CRM Opt-In Submission", submission.name):
-		frappe.delete_doc(
-			"CRM Opt-In Submission", submission.name, ignore_permissions=True
-		)  # SYSTEM-INTERNAL
+	# is intentionally not used. Scoped link blockers are retried after their owning
+	# document is removed, while an unexpected external reference still rolls back.
+	_teardown_delete_documents(
+		[("Email Queue", name) for name in queue_names]
+		+ [("Communication", name) for name in communication_names]
+		+ [("CRM Contract SMS Delivery", name) for name in sms_delivery_names]
+	)
+	for doctype in (
+		"CRM Notification",
+		"ToDo",
+		"CRM Call Log",
+		"CRM Task",
+		"FCRM Note",
+		"Event",
+		"Comment",
+	):
+		_teardown_delete_documents([(doctype, name) for name in activity_records.get(doctype, [])])
+	for doctype, names in downstream_records.items():
+		_teardown_delete_documents([(doctype, name) for name in names])
+	for doctype in ("Payment Entry", "Delivery Note", "Sales Invoice", "Sales Order"):
+		_teardown_delete_documents([(doctype, name) for name in financial_records.get(doctype, set())])
+	_teardown_delete_documents(
+		[("CRM Contract", name) for name in contract_names]
+		+ [("Quotation", name) for name in quote_names]
+		+ [("CRM Quote", name) for name in crm_quote_names]
+	)
+	_teardown_delete_documents(
+		([("CRM Deal", deal_name)] if deal_name else [])
+		+ ([("CRM Lead", lead_name)] if lead_name else [])
+		+ [("CRM Opt-In Submission", submission.name)]
+	)
 
 	_teardown_restore_memberships(submission, mfl_codes)
 	frappe.db.commit()
