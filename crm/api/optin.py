@@ -5539,27 +5539,6 @@ def _teardown_contracts(submission, deal_name):
 			)
 		)
 
-	for row in contract_rows:
-		status = frappe.utils.cstr(row.get("status") or row.get("workflow_state") or "").strip()
-		if status == "Fully Executed" or row.get("workflow_state") == "Fully Executed":
-			frappe.throw(
-				_("This Opt-In cannot be torn down because its contract is fully executed."),
-				frappe.ValidationError,
-			)
-
-	signed_rows = _teardown_rows(
-		"CRM Contract Signatory",
-		{"parent": ["in", list(contract_names)], "parenttype": "CRM Contract"},
-		["parent", "status", "signed_at"],
-	)
-	if any(
-		frappe.utils.cstr(row.get("status") or "").strip() == "Signed" or row.get("signed_at")
-		for row in signed_rows
-	):
-		frappe.throw(
-			_("This Opt-In cannot be torn down because a contract signature has been recorded."),
-			frappe.ValidationError,
-		)
 	return list(contract_names), contract_rows
 
 
@@ -5926,8 +5905,8 @@ def teardown_submission(submission_ref: Any):
 
 	Only the OIS, its clearly-owned draft quotations/contracts, delivery records, the
 	OIS-created Lead (when provably orphaned), and its Deal are removed. Shared CRM
-	identity records are deliberately preserved. Signed, billed, or downstream Deals
-	are rejected before any mutation is made.
+	identity records are deliberately preserved. A submitted or cancelled invoice
+	blocks the teardown before any mutation is made.
 	"""
 	_require_optin_manager()
 	submission_ref = frappe.utils.cstr(submission_ref).strip()
