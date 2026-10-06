@@ -27,6 +27,7 @@ Line items stored as QuotationItem rows:
 """
 
 import json
+from typing import Any
 
 import frappe
 from frappe.utils import add_days, date_diff, getdate, nowdate
@@ -391,7 +392,7 @@ def create_quote(deal, price_list=None):
 
 
 @frappe.whitelist()
-def list_quotes(deal):
+def list_quotes(deal: Any):
 	"""Return all Quotations for a given CRM Deal, shaped for the QuotingTab."""
 	fields = [
 		"name",

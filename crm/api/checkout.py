@@ -259,6 +259,7 @@ def _require_session(token: str):
 	return session, submission
 
 
+# nosemgrep: guest-whitelisted-method -- generic responses, per-IP throttling, and the subsequent OTP gate prevent payment-session enumeration.
 @frappe.whitelist(allow_guest=True)
 def request_payment_otp(ois_number: Any):
 	"""Send an OTP to the facility signatory for an OIS payment session."""
@@ -315,6 +316,7 @@ def _hash_otp(otp: str) -> str:
 	return hmac.new((_signing_secret() or "checkout").encode(), otp.encode(), hashlib.sha256).hexdigest()
 
 
+# nosemgrep: guest-whitelisted-method -- the supplied OIS must pass the bounded OTP state and constant-time comparison before invoices are returned.
 @frappe.whitelist(allow_guest=True)
 def verify_payment_otp(ois_number: Any, otp: Any):
 	ois = _normalise(ois_number)
@@ -345,6 +347,7 @@ def verify_payment_otp(ois_number: Any, otp: Any):
 	}
 
 
+# nosemgrep: guest-whitelisted-method -- access requires the short-lived checkout session and the invoice is rechecked against that session.
 @frappe.whitelist(allow_guest=True)
 def get_payment_checkout(session_token: Any):
 	session, submission = _require_session(_normalise(session_token))
@@ -385,6 +388,7 @@ def _paystack_request(method, url, secret, **kwargs):
 	return (make_get_request if method == "GET" else make_post_request)(url, **kwargs)
 
 
+# nosemgrep: guest-whitelisted-method -- Paystack verification is server-side and the invoice is scoped to the verified checkout session.
 @frappe.whitelist(allow_guest=True)
 def initialize_paystack_payment(session_token: Any, invoice: Any):
 	_, submission = _require_session(_normalise(session_token))
@@ -487,6 +491,7 @@ def _record_verified_paystack_payment(submission, invoice_row, reference, amount
 	return {"paid": True, "payment_entry": pe.name, "invoice": invoice_row["name"]}
 
 
+# nosemgrep: guest-whitelisted-method -- Paystack signature verification, metadata matching, invoice ownership, and idempotent reconciliation are enforced below.
 @frappe.whitelist(allow_guest=True)
 def verify_paystack_payment(session_token: Any, reference: Any):
 	_, submission = _require_session(_normalise(session_token))
@@ -505,6 +510,7 @@ def verify_paystack_payment(session_token: Any, reference: Any):
 	return _record_verified_paystack_payment(submission, invoice_row, reference, data.get("amount"))
 
 
+# nosemgrep: guest-whitelisted-method -- the webhook is accepted only after Paystack HMAC signature verification and server-side invoice reconciliation.
 @frappe.whitelist(allow_guest=True)
 def paystack_webhook():
 	"""Receive Paystack's signed charge.success event for closed-browser payments."""
@@ -535,6 +541,7 @@ def paystack_webhook():
 	return {"ok": True}
 
 
+# nosemgrep: guest-whitelisted-method -- bank-transfer reports require a short-lived checkout session and are created as finance-reconciled draft entries.
 @frappe.whitelist(allow_guest=True)
 def report_bank_transfer(
 	session_token: Any,
