@@ -25,7 +25,7 @@
         <input
           v-model="search"
           class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3 sm:w-44"
-          :placeholder="__('Name, slug or email')"
+          :placeholder="__('Name, Partner ID, slug or email')"
           @keyup.enter="applyFilters"
           @input="scheduleSearch"
         />
@@ -134,7 +134,7 @@
         <p class="mt-1 text-xs text-ink-gray-4">
           {{
             __(
-              'Create a network to configure its portal, pricing, partners, coordinators, and signatories.',
+              'Create a network to configure Customer Experience, pricing, branding, coordinators, and signatories.',
             )
           }}
         </p>
@@ -149,6 +149,9 @@
               {{ __('Display Name') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">{{ __('Slug') }}</th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Partner ID') }}
+            </th>
             <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Status') }}
             </th>
@@ -179,6 +182,9 @@
             </td>
             <td class="px-4 py-3 font-mono text-xs text-ink-gray-6">
               {{ row.slug }}
+            </td>
+            <td class="px-4 py-3 font-mono text-xs text-ink-gray-7">
+              {{ row.partner_id || '—' }}
             </td>
             <td class="px-4 py-3">
               <span :class="statusPill(row.enabled)">

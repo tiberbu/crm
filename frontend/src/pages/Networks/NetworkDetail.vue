@@ -29,6 +29,12 @@
             <span class="font-mono text-xs text-ink-gray-4">{{
               networkDoc?.slug || networkSlug
             }}</span>
+            <span
+              v-if="networkDoc?.partner_id"
+              class="rounded-full bg-surface-gray-2 px-2 py-0.5 font-mono text-xs text-ink-gray-6"
+            >
+              {{ __('Partner ID {0}', [networkDoc.partner_id]) }}
+            </span>
             <span :class="enabledPill(networkDoc?.enabled)">
               {{ networkDoc?.enabled ? __('Enabled') : __('Disabled') }}
             </span>
@@ -39,7 +45,7 @@
               target="_blank"
               rel="noopener"
               class="text-xs text-ink-blue-6 hover:text-ink-blue-7 hover:underline"
-              >{{ __('Open Opt-In Portal') }}</a
+              >{{ __('Open Opt-In') }}</a
             >
             <router-link
               to="/networks"
@@ -72,7 +78,7 @@
             <p
               class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
             >
-              {{ __('Portal configuration') }}
+              {{ __('Customer Experience configuration') }}
             </p>
             <p class="mt-2 text-sm text-ink-gray-7">
               {{
@@ -208,6 +214,15 @@
             v-model="networkForm.display_name"
             :label="__('Display Name')"
             :placeholder="__('Name shown to facilities')"
+          />
+          <FormControl
+            v-model="networkForm.partner_id"
+            :label="__('Partner ID')"
+            :placeholder="__('Leave blank to generate')"
+            :description="__('Exactly six digits. Set it only when creating the Network; it cannot be changed later.')"
+            :disabled="!isNewNetwork"
+            inputmode="numeric"
+            maxlength="6"
           />
           <FormControl
             v-model="networkForm.contact_email"
@@ -348,7 +363,7 @@
             </select>
             <p class="text-[11px] text-ink-gray-5">
               {{
-                __('Choices are shown in the portal; they are informational only.')
+                __('Choices are shown in Customer Experience; they are informational only.')
               }}
             </p>
           </div>
@@ -1450,6 +1465,7 @@ const networkFormError = ref('')
 const networkForm = reactive({
   slug: '',
   display_name: '',
+  partner_id: '',
   enabled: true,
   contact_email: '',
   footer_legal_name: '',
@@ -1471,6 +1487,7 @@ function startEditNetwork() {
   Object.assign(networkForm, {
     slug: doc?.slug ?? '',
     display_name: doc?.display_name ?? '',
+    partner_id: doc?.partner_id ?? '',
     enabled: !!doc?.enabled,
     contact_email: doc?.contact_email ?? '',
     footer_legal_name: doc?.footer_legal_name ?? '',

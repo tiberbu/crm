@@ -12,6 +12,7 @@ this redirect actually runs for workspace-having users, closing a desk-fence byp
 import frappe
 from frappe import _
 
+from crm.api.website_redirect import get_portal_route
 from crm.branding import apply_brand_context, get_configured_app_brand
 
 no_cache = True
@@ -20,7 +21,7 @@ no_cache = True
 def get_context(context):
 	# Logged-in users belong in the app, not on the marketing splash.
 	if frappe.session.user != "Guest":
-		frappe.local.flags.redirect_location = "/crm"
+		frappe.local.flags.redirect_location = get_portal_route() or "/crm"
 		raise frappe.Redirect
 
 	brand = get_configured_app_brand()

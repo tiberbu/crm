@@ -8,6 +8,8 @@ from frappe.translate import get_messages_for_boot, get_translated_doctypes
 from frappe.utils import cint, get_system_timezone
 from frappe.utils.telemetry import capture
 
+from crm.api.website_redirect import PORTAL_ROUTE, get_portal_route
+
 no_cache = 1
 
 
@@ -23,6 +25,9 @@ def get_context():
 	# Authenticated but without CRM access (e.g. a Website User) -> branded access page
 	# instead of the stock PermissionError screen.
 	if not check_app_permission():
+		if get_portal_route():
+			frappe.local.flags.redirect_location = PORTAL_ROUTE
+			raise frappe.Redirect
 		frappe.local.flags.redirect_location = "/access-restricted"
 		raise frappe.Redirect
 

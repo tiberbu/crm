@@ -991,6 +991,10 @@ class TestOptInFacilityList(UnitTestCase):
 		self.assertEqual(result["total"], 1)
 		self.assertEqual(result["rows"][0]["name"], "FAC-0001")
 		self.assertTrue(result["rows"][0]["memberships"][0]["go_live"])
+		self.assertEqual(
+			result["rows"][0]["memberships"][0]["progress"],
+			{"opt_in": True, "go_live": True},
+		)
 		self.assertEqual(get_list.call_args_list[0].kwargs["filters"]["network"], ["in", ["network-a"]])
 
 	def test_network_contacts_can_be_filtered_by_facility_and_contact_details(self):

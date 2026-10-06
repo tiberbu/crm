@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 import frappe
 from frappe.model.document import Document
 
@@ -37,11 +39,17 @@ def _send_membership_invitation(doc, membership):
 
 	network = frappe.get_doc("CRM Opt-In Network", membership.network)
 	slug = network.slug or membership.network
-	optin_url = "{}/opt-in?network={}".format(frappe.utils.get_url(), slug)
+	invitation_query = urlencode({"network": slug, "facility": doc.facility_name})
+	invitation_url = "{}/facility-onboarding?{}".format(frappe.utils.get_url(), invitation_query)
 	queue = frappe.sendmail(
 		recipients=[membership.contact_email],
 		subject="You've been pre-qualified: {} — CareverseHIMS".format(network.display_name),
-		message=_invite_html(membership.contact_name, network.display_name, doc.facility_name, optin_url),
+		message=_invite_html(
+			membership.contact_name,
+			network.display_name,
+			doc.facility_name,
+			invitation_url,
+		),
 		reference_doctype=doc.doctype,
 		reference_name=doc.name,
 		now=True,
@@ -85,7 +93,7 @@ takes about 5 minutes:</p>
   <a href="{optin_url}"
      style="background:#b91c1c;color:#fff;padding:12px 24px;border-radius:6px;
             text-decoration:none;font-weight:600;">
-    Start Opt-In &rarr;
+    View your invitation &rarr;
   </a>
 </p>
 

@@ -80,8 +80,14 @@ doctype_js = {
 
 # Tiberbu CRM (E2-S1): public landing page at site root. `home_page` overrides Website
 # Settings (verified: frappe website/utils.py get_home_page). Guests -> /index (branded
-# landing); logged-in users are bounced to /crm by index.py before workspace resolution.
+# landing); logged-in users are routed by index.py to their permitted application.
 home_page = "index"
+
+# Website Users provisioned from a completed facility Opt-In are redirected by
+# the native Frappe login flow to the customer portal.  The hook only sets
+# Frappe's one-shot post-login route; credentials, 2FA, and the login method
+# remain upstream behavior.
+on_login = ["crm.api.website_redirect.on_login"]
 
 # website user home page (by Role)
 # role_home_page = {
@@ -90,6 +96,10 @@ home_page = "index"
 
 website_route_rules = [
 	{"from_route": "/crm/<path:app_path>", "to_route": "crm"},
+	{"from_route": "/cx-portal", "to_route": "cx-portal"},
+	# Compatibility route for invitations or bookmarks issued before the portal
+	# was named Customer Experience.
+	{"from_route": "/portal", "to_route": "cx-portal"},
 	{"from_route": "/crm-form/<route>", "to_route": "crm_form"},
 	# E2-S1: route /login to the branded login page (shadows stock login *page* only;
 	# the /api/method/login *method* is untouched).

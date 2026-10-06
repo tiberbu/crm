@@ -1,0 +1,13 @@
+<!doctype html>
+<html class="h-full" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CareverseHIMS — Customer Experience</title>
+    <script>window.csrf_token = {{ (csrf_token or '') | tojson }};</script>
+    {{ portal_head | safe }}
+  </head>
+  <body class="h-full">
+    <div id="facility-portal-app" class="h-full"></div>
+  </body>
+</html>

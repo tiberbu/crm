@@ -1,0 +1,86 @@
+{
+ "actions": [],
+ "creation": "2026-10-06 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "display_name",
+  "token_quantity",
+  "billing_period",
+  "description",
+  "coverage_summary",
+  "coverage_metrics",
+  "enabled"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Service Item",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Facility-facing name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "token_quantity",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Tokens",
+   "reqd": 1
+  },
+  {
+   "default": "Monthly",
+   "fieldname": "billing_period",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Billing period",
+   "options": "Monthly\nQuarterly\nAnnual",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Facility-facing description",
+   "reqd": 1
+  },
+  {
+   "fieldname": "coverage_summary",
+   "fieldtype": "Small Text",
+   "label": "Coverage summary",
+   "reqd": 1
+  },
+  {
+   "fieldname": "coverage_metrics",
+   "fieldtype": "Code",
+   "label": "Coverage metrics",
+   "options": "JSON",
+   "description": "Optional structured metrics used by the portal to explain workload coverage."
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-06 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Token Package",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}
