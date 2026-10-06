@@ -1,5 +1,5 @@
 # Sprint Status
-# Project: crm (Tiberbu CRM fork)
+# Project: tiberbu Express — CRM implementation
 # Tracking: Claude Code Studio
 # Updated: 2026-08-26
 
@@ -116,15 +116,16 @@ development_status:
   # QA — full cockpit integration pass (all 18 stories complete)
   fc-qa-full-cockpit: qa                 # [qa] Full Finance Cockpit end-to-end QA pass: all roles, all sections, mobile, dark/light mode
 
-  # Chain: epic-partner-portal
-  epic-partner-portal: ready-for-dev
+  # Chain: epic-partner-portal — retired 2026-10-06. Customer Experience is
+  # the only external authenticated surface; retain the artifacts as history.
+  epic-partner-portal: cancelled
 
-  partner-portal-e1-api-leads: ready-for-dev              # [dev-story] Partner API: create/get/list/update leads
-  partner-portal-e1-api-deals: ready-for-dev              # [dev-story] Partner API: create/get/list/update deals
-  partner-portal-e1-api-contacts: ready-for-dev           # [dev-story] Partner API: create/list/link contacts
-  partner-portal-e2-webhooks: ready-for-dev               # [dev-story] Outbound webhooks: lead/deal lifecycle events
-  partner-portal-e3-ref-data: ready-for-dev               # [dev-story] Reference data endpoints + rate limiting
-  partner-portal-qa: ready-for-dev                        # [qa] Partner portal full flow QA
+  partner-portal-e1-api-leads: cancelled                  # [descoped] Legacy partner API; no new implementation
+  partner-portal-e1-api-deals: cancelled                  # [descoped] Legacy partner API; no new implementation
+  partner-portal-e1-api-contacts: cancelled               # [descoped] Legacy partner API; no new implementation
+  partner-portal-e2-webhooks: cancelled                   # [descoped] Legacy partner API; no new implementation
+  partner-portal-e3-ref-data: cancelled                   # [descoped] Legacy partner API; no new implementation
+  partner-portal-qa: cancelled                            # [descoped] Partner Portal surface retired
 
   # Chain: epic-crm-quote-builder (BRD + ADR + PRD confirmed 2026-08-07)
   epic-crm-quote-builder: in-progress
@@ -258,3 +259,24 @@ development_status:
 
   # Sprint 4 — QA
   nc-qa: review                                    # [qa] L: configure signers → opt-in witness → generate → facility+witness+network sign via OTP+pad NO login → final execution → PDF certificate lists all (dep nc-s2-5,nc-s3-1,nc-s3-3). PROOF: (1) guest signing PORTAL E2E — Playwright drove /sign-contract as an anonymous browser context (no CRM login): OTP gate → Verify Code → Review&Sign → scrolled contract → read-confirm → drew signature on pad → Confirm Signature → success screen "Your signature has been recorded." (/tmp/cosign-qa/surface4-portal-signed.png); server confirmed row status=Signed, signed_at set, signature_ip captured from HTTP request, workflow_state=Fully Executed. (2) PDF Certificate of Completion — _build_contract_document_html on a fully-executed contract signed via the real sign() path (all 4 roles) contains "Certificate of Completion", the T&C integrity hash, and every signatory (Facility Signatory, Facility Witness, Network Signatory, Tiberbu Signatory) with status=Signed + signed_at. Suite: frontend/e2e/proof/cosign_proof.spec.ts "Surface 4"; scripts /tmp/ncqa_cert_full.py, /tmp/ncqa_setup.py
+
+  # Chain: epic-facility-cx-portal (activated 2026-10-06)
+  # Objective: complete the post-Opt-In Website User invitation and the
+  # permission-bound Customer Experience progress view. GoLive is projected
+  # from CRM Facility Membership.go_live for each Network Contact.
+  epic-facility-cx-portal: in-progress
+
+  # Sprint 0 — Network identity foundation
+  facility-cx-s0-1-network-owned-partner-id: review # [dev-story] Admin-created CRM Opt-In Network owns a unique six-digit Partner ID; generate on insert or validate an admin-supplied value, backfill existing Networks, and keep the ID immutable. PROOF: cr-dev migration/backfill passed; 3/3 Network ID tests pass; Network list/detail and public settings expose the ID.
+
+  # Sprint 1 — Access and progress spine (depends on the canonical Network/OIS records)
+  facility-cx-s1-1-website-user-invitation: review # [dev-story] Processed OIS → idempotent Website User + User Permission(allow=CRM Opt-In Submission, for_value=OIS) + native welcome invitation; block internal-user collisions. PROOF: focused invitation tests pass; normal cr-dev migration applied portal fields.
+  facility-cx-s1-2-progress-projection: review     # [dev-story] Permission-bound get_portal_context projection: OIS, contract/signature progress, facility membership, Network Contact source, and authoritative go_live/GoLive milestone. PROOF: GoLive projection test passes; no browser-supplied OIS is trusted.
+  facility-cx-s1-3-cx-portal-progress-ui: review    # [dev-story] Vue /cx-portal experience: next action, milestone stepper, facility cards, membership status, GoLive readiness, and unlinked-account state. PROOF: frontend tests/build previously passed; served route is /cx-portal with /portal compatibility alias.
+  facility-cx-s1-4-invitation-portal-security-qa: review # [qa] IDOR/BOLA, OIS enumeration, duplicate account/permission, multi-facility isolation, stale permission, and GoLive projection regression tests. PROOF: 5/5 focused portal tests, 31/31 opt-in admin tests, ruff, py_compile, diff-check, and normal migration pass.
+  facility-cx-s2-1-crm-owned-hfr-client-registry-adapter: review # [dev-story] CRM-native guest adapter copied from the approved upstream request shapes; encrypted session, generic failure responses, OTP limits, strict facility/session binding. PROOF: CRM module compiles, cr-dev migration applied, no careverse_hq imports.
+  facility-cx-s2-2-facility-onboarding-wizard: review # [dev-story] Vue public wizard: ID → OTP → multi-facility selection → Partner ID/default Network → token package → witness/terms → one OIS per facility. PROOF: production frontend build passed.
+  facility-cx-s2-3-cx-catalog-and-invoice-visibility: review # [dev-story] Permission-bound Customer Experience catalog, Network Contact/GoLive progress, and open invoice visibility using existing checkout authorization.
+  facility-cx-s2-4-authenticated-token-purchase-chain: ready-for-dev # [dev-story] User-initiated package purchase creates one next-period Quotation and facility-specific Sales Order, then creates an Invoice only when payment starts; no cron jobs.
+  facility-cx-s2-5-paystack-portal-checkout: ready-for-dev # [dev-story] Extend existing Paystack checkout to authenticated Website User sessions; verify invoice ownership, amount integrity, signed idempotent webhook, and legacy OIS checkout compatibility.
+  facility-cx-s2-6-onboarding-e2e-qa: ready-for-dev # [qa] Existing-OIS login, multi-facility self-onboarding, Website User reuse/invite, permission isolation, signing handoff, catalog, order/invoice, Paystack, and GoLive regression pass.

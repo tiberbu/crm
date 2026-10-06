@@ -48,10 +48,15 @@ class TestCRMPreQualifiedFacility(UnitTestCase):
 
 		self.assertIs(result, queue)
 		self.assertEqual(membership.invite_email_queue, queue.name)
+		message = sendmail.call_args.kwargs["message"]
+		self.assertIn(
+			"https://crm.example.test/facility-onboarding?network=example-network&facility=Example+Hospital",
+			message,
+		)
 		sendmail.assert_called_once_with(
 			recipients=["jane@example.com"],
 			subject="You've been pre-qualified: Example Network — CareverseHIMS",
-			message=sendmail.call_args.kwargs["message"],
+			message=message,
 			reference_doctype="CRM Pre-Qualified Facility",
 			reference_name="FAC-0001",
 			now=True,

@@ -246,7 +246,11 @@ def execute():
 				)
 			if "quote_names_json" in row and not row.get("quote_names_json") and row.get("quote"):
 				updates["quote_names_json"] = frappe.as_json([row.quote])
-			if "billing_schedule_json" in row and not row.get("billing_schedule_json") and row.get("submitted_at"):
+			if (
+				"billing_schedule_json" in row
+				and not row.get("billing_schedule_json")
+				and row.get("submitted_at")
+			):
 				updates["billing_schedule_json"] = frappe.as_json(
 					billing_schedule(row.submitted_at, [1], 3, key_prefix=row.name)
 				)
@@ -257,11 +261,18 @@ def execute():
 		"CRM Contract", "contract_html_snapshot"
 	):
 		for row in frappe.get_list(
-			"CRM Contract", fields=["name", "contract_html", "contract_html_snapshot"], limit_page_length=0, ignore_permissions=True
+			"CRM Contract",
+			fields=["name", "contract_html", "contract_html_snapshot"],
+			limit_page_length=0,
+			ignore_permissions=True,
 		):
 			if row.contract_html and not row.contract_html_snapshot:
 				frappe.db.set_value(
-					"CRM Contract", row.name, "contract_html_snapshot", row.contract_html, update_modified=False
+					"CRM Contract",
+					row.name,
+					"contract_html_snapshot",
+					row.contract_html,
+					update_modified=False,
 				)
 
 	frappe.clear_cache()

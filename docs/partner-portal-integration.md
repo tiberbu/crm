@@ -1,9 +1,15 @@
-# Tiberbu CRM — Partner Portal Integration Reference
+# Tiberbu CRM — Legacy Partner Integration Reference
 **Version:** 1.1  
 **Base URL:** `https://crm.tiberbu.app`  
 **Protocol:** HTTPS only  
 **Auth:** Token (API Key + Secret)  
 **Content-Type:** `application/json`
+
+> **Retired scope:** Partner Portal and partner workspace delivery are not part
+> of the facility onboarding product. This document is retained only as a
+> legacy CRM Partner Lead/Deal/Contact integration reference. New onboarding
+> work must use the Network-owned six-digit Partner ID and Customer Experience;
+> do not extend this contract for facility onboarding.
 
 ---
 

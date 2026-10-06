@@ -56,6 +56,13 @@ crm.patches.v1_0.link_optin_records_to_network
 crm.patches.v1_0.ensure_contract_invitation_delivery
 crm.patches.v1_0.add_optin_multi_year_fields
 crm.patches.v1_0.configure_optin_optional_services
+crm.patches.v1_0.add_token_catalog_settings
+crm.patches.v1_0.add_facility_onboarding_settings
+crm.patches.v1_0.add_facility_onboarding_default_partner
+crm.patches.v1_0.consolidate_facility_onboarding_registry_credentials
+crm.patches.v1_0.add_token_purchase_fields
+crm.patches.v1_0.add_cx_portal_fields
+crm.patches.v1_0.backfill_network_partner_ids
 crm.patches.v1_0.refresh_network_facility_terms_v1
 crm.patches.v1_0.backfill_optin_signatory_modes
 crm.patches.v1_0.refresh_contract_totals_placeholders_v1

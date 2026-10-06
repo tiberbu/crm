@@ -57,10 +57,18 @@ def execute():
 			quote.set(INITIAL_FIELD, data["initial"])
 		if not quote.get(HISTORY_FIELD):
 			quote.set(HISTORY_FIELD, json.dumps(data["history"], separators=(",", ":"), default=str))
-		quote.flags.ignore_permissions = True  # SYSTEM-INTERNAL
-		quote.flags.ignore_validate = True
-		quote.flags.ignore_mandatory = True
-		quote.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		# Use a direct field update so submitted historical quotations remain
+		# immutable to Frappe's update-after-submit guard. These are migration-only
+		# provenance columns and do not change the commercial document itself.
+		frappe.db.set_value(
+			"Quotation",
+			row.name,
+			{
+				INITIAL_FIELD: quote.get(INITIAL_FIELD),
+				HISTORY_FIELD: quote.get(HISTORY_FIELD),
+			},
+			update_modified=False,
+		)
 
 	frappe.clear_cache(doctype="Quotation")
 

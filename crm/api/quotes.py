@@ -27,6 +27,7 @@ Line items stored as QuotationItem rows:
 """
 
 import json
+from typing import Any
 
 import frappe
 from frappe.utils import add_days, date_diff, getdate, nowdate
@@ -391,7 +392,7 @@ def create_quote(deal, price_list=None):
 
 
 @frappe.whitelist()
-def list_quotes(deal):
+def list_quotes(deal: Any):
 	"""Return all Quotations for a given CRM Deal, shaped for the QuotingTab."""
 	fields = [
 		"name",
@@ -467,9 +468,7 @@ def list_quotes(deal):
 		r["erpnext_sales_invoice"] = invoice_by_quotation.get(r["name"])
 		submission_name = frappe.utils.cstr(r.get("crm_optin_submission") or "").strip()
 		year_number = frappe.utils.cint(r.get("crm_optin_year") or 1) or 1
-		schedule = (
-			_schedule_by_year.get(submission_name, {}).get(year_number, []) if submission_name else []
-		)
+		schedule = _schedule_by_year.get(submission_name, {}).get(year_number, []) if submission_name else []
 		for schedule_row in schedule:
 			# Rows created before amount fields were introduced still have reliable
 			# dates. Fill their display amounts from this year's VAT-aware quote totals.

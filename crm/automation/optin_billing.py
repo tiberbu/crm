@@ -127,12 +127,8 @@ def _create_order_and_invoice(schedule, quotation, submission, issue_date):
 	billing_key = frappe.utils.cstr(schedule.get("billing_key") or "").strip()
 	year = schedule.get("year_number")
 	quarter = schedule.get("quarter_number")
-	order_name = _find_billing_document(
-		"Sales Order", billing_key, submission.name, year, quarter
-	)
-	invoice_name = _find_billing_document(
-		"Sales Invoice", billing_key, submission.name, year, quarter
-	)
+	order_name = _find_billing_document("Sales Order", billing_key, submission.name, year, quarter)
+	invoice_name = _find_billing_document("Sales Invoice", billing_key, submission.name, year, quarter)
 	if invoice_name:
 		return order_name, invoice_name
 
@@ -159,8 +155,8 @@ def _create_order_and_invoice(schedule, quotation, submission, issue_date):
 				"delivery_date": issue_date,
 				"currency": quotation.currency or "KES",
 				"selling_price_list": quotation.selling_price_list,
-			"items": quarter_items,
-		}
+				"items": quarter_items,
+			}
 		)
 		_field(order, "crm_optin_submission", submission.name)
 		_field(order, "crm_optin_year", schedule.get("year_number"))
@@ -327,7 +323,9 @@ def process_due_optin_billing():
 			raw_key = frappe.utils.cstr(schedule.get("billing_key") or "").strip()
 			if raw_key and not raw_key.startswith("%s-" % row.name):
 				schedule["billing_key"] = "%s-%s" % (row.name, raw_key)
-			if getdate(schedule.get("invoice_date") or schedule.get("scheduled_order_date")) > getdate(nowdate()):
+			if getdate(schedule.get("invoice_date") or schedule.get("scheduled_order_date")) > getdate(
+				nowdate()
+			):
 				continue
 			save_point = "optin_billing_%s_%s" % (
 				frappe.utils.cstr(row.name).replace("-", "_"),
@@ -344,7 +342,9 @@ def process_due_optin_billing():
 					continue
 				quotation = frappe.get_doc("Quotation", quote_name)
 				issue_date = getdate(schedule.get("invoice_date") or schedule.get("scheduled_order_date"))
-				order_name, invoice_name = _create_order_and_invoice(schedule, quotation, submission, issue_date)
+				order_name, invoice_name = _create_order_and_invoice(
+					schedule, quotation, submission, issue_date
+				)
 				if not order_name or not invoice_name:
 					raise frappe.ValidationError(
 						_("ERPNext billing is not available on this site; the schedule was not issued.")

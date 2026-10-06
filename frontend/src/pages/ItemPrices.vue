@@ -682,8 +682,8 @@ const canEditSelectedPriceList = computed(() => {
   const priceList = selectedPriceListMeta.value
   return Boolean(
     priceList &&
-    priceList.enabled !== false &&
-    !isStandardSellingPriceList(priceList.value),
+      priceList.enabled !== false &&
+      !isStandardSellingPriceList(priceList.value),
   )
 })
 
@@ -811,16 +811,16 @@ async function loadPriceListFacilities(append = false) {
       value !== selectedPriceList.value
     )
       return
-    const rows = Array.isArray(response) ? response : (response?.rows ?? [])
+    const rows = Array.isArray(response) ? response : response?.rows ?? []
     priceListFacilities.value = append
       ? [...priceListFacilities.value, ...rows]
       : rows
     priceListFacilitiesTotal.value = Array.isArray(response)
       ? rows.length
-      : (response?.total ?? rows.length)
+      : response?.total ?? rows.length
     priceListFacilitiesPage.value = Array.isArray(response)
       ? 1
-      : (response?.page ?? page)
+      : response?.page ?? page
   } catch (error) {
     if (requestId !== priceListFacilitiesRequestId) return
     toast.error(
@@ -990,7 +990,7 @@ async function saveItemPrice(itemPrice = null) {
   savingItem.value = itemPrice?.name ?? 'new'
   try {
     const destination = itemPrice
-      ? (itemPriceTargets.value[itemPrice.name] ?? selectedPriceList.value)
+      ? itemPriceTargets.value[itemPrice.name] ?? selectedPriceList.value
       : selectedPriceList.value
     if (itemPrice && destination !== selectedPriceList.value) {
       if (

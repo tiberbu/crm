@@ -1,4 +1,9 @@
 # BRD — Partner Portal Integration
+
+> **Retired / out of scope:** Preserved as historical planning material only.
+> No Partner Portal or partner workspace is being delivered. Facility
+> onboarding uses the Network-owned six-digit Partner ID and Customer
+> Experience.
 **Version:** 1.1  
 **Date:** 2026-07-31  
 **Author:** Salim  

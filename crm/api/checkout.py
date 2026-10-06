@@ -45,9 +45,11 @@ def _cache_key(prefix: str, value: str) -> str:
 def _client_ip() -> str:
 	try:
 		request = getattr(frappe.local, "request", None)
-		return _normalise(request.headers.get("X-Forwarded-For", "").split(",")[0] if request else "") or _normalise(
-			getattr(request, "remote_addr", "") if request else ""
-		) or "unknown"
+		return (
+			_normalise(request.headers.get("X-Forwarded-For", "").split(",")[0] if request else "")
+			or _normalise(getattr(request, "remote_addr", "") if request else "")
+			or "unknown"
+		)
 	except Exception:
 		return "unknown"
 
@@ -150,7 +152,16 @@ def _send_payment_otp(submission, otp, request_id=None):
 
 
 def _invoice_fields() -> list[str]:
-	fields = ["name", "company", "customer", "posting_date", "due_date", "grand_total", "outstanding_amount", "currency"]
+	fields = [
+		"name",
+		"company",
+		"customer",
+		"posting_date",
+		"due_date",
+		"grand_total",
+		"outstanding_amount",
+		"currency",
+	]
 	for field in ("crm_optin_submission", "crm_deal", "optin_network", "crm_checkout_reference"):
 		try:
 			if frappe.db.has_column("Sales Invoice", field):
@@ -233,7 +244,9 @@ def _session(token: str) -> dict | None:
 
 
 def _save_session(token: str, payload: dict):
-	frappe.cache().set_value(_cache_key("session", token), json.dumps(payload), expires_in_sec=SESSION_TTL_SECONDS)
+	frappe.cache().set_value(
+		_cache_key("session", token), json.dumps(payload), expires_in_sec=SESSION_TTL_SECONDS
+	)
 
 
 def _require_session(token: str):
@@ -246,6 +259,7 @@ def _require_session(token: str):
 	return session, submission
 
 
+# nosemgrep: guest-whitelisted-method -- generic responses, per-IP throttling, and the subsequent OTP gate prevent payment-session enumeration.
 @frappe.whitelist(allow_guest=True)
 def request_payment_otp(ois_number: Any):
 	"""Send an OTP to the facility signatory for an OIS payment session."""
@@ -254,7 +268,10 @@ def request_payment_otp(ois_number: Any):
 	rate_key = _cache_key("otp-rate", "%s:%s" % (ois, _client_ip()))
 	count = int(frappe.cache().get_value(rate_key) or 0)
 	if count >= 5:
-		return {"sent": True, "message": _("If the OIS is eligible, a code was sent to its facility signatory.")}
+		return {
+			"sent": True,
+			"message": _("If the OIS is eligible, a code was sent to its facility signatory."),
+		}
 	submission = _get_submission(ois)
 	email = _submission_email(submission) if submission else ""
 	if submission and email and getattr(submission, "status", "") == "Processed":
@@ -272,7 +289,10 @@ def request_payment_otp(ois_number: Any):
 				int(state.get("expires_at") or 0) > now
 				and now - int(state.get("sent_at") or 0) < OTP_RESEND_COOLDOWN_SECONDS
 			):
-				return {"sent": True, "message": _("If the OIS is eligible, a code was sent to its facility signatory.")}
+				return {
+					"sent": True,
+					"message": _("If the OIS is eligible, a code was sent to its facility signatory."),
+				}
 	frappe.cache().set_value(rate_key, count + 1, expires_in_sec=10 * 60)
 	if submission and email and getattr(submission, "status", "") == "Processed":
 		otp = "%06d" % secrets.randbelow(1_000_000)
@@ -296,6 +316,7 @@ def _hash_otp(otp: str) -> str:
 	return hmac.new((_signing_secret() or "checkout").encode(), otp.encode(), hashlib.sha256).hexdigest()
 
 
+# nosemgrep: guest-whitelisted-method -- the supplied OIS must pass the bounded OTP state and constant-time comparison before invoices are returned.
 @frappe.whitelist(allow_guest=True)
 def verify_payment_otp(ois_number: Any, otp: Any):
 	ois = _normalise(ois_number)
@@ -311,14 +332,22 @@ def verify_payment_otp(ois_number: Any, otp: Any):
 		frappe.cache().delete_value(key)
 		frappe.throw(_("The code is invalid or expired."), frappe.PermissionError)
 	if not hmac.compare_digest(state.get("otp_hash", ""), _hash_otp(_normalise(otp))):
-		frappe.cache().set_value(key, json.dumps(state), expires_in_sec=max(1, int(state.get("expires_at", 0) - time.time())))
+		frappe.cache().set_value(
+			key, json.dumps(state), expires_in_sec=max(1, int(state.get("expires_at", 0) - time.time()))
+		)
 		frappe.throw(_("The code is invalid or expired."), frappe.PermissionError)
 	frappe.cache().delete_value(key)
 	token = secrets.token_urlsafe(32)
 	_save_session(token, {"ois_number": submission.name, "email": email, "issued_at": int(time.time())})
-	return {"session_token": token, "network": _network_for_submission(submission), "bank_details": _bank_details(), "invoices": _invoice_rows(submission)}
+	return {
+		"session_token": token,
+		"network": _network_for_submission(submission),
+		"bank_details": _bank_details(),
+		"invoices": _invoice_rows(submission),
+	}
 
 
+# nosemgrep: guest-whitelisted-method -- access requires the short-lived checkout session and the invoice is rechecked against that session.
 @frappe.whitelist(allow_guest=True)
 def get_payment_checkout(session_token: Any):
 	session, submission = _require_session(_normalise(session_token))
@@ -345,7 +374,9 @@ def _paystack_settings():
 	secret = _setting_secret(settings, "paystack_secret_key")
 	public = _normalise(getattr(settings, "paystack_public_key", "") if settings else "")
 	if not secret or not public or not cint(getattr(settings, "paystack_enabled", 0)):
-		frappe.throw(_("Paystack is not configured. Use bank transfer or contact finance."), frappe.ConfigurationError)
+		frappe.throw(
+			_("Paystack is not configured. Use bank transfer or contact finance."), frappe.ConfigurationError
+		)
 	return secret, public
 
 
@@ -357,6 +388,7 @@ def _paystack_request(method, url, secret, **kwargs):
 	return (make_get_request if method == "GET" else make_post_request)(url, **kwargs)
 
 
+# nosemgrep: guest-whitelisted-method -- Paystack verification is server-side and the invoice is scoped to the verified checkout session.
 @frappe.whitelist(allow_guest=True)
 def initialize_paystack_payment(session_token: Any, invoice: Any):
 	_, submission = _require_session(_normalise(session_token))
@@ -364,8 +396,16 @@ def initialize_paystack_payment(session_token: Any, invoice: Any):
 	if not invoice_row:
 		frappe.throw(_("That invoice is no longer available for payment."), frappe.ValidationError)
 	secret, _ = _paystack_settings()
-	reference = "OIS-%s-%s-%s" % (submission.name.replace("/", "-"), invoice_row["name"].replace("/", "-"), secrets.token_hex(5))
-	callback = "%s/payment-checkout?ois=%s&reference=%s" % (frappe.utils.get_url(), submission.name, reference)
+	reference = "OIS-%s-%s-%s" % (
+		submission.name.replace("/", "-"),
+		invoice_row["name"].replace("/", "-"),
+		secrets.token_hex(5),
+	)
+	callback = "%s/payment-checkout?ois=%s&reference=%s" % (
+		frappe.utils.get_url(),
+		submission.name,
+		reference,
+	)
 	response = _paystack_request(
 		"POST",
 		"https://api.paystack.co/transaction/initialize",
@@ -380,11 +420,19 @@ def initialize_paystack_payment(session_token: Any, invoice: Any):
 		},
 	)
 	if not response or not response.get("status") or not response.get("data", {}).get("authorization_url"):
-		frappe.throw(_("Paystack could not start this payment. Try again or use bank transfer."), frappe.ValidationError)
-	return {"authorization_url": response["data"]["authorization_url"], "reference": response["data"].get("reference") or reference}
+		frappe.throw(
+			_("Paystack could not start this payment. Try again or use bank transfer."),
+			frappe.ValidationError,
+		)
+	return {
+		"authorization_url": response["data"]["authorization_url"],
+		"reference": response["data"].get("reference") or reference,
+	}
 
 
-def _payment_entry_for_invoice(invoice_name, amount, *, mode_of_payment=None, reference_no=None, reference_date=None):
+def _payment_entry_for_invoice(
+	invoice_name, amount, *, mode_of_payment=None, reference_no=None, reference_date=None
+):
 	from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
 
 	pe = get_payment_entry("Sales Invoice", invoice_name, party_amount=flt(amount))
@@ -425,7 +473,11 @@ def _record_verified_paystack_payment(submission, invoice_row, reference, amount
 			ignore_permissions=True,
 		)
 		if existing:
-			return {"paid": existing[0].docstatus == 1, "payment_entry": existing[0].name, "invoice": invoice_row["name"]}
+			return {
+				"paid": existing[0].docstatus == 1,
+				"payment_entry": existing[0].name,
+				"invoice": invoice_row["name"],
+			}
 	pe = _payment_entry_for_invoice(
 		invoice_row["name"],
 		invoice_row["amount"],
@@ -439,6 +491,7 @@ def _record_verified_paystack_payment(submission, invoice_row, reference, amount
 	return {"paid": True, "payment_entry": pe.name, "invoice": invoice_row["name"]}
 
 
+# nosemgrep: guest-whitelisted-method -- Paystack signature verification, metadata matching, invoice ownership, and idempotent reconciliation are enforced below.
 @frappe.whitelist(allow_guest=True)
 def verify_paystack_payment(session_token: Any, reference: Any):
 	_, submission = _require_session(_normalise(session_token))
@@ -457,6 +510,7 @@ def verify_paystack_payment(session_token: Any, reference: Any):
 	return _record_verified_paystack_payment(submission, invoice_row, reference, data.get("amount"))
 
 
+# nosemgrep: guest-whitelisted-method -- the webhook is accepted only after Paystack HMAC signature verification and server-side invoice reconciliation.
 @frappe.whitelist(allow_guest=True)
 def paystack_webhook():
 	"""Receive Paystack's signed charge.success event for closed-browser payments."""
@@ -481,12 +535,22 @@ def paystack_webhook():
 	invoice_row = _invoice_for_session(submission, metadata.get("invoice"))
 	if not invoice_row:
 		return {"ok": True}
-	_record_verified_paystack_payment(submission, invoice_row, _normalise(data.get("reference")), data.get("amount"))
+	_record_verified_paystack_payment(
+		submission, invoice_row, _normalise(data.get("reference")), data.get("amount")
+	)
 	return {"ok": True}
 
 
+# nosemgrep: guest-whitelisted-method -- bank-transfer reports require a short-lived checkout session and are created as finance-reconciled draft entries.
 @frappe.whitelist(allow_guest=True)
-def report_bank_transfer(session_token: Any, invoice: Any, reference_no: Any, transfer_date: Any = None, amount: Any = None, notes: Any = None):
+def report_bank_transfer(
+	session_token: Any,
+	invoice: Any,
+	reference_no: Any,
+	transfer_date: Any = None,
+	amount: Any = None,
+	notes: Any = None,
+):
 	_, submission = _require_session(_normalise(session_token))
 	invoice_row = _invoice_for_session(submission, invoice)
 	if not invoice_row:
@@ -498,22 +562,44 @@ def report_bank_transfer(session_token: Any, invoice: Any, reference_no: Any, tr
 	if amount <= 0 or amount > flt(invoice_row["amount"]) + 0.005:
 		frappe.throw(_("The transfer amount must not exceed the invoice balance."), frappe.ValidationError)
 	if frappe.db.has_column("Payment Entry", "crm_checkout_reference"):
-		existing = frappe.get_list("Payment Entry", filters={"crm_checkout_reference": reference_no}, fields=["name", "docstatus"], limit=1, ignore_permissions=True)
+		existing = frappe.get_list(
+			"Payment Entry",
+			filters={"crm_checkout_reference": reference_no},
+			fields=["name", "docstatus"],
+			limit=1,
+			ignore_permissions=True,
+		)
 		if existing:
-			return {"status": "submitted_for_reconciliation", "payment_entry": existing[0].name, "duplicate": True}
-	pe = _payment_entry_for_invoice(invoice_row["name"], amount, mode_of_payment="Bank Transfer", reference_no=reference_no, reference_date=transfer_date or nowdate())
+			return {
+				"status": "submitted_for_reconciliation",
+				"payment_entry": existing[0].name,
+				"duplicate": True,
+			}
+	pe = _payment_entry_for_invoice(
+		invoice_row["name"],
+		amount,
+		mode_of_payment="Bank Transfer",
+		reference_no=reference_no,
+		reference_date=transfer_date or nowdate(),
+	)
 	_set_checkout_fields(pe, "Bank Transfer", reference_no, submission)
 	if frappe.db.has_column("Payment Entry", "crm_checkout_notes"):
 		pe.crm_checkout_notes = _normalise(notes)
 	pe.insert(ignore_permissions=True)
-	return {"status": "submitted_for_reconciliation", "payment_entry": pe.name, "invoice": invoice_row["name"]}
+	return {
+		"status": "submitted_for_reconciliation",
+		"payment_entry": pe.name,
+		"invoice": invoice_row["name"],
+	}
 
 
 @frappe.whitelist()
 def confirm_bank_transfer(payment_entry: Any, submit: Any = 1):
 	"""Finance action: confirm a reported transfer, then submit its draft entry."""
 	roles = set(frappe.get_roles(frappe.session.user))
-	if frappe.session.user != "Administrator" and not roles.intersection({"System Manager", "Finance Manager", "AR Accountant"}):
+	if frappe.session.user != "Administrator" and not roles.intersection(
+		{"System Manager", "Finance Manager", "AR Accountant"}
+	):
 		frappe.throw(_("Only finance users can confirm bank transfers."), frappe.PermissionError)
 	pe = frappe.get_doc("Payment Entry", _normalise(payment_entry))
 	if pe.docstatus == 1:

@@ -10,7 +10,6 @@ from __future__ import annotations
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
-
 BANK_NAME = "Gulf African Bank"
 BANK_ACCOUNT_NUMBER = "0300163301"
 BANK_BRANCH = "UpperHill"
@@ -228,7 +227,9 @@ def _ensure_mode_of_payment(account, name):
 	if frappe.db.exists("Mode of Payment", name):
 		doc = frappe.get_doc("Mode of Payment", name)
 	else:
-		doc = frappe.get_doc({"doctype": "Mode of Payment", "mode_of_payment": name, "type": "Bank", "enabled": 1})
+		doc = frappe.get_doc(
+			{"doctype": "Mode of Payment", "mode_of_payment": name, "type": "Bank", "enabled": 1}
+		)
 	doc.set("accounts", [row for row in (doc.get("accounts") or []) if row.company != _company()])
 	doc.append("accounts", {"company": _company(), "default_account": account})
 	doc.save(ignore_permissions=True)

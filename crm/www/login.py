@@ -26,6 +26,7 @@ from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
 from frappe.utils.password import get_decrypted_password
 from frappe.website.utils import get_home_page
 
+from crm.api.website_redirect import get_portal_route
 from crm.branding import apply_brand_context, get_configured_app_brand
 
 no_cache = True
@@ -39,7 +40,12 @@ def get_context(context):
 	# Already logged in -> bounce to target. Branch on user_type like native: Website Users
 	# go to the website home page, not the SPA (which would 403 them).
 	if frappe.session.user != "Guest":
-		if not redirect_to:
+		portal_route = get_portal_route() if frappe.session.data.user_type == "Website User" else None
+		if portal_route:
+			# An OIS-linked Website User always lands in the customer portal, even
+			# when a stale /crm redirect was left in the browser URL.
+			redirect_to = portal_route
+		elif not redirect_to:
 			if frappe.session.data.user_type == "Website User":
 				redirect_to = get_default_path() or get_home_page()
 			else:

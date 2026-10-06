@@ -1,0 +1,20 @@
+<!doctype html>
+<html class="h-full" lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CareverseHIMS — Facility invitation</title>
+    <script>
+      window.csrf_token = {{ (csrf_token or '') | tojson }};
+    </script>
+    {{ invitation_head | safe }}
+  </head>
+  <body class="h-full">
+    <div
+      id="facility-onboarding-app"
+      class="h-full"
+      data-network="{{ invitation_network }}"
+      data-facility="{{ invitation_facility }}"
+    ></div>
+  </body>
+</html>

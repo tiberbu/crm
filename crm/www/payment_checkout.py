@@ -30,6 +30,10 @@ def _asset_head():
 		tag = line.strip()
 		if any(skip in tag for skip in ("registerSW", "vite-plugin-pwa", 'rel="manifest"')):
 			continue
-		if tag.startswith('<script type="module"') or tag.startswith('<link rel="modulepreload"') or tag.startswith('<link rel="stylesheet"'):
+		if (
+			tag.startswith('<script type="module"')
+			or tag.startswith('<link rel="modulepreload"')
+			or tag.startswith('<link rel="stylesheet"')
+		):
 			kept.append(tag)
 	return "\n    ".join(kept)

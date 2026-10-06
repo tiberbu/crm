@@ -79,7 +79,9 @@ def membership_price_lists(overrides: Any, legacy: str = "") -> dict[int, str]:
 	return {1: legacy} if legacy else {}
 
 
-def effective_year_price_list(year: int, plans: list[dict[str, Any]], overrides: Any = None, legacy: str = "") -> str:
+def effective_year_price_list(
+	year: int, plans: list[dict[str, Any]], overrides: Any = None, legacy: str = ""
+) -> str:
 	"""Resolve facility override first, then network year plan, then legacy."""
 	by_year = membership_price_lists(overrides, legacy)
 	if year in by_year:

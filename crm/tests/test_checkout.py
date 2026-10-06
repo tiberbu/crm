@@ -72,10 +72,6 @@ class TestCheckoutOtp(UnitTestCase):
 		self.assertTrue(first["sent"])
 		self.assertTrue(second["sent"])
 		send_otp.assert_called_once()
-		otp_payloads = [
-			json.loads(value)
-			for key, value in cache.values.items()
-			if ":otp:" in key
-		]
+		otp_payloads = [json.loads(value) for key, value in cache.values.items() if ":otp:" in key]
 		self.assertEqual(len(otp_payloads), 1)
 		self.assertEqual(otp_payloads[0]["sent_at"], 1_000_000)

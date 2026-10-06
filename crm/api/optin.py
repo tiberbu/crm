@@ -263,7 +263,11 @@ def _get_network_doc(network_slug):
 	# Partner identity is network-owned. Keep the lookup compatible with sites
 	# that have not migrated the optional fields yet; the render context derives
 	# a network-specific fallback for those legacy rows.
-	for field in ("technology_delivery_partner_name", "technology_delivery_partner_short_name"):
+	for field in (
+		"partner_id",
+		"technology_delivery_partner_name",
+		"technology_delivery_partner_short_name",
+	):
 		try:
 			if frappe.db.has_column("CRM Opt-In Network", field):
 				fields.append(field)
@@ -1201,6 +1205,7 @@ def get_settings(network_slug: Any, deal_invitation: Any = None):
 	if network_doc:
 		network_config = {
 			"display_name": network_doc.get("display_name") or "",
+			"partner_id": network_doc.get("partner_id") or "",
 			"logo_url": network_doc.get("logo_url") or "",
 			"primary_colour": network_doc.get("primary_colour") or "",
 			"contact_email": network_doc.get("contact_email") or "",
@@ -1219,6 +1224,7 @@ def get_settings(network_slug: Any, deal_invitation: Any = None):
 	else:
 		network_config = {
 			"display_name": "CareverseHIMS",
+			"partner_id": "",
 			"logo_url": "",
 			"primary_colour": "",
 			"contact_email": "",
@@ -2983,6 +2989,33 @@ def _should_auto_generate_contract():
 		return True
 
 
+def _provision_customer_experience_access(submission):
+	"""Create the facility Website User after a completed Opt-In, idempotently."""
+	try:
+		from crm.api.website_redirect import ensure_website_user_for_ois
+
+		return ensure_website_user_for_ois(submission)
+	except Exception:
+		# Portal access must not roll back an otherwise completed Opt-In. The OIS
+		# remains auditable and can be reconciled by the invitation story/admin flow.
+		try:
+			if frappe.get_meta("CRM Opt-In Submission").has_field("portal_invitation_status"):
+				frappe.db.set_value(
+					"CRM Opt-In Submission",
+					submission.name,
+					"portal_invitation_status",
+					"Failed",
+					update_modified=False,
+				)
+		except Exception:
+			pass
+		frappe.log_error(
+			frappe.get_traceback(),
+			"optin: Customer Experience invitation failed for %s" % submission.name,
+		)
+		return {"status": "failed"}
+
+
 def _mark_opted_in_facilities(network_slug, facilities):
 	"""Mark memberships represented by a completed submission as Opted In.
 
@@ -3732,6 +3765,7 @@ def _process_deal_invitation_submission(sub, payload):
 	_mark_opted_in_facilities(sub.network_slug, payload.get("facilities") or [])
 	sub.status = "Processed"
 	sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	_provision_customer_experience_access(sub)
 	data = _get_job_progress(sub.name) or {}
 	data["overall"] = "complete"
 	data["lead_id"] = None
@@ -4092,6 +4126,7 @@ def _process_submission(submission_ref):
 		# ── Mark submission complete ──────────────────────────────────────────
 		sub.status = "Processed"
 		sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		_provision_customer_experience_access(sub)
 		# Give the facility signatory a direct path to invoices. The link itself is
 		# harmless without the OTP, which is sent only to the stored signatory email.
 		_queue_payment_link_email(sub, network)

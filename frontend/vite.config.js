@@ -150,6 +150,8 @@ export default defineConfig(async ({ mode }) => {
     main: path.resolve(__dirname, 'index.html'),
     'finance-cockpit': path.resolve(__dirname, 'finance-cockpit.html'),
     'opt-in': path.resolve(__dirname, 'opt-in.html'),
+    'facility-onboarding': path.resolve(__dirname, 'facility-onboarding.html'),
+    'cx-portal': path.resolve(__dirname, 'cx-portal.html'),
     'sign-contract': path.resolve(__dirname, 'sign-contract.html'),
     'payment-checkout': path.resolve(__dirname, 'payment-checkout.html'),
   }
