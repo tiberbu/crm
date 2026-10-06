@@ -11,6 +11,7 @@ migration so production sites do not receive demo commercial rates.
 from __future__ import annotations
 
 import frappe
+from frappe import _
 
 PRICE_LIST = "CRM Token Packages - DEV"
 
@@ -47,7 +48,7 @@ PACKAGES = [
 
 def run():
 	if "erpnext" not in frappe.get_installed_apps():
-		frappe.throw("ERPNext is required to seed the token catalogue.")
+		frappe.throw(_("ERPNext is required to seed the token catalogue."))
 
 	price_list = _ensure_price_list()
 	rows = []
@@ -62,7 +63,7 @@ def run():
 				"token_quantity": package["token_quantity"],
 				"billing_period": "Monthly",
 				"coverage_summary": package["coverage_summary"],
-				"coverage_metrics": "{\"metric\": \"routine_transactions\", \"period\": \"monthly\"}",
+				"coverage_metrics": '{"metric": "routine_transactions", "period": "monthly"}',
 				"enabled": 1,
 			}
 		)
@@ -106,7 +107,9 @@ def _ensure_item(package):
 			"doctype": "Item",
 			"item_code": package["item_code"],
 			"item_name": package["item_name"],
-			"item_group": "CareVerse HMIS" if frappe.db.exists("Item Group", "CareVerse HMIS") else "Services",
+			"item_group": "CareVerse HMIS"
+			if frappe.db.exists("Item Group", "CareVerse HMIS")
+			else "Services",
 			"stock_uom": "Nos",
 			"is_sales_item": 1,
 			"is_stock_item": 0,

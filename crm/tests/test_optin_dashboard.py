@@ -16,13 +16,28 @@ class TestOptInDashboard(UnitTestCase):
 		]
 		prequalified_facilities = [
 			frappe._dict(
-				{"name": "FAC-0001", "mfl_code": "1001", "facility_name": "First Clinic", "keph_level": "Level 2"}
+				{
+					"name": "FAC-0001",
+					"mfl_code": "1001",
+					"facility_name": "First Clinic",
+					"keph_level": "Level 2",
+				}
 			),
 			frappe._dict(
-				{"name": "FAC-0002", "mfl_code": "1002", "facility_name": "Second Clinic", "keph_level": "Level 3A"}
+				{
+					"name": "FAC-0002",
+					"mfl_code": "1002",
+					"facility_name": "Second Clinic",
+					"keph_level": "Level 3A",
+				}
 			),
 			frappe._dict(
-				{"name": "FAC-0003", "mfl_code": "2001", "facility_name": "Third Clinic", "keph_level": "Level 3A"}
+				{
+					"name": "FAC-0003",
+					"mfl_code": "2001",
+					"facility_name": "Third Clinic",
+					"keph_level": "Level 3A",
+				}
 			),
 		]
 		memberships = [

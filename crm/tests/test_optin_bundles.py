@@ -69,4 +69,6 @@ class TestOptInBundleHelpers(UnitTestCase):
 		)
 
 	def test_split_period_amount_carries_rounding_remainder_to_last_period(self):
-		self.assertEqual([split_period_amount(100.01, quarter) for quarter in range(1, 5)], [25, 25, 25, 25.01])
+		self.assertEqual(
+			[split_period_amount(100.01, quarter) for quarter in range(1, 5)], [25, 25, 25, 25.01]
+		)

@@ -28,7 +28,16 @@ class TestCustomerExperienceProgress(UnitTestCase):
 				"crm.api.website_redirect.frappe.get_all",
 				side_effect=[
 					[frappe._dict({"status": "Signed"}), frappe._dict({"status": "Pending"})],
-					[frappe._dict({"name": "FAC-0001", "mfl_code": "1001", "facility_name": "First Clinic", "keph_level": "Level 3"})],
+					[
+						frappe._dict(
+							{
+								"name": "FAC-0001",
+								"mfl_code": "1001",
+								"facility_name": "First Clinic",
+								"keph_level": "Level 3",
+							}
+						)
+					],
 					[
 						frappe._dict(
 							{
@@ -77,9 +86,7 @@ class TestCustomerExperienceAccess(UnitTestCase):
 				"facility_signatory_name": "Facility Admin",
 			}
 		)
-		user = frappe._dict(
-			{"name": "facility@example.com", "user_type": "Website User", "enabled": 1}
-		)
+		user = frappe._dict({"name": "facility@example.com", "user_type": "Website User", "enabled": 1})
 		with (
 			patch("crm.api.website_redirect.frappe.db.get_value", return_value=user.name),
 			patch("crm.api.website_redirect.frappe.get_doc", return_value=user),

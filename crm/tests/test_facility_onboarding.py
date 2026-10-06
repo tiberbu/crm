@@ -2,10 +2,17 @@ from unittest.mock import Mock, patch
 
 from frappe.tests import UnitTestCase
 
-from crm.api.facility_onboarding import _onboarding_config
+from crm.api.facility_onboarding import _onboarding_config, _session_key
 
 
 class TestFacilityOnboardingRegistryConfig(UnitTestCase):
+	def test_session_cache_key_is_keyed_and_does_not_expose_token(self):
+		with patch("crm.api.facility_onboarding._password_setting", return_value="test-secret"):
+			key = _session_key("opaque-session-token")
+
+		self.assertTrue(key.startswith("crm_facility_onboarding:"))
+		self.assertNotIn("opaque-session-token", key)
+
 	def test_onboarding_reuses_crm_hfr_credentials(self):
 		hfr = Mock(
 			hfr_enabled=1,

@@ -29,6 +29,7 @@ def get_context(context):
 def _asset_head():
 	path = os.path.join(frappe.get_app_path("crm"), *_BUILT_HTML)
 	try:
+		# nosemgrep: frappe-security-file-traversal -- path is assembled only from a fixed asset tuple and the CRM app path; no request value is used.
 		with open(path, encoding="utf-8") as stream:
 			lines = stream.readlines()
 	except OSError:

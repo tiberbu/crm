@@ -4,7 +4,6 @@ from pathlib import Path
 
 import frappe
 
-
 TITLE = "CareverseHIMS Network Facility Agreement v1 (Facility Template)"
 TEMPLATE_FILENAME = "chak_careverse_saas_agreement_v1.html"
 

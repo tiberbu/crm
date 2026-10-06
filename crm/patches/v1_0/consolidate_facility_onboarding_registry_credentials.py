@@ -26,9 +26,7 @@ def execute():
 		hfr.hfr_username = onboarding.facility_onboarding_hie_username
 		changed = True
 	if not hfr.get_password("hfr_password", raise_exception=False):
-		password = onboarding.get_password(
-			"facility_onboarding_hie_password", raise_exception=False
-		)
+		password = onboarding.get_password("facility_onboarding_hie_password", raise_exception=False)
 		if password:
 			hfr.hfr_password = password
 			changed = True

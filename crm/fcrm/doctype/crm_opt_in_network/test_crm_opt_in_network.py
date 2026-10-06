@@ -40,9 +40,7 @@ class TestCRMOptInNetwork(UnitTestCase):
 		)
 		with (
 			patch.object(frappe.db, "get_value", return_value="123456"),
-			patch(
-				"crm.fcrm.doctype.crm_opt_in_network.crm_opt_in_network._validate_partner_id"
-			),
+			patch("crm.fcrm.doctype.crm_opt_in_network.crm_opt_in_network._validate_partner_id"),
 		):
 			with self.assertRaises(frappe.ValidationError):
 				CRMOptInNetwork.validate(doc)

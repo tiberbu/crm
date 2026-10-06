@@ -40,9 +40,7 @@ class TestOptInSignatoryModePatch(UnitTestCase):
 					),
 				],
 			),
-			patch(
-				"crm.patches.v1_0.backfill_optin_signatory_modes.frappe.db.set_value"
-			) as set_value,
+			patch("crm.patches.v1_0.backfill_optin_signatory_modes.frappe.db.set_value") as set_value,
 		):
 			execute()
 

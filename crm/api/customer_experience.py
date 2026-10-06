@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from typing import Any
 
 import frappe
 from frappe import _
@@ -48,7 +49,9 @@ def _customer(submission):
 		organization = _text(frappe.db.get_value("CRM Deal", submission.deal, "organization"))
 	from crm.api.quotes import _ensure_customer
 
-	return _ensure_customer(organization or submission.facility_signatory_name or submission.submitter_email, commit=False)
+	return _ensure_customer(
+		organization or submission.facility_signatory_name or submission.submitter_email, commit=False
+	)
 
 
 def _company():
@@ -74,7 +77,16 @@ def _order_rows(submission):
 	return frappe.get_list(
 		"Sales Order",
 		filters={"crm_optin_submission": submission.name, "docstatus": 0},
-		fields=["name", "transaction_date", "valid_till", "grand_total", "currency", "status", "crm_token_facility_mfl", "crm_token_package_item"],
+		fields=[
+			"name",
+			"transaction_date",
+			"valid_till",
+			"grand_total",
+			"currency",
+			"status",
+			"crm_token_facility_mfl",
+			"crm_token_package_item",
+		],
 		order_by="creation desc",
 		limit_page_length=200,
 		ignore_permissions=True,
@@ -102,7 +114,7 @@ def get_purchase_context():
 
 
 @frappe.whitelist(methods=["POST"])
-def create_token_order(ois_number, facility_mfl, package_item_code, purchase_key=None):
+def create_token_order(ois_number: Any, facility_mfl: Any, package_item_code: Any, purchase_key: Any = None):
 	"""Create one draft next-period quotation and Sales Order for one facility."""
 	submission = _submission(ois_number)
 	facility_mfl = _text(facility_mfl)
@@ -114,7 +126,14 @@ def create_token_order(ois_number, facility_mfl, package_item_code, purchase_key
 	key = _text(purchase_key) or secrets.token_urlsafe(18)
 	existing = _existing_purchase(key)
 	if existing:
-		return {"success": True, "data": {"quotation": existing[1] if existing[0] == "Quotation" else None, "sales_order": existing[1] if existing[0] == "Sales Order" else None, "idempotent": True}}
+		return {
+			"success": True,
+			"data": {
+				"quotation": existing[1] if existing[0] == "Quotation" else None,
+				"sales_order": existing[1] if existing[0] == "Sales Order" else None,
+				"idempotent": True,
+			},
+		}
 	settings = frappe.get_single("CRM Opt-In Settings")
 	validity = int(settings.get("token_sales_order_validity_days") or 30)
 	price = float(package["price"])
@@ -135,7 +154,16 @@ def create_token_order(ois_number, facility_mfl, package_item_code, purchase_key
 		"crm_token_package_item": package["item_code"],
 	}
 	quotation = frappe.get_doc({"doctype": "Quotation", **common})
-	quotation.append("items", {"item_code": package["item_code"], "qty": 1, "price_list_rate": price, "rate": price, "description": package["description"]})
+	quotation.append(
+		"items",
+		{
+			"item_code": package["item_code"],
+			"qty": 1,
+			"price_list_rate": price,
+			"rate": price,
+			"description": package["description"],
+		},
+	)
 	quotation.flags.ignore_mandatory = True
 	quotation.flags.ignore_permissions = True
 	quotation.set_missing_values()
@@ -151,23 +179,37 @@ def create_token_order(ois_number, facility_mfl, package_item_code, purchase_key
 			"currency": package["currency"],
 			"order_type": "Sales",
 			"crm_optin_submission": submission.name,
-			"crm_optin_quotation": quotation.name if frappe.db.has_column("Sales Order", "crm_optin_quotation") else None,
+			"crm_optin_quotation": quotation.name
+			if frappe.db.has_column("Sales Order", "crm_optin_quotation")
+			else None,
 			"crm_token_purchase_key": key,
 			"crm_token_facility_mfl": facility_mfl,
 			"crm_token_package_item": package["item_code"],
 		}
 	)
-	sales_order.append("items", {"item_code": package["item_code"], "qty": 1, "price_list_rate": price, "rate": price, "description": package["description"], "delivery_date": frappe.utils.add_days(frappe.utils.today(), validity)})
+	sales_order.append(
+		"items",
+		{
+			"item_code": package["item_code"],
+			"qty": 1,
+			"price_list_rate": price,
+			"rate": price,
+			"description": package["description"],
+			"delivery_date": frappe.utils.add_days(frappe.utils.today(), validity),
+		},
+	)
 	sales_order.flags.ignore_mandatory = True
 	sales_order.flags.ignore_permissions = True
 	sales_order.set_missing_values()
 	sales_order.insert(ignore_permissions=True, ignore_mandatory=True)
-	frappe.db.commit()
-	return {"success": True, "data": {"quotation": quotation.name, "sales_order": sales_order.name, "idempotent": False}}
+	return {
+		"success": True,
+		"data": {"quotation": quotation.name, "sales_order": sales_order.name, "idempotent": False},
+	}
 
 
 @frappe.whitelist(methods=["POST"])
-def start_token_payment(sales_order):
+def start_token_payment(sales_order: Any):
 	"""Create and submit the invoice only when the user starts payment."""
 	if not frappe.db.has_column("Sales Order", "crm_optin_submission"):
 		frappe.throw(_("Token order fields are not installed."), frappe.ConfigurationError)
@@ -187,9 +229,17 @@ def start_token_payment(sales_order):
 		invoice.crm_token_facility_mfl = order.crm_token_facility_mfl
 		invoice.crm_token_package_item = order.crm_token_package_item
 	settings = frappe.get_single("CRM Opt-In Settings")
-	invoice.due_date = frappe.utils.add_days(frappe.utils.today(), int(settings.get("token_invoice_due_days") or 30))
+	invoice.due_date = frappe.utils.add_days(
+		frappe.utils.today(), int(settings.get("token_invoice_due_days") or 30)
+	)
 	invoice.flags.ignore_mandatory = True
 	invoice.insert(ignore_permissions=True, ignore_mandatory=True)
 	invoice.submit()
-	frappe.db.commit()
-	return {"success": True, "data": {"invoice": invoice.name, "ois": order.crm_optin_submission, "checkout_url": "/payment-checkout?ois=%s" % order.crm_optin_submission}}
+	return {
+		"success": True,
+		"data": {
+			"invoice": invoice.name,
+			"ois": order.crm_optin_submission,
+			"checkout_url": "/payment-checkout?ois=%s" % order.crm_optin_submission,
+		},
+	}

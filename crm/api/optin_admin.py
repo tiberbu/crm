@@ -374,7 +374,9 @@ def save_network(data: Any):
 		frappe.throw(_("Select an enabled selling price list."))
 	data["price_list_override"] = price_list_override
 	if "first_invoice_offset_months" in data:
-		data["first_invoice_offset_months"] = max(frappe.utils.cint(data.get("first_invoice_offset_months")) or 3, 1)
+		data["first_invoice_offset_months"] = max(
+			frappe.utils.cint(data.get("first_invoice_offset_months")) or 3, 1
+		)
 	if "invoice_on_contract_signature" in data:
 		raw_signature_rule = data.get("invoice_on_contract_signature")
 		data["invoice_on_contract_signature"] = int(
@@ -385,7 +387,9 @@ def save_network(data: Any):
 	for price_field in ("optional_services_price_list",):
 		value = frappe.utils.cstr(data.get(price_field) or "").strip()
 		if value and not frappe.db.exists("Price List", {"name": value, "selling": 1, "enabled": 1}):
-			frappe.throw(_("Select an enabled selling price list for {0}.").format(price_field.replace("_", " ")))
+			frappe.throw(
+				_("Select an enabled selling price list for {0}.").format(price_field.replace("_", " "))
+			)
 		data[price_field] = value
 	if "price_lists" in data:
 		plans = data.get("price_lists") or []
@@ -403,12 +407,14 @@ def save_network(data: Any):
 			if not frappe.db.exists("Price List", {"name": value, "selling": 1, "enabled": 1}):
 				frappe.throw(_("Select an enabled selling price list for year {0}.").format(year))
 			seen_years.add(year)
-			normalized_plans.append({
-				"year_number": year,
-				"price_list": value,
-				"label": frappe.utils.cstr(row.get("label") or "Year %s" % year).strip(),
-				"enabled": bool(row.get("enabled", True)),
-			})
+			normalized_plans.append(
+				{
+					"year_number": year,
+					"price_list": value,
+					"label": frappe.utils.cstr(row.get("label") or "Year %s" % year).strip(),
+					"enabled": bool(row.get("enabled", True)),
+				}
+			)
 		data["price_lists_json"] = json.dumps(sorted(normalized_plans, key=lambda row: row["year_number"]))
 
 	name = data.get("name")
@@ -688,7 +694,8 @@ def get_optin_settings():
 			for row in (settings.get("tiberbu_contacts") or [])
 		],
 		"token_price_list": settings.get("token_price_list") or "",
-		"facility_onboarding_default_partner_id": settings.get("facility_onboarding_default_partner_id") or "",
+		"facility_onboarding_default_partner_id": settings.get("facility_onboarding_default_partner_id")
+		or "",
 		"token_sales_order_validity_days": int(settings.get("token_sales_order_validity_days") or 30),
 		"token_invoice_due_days": int(settings.get("token_invoice_due_days") or 30),
 		"token_packages": token_packages,
@@ -704,9 +711,7 @@ def update_optin_settings(settings: Any):
 	settings = settings or {}
 
 	default_price_list = frappe.utils.cstr(settings.get("default_price_list")).strip()
-	optional_services_price_list = frappe.utils.cstr(
-		settings.get("optional_services_price_list")
-	).strip()
+	optional_services_price_list = frappe.utils.cstr(settings.get("optional_services_price_list")).strip()
 	sales_tax_template = frappe.utils.cstr(settings.get("sales_tax_template")).strip()
 	active_tc_document = frappe.utils.cstr(settings.get("active_tc_document")).strip()
 	default_lead_owner = frappe.utils.cstr(settings.get("default_lead_owner")).strip()
@@ -721,7 +726,9 @@ def update_optin_settings(settings: Any):
 		settings.get("tiberbu_signing_requirement") or "All must sign"
 	).strip()
 	token_price_list = frappe.utils.cstr(settings.get("token_price_list") or "").strip()
-	default_partner_id = frappe.utils.cstr(settings.get("facility_onboarding_default_partner_id") or "").strip()
+	default_partner_id = frappe.utils.cstr(
+		settings.get("facility_onboarding_default_partner_id") or ""
+	).strip()
 	token_sales_order_validity_days = int(settings.get("token_sales_order_validity_days") or 30)
 	token_invoice_due_days = int(settings.get("token_invoice_due_days") or 30)
 	token_packages = settings.get("token_packages") or []
@@ -979,7 +986,9 @@ def _price_list_assignments():
 			)
 			assignment["facilities"].add(membership.parent)
 			assignment["networks"].add(network.get("slug") or membership.network)
-			assignment["facility_networks"].add((membership.parent, network.get("slug") or membership.network))
+			assignment["facility_networks"].add(
+				(membership.parent, network.get("slug") or membership.network)
+			)
 	return assignments
 
 
@@ -1200,16 +1209,12 @@ def get_facility_sample_quote(facility: Any, network: Any = None, price_list: An
 				{
 					"year_number": 1,
 					"label": "Year 1",
-					"price_list": facility_overrides.get(1)
-					or settings_default
-					or "Negotiated Year 1",
+					"price_list": facility_overrides.get(1) or settings_default or "Negotiated Year 1",
 				}
 			]
 
 	for schedule in schedules:
-		if not frappe.db.exists(
-			"Price List", {"name": schedule["price_list"], "selling": 1, "enabled": 1}
-		):
+		if not frappe.db.exists("Price List", {"name": schedule["price_list"], "selling": 1, "enabled": 1}):
 			frappe.throw(
 				_("The contract schedule for year {0} is not enabled.").format(schedule["year_number"])
 			)
@@ -1885,7 +1890,9 @@ def save_facility(data: Any):
 	doc.memberships = [m for m in (doc.memberships or []) if m.network not in new_network_set]
 	try:
 		membership_has_override = frappe.db.has_column("CRM Facility Membership", "price_list_override")
-		membership_has_overrides = frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json")
+		membership_has_overrides = frappe.db.has_column(
+			"CRM Facility Membership", "price_list_overrides_json"
+		)
 		membership_has_go_live = frappe.db.has_column("CRM Facility Membership", "go_live")
 	except Exception:
 		membership_has_override = False
@@ -1929,19 +1936,25 @@ def save_facility(data: Any):
 				)
 				if unexpected_years:
 					frappe.throw(
-						_("Facility contract schedules can only be overridden for configured years: {0}.").format(
-							", ".join(str(year) for year in unexpected_years)
-						)
+						_(
+							"Facility contract schedules can only be overridden for configured years: {0}."
+						).format(", ".join(str(year) for year in unexpected_years))
 					)
 				if net in existing_memberships and existing_memberships[net].get("status") == "Opted In":
-					previous = _normalize_price_list_overrides(existing_memberships[net].get("price_list_overrides_json"))
+					previous = _normalize_price_list_overrides(
+						existing_memberships[net].get("price_list_overrides_json")
+					)
 					if candidate != previous:
-						frappe.throw(_("Facility yearly price lists are locked after Opt-In. Update pricing from the quotation."))
-				membership_values["price_list_overrides_json"] = json.dumps(
-					candidate, separators=(",", ":")
-				)
+						frappe.throw(
+							_(
+								"Facility yearly price lists are locked after Opt-In. Update pricing from the quotation."
+							)
+						)
+				membership_values["price_list_overrides_json"] = json.dumps(candidate, separators=(",", ":"))
 			elif net in existing_memberships:
-				membership_values["price_list_overrides_json"] = existing_memberships[net].get("price_list_overrides_json") or ""
+				membership_values["price_list_overrides_json"] = (
+					existing_memberships[net].get("price_list_overrides_json") or ""
+				)
 		if membership_has_go_live:
 			if "go_live" in mem_data:
 				membership_values["go_live"] = frappe.utils.cint(mem_data.get("go_live"))
@@ -1991,7 +2004,9 @@ def set_facility_go_live(facility_name: Any, network: Any, go_live: Any):
 	if not membership:
 		frappe.throw(_("This facility is not a contact for the selected network."), frappe.DoesNotExistError)
 	if membership.status != "Opted In":
-		frappe.throw(_("Complete Opt-In before marking a facility ready for Go Live."), frappe.ValidationError)
+		frappe.throw(
+			_("Complete Opt-In before marking a facility ready for Go Live."), frappe.ValidationError
+		)
 
 	membership.go_live = frappe.utils.cint(go_live)
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL: network access was checked above
@@ -2272,9 +2287,16 @@ def _submission_for_facility(network, mfl_code):
 			continue
 		if not isinstance(payload, dict):
 			continue
-		facilities = payload.get("pricing") or payload.get("facilities") or payload.get("selected_facilities") or []
+		facilities = (
+			payload.get("pricing") or payload.get("facilities") or payload.get("selected_facilities") or []
+		)
 		# Pricing can be a yearly-plan list; flatten its facility rows before matching.
-		if isinstance(facilities, list) and facilities and isinstance(facilities[0], dict) and facilities[0].get("facilities"):
+		if (
+			isinstance(facilities, list)
+			and facilities
+			and isinstance(facilities[0], dict)
+			and facilities[0].get("facilities")
+		):
 			facilities = [item for plan in facilities for item in (plan.get("facilities") or [])]
 		for facility in facilities if isinstance(facilities, list) else []:
 			if frappe.utils.cstr((facility or {}).get("mfl_code") or "").strip() == mfl_code:

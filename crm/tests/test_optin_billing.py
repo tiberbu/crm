@@ -26,7 +26,8 @@ class TestOptInBillingHelpers(UnitTestCase):
 		self.assertEqual(_quarter_items(quotation, 4)[0]["rate"], 25.01)
 
 	def test_billing_document_lookup_is_safe_when_custom_field_is_missing(self):
-		with patch("crm.automation.optin_billing.frappe.db.exists", return_value=True), patch(
-			"crm.automation.optin_billing.frappe.db.has_column", return_value=False
+		with (
+			patch("crm.automation.optin_billing.frappe.db.exists", return_value=True),
+			patch("crm.automation.optin_billing.frappe.db.has_column", return_value=False),
 		):
 			self.assertEqual(_find_billing_document("Sales Invoice", "SUB-1-Y1-Q1"), "")

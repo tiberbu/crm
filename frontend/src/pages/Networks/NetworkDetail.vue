@@ -219,7 +219,11 @@
             v-model="networkForm.partner_id"
             :label="__('Partner ID')"
             :placeholder="__('Leave blank to generate')"
-            :description="__('Exactly six digits. Set it only when creating the Network; it cannot be changed later.')"
+            :description="
+              __(
+                'Exactly six digits. Set it only when creating the Network; it cannot be changed later.',
+              )
+            "
             :disabled="!isNewNetwork"
             inputmode="numeric"
             maxlength="6"
@@ -341,7 +345,11 @@
               size="sm"
             />
             <p class="text-[11px] text-ink-gray-5">
-              {{ __('Enabled: invoice on full signature. Disabled: existing Opt-In timing. The choice appears in the T&C.') }}
+              {{
+                __(
+                  'Enabled: invoice on full signature. Disabled: existing Opt-In timing. The choice appears in the T&C.',
+                )
+              }}
             </p>
           </div>
           <div class="flex flex-col gap-1">
@@ -363,7 +371,9 @@
             </select>
             <p class="text-[11px] text-ink-gray-5">
               {{
-                __('Choices are shown in Customer Experience; they are informational only.')
+                __(
+                  'Choices are shown in Customer Experience; they are informational only.',
+                )
               }}
             </p>
           </div>
@@ -412,7 +422,9 @@
                   v-model="plan.price_list"
                   class="h-8 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
                 >
-                  <option value="">{{ __('Select a contract schedule') }}</option>
+                  <option value="">
+                    {{ __('Select a contract schedule') }}
+                  </option>
                   <option
                     v-for="priceList in negotiatedPriceLists"
                     :key="priceList.value"
@@ -983,7 +995,9 @@
                 {{ sampleQuote.network }}
               </p>
             </div>
-            <div class="overflow-hidden rounded-lg border border-outline-gray-2">
+            <div
+              class="overflow-hidden rounded-lg border border-outline-gray-2"
+            >
               <div
                 class="flex items-start justify-between gap-4 border-b border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 dark:bg-surface-gray-2"
               >
@@ -1023,7 +1037,9 @@
                       :key="`${yearlyQuote.year_number}-${yearlyQuote.price_list}`"
                     >
                       <td class="px-3 py-2.5 font-medium text-ink-gray-9">
-                        {{ yearlyQuote.label || `Year ${yearlyQuote.year_number}` }}
+                        {{
+                          yearlyQuote.label || `Year ${yearlyQuote.year_number}`
+                        }}
                       </td>
                       <td class="px-3 py-2.5 text-ink-gray-7">
                         {{ yearlyQuote.price_list }}
@@ -1033,7 +1049,8 @@
                           {{ formatKes(yearlyQuote.monthly_gross) }}
                         </p>
                         <p class="text-xs text-ink-gray-5">
-                          {{ formatKes(yearlyQuote.monthly_net) }} {{ __('excl. VAT') }}
+                          {{ formatKes(yearlyQuote.monthly_net) }}
+                          {{ __('excl. VAT') }}
                         </p>
                       </td>
                       <td class="px-3 py-2.5 text-right">
@@ -1041,7 +1058,8 @@
                           {{ formatKes(yearlyQuote.annual_gross) }}
                         </p>
                         <p class="text-xs text-ink-gray-5">
-                          {{ formatKes(yearlyQuote.annual_net) }} {{ __('excl. VAT') }}
+                          {{ formatKes(yearlyQuote.annual_net) }}
+                          {{ __('excl. VAT') }}
                         </p>
                       </td>
                     </tr>
@@ -1057,7 +1075,8 @@
                   {{ __('Total contract commitment') }}
                 </p>
                 <p class="mt-1 text-xs text-ink-gray-5">
-                  {{ formatKes(sampleQuote.contract_total_net) }} {{ __('excl. VAT') }}
+                  {{ formatKes(sampleQuote.contract_total_net) }}
+                  {{ __('excl. VAT') }}
                 </p>
               </div>
               <p class="text-lg font-semibold text-ink-gray-9">
@@ -1236,7 +1255,9 @@
                 <span class="text-xs font-medium text-ink-gray-6">
                   {{ __('Network contract schedule') }}
                 </span>
-                <p class="min-h-8 rounded border border-outline-gray-2 bg-surface-gray-1 px-2 py-1.5 text-sm text-ink-gray-7 dark:bg-surface-gray-2">
+                <p
+                  class="min-h-8 rounded border border-outline-gray-2 bg-surface-gray-1 px-2 py-1.5 text-sm text-ink-gray-7 dark:bg-surface-gray-2"
+                >
                   {{ plan.price_list || __('Opt-In default') }}
                 </p>
               </div>
@@ -1265,7 +1286,11 @@
                 theme="red"
                 icon="lucide-trash-2"
                 :disabled="facilityPricingLocked"
-                :aria-label="__('Remove facility override for {0}', [plan.label || `Year ${plan.year_number}`])"
+                :aria-label="
+                  __('Remove facility override for {0}', [
+                    plan.label || `Year ${plan.year_number}`,
+                  ])
+                "
                 @click="clearFacilityScheduleOverride(plan.year_number)"
               />
               <span v-else class="hidden sm:block" aria-hidden="true" />
@@ -1566,13 +1591,17 @@ const syncPricingResource = createResource({
 async function syncConfiguredPricing() {
   if (
     !window.confirm(
-      __('Add missing yearly quotations for processed Opt-Ins in this network? Existing quotes and signed contracts will not be changed.'),
+      __(
+        'Add missing yearly quotations for processed Opt-Ins in this network? Existing quotes and signed contracts will not be changed.',
+      ),
     )
   ) {
     return
   }
   try {
-    const result = await syncPricingResource.submit({ network: props.networkSlug })
+    const result = await syncPricingResource.submit({
+      network: props.networkSlug,
+    })
     const summary = [
       __('{0} updated', [result?.updated ?? 0]),
       __('{0} already current', [result?.unchanged ?? 0]),
@@ -1811,8 +1840,7 @@ async function viewSampleQuote(row) {
 
 function facilityContractScheduleLabel() {
   const count = facilitySchedulePlans.value.length
-  if (count > 1)
-    return __('Contract schedules: {0} yearly schedules', [count])
+  if (count > 1) return __('Contract schedules: {0} yearly schedules', [count])
   if (count === 1)
     return __('Contract schedule: {0}', [
       facilitySchedulePlans.value[0]?.price_list || __('Year 1'),
@@ -1870,7 +1898,9 @@ function paymentLinkHelp(row) {
   if (!networkMembership(row)?.contact_email) {
     return __('Add a contact email before sending the payment link.')
   }
-  return __('The link can be sent now. Payment unlocks when a submitted invoice is ready.')
+  return __(
+    'The link can be sent now. Payment unlocks when a submitted invoice is ready.',
+  )
 }
 
 async function sendPaymentLink(row) {
@@ -1882,7 +1912,11 @@ async function sendPaymentLink(row) {
       facility_name: row.name,
       membership_name: membership.name,
     })
-    toast.success(__('Payment link sent to {0}', [result?.sent_to || membership.contact_email]))
+    toast.success(
+      __('Payment link sent to {0}', [
+        result?.sent_to || membership.contact_email,
+      ]),
+    )
   } catch (error) {
     toast.error(
       error?.messages?.[0] ??

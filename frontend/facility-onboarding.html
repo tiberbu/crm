@@ -4,7 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CareverseHIMS — Facility invitation</title>
-    <script>window.csrf_token = {{ (csrf_token or '') | tojson }};</script>
+    <script>
+      window.csrf_token = {{ (csrf_token or '') | tojson }};
+    </script>
     {{ invitation_head | safe }}
   </head>
   <body class="h-full">

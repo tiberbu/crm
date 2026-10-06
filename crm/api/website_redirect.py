@@ -36,7 +36,9 @@ def _json_object(value):
 def _submission_facilities(submission):
 	"""Return the canonical facility snapshots retained on an OIS."""
 	payload = _json_object(submission.get("raw_json"))
-	facilities = payload.get("facilities") or payload.get("pricing") or payload.get("selected_facilities") or []
+	facilities = (
+		payload.get("facilities") or payload.get("pricing") or payload.get("selected_facilities") or []
+	)
 	if not isinstance(facilities, list):
 		return []
 	if facilities and isinstance(facilities[0], dict) and facilities[0].get("facilities"):
@@ -163,10 +165,22 @@ def _portal_progress(submission):
 		"next_action": next_action,
 		"steps": [
 			{"key": "identity", "label": "Identity verified", "status": "complete"},
-			{"key": "facility", "label": "Facility confirmed", "status": "complete" if contacts else "current"},
+			{
+				"key": "facility",
+				"label": "Facility confirmed",
+				"status": "complete" if contacts else "current",
+			},
 			{"key": "optin", "label": "Opt-In request", "status": "complete" if opted_in else "current"},
-			{"key": "signatures", "label": "Required signatures", "status": "complete" if contract["complete"] else "current"},
-			{"key": "golive", "label": "GoLive", "status": "complete" if all_live else ("current" if opted_in else "locked")},
+			{
+				"key": "signatures",
+				"label": "Required signatures",
+				"status": "complete" if contract["complete"] else "current",
+			},
+			{
+				"key": "golive",
+				"label": "GoLive",
+				"status": "complete" if all_live else ("current" if opted_in else "locked"),
+			},
 		],
 	}
 
@@ -181,7 +195,9 @@ def ensure_website_user_for_ois(submission):
 	email = cstr(submission.facility_signatory_email or submission.submitter_email or "").strip().lower()
 	if not email or "@" not in email:
 		_set_submission_portal_field(submission, "portal_invitation_status", "Blocked")
-		_set_submission_portal_field(submission, "portal_invitation_error", "No valid facility email is available.")
+		_set_submission_portal_field(
+			submission, "portal_invitation_error", "No valid facility email is available."
+		)
 		return {"status": "blocked", "reason": "No valid facility email"}
 
 	user_name = frappe.db.get_value("User", {"email": email}, "name")
@@ -191,18 +207,24 @@ def ensure_website_user_for_ois(submission):
 		user = frappe.get_doc("User", user_name)
 		if user.user_type != "Website User":
 			_set_submission_portal_field(submission, "portal_invitation_status", "Blocked")
-			_set_submission_portal_field(submission, "portal_invitation_error", "The facility email belongs to an internal user.")
+			_set_submission_portal_field(
+				submission, "portal_invitation_error", "The facility email belongs to an internal user."
+			)
 			return {"status": "blocked", "reason": "Email belongs to an internal user"}
 		if not user.enabled:
 			_set_submission_portal_field(submission, "portal_invitation_status", "Blocked")
-			_set_submission_portal_field(submission, "portal_invitation_error", "The facility account is disabled.")
+			_set_submission_portal_field(
+				submission, "portal_invitation_error", "The facility account is disabled."
+			)
 			return {"status": "blocked", "reason": "Website User is disabled"}
 	else:
 		user = frappe.new_doc("User")
 		user.update(
 			{
 				"email": email,
-				"first_name": cstr(submission.facility_signatory_name or submission.submitter_name or email.split("@")[0]),
+				"first_name": cstr(
+					submission.facility_signatory_name or submission.submitter_name or email.split("@")[0]
+				),
 				"user_type": "Website User",
 				"enabled": 1,
 				"send_welcome_email": 1,
@@ -238,7 +260,9 @@ def ensure_website_user_for_ois(submission):
 			"The Website User was created, but the welcome email was not queued.",
 		)
 		return {"status": "failed", "user": user_name}
-	_set_submission_portal_field(submission, "portal_invitation_status", "Sent" if created else "Already active")
+	_set_submission_portal_field(
+		submission, "portal_invitation_status", "Sent" if created else "Already active"
+	)
 	if created and welcome_email_sent:
 		_set_submission_portal_field(submission, "portal_invitation_sent_at", frappe.utils.now_datetime())
 	_set_submission_portal_field(submission, "portal_invitation_error", "")
