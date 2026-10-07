@@ -126,6 +126,20 @@
         .cta-band p { color:rgba(255,255,255,0.7); font-size:15px; margin-bottom:26px; }
         .cta-band .btn-primary { box-shadow:0 10px 26px rgba(188,24,35,0.4); }
 
+        /* ---------- audience routing: keep facility owners and internal teams distinct ---------- */
+        .audience { padding: 0 0 clamp(72px, 11vh, 104px); }
+        .audience-heading { max-width: 680px; margin: 0 auto 28px; text-align: center; }
+        .audience-heading h2 { font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 600; letter-spacing: -0.02em; color: var(--black); margin-bottom: 10px; }
+        .audience-heading p { color: var(--ink-6); font-size: 15px; }
+        .audience-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; }
+        .audience-card { display:flex; flex-direction:column; align-items:flex-start; padding:24px 22px; background:var(--glass-bg); border:var(--glass-border); border-radius:var(--radius); box-shadow:var(--glass-shadow), var(--glass-inset); }
+        .audience-card.primary { border-color: rgba(188,24,35,0.28); }
+        .audience-card h3 { font-size:16px; font-weight:600; color:var(--ink-9); margin-bottom:8px; }
+        .audience-card p { flex:1; color:var(--ink-6); font-size:13.5px; line-height:1.55; margin-bottom:20px; }
+        .audience-card .btn-primary { height:44px; padding:0 18px; font-size:13px; box-shadow:none; }
+        .audience-card .link-secondary { font-size:13.5px; }
+        .audience-card .link-secondary + .link-secondary { margin-top:12px; }
+
         /* ---------- footer ---------- */
         .ft { border-top:1px solid var(--line); padding:26px 0; }
         .ft-inner { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; font-size:13px; color:var(--ink-5); }
@@ -135,8 +149,9 @@
         @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
             .nav, .feature { background:#ffffff; }
         }
-        @media (max-width: 900px) { .grid { grid-template-columns:repeat(2,1fr); } }
+        @media (max-width: 900px) { .grid, .audience-grid { grid-template-columns:repeat(2,1fr); } }
         @media (max-width: 560px) { .grid { grid-template-columns:1fr; } .trust { gap:24px; } }
+        @media (max-width: 560px) { .audience-grid { grid-template-columns:1fr; } }
         @media (prefers-reduced-motion: reduce) {
             html { scroll-behavior:auto; }
             *, *::before, *::after { transition-duration:.001ms !important; }
@@ -179,6 +194,34 @@
         </div>
     </header>
 
+    <section class="audience" aria-labelledby="audience-title">
+        <div class="wrap">
+            <div class="audience-heading">
+                <div class="eyebrow"><span class="dot"></span> Tiberbu HMIS</div>
+                <h2 id="audience-title">Start in the right Tiberbu experience</h2>
+                <p>Facility owners use Customer Experience. Tiberbu Sales, Support and Finance teams use their internal workspaces.</p>
+            </div>
+            <div class="audience-grid">
+                <article class="audience-card primary">
+                    <h3>New facility owner</h3>
+                    <p>Verify ownership, find your eligible facilities, choose a package and begin the secure onboarding and signature process.</p>
+                    <a class="btn-primary" href="/facility-onboarding">Start facility onboarding <span aria-hidden="true" style="margin-left:8px">→</span></a>
+                </article>
+                <article class="audience-card">
+                    <h3>Existing facility owner</h3>
+                    <p>Already activated your access? Customer Experience is where you follow facility progress, contracts, purchases and support.</p>
+                    <a class="link-secondary" href="/login?redirect-to=/cx-portal">Open Customer Experience <span aria-hidden="true">→</span></a>
+                </article>
+                <article class="audience-card">
+                    <h3>Tiberbu team member</h3>
+                    <p>Internal teams work in role-specific tools. CRM is for Sales and Support; Finance uses the Finance Cockpit.</p>
+                    <a class="link-secondary" href="/login?redirect-to=/crm">Team sign in <span aria-hidden="true">→</span></a>
+                    <a class="link-secondary" href="/login?redirect-to=/finance-cockpit">Finance Cockpit <span aria-hidden="true">→</span></a>
+                </article>
+            </div>
+        </div>
+    </section>
+
     <section class="features">
         <div class="wrap">
             <div class="grid">
@@ -219,7 +262,7 @@
     <footer class="ft">
         <div class="wrap ft-inner">
             <span>&copy; {{ app_name or 'Tiberbu CRM' }}</span>
-            <a href="{{ cta_secondary_link }}">Sign in</a>
+            <a href="{{ cta_secondary_link }}">{{ cta_secondary_text }}</a>
         </div>
     </footer>
 </body>

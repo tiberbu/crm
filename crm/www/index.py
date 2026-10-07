@@ -36,8 +36,8 @@ def get_context(context):
 	# Falls back to /login if an admin hasn't published the form yet.
 	context.cta_text = "Request a Demo"
 	context.cta_link = _demo_form_route()
-	context.cta_secondary_text = "Sign In"
-	context.cta_secondary_link = "/login"
+	context.cta_secondary_text = "Team sign in"
+	context.cta_secondary_link = "/login?redirect-to=/crm"
 
 	context.features = [
 		{
