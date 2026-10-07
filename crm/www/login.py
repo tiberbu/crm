@@ -26,7 +26,7 @@ from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
 from frappe.utils.password import get_decrypted_password
 from frappe.website.utils import get_home_page
 
-from crm.api.website_redirect import get_portal_route
+from crm.api.website_redirect import PORTAL_ROUTE, get_portal_route
 from crm.branding import apply_brand_context, get_configured_app_brand
 
 no_cache = True
@@ -76,10 +76,10 @@ def get_context(context):
 
 	# In a provider-side OIDC authorize flow, suppress social buttons by policy.
 	is_oidc_flow = _is_oidc_authorize_redirect(redirect_to)
-	context.provider_logins = [] if is_oidc_flow else _build_provider_logins(redirect_to or "/crm")
+	context.provider_logins = [] if is_oidc_flow else _build_provider_logins(redirect_to or PORTAL_ROUTE)
 	context.social_login = bool(context.provider_logins)
 
-	context.redirect_to = redirect_to or "/crm"
+	context.redirect_to = redirect_to or PORTAL_ROUTE
 	# CSRF token for the guest session (generating it is what makes /api/method/login
 	# accept the POST from this page; see frappe auth.LoginManager.validate_csrf_token).
 	context.csrf_token = frappe.sessions.get_csrf_token()

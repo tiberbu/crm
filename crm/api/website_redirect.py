@@ -20,6 +20,11 @@ from frappe import _
 from frappe.utils import cstr
 
 PORTAL_ROUTE = "/cx-portal"
+CRM_LOGIN_MARKER = "crm_login"
+LOGIN_TEAM_ROUTES = {
+	"sales": "/crm",
+	"finance": "/finance-cockpit",
+}
 OIS_DOCTYPE = "CRM Opt-In Submission"
 OIS_PERMISSION_ALLOW = OIS_DOCTYPE
 MAX_OIS_PER_USER = 100
@@ -343,16 +348,29 @@ def get_portal_route(user: str | None = None) -> str | None:
 	return PORTAL_ROUTE
 
 
+def get_login_team_route(team: str | None = None) -> str:
+	"""Return the allow-listed destination selected on the branded login form."""
+	return LOGIN_TEAM_ROUTES.get(cstr(team or "").strip().lower(), PORTAL_ROUTE)
+
+
 def on_login(login_manager=None):
-	"""Set Frappe's one-shot post-login redirect for every Website User.
+	"""Set Frappe's one-shot post-login redirect for the branded login flow.
 
 	Frappe calls ``on_login`` before ``set_user_info`` consumes the
-	``redirect_after_login`` cache key.  This preserves native login, password
-	reset, 2FA, and email-link behavior while changing only the destination for
-	Website Users. OIS permissions still scope the records shown after login.
+	``redirect_after_login`` cache key. The marker limits team routing to the
+	branded password-login page; API, OAuth, email-link, and other native login
+	paths keep their existing behavior. The team value is only an allow-listed
+	destination hint: the destination's own route guard remains authoritative.
 	"""
 	user = getattr(login_manager, "user", None) or frappe.session.user
-	if get_portal_route(user):
+	if cstr(frappe.form_dict.get(CRM_LOGIN_MARKER) or "") == "1":
+		frappe.cache.hset(
+			"redirect_after_login",
+			user,
+			get_login_team_route(frappe.form_dict.get("login_team")),
+		)
+	elif get_portal_route(user):
+		# Preserve the existing native behavior for non-branded Website User logins.
 		frappe.cache.hset("redirect_after_login", user, PORTAL_ROUTE)
 
 
