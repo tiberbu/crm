@@ -5,15 +5,22 @@
         class="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8"
       >
         <div>
-          <p class="text-base font-semibold tracking-tight">tiberbu Express</p>
-          <p class="text-xs text-ink-gray-5">Facility onboarding</p>
+          <p class="text-base font-semibold tracking-tight">Tiberbu HMIS</p>
+          <p class="text-xs text-ink-gray-5">Customer Experience onboarding</p>
         </div>
-        <a
-          v-if="supportEmail"
-          :href="`mailto:${supportEmail}`"
-          class="text-sm text-ink-gray-6 hover:text-ink-gray-9"
-          >{{ __('Need help?') }}</a
-        >
+        <div class="flex items-center gap-4 text-sm">
+          <a
+            v-if="supportEmail"
+            :href="`mailto:${supportEmail}`"
+            class="text-ink-gray-6 hover:text-ink-gray-9"
+            >{{ __('Need help?') }}</a
+          >
+          <a
+            href="/login?redirect-to=/cx-portal"
+            class="text-ink-gray-6 hover:text-ink-gray-9"
+            >{{ __('Already have access? Sign in') }}</a
+          >
+        </div>
       </div>
     </header>
     <div class="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-12">
@@ -91,6 +98,28 @@
             }}
           </p>
         </aside>
+      </section>
+      <section
+        v-if="stage === 'welcome'"
+        class="mt-10 rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
+        aria-labelledby="hmis-about-title"
+      >
+        <p
+          class="text-xs font-semibold uppercase tracking-[.15em] text-ink-gray-5"
+        >
+          {{ __('About Tiberbu HMIS') }}
+        </p>
+        <h2 id="hmis-about-title" class="mt-2 text-xl font-semibold">
+          {{ __('One connected path from onboarding to Customer Experience') }}
+        </h2>
+        <p class="mt-3 max-w-3xl text-sm leading-6 text-ink-gray-6">
+          {{ __('Tiberbu HMIS connects facility ownership verification, network onboarding, signatures and the Customer Experience portal. This wizard is for facility owners. Internal Tiberbu team members should use the CRM team sign-in instead.') }}
+        </p>
+        <a
+          href="/login?redirect-to=/crm"
+          class="mt-4 inline-flex text-sm font-medium text-[#bc1823] underline underline-offset-4"
+          >{{ __('Tiberbu team sign in') }}</a
+        >
       </section>
       <section v-else class="mx-auto max-w-3xl">
         <div class="mb-8 flex items-center justify-between gap-4">
