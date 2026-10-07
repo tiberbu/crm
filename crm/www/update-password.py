@@ -15,6 +15,7 @@ import frappe.sessions  # ensure frappe.sessions is resolvable for get_csrf_toke
 from frappe import _
 
 from crm.branding import apply_brand_context, get_configured_app_brand
+from crm.api.website_redirect import PORTAL_ROUTE
 
 no_cache = 1
 
@@ -36,5 +37,7 @@ def get_context(context):
 	context.password_expired = args.get("password_expired") in ("true", "1", "yes")
 	# Signed-in users (no key) must supply their current password.
 	context.is_logged_in = frappe.session.user != "Guest"
+	context.portal_route = PORTAL_ROUTE
+	context.login_redirect = f"/login?redirect-to={PORTAL_ROUTE}"
 	context.csrf_token = frappe.sessions.get_csrf_token()
 	return context
