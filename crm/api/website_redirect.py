@@ -240,6 +240,10 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None):
 				"user_type": "Website User",
 				"enabled": 1,
 				"send_welcome_email": 1,
+				# Native Frappe update_password() consumes User.redirect_url after
+				# the emailed reset link is used. This keeps the invitation flow on
+				# Frappe's password-reset implementation while landing in CX.
+				"redirect_url": PORTAL_ROUTE,
 			}
 		)
 		user.flags.ignore_password_policy = True
@@ -247,6 +251,21 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None):
 		user_name = user.name
 		created = True
 		welcome_email_sent = bool(getattr(user.flags, "email_sent", False))
+	if not created:
+		# Existing Website Users may have been invited before CX routing was
+		# added. Set the native one-shot redirect without changing their account
+		# or password state.
+		try:
+			if hasattr(user, "db_set"):
+				user.db_set("redirect_url", PORTAL_ROUTE, update_modified=False)
+			else:
+				# Keeps lightweight unit-test doubles and migration-time stubs safe.
+				user.redirect_url = PORTAL_ROUTE
+		except Exception:
+			# Access reconciliation must remain idempotent if a site is mid-migration.
+			frappe.logger("crm.website_redirect").warning(
+				"Could not set CX password redirect for %s", user_name, exc_info=True
+			)
 
 	permission = frappe.get_all(
 		"User Permission",
