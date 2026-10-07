@@ -6,12 +6,14 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from crm.api.optin_admin import (
+	_customer_experience_link,
 	_get_negotiated_price_list,
 	_validate_opted_in_price_list_override,
 	create_sellable_item,
 	duplicate_negotiated_price_list,
 	get_facility_sample_quote,
 	import_facilities_csv,
+	invite_facility_to_customer_experience,
 	list_facilities,
 	list_item_prices,
 	list_negotiated_price_lists,
@@ -23,6 +25,66 @@ from crm.api.optin_admin import (
 	set_facility_go_live,
 	update_item_price,
 )
+
+
+class TestCustomerExperienceNetworkContactInvitation(UnitTestCase):
+	def test_customer_experience_link_reports_existing_ois_user(self):
+		result = _customer_experience_link(
+			[
+				frappe._dict(
+					{
+						"name": "OIS-0001",
+						"portal_user": "facility@example.com",
+						"portal_invitation_status": "Sent",
+						"portal_invitation_sent_at": "2026-10-07 10:00:00",
+					}
+				)
+			]
+		)
+
+		self.assertTrue(result["linked"])
+		self.assertEqual(result["user"], "facility@example.com")
+		self.assertEqual(result["ois_numbers"], ["OIS-0001"])
+
+	def test_invitation_uses_network_contact_email_for_all_processed_ois(self):
+		facility = frappe._dict(
+			{
+				"name": "FAC-0001",
+				"mfl_code": "1001",
+				"memberships": [
+					frappe._dict(
+						{
+							"name": "MEM-0001",
+							"network": "network-a",
+							"status": "Opted In",
+							"contact_name": "Facility Admin",
+							"contact_email": "admin@example.com",
+						}
+					)
+				],
+			}
+		)
+		submissions = [frappe._dict({"name": "OIS-0001"}), frappe._dict({"name": "OIS-0002"})]
+
+		with (
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch("crm.api.optin_admin._assert_network_access"),
+			patch("crm.api.optin_admin._processed_ois_for_facility", return_value=submissions),
+			patch("crm.api.website_redirect.ensure_website_user_for_ois") as ensure_user,
+		):
+			ensure_user.side_effect = [
+				{"status": "sent", "user": "admin@example.com"},
+				{"status": "linked", "user": "admin@example.com"},
+			]
+			result = invite_facility_to_customer_experience("FAC-0001", "MEM-0001")
+
+		self.assertEqual(result["status"], "sent")
+		self.assertEqual(result["user"], "admin@example.com")
+		self.assertEqual(result["ois"], ["OIS-0001", "OIS-0002"])
+		self.assertEqual(ensure_user.call_count, 2)
+		for call in ensure_user.call_args_list:
+			self.assertEqual(call.kwargs["email"], "admin@example.com")
+			self.assertEqual(call.kwargs["display_name"], "Facility Admin")
 
 
 class TestOptInFacilityCsvImport(UnitTestCase):
@@ -976,6 +1038,7 @@ class TestOptInFacilityList(UnitTestCase):
 
 		with (
 			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._processed_ois_for_facility", return_value=[]),
 			patch("crm.api.optin_admin.frappe.db.has_column", return_value=True),
 			patch(
 				"crm.api.optin_admin.frappe.get_list",
@@ -1024,6 +1087,7 @@ class TestOptInFacilityList(UnitTestCase):
 
 		with (
 			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch("crm.api.optin_admin._processed_ois_for_facility", return_value=[]),
 			patch(
 				"crm.api.optin_admin.frappe.get_list",
 				side_effect=[

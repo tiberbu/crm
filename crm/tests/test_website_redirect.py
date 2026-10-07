@@ -100,6 +100,34 @@ class TestCustomerExperienceAccess(UnitTestCase):
 			any(call.args[0] == "portal_invitation_sent_at" for call in set_field.call_args_list)
 		)
 
+	def test_existing_ois_user_link_wins_over_changed_contact_email(self):
+		submission = frappe._dict(
+			{
+				"name": "OIS-0005",
+				"portal_user": "existing@example.com",
+				"facility_signatory_email": "old@example.com",
+				"facility_signatory_name": "Facility Admin",
+			}
+		)
+		user = frappe._dict({"name": "existing@example.com", "user_type": "Website User", "enabled": 1})
+		with (
+			patch("crm.api.website_redirect.frappe.db.exists", return_value=True),
+			patch("crm.api.website_redirect.frappe.get_doc", return_value=user),
+			patch("crm.api.website_redirect.frappe.get_all", return_value=[{"name": "UP-0005"}]),
+			patch("crm.api.website_redirect._set_submission_portal_field") as set_field,
+		):
+			result = ensure_website_user_for_ois(
+				submission,
+				email="new-contact@example.com",
+				display_name="Updated Contact",
+			)
+
+		self.assertEqual(result, {"status": "linked", "user": "existing@example.com"})
+		self.assertIn(
+			("portal_invitation_status", "Already active"),
+			[(call.args[1], call.args[2]) for call in set_field.call_args_list],
+		)
+
 	def test_new_website_user_gets_native_welcome_and_ois_scoped_permission(self):
 		submission = frappe._dict(
 			{

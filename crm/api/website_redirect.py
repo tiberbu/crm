@@ -190,17 +190,26 @@ def _set_submission_portal_field(submission, fieldname, value):
 		frappe.db.set_value(OIS_DOCTYPE, submission.name, fieldname, value, update_modified=False)
 
 
-def ensure_website_user_for_ois(submission):
+def ensure_website_user_for_ois(submission, email=None, display_name=None):
 	"""Create/reconcile a Website User and OIS permission exactly once."""
-	email = cstr(submission.facility_signatory_email or submission.submitter_email or "").strip().lower()
-	if not email or "@" not in email:
+	requested_email = cstr(email or "").strip().lower()
+	if not requested_email:
+		requested_email = (
+			cstr(submission.facility_signatory_email or submission.submitter_email or "").strip().lower()
+		)
+	if not requested_email or "@" not in requested_email:
 		_set_submission_portal_field(submission, "portal_invitation_status", "Blocked")
 		_set_submission_portal_field(
 			submission, "portal_invitation_error", "No valid facility email is available."
 		)
 		return {"status": "blocked", "reason": "No valid facility email"}
 
-	user_name = frappe.db.get_value("User", {"email": email}, "name")
+	# A prior OIS-to-user link is authoritative. This keeps admin re-invites
+	# idempotent when the Network Contact email changes after the first invite.
+	linked_user = cstr(getattr(submission, "portal_user", "") or "").strip()
+	user_name = linked_user if linked_user and frappe.db.exists("User", linked_user) else None
+	if not user_name:
+		user_name = frappe.db.get_value("User", {"email": requested_email}, "name")
 	created = False
 	welcome_email_sent = False
 	if user_name:
@@ -221,9 +230,12 @@ def ensure_website_user_for_ois(submission):
 		user = frappe.new_doc("User")
 		user.update(
 			{
-				"email": email,
+				"email": requested_email,
 				"first_name": cstr(
-					submission.facility_signatory_name or submission.submitter_name or email.split("@")[0]
+					display_name
+					or submission.facility_signatory_name
+					or submission.submitter_name
+					or requested_email.split("@")[0]
 				),
 				"user_type": "Website User",
 				"enabled": 1,
