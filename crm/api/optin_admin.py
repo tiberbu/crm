@@ -1779,6 +1779,16 @@ def list_facilities(
 	}
 
 	result = []
+	portal_links = {}
+
+	def portal_link(membership, mfl_code):
+		key = (membership.network, mfl_code)
+		if key not in portal_links:
+			portal_links[key] = _customer_experience_link(
+				_processed_ois_for_facility(membership.network, mfl_code)
+			)
+		return portal_links[key]
+
 	for facility_name in page_names:
 		fac = fac_rows_by_name[facility_name]
 		result.append(
@@ -1790,6 +1800,7 @@ def list_facilities(
 				"keph_level": fac.keph_level,
 				"memberships": [
 					{
+						"customer_experience": portal_link(m, fac.mfl_code),
 						"network": m.network,
 						"name": m.name,
 						"price_list_override": m.get("price_list_override") or "",
@@ -2267,19 +2278,32 @@ def csv_template():
 	return "mfl_code,facility_name,organization,price_list_override,keph_level,contact_name,contact_email,contact_phone\n22999,Example Hospital,Example Hospital Group,,Level 4,Jane Wanjiku,jane@hospital.co.ke,0722000000\n"
 
 
-def _submission_for_facility(network, mfl_code):
-	"""Find the newest processed OIS containing a facility MFL code."""
+def _processed_ois_for_facility(network, mfl_code):
+	"""Find processed OIS records containing a facility MFL code."""
 	if not frappe.db.exists("DocType", "CRM Opt-In Submission"):
-		return None
+		return []
+	fields = ["name", "raw_json", "deal", "contract", "submitted_at"]
+	for fieldname in (
+		"portal_user",
+		"portal_invitation_status",
+		"portal_invitation_sent_at",
+		"portal_invitation_error",
+	):
+		try:
+			if frappe.db.has_column("CRM Opt-In Submission", fieldname):
+				fields.append(fieldname)
+		except Exception:
+			pass
 	rows = frappe.get_list(
 		"CRM Opt-In Submission",
 		filters={"network_slug": network, "status": "Processed"},
-		fields=["name", "raw_json", "deal", "contract", "submitted_at"],
+		fields=fields,
 		order_by="submitted_at desc, creation desc",
 		limit_page_length=0,
 		ignore_permissions=True,  # SYSTEM-INTERNAL: coordinator action is scoped above
 	)
 	mfl_code = frappe.utils.cstr(mfl_code or "").strip()
+	matched = []
 	for row in rows:
 		try:
 			payload = frappe.parse_json(row.raw_json or "{}")
@@ -2300,8 +2324,121 @@ def _submission_for_facility(network, mfl_code):
 			facilities = [item for plan in facilities for item in (plan.get("facilities") or [])]
 		for facility in facilities if isinstance(facilities, list) else []:
 			if frappe.utils.cstr((facility or {}).get("mfl_code") or "").strip() == mfl_code:
-				return row
-	return None
+				matched.append(row)
+	return matched
+
+
+def _submission_for_facility(network, mfl_code):
+	"""Find the newest processed OIS containing a facility MFL code."""
+	rows = _processed_ois_for_facility(network, mfl_code)
+	return rows[0] if rows else None
+
+
+def _customer_experience_link(submissions):
+	"""Return a safe summary of the OIS-to-Website User link for admin UI."""
+	if not submissions:
+		return {
+			"linked": False,
+			"user": None,
+			"ois_numbers": [],
+			"invitation_status": "Not linked",
+			"invitation_sent_at": None,
+		}
+
+	user_names = [
+		frappe.utils.cstr(row.get("portal_user") or "").strip()
+		for row in submissions
+		if frappe.utils.cstr(row.get("portal_user") or "").strip()
+	]
+	if not user_names:
+		for row in submissions:
+			user_name = frappe.db.get_value(
+				"User Permission",
+				{
+					"allow": "CRM Opt-In Submission",
+					"for_value": row.name,
+				},
+				"user",
+			)
+			if user_name:
+				user_names.append(user_name)
+
+	statuses = [frappe.utils.cstr(row.get("portal_invitation_status") or "") for row in submissions]
+	status = next((value for value in statuses if value in ("Sent", "Already active")), None)
+	return {
+		"linked": bool(user_names),
+		"user": user_names[0] if user_names else None,
+		"ois_numbers": [row.name for row in submissions],
+		"invitation_status": status or (statuses[0] if statuses else "Not linked"),
+		"invitation_sent_at": next(
+			(
+				row.get("portal_invitation_sent_at")
+				for row in submissions
+				if row.get("portal_invitation_sent_at")
+			),
+			None,
+		),
+	}
+
+
+@frappe.whitelist()
+def invite_facility_to_customer_experience(facility_name: Any, membership_name: Any = None):
+	"""Idempotently link a Network Contact's email to its processed OIS records."""
+	facility_name = frappe.utils.cstr(facility_name or "").strip()
+	membership_name = frappe.utils.cstr(membership_name or "").strip()
+	if not facility_name:
+		frappe.throw(_("Facility is required."), frappe.ValidationError)
+
+	facility = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
+	membership = next(
+		(row for row in (facility.memberships or []) if (not membership_name or row.name == membership_name)),
+		None,
+	)
+	if not membership:
+		frappe.throw(_("The selected network contact was not found."), frappe.DoesNotExistError)
+	_assert_network_access(membership.network)
+	if membership.status == "Declined":
+		frappe.throw(
+			_("A declined network contact cannot be invited to Customer Experience."), frappe.ValidationError
+		)
+
+	recipient = frappe.utils.cstr(membership.contact_email or "").strip().lower()
+	if not recipient or "@" not in recipient:
+		frappe.throw(_("Add a valid contact email before inviting this facility."), frappe.ValidationError)
+
+	submissions = _processed_ois_for_facility(membership.network, facility.mfl_code)
+	if not submissions:
+		frappe.throw(
+			_("No processed Opt-In Request was found for this facility in the selected network."),
+			frappe.ValidationError,
+		)
+
+	# Reuse the same identity and permission path used by self-onboarding. The
+	# explicit contact email is the username for a newly created Website User;
+	# the existing OIS link remains authoritative on repeated invitations.
+	from crm.api.website_redirect import ensure_website_user_for_ois
+
+	results = [
+		ensure_website_user_for_ois(
+			submission,
+			email=recipient,
+			display_name=frappe.utils.cstr(membership.contact_name or "").strip(),
+		)
+		for submission in submissions
+	]
+	failed = [result for result in results if result.get("status") in ("blocked", "failed")]
+	if failed:
+		frappe.throw(failed[0].get("reason") or _("The Customer Experience invitation could not be created."))
+
+	users = list(dict.fromkeys(result.get("user") for result in results if result.get("user")))
+	status = "sent" if any(result.get("status") == "sent" for result in results) else "linked"
+	return {
+		"status": status,
+		"user": users[0] if users else None,
+		"ois": [submission.name for submission in submissions],
+		"idempotent": status == "linked",
+		"results": results,
+	}
 
 
 @frappe.whitelist()

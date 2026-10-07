@@ -804,6 +804,9 @@
               <th class="px-4 py-2.5 text-left font-medium">
                 {{ __('Invitation') }}
               </th>
+              <th class="px-4 py-2.5 text-left font-medium">
+                {{ __('Customer Experience') }}
+              </th>
               <th class="px-4 py-2.5 text-right font-medium">
                 {{ __('Actions') }}
               </th>
@@ -878,6 +881,34 @@
                   {{ formatDate(networkMembership(row).invite_sent_at) }}
                 </p>
               </td>
+              <td class="px-4 py-3">
+                <span
+                  :class="
+                    customerExperiencePill(customerExperienceLink(row)?.linked)
+                  "
+                >
+                  {{
+                    customerExperienceLink(row)?.linked
+                      ? __('Linked')
+                      : __('Not linked')
+                  }}
+                </span>
+                <p
+                  v-if="customerExperienceLink(row)?.user"
+                  class="mt-1 text-xs text-ink-gray-5"
+                >
+                  {{ customerExperienceLink(row).user }}
+                </p>
+                <p
+                  v-if="customerExperienceLink(row)?.ois_numbers?.length"
+                  class="mt-1 text-[11px] text-ink-gray-5"
+                >
+                  {{ customerExperienceLink(row).ois_numbers.join(', ') }}
+                </p>
+                <p v-else class="mt-1 text-[11px] text-ink-gray-5">
+                  {{ __('Available after a processed Opt-In Request') }}
+                </p>
+              </td>
               <td class="px-4 py-3 text-right" @click.stop>
                 <div class="flex items-center justify-end gap-2">
                   <Button
@@ -904,6 +935,18 @@
                       {{ paymentLinkHelp(row) }}
                     </p>
                   </div>
+                  <Button
+                    size="sm"
+                    variant="subtle"
+                    :loading="invitingToCustomerExperience === row.name"
+                    :disabled="!canInviteToCustomerExperience(row)"
+                    @click="inviteToCustomerExperience(row)"
+                    >{{
+                      customerExperienceLink(row)?.linked
+                        ? __('Sync CX access')
+                        : __('Invite to Customer Experience')
+                    }}</Button
+                  >
                   <Button
                     size="sm"
                     variant="subtle"
@@ -1807,6 +1850,58 @@ const sendPaymentLinkResource = createResource({
   url: 'crm.api.optin_admin.send_payment_link',
 })
 const sendingPaymentLink = ref(null)
+const inviteCustomerExperienceResource = createResource({
+  url: 'crm.api.optin_admin.invite_facility_to_customer_experience',
+})
+const invitingToCustomerExperience = ref(null)
+
+function customerExperienceLink(row) {
+  return networkMembership(row)?.customer_experience ?? null
+}
+
+function canInviteToCustomerExperience(row) {
+  return Boolean(
+    networkMembership(row)?.contact_email &&
+      customerExperienceLink(row)?.ois_numbers?.length,
+  )
+}
+
+function customerExperiencePill(linked) {
+  const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
+  return linked
+    ? `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`
+    : `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400`
+}
+
+async function inviteToCustomerExperience(row) {
+  const membership = networkMembership(row)
+  if (!canInviteToCustomerExperience(row)) return
+  invitingToCustomerExperience.value = row.name
+  try {
+    const result = await inviteCustomerExperienceResource.submit({
+      facility_name: row.name,
+      membership_name: membership.name,
+    })
+    toast.success(
+      result?.status === 'linked'
+        ? __('Customer Experience access is already linked to {0}', [
+            result?.user || membership.contact_email,
+          ])
+        : __('Customer Experience invitation sent to {0}', [
+            membership.contact_email,
+          ]),
+    )
+    facilitiesResource.reload()
+  } catch (error) {
+    toast.error(
+      error?.messages?.[0] ??
+        error?.message ??
+        __('Could not invite this facility to Customer Experience'),
+    )
+  } finally {
+    invitingToCustomerExperience.value = null
+  }
+}
 
 function formatKes(value) {
   return `KES ${Number(value || 0).toLocaleString(undefined, {
