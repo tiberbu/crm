@@ -141,6 +141,18 @@
         .fc:disabled { background: rgba(17,24,39,0.04); color:var(--muted); }
         .field-error { color:var(--error); font-size:12px; margin-top:5px; }
 
+        .team-choice {
+            border:1px solid rgba(17,24,39,0.10); border-radius:11px;
+            padding:12px 13px 11px; margin:2px 0 15px;
+            background:rgba(255,255,255,0.38);
+        }
+        .team-choice legend { padding:0 4px; font-size:12.5px; font-weight:600; color:var(--ink-soft); }
+        .team-choice p { color:var(--muted); font-size:12px; line-height:1.4; margin:2px 0 9px; }
+        .team-options { display:flex; flex-wrap:wrap; gap:8px; }
+        .team-option { display:flex; align-items:center; gap:7px; color:var(--ink-soft); font-size:12.5px; cursor:pointer; }
+        .team-option input { width:15px; height:15px; margin:0; accent-color:var(--brand); }
+        .team-option input:focus-visible { outline:none; box-shadow:var(--focus); }
+
         .mfa-step { display:none; }
         .mfa-prompt { font-size:13px; color:var(--ink-soft); margin-bottom:14px; padding:11px 13px; background:rgba(188,24,35,0.06); border:1px solid rgba(188,24,35,0.12); border-radius:11px; }
         .mfa-prompt.warn { color:var(--error); background:rgba(217,45,32,0.08); }
@@ -253,6 +265,15 @@
                         <div id="pwdError" class="field-error" aria-live="polite"></div>
                     </div>
 
+                    <fieldset class="team-choice" id="teamGroup">
+                        <legend>Team access (optional)</legend>
+                        <p>Leave this unselected to continue to Customer Experience.</p>
+                        <div class="team-options">
+                            <label class="team-option"><input type="radio" name="login_team" value="sales" /> Sales Team</label>
+                            <label class="team-option"><input type="radio" name="login_team" value="finance" /> Finance Team</label>
+                        </div>
+                    </fieldset>
+
                     <div id="mfaStep" class="mfa-step" aria-live="polite">
                         <div id="mfaPrompt" class="mfa-prompt"></div>
                         <div class="fg">
@@ -313,6 +334,7 @@
         var pwdEl = document.getElementById('pwd');
         var usrGroup = document.getElementById('usrGroup');
         var pwdGroup = document.getElementById('pwdGroup');
+        var teamGroup = document.getElementById('teamGroup');
         var usrError = document.getElementById('usrError');
         var pwdError = document.getElementById('pwdError');
         var otpError = document.getElementById('otpError');
@@ -329,6 +351,11 @@
         var pendingTmpId = null;
         var activeVerification = null;
         var mfaEntryBlocked = false;
+
+        function getSelectedLoginTeam() {
+            var selected = document.querySelector('input[name="login_team"]:checked');
+            return selected ? selected.value : '';
+        }
 
         // ---- helpers ----
         function getCookie(name) {
@@ -400,7 +427,7 @@
             if (target.charAt(0) !== '/') target = '/' + target;
             // /update-password is included so a forced/expired password-reset redirect
             // (…/update-password?key=…) survives the guard WITH its key intact.
-            var safe = ['/crm', '/app', '/desk', '/api', '/update-password'];
+            var safe = ['/crm', '/app', '/desk', '/api', '/cx-portal', '/finance-cockpit', '/update-password'];
             var ok = safe.some(function (p) { return target.indexOf(p) === 0; });
             return ok ? target : '';
         }
@@ -439,6 +466,7 @@
 
             if (usrGroup) usrGroup.style.display = '';
             if (pwdGroup) pwdGroup.style.display = '';
+            if (teamGroup) teamGroup.style.display = '';
             if (usrEl) usrEl.disabled = false;
             if (pwdEl) { pwdEl.disabled = false; pwdEl.value = ''; }
             if (mfaStep) mfaStep.style.display = 'none';
@@ -463,6 +491,7 @@
             inMfaVerification = true;
             if (usrGroup) usrGroup.style.display = 'none';
             if (pwdGroup) pwdGroup.style.display = 'none';
+            if (teamGroup) teamGroup.style.display = 'none';
             if (usrEl) usrEl.disabled = true;
             if (pwdEl) pwdEl.disabled = true;
             if (mfaStep) mfaStep.style.display = 'block';
@@ -557,7 +586,12 @@
                     var tmpId = pendingTmpId || cleanText(getCookie('tmp_id'));
                     if (!otp) { setFieldError(loginOtp, otpError, 'Verification code is required.'); return; }
                     if (!tmpId) { showAuthError('Verification session expired. Please sign in again.'); enterCredentialsStep(); return; }
-                    await submitLogin({ otp: otp, tmp_id: tmpId });
+                    await submitLogin({
+                        otp: otp,
+                        tmp_id: tmpId,
+                        crm_login: '1',
+                        login_team: getSelectedLoginTeam()
+                    });
                     return;
                 }
 
@@ -569,7 +603,12 @@
                     if (!pwd) setFieldError(pwdEl, pwdError, 'Password is required.');
                     return;
                 }
-                await submitLogin({ usr: usr, pwd: pwd });
+                await submitLogin({
+                    usr: usr,
+                    pwd: pwd,
+                    crm_login: '1',
+                    login_team: getSelectedLoginTeam()
+                });
             });
         }
         if (btnMfaBack) btnMfaBack.addEventListener('click', enterCredentialsStep);

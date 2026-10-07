@@ -4,9 +4,12 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from crm.api.website_redirect import (
+	CRM_LOGIN_MARKER,
 	_portal_progress,
 	ensure_website_user_for_ois,
+	get_login_team_route,
 	get_user_ois_numbers,
+	on_login,
 )
 
 
@@ -61,6 +64,26 @@ class TestCustomerExperienceProgress(UnitTestCase):
 
 
 class TestCustomerExperienceAccess(UnitTestCase):
+	def test_branded_login_uses_selected_team_route(self):
+		with (
+			patch(
+				"crm.api.website_redirect.frappe.form_dict",
+				{CRM_LOGIN_MARKER: "1", "login_team": "finance"},
+			),
+			patch("crm.api.website_redirect.frappe.cache.hset") as hset,
+		):
+			on_login(frappe._dict(user="finance@example.com"))
+
+		hset.assert_called_once_with("redirect_after_login", "finance@example.com", "/finance-cockpit")
+
+	def test_login_team_routes_are_allow_listed(self):
+		self.assertEqual(get_login_team_route("sales"), "/crm")
+		self.assertEqual(get_login_team_route("finance"), "/finance-cockpit")
+
+	def test_unselected_or_unknown_login_team_defaults_to_customer_experience(self):
+		self.assertEqual(get_login_team_route(None), "/cx-portal")
+		self.assertEqual(get_login_team_route("/finance-cockpit"), "/cx-portal")
+
 	def test_user_ois_permissions_are_deduplicated_and_stale_values_ignored(self):
 		with (
 			patch(
