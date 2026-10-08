@@ -119,12 +119,12 @@
       <div
         class="px-5 pt-4 pb-3 border-b border-outline-gray-1/60 flex items-center justify-between"
       >
-        <h3 class="text-sm font-semibold text-ink-gray-8">Recent Invoices</h3>
+        <h3 class="text-sm font-semibold text-ink-gray-8">Due invoices</h3>
         <button
           class="text-xs font-medium text-ink-red-6 hover:text-ink-red-8 transition-colors"
           @click="$emit('navigate', 'invoices')"
         >
-          View all →
+          Open workbench →
         </button>
       </div>
       <div v-if="recentLoading" class="divide-y divide-outline-gray-1/40">
@@ -140,7 +140,7 @@
         v-else-if="!recentInvoices.length"
         class="py-12 text-center text-sm text-ink-gray-4"
       >
-        No invoices yet.
+        No outstanding invoices.
       </div>
       <div v-else class="divide-y divide-outline-gray-1/40">
         <div
@@ -156,9 +156,14 @@
           <span class="flex-1 text-sm text-ink-gray-6 truncate">{{
             inv.customer
           }}</span>
-          <span class="text-xs text-ink-gray-4 flex-shrink-0 w-24 text-right">{{
-            fmtDate(inv.posting_date)
-          }}</span>
+          <span class="flex flex-col text-xs flex-shrink-0 w-28 text-right">
+            <span class="text-ink-gray-6">Due {{ fmtDate(inv.due_date) }}</span>
+            <span
+              :class="inv.days_overdue > 0 ? 'text-ink-red-6' : 'text-ink-gray-4'"
+            >
+              {{ inv.days_overdue > 0 ? `${inv.days_overdue}d overdue` : 'On time' }}
+            </span>
+          </span>
           <span
             class="text-sm font-semibold text-ink-gray-8 tabular-nums flex-shrink-0 w-28 text-right"
             >{{ fmtCurrency(inv.outstanding_amount, inv.currency) }}</span
