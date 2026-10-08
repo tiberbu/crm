@@ -144,6 +144,9 @@ def guard_desk_access():
 			return
 
 	# Non-allow-listed user attempting desk access -> branded unauthorized page.
+	# Preserve the requested surface so the page can explain the actual boundary
+	# instead of showing the old generic "desk administrators only" message.
+	resource = "finance" if p == FINANCE_COCKPIT_PATH or p.startswith(FINANCE_COCKPIT_PATH + "/") else "desk"
 	# Audit trail: log the blocked attempt (no secrets/PII beyond user + path).
 	try:
 		frappe.logger("desk_access_guard").info("Blocked desk access: user=%s path=%s", user, request_path)
@@ -153,6 +156,6 @@ def guard_desk_access():
 
 	# Raise a werkzeug redirect (see module docstring): the only mechanism that actually
 	# redirects a web-page GET from a before_request hook. 303 => browser re-fetches with GET.
-	exc = RequestRedirect(UNAUTHORIZED_ROUTE)
+	exc = RequestRedirect(f"{UNAUTHORIZED_ROUTE}?resource={resource}")
 	exc.code = 303
 	raise exc

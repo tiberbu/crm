@@ -1,8 +1,10 @@
+import frappe
 from frappe.tests import UnitTestCase
 from unittest.mock import patch
 
 from crm.finance.access import has_access
-from crm.finance.api import _handoff_schedule
+from crm.finance.api import _handoff_schedule, get_ar_invoices, get_finance_kpis
+from crm.www.access_restricted import RESOURCE_COPY
 
 
 class TestFinanceCockpitAccess(UnitTestCase):
@@ -16,6 +18,17 @@ class TestFinanceCockpitAccess(UnitTestCase):
 	def test_non_accounting_roles_are_denied(self):
 		for role in ("System Manager", "Finance Manager", "AR Accountant", "Sales Manager"):
 			self.assertFalse(has_access(user="user@example.com", roles={role}))
+
+	def test_accounts_roles_are_registered_as_whitelisted_finance_endpoints(self):
+		# Public Finance functions are wrapped after their module-level decorator so
+		# the shared access check runs first. The guarded callable must itself remain
+		# in Frappe's whitelist registry.
+		self.assertIn(get_ar_invoices, frappe.whitelisted)
+		self.assertIn(get_finance_kpis, frappe.whitelisted)
+
+	def test_finance_access_restriction_explains_required_roles(self):
+		self.assertIn("Accounts User", RESOURCE_COPY["finance"]["required_roles"])
+		self.assertIn("Accounts Manager", RESOURCE_COPY["finance"]["required_roles"])
 
 	def test_handoff_schedule_selects_native_year_one_quarter_one_row(self):
 		submission = {

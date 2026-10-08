@@ -118,9 +118,21 @@
       <div
         class="fc-content-col flex-1 flex flex-col h-full overflow-auto bg-surface-base"
       >
-        <!-- Sticky glass header — mirrors CRM AppHeader (breadcrumb strip) -->
-        <div class="fc-app-header flex items-center px-5">
-          <Breadcrumbs :items="breadcrumbs" />
+        <!-- Finance context header: job, current company, and data authority. -->
+        <div class="fc-app-header flex items-center justify-between gap-4 px-5">
+          <div class="min-w-0">
+            <p class="fc-header-eyebrow">Finance Workspace</p>
+            <h1 class="truncate text-base font-semibold text-ink-gray-9">
+              {{ headerTitle }}
+            </h1>
+          </div>
+          <div class="fc-header-context flex shrink-0 items-center gap-3 text-xs text-ink-gray-5">
+            <span class="hidden items-center gap-1.5 sm:flex">
+              <span class="fc-live-dot" aria-hidden="true" />
+              Native ERPNext data
+            </span>
+            <span class="max-w-48 truncate">{{ company || 'Select company' }}</span>
+          </div>
         </div>
 
         <!-- Page body -->
@@ -190,7 +202,6 @@ import {
   Sidebar,
   SidebarItem,
   Dropdown,
-  Breadcrumbs,
   Tooltip,
   createResource,
   useTheme,
@@ -258,11 +269,6 @@ const headerTitle = computed(() => {
     'Finance'
   )
 })
-const breadcrumbs = computed(() => [
-  { label: 'Finance', onClick: () => onNavigate('dashboard') },
-  { label: headerTitle.value },
-])
-
 // Logout — POST-only in Frappe; frappe-ui call() issues POST with CSRF.
 const logoutResource = createResource({
   url: 'logout',
@@ -358,6 +364,21 @@ const searchOpen = ref(false)
   -webkit-backdrop-filter: blur(12px) saturate(140%);
   backdrop-filter: blur(12px) saturate(140%);
   border-bottom: 1px solid var(--glass-border-color);
+}
+.fc-header-eyebrow {
+  margin: 0 0 1px;
+  color: var(--brand-primary, #bc1823);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.fc-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ink-green-6, #2f9e44);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink-green-6, #2f9e44) 15%, transparent);
 }
 @supports not (
   (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))

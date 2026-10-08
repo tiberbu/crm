@@ -2470,7 +2470,12 @@ def _guard_public_finance_api(function):
 		require_access()
 		return function(*args, **kwargs)
 
-	return guarded
+	# The functions above are initially decorated with ``frappe.whitelist``.
+	# Wrapping them after module import creates a new callable, though, and Frappe
+	# checks the callable returned by ``frappe.get_attr`` against its whitelist
+	# registry by identity. Register the guarded callable as well or every request
+	# fails with "Function ... is not whitelisted" before authorization runs.
+	return frappe.whitelist()(guarded)
 
 
 for _api_name in _PUBLIC_FINANCE_API_NAMES:

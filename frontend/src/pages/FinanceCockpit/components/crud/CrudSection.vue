@@ -1,8 +1,17 @@
 <template>
   <div class="fc-crud-section">
-    <!-- Breadcrumb trail + primary action -->
+    <!-- Finance workbench header + primary action -->
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <Breadcrumbs :items="breadcrumbs" />
+      <div v-if="mode === 'list'" class="min-w-0">
+        <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-red-6">
+          Finance Workspace
+        </p>
+        <h2 class="mt-1 text-xl font-semibold tracking-tight text-ink-gray-9">
+          {{ title || doctype }}
+        </h2>
+        <p class="mt-0.5 text-xs text-ink-gray-5">{{ subtitle }}</p>
+      </div>
+      <Breadcrumbs v-else :items="breadcrumbs" />
       <div v-if="mode === 'list'" class="flex flex-wrap items-center gap-2">
         <!-- Create-From (mapped-doc) actions — visible-but-disabled without create
              permission, matching the New gate. -->
@@ -27,9 +36,9 @@
           Print
         </Button>
         <Button
+          v-if="!readOnly"
           variant="solid"
           theme="blue"
-          v-if="!readOnly"
           :disabled="!canNew"
           :title="!canNew ? 'You do not have permission to create' : ''"
           @click="canNew && goNew()"
@@ -56,13 +65,11 @@
       </div>
 
       <!-- Error -->
-      <div
+      <FinanceErrorState
         v-else-if="listError"
-        class="text-sm text-red-600 dark:text-red-400 py-6 text-center"
-      >
-        {{ listErrorMessage }}
-        <button class="underline ml-1" @click="refetch">Retry</button>
-      </div>
+        :error="listError"
+        @retry="refetch"
+      />
 
       <!-- Empty -->
       <div
@@ -271,11 +278,15 @@ import StatusBadge from './StatusBadge.vue'
 import { useBoot } from '../../composables/useBoot.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { useBreakpoint } from '../../composables/useBreakpoint.js'
-import { readableError } from '../../composables/useCrud.js'
+import FinanceErrorState from '../FinanceErrorState.vue'
 
 const props = defineProps({
   doctype: { type: String, required: true },
   title: { type: String, default: '' },
+  subtitle: {
+    type: String,
+    default: 'Native ERPNext records, permissions, and next actions.',
+  },
   columns: { type: Array, default: () => [] },
   listResourceUrl: { type: String, required: true },
   listParams: { type: Function, default: () => ({}) },
@@ -334,12 +345,6 @@ const listResource = createResource({
 const rows = computed(() => listResource.data || [])
 const listLoading = computed(() => listResource.loading)
 const listError = computed(() => listResource.error)
-const listErrorMessage = computed(
-  () =>
-    readableError(listError.value) ||
-    'The records could not be loaded. Check your company access and try again.',
-)
-
 // ListView column shape: {label, key, width, align, getLabel, type(custom)}.
 // getLabel drives the tooltip/plain value; the #cell slot handles rendering.
 const listColumns = computed(() =>

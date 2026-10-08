@@ -3,6 +3,7 @@
     ref="sectionRef"
     doctype="Sales Invoice"
     title="Invoices"
+    subtitle="Prioritize overdue receivables, review the handoff, and receive payment."
     list-resource-url="crm.finance.api.get_ar_invoices"
     :list-params="listParams"
     :columns="columns"
