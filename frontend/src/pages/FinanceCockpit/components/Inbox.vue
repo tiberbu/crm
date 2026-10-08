@@ -3,7 +3,7 @@
     <!-- Header + filter pills -->
     <div class="flex flex-wrap items-center gap-2">
       <h2
-        class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex-1"
+        class="text-sm font-semibold text-ink-gray-7 uppercase tracking-wide flex-1"
       >
         Inbox
         <span
@@ -13,7 +13,7 @@
         >
       </h2>
       <button
-        class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 transition-colors"
+          class="p-1.5 rounded hover:bg-surface-gray-2 text-ink-gray-5 transition-colors"
         :disabled="loading"
         @click="refetch"
       >
@@ -44,8 +44,8 @@
         :class="[
           'px-3 py-1 rounded-full text-xs font-medium transition-colors border',
           activeFilter === pill.key
-            ? 'bg-blue-600 text-white border-blue-600'
-            : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:border-blue-400',
+            ? 'bg-surface-gray-9 text-white border-outline-gray-9'
+            : 'bg-surface-white text-ink-gray-6 border-outline-gray-2 hover:border-outline-gray-4',
         ]"
         @click="activeFilter = pill.key"
       >
@@ -58,23 +58,29 @@
       <div
         v-for="n in 4"
         :key="n"
-        class="h-16 bg-gray-100 dark:bg-gray-800 rounded animate-pulse"
+        class="h-16 bg-surface-gray-2 rounded animate-pulse"
       />
     </div>
 
     <!-- Error state -->
-    <div v-else-if="error" class="text-sm text-red-500 py-2">
-      Failed to load inbox.
-      <button class="underline" @click="refetch">Retry</button>
+    <div
+      v-else-if="error"
+      class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-6"
+      role="alert"
+      aria-live="polite"
+    >
+      <p class="font-medium">Could not load inbox actions.</p>
+      <p class="mt-1 text-xs text-ink-red-5">{{ errorMessage }}</p>
+      <button class="mt-2 underline font-medium" @click="refetch">Retry</button>
     </div>
 
     <!-- Empty state -->
     <div
       v-else-if="!filteredItems.length"
-      class="text-center py-10 text-sm text-gray-400"
+      class="text-center py-10 text-sm text-ink-gray-4"
     >
       <svg
-        class="mx-auto mb-2 text-gray-300 dark:text-gray-600"
+        class="mx-auto mb-2 text-ink-gray-3"
         xmlns="http://www.w3.org/2000/svg"
         width="40"
         height="40"
@@ -117,6 +123,7 @@ import { createResource } from 'frappe-ui'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 import InboxUrgencyBand from './InboxUrgencyBand.vue'
 import InboxItem from './InboxItem.vue'
+import { readableError } from '../composables/useCrud.js'
 
 const { company } = useCompanyContext()
 
@@ -158,6 +165,11 @@ const inboxResource = createResource({
 
 const loading = computed(() => inboxResource.loading)
 const error = computed(() => inboxResource.error)
+const errorMessage = computed(
+  () =>
+    readableError(error.value) ||
+    'Inbox actions could not be loaded. Check the selected company and retry.',
+)
 
 const allItems = computed(() => inboxResource.data || [])
 const totalCount = computed(() => allItems.value.length)
