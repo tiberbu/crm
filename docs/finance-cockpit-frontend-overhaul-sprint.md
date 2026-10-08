@@ -1,6 +1,6 @@
 # Finance Cockpit Frontend Overhaul — UX/Frontend Sprint Plan
 
-**Status:** Sprint 1 in progress — FCO-01, FCO-02, FCO-03, and FCO-08 foundation started
+**Status:** Code implementation complete for the current Finance Cockpit scope; release/UAT gates remain
 **Owners:** Senior UX Engineer, Senior Frontend Engineer
 **Supporting owners:** Finance/AR lead, ERPNext integration engineer, QA engineer
 **Scope:** `apps/crm/frontend/src/pages/FinanceCockpit`
@@ -8,13 +8,17 @@
 
 ## Sprint 1 progress
 
-The first implementation slice is complete locally in commit `2a126cd`:
+The implementation is complete locally across the following slices:
 
 - Shared table, KPI, chart, and inbox error states now expose normalized server messages, accessible alert semantics, and retry actions.
 - Touched surfaces use the Finance Cockpit/Frappe token language for surfaces, borders, text hierarchy, and interactive states.
-- The production build passes; existing bundle-size, Browserslist, and Lucide brand-icon warnings remain unchanged.
+- The AR dashboard now includes a due-invoice queue and a read-only signed-facility handoff timeline.
+- The handoff timeline resolves native Year 1 Quotation, Q1 Sales Order, Sales Invoice, and Payment Entry records, shows signature/modified/creator timestamps, and derives the next action from native state and Network schedule metadata.
+- Quotation and Sales Order field editing remains read-only for Finance. Native Sales Order submit/cancel and duplicate-safe draft invoice generation remain available where permitted.
+- Remaining finance API gates and frontend report/KPI metadata use native Accounts User/Accounts Manager roles; deprecated Finance Manager/AR Accountant/AP Accountant gates are no longer used by the cockpit.
+- The production build and frontend unit suite pass; existing bundle-size, Browserslist, and Lucide brand-icon warnings remain unchanged.
 
-Next implementation slice: the AR action-center dashboard and invoice workbench (FCO-02 and FCO-03), followed by native action surfaces and browser regression coverage.
+The remaining release work is environment-dependent: browser-level workflow coverage, keyboard/screen-reader audit, and Finance UAT against representative configured and unconfigured Network schedules.
 
 The current workspace refinement also establishes the invoice-workbench contract:
 
@@ -49,17 +53,17 @@ The cockpit must feel like one coherent finance workspace rather than a collecti
 
 | Area | Finding | User impact | Priority |
 |---|---|---|---|
-| Information architecture | Dashboard, invoices, payments, reports, and partner operations are separate areas without a clear AR work queue | Users hunt across sections instead of following a collection workflow | P0 |
-| Handoff visibility | CRM quotation → Q1 order → invoice → payment relationships are not presented as a single traceable chain | Finance cannot quickly explain where a signed facility is blocked | P0 |
-| Invoice workbench | Invoice rows expose basic fields but lack a focused overdue/collection action model | AR users cannot triage by risk and next action | P0 |
+| Information architecture | Dashboard, invoices, payments, reports, and partner operations are separate areas without a clear AR work queue | Dashboard now leads with due invoices and handoffs; validate with Finance UAT | P0 — UAT |
+| Handoff visibility | CRM quotation → Q1 order → invoice → payment relationships are not presented as a single traceable chain | Timeline now resolves the chain and next action from native data | Complete in code |
+| Invoice workbench | Invoice rows expose basic fields but lack a focused overdue/collection action model | Due-date ordering, age, filters, read-only source docs, and payment flow are implemented | Complete in code |
 | Payment capture | Payment form is materially better, but amount-first allocation, smart mode selection, balance context, and review ergonomics need completion | Receipt posting is slower and error-prone | P0 |
 | Native workflow actions | Some actions still open `/app/...` Desk URLs or rely on generic CRUD controls | Context is lost and actions may be unavailable to the current role | P1 |
-| Error handling | Several sections still show generic “Failed to load” messages | Users do not know whether to retry, fix setup, or ask an administrator | P0 |
-| Design language | Legacy `gray-*` classes and mixed card/table treatments remain | Dark mode and visual hierarchy are inconsistent | P1 |
-| Responsive behavior | Tables and deep links are not consistently designed for small screens | Mobile users lose access to key collection actions | P1 |
-| Accessibility | Keyboard focus, semantic table actions, status announcements, and contrast need a dedicated pass | Finance operations are harder to complete reliably | P1 |
-| Test coverage | Production build exists, but browser-level Finance Cockpit workflow coverage is incomplete | Regressions can reach users undetected | P0 |
-| Role metadata | Some report/KPI configuration still contains legacy Finance Manager/AR Accountant labels | UI configuration can drift from Accounts-only authorization | P1 |
+| Error handling | Several sections still show generic “Failed to load” messages | Core Finance surfaces now provide normalized messages and retry paths; classify remaining sections during UAT | P0 — UAT |
+| Design language | Legacy `gray-*` classes and mixed card/table treatments remain | Core cockpit surfaces use Frappe tokens; full visual audit remains | P1 — audit |
+| Responsive behavior | Tables and deep links are not consistently designed for small screens | Mobile card fallbacks exist; validate all payment/detail paths | P1 — audit |
+| Accessibility | Keyboard focus, semantic table actions, status announcements, and contrast need a dedicated pass | Core alerts/buttons have semantics; dedicated keyboard/screen-reader pass remains | P1 — audit |
+| Test coverage | Production build exists, but browser-level Finance Cockpit workflow coverage is incomplete | Unit/build/ERPNext focused tests pass; browser suite remains a release gate | P0 — release gate |
+| Role metadata | Some report/KPI configuration still contains legacy Finance Manager/AR Accountant labels | Runtime metadata is normalized to native Accounts roles | Complete in code |
 
 ## Native status and workflow contract
 
@@ -93,21 +97,21 @@ UI labels may explain a business action, but the saved value must always be the 
 
 **Duration:** 5 working days
 
-- Deliver FCO-01 through FCO-05.
-- Focus on practical daily use: prioritization, invoice review, amount-first receipt capture, allocation review, and clear recovery.
+- FCO-01 through FCO-05 are implemented in the current branch.
+- Focus remaining validation on practical daily use: prioritization, invoice review, amount-first receipt capture, allocation review, and clear recovery.
 
 ### Sprint 2 — Handoff traceability and workflow surfaces
 
 **Duration:** 5 working days
 
-- Deliver FCO-06 through FCO-08.
-- Bring CRM handoff context into the cockpit and reduce unnecessary Desk context switches.
+- FCO-06 through FCO-08 are implemented in the current branch.
+- Bring Finance UAT evidence into the release record and reduce any remaining unnecessary Desk context switches.
 
 ### Sprint 3 — Responsive quality, accessibility, and regression hardening
 
 **Duration:** 4–5 working days
 
-- Deliver FCO-09 and FCO-10.
+- FCO-09 and FCO-10 remain release hardening work.
 - Complete visual regression, keyboard testing, permission testing, and native ERPNext validation testing.
 
 ## Implementation stories

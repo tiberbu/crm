@@ -25,6 +25,19 @@
       </div>
     </div>
 
+    <div
+      v-if="kpis.error || pipeline.error"
+      class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-6"
+      role="alert"
+      aria-live="polite"
+    >
+      <p class="font-medium">Some overview data could not be loaded.</p>
+      <p class="mt-1 text-xs">{{ overviewError }}</p>
+      <button type="button" class="mt-1 underline font-medium" @click="refreshOverview">
+        Retry overview
+      </button>
+    </div>
+
     <!-- ── KPI tiles ── -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <div
@@ -114,6 +127,8 @@
       </div>
     </div>
 
+    <HandoffTimeline @navigate="(section) => $emit('navigate', section)" />
+
     <!-- ── Recent invoices ── -->
     <div class="fc-glass-card !p-0 overflow-hidden">
       <div
@@ -135,6 +150,16 @@
           <div class="h-3 w-20 bg-surface-gray-2 rounded animate-pulse" />
           <div class="h-5 w-16 bg-surface-gray-2 rounded-full animate-pulse" />
         </div>
+      </div>
+      <div
+        v-else-if="recentResource.error"
+        class="py-10 text-center text-sm text-ink-red-6"
+        role="alert"
+      >
+        Could not load due invoices.
+        <button type="button" class="ml-1 underline font-medium" @click="refreshInvoices">
+          Retry
+        </button>
       </div>
       <div
         v-else-if="!recentInvoices.length"
@@ -187,6 +212,8 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 import { useCurrency } from '../composables/useCurrency.js'
+import { readableError } from '../composables/useCrud.js'
+import HandoffTimeline from '../components/HandoffTimeline.vue'
 
 const emit = defineEmits(['navigate'])
 const { company } = useCompanyContext()
@@ -245,6 +272,11 @@ watch(company, () => {
 
 const loading = computed(() => kpis.loading || pipeline.loading)
 const recentLoading = computed(() => recentResource.loading)
+const overviewError = computed(
+  () =>
+    readableError(kpis.error?.value || pipeline.error?.value) ||
+    'Check the selected company and try again.',
+)
 
 const kd = computed(() => kpis.data || {})
 function fmtKpi(key) {
@@ -258,6 +290,15 @@ function fmtKpi(key) {
 }
 function delta(key) {
   return kd.value[key]?.delta_pct ?? 0
+}
+
+function refreshOverview() {
+  kpis.fetch({ force: 1 })
+  pipeline.fetch({ force: 1 })
+}
+
+function refreshInvoices() {
+  recentResource.fetch()
 }
 
 // Finance-semantic tones. Chip = pale surface-*-2 fill + ink-*-6 glyph.

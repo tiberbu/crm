@@ -180,8 +180,8 @@ def _get_pending_rebates(company, roles):
 	# Scope to own partners when user is Partner RM only (no elevated role)
 	if (
 		"Partner RM" in roles
-		and "Finance Manager" not in roles
-		and "AR Accountant" not in roles
+		and "Accounts Manager" not in roles
+		and "Accounts User" not in roles
 		and not _is_admin(roles)
 	):
 		own_partners = frappe.get_list(
@@ -210,8 +210,8 @@ def _get_unpaid_commissions(company, roles):
 	# Scope to own deals when user is Sales Manager only (no elevated role)
 	if (
 		"Sales Manager" in roles
-		and "Finance Manager" not in roles
-		and "AR Accountant" not in roles
+		and "Accounts Manager" not in roles
+		and "Accounts User" not in roles
 		and not _is_admin(roles)
 	):
 		own_deals = frappe.get_list(
@@ -385,7 +385,7 @@ def _collect_pending_rebates(company, currency, roles):
 	if not (_has_ar_access(roles) or "Partner RM" in roles):
 		return []
 	base_filters = [["status", "=", "Pending"]]
-	if "Partner RM" in roles and "Finance Manager" not in roles and "AR Accountant" not in roles:
+	if "Partner RM" in roles and "Accounts Manager" not in roles and "Accounts User" not in roles:
 		own_partners = frappe.get_list(
 			"CRM Partner",
 			filters={"partner_rm": frappe.session.user},
@@ -426,7 +426,7 @@ def _collect_pending_rebates(company, currency, roles):
 def _collect_approved_rebates_unpaid(company, currency, roles):
 	if not frappe.db.exists("DocType", "CRM Partner Rebate Voucher"):
 		return []
-	if "Finance Manager" not in roles and not _is_admin(roles):
+	if "Accounts Manager" not in roles and not _is_admin(roles):
 		return []
 	rows = frappe.get_list(
 		"CRM Partner Rebate Voucher",
@@ -463,7 +463,7 @@ def _collect_unconfirmed_commissions(company, currency, roles):
 	if not (_has_ar_access(roles) or "Sales Manager" in roles):
 		return []
 	base_filters = [["status", "=", "Reported"]]
-	if "Sales Manager" in roles and "Finance Manager" not in roles and "AR Accountant" not in roles:
+	if "Sales Manager" in roles and "Accounts Manager" not in roles and "Accounts User" not in roles:
 		# scope to own team — deals where deal_owner == session user for now
 		base_filters.append(
 			[
@@ -509,7 +509,7 @@ def _collect_unconfirmed_commissions(company, currency, roles):
 def _collect_confirmed_commissions_unpaid(company, currency, roles):
 	if not frappe.db.exists("DocType", "CRM Sales Commission"):
 		return []
-	if "Finance Manager" not in roles and not _is_admin(roles):
+	if "Accounts Manager" not in roles and not _is_admin(roles):
 		return []
 	rows = frappe.get_list(
 		"CRM Sales Commission",
@@ -656,7 +656,7 @@ def _collect_overdue_purchase_invoices(company, currency, roles):
 
 
 def _collect_purchase_invoices_pending_approval(company, currency, roles):
-	if "Finance Manager" not in roles and not _is_admin(roles):
+	if "Accounts Manager" not in roles and not _is_admin(roles):
 		return []
 	rows = frappe.get_list(
 		"Purchase Invoice",
@@ -729,7 +729,7 @@ def _collect_bank_transactions_unmatched(company, currency, roles):
 
 
 def _collect_period_closing_due(currency, roles):
-	if "Finance Manager" not in roles and not _is_admin(roles):
+	if "Accounts Manager" not in roles and not _is_admin(roles):
 		return []
 	# Check if a Period Closing Voucher exists for the current fiscal year
 	if not frappe.db.exists("DocType", "Period Closing Voucher"):
@@ -912,6 +912,230 @@ def get_sales_orders(company=None, filters=None, page=0, page_size=20):
 		limit_page_length=int(page_size),
 		limit_start=int(page) * int(page_size),
 	)
+
+
+def _finance_handoff_doc(doctype, filters, fields):
+	"""Read one linked financial document without assuming optional CRM fields exist."""
+	if not frappe.db.exists("DocType", doctype):
+		return None
+	available_fields = [field for field in fields if frappe.db.has_column(doctype, field)]
+	if not available_fields:
+		return None
+	try:
+		rows = frappe.get_list(
+			doctype,
+			filters=filters,
+			fields=available_fields,
+			order_by="creation desc",
+			limit=1,
+		)
+	except frappe.PermissionError:
+		return None
+	return rows[0] if rows else None
+
+
+def _facility_signature_snapshot(contract_name):
+	"""Return native Contract status and Facility Signatory timestamp when readable."""
+	if not contract_name or not frappe.db.exists("CRM Contract", contract_name):
+		return {"status": "", "signed_at": ""}
+	try:
+		contract = frappe.get_doc("CRM Contract", contract_name)
+		facility_signatures = [
+			row
+			for row in contract.get("signatories") or []
+			if row.signatory_role == "Facility Signatory" and row.status == "Signed"
+			and row.signed_at
+		]
+		signed_at = max((row.signed_at for row in facility_signatures), default="")
+		return {"status": contract.status or "", "signed_at": signed_at}
+	except Exception:
+		# Financial users should still receive the handoff row if contract metadata is
+		# unavailable; the linked native ERPNext documents remain authoritative.
+		return {"status": "", "signed_at": ""}
+
+
+def _handoff_schedule(submission):
+	if not frappe.db.has_column("CRM Opt-In Submission", "billing_schedule_json"):
+		return {}
+	try:
+		schedules = json.loads(submission.get("billing_schedule_json") or "[]")
+	except (TypeError, ValueError, json.JSONDecodeError):
+		return {}
+	if not isinstance(schedules, list):
+		return {}
+	return next(
+		(
+			row
+			for row in schedules
+			if isinstance(row, dict)
+			and int(row.get("year_number") or 0) == 1
+			and int(row.get("quarter_number") or 0) == 1
+		),
+		{},
+	)
+
+
+@frappe.whitelist()
+def get_signed_handoff_timeline(company=None, page=0, page_size=20):
+	"""Return signed facility handoffs and their native Year 1/Q1 documents.
+
+	The endpoint is intentionally read-only. It does not introduce a finance
+	status: each document exposes its native ERPNext status/docstatus, while
+	``next_step`` is explanatory UI guidance derived from those records.
+	"""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw("Insufficient permissions", frappe.PermissionError)
+	company = _resolve_company(company)
+	if not frappe.db.exists("DocType", "CRM Opt-In Submission"):
+		return []
+
+	fields = ["name", "deal", "contract", "network_slug", "status", "submitted_at", "creation", "modified", "owner"]
+	if frappe.db.has_column("CRM Opt-In Submission", "billing_schedule_json"):
+		fields.append("billing_schedule_json")
+	try:
+		submissions = frappe.get_list(
+			"CRM Opt-In Submission",
+			filters=[["status", "=", "Processed"], ["contract", "is", "set"]],
+			fields=fields,
+			order_by="modified desc",
+			limit_page_length=min(max(int(page_size) * 5, 20), 200),
+		)
+	except frappe.PermissionError:
+		return []
+
+	items = []
+	for submission in submissions:
+		quote_filters = {}
+		if frappe.db.has_column("Quotation", "crm_optin_submission"):
+			quote_filters = {"crm_optin_submission": submission.name}
+			if frappe.db.has_column("Quotation", "crm_optin_year"):
+				quote_filters["crm_optin_year"] = 1
+		elif submission.deal and frappe.db.has_column("Quotation", "crm_deal"):
+			quote_filters = {"crm_deal": submission.deal}
+		quotation = _finance_handoff_doc(
+			"Quotation",
+			quote_filters,
+			["name", "company", "party_name", "status", "docstatus", "currency", "grand_total", "creation", "modified", "owner"],
+		) if quote_filters else None
+		if quotation and quotation.get("company") != company:
+			continue
+
+		order_filters = {}
+		if frappe.db.has_column("Sales Order", "crm_optin_submission"):
+			order_filters = {"crm_optin_submission": submission.name}
+			if frappe.db.has_column("Sales Order", "crm_optin_year"):
+				order_filters["crm_optin_year"] = 1
+			if frappe.db.has_column("Sales Order", "crm_optin_quarter"):
+				order_filters["crm_optin_quarter"] = 1
+		elif quotation and frappe.db.has_column("Sales Order", "quotation"):
+			order_filters = {"quotation": quotation.name}
+		order = _finance_handoff_doc(
+			"Sales Order",
+			order_filters,
+			["name", "company", "customer", "status", "docstatus", "currency", "grand_total", "creation", "modified", "owner"],
+		) if order_filters else None
+		if order and order.get("company") != company:
+			continue
+
+		invoice_filters = {}
+		if frappe.db.has_column("Sales Invoice", "crm_optin_submission"):
+			invoice_filters = {"crm_optin_submission": submission.name}
+			if frappe.db.has_column("Sales Invoice", "crm_optin_year"):
+				invoice_filters["crm_optin_year"] = 1
+			if frappe.db.has_column("Sales Invoice", "crm_optin_quarter"):
+				invoice_filters["crm_optin_quarter"] = 1
+		invoice = _finance_handoff_doc(
+			"Sales Invoice",
+			invoice_filters,
+			["name", "company", "customer", "status", "docstatus", "currency", "grand_total", "outstanding_amount", "posting_date", "due_date", "creation", "modified", "owner"],
+		) if invoice_filters else None
+		if invoice and invoice.get("company") != company:
+			continue
+		linked_companies = {
+			doc.get("company")
+			for doc in (quotation, order, invoice)
+			if doc and doc.get("company")
+		}
+		if linked_companies != {company}:
+			# CRM Opt-In submissions do not carry a Company field. Do not expose an
+			# unresolvable or cross-company handoff to the current finance user.
+			continue
+		payments = []
+		if invoice and frappe.db.exists("DocType", "Payment Entry Reference"):
+			try:
+				references = frappe.get_list(
+					"Payment Entry Reference",
+					filters={"reference_doctype": "Sales Invoice", "reference_name": invoice.name},
+					fields=["parent"],
+					order_by="creation desc",
+					limit_page_length=20,
+				)
+				payment_names = list(dict.fromkeys(row.parent for row in references if row.parent))
+				if payment_names and frappe.db.exists("DocType", "Payment Entry"):
+					payments = frappe.get_list(
+						"Payment Entry",
+						filters={"name": ["in", payment_names], "company": company},
+						fields=["name", "docstatus", "posting_date", "paid_amount", "creation", "modified", "owner"],
+						order_by="posting_date desc",
+						limit_page_length=20,
+					)
+			except frappe.PermissionError:
+				payments = []
+
+		schedule = _handoff_schedule(submission)
+		contract = _facility_signature_snapshot(submission.contract)
+		if invoice:
+			next_step = "Record payment when funds are received"
+		elif order and int(order.get("docstatus") or 0) == 0:
+			next_step = "Submit the Sales Order"
+		elif order:
+			next_step = (
+				"Review the handoff error"
+				if schedule.get("error") or schedule.get("status") == "Failed"
+				else "Review the Network billing schedule"
+				if schedule.get("invoice_schedule_configured") is False
+				else (
+					"Wait for the scheduled Network billing period"
+					if schedule.get("invoice_issue_timing") != "contract_signature"
+					and schedule.get("invoice_date")
+					and str(schedule.get("invoice_date")) > today()
+					else "Generate the Sales Invoice"
+				)
+			)
+		elif quotation and int(quotation.get("docstatus") or 0) == 0:
+			next_step = "Submit the Year 1 Quotation"
+		else:
+			next_step = "Review the missing Sales Order"
+
+		items.append(
+			{
+				"submission": submission.name,
+				"network": submission.network_slug or "",
+				"submission_status": submission.status or "",
+				"submitted_at": submission.submitted_at or submission.creation,
+				"modified": submission.modified,
+				"owner": submission.owner,
+				"contract": {"name": submission.contract, **contract},
+				"quotation": quotation.as_dict() if quotation else None,
+				"sales_order": order.as_dict() if order else None,
+				"sales_invoice": invoice.as_dict() if invoice else None,
+				"payments": [payment.as_dict() for payment in payments],
+				"schedule": {
+					"order_date": schedule.get("scheduled_order_date", ""),
+					"invoice_date": schedule.get("invoice_date", ""),
+					"due_date": schedule.get("invoice_due_date", ""),
+					"invoice_issue_timing": schedule.get("invoice_issue_timing", ""),
+					"invoice_schedule_configured": schedule.get("invoice_schedule_configured"),
+					"error": schedule.get("error", ""),
+					"handoff_note": schedule.get("handoff_note", ""),
+				},
+				"next_step": next_step,
+			}
+		)
+
+	start = int(page) * int(page_size)
+	return items[start : start + int(page_size)]
 
 
 @frappe.whitelist()
@@ -1473,7 +1697,7 @@ def get_rebate_vouchers(company=None, filters=None, page=0, page_size=20):
 	if filters and isinstance(filters, str):
 		filters = json.loads(filters)
 	base_filters = [["docstatus", "!=", 2]]
-	if "Partner RM" in roles and "Finance Manager" not in roles and "Accounts Manager" not in roles:
+	if "Partner RM" in roles and "Accounts Manager" not in roles and "Accounts User" not in roles:
 		own_partners = frappe.get_list(
 			"CRM Partner",
 			filters={"partner_rm": frappe.session.user},
@@ -1513,7 +1737,7 @@ def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 	if filters and isinstance(filters, str):
 		filters = json.loads(filters)
 	base_filters = [["docstatus", "!=", 2]]
-	if "Sales Manager" in roles and "Finance Manager" not in roles and "Accounts Manager" not in roles:
+	if "Sales Manager" in roles and "Accounts Manager" not in roles and "Accounts User" not in roles:
 		own_deals = frappe.get_list(
 			"CRM Deal",
 			filters={"deal_owner": frappe.session.user},
@@ -1546,9 +1770,7 @@ def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 @frappe.whitelist()
 def approve_rebate_voucher(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
-	if not any(
-		r in roles for r in ("Accounts User", "Accounts Manager", "Finance Manager", "System Manager")
-	):
+	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and not _is_admin(roles):
 		frappe.throw("Insufficient permissions", frappe.PermissionError)
 	doc = frappe.get_doc("CRM Partner Rebate Voucher", name)
 	doc.status = "Approved"
@@ -1571,9 +1793,7 @@ def approve_rebate_voucher(name: str, company: str | None = None) -> dict:
 @frappe.whitelist()
 def reject_rebate_voucher(name: str, reason: str = "", company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
-	if not any(
-		r in roles for r in ("Accounts User", "Accounts Manager", "Finance Manager", "System Manager")
-	):
+	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and not _is_admin(roles):
 		frappe.throw("Insufficient permissions", frappe.PermissionError)
 	doc = frappe.get_doc("CRM Partner Rebate Voucher", name)
 	doc.status = "Rejected"
@@ -1619,9 +1839,7 @@ def mark_rebate_paid(name: str, company: str | None = None) -> dict:
 @frappe.whitelist()
 def confirm_commission(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
-	if not any(
-		r in roles for r in ("Accounts User", "Accounts Manager", "Finance Manager", "System Manager")
-	):
+	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and not _is_admin(roles):
 		frappe.throw("Insufficient permissions", frappe.PermissionError)
 	doc = frappe.get_doc("CRM Sales Commission", name)
 	doc.status = "Confirmed"
@@ -1643,9 +1861,7 @@ def confirm_commission(name: str, company: str | None = None) -> dict:
 @frappe.whitelist()
 def reject_commission(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
-	if not any(
-		r in roles for r in ("Accounts User", "Accounts Manager", "Finance Manager", "System Manager")
-	):
+	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and not _is_admin(roles):
 		frappe.throw("Insufficient permissions", frappe.PermissionError)
 	doc = frappe.get_doc("CRM Sales Commission", name)
 	doc.status = "Rejected"
@@ -1739,8 +1955,8 @@ def get_bank_transactions(company=None, filters=None, page=0, page_size=20):
 @frappe.whitelist()
 def approve_purchase_invoice(name: str) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
-	if "Finance Manager" not in roles and not _is_admin(roles):
-		frappe.throw("Only Finance Manager can approve purchase invoices", frappe.PermissionError)
+	if "Accounts Manager" not in roles and not _is_admin(roles):
+		frappe.throw("Only Accounts Manager can approve purchase invoices", frappe.PermissionError)
 	doc = frappe.get_doc("Purchase Invoice", name)
 	frappe.has_permission("Company", doc=doc.company, ptype="read", throw=True)
 	doc.submit()
@@ -1904,8 +2120,8 @@ def get_dashboard_charts(company=None, period="month"):
 		result["pl"] = _get_pl_summary(company, from_date, to_date)
 	if _has_ap_access(roles):
 		result["ap_aging"] = _get_ap_aging_buckets(company)
-	# Finance Manager gets everything
-	if _is_admin(roles) or "Finance Manager" in roles:
+	# Accounts Manager gets the full accounting view.
+	if _is_admin(roles) or "Accounts Manager" in roles:
 		if "ar_aging" not in result:
 			result["ar_aging"] = _get_ar_aging_buckets(company)
 		if "pl" not in result:
@@ -2207,6 +2423,7 @@ _PUBLIC_FINANCE_API_NAMES = (
 	"get_pending_actions",
 	"get_ar_invoices",
 	"get_sales_orders",
+	"get_signed_handoff_timeline",
 	"get_sales_order_invoice_state",
 	"make_sales_invoice_from_order",
 	"get_customer_payments",

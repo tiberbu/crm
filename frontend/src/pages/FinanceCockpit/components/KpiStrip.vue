@@ -168,7 +168,7 @@ const ALL_TILES = [
     label: 'AR Outstanding',
     section: 'receivables',
     tone: 'neutral',
-    roles: ['Finance Manager', 'AR Accountant'],
+    roles: ['Accounts Manager', 'Accounts User'],
     iconSvg: ICON_SVGS.ar,
   },
   {
@@ -176,7 +176,7 @@ const ALL_TILES = [
     label: 'AR Overdue',
     section: 'receivables',
     tone: 'attention',
-    roles: ['Finance Manager', 'AR Accountant'],
+    roles: ['Accounts Manager', 'Accounts User'],
     iconSvg: ICON_SVGS.ar,
   },
   {
@@ -184,7 +184,7 @@ const ALL_TILES = [
     label: 'Invoiced MTD',
     section: 'receivables',
     tone: 'pending',
-    roles: ['Finance Manager', 'AR Accountant'],
+    roles: ['Accounts Manager', 'Accounts User'],
     iconSvg: ICON_SVGS.payment,
   },
   {
@@ -192,7 +192,7 @@ const ALL_TILES = [
     label: 'Collected MTD',
     section: 'receivables',
     tone: 'positive',
-    roles: ['Finance Manager', 'AR Accountant'],
+    roles: ['Accounts Manager', 'Accounts User'],
     iconSvg: ICON_SVGS.payment,
   },
   {
@@ -200,7 +200,7 @@ const ALL_TILES = [
     label: 'AP Outstanding',
     section: 'payables',
     tone: 'pending',
-    roles: ['Finance Manager', 'AP Accountant'],
+    roles: ['Accounts Manager', 'Accounts User'],
     iconSvg: ICON_SVGS.ap,
   },
   {
@@ -208,7 +208,7 @@ const ALL_TILES = [
     label: 'AP Overdue',
     section: 'payables',
     tone: 'attention',
-    roles: ['Finance Manager', 'AP Accountant'],
+    roles: ['Accounts Manager', 'Accounts User'],
     iconSvg: ICON_SVGS.ap,
   },
   {
@@ -216,7 +216,7 @@ const ALL_TILES = [
     label: 'Pending Rebates',
     section: 'partner_commission',
     tone: 'pending',
-    roles: ['Finance Manager', 'AR Accountant', 'Partner RM'],
+    roles: ['Accounts Manager', 'Accounts User'],
     iconSvg: ICON_SVGS.rebate,
   },
   {
@@ -224,7 +224,7 @@ const ALL_TILES = [
     label: 'Unpaid Commissions',
     section: 'partner_commission',
     tone: 'pending',
-    roles: ['Finance Manager', 'Sales Manager'],
+    roles: ['Accounts Manager', 'Accounts User'],
     iconSvg: ICON_SVGS.rebate,
   },
 ]

@@ -267,6 +267,17 @@ export const REPORTS = [
   },
 ]
 
+// Keep report visibility aligned with the native ERPNext accounting roles.
+// Older labels were presentation-only aliases and must not gate the cockpit.
+const NATIVE_ACCOUNTING_ROLE = {
+  'Finance Manager': 'Accounts Manager',
+  'AR Accountant': 'Accounts User',
+  'AP Accountant': 'Accounts User',
+}
+for (const report of REPORTS) {
+  report.roles = [...new Set(report.roles.map((role) => NATIVE_ACCOUNTING_ROLE[role] || role))]
+}
+
 export const GROUPS = ['AR', 'AP', 'PL', 'GL', 'Assets', 'Partner']
 
 export const GROUP_LABELS = {

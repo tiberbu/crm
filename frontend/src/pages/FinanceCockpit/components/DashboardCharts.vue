@@ -33,7 +33,7 @@
         <ArAgingChart :data="chartData.ar_aging" />
       </div>
 
-      <!-- AP Aging (hidden for AR Accountant — API omits it) -->
+      <!-- AP Aging (hidden when the Accounts API omits it) -->
       <div v-if="chartData.ap_aging" class="fc-glass-card">
         <ApAgingChart :data="chartData.ap_aging" />
       </div>
