@@ -35,9 +35,9 @@
         <button
           v-if="row.status === 'Draft'"
           class="text-xs px-2.5 py-1 rounded bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap disabled:opacity-60"
-          :disabled="!isFinanceManager || approvingRow === row.name"
-          :title="!isFinanceManager ? 'Finance Manager only' : ''"
-          @click.stop="isFinanceManager && approvePurchaseInvoice(row)"
+          :disabled="!canApprove || approvingRow === row.name"
+          :title="!canApprove ? 'Accounts Manager role required' : ''"
+          @click.stop="canApprove && approvePurchaseInvoice(row)"
         >
           {{ approvingRow === row.name ? 'Approving...' : 'Approve' }}
         </button>
@@ -68,9 +68,10 @@ const page = ref(0)
 const statusFilter = ref('')
 const approvingRow = ref(null)
 
-const isFinanceManager = computed(() => {
+const canApprove = computed(() => {
   const { getRoles } = useBoot()
-  return getRoles().includes('Finance Manager')
+  const roles = getRoles()
+  return roles.includes('Accounts Manager') || roles.includes('Administrator')
 })
 
 const columns = [

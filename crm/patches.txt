@@ -71,3 +71,5 @@ crm.patches.v1_0.configure_network_invoice_timing_v1
 crm.patches.v1_0.redact_otp_email_queue
 crm.patches.v1_0.seed_checkout_payment_settings
 crm.patches.v1_0.refresh_checkout_bank_details_terms_v1
+crm.patches.v1_0.restrict_finance_cockpit_to_accounts
+crm.patches.v1_0.reconcile_signed_optin_finance_handoffs_v1

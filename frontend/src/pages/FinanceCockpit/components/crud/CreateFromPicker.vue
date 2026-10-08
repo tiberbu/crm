@@ -32,6 +32,15 @@
           @update:model-value="onSelect"
           @update:query="onQuery"
         />
+        <p
+          v-if="sourceError"
+          class="mt-2 text-xs text-red-600 dark:text-red-400 whitespace-pre-line"
+        >
+          {{ sourceError }}
+          <button class="ml-1 underline font-medium" @click="runQuery('')">
+            Retry
+          </button>
+        </p>
         <p class="text-xs text-ink-gray-4 mt-2">
           Only submitted {{ flow.sourceLabel }} records for the current company
           are listed.
@@ -89,6 +98,7 @@ const { mapDoc } = useMappedDoc()
 const source = ref(null)
 const mapping = ref(false)
 const errorMsg = ref('')
+const sourceError = ref('')
 
 const targetLabel = computed(() => props.flow.targetDoctype)
 
@@ -146,12 +156,18 @@ async function runQuery(query) {
   try {
     const rows = await listRes.submit(params)
     if (my !== req) return
+    sourceError.value = ''
     sourceResults.value = (rows || []).map((r) => ({
       label: subtitle && r[subtitle] ? `${r.name} · ${r[subtitle]}` : r.name,
       value: r.name,
     }))
-  } catch {
-    if (my === req) sourceResults.value = []
+  } catch (err) {
+    if (my === req) {
+      sourceResults.value = []
+      sourceError.value =
+        (err && (Array.isArray(err.messages) ? err.messages.join('\n') : err.message)) ||
+        'Could not load source records. Check company access and try again.'
+    }
   }
 }
 

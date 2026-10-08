@@ -83,7 +83,7 @@
                 :class="
                   isLinkDisabled(link) ? 'pointer-events-none opacity-40' : ''
                 "
-                @click="selectItem($event, link.key)"
+                @click="selectItem($event, link.key, link)"
               >
                 <template #prefix>
                   <Icon :icon="link.icon" class="size-4 text-ink-gray-7" />
@@ -322,6 +322,13 @@ const links = [
     to: 'Quotes',
   },
   {
+    label: 'Finance Cockpit',
+    icon: LucideLayoutDashboard,
+    to: '/finance-cockpit',
+    externalUrl: '/finance-cockpit',
+    condition: () => hasAccountingRole(),
+  },
+  {
     label: 'Opt-In Dashboard',
     icon: LucideLayoutDashboard,
     to: 'OptInDashboard',
@@ -379,7 +386,8 @@ const allViews = computed(() => {
           label: link.label,
           icon: link.icon,
           key: link.to,
-          to: { name: link.to },
+          to: link.externalUrl ? undefined : { name: link.to },
+          externalUrl: link.externalUrl,
           gated: link.gated,
         })),
     },
@@ -449,7 +457,7 @@ function currentRouteKey() {
 // move the highlight here.
 const activeItem = ref(currentRouteKey())
 
-function selectItem(event, key) {
+function selectItem(event, key, link = null) {
   if (
     event.metaKey ||
     event.ctrlKey ||
@@ -464,6 +472,9 @@ function selectItem(event, key) {
   // the drawer's navigation watcher never fires. Close it here too.
   if (props.mobile) {
     mobileSidebarOpened.value = false
+  }
+  if (link?.externalUrl) {
+    window.location.assign(link.externalUrl)
   }
 }
 
@@ -488,6 +499,15 @@ function toggleHelpModal() {
 // onboarding
 const { user } = sessionStore()
 const { users, isManager, isAdmin, isSalesUser } = usersStore()
+
+function hasAccountingRole() {
+  const roles = window.user?.roles || []
+  return (
+    window.user?.name === 'Administrator' ||
+    roles.includes('Accounts User') ||
+    roles.includes('Accounts Manager')
+  )
+}
 
 // A `gated` nav item is visible-but-disabled (never hidden — project rule) when
 // the user lacks read access. CRM Opt-In Submission grants read to System

@@ -1228,6 +1228,31 @@ def _transition(contract_name):
 	# single invitation wave. _set_contract_state commits it once below, so a
 	# partially-issued wave cannot be delivered ahead of the rest.
 	if fac_sig_signed:
+		# Commercial handoff begins at the facility signature. It is deliberately
+		# best-effort so a missing ERPNext account/tax/period configuration never
+		# rolls back the legally recorded signature; the handoff persists its exact
+		# retry reason for Finance Cockpit users.
+		try:
+			from crm.automation.optin_billing import handoff_facility_signed
+
+			handoff = handoff_facility_signed(
+				contract.name,
+				signed_at=getattr(fac_sig, "signed_at", None) or frappe.utils.now_datetime(),
+			)
+			# The billing helper persists actionable failures when a submission exists;
+			# a missing/legacy submission is a normal no-op for contracts created
+			# outside the Opt-In pipeline and must not make signature completion noisy.
+			if not handoff.get("ok") and handoff.get("reason_code") != "missing_submission":
+				log_deal_event(
+					contract.deal,
+					"Finance handoff deferred for contract %s: %s"
+					% (contract.name, frappe.utils.cstr(handoff.get("reason") or "Review the submission links")),
+				)
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"contracts._transition: facility Finance handoff failed for %s" % contract.name,
+			)
 		invited_any = False
 		internal_action_any = False
 		for row in sigs:

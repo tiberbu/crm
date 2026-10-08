@@ -59,7 +59,7 @@
         v-else-if="listError"
         class="text-sm text-red-600 dark:text-red-400 py-6 text-center"
       >
-        Failed to load data.
+        {{ listErrorMessage }}
         <button class="underline ml-1" @click="refetch">Retry</button>
       </div>
 
@@ -223,6 +223,7 @@ import StatusBadge from './StatusBadge.vue'
 import { useBoot } from '../../composables/useBoot.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { useBreakpoint } from '../../composables/useBreakpoint.js'
+import { readableError } from '../../composables/useCrud.js'
 
 const props = defineProps({
   doctype: { type: String, required: true },
@@ -246,8 +247,6 @@ const props = defineProps({
   createRoles: {
     type: Array,
     default: () => [
-      'System Manager',
-      'Finance Manager',
       'Accounts Manager',
       'Accounts User',
     ],
@@ -282,6 +281,11 @@ const listResource = createResource({
 const rows = computed(() => listResource.data || [])
 const listLoading = computed(() => listResource.loading)
 const listError = computed(() => listResource.error)
+const listErrorMessage = computed(
+  () =>
+    readableError(listError.value) ||
+    'The records could not be loaded. Check your company access and try again.',
+)
 
 // ListView column shape: {label, key, width, align, getLabel, type(custom)}.
 // getLabel drives the tooltip/plain value; the #cell slot handles rendering.

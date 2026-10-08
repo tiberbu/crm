@@ -1,5 +1,6 @@
 import calendar
 import json
+from functools import wraps
 from datetime import date
 
 import frappe
@@ -7,6 +8,7 @@ from frappe import _
 from frappe.utils import add_months, date_diff, flt, get_first_day, today
 
 from crm.finance import erpnext_adapter
+from crm.finance.access import is_manager, require_access
 from crm.utils.optin_network import set_network_link
 
 
@@ -51,15 +53,15 @@ def _resolve_company(company):
 
 
 def _is_admin(roles):
-	return "System Manager" in roles or frappe.session.user == "Administrator"
+	return frappe.session.user == "Administrator"
 
 
 def _has_ar_access(roles):
-	return _is_admin(roles) or bool({"Finance Manager", "AR Accountant"} & set(roles))
+	return _is_admin(roles) or bool({"Accounts User", "Accounts Manager"} & set(roles))
 
 
 def _has_ap_access(roles):
-	return _is_admin(roles) or bool({"Finance Manager", "AP Accountant"} & set(roles))
+	return _is_admin(roles) or bool({"Accounts User", "Accounts Manager"} & set(roles))
 
 
 def _company_currency(company):
@@ -1496,8 +1498,8 @@ def reject_rebate_voucher(name: str, reason: str = "", company: str | None = Non
 @frappe.whitelist()
 def mark_rebate_paid(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
-	if "Finance Manager" not in roles and not _is_admin(roles):
-		frappe.throw("Only Finance Manager can mark rebates as paid", frappe.PermissionError)
+	if not is_manager(roles=roles):
+		frappe.throw("Accounts Manager role required to mark rebates as paid", frappe.PermissionError)
 	doc = frappe.get_doc("CRM Partner Rebate Voucher", name)
 	if doc.status != "Approved":
 		frappe.throw("Rebate must be Approved before marking Paid")
@@ -1566,8 +1568,8 @@ def reject_commission(name: str, company: str | None = None) -> dict:
 @frappe.whitelist()
 def mark_commission_paid(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
-	if "Finance Manager" not in roles and not _is_admin(roles):
-		frappe.throw("Only Finance Manager can mark commissions as paid", frappe.PermissionError)
+	if not is_manager(roles=roles):
+		frappe.throw("Accounts Manager role required to mark commissions as paid", frappe.PermissionError)
 	doc = frappe.get_doc("CRM Sales Commission", name)
 	if doc.status != "Confirmed":
 		frappe.throw("Commission must be Confirmed before marking Paid")
@@ -1822,9 +1824,8 @@ def get_dashboard_charts(company=None, period="month"):
 
 
 def _require_finance_manager():
-	roles = frappe.get_roles(frappe.session.user)
-	if "Finance Manager" not in roles and not _is_admin(roles):
-		frappe.throw("Finance Manager role required", frappe.PermissionError)
+	if not is_manager():
+		frappe.throw("Accounts Manager role required", frappe.PermissionError)
 
 
 @frappe.whitelist()
@@ -2097,3 +2098,65 @@ def global_search(query, company=None, limit=20):
 	# Trim to limit across all record types
 	results["records"] = results["records"][:limit]
 	return results
+
+
+# Keep the public boundary fail-closed even when a new endpoint does not need a
+# document-specific role check. The individual handlers retain their native
+# ERPNext/company permission checks; this guard only controls entry to the
+# accounting workspace itself.
+_PUBLIC_FINANCE_API_NAMES = (
+	"get_accessible_companies",
+	"get_finance_kpis",
+	"get_pending_actions",
+	"get_ar_invoices",
+	"get_sales_orders",
+	"get_customer_payments",
+	"get_customer_outstanding_invoices",
+	"create_customer_payment",
+	"make_payment_entry_from_invoice",
+	"get_customers",
+	"get_quotations",
+	"get_pipeline_summary",
+	"get_ap_invoices",
+	"get_purchase_orders",
+	"get_supplier_payments",
+	"get_suppliers",
+	"get_expense_claims",
+	"get_employee_advances",
+	"get_expense_journals",
+	"mark_expense_claim_paid",
+	"get_rebate_vouchers",
+	"get_sales_commissions",
+	"approve_rebate_voucher",
+	"reject_rebate_voucher",
+	"mark_rebate_paid",
+	"confirm_commission",
+	"reject_commission",
+	"mark_commission_paid",
+	"get_bank_accounts",
+	"get_bank_transactions",
+	"approve_purchase_invoice",
+	"get_dashboard_charts",
+	"get_journal_entries",
+	"get_gl_entries",
+	"get_period_closing_vouchers",
+	"get_subscriptions",
+	"get_assets",
+	"get_depreciation_schedule",
+	"get_asset_movements",
+	"global_search",
+)
+
+
+def _guard_public_finance_api(function):
+	@wraps(function)
+	def guarded(*args, **kwargs):
+		require_access()
+		return function(*args, **kwargs)
+
+	return guarded
+
+
+for _api_name in _PUBLIC_FINANCE_API_NAMES:
+	if callable(globals().get(_api_name)):
+		globals()[_api_name] = _guard_public_finance_api(globals()[_api_name])

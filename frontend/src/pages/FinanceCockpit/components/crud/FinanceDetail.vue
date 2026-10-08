@@ -6,6 +6,27 @@
       <div class="h-64 bg-surface-gray-2 rounded-xl animate-pulse" />
     </div>
 
+    <div
+      v-else-if="crud.error.value"
+      class="mx-auto max-w-xl rounded-xl border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+    >
+      <div class="flex items-start gap-2">
+        <FcIcon name="alert-circle" :size="18" class="mt-0.5 shrink-0" />
+        <div>
+          <p class="font-medium">Could not load {{ name }}.</p>
+          <p class="mt-1 whitespace-pre-line">{{ crud.error.value }}</p>
+          <div class="mt-3 flex gap-3">
+            <Button size="sm" variant="outline" theme="gray" @click="load">
+              Retry
+            </Button>
+            <Button size="sm" variant="ghost" theme="gray" @click="$emit('close')">
+              Back
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <template v-else-if="doc">
       <!-- Error banner -->
       <div
@@ -480,14 +501,12 @@ const roles = computed(() => getRoles())
 const isElevated = computed(
   () =>
     isAdministrator() ||
-    roles.value.includes('System Manager') ||
-    roles.value.includes('Finance Manager') ||
     roles.value.includes('Accounts Manager'),
 )
 const canWrite = computed(
   () => isElevated.value || roles.value.includes('Accounts User'),
 )
-const canSubmit = computed(() => isElevated.value)
+const canSubmit = computed(() => canWrite.value)
 const canCancel = computed(() => isElevated.value)
 const canDelete = computed(() => isElevated.value)
 
