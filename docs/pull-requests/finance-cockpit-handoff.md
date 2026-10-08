@@ -14,6 +14,7 @@ This change makes the CRM-to-accounting handoff begin when the facility signator
 - Historical signed Opt-In reconciliation patch.
 - Accounts User/Accounts Manager access policy across page, route, API, migration, and CRM navigation.
 - Finance Cockpit frontend retry/error-state improvements, token alignment, and role alignment.
+- AR workspace refinement: due-date-first invoice queue, clear filters, audit metadata, quotation/order read-only behavior, and duplicate-safe order-to-invoice generation.
 - Focused unit tests and existing Opt-In regression coverage.
 
 ## Native lifecycle decision
@@ -33,6 +34,12 @@ No custom statuses are introduced. Quotation acceptance is represented by native
 - `frontend/src/pages/FinanceCockpit/components/DashboardCharts.vue`
 - `frontend/src/pages/FinanceCockpit/components/KpiStrip.vue`
 - `frontend/src/pages/FinanceCockpit/components/Inbox.vue`
+- `frontend/src/pages/FinanceCockpit/components/crud/CreateFromPicker.vue`
+- `frontend/src/pages/FinanceCockpit/components/crud/CrudSection.vue`
+- `frontend/src/pages/FinanceCockpit/components/crud/FinanceDetail.vue`
+- `frontend/src/pages/FinanceCockpit/sections/Invoices.vue`
+- `frontend/src/pages/FinanceCockpit/sections/Orders.vue`
+- `frontend/src/pages/FinanceCockpit/sections/Quotes.vue`
 - `frontend/src/pages/FinanceCockpit/components/crud/*`
 
 ## Verification
@@ -46,6 +53,12 @@ No custom statuses are introduced. Quotation acceptance is represented by native
 
 The follow-up frontend slice is separately committed as `2a126cd` (`feat: improve
 finance cockpit feedback states`) on the same branch.
+
+The AR workspace refinement is the next local implementation slice. It keeps
+quotations and orders native/read-only for Finance, allows native order
+submission, and creates at most one draft Sales Invoice per Sales Order through
+the guarded Finance API. The invoice remains unsubmitted until Finance reviews
+and submits it through ERPNext.
 
 ## Rollout
 
@@ -63,7 +76,7 @@ finance cockpit feedback states`) on the same branch.
 
 ## Follow-up
 
-The full senior UX/frontend overhaul is tracked in `docs/finance-cockpit-frontend-overhaul-sprint.md`. FCO-01 and FCO-08 have now started; the AR workbench and handoff timeline remain follow-up slices.
+The full senior UX/frontend overhaul is tracked in `docs/finance-cockpit-frontend-overhaul-sprint.md`. FCO-01, FCO-02, FCO-03, and FCO-08 have now started; the handoff timeline and browser regression gate remain follow-up slices.
 
 ## Known warnings
 

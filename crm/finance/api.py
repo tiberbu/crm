@@ -859,6 +859,9 @@ def get_ar_invoices(company=None, filters=None, page=0, page_size=20):
 			"customer",
 			"posting_date",
 			"due_date",
+			"creation",
+			"modified",
+			"owner",
 			"grand_total",
 			"outstanding_amount",
 			"status",
@@ -882,7 +885,10 @@ def get_sales_orders(company=None, filters=None, page=0, page_size=20):
 	if not _has_ar_access(roles):
 		frappe.throw("Insufficient permissions", frappe.PermissionError)
 	company = _resolve_company(company)
-	base_filters = [["company", "=", company], ["docstatus", "=", 1]]
+	# Draft orders remain visible so Accounts Users can validate and submit them
+	# before generating an invoice. Native ERPNext permissions still govern the
+	# detail action itself.
+	base_filters = [["company", "=", company], ["docstatus", "in", [0, 1]]]
 	if filters:
 		if isinstance(filters, str):
 			filters = json.loads(filters)
@@ -895,6 +901,9 @@ def get_sales_orders(company=None, filters=None, page=0, page_size=20):
 			"customer",
 			"transaction_date",
 			"delivery_date",
+			"creation",
+			"modified",
+			"owner",
 			"grand_total",
 			"status",
 			"billing_status",
@@ -903,6 +912,84 @@ def get_sales_orders(company=None, filters=None, page=0, page_size=20):
 		limit_page_length=int(page_size),
 		limit_start=int(page) * int(page_size),
 	)
+
+
+@frappe.whitelist()
+def get_sales_order_invoice_state(order_name, company=None):
+	"""Return native Sales Invoice links for one Sales Order.
+
+	The child-table relationship is the source of truth. Draft and submitted
+	invoices both count as generated so a retry cannot create a duplicate draft
+	while the first invoice is still being reviewed.
+	"""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw("Insufficient permissions", frappe.PermissionError)
+	company = _resolve_company(company)
+	frappe.has_permission("Sales Order", doc=order_name, ptype="read", throw=True)
+	order_company = frappe.db.get_value("Sales Order", order_name, "company")
+	if not order_company:
+		frappe.throw("Sales Order %s was not found" % order_name, frappe.DoesNotExistError)
+	if order_company != company:
+		frappe.throw("Sales Order %s belongs to another company" % order_name, frappe.PermissionError)
+	rows = erpnext_adapter.get_list(
+		"Sales Invoice Item",
+		filters=[
+			["sales_order", "=", order_name],
+			["docstatus", "<", 2],
+		],
+		fields=["parent"],
+		order_by="creation desc",
+		limit_page_length=50,
+	)
+	names = []
+	for row in rows:
+		name = row.get("parent")
+		if name and name not in names:
+			names.append(name)
+	return {"has_invoice": bool(names), "invoice_names": names}
+
+
+@frappe.whitelist()
+def make_sales_invoice_from_order(order_name, company=None):
+	"""Create one native draft Sales Invoice from a submitted Sales Order.
+
+	This endpoint deliberately does not submit the invoice. Finance reviews and
+	submits it through the native ERPNext lifecycle. Existing draft or submitted
+	invoices linked through Sales Invoice Item are treated as already generated.
+	"""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw("Insufficient permissions", frappe.PermissionError)
+	company = _resolve_company(company)
+	order = frappe.get_doc("Sales Order", order_name)
+	if order.company != company:
+		frappe.throw("Sales Order %s belongs to another company" % order_name, frappe.PermissionError)
+	if order.docstatus != 1:
+		frappe.throw("Submit Sales Order %s before generating an invoice" % order_name)
+
+	# Serialize concurrent retries on the source order, then re-check the native
+	# child-table relationship before invoking ERPNext's mapper.
+	frappe.db.sql("select name from `tabSales Order` where name=%s for update", order_name)
+	state = get_sales_order_invoice_state(order_name, company)
+	if state["has_invoice"]:
+		frappe.throw(
+			"Sales Order %s already has an invoice: %s"
+			% (order_name, ", ".join(state["invoice_names"])),
+			frappe.ValidationError,
+		)
+
+	from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+
+	invoice = frappe.get_doc(make_sales_invoice(order_name))
+	if not invoice.get("items"):
+		frappe.throw("Sales Order %s has no billable items" % order_name)
+	invoice.insert()
+	return {
+		"name": invoice.name,
+		"doctype": "Sales Invoice",
+		"docstatus": invoice.docstatus,
+	}
 
 
 @frappe.whitelist()
@@ -1122,7 +1209,17 @@ def get_quotations(company=None, filters=None, page=0, page_size=20):
 	return erpnext_adapter.get_list(
 		"Quotation",
 		filters=base_filters,
-		fields=["name", "party_name", "transaction_date", "valid_till", "grand_total", "status"],
+		fields=[
+			"name",
+			"party_name",
+			"transaction_date",
+			"valid_till",
+			"creation",
+			"modified",
+			"owner",
+			"grand_total",
+			"status",
+		],
 		order_by="transaction_date desc",
 		limit_page_length=int(page_size),
 		limit_start=int(page) * int(page_size),
@@ -2110,6 +2207,8 @@ _PUBLIC_FINANCE_API_NAMES = (
 	"get_pending_actions",
 	"get_ar_invoices",
 	"get_sales_orders",
+	"get_sales_order_invoice_state",
+	"make_sales_invoice_from_order",
 	"get_customer_payments",
 	"get_customer_outstanding_invoices",
 	"create_customer_payment",

@@ -5,8 +5,15 @@
       <p class="text-xs font-medium text-ink-gray-5">New Document</p>
       <h2 class="text-xl font-bold text-ink-gray-9">{{ flow.label }}</h2>
       <p class="text-sm text-ink-gray-5 mt-0.5">
-        Pick a submitted {{ flow.sourceLabel }} to pre-fill a new
-        {{ targetLabel }}. You can review and edit every field before saving.
+        Pick a submitted {{ flow.sourceLabel }} to
+        {{
+          flow.actionMethod
+            ? 'run the native finance action'
+            : `pre-fill a new ${targetLabel}`
+        }}.
+        <template v-if="!flow.actionMethod">
+          You can review and edit every field before saving.
+        </template>
       </p>
     </div>
 
@@ -42,8 +49,11 @@
           </button>
         </p>
         <p class="text-xs text-ink-gray-4 mt-2">
-          Only submitted {{ flow.sourceLabel }} records for the current company
-          are listed.
+          {{
+            flow.actionMethod
+              ? `Only eligible ${flow.sourceLabel} records for the current company are listed.`
+              : `Only submitted ${flow.sourceLabel} records for the current company are listed.`
+          }}
         </p>
 
         <!-- Mapping in progress -->
@@ -90,7 +100,7 @@ const props = defineProps({
   flow: { type: Object, required: true },
 })
 
-const emit = defineEmits(['mapped', 'close'])
+const emit = defineEmits(['mapped', 'created', 'close'])
 
 const { company } = useCompanyContext()
 const { mapDoc } = useMappedDoc()
@@ -119,17 +129,20 @@ let req = 0
 
 async function runQuery(query) {
   const my = ++req
+  if (!company.value) {
+    sourceResults.value = []
+    return
+  }
   // If the flow supplies explicit sourceFilters, use them directly (no company/docstatus
   // defaults). Otherwise fall back to the standard company + docstatus=1 filters —
   // but skip the company filter if the company context hasn't resolved yet.
   let filters
   if (props.flow.sourceFilters) {
-    filters = props.flow.sourceFilters
-  } else {
-    if (!company.value) {
-      sourceResults.value = []
-      return
+    filters = props.flow.sourceFilters.slice()
+    if (company.value && !filters.some((f) => f[0] === 'company')) {
+      filters.unshift(['company', '=', company.value])
     }
+  } else {
     filters = [
       ['company', '=', company.value],
       ['docstatus', '=', 1],
@@ -179,6 +192,17 @@ async function onSelect(val) {
   errorMsg.value = ''
   mapping.value = true
   try {
+    if (props.flow.actionMethod) {
+      const result = await createResource({
+        url: props.flow.actionMethod,
+        method: 'POST',
+      }).submit({
+        [props.flow.actionParam || 'source_name']: val,
+        company: company.value,
+      })
+      emit('created', result)
+      return
+    }
     const doc = await mapDoc(props.flow.mapMethod, val)
     emit('mapped', doc)
   } catch (err) {

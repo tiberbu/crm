@@ -1,6 +1,6 @@
 # Finance Cockpit Frontend Overhaul — UX/Frontend Sprint Plan
 
-**Status:** Sprint 1 started — FCO-01 and FCO-08 foundation in progress
+**Status:** Sprint 1 in progress — FCO-01, FCO-02, FCO-03, and FCO-08 foundation started
 **Owners:** Senior UX Engineer, Senior Frontend Engineer
 **Supporting owners:** Finance/AR lead, ERPNext integration engineer, QA engineer
 **Scope:** `apps/crm/frontend/src/pages/FinanceCockpit`
@@ -15,6 +15,13 @@ The first implementation slice is complete locally in commit `2a126cd`:
 - The production build passes; existing bundle-size, Browserslist, and Lucide brand-icon warnings remain unchanged.
 
 Next implementation slice: the AR action-center dashboard and invoice workbench (FCO-02 and FCO-03), followed by native action surfaces and browser regression coverage.
+
+The current workspace refinement also establishes the invoice-workbench contract:
+
+- Finance sees outstanding invoices by due date, with overdue age, relative and absolute timestamps, last modifier, creator, and explicit sort guidance.
+- Clear filters resets status, due-date windows, and pagination together.
+- Quotations are read-only in Finance; Sales Orders are read-only for field edits but retain native Submit and guarded invoice generation actions.
+- Invoice generation from an order uses the native ERPNext mapper only after a server-side duplicate check; existing draft or submitted invoices block the action.
 
 ## Product outcome
 
