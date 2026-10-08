@@ -111,7 +111,7 @@ import PeriodSelector from './PeriodSelector.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 import { readableError } from '../composables/useCrud.js'
 
-const props = defineProps({
+defineProps({
   userRoles: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['navigate', 'update:period'])

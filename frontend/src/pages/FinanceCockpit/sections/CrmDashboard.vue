@@ -215,7 +215,7 @@ import { useCurrency } from '../composables/useCurrency.js'
 import { readableError } from '../composables/useCrud.js'
 import HandoffTimeline from '../components/HandoffTimeline.vue'
 
-const emit = defineEmits(['navigate'])
+defineEmits(['navigate'])
 const { company } = useCompanyContext()
 const { formatCurrency } = useCurrency()
 
