@@ -13,7 +13,7 @@ This change makes the CRM-to-accounting handoff begin when the facility signator
 - Native CRM Deal transition to `Won`.
 - Historical signed Opt-In reconciliation patch.
 - Accounts User/Accounts Manager access policy across page, route, API, migration, and CRM navigation.
-- Finance Cockpit frontend retry/error-state improvements and role alignment.
+- Finance Cockpit frontend retry/error-state improvements, token alignment, and role alignment.
 - Focused unit tests and existing Opt-In regression coverage.
 
 ## Native lifecycle decision
@@ -29,6 +29,10 @@ No custom statuses are introduced. Quotation acceptance is represented by native
 - `crm/patches/v1_0/reconcile_signed_optin_finance_handoffs_v1.py`
 - `crm/patches/v1_0/restrict_finance_cockpit_to_accounts.py`
 - `frontend/src/components/Layouts/AppSidebar.vue`
+- `frontend/src/pages/FinanceCockpit/components/FinanceTable.vue`
+- `frontend/src/pages/FinanceCockpit/components/DashboardCharts.vue`
+- `frontend/src/pages/FinanceCockpit/components/KpiStrip.vue`
+- `frontend/src/pages/FinanceCockpit/components/Inbox.vue`
 - `frontend/src/pages/FinanceCockpit/components/crud/*`
 
 ## Verification
@@ -39,6 +43,9 @@ No custom statuses are introduced. Quotation acceptance is represented by native
 - `bench --site cr-dev.tiberbu.app run-tests --app crm --module crm.tests.test_optin`
 - `yarn build` from `apps/crm/frontend`
 - `git diff --check`
+
+The follow-up frontend slice is separately committed as `2a126cd` (`feat: improve
+finance cockpit feedback states`) on the same branch.
 
 ## Rollout
 
@@ -56,7 +63,7 @@ No custom statuses are introduced. Quotation acceptance is represented by native
 
 ## Follow-up
 
-The full senior UX/frontend overhaul is planned in `docs/finance-cockpit-frontend-overhaul-sprint.md`. This PR delivers the access, handoff, and frontend foundation; the overhaul remains a separate implementation sprint.
+The full senior UX/frontend overhaul is tracked in `docs/finance-cockpit-frontend-overhaul-sprint.md`. FCO-01 and FCO-08 have now started; the AR workbench and handoff timeline remain follow-up slices.
 
 ## Known warnings
 

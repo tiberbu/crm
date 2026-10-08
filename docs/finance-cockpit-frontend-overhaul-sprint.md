@@ -1,10 +1,20 @@
 # Finance Cockpit Frontend Overhaul — UX/Frontend Sprint Plan
 
-**Status:** Ready for Sprint 1 refinement
+**Status:** Sprint 1 started — FCO-01 and FCO-08 foundation in progress
 **Owners:** Senior UX Engineer, Senior Frontend Engineer
 **Supporting owners:** Finance/AR lead, ERPNext integration engineer, QA engineer
 **Scope:** `apps/crm/frontend/src/pages/FinanceCockpit`
 **Principle:** Native Frappe/ERPNext documents, permissions, workflows, and statuses remain authoritative.
+
+## Sprint 1 progress
+
+The first implementation slice is complete locally in commit `2a126cd`:
+
+- Shared table, KPI, chart, and inbox error states now expose normalized server messages, accessible alert semantics, and retry actions.
+- Touched surfaces use the Finance Cockpit/Frappe token language for surfaces, borders, text hierarchy, and interactive states.
+- The production build passes; existing bundle-size, Browserslist, and Lucide brand-icon warnings remain unchanged.
+
+Next implementation slice: the AR action-center dashboard and invoice workbench (FCO-02 and FCO-03), followed by native action surfaces and browser regression coverage.
 
 ## Product outcome
 
