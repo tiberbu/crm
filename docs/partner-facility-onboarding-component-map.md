@@ -6,6 +6,12 @@ wizard.
 verified facility owner into a completed Opt-In and a clear Customer Experience
 view without exposing CRM complexity.
 
+**Implementation status — 2026-10-08:** the public landing page is `/`, the
+facility-owner welcome and wizard is `/facility-onboarding`, and the
+authenticated surface is `/cx-portal`. The public landing and onboarding
+welcome are implemented; resume-by-reference, scoped support chat, and the
+downstream purchase/payment experiences remain separate stories.
+
 ## 1. Design language
 
 Reuse the existing CRM/Opt-In visual grammar:
@@ -29,8 +35,12 @@ it must still look like the same product family.
 
 ```text
 Public
+├── /
+│   ├── Customer Experience overview
+│   ├── Onboarding journey and requirements
+│   └── Start onboarding / Customer Experience sign-in
 ├── /facility-onboarding
-│   ├── Guide / what you need
+│   ├── Welcome / what you need
 │   ├── Verify identity
 │   ├── Confirm HFR facilities
 │   ├── Enter Network Partner ID
@@ -38,7 +48,7 @@ Public
 │   ├── Confirm contact / OTP
 │   ├── Opt-In handoff
 │   └── Submitted / next steps
-├── /facility-onboarding/resume/:reference
+├── /facility-onboarding/resume/:reference (planned)
 Authenticated
 ├── /cx-portal (Customer Experience)
 │   ├── Overview

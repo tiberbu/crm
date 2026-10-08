@@ -3,11 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CareverseHIMS — Facility invitation</title>
+    <title>Tiberbu Customer Experience — Facility onboarding</title>
     <script>
       window.csrf_token = {{ (csrf_token or '') | tojson }};
     </script>
     {{ invitation_head | safe }}
+    <script type="module" src="/src/facility-onboarding-main.js"></script>
   </head>
   <body class="h-full">
     <div

@@ -5,8 +5,8 @@
         class="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8"
       >
         <div>
-          <p class="text-base font-semibold tracking-tight">Tiberbu HMIS</p>
-          <p class="text-xs text-ink-gray-5">Customer Experience onboarding</p>
+          <p class="text-base font-semibold tracking-tight">Tiberbu Customer Experience</p>
+          <p class="text-xs text-ink-gray-5">Secure facility onboarding</p>
         </div>
         <div class="flex items-center gap-4 text-sm">
           <a
@@ -32,15 +32,15 @@
           <p
             class="text-xs font-semibold uppercase tracking-[.16em] text-ink-gray-5"
           >
-            {{ __('Join your network') }}
+            {{ __('Start your facility journey') }}
           </p>
           <h1
             class="mt-4 max-w-2xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl"
           >
             {{
               networkName
-                ? `Bring ${facilityName || 'your facility'} to ${networkName}.`
-                : __('Bring your facility into the right network.')
+                ? `Onboard ${facilityName || 'your facility'} with ${networkName}.`
+                : __('Onboard your facility securely.')
             }}
           </h1>
           <p
@@ -48,7 +48,7 @@
           >
             {{
               __(
-                'Verify your facility ownership, choose a token package, review the Opt-In terms, and receive your signing and Customer Experience access by email.',
+                'Verify your facility ownership, choose the applicable package, review the terms, complete signatures, and receive secure Customer Experience access by email.',
               )
             }}
           </p>
@@ -110,15 +110,15 @@
           {{ __('About Tiberbu HMIS') }}
         </p>
         <h2 id="hmis-about-title" class="mt-2 text-xl font-semibold">
-          {{ __('One connected path from onboarding to Customer Experience') }}
+          {{ __('One connected path from verification to Customer Experience') }}
         </h2>
         <p class="mt-3 max-w-3xl text-sm leading-6 text-ink-gray-6">
-          {{ __('Tiberbu HMIS connects facility ownership verification, network onboarding, signatures and the Customer Experience portal. This wizard is for facility owners. Internal Tiberbu team members should use the CRM team sign-in instead.') }}
+          {{ __('Tiberbu HMIS connects identity checks, facility selection, package review, signatures and Customer Experience access. This wizard is for facility owners and administrators.') }}
         </p>
         <a
           href="/login?redirect-to=/crm"
           class="mt-4 inline-flex text-sm font-medium text-[#bc1823] underline underline-offset-4"
-          >{{ __('Tiberbu team sign in') }}</a
+          >{{ __('Staff access') }}</a
         >
       </section>
       <section v-else class="mx-auto max-w-3xl">
@@ -328,7 +328,7 @@
                 placeholder="000000"
               /><span class="mt-2 block text-xs text-ink-gray-5">{{
                 __(
-                  'This six-digit ID identifies the Network configured by the CRM administrator. Leave blank to use the preconfigured Network.',
+                  'This six-digit ID identifies the Network configured for your onboarding. Leave blank to use the preconfigured Network.',
                 )
               }}</span></label
             ><button

@@ -128,8 +128,8 @@ onMounted(async () => {
         class="mx-auto flex max-w-5xl items-center justify-between px-5 py-4 sm:px-8"
       >
         <div>
-          <p class="text-sm font-semibold tracking-tight">tiberbu Express</p>
-          <p class="text-xs text-ink-gray-5">Customer Experience</p>
+          <p class="text-sm font-semibold tracking-tight">Tiberbu Customer Experience</p>
+          <p class="text-xs text-ink-gray-5">Secure facility portal</p>
         </div>
         <a
           class="text-sm text-ink-gray-6 underline underline-offset-4 hover:text-ink-gray-9"

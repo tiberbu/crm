@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }}</title>
-    <meta name="description" content="{{ app_name }} — {{ tagline }}. The sales and customer-support layer for the Careverse HMIS.">
+    <title>{{ title or 'Tiberbu Customer Experience' }}</title>
+    <meta name="description" content="Tiberbu Customer Experience is the secure portal for facility owners to onboard facilities, track progress, manage approved services and get support.">
 
     <link rel="icon" type="image/svg+xml" href="{{ favicon or '/assets/crm/images/tiberbu-mark.svg' }}">
     <link rel="stylesheet" href="/assets/crm/css/tiberbu-brand.css">
@@ -12,257 +12,204 @@
         :root {
             --brand: {{ brand_primary or '#bc1823' }};
             --brand-dark: {{ brand_primary_dark or '#8f111b' }};
-            /* black + ink-gray ramp mirrored from frappe-ui (ink-gray-9/8/7/6/5) for
-               visual consistency with the CRM SPA */
-            --black: #171717;              /* = surface-gray-10, the SPA primary */
-            --ink-9: #1f272e;
-            --ink-7: #4c5257;
-            --ink-6: #667075;
-            --ink-5: #8b9096;
-            --line: rgba(23,23,23,0.08);
-            /* glass */
-            --glass-bg: rgba(255,255,255,0.55);
-            --glass-strong: rgba(255,255,255,0.72);
-            --glass-border: 1px solid rgba(255,255,255,0.6);
-            --glass-shadow: 0 10px 40px rgba(23,23,23,0.07);
-            --glass-inset: inset 0 1px 0 rgba(255,255,255,0.7);
-            --radius: 16px;
-            --focus: 0 0 0 3px rgba(188,24,35,0.22);
+            --ink: #1f272e;
+            --muted: #667075;
+            --soft: #f6f7f8;
+            --line: rgba(31,39,46,.11);
+            --focus: 0 0 0 3px rgba(188,24,35,.22);
             --font: 'InterVar','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         }
-        *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+        *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
         html { scroll-behavior:smooth; }
-        body {
-            font-family:var(--font); color:var(--ink-9); line-height:1.5;
-            -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
-            /* ONE restrained scene device: a single soft red wash, top-left */
-            background:
-                radial-gradient(60% 50% at 12% 6%, rgba(188,24,35,0.08) 0%, transparent 58%),
-                linear-gradient(180deg, #ffffff 0%, #f4f5f7 100%);
-            background-attachment: fixed;
-            min-height:100vh;
-        }
-        a { text-decoration:none; color:inherit; }
+        body { color:var(--ink); background:linear-gradient(180deg,#fff 0%,var(--soft) 100%); font-family:var(--font); line-height:1.5; -webkit-font-smoothing:antialiased; }
+        a { color:inherit; text-decoration:none; }
+        :where(a,button):focus-visible { outline:none; box-shadow:var(--focus); border-radius:10px; }
         .wrap { max-width:1120px; margin:0 auto; padding:0 24px; }
-        :where(a, button):focus-visible { outline:none; box-shadow:var(--focus); border-radius:11px; }
-
-        /* ---------- glass nav ---------- */
-        .nav {
-            position:sticky; top:0; z-index:20;
-            background: var(--glass-bg);
-            -webkit-backdrop-filter: blur(16px) saturate(160%);
-            backdrop-filter: blur(16px) saturate(160%);
-            border-bottom: 1px solid rgba(255,255,255,0.5);
-        }
-        .nav-inner { display:flex; align-items:center; justify-content:space-between; height:64px; }
-        .brand { display:flex; align-items:center; gap:11px; }
-        .brand img { height:32px; width:32px; border-radius:8px; }
-        .brand span { font-size:16px; font-weight:600; letter-spacing:-0.01em; }
-        .nav-cta {
-            display:inline-flex; align-items:center; height:38px; padding:0 18px; border-radius:10px;
-            font-size:14px; font-weight:600; color:#fff; background:var(--black);
-            transition:background .12s, transform .06s;
-        }
-        .nav-cta:hover { background:#000; transform:translateY(-1px); }
-
-        /* ---------- hero (tighter rhythm; sentence-case; weight 800 not 900) ---------- */
-        .hero { text-align:center; padding: clamp(64px, 10vh, 104px) 0 clamp(40px, 6vh, 60px); }
-        .eyebrow {
-            display:inline-flex; align-items:center; gap:8px;
-            font-size:13px; font-weight:600; color:var(--brand);
-            padding:6px 14px; border-radius:999px;
-            background: rgba(188,24,35,0.07); border:1px solid rgba(188,24,35,0.14);
-            margin-bottom:24px;
-        }
-        .eyebrow .dot { width:6px; height:6px; border-radius:50%; background:var(--brand); }
-        .hero h1 {
-            font-size: clamp(2.1rem, 4vw, 3rem); line-height:1.12; font-weight:600; letter-spacing:-0.02em;
-            max-width:860px; margin:0 auto 20px; color:var(--black);
-        }
-        .hero h1 .accent { color:var(--brand); }
-        .hero p.lead { font-size: clamp(1rem, 1.3vw, 1.15rem); color:var(--ink-6); line-height:1.6; max-width:600px; margin:0 auto 30px; }
-        /* primary dominates; secondary is a quiet text link (not a co-equal button) */
-        .cta-row { display:flex; gap:20px; justify-content:center; align-items:center; flex-wrap:wrap; }
-        .btn-primary {
-            display:inline-flex; align-items:center; justify-content:center; height:50px; padding:0 30px;
-            border-radius:12px; font-size:15px; font-weight:600; color:#fff; background:var(--brand);
-            box-shadow:0 10px 26px rgba(188,24,35,0.24); transition:background .12s, transform .06s;
-        }
+        .nav { position:sticky; top:0; z-index:10; background:rgba(255,255,255,.88); backdrop-filter:blur(14px); border-bottom:1px solid var(--line); }
+        .nav-inner { display:flex; align-items:center; justify-content:space-between; min-height:68px; gap:20px; }
+        .brand { display:flex; align-items:center; gap:10px; font-size:16px; font-weight:700; letter-spacing:-.01em; }
+        .brand img { width:32px; height:32px; border-radius:8px; }
+        .nav-link { color:var(--muted); font-size:14px; font-weight:600; }
+        .nav-link:hover { color:var(--ink); }
+        .hero { padding:clamp(72px,11vw,132px) 0 84px; background:radial-gradient(48% 55% at 8% 2%,rgba(188,24,35,.11),transparent 72%); }
+        .hero-grid { display:grid; grid-template-columns:minmax(0,1.08fr) minmax(320px,.92fr); align-items:center; gap:72px; }
+        .eyebrow { color:var(--brand); font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+        .eyebrow::before { content:''; display:inline-block; width:7px; height:7px; margin:0 9px 1px 0; border-radius:50%; background:var(--brand); }
+        h1 { max-width:700px; margin-top:20px; color:#171717; font-size:clamp(2.45rem,5vw,4.45rem); font-weight:650; letter-spacing:-.055em; line-height:1.02; }
+        .accent { color:var(--brand); }
+        .lead { max-width:650px; margin-top:24px; color:var(--muted); font-size:clamp(1.05rem,1.6vw,1.25rem); line-height:1.7; }
+        .cta-row { display:flex; align-items:center; flex-wrap:wrap; gap:18px; margin-top:34px; }
+        .btn-primary { display:inline-flex; align-items:center; justify-content:center; min-height:50px; padding:0 24px; border-radius:11px; color:#fff; background:var(--brand); box-shadow:0 10px 24px rgba(188,24,35,.22); font-size:15px; font-weight:700; transition:transform .12s,background .12s; }
         .btn-primary:hover { background:var(--brand-dark); transform:translateY(-1px); }
-        .link-secondary { font-size:15px; font-weight:600; color:var(--ink-7); display:inline-flex; align-items:center; gap:6px; }
-        .link-secondary:hover { color:var(--black); }
-        .link-secondary svg { width:16px; height:16px; }
-
-        /* ---------- borrowed: one quiet trust strip (careverse hero-social-proof), minimal ---------- */
-        .trust { display:flex; justify-content:center; gap:36px; flex-wrap:wrap; margin-top:34px; }
-        .trust-item { text-align:center; }
-        .trust-num { font-size:22px; font-weight:600; color:var(--black); letter-spacing:-0.02em; }
-        .trust-lbl { font-size:12.5px; color:var(--ink-5); margin-top:2px; }
-
-        /* ---------- feature cards: distinct icons, normalized copy ---------- */
-        .features { padding: clamp(40px,7vh,64px) 0 clamp(72px,11vh,104px); }
-        .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; }
-        .feature {
-            padding:24px 22px;
-            background: var(--glass-bg);
-            -webkit-backdrop-filter: blur(18px) saturate(160%);
-            backdrop-filter: blur(18px) saturate(160%);
-            border: var(--glass-border); border-radius: var(--radius);
-            box-shadow: var(--glass-shadow), var(--glass-inset);
-        }
-        .feature .ic {
-            width:40px; height:40px; border-radius:11px; margin-bottom:15px;
-            background: var(--black);
-            display:flex; align-items:center; justify-content:center;
-        }
-        .feature .ic svg { width:19px; height:19px; stroke:#fff; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
-        .feature h3 { font-size:15.5px; font-weight:600; margin-bottom:7px; color:var(--ink-9); }
-        .feature p { font-size:13.5px; color:var(--ink-6); line-height:1.55; }
-
-        /* ---------- black structural CTA band (brings BLACK into the palette) ---------- */
-        .cta-band { background: var(--black); color:#fff; }
-        .cta-band .wrap { padding: clamp(48px,8vh,72px) 24px; text-align:center; }
-        .cta-band h2 { font-size: clamp(1.6rem,3vw,2.1rem); font-weight:600; letter-spacing:-0.02em; margin-bottom:12px; }
-        .cta-band p { color:rgba(255,255,255,0.7); font-size:15px; margin-bottom:26px; }
-        .cta-band .btn-primary { box-shadow:0 10px 26px rgba(188,24,35,0.4); }
-
-        /* ---------- audience routing: keep facility owners and internal teams distinct ---------- */
-        .audience { padding: 0 0 clamp(72px, 11vh, 104px); }
-        .audience-heading { max-width: 680px; margin: 0 auto 28px; text-align: center; }
-        .audience-heading h2 { font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 600; letter-spacing: -0.02em; color: var(--black); margin-bottom: 10px; }
-        .audience-heading p { color: var(--ink-6); font-size: 15px; }
-        .audience-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; }
-        .audience-card { display:flex; flex-direction:column; align-items:flex-start; padding:24px 22px; background:var(--glass-bg); border:var(--glass-border); border-radius:var(--radius); box-shadow:var(--glass-shadow), var(--glass-inset); }
-        .audience-card.primary { border-color: rgba(188,24,35,0.28); }
-        .audience-card h3 { font-size:16px; font-weight:600; color:var(--ink-9); margin-bottom:8px; }
-        .audience-card p { flex:1; color:var(--ink-6); font-size:13.5px; line-height:1.55; margin-bottom:20px; }
-        .audience-card .btn-primary { height:44px; padding:0 18px; font-size:13px; box-shadow:none; }
-        .audience-card .link-secondary { font-size:13.5px; }
-        .audience-card .link-secondary + .link-secondary { margin-top:12px; }
-
-        /* ---------- footer ---------- */
-        .ft { border-top:1px solid var(--line); padding:26px 0; }
-        .ft-inner { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; font-size:13px; color:var(--ink-5); }
-        .ft a { color:var(--ink-7); font-weight:600; }
-        .ft a:hover { color:var(--black); }
-
-        @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-            .nav, .feature { background:#ffffff; }
-        }
-        @media (max-width: 900px) { .grid, .audience-grid { grid-template-columns:repeat(2,1fr); } }
-        @media (max-width: 560px) { .grid { grid-template-columns:1fr; } .trust { gap:24px; } }
-        @media (max-width: 560px) { .audience-grid { grid-template-columns:1fr; } }
-        @media (prefers-reduced-motion: reduce) {
-            html { scroll-behavior:auto; }
-            *, *::before, *::after { transition-duration:.001ms !important; }
-        }
+        .link-secondary { display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:15px; font-weight:650; }
+        .link-secondary:hover { color:var(--ink); }
+        .hero-note { margin-top:18px; color:#8b9096; font-size:12.5px; }
+        .hero-card { padding:28px; border:1px solid rgba(255,255,255,.8); border-radius:22px; background:rgba(255,255,255,.72); box-shadow:0 20px 60px rgba(23,23,23,.09); backdrop-filter:blur(16px); }
+        .hero-card h2 { font-size:18px; letter-spacing:-.02em; }
+        .hero-card p { margin-top:8px; color:var(--muted); font-size:14px; line-height:1.6; }
+        .secure-list { display:grid; gap:15px; margin-top:24px; }
+        .secure-list li { display:flex; gap:12px; align-items:flex-start; list-style:none; color:var(--ink); font-size:14px; }
+        .check { display:grid; flex:0 0 24px; place-items:center; width:24px; height:24px; border-radius:50%; color:var(--brand); background:#fdf0f1; font-size:13px; font-weight:800; }
+        .section { padding:88px 0; }
+        .section-alt { background:#fff; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+        .section-heading { max-width:700px; margin:0 auto 38px; text-align:center; }
+        .section-heading h2 { margin-top:12px; color:#171717; font-size:clamp(1.9rem,3vw,2.6rem); letter-spacing:-.04em; line-height:1.1; }
+        .section-heading p { margin-top:14px; color:var(--muted); font-size:16px; line-height:1.65; }
+        .card-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+        .info-card { min-height:180px; padding:24px; border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.76); }
+        .info-card .icon { display:grid; place-items:center; width:40px; height:40px; border-radius:11px; color:#fff; background:#171717; font-size:18px; }
+        .info-card h3 { margin-top:18px; font-size:16px; letter-spacing:-.015em; }
+        .info-card p { margin-top:7px; color:var(--muted); font-size:14px; line-height:1.6; }
+        .steps { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
+        .step { padding:20px 16px; border-top:2px solid var(--brand); background:var(--soft); }
+        .step-number { color:var(--brand); font-size:13px; font-weight:800; }
+        .step h3 { margin-top:24px; font-size:15px; }
+        .step p { margin-top:7px; color:var(--muted); font-size:13px; line-height:1.55; }
+        .needs { display:grid; grid-template-columns:1fr 1fr; gap:16px; max-width:900px; margin:0 auto; }
+        .need { display:flex; gap:14px; padding:20px; border:1px solid var(--line); border-radius:14px; background:#fff; }
+        .need strong { display:block; font-size:15px; }
+        .need span { display:block; margin-top:4px; color:var(--muted); font-size:14px; line-height:1.5; }
+        .after-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+        .after-card { padding:30px; border-radius:18px; background:#171717; color:#fff; }
+        .after-card.light { color:var(--ink); background:#fff; border:1px solid var(--line); }
+        .after-card h3 { font-size:20px; letter-spacing:-.025em; }
+        .after-card p { margin-top:10px; color:rgba(255,255,255,.72); font-size:14px; line-height:1.65; }
+        .after-card.light p { color:var(--muted); }
+        .trust-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:22px; }
+        .trust-item { padding:18px; border:1px solid var(--line); border-radius:14px; background:#fff; }
+        .trust-item strong { display:block; font-size:14px; }
+        .trust-item span { display:block; margin-top:5px; color:var(--muted); font-size:13px; line-height:1.5; }
+        .cta-band { padding:72px 0; color:#fff; background:#171717; text-align:center; }
+        .cta-band h2 { font-size:clamp(1.9rem,3vw,2.6rem); letter-spacing:-.04em; }
+        .cta-band p { max-width:620px; margin:12px auto 26px; color:rgba(255,255,255,.7); font-size:15px; }
+        .footer { padding:24px 0; color:#8b9096; font-size:13px; }
+        .footer-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+        .footer a { color:var(--muted); font-weight:650; }
+        @media (max-width:900px) { .hero-grid { grid-template-columns:1fr; gap:42px; } .steps { grid-template-columns:repeat(3,1fr); } .card-grid { grid-template-columns:repeat(2,1fr); } }
+        @media (max-width:600px) { .wrap { padding:0 20px; } .hero { padding-top:62px; } .card-grid,.needs,.after-grid,.trust-row { grid-template-columns:1fr; } .steps { grid-template-columns:repeat(2,1fr); } .nav-link { font-size:13px; } .footer-inner { align-items:flex-start; flex-direction:column; } }
+        @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } *,*::before,*::after { transition-duration:.001ms !important; } }
     </style>
 </head>
 <body>
     <nav class="nav">
         <div class="wrap nav-inner">
-            <div class="brand">
-                {% if brand_logo %}<img src="{{ brand_logo }}" alt="{{ app_name }}">{% endif %}
-                <span>{{ app_name or 'Tiberbu CRM' }}</span>
-            </div>
-            <a class="nav-cta" href="{{ cta_secondary_link }}">{{ cta_secondary_text }}</a>
+            <a class="brand" href="/">
+                {% if brand_logo %}<img src="{{ brand_logo }}" alt="">{% endif %}
+                <span>Tiberbu Customer Experience</span>
+            </a>
+            <a class="nav-link" href="{{ cta_secondary_link }}">Already have access? Sign in <span aria-hidden="true">→</span></a>
         </div>
     </nav>
 
     <header class="hero">
-        <div class="wrap">
-            <div class="eyebrow"><span class="dot"></span> {{ tagline or 'Powering better health' }}</div>
-            <h1>The CRM built for <span class="accent">better health outcomes</span></h1>
-            <p class="lead">
-                {{ app_name or 'Tiberbu CRM' }} unifies leads, referrals, telephony and support
-                around the Careverse HMIS — so your teams grow revenue and care together.
-            </p>
-            <div class="cta-row">
-                <a class="btn-primary" href="{{ cta_link }}">{{ cta_text }}</a>
-                <a class="link-secondary" href="{{ cta_secondary_link }}">
-                    {{ cta_secondary_text }}
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                </a>
+        <div class="wrap hero-grid">
+            <div>
+                <p class="eyebrow">Secure portal for facility owners</p>
+                <h1>Welcome to <span class="accent">Tiberbu Customer Experience.</span></h1>
+                <p class="lead">The secure portal for facility owners and administrators to onboard eligible facilities, complete signatures, track progress, manage approved services and get support.</p>
+                <div class="cta-row">
+                    <a class="btn-primary" href="/facility-onboarding">Start facility onboarding <span aria-hidden="true" style="margin-left:9px">→</span></a>
+                    <a class="link-secondary" href="{{ cta_secondary_link }}">Already have access? Sign in <span aria-hidden="true">→</span></a>
+                </div>
+                <p class="hero-note">You can manage multiple facilities separately under the same account where permitted.</p>
             </div>
-
-            <!-- borrowed (careverse hero social-proof), minimal + sentence case -->
-            <div class="trust">
-                <div class="trust-item"><div class="trust-num">1</div><div class="trust-lbl">Unified platform</div></div>
-                <div class="trust-item"><div class="trust-num">Dual-mode</div><div class="trust-lbl">Avaya telephony</div></div>
-                <div class="trust-item"><div class="trust-num">SLA-driven</div><div class="trust-lbl">Support automation</div></div>
-            </div>
+            <aside class="hero-card" aria-label="Customer Experience overview">
+                <h2>One clear path from verification to access</h2>
+                <p>Customer Experience keeps facility onboarding and next actions in one secure place.</p>
+                <p><strong>Token packages are preconfigured service options</strong> that define approved capacity, validity and price. You choose an eligible package; you do not enter a custom quantity or price.</p>
+                <ul class="secure-list">
+                    <li><span class="check">✓</span><span>Confirm your identity and facility ownership through the approved registry process.</span></li>
+                    <li><span class="check">✓</span><span>Choose the applicable package or network and complete the required signatures.</span></li>
+                    <li><span class="check">✓</span><span>Receive secure email instructions and follow facility progress after activation.</span></li>
+                </ul>
+            </aside>
         </div>
     </header>
 
-    <section class="audience" aria-labelledby="audience-title">
-        <div class="wrap">
-            <div class="audience-heading">
-                <div class="eyebrow"><span class="dot"></span> Tiberbu HMIS</div>
-                <h2 id="audience-title">Start in the right Tiberbu experience</h2>
-                <p>Facility owners use Customer Experience. Tiberbu Sales, Support and Finance teams use their internal workspaces.</p>
-            </div>
-            <div class="audience-grid">
-                <article class="audience-card primary">
-                    <h3>New facility owner</h3>
-                    <p>Verify ownership, find your eligible facilities, choose a package and begin the secure onboarding and signature process.</p>
-                    <a class="btn-primary" href="/facility-onboarding">Start facility onboarding <span aria-hidden="true" style="margin-left:8px">→</span></a>
-                </article>
-                <article class="audience-card">
-                    <h3>Existing facility owner</h3>
-                    <p>Already activated your access? Customer Experience is where you follow facility progress, contracts, purchases and support.</p>
-                    <a class="link-secondary" href="/login?redirect-to=/cx-portal">Open Customer Experience <span aria-hidden="true">→</span></a>
-                </article>
-                <article class="audience-card">
-                    <h3>Tiberbu team member</h3>
-                    <p>Internal teams work in role-specific tools. CRM is for Sales and Support; Finance uses the Finance Cockpit.</p>
-                    <a class="link-secondary" href="/login?redirect-to=/crm">Team sign in <span aria-hidden="true">→</span></a>
-                    <a class="link-secondary" href="/login?redirect-to=/finance-cockpit">Finance Cockpit <span aria-hidden="true">→</span></a>
-                </article>
-            </div>
-        </div>
-    </section>
-
-    <section class="features">
-        <div class="wrap">
-            <div class="grid">
-                <!-- distinct icons per card (fixes identical-checkmark issue) -->
-                <div class="feature">
-                    <div class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-                    <h3>Unified relationships</h3>
-                    <p>One record per lead, referral and patient across the Careverse HMIS.</p>
+    <main>
+        <section class="section section-alt" aria-labelledby="helps-title">
+            <div class="wrap">
+                <div class="section-heading">
+                    <p class="eyebrow">For facility owners</p>
+                    <h2 id="helps-title">Everything you need to move your facility forward</h2>
+                    <p>Customer Experience gives you a focused view of ownership, onboarding, contracts, approved services and support.</p>
                 </div>
-                <div class="feature">
-                    <div class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
-                    <h3>Sales &amp; referral pipelines</h3>
-                    <p>Track deals, sources and follow-ups in a pipeline built for health.</p>
-                </div>
-                <div class="feature">
-                    <div class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
-                    <h3>Integrated telephony</h3>
-                    <p>Click-to-call, screen-pop and logging — inbound and outbound.</p>
-                </div>
-                <div class="feature">
-                    <div class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
-                    <h3>Support automation</h3>
-                    <p>SLAs, assignment rules and onboarding journeys, out of the box.</p>
+                <div class="card-grid">
+                    <article class="info-card"><div class="icon" aria-hidden="true">✓</div><h3>Verify facility ownership</h3><p>Confirm your identity and match your details with the approved registry process.</p></article>
+                    <article class="info-card"><div class="icon" aria-hidden="true">⌂</div><h3>Manage eligible facilities</h3><p>Find and select one or more facilities connected to your registered details.</p></article>
+                    <article class="info-card"><div class="icon" aria-hidden="true">→</div><h3>Track onboarding progress</h3><p>See signature progress, facility status and the next action for each facility.</p></article>
+                    <article class="info-card"><div class="icon" aria-hidden="true">□</div><h3>Review contracts and terms</h3><p>Keep the applicable package, terms and signature steps visible before you submit.</p></article>
+                    <article class="info-card"><div class="icon" aria-hidden="true">+</div><h3>Manage approved services</h3><p>Review approved purchases or services for each facility when they become available.</p></article>
+                    <article class="info-card"><div class="icon" aria-hidden="true">?</div><h3>Get support</h3><p>Access important account information and the support path for your facility.</p></article>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- BLACK structural band — brings black into the red/black/white system -->
-    <section class="cta-band">
-        <div class="wrap">
-            <h2>Ready to see it in action?</h2>
-            <p>Request a demo and we'll tailor {{ app_name or 'Tiberbu CRM' }} to your team.</p>
-            <a class="btn-primary" href="{{ cta_link }}">{{ cta_text }}</a>
-        </div>
-    </section>
+        <section class="section" aria-labelledby="works-title">
+            <div class="wrap">
+                <div class="section-heading">
+                    <p class="eyebrow">How it works</p>
+                    <h2 id="works-title">A guided onboarding journey</h2>
+                    <p>You will see what is needed at every step before you share sensitive information.</p>
+                </div>
+                <div class="steps">
+                    <article class="step"><span class="step-number">01</span><h3>Verify identity</h3><p>Use your registered identification and confirm the contact on file.</p></article>
+                    <article class="step"><span class="step-number">02</span><h3>Find facilities</h3><p>View the eligible facilities associated with your verified details.</p></article>
+                    <article class="step"><span class="step-number">03</span><h3>Select a facility</h3><p>Choose the facility you want to onboard first.</p></article>
+                    <article class="step"><span class="step-number">04</span><h3>Review package</h3><p>Review the applicable package, price and terms for your facility.</p></article>
+                    <article class="step"><span class="step-number">05</span><h3>Complete signatures</h3><p>Provide witness or signatory details where required and submit.</p></article>
+                    <article class="step"><span class="step-number">06</span><h3>Receive access</h3><p>Get secure email instructions to sign in and track what happens next.</p></article>
+                </div>
+            </div>
+        </section>
 
-    <footer class="ft">
-        <div class="wrap ft-inner">
-            <span>&copy; {{ app_name or 'Tiberbu CRM' }}</span>
-            <a href="{{ cta_secondary_link }}">{{ cta_secondary_text }}</a>
+        <section class="section section-alt" aria-labelledby="needs-title">
+            <div class="wrap">
+                <div class="section-heading">
+                    <p class="eyebrow">Before you begin</p>
+                    <h2 id="needs-title">What the facility owner needs</h2>
+                    <p>Have these details ready so verification can move smoothly.</p>
+                </div>
+                <div class="needs">
+                    <div class="need"><span class="check">1</span><div><strong>Registered identification</strong><span>National ID, Alien ID or another approved identification.</span></div></div>
+                    <div class="need"><span class="check">2</span><div><strong>Registered contact access</strong><span>Access to the phone or email registered against your identification.</span></div></div>
+                    <div class="need"><span class="check">3</span><div><strong>Facility details</strong><span>Details as recorded in the official facility registry.</span></div></div>
+                    <div class="need"><span class="check">4</span><div><strong>Witness or signatory details</strong><span>Names and contact details where the signature process requires them.</span></div></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" aria-labelledby="after-title">
+            <div class="wrap">
+                <div class="section-heading">
+                    <p class="eyebrow">After onboarding</p>
+                    <h2 id="after-title">Know what happens next</h2>
+                </div>
+                <div class="after-grid">
+                    <article class="after-card"><h3>Secure access instructions</h3><p>After the required approvals and signatures, you receive secure email instructions. Sign in to Customer Experience to see your facility-specific status and next actions.</p></article>
+                    <article class="after-card light"><h3>Separate facility progress</h3><p>Where permitted, one account can manage multiple facilities independently, so each facility has a clear status, contract and next step.</p></article>
+                </div>
+                <div class="trust-row" aria-label="Trust and security commitments">
+                    <div class="trust-item"><strong>Approved registry checks</strong><span>Identity and ownership are checked through the approved registry process.</span></div>
+                    <div class="trust-item"><strong>Permission-based access</strong><span>You only see facilities and information your account is allowed to access.</span></div>
+                    <div class="trust-item"><strong>Protected information</strong><span>Sensitive information is not exposed in URLs or ordinary messages.</span></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="cta-band">
+            <div class="wrap">
+                <h2>Ready to start?</h2>
+                <p>Begin with identity verification. The welcome screen will explain the journey before you are asked for your details.</p>
+                <a class="btn-primary" href="/facility-onboarding">Start facility onboarding <span aria-hidden="true" style="margin-left:9px">→</span></a>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="wrap footer-inner">
+            <span>© Tiberbu Customer Experience</span>
+            <a href="/login?redirect-to=/crm">Staff access</a>
         </div>
     </footer>
 </body>

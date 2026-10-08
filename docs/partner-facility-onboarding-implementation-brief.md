@@ -1,10 +1,74 @@
 # Facility Onboarding and Customer Experience — Implementation Brief
 
-**Product:** tiberbu Express
-**Implementation system:** CRM (`crm`) with a CRM-owned Client Registry/HFR adapter
+**Customer-facing product:** Tiberbu Customer Experience (also: Tiberbu HMIS Customer Experience Portal)
+**Implementation system:** Frappe app in `apps/crm`; the repository/app name is an implementation detail and must not appear in customer-facing copy
 **Reference only:** `careverse_hq` request and response shapes; no CRM import, cross-app call, or runtime dependency
-**Status:** Onboarding and Customer Experience foundation implemented; token purchase order-to-invoice flow remains the next story
-**Date:** 2026-10-06
+**Status:** Public Customer Experience entry, facility onboarding welcome/wizard, sign-in routing, and authenticated portal foundation stabilized; token purchase order-to-invoice flow remains the next story
+**Date:** 2026-10-08
+
+## 0. Stabilization pass — 2026-10-08
+
+This pass records the implemented customer-facing entry points and the verification
+performed before the focused PR. It does not claim that the downstream token
+purchase, invoice, or payment stories are complete.
+
+### Customer-facing language
+
+- Use **Tiberbu Customer Experience** or **Tiberbu HMIS Customer Experience Portal**.
+- The primary audience is facility owners and facility administrators.
+- Do not use the repository/app name, internal workspace terminology, or sales,
+  pipeline, telephony, or staff-operations language in the facility-owner journey.
+- Any internal link on the public page is secondary and labelled **Staff access**.
+
+### Implemented route map
+
+| Route | Audience | Current behavior | Source of truth |
+|---|---|---|---|
+| `/` | Public facility owner | Explains Customer Experience, the value to an owner, the onboarding journey, requirements, security, and next steps. | `crm/www/index.html`, `crm/www/index.py` |
+| `/facility-onboarding` | Public facility owner | Opens directly on the welcome screen, then continues through identity, OTP, facility selection, package/network selection, review, and submission. | `crm/www/facility-onboarding.html`, `crm/www/facility_onboarding.py`, `frontend/src/pages/FacilityOnboarding/FacilityOnboardingLanding.vue` |
+| `/login?redirect-to=/cx-portal` | Existing facility owner | Branded sign-in path for Customer Experience access. | `crm/www/login.html`, `crm/www/login.py` |
+| `/cx-portal` | Authenticated facility owner | Redirects guests to the Customer Experience sign-in path; authenticated users receive the facility-scoped portal shell. | `crm/www/cx-portal.html`, `crm/www/cx_portal.py`, `frontend/src/pages/FacilityPortal/FacilityPortal.vue` |
+
+### Build and asset publication
+
+The frontend is a Vite multi-entry build. `frontend/facility-onboarding.html`
+must include `facility-onboarding-main.js`; otherwise Vite emits a 200 HTML
+entry with no application bundle and the Frappe route appears blank.
+
+The Frappe `www` wrappers remain thin. `facility_onboarding.py` and
+`cx_portal.py` lift the hashed module, modulepreload, and stylesheet tags from
+`crm/public/frontend/{facility-onboarding,cx-portal}.html` and omit PWA
+manifest/service-worker tags for these authenticated or guest flows. The build
+must not overwrite those wrappers with generated HTML, because that duplicates
+the injected tags.
+
+Build command:
+
+```text
+cd apps/crm
+yarn build
+```
+
+The production path is served through Nginx at `https://cr-dev.tiberbu.app`;
+the raw Gunicorn port is not the static-asset verification path.
+
+### Verification evidence
+
+- `/`, `/facility-onboarding`, and `/login?redirect-to=/cx-portal` returned HTTP
+  200 on `https://cr-dev.tiberbu.app`.
+- `/cx-portal` returned the expected guest redirect to
+  `/login?redirect-to=/cx-portal`.
+- The landing-page links resolved successfully.
+- The facility onboarding HTML entry, module bundle, modulepreload bundles, and
+  stylesheet returned HTTP 200.
+- Frontend unit tests: 8 files, 135 tests passed.
+- Frappe unit tests: onboarding module 2 passed; Customer Experience redirect and
+  progress module 9 passed.
+- `git diff --check` passed.
+
+The build still reports non-blocking existing warnings for Browserslist data,
+the missing Lucide GitHub icon placeholder, and large chunks excluded from PWA
+precaching.
 
 ## 1. Product goal
 
@@ -498,7 +562,7 @@ The existing Year 1–Year 5 path must remain regression-tested separately.
 | Opt-In process | Existing guest Opt-In, quotation, contract, OTP, and signatory workflows are reusable. | Add token self-onboarding provenance and pass the verified facility context into the existing process without forking signatures. |
 | Token catalogue | ERPNext `Price List`, `Item`, and `Item Price` are available. CRM Settings currently has no complete token package catalogue. | Add one configured selling Price List with searchable service-item metadata and facility-friendly coverage descriptions. |
 | Current checkout | The existing page and API support outstanding OIS invoices, Paystack, and bank-transfer reporting. | Reuse the existing Paystack integration and extend authorization for facility portal users. |
-| Customer Experience portal | The existing facility landing page is an invitation shell around the Opt-In wizard. | Build the authenticated `/cx-portal` for package purchase, open invoices, payment status, progress, and support. Keep `/portal` as a compatibility redirect only. |
+| Customer Experience portal | Public `/` now explains the facility-owner journey; `/facility-onboarding` is the welcome/wizard entry; `/cx-portal` is the authenticated facility-scoped shell. | Continue the downstream package purchase, open-invoice, payment, and support work. Keep `/portal` as a compatibility redirect only. |
 
 The audit conclusion is that the accounting, Paystack, and signature foundations exist, while the identity-first HFR flow, token catalog, and portal purchase flow remain implementation work.
 
@@ -509,6 +573,11 @@ This section defines implementation choices separately from the product goal.
 ### 10.1 Frontend
 
 Use the existing CRM Vue frontend for the public onboarding journey and authenticated facility portal.
+
+The public information page is a standalone Frappe web page at `/`. The
+onboarding and authenticated portal pages use thin Frappe wrappers around the
+hashed Vite entries. The wrappers inject CSRF data and asset tags at request
+time; they are not generated-file copies.
 
 The authenticated customer-facing surface is named **Customer Experience** and is served at `/cx-portal`. The route name is implementation-facing; user-facing copy must say “Customer Experience”. Existing `/portal` links must redirect to `/cx-portal` during the transition.
 
@@ -1119,7 +1188,12 @@ progress-tracking sprint.
 
 ### D1 — Landing page
 
-Design the information hierarchy, token explanation, package coverage, support, legal content, and start action.
+Implemented for the stabilization pass at `/`. The page now presents the
+Customer Experience value proposition, facility-owner capabilities, six-step
+onboarding journey, required information, post-onboarding expectations, trust
+and security commitments, **Start facility onboarding**, **Already have access?
+Sign in**, and secondary **Staff access**. Detailed package coverage and
+calculated pricing remain in the onboarding and authenticated portal flows.
 
 ### D2 — Identity and facility verification
 
@@ -1184,6 +1258,20 @@ The experience must preserve context between steps, explain what happens next, a
 20. Which token entitlement or balance record is updated after a successful payment?
 
 ## 20. Definition of done
+
+### 20.1 Stabilization increment acceptance
+
+The public and authenticated entry-point increment is complete when:
+
+- a new facility owner can understand Customer Experience and its value from `/`;
+- `/facility-onboarding` opens directly on the welcome screen before requesting
+  identity information;
+- existing owners have a clearly labelled Customer Experience sign-in path;
+- unauthenticated `/cx-portal` requests redirect to the correct sign-in target;
+- no facility-owner-facing copy calls the product CRM or exposes internal
+  workspace terminology;
+- the hashed onboarding and portal entries are published by the frontend build;
+- the route, asset, link, frontend-unit, and focused Frappe checks pass.
 
 The feature is complete when an owner can verify identity, receive and verify an OTP, select an owned facility, resolve a Network by six-digit Partner ID or approved admin preconfiguration, search and select an enabled catalogue service item, review an ex-VAT next-period quotation with separate VAT and coverage information, accept it, and receive the corresponding facility-specific Sales Order.
 

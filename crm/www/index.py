@@ -1,6 +1,7 @@
-"""Public landing page for Tiberbu CRM (site root, set via `home_page = "index"`).
+"""Public Tiberbu Customer Experience landing page.
 
-Guests see the branded splash; logged-in users are redirected to the SPA (`/crm`).
+Guests see the facility-owner welcome page; logged-in users are routed to the
+experience permitted for their account.
 
 Root-resolution note: `home_page = "index"` alone is NOT enough — Frappe's
 `get_home_page()` still resolves '/' to a System User's `default_workspace`
@@ -28,53 +29,12 @@ def get_context(context):
 	context.no_cache = 1
 	context.no_header = True
 	context.no_breadcrumbs = True
-	context.title = _("{0} - {1}").format(brand["app_name"], brand["tagline"])
+	context.title = _("Tiberbu Customer Experience")
 	apply_brand_context(context, brand, surface="splash")
 
-	# Primary CTA (E3-S2): "Request a Demo" -> the public CRM form that creates a real
-	# CRM Lead via the native Web Form engine (crm/www/crm_form.py + crm/api/form.py).
-	# Falls back to /login if an admin hasn't published the form yet.
-	context.cta_text = "Request a Demo"
-	context.cta_link = _demo_form_route()
-	context.cta_secondary_text = "Team sign in"
-	context.cta_secondary_link = "/login?redirect-to=/crm"
-
-	context.features = [
-		{
-			"title": "Unified Patient Relationships",
-			"description": "One record for every lead, referral, and patient interaction across the Careverse HMIS.",
-		},
-		{
-			"title": "Sales & Referral Pipelines",
-			"description": "Track deals, referral sources, and follow-ups with a pipeline built for healthcare growth.",
-		},
-		{
-			"title": "Integrated Telephony",
-			"description": "Click-to-call, screen-pop, and call logging — inbound and outbound — from within the CRM.",
-		},
-		{
-			"title": "Support Automation",
-			"description": "SLAs, assignment rules, and onboarding journeys keep every patient and partner cared for.",
-		},
-	]
+	context.cta_text = "Start facility onboarding"
+	context.cta_link = "/facility-onboarding"
+	context.cta_secondary_text = "Already have access? Sign in"
+	context.cta_secondary_link = "/login?redirect-to=/cx-portal"
 
 	return context
-
-
-def _demo_form_route() -> str:
-	"""Route to the published 'Request a Demo' CRM form, or /login if none is published.
-
-	Matches any published FCRM Web Form targeting CRM Lead (route defaults to
-	'request-a-demo'); degrades to /login so the CTA is never a dead link.
-	"""
-	try:
-		route = frappe.db.get_value(
-			"Web Form",
-			{"module": "FCRM", "doc_type": "CRM Lead", "crm_published": 1},
-			"route",
-		)
-		if route:
-			return f"/crm-form/{route}"
-	except Exception:
-		pass
-	return "/login"
