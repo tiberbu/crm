@@ -25,6 +25,19 @@
       </div>
     </div>
 
+    <div
+      v-if="kpis.error || pipeline.error"
+      class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-6"
+      role="alert"
+      aria-live="polite"
+    >
+      <p class="font-medium">Some overview data could not be loaded.</p>
+      <p class="mt-1 text-xs">{{ overviewError }}</p>
+      <button type="button" class="mt-1 underline font-medium" @click="refreshOverview">
+        Retry overview
+      </button>
+    </div>
+
     <!-- ── KPI tiles ── -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <div
@@ -114,17 +127,19 @@
       </div>
     </div>
 
+    <HandoffTimeline @navigate="(section) => $emit('navigate', section)" />
+
     <!-- ── Recent invoices ── -->
     <div class="fc-glass-card !p-0 overflow-hidden">
       <div
         class="px-5 pt-4 pb-3 border-b border-outline-gray-1/60 flex items-center justify-between"
       >
-        <h3 class="text-sm font-semibold text-ink-gray-8">Recent Invoices</h3>
+        <h3 class="text-sm font-semibold text-ink-gray-8">Due invoices</h3>
         <button
           class="text-xs font-medium text-ink-red-6 hover:text-ink-red-8 transition-colors"
           @click="$emit('navigate', 'invoices')"
         >
-          View all →
+          Open workbench →
         </button>
       </div>
       <div v-if="recentLoading" class="divide-y divide-outline-gray-1/40">
@@ -137,10 +152,20 @@
         </div>
       </div>
       <div
+        v-else-if="recentResource.error"
+        class="py-10 text-center text-sm text-ink-red-6"
+        role="alert"
+      >
+        Could not load due invoices.
+        <button type="button" class="ml-1 underline font-medium" @click="refreshInvoices">
+          Retry
+        </button>
+      </div>
+      <div
         v-else-if="!recentInvoices.length"
         class="py-12 text-center text-sm text-ink-gray-4"
       >
-        No invoices yet.
+        No outstanding invoices.
       </div>
       <div v-else class="divide-y divide-outline-gray-1/40">
         <div
@@ -156,9 +181,14 @@
           <span class="flex-1 text-sm text-ink-gray-6 truncate">{{
             inv.customer
           }}</span>
-          <span class="text-xs text-ink-gray-4 flex-shrink-0 w-24 text-right">{{
-            fmtDate(inv.posting_date)
-          }}</span>
+          <span class="flex flex-col text-xs flex-shrink-0 w-28 text-right">
+            <span class="text-ink-gray-6">Due {{ fmtDate(inv.due_date) }}</span>
+            <span
+              :class="inv.days_overdue > 0 ? 'text-ink-red-6' : 'text-ink-gray-4'"
+            >
+              {{ inv.days_overdue > 0 ? `${inv.days_overdue}d overdue` : 'On time' }}
+            </span>
+          </span>
           <span
             class="text-sm font-semibold text-ink-gray-8 tabular-nums flex-shrink-0 w-28 text-right"
             >{{ fmtCurrency(inv.outstanding_amount, inv.currency) }}</span
@@ -182,6 +212,8 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 import { useCurrency } from '../composables/useCurrency.js'
+import { readableError } from '../composables/useCrud.js'
+import HandoffTimeline from '../components/HandoffTimeline.vue'
 
 const emit = defineEmits(['navigate'])
 const { company } = useCompanyContext()
@@ -240,6 +272,11 @@ watch(company, () => {
 
 const loading = computed(() => kpis.loading || pipeline.loading)
 const recentLoading = computed(() => recentResource.loading)
+const overviewError = computed(
+  () =>
+    readableError(kpis.error?.value || pipeline.error?.value) ||
+    'Check the selected company and try again.',
+)
 
 const kd = computed(() => kpis.data || {})
 function fmtKpi(key) {
@@ -253,6 +290,15 @@ function fmtKpi(key) {
 }
 function delta(key) {
   return kd.value[key]?.delta_pct ?? 0
+}
+
+function refreshOverview() {
+  kpis.fetch({ force: 1 })
+  pipeline.fetch({ force: 1 })
+}
+
+function refreshInvoices() {
+  recentResource.fetch()
 }
 
 // Finance-semantic tones. Chip = pale surface-*-2 fill + ink-*-6 glyph.

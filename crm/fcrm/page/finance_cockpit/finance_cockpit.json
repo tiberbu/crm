@@ -10,12 +10,8 @@
  "owner": "Administrator",
  "page_name": "finance-cockpit",
  "roles": [
-  {"role": "Finance Manager"},
-  {"role": "AR Accountant"},
-  {"role": "AP Accountant"},
-  {"role": "Sales Manager"},
-  {"role": "Partner RM"},
-  {"role": "System Manager"}
+  {"role": "Accounts Manager"},
+  {"role": "Accounts User"}
  ],
  "script": null,
  "standard": "Yes",

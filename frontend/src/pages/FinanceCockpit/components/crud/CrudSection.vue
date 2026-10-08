@@ -29,9 +29,10 @@
         <Button
           variant="solid"
           theme="blue"
-          :disabled="!canCreate"
-          :title="!canCreate ? 'You do not have permission to create' : ''"
-          @click="canCreate && goNew()"
+          v-if="!readOnly"
+          :disabled="!canNew"
+          :title="!canNew ? 'You do not have permission to create' : ''"
+          @click="canNew && goNew()"
         >
           <template #prefix><FcIcon name="plus" :size="15" /></template>
           New
@@ -59,7 +60,7 @@
         v-else-if="listError"
         class="text-sm text-red-600 dark:text-red-400 py-6 text-center"
       >
-        Failed to load data.
+        {{ listErrorMessage }}
         <button class="underline ml-1" @click="refetch">Retry</button>
       </div>
 
@@ -88,6 +89,43 @@
               class="font-medium text-ink-gray-8 tabular-nums"
               >{{ formatCurrency(item, row.currency) }}</span
             >
+            <span
+              v-else-if="column.type === 'due-date'"
+              class="flex flex-col leading-tight"
+            >
+              <span class="font-medium text-ink-gray-8">{{ formatDate(item) }}</span>
+              <span
+                v-if="Number(row.days_overdue || 0) > 0"
+                class="text-xs text-ink-red-6"
+              >
+                {{ row.days_overdue }}
+                {{ Number(row.days_overdue) === 1 ? 'day' : 'days' }} overdue
+              </span>
+              <span v-else class="text-xs text-ink-gray-4">Due on time</span>
+            </span>
+            <span
+              v-else-if="column.type === 'overdue'"
+              :class="[
+                'text-xs font-medium whitespace-nowrap',
+                Number(item || 0) > 0 ? 'text-ink-red-6' : 'text-ink-gray-5',
+              ]"
+            >
+              {{ Number(item || 0) > 0 ? `${item}d overdue` : 'Not overdue' }}
+            </span>
+            <span
+              v-else-if="column.type === 'datetime'"
+              class="flex flex-col leading-tight"
+            >
+              <span class="font-medium text-ink-gray-8">{{ timeAgo(item) }}</span>
+              <span class="text-xs text-ink-gray-4">{{ formatDateTime(item) }}</span>
+            </span>
+            <span
+              v-else-if="column.type === 'owner'"
+              class="truncate"
+              :title="item || ''"
+            >
+              {{ ownerLabel(item) }}
+            </span>
             <span v-else-if="column.type === 'date'" class="text-ink-gray-6">{{
               item || '—'
             }}</span>
@@ -142,6 +180,13 @@
                 <StatusBadge v-if="statusKey" :status="row[statusKey]" />
               </div>
             </div>
+            <div
+              v-if="row.modified || row.owner"
+              class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-gray-5"
+            >
+              <span v-if="row.modified">Updated {{ timeAgo(row.modified) }}</span>
+              <span v-if="row.owner">By {{ ownerLabel(row.owner) }}</span>
+            </div>
           </button>
         </div>
 
@@ -176,6 +221,8 @@
       v-else-if="mode === 'view'"
       :doctype="doctype"
       :name="activeName"
+      :read-only="readOnly"
+      :allow-lifecycle-actions="allowLifecycleActions"
       @edit="goEdit"
       @deleted="onMutated"
       @close="goList"
@@ -186,6 +233,7 @@
       v-else-if="mode === 'createFrom' && activeFlow"
       :flow="activeFlow"
       @mapped="onMapped"
+      @created="onCreated"
       @close="goBackFromForm"
     />
 
@@ -223,6 +271,7 @@ import StatusBadge from './StatusBadge.vue'
 import { useBoot } from '../../composables/useBoot.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { useBreakpoint } from '../../composables/useBreakpoint.js'
+import { readableError } from '../../composables/useCrud.js'
 
 const props = defineProps({
   doctype: { type: String, required: true },
@@ -239,6 +288,11 @@ const props = defineProps({
   // FinanceForm with the returned (unsaved) target doc for review + save. Shape:
   //   { key, label, sourceDoctype, sourceLabel, subtitleField?, mapMethod, targetDoctype }
   createFrom: { type: Array, default: () => [] },
+  // Finance may inspect quotations and orders without editing their fields.
+  // Create-from flows remain independently enabled where the section exposes
+  // a native downstream operation (for example Quote -> Sales Order).
+  readOnly: { type: Boolean, default: false },
+  allowLifecycleActions: { type: Boolean, default: false },
   // Optional role allow-list for the "New" gate. Defaults to the native-DocType
   // create roles. Sections whose create goes through a custom endpoint (e.g.
   // Payments -> create_customer_payment, AR-gated) pass their own list so the
@@ -246,8 +300,6 @@ const props = defineProps({
   createRoles: {
     type: Array,
     default: () => [
-      'System Manager',
-      'Finance Manager',
       'Accounts Manager',
       'Accounts User',
     ],
@@ -282,6 +334,11 @@ const listResource = createResource({
 const rows = computed(() => listResource.data || [])
 const listLoading = computed(() => listResource.loading)
 const listError = computed(() => listResource.error)
+const listErrorMessage = computed(
+  () =>
+    readableError(listError.value) ||
+    'The records could not be loaded. Check your company access and try again.',
+)
 
 // ListView column shape: {label, key, width, align, getLabel, type(custom)}.
 // getLabel drives the tooltip/plain value; the #cell slot handles rendering.
@@ -324,6 +381,7 @@ const canCreate = computed(
   () =>
     isAdministrator() || props.createRoles.some((r) => roles.value.includes(r)),
 )
+const canNew = computed(() => canCreate.value && !props.readOnly)
 
 // Breadcrumb trail: Title / Record / Edit — routeless buttons (standalone page).
 const breadcrumbs = computed(() => {
@@ -360,6 +418,35 @@ function timeAgo(dateStr) {
     month: 'short',
     year: 'numeric',
   })
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '—'
+  const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return String(dateStr)
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+function formatDateTime(dateStr) {
+  if (!dateStr) return '—'
+  const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return String(dateStr)
+  return date.toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function ownerLabel(owner) {
+  if (!owner) return '—'
+  return String(owner).split('@')[0]
 }
 
 function refetch() {
@@ -414,6 +501,13 @@ function onMapped(doc) {
   seedDoc.value = doc
   activeName.value = null
   mode.value = 'new'
+}
+
+function onCreated(result) {
+  activeName.value = result?.name || null
+  resetCreateFrom()
+  refetch()
+  mode.value = activeName.value ? 'view' : 'list'
 }
 
 function printRow(row) {

@@ -121,10 +121,7 @@ const actionPending = ref(null)
 const mode = ref('list')
 const activeName = ref(null)
 
-// Gate arrays mirror the backend exactly:
-//  - confirm/reject_commission -> Accounts User/Manager, Finance Manager, System Manager
-//  - mark_commission_paid      -> Finance Manager (+ admin) only
-//  - DocType create perm       -> System Manager, Accounts Manager (+ Administrator)
+// Gate arrays mirror the Accounts-only backend exactly.
 const userRoles = getRoles()
 const admin = isAdministrator()
 const canConfirmReject =
@@ -133,16 +130,14 @@ const canConfirmReject =
     [
       'Accounts User',
       'Accounts Manager',
-      'Finance Manager',
-      'System Manager',
     ].includes(r),
   )
 const canMarkPaid =
   admin ||
-  userRoles.some((r) => ['Finance Manager', 'System Manager'].includes(r))
+  userRoles.includes('Accounts Manager')
 const canCreate =
   admin ||
-  userRoles.some((r) => ['System Manager', 'Accounts Manager'].includes(r))
+  userRoles.includes('Accounts Manager')
 
 const columns = [
   { key: 'name', label: 'Commission' },

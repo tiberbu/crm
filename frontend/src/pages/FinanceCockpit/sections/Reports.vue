@@ -132,13 +132,16 @@ function toggleGroup(group) {
   }
 }
 
-const isAdmin = userRoles.includes('System Manager') || isAdministrator()
+const isAccountingUser =
+  isAdministrator() ||
+  userRoles.includes('Accounts User') ||
+  userRoles.includes('Accounts Manager')
 
 function visibleReportsForGroup(group) {
   return REPORTS.filter(
     (r) =>
       r.group === group &&
-      (isAdmin || r.roles.some((role) => userRoles.includes(role))),
+      (isAccountingUser || r.roles.some((role) => userRoles.includes(role))),
   )
 }
 

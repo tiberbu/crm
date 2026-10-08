@@ -6,6 +6,27 @@
       <div class="h-64 bg-surface-gray-2 rounded-xl animate-pulse" />
     </div>
 
+    <div
+      v-else-if="crud.error.value"
+      class="mx-auto max-w-xl rounded-xl border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+    >
+      <div class="flex items-start gap-2">
+        <FcIcon name="alert-circle" :size="18" class="mt-0.5 shrink-0" />
+        <div>
+          <p class="font-medium">Could not load {{ name }}.</p>
+          <p class="mt-1 whitespace-pre-line">{{ crud.error.value }}</p>
+          <div class="mt-3 flex gap-3">
+            <Button size="sm" variant="outline" theme="gray" @click="load">
+              Retry
+            </Button>
+            <Button size="sm" variant="ghost" theme="gray" @click="$emit('close')">
+              Back
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <template v-else-if="doc">
       <!-- Error banner -->
       <div
@@ -56,6 +77,7 @@
           <!-- Actions (RBAC-gated, visible-but-disabled) -->
           <div class="flex items-center gap-2 flex-wrap">
             <Button
+              v-if="!readOnly"
               variant="outline"
               theme="gray"
               :disabled="!canWrite || isCancelled"
@@ -66,7 +88,7 @@
               Edit
             </Button>
             <Button
-              v-if="isSubmittable && docstatus === 0"
+              v-if="isSubmittable && docstatus === 0 && (!readOnly || allowLifecycleActions)"
               theme="green"
               variant="subtle"
               :loading="busy"
@@ -78,7 +100,7 @@
               Submit
             </Button>
             <Button
-              v-if="isSubmittable && docstatus === 1"
+              v-if="isSubmittable && docstatus === 1 && (!readOnly || allowLifecycleActions)"
               theme="gray"
               variant="outline"
               :loading="busy"
@@ -89,11 +111,30 @@
               <template #prefix><FcIcon name="x" :size="14" /></template>
               Cancel
             </Button>
+            <Button
+              v-if="doctype === 'Sales Order' && docstatus === 1 && !invoiceState.hasInvoice"
+              theme="blue"
+              variant="solid"
+              :loading="busy || invoiceStateLoading"
+              :disabled="!canWrite || invoiceStateLoading || !!invoiceStateError"
+              :title="
+                invoiceStateError
+                  ? 'Verify the existing invoice state before generating'
+                  : !canWrite
+                    ? 'Requires Accounts User or Accounts Manager'
+                    : ''
+              "
+              @click="canWrite && onGenerateInvoice()"
+            >
+              <template #prefix><FcIcon name="file-plus" :size="14" /></template>
+              Generate invoice
+            </Button>
             <Button variant="outline" theme="gray" @click="printDoc">
               <template #prefix><FcIcon name="printer" :size="14" /></template>
               Print
             </Button>
             <Button
+              v-if="!readOnly"
               theme="red"
               variant="subtle"
               :loading="busy"
@@ -143,6 +184,39 @@
 
       <!-- Detail sections -->
       <div class="mt-5 space-y-5">
+        <SectionCard
+          v-if="doctype === 'Sales Order'"
+          title="Billing"
+          icon="receipt"
+          tone="neutral"
+        >
+          <div class="flex flex-wrap items-center gap-3 text-sm">
+            <span v-if="invoiceStateLoading" class="text-ink-gray-5">
+              Checking for an existing invoice…
+            </span>
+            <div v-else-if="invoiceStateError" class="text-ink-red-6" role="alert">
+              <span>{{ invoiceStateError }}</span>
+              <button class="ml-2 underline font-medium" @click="loadInvoiceState">
+                Retry
+              </button>
+            </div>
+            <template v-else-if="invoiceState.hasInvoice">
+              <span class="text-ink-gray-6">Invoice already generated:</span>
+              <a
+                v-for="invoiceName in invoiceState.invoiceNames"
+                :key="invoiceName"
+                :href="`/app/sales-invoice/${encodeURIComponent(invoiceName)}`"
+                class="font-medium text-ink-gray-8 underline underline-offset-2"
+              >
+                {{ invoiceName }}
+              </a>
+            </template>
+            <span v-else class="text-ink-gray-6">
+              No invoice generated from this order yet.
+            </span>
+          </div>
+        </SectionCard>
+
         <template v-for="sec in layout.sections" :key="sec.key">
           <!-- Line items / taxes -->
           <SectionCard
@@ -266,13 +340,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Button, toast, dialog } from 'frappe-ui'
+import { Button, toast, dialog, createResource } from 'frappe-ui'
 import StatusBadge from './StatusBadge.vue'
 import SectionCard from './SectionCard.vue'
 import SummaryBar from './SummaryBar.vue'
 import LineItemsGrid from './LineItemsGrid.vue'
 import FcIcon from './FcIcon.vue'
-import { useCrud } from '../../composables/useCrud.js'
+import { useCrud, readableError } from '../../composables/useCrud.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { useBoot } from '../../composables/useBoot.js'
 import { resolveLayout, isNumericType } from '../../constants/formLayouts.js'
@@ -280,6 +354,8 @@ import { resolveLayout, isNumericType } from '../../constants/formLayouts.js'
 const props = defineProps({
   doctype: { type: String, required: true },
   name: { type: String, required: true },
+  readOnly: { type: Boolean, default: false },
+  allowLifecycleActions: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['edit', 'deleted', 'close'])
@@ -292,6 +368,15 @@ const layout = resolveLayout(props.doctype)
 const doc = ref(null)
 const loading = ref(true)
 const busy = ref(false)
+const invoiceState = ref({ hasInvoice: false, invoiceNames: [] })
+const invoiceStateLoading = ref(false)
+const invoiceStateError = ref('')
+const invoiceStateResource = createResource({
+  url: 'crm.finance.api.get_sales_order_invoice_state',
+})
+const generateInvoiceResource = createResource({
+  url: 'crm.finance.api.make_sales_invoice_from_order',
+})
 
 /* ---- Header facets ---- */
 const statusValue = computed(() => doc.value?.[layout.statusField] || '')
@@ -480,14 +565,12 @@ const roles = computed(() => getRoles())
 const isElevated = computed(
   () =>
     isAdministrator() ||
-    roles.value.includes('System Manager') ||
-    roles.value.includes('Finance Manager') ||
     roles.value.includes('Accounts Manager'),
 )
 const canWrite = computed(
   () => isElevated.value || roles.value.includes('Accounts User'),
 )
-const canSubmit = computed(() => isElevated.value)
+const canSubmit = computed(() => canWrite.value)
 const canCancel = computed(() => isElevated.value)
 const canDelete = computed(() => isElevated.value)
 
@@ -496,11 +579,54 @@ async function load() {
   loading.value = true
   try {
     doc.value = await crud.loadDoc(props.name)
+    await loadInvoiceState()
   } finally {
     loading.value = false
   }
 }
 onMounted(load)
+
+async function loadInvoiceState() {
+  if (props.doctype !== 'Sales Order') return
+  invoiceStateLoading.value = true
+  invoiceStateError.value = ''
+  try {
+    const result = await invoiceStateResource.submit({
+      order_name: props.name,
+      company: doc.value?.company,
+    })
+    invoiceState.value = {
+      hasInvoice: !!result?.has_invoice,
+      invoiceNames: result?.invoice_names || [],
+    }
+  } catch (err) {
+    invoiceStateError.value =
+      readableError(err) ||
+      'Could not verify whether this order already has an invoice.'
+  } finally {
+    invoiceStateLoading.value = false
+  }
+}
+
+async function onGenerateInvoice() {
+  busy.value = true
+  try {
+    const result = await generateInvoiceResource.submit({
+      order_name: props.name,
+      company: doc.value?.company,
+    })
+    toast.success(`Created draft invoice ${result?.name || ''}`.trim())
+    await load()
+  } catch (err) {
+    toast.error(
+      readableError(err) ||
+        'Invoice could not be generated. Check the order state and billing setup.',
+    )
+    await loadInvoiceState()
+  } finally {
+    busy.value = false
+  }
+}
 
 async function onSubmit() {
   busy.value = true

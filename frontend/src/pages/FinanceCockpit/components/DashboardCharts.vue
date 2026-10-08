@@ -10,9 +10,15 @@
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="text-sm text-ink-red-6 py-2">
-      Failed to load chart data.
-      <button class="underline" @click="refetch">Retry</button>
+    <div
+      v-else-if="error"
+      class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-6"
+      role="alert"
+      aria-live="polite"
+    >
+      <p class="font-medium">Could not load chart data.</p>
+      <p class="mt-1 text-xs text-ink-red-5">{{ errorMessage }}</p>
+      <button class="mt-2 underline font-medium" @click="refetch">Retry</button>
     </div>
 
     <!-- Charts grid -->
@@ -27,7 +33,7 @@
         <ArAgingChart :data="chartData.ar_aging" />
       </div>
 
-      <!-- AP Aging (hidden for AR Accountant — API omits it) -->
+      <!-- AP Aging (hidden when the Accounts API omits it) -->
       <div v-if="chartData.ap_aging" class="fc-glass-card">
         <ApAgingChart :data="chartData.ap_aging" />
       </div>
@@ -50,6 +56,7 @@ import ArAgingChart from './charts/ArAgingChart.vue'
 import ApAgingChart from './charts/ApAgingChart.vue'
 import PlSummaryBar from './charts/PlSummaryBar.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
+import { readableError } from '../composables/useCrud.js'
 
 const props = defineProps({
   period: { type: String, default: 'month' },
@@ -68,6 +75,11 @@ const resource = createResource({
 const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
 const chartData = computed(() => resource.data || null)
+const errorMessage = computed(
+  () =>
+    readableError(error.value) ||
+    'Chart data could not be loaded. Check the selected company and retry.',
+)
 
 function refetch() {
   resource.fetch()

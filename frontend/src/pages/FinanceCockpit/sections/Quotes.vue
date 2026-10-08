@@ -7,6 +7,8 @@
     :list-params="listParams"
     :columns="columns"
     empty-label="No quotations found."
+    :read-only="true"
+    :create-roles="[]"
   >
     <template #filters>
       <label class="text-xs text-ink-gray-5">Status:</label>
@@ -25,12 +27,23 @@
         <option value="Lost">Lost</option>
         <option value="Expired">Expired</option>
       </select>
+      <button
+        v-if="hasFilters"
+        type="button"
+        class="ml-2 text-xs font-medium text-ink-gray-6 underline underline-offset-2"
+        @click="clearFilters"
+      >
+        Clear filters
+      </button>
+      <span class="ml-auto text-xs text-ink-gray-4">
+        Sales-owned · read only for Finance
+      </span>
     </template>
   </CrudSection>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import CrudSection from '../components/crud/CrudSection.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 
@@ -43,6 +56,8 @@ const columns = [
   { key: 'party_name', label: 'Party' },
   { key: 'transaction_date', label: 'Date', type: 'date' },
   { key: 'valid_till', label: 'Valid', type: 'date' },
+  { key: 'modified', label: 'Last modified', type: 'datetime' },
+  { key: 'owner', label: 'Created by', type: 'owner' },
   { key: 'grand_total', label: 'Total', type: 'currency', align: 'right' },
   { key: 'status', label: 'Status', type: 'status' },
 ]
@@ -51,6 +66,7 @@ const columns = [
 // "Open" (ERPNext has no "Submitted" status), so the prior ['Draft','Submitted']
 // default silently hid every submitted quote. These are the real in-play values.
 const ACTIVE_STATUSES = ['Draft', 'Open', 'Replied', 'Partially Ordered']
+const hasFilters = computed(() => !!statusFilter.value)
 
 function listParams() {
   const filters = []
@@ -67,5 +83,10 @@ function listParams() {
 function onFilterChange() {
   sectionRef.value?.resetPage()
   sectionRef.value?.refetch()
+}
+
+function clearFilters() {
+  statusFilter.value = ''
+  onFilterChange()
 }
 </script>

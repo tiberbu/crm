@@ -5,20 +5,28 @@
       <div
         v-for="n in 5"
         :key="n"
-        class="h-12 bg-gray-100 dark:bg-gray-800 rounded animate-pulse"
+        class="h-12 bg-surface-gray-2 rounded animate-pulse"
       />
     </div>
 
     <!-- Error state -->
-    <div v-else-if="error" class="text-sm text-red-500 py-4">
-      Failed to load data.
-      <button class="underline" @click="$emit('retry')">Retry</button>
+    <div
+      v-else-if="error"
+      class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-6"
+      role="alert"
+      aria-live="polite"
+    >
+      <p class="font-medium">Could not load records.</p>
+      <p class="mt-1 text-xs text-ink-red-5">{{ errorMessage }}</p>
+      <button class="mt-2 underline font-medium" @click="$emit('retry')">
+        Retry
+      </button>
     </div>
 
     <!-- Empty state -->
     <div
       v-else-if="!rows || !rows.length"
-      class="text-center py-10 text-sm text-gray-400"
+      class="text-center py-10 text-sm text-ink-gray-4"
     >
       {{ emptyLabel || 'No records found.' }}
     </div>
@@ -26,18 +34,18 @@
     <!-- Desktop table -->
     <div
       v-else-if="!isMobile"
-      class="overflow-x-auto rounded border border-gray-200 dark:border-gray-700"
+      class="overflow-x-auto rounded border border-outline-gray-1"
     >
       <table class="w-full text-sm">
         <thead
-          class="sticky top-0 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+          class="sticky top-0 bg-surface-gray-1 border-b border-outline-gray-1"
         >
           <tr>
             <th
               v-for="col in columns"
               :key="col.key"
               :class="[
-                'px-3 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide whitespace-nowrap',
+                'px-3 py-2.5 text-left text-xs font-semibold text-ink-gray-5 uppercase tracking-wide whitespace-nowrap',
                 col.align === 'right' ? 'text-right' : '',
               ]"
             >
@@ -45,24 +53,24 @@
             </th>
             <th
               v-if="$slots.actions"
-              class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+              class="px-3 py-2.5 text-right text-xs font-semibold text-ink-gray-5 uppercase tracking-wide"
             >
               Actions
             </th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+        <tbody class="divide-y divide-outline-gray-1">
           <tr
             v-for="row in rows"
             :key="row.name"
-            class="hover:bg-gray-50 dark:hover:bg-gray-800/60 cursor-pointer transition-colors"
+            class="hover:bg-surface-gray-1 cursor-pointer transition-colors"
             @click="$emit('row-click', row)"
           >
             <td
               v-for="col in columns"
               :key="col.key"
               :class="[
-                'px-3 py-2.5 text-gray-700 dark:text-gray-300',
+                'px-3 py-2.5 text-ink-gray-7',
                 col.align === 'right' ? 'text-right' : '',
               ]"
             >
@@ -88,22 +96,22 @@
       <div
         v-for="row in rows"
         :key="row.name"
-        class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 shadow-sm cursor-pointer"
+        class="bg-surface-white rounded-lg border border-outline-gray-1 p-3 shadow-sm cursor-pointer"
         @click="$emit('row-click', row)"
       >
         <div class="flex items-start justify-between gap-2 mb-2">
           <div>
-            <p class="font-medium text-gray-800 dark:text-gray-200 text-sm">
+            <p class="font-medium text-ink-gray-8 text-sm">
               {{ row[columns[0]?.key] || row.name }}
             </p>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            <p class="text-xs text-ink-gray-5 mt-0.5">
               {{ row[columns[1]?.key] }}
             </p>
           </div>
           <div class="text-right flex-shrink-0">
             <p
               v-if="amountCol"
-              class="font-semibold text-gray-700 dark:text-gray-300 text-sm"
+              class="font-semibold text-ink-gray-7 text-sm"
             >
               {{ formatCurrency(row[amountCol.key], row.currency) }}
             </p>
@@ -123,15 +131,15 @@
     >
       <button
         :disabled="page <= 0"
-        class="px-3 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        class="px-3 py-1 text-xs rounded border border-outline-gray-2 disabled:opacity-40 hover:bg-surface-gray-2 transition-colors"
         @click="$emit('update:page', page - 1)"
       >
         Previous
       </button>
-      <span class="text-xs text-gray-500">Page {{ page + 1 }}</span>
+      <span class="text-xs text-ink-gray-5">Page {{ page + 1 }}</span>
       <button
         :disabled="rows.length < pageSize"
-        class="px-3 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        class="px-3 py-1 text-xs rounded border border-outline-gray-2 disabled:opacity-40 hover:bg-surface-gray-2 transition-colors"
         @click="$emit('update:page', page + 1)"
       >
         Next
@@ -145,6 +153,7 @@ import { computed } from 'vue'
 import StatusPill from './StatusPill.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useCurrency } from '../composables/useCurrency.js'
+import { readableError } from '../composables/useCrud.js'
 
 const props = defineProps({
   columns: { type: Array, default: () => [] },
@@ -160,6 +169,11 @@ defineEmits(['row-click', 'retry', 'update:page'])
 
 const { isMobile } = useBreakpoint()
 const { formatCurrency } = useCurrency()
+const errorMessage = computed(
+  () =>
+    readableError(props.error) ||
+    'The records could not be loaded. Check the selected company and retry.',
+)
 
 const amountCol = computed(() =>
   props.columns.find((c) => c.type === 'currency'),

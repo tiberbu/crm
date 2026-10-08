@@ -7,7 +7,7 @@
     :list-params="listParams"
     :columns="columns"
     :new-component="PaymentAllocationForm"
-    :create-roles="['System Manager', 'Finance Manager', 'AR Accountant']"
+    :create-roles="['Accounts Manager', 'Accounts User']"
     empty-label="No payments found."
   />
 </template>

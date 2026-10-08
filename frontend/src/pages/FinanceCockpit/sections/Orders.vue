@@ -8,6 +8,9 @@
     :columns="columns"
     :create-from="createFrom"
     empty-label="No sales orders found."
+    :read-only="true"
+    :allow-lifecycle-actions="true"
+    :create-roles="['Accounts User', 'Accounts Manager']"
   >
     <template #filters>
       <label class="text-xs text-ink-gray-5">Status:</label>
@@ -24,12 +27,23 @@
         <option value="Completed">Completed</option>
         <option value="Cancelled">Cancelled</option>
       </select>
+      <button
+        v-if="hasFilters"
+        type="button"
+        class="ml-2 text-xs font-medium text-ink-gray-6 underline underline-offset-2"
+        @click="clearFilters"
+      >
+        Clear filters
+      </button>
+      <span class="ml-auto text-xs text-ink-gray-4">
+        Sorted by order date · newest first
+      </span>
     </template>
   </CrudSection>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import CrudSection from '../components/crud/CrudSection.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 
@@ -42,6 +56,8 @@ const columns = [
   { key: 'customer', label: 'Customer' },
   { key: 'transaction_date', label: 'Date', type: 'timeago' },
   { key: 'delivery_date', label: 'Delivery', type: 'date' },
+  { key: 'modified', label: 'Last modified', type: 'datetime' },
+  { key: 'owner', label: 'Created by', type: 'owner' },
   { key: 'grand_total', label: 'Total', type: 'currency', align: 'right' },
   { key: 'status', label: 'Status', type: 'status' },
   { key: 'billing_status', label: 'Billing', type: 'status' },
@@ -60,6 +76,8 @@ const createFrom = [
   },
 ]
 
+const hasFilters = computed(() => !!statusFilter.value)
+
 function listParams() {
   const filters = []
   if (statusFilter.value === 'all') {
@@ -75,5 +93,10 @@ function listParams() {
 function onFilterChange() {
   sectionRef.value?.resetPage()
   sectionRef.value?.refetch()
+}
+
+function clearFilters() {
+  statusFilter.value = ''
+  onFilterChange()
 }
 </script>

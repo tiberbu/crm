@@ -3,30 +3,16 @@ from frappe import _
 from frappe.translate import get_messages_for_boot, get_translated_doctypes
 from frappe.utils import cint, get_system_timezone
 
+from crm.finance.access import has_access
+
 no_cache = 1
-
-FINANCE_ROLES = frozenset(
-	[
-		"Finance Manager",
-		"AR Accountant",
-		"AP Accountant",
-		"Accounts Manager",
-		"Accounts User",
-		"Sales Manager",
-		"Partner RM",
-		"System Manager",
-	]
-)
-
 
 def get_context():
 	if frappe.session.user == "Guest":
 		frappe.local.flags.redirect_location = "/login?redirect-to=/finance-cockpit"
 		raise frappe.Redirect
 
-	roles = set(frappe.get_roles(frappe.session.user))
-	is_admin = frappe.session.user == "Administrator" or "System Manager" in roles
-	if not is_admin and not (roles & FINANCE_ROLES):
+	if not has_access():
 		frappe.local.flags.redirect_location = "/access-restricted"
 		raise frappe.Redirect
 

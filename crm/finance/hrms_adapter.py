@@ -89,9 +89,7 @@ def mark_expense_claim_paid(name):
 	if not is_hrms_installed():
 		frappe.throw("HRMS is not installed")
 	roles = frappe.get_roles(frappe.session.user)
-	if not any(
-		r in roles for r in ("Accounts User", "Accounts Manager", "Finance Manager", "System Manager")
-	):
+	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and frappe.session.user != "Administrator":
 		frappe.throw("Insufficient permissions", frappe.PermissionError)
 	frappe.db.set_value(
 		"Expense Claim",

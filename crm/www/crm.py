@@ -62,6 +62,10 @@ def get_boot():
 			"is_fc_site": is_fc_site(),
 			"translated_doctypes": get_translated_doctypes(),
 			"translated_messages": get_messages_for_boot(),
+			"user": {
+				"name": frappe.session.user,
+				"roles": frappe.get_roles(frappe.session.user),
+			},
 			"timezone": {
 				"system": get_system_timezone(),
 				"user": frappe.db.get_value("User", frappe.session.user, "time_zone")
