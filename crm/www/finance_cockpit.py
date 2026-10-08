@@ -13,7 +13,7 @@ def get_context():
 		raise frappe.Redirect
 
 	if not has_access():
-		frappe.local.flags.redirect_location = "/access-restricted"
+		frappe.local.flags.redirect_location = "/access-restricted?resource=finance"
 		raise frappe.Redirect
 
 	frappe.db.commit()

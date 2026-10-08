@@ -1,5 +1,8 @@
 import { ref } from 'vue'
 import { createResource } from 'frappe-ui'
+import { getErrorPresentation, readableError } from './financeErrors.js'
+
+export { getErrorPresentation, readableError }
 
 /**
  * Native Frappe CRUD factory for the Finance Cockpit.
@@ -21,14 +24,6 @@ import { createResource } from 'frappe-ui'
  * frappe-ui unwraps the RPC envelope, so `resource.submit()` resolves to the
  * returned doc dict directly. Every throw is normalized to a readable string.
  */
-
-export function readableError(err) {
-  if (!err) return ''
-  if (Array.isArray(err.messages) && err.messages.length)
-    return err.messages.join('\n')
-  if (typeof err === 'string') return err
-  return err.message || 'Something went wrong. Please try again.'
-}
 
 export function useCrud(doctype) {
   const loading = ref(false)

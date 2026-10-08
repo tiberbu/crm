@@ -18,7 +18,7 @@ def get_context(context):
 		raise frappe.Redirect
 
 	if not get_portal_route():
-		frappe.local.flags.redirect_location = "/access-restricted"
+		frappe.local.flags.redirect_location = "/access-restricted?resource=portal"
 		raise frappe.Redirect
 
 	context.csrf_token = frappe.sessions.get_csrf_token()

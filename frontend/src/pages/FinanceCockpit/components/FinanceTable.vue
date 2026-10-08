@@ -10,18 +10,7 @@
     </div>
 
     <!-- Error state -->
-    <div
-      v-else-if="error"
-      class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-6"
-      role="alert"
-      aria-live="polite"
-    >
-      <p class="font-medium">Could not load records.</p>
-      <p class="mt-1 text-xs text-ink-red-5">{{ errorMessage }}</p>
-      <button class="mt-2 underline font-medium" @click="$emit('retry')">
-        Retry
-      </button>
-    </div>
+    <FinanceErrorState v-else-if="error" :error="error" @retry="$emit('retry')" />
 
     <!-- Empty state -->
     <div
@@ -153,7 +142,7 @@ import { computed } from 'vue'
 import StatusPill from './StatusPill.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useCurrency } from '../composables/useCurrency.js'
-import { readableError } from '../composables/useCrud.js'
+import FinanceErrorState from './FinanceErrorState.vue'
 
 const props = defineProps({
   columns: { type: Array, default: () => [] },
@@ -169,12 +158,6 @@ defineEmits(['row-click', 'retry', 'update:page'])
 
 const { isMobile } = useBreakpoint()
 const { formatCurrency } = useCurrency()
-const errorMessage = computed(
-  () =>
-    readableError(props.error) ||
-    'The records could not be loaded. Check the selected company and retry.',
-)
-
 const amountCol = computed(() =>
   props.columns.find((c) => c.type === 'currency'),
 )

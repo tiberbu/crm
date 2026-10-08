@@ -28,7 +28,7 @@ def get_context():
 		if get_portal_route():
 			frappe.local.flags.redirect_location = PORTAL_ROUTE
 			raise frappe.Redirect
-		frappe.local.flags.redirect_location = "/access-restricted"
+		frappe.local.flags.redirect_location = "/access-restricted?resource=crm"
 		raise frappe.Redirect
 
 	frappe.db.commit()
