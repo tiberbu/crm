@@ -1,8 +1,17 @@
 <template>
   <div class="fc-crud-section">
-    <!-- Breadcrumb trail + primary action -->
+    <!-- Finance workbench header + primary action -->
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <Breadcrumbs :items="breadcrumbs" />
+      <div v-if="mode === 'list'" class="min-w-0">
+        <p class="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-red-6">
+          Finance Workspace
+        </p>
+        <h2 class="mt-1 text-xl font-semibold tracking-tight text-ink-gray-9">
+          {{ title || doctype }}
+        </h2>
+        <p class="mt-0.5 text-xs text-ink-gray-5">{{ subtitle }}</p>
+      </div>
+      <Breadcrumbs v-else :items="breadcrumbs" />
       <div v-if="mode === 'list'" class="flex flex-wrap items-center gap-2">
         <!-- Create-From (mapped-doc) actions — visible-but-disabled without create
              permission, matching the New gate. -->
@@ -274,6 +283,10 @@ import FinanceErrorState from '../FinanceErrorState.vue'
 const props = defineProps({
   doctype: { type: String, required: true },
   title: { type: String, default: '' },
+  subtitle: {
+    type: String,
+    default: 'Native ERPNext records, permissions, and next actions.',
+  },
   columns: { type: Array, default: () => [] },
   listResourceUrl: { type: String, required: true },
   listParams: { type: Function, default: () => ({}) },
