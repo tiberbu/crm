@@ -96,6 +96,7 @@ on_login = ["crm.api.website_redirect.on_login"]
 
 website_route_rules = [
 	{"from_route": "/crm/<path:app_path>", "to_route": "crm"},
+	{"from_route": "/facility-onboarding", "to_route": "facility-onboarding"},
 	{"from_route": "/cx-portal", "to_route": "cx-portal"},
 	# Compatibility route for invitations or bookmarks issued before the portal
 	# was named Customer Experience.

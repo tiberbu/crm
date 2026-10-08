@@ -1,7 +1,7 @@
 # PRD — Facility Self-Onboarding and Customer Experience
 
-**Product:** tiberbu Express
-**Implementation system:** CRM (`crm`) with CareVerse HQ integration
+**Customer-facing product:** Tiberbu Customer Experience (also: Tiberbu HMIS Customer Experience Portal)
+**Implementation system:** Frappe app in `apps/crm` with CareVerse HQ integration; `crm` is an implementation name, not customer-facing product language
 
 > **Scope decision:** Partner Portal and partner workspace delivery are
 > descoped. Customer Experience is the only external authenticated surface.
@@ -10,7 +10,7 @@
 
 **Status:** Draft for product, UX, CRM, Careverse HQ, and Customer Experience handoff
 **Version:** 0.1
-**Date:** 2026-09-28
+**Date:** 2026-10-08
 **System boundary:** `crm` + `careverse_hq` + public facility onboarding + Customer Experience
 
 ## 1. Product decision

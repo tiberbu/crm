@@ -58,8 +58,9 @@ def get_context(context):
 	context.no_cache = 1
 	context.no_header = True
 	context.no_breadcrumbs = True
-	context.title = _("Sign In - {0}").format(brand["app_name"])
+	context.title = _("Sign in - Tiberbu Customer Experience")
 	apply_brand_context(context, brand, surface="login")
+	context.customer_experience_name = "Tiberbu Customer Experience"
 
 	# Auth settings consumed by the template (mirror stock login).
 	context.disable_user_pass_login = cint(frappe.get_system_settings("disable_user_pass_login")) or 0
