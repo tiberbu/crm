@@ -1368,6 +1368,62 @@ def get_customer_payments(company=None, filters=None, page=0, page_size=20):
 
 
 @frappe.whitelist()
+def get_sales_invoice_payments(invoice_name, company=None):
+	"""Return submitted customer payments allocated to one Sales Invoice."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw(
+			_("Finance access requires the Accounts User or Accounts Manager role."),
+			frappe.PermissionError,
+		)
+	company = _resolve_company(company)
+	invoice_name = _require_document_permission("Sales Invoice", invoice_name, "read")
+	invoice = frappe.get_doc("Sales Invoice", invoice_name)
+	if invoice.company != company:
+		frappe.throw(_("Sales Invoice {0} belongs to another company").format(invoice_name), frappe.PermissionError)
+
+	if not frappe.db.exists("DocType", "Payment Entry Reference"):
+		return []
+
+	references = frappe.get_list(
+		"Payment Entry Reference",
+		filters={"reference_doctype": "Sales Invoice", "reference_name": invoice_name},
+		fields=["parent", "allocated_amount"],
+		order_by="creation desc",
+		limit_page_length=200,
+	)
+	payment_names = list(dict.fromkeys(row.parent for row in references if row.parent))
+	if not payment_names:
+		return []
+
+	payments = frappe.get_list(
+		"Payment Entry",
+		filters={
+			"name": ["in", payment_names],
+			"company": company,
+			"payment_type": "Receive",
+			"docstatus": 1,
+		},
+		fields=[
+			"name",
+			"posting_date",
+			"paid_amount",
+			"mode_of_payment",
+			"reference_no",
+			"reference_date",
+			"owner",
+			"modified",
+		],
+		order_by="posting_date desc, modified desc",
+		limit_page_length=200,
+	)
+	allocated_by_payment = {row.parent: row.allocated_amount for row in references}
+	for payment in payments:
+		payment["allocated_amount"] = allocated_by_payment.get(payment.name, 0)
+	return payments
+
+
+@frappe.whitelist()
 def get_customer_outstanding_invoices(company=None, customer=None):
 	"""Outstanding submitted Sales Invoices for a customer, for payment allocation.
 
@@ -2550,6 +2606,7 @@ _PUBLIC_FINANCE_API_NAMES = (
 	"get_sales_order_invoice_state",
 	"make_sales_invoice_from_order",
 	"get_customer_payments",
+	"get_sales_invoice_payments",
 	"get_customer_outstanding_invoices",
 	"create_customer_payment",
 	"make_payment_entry_from_invoice",

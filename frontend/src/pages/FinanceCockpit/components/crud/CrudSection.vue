@@ -226,11 +226,12 @@
     <!-- VIEW -->
     <FinanceDetail
       v-else-if="mode === 'view'"
-      :doctype="doctype"
+      :doctype="activeDoctype"
       :name="activeName"
       :read-only="readOnly"
       :allow-lifecycle-actions="allowLifecycleActions"
       @edit="goEdit"
+      @mapped="onMappedFromDetail"
       @deleted="onMutated"
       @close="goList"
     />
@@ -258,7 +259,7 @@
          from a mapped source (Create From); ignored when editing (name set). -->
     <FinanceForm
       v-else-if="mode === 'new' || mode === 'edit'"
-      :doctype="doctype"
+      :doctype="formDoctype"
       :name="mode === 'edit' ? activeName : null"
       :seed="mode === 'new' ? seedDoc : null"
       @saved="onSaved"
@@ -279,6 +280,7 @@ import { useBoot } from '../../composables/useBoot.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { useBreakpoint } from '../../composables/useBreakpoint.js'
 import FinanceErrorState from '../FinanceErrorState.vue'
+import { printUrl } from '../../constants/printFormats.js'
 
 const props = defineProps({
   doctype: { type: String, required: true },
@@ -323,12 +325,14 @@ const { isMobile } = useBreakpoint()
 
 const mode = ref('list')
 const activeName = ref(null)
+const activeDoctype = ref(props.doctype)
 const page = ref(0)
 
 // Create-From state: the active flow config while picking a source, and the
 // mapped (unsaved) target doc used to seed FinanceForm once a source is chosen.
 const activeFlow = ref(null)
 const seedDoc = ref(null)
+const formDoctype = ref(props.doctype)
 
 const listResource = createResource({
   url: props.listResourceUrl,
@@ -465,15 +469,18 @@ function onPage(p) {
 function resetCreateFrom() {
   activeFlow.value = null
   seedDoc.value = null
+  formDoctype.value = props.doctype
 }
 
 function goList() {
   mode.value = 'list'
   activeName.value = null
+  activeDoctype.value = props.doctype
   resetCreateFrom()
 }
 function goView(row) {
   activeName.value = row.name
+  activeDoctype.value = props.doctype
   mode.value = 'view'
 }
 function goNew() {
@@ -505,21 +512,28 @@ function goCreateFrom(flow) {
 function onMapped(doc) {
   seedDoc.value = doc
   activeName.value = null
+  formDoctype.value = activeFlow.value?.targetDoctype || doc?.doctype || props.doctype
+  mode.value = 'new'
+}
+
+function onMappedFromDetail(doc) {
+  seedDoc.value = doc
+  activeName.value = null
+  formDoctype.value = doc?.doctype || (props.doctype === 'Quotation' ? 'Sales Order' : 'Payment Entry')
+  activeFlow.value = { label: `Create ${formDoctype.value}` }
   mode.value = 'new'
 }
 
 function onCreated(result) {
   activeName.value = result?.name || null
+  activeDoctype.value = props.doctype
   resetCreateFrom()
   refetch()
   mode.value = activeName.value ? 'view' : 'list'
 }
 
 function printRow(row) {
-  window.open(
-    `/printview?doctype=${encodeURIComponent(props.doctype)}&name=${encodeURIComponent(row.name)}&trigger_print=1`,
-    '_blank',
-  )
+  window.open(printUrl(props.doctype, row.name), '_blank')
 }
 
 function exportCsv() {
@@ -577,8 +591,11 @@ function printAll() {
 }
 
 function onSaved(doc) {
+  const savedDoctype = formDoctype.value
   activeName.value = doc?.name || activeName.value
-  resetCreateFrom()
+  activeDoctype.value = savedDoctype
+  activeFlow.value = null
+  seedDoc.value = null
   refetch()
   mode.value = activeName.value ? 'view' : 'list'
 }

@@ -394,6 +394,7 @@ after_migrate = [
 	"crm.setup.optin.ensure_signing_key",
 	"crm.setup.optin.ensure_default_terms",
 	"crm.setup.optin.ensure_contract_print_format",
+	"crm.finance.print_formats.ensure_finance_print_formats",
 	"crm.setup.optin.ensure_lead_source",
 ]
 
