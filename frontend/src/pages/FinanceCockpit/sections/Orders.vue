@@ -63,7 +63,7 @@ const columns = [
   { key: 'billing_status', label: 'Billing', type: 'status' },
 ]
 
-// Create-From: submitted Quotation (docstatus=1) → Sales Order via native ERPNext mapper.
+// Create-From: submitted Quotation (docstatus=1) → Sales Order via the native mapper.
 const createFrom = [
   {
     key: 'from-quotation',

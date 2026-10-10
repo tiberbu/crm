@@ -493,6 +493,7 @@ import SectionCard from './SectionCard.vue'
 import FcIcon from './FcIcon.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
 import { useCurrency } from '../../composables/useCurrency.js'
+import { readableError } from '../../composables/financeErrors.js'
 
 const emit = defineEmits(['saved', 'close'])
 
@@ -718,7 +719,7 @@ async function onCustomerChange(val) {
       0,
     )
   } catch (err) {
-    errorMsg.value = readable(err)
+    errorMsg.value = readableError(err)
   } finally {
     invoicesLoading.value = false
   }
@@ -776,13 +777,6 @@ const canReview = computed(
   () => !!customer.value && totalAllocated.value > 0 && !saving.value,
 )
 
-function readable(err) {
-  if (!err) return 'Something went wrong.'
-  if (Array.isArray(err.messages) && err.messages.length)
-    return err.messages.join('\n')
-  return err.message || String(err)
-}
-
 function onBack() {
   if (reviewing.value) {
     reviewing.value = false
@@ -819,7 +813,7 @@ async function onConfirmPost() {
     toast.success('Payment ' + (res?.name || '') + ' recorded')
     emit('saved', res)
   } catch (err) {
-    reviewError.value = readable(err)
+    reviewError.value = readableError(err)
   } finally {
     saving.value = false
   }

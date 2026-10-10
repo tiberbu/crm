@@ -267,7 +267,7 @@ export const REPORTS = [
   },
 ]
 
-// Keep report visibility aligned with the native ERPNext accounting roles.
+// Keep report visibility aligned with the native accounting roles.
 // Older labels were presentation-only aliases and must not gate the cockpit.
 const NATIVE_ACCOUNTING_ROLE = {
   'Finance Manager': 'Accounts Manager',

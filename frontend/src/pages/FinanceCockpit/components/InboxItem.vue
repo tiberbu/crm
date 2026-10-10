@@ -12,8 +12,11 @@
         'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
         urgencyBgClass,
       ]"
-      v-html="typeIconSvg"
-    />
+    >
+      <!-- The value comes only from the closed TYPE_ICONS map below. -->
+      <!-- eslint-disable-next-line vue/no-v-html -->
+      <span aria-hidden="true" v-html="typeIconSvg" />
+    </div>
 
     <!-- Main info -->
     <div class="flex-1 min-w-0">
@@ -49,7 +52,7 @@
       class="flex flex-col md:flex-row items-stretch md:items-center gap-2 md:flex-shrink-0 w-full md:w-auto"
     >
       <a
-        :href="item.erpnext_url"
+        :href="item.record_url"
         target="_blank"
         class="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors text-center font-medium"
         @click.stop

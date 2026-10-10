@@ -136,7 +136,7 @@ const resource = createResource({
 
 const loading = computed(() => resource.loading)
 const error = computed(() =>
-  resource.error ? 'Failed to load report. Check ERPNext connection.' : null,
+  resource.error ? 'The report could not be loaded. Check your connection and try again.' : null,
 )
 
 const columns = computed(() => resource.data?.columns || [])

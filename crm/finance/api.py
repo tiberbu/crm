@@ -12,6 +12,116 @@ from crm.finance.access import is_manager, require_access
 from crm.utils.optin_network import set_network_link
 
 
+def _request_text(value, label, *, required=False, default=""):
+	"""Return clean request text or raise a readable validation error.
+
+	Request arguments can arrive as JSON objects when a client sends the
+	wrong shape. Do not coerce dictionaries to strings: that hides the input
+	problem and can make downstream code fail with an unrelated AttributeError.
+	"""
+	if value is None:
+		text = default
+	elif isinstance(value, str):
+		text = value.strip()
+	elif isinstance(value, (int, float)) and not isinstance(value, bool):
+		text = str(value)
+	else:
+		frappe.throw(_("{0} must be plain text.").format(label), frappe.ValidationError)
+
+	if required and not text:
+		frappe.throw(_("{0} is required.").format(label), frappe.ValidationError)
+	return text
+
+
+def _safe_text(value, default=""):
+	"""Return text for trusted display data without throwing on malformed rows."""
+	if isinstance(value, str):
+		return value.strip()
+	if value is None:
+		return default
+	if isinstance(value, (int, float)) and not isinstance(value, bool):
+		return str(value)
+	return default
+
+
+def _request_filters(filters):
+	"""Parse client filters into safe condition rows for list queries."""
+	if not filters:
+		return []
+	if isinstance(filters, str):
+		try:
+			filters = json.loads(filters)
+		except (TypeError, ValueError):
+			frappe.throw(_("The filters could not be read. Clear the filters and try again."), frappe.ValidationError)
+
+	if isinstance(filters, dict):
+		if any(isinstance(value, (dict, list, tuple, set)) for value in filters.values()):
+			frappe.throw(_("Filter values must be plain values, not objects or lists."), frappe.ValidationError)
+		filters = [[field, "=", value] for field, value in filters.items()]
+	if not isinstance(filters, list):
+		frappe.throw(_("Filters must be a list of conditions."), frappe.ValidationError)
+
+	validated = []
+	for condition in filters:
+		if not isinstance(condition, (list, tuple)) or len(condition) not in (2, 3):
+			frappe.throw(_("Each filter must contain a field, an operator, and a value."), frappe.ValidationError)
+		if not isinstance(condition[0], str) or (len(condition) == 3 and not isinstance(condition[1], str)):
+			frappe.throw(_("Each filter must use a text field and operator."), frappe.ValidationError)
+		if isinstance(condition[-1], (dict, tuple, set)):
+			frappe.throw(_("Filter values must be plain values, not objects."), frappe.ValidationError)
+		validated.append(list(condition))
+	return validated
+
+
+def _request_page(value, label, default, maximum):
+	if value in (None, ""):
+		return default
+	if isinstance(value, (dict, list, tuple, set, bool)):
+		frappe.throw(_("{0} must be a whole number.").format(label), frappe.ValidationError)
+	try:
+		parsed = int(value)
+	except (TypeError, ValueError):
+		frappe.throw(_("{0} must be a whole number.").format(label), frappe.ValidationError)
+	if parsed < 0 or parsed > maximum:
+		frappe.throw(_("{0} must be between 0 and {1}.").format(label, maximum), frappe.ValidationError)
+	return parsed
+
+
+def _page_args(page, page_size, maximum=200):
+	return (
+		_request_page(page, "Page", 0, 100000),
+		_request_page(page_size, "Page size", 20, maximum),
+	)
+
+
+def _request_flag(value, label, default=0):
+	if value in (None, ""):
+		return default
+	if isinstance(value, bool):
+		return int(value)
+	if isinstance(value, int) and value in (0, 1):
+		return value
+	if isinstance(value, str) and value.strip().lower() in {"0", "1"}:
+		return int(value.strip())
+	frappe.throw(_("{0} must be yes or no.").format(label), frappe.ValidationError)
+
+
+def _record_url(doctype, docname):
+	"""Build a Desk record link without assuming row values are strings."""
+	doctype_text = _safe_text(doctype)
+	docname_text = _safe_text(docname)
+	if not doctype_text or not docname_text:
+		return ""
+	return "/app/%s/%s" % (doctype_text.lower().replace(" ", "-"), docname_text)
+
+
+def _require_document_permission(doctype, name, ptype="read"):
+	"""Validate the document name and defer authorization to native permissions."""
+	name = _request_text(name, doctype, required=True)
+	frappe.has_permission(doctype, doc=name, ptype=ptype, throw=True)
+	return name
+
+
 @frappe.whitelist()
 def get_accessible_companies():
 	return frappe.get_list(
@@ -23,6 +133,9 @@ def get_accessible_companies():
 
 def _get_date_filter(period):
 	"""Return (from_date, to_date) for the given period string."""
+	period = _request_text(period, "Period", default="month")
+	if period not in {"month", "quarter", "year", "ytd"}:
+		frappe.throw(_("Period must be month, quarter, year, or ytd."), frappe.ValidationError)
 	t = today()
 	t_date = date.fromisoformat(t)
 	if period == "quarter":
@@ -42,6 +155,8 @@ def _get_date_filter(period):
 def _resolve_company(company):
 	"""Return a validated company name, falling back to the first accessible company.
 	Throws PermissionError if the user has access to no company at all."""
+	if company is not None:
+		company = _request_text(company, "Company")
 	company = company or frappe.defaults.get_user_default("company")
 	if not company:
 		rows = frappe.get_list("Company", fields=["name"], limit=1, order_by="name asc")
@@ -232,16 +347,18 @@ def _get_unpaid_commissions(company, roles):
 
 @frappe.whitelist()
 def get_finance_kpis(company=None, period="month", force=0):
+	period = _request_text(period, "Period", default="month")
+	date_filter = _get_date_filter(period)
+	force = _request_flag(force, "Refresh KPIs")
 	company = _resolve_company(company)
 	roles = frappe.get_roles(frappe.session.user)
 	cache_key = "fc_kpis_%s_%s_%s" % (frappe.session.user, company, period)
-	if not frappe.utils.cint(force):
+	if not force:
 		cached = frappe.cache().get_value(cache_key)
 		if cached:
 			return cached
 	result = {}
 	currency = _company_currency(company)
-	date_filter = _get_date_filter(period)
 	if _has_ar_access(roles):
 		result["ar_outstanding"] = _get_ar_outstanding(company, currency)
 		result["ar_overdue"] = _get_ar_overdue(company, currency)
@@ -284,12 +401,14 @@ def _action_item(
 	primary_action,
 	primary_action_label,
 	secondary_actions=None,
-	erpnext_url=None,
+	record_url=None,
 ):
+	doctype_text = _safe_text(doctype)
+	docname_text = _safe_text(docname)
 	return {
 		"type": type_,
-		"doctype": doctype,
-		"docname": docname,
+		"doctype": doctype_text,
+		"docname": docname_text,
 		"party_type": party_type,
 		"party_name": party_name,
 		"amount": float(amount or 0),
@@ -299,7 +418,7 @@ def _action_item(
 		"primary_action": primary_action,
 		"primary_action_label": primary_action_label,
 		"secondary_actions": secondary_actions or [],
-		"erpnext_url": erpnext_url or ("/app/%s/%s" % (doctype.lower().replace(" ", "-"), docname)),
+		"record_url": _safe_text(record_url) or _record_url(doctype_text, docname_text),
 	}
 
 
@@ -335,7 +454,7 @@ def _collect_overdue_invoices(company, currency, roles):
 				urgency,
 				"record_payment",
 				"Record Payment",
-				erpnext_url="/app/payment-entry/new-payment-entry-1?party_type=Customer&party=%s"
+				record_url="/app/payment-entry/new-payment-entry-1?party_type=Customer&party=%s"
 				% r.customer,
 			)
 		)
@@ -648,7 +767,7 @@ def _collect_overdue_purchase_invoices(company, currency, roles):
 				urgency,
 				"record_payment",
 				"Record Payment",
-				erpnext_url="/app/payment-entry/new-payment-entry-1?party_type=Supplier&party=%s"
+				record_url="/app/payment-entry/new-payment-entry-1?party_type=Supplier&party=%s"
 				% r.supplier,
 			)
 		)
@@ -722,7 +841,7 @@ def _collect_bank_transactions_unmatched(company, currency, roles):
 				urgency,
 				"reconcile",
 				"Reconcile",
-				erpnext_url="/app/bank-reconciliation-tool?bank_account=%s" % r.bank_account,
+				record_url="/app/bank-reconciliation-tool?bank_account=%s" % r.bank_account,
 			)
 		)
 	return items
@@ -755,7 +874,7 @@ def _collect_period_closing_due(currency, roles):
 			"critical",
 			"create",
 			"Create Period Closing",
-			erpnext_url="/app/period-closing-voucher/new-period-closing-voucher-1",
+			record_url="/app/period-closing-voucher/new-period-closing-voucher-1",
 		)
 	]
 
@@ -765,7 +884,7 @@ def _collect_subscription_invoices_due(company, currency, roles):
 		return []
 	if not frappe.db.exists("DocType", "Subscription"):
 		return []
-	# Use current_invoice_end as the invoice-due indicator (ERPNext v16 Subscription)
+	# Use current_invoice_end as the invoice-due indicator for Subscription.
 	meta = frappe.get_meta("Subscription")
 	date_field = "current_invoice_end" if meta.has_field("current_invoice_end") else None
 	if not date_field:
@@ -840,17 +959,15 @@ def get_pending_actions(company=None):
 def get_ar_invoices(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	base_filters = [
 		["company", "=", company],
 		["docstatus", "=", 1],
 		["outstanding_amount", ">", 0],
 	]
-	if filters:
-		if isinstance(filters, str):
-			filters = json.loads(filters)
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	rows = erpnext_adapter.get_list(
 		"Sales Invoice",
 		filters=base_filters,
@@ -869,8 +986,8 @@ def get_ar_invoices(company=None, filters=None, page=0, page_size=20):
 			"crm_quotation",
 		],
 		order_by="due_date asc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 	today_str = today()
 	for r in rows:
@@ -883,16 +1000,14 @@ def get_ar_invoices(company=None, filters=None, page=0, page_size=20):
 def get_sales_orders(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	# Draft orders remain visible so Accounts Users can validate and submit them
-	# before generating an invoice. Native ERPNext permissions still govern the
+	# before generating an invoice. Document permissions still govern the
 	# detail action itself.
 	base_filters = [["company", "=", company], ["docstatus", "in", [0, 1]]]
-	if filters:
-		if isinstance(filters, str):
-			filters = json.loads(filters)
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"Sales Order",
 		filters=base_filters,
@@ -909,8 +1024,8 @@ def get_sales_orders(company=None, filters=None, page=0, page_size=20):
 			"billing_status",
 		],
 		order_by="transaction_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -950,7 +1065,7 @@ def _facility_signature_snapshot(contract_name):
 		return {"status": contract.status or "", "signed_at": signed_at}
 	except Exception:
 		# Financial users should still receive the handoff row if contract metadata is
-		# unavailable; the linked native ERPNext documents remain authoritative.
+		# unavailable; the linked accounting documents remain authoritative.
 		return {"status": "", "signed_at": ""}
 
 
@@ -980,13 +1095,14 @@ def get_signed_handoff_timeline(company=None, page=0, page_size=20):
 	"""Return signed facility handoffs and their native Year 1/Q1 documents.
 
 	The endpoint is intentionally read-only. It does not introduce a finance
-	status: each document exposes its native ERPNext status/docstatus, while
+	status: each document exposes its native status/docstatus, while
 	``next_step`` is explanatory UI guidance derived from those records.
 	"""
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	if not frappe.db.exists("DocType", "CRM Opt-In Submission"):
 		return []
 
@@ -999,7 +1115,7 @@ def get_signed_handoff_timeline(company=None, page=0, page_size=20):
 			filters=[["status", "=", "Processed"], ["contract", "is", "set"]],
 			fields=fields,
 			order_by="modified desc",
-			limit_page_length=min(max(int(page_size) * 5, 20), 200),
+			limit_page_length=min(max(page_size * 5, 20), 200),
 		)
 	except frappe.PermissionError:
 		return []
@@ -1134,8 +1250,8 @@ def get_signed_handoff_timeline(company=None, page=0, page_size=20):
 			}
 		)
 
-	start = int(page) * int(page_size)
-	return items[start : start + int(page_size)]
+	start = page * page_size
+	return items[start : start + page_size]
 
 
 @frappe.whitelist()
@@ -1148,7 +1264,8 @@ def get_sales_order_invoice_state(order_name, company=None):
 	"""
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	order_name = _request_text(order_name, "Sales Order", required=True)
 	company = _resolve_company(company)
 	frappe.has_permission("Sales Order", doc=order_name, ptype="read", throw=True)
 	order_company = frappe.db.get_value("Sales Order", order_name, "company")
@@ -1179,13 +1296,16 @@ def make_sales_invoice_from_order(order_name, company=None):
 	"""Create one native draft Sales Invoice from a submitted Sales Order.
 
 	This endpoint deliberately does not submit the invoice. Finance reviews and
-	submits it through the native ERPNext lifecycle. Existing draft or submitted
+	submits it through the native document lifecycle. Existing draft or submitted
 	invoices linked through Sales Invoice Item are treated as already generated.
 	"""
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	order_name = _request_text(order_name, "Sales Order", required=True)
 	company = _resolve_company(company)
+	_require_document_permission("Sales Order", order_name, "read")
+	frappe.has_permission("Sales Invoice", ptype="create", throw=True)
 	order = frappe.get_doc("Sales Order", order_name)
 	if order.company != company:
 		frappe.throw("Sales Order %s belongs to another company" % order_name, frappe.PermissionError)
@@ -1193,7 +1313,7 @@ def make_sales_invoice_from_order(order_name, company=None):
 		frappe.throw("Submit Sales Order %s before generating an invoice" % order_name)
 
 	# Serialize concurrent retries on the source order, then re-check the native
-	# child-table relationship before invoking ERPNext's mapper.
+	# child-table relationship before invoking the document mapper.
 	frappe.db.sql("select name from `tabSales Order` where name=%s for update", order_name)
 	state = get_sales_order_invoice_state(order_name, company)
 	if state["has_invoice"]:
@@ -1220,17 +1340,15 @@ def make_sales_invoice_from_order(order_name, company=None):
 def get_customer_payments(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	base_filters = [
 		["company", "=", company],
 		["payment_type", "=", "Receive"],
 		["docstatus", "=", 1],
 	]
-	if filters:
-		if isinstance(filters, str):
-			filters = json.loads(filters)
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"Payment Entry",
 		filters=base_filters,
@@ -1244,8 +1362,8 @@ def get_customer_payments(company=None, filters=None, page=0, page_size=20):
 			"unallocated_amount",
 		],
 		order_by="posting_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -1259,8 +1377,10 @@ def get_customer_outstanding_invoices(company=None, customer=None):
 	"""
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	if customer is not None:
+		customer = _request_text(customer, "Customer")
 	if not customer:
 		return []
 	rows = erpnext_adapter.get_list(
@@ -1295,7 +1415,7 @@ def create_customer_payment(
 ):
 	"""Create (and optionally submit) a Receive Payment Entry for a customer.
 
-	`allocations` is a JSON array of {invoice, amount}. ERPNext's get_payment_entry
+	`allocations` is a JSON array of {invoice, amount}. The payment helper
 	seeds the correct bank/party accounts and exchange rates from the first invoice;
 	remaining invoices are appended as additional references. When no invoice is
 	allocated, an on-account (unallocated) receipt is created instead.
@@ -1304,14 +1424,22 @@ def create_customer_payment(
 
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
-	if not customer:
-		frappe.throw("Customer is required")
+	frappe.has_permission("Payment Entry", ptype="create", throw=True)
+	customer = _request_text(customer, "Customer", required=True)
 
 	if isinstance(allocations, str):
-		allocations = json.loads(allocations or "[]")
-	allocations = [a for a in (allocations or []) if flt(a.get("amount")) > 0]
+		try:
+			allocations = json.loads(allocations or "[]")
+		except (TypeError, ValueError):
+			frappe.throw(_("Payment allocations could not be read. Review the invoice amounts and try again."), frappe.ValidationError)
+	if allocations in (None, ""):
+		allocations = []
+	if not isinstance(allocations, list) or any(not isinstance(item, dict) for item in allocations):
+		frappe.throw(_("Payment allocations must be a list of invoice amounts."), frappe.ValidationError)
+	allocations = [a for a in allocations if flt(a.get("amount")) > 0]
+	submit = _request_flag(submit, "Submit payment", default=1)
 
 	# Re-derive the allowed invoices server-side and reject any allocation that
 	# doesn't belong to this (company, customer). The client-supplied list is
@@ -1384,7 +1512,10 @@ def make_payment_entry_from_invoice(source_name):
 	"""
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	source_name = _request_text(source_name, "Sales Invoice", required=True)
+	_require_document_permission("Sales Invoice", source_name, "read")
+	frappe.has_permission("Payment Entry", ptype="create", throw=True)
 
 	from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
 
@@ -1408,14 +1539,15 @@ def make_payment_entry_from_invoice(source_name):
 def get_customers(company=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	return erpnext_adapter.get_list(
 		"Customer",
 		fields=["name", "customer_name", "customer_group", "territory"],
 		order_by="customer_name asc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -1423,13 +1555,11 @@ def get_customers(company=None, page=0, page_size=20):
 def get_quotations(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	base_filters = [["company", "=", company], ["docstatus", "in", [0, 1]]]
-	if filters:
-		if isinstance(filters, str):
-			filters = json.loads(filters)
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"Quotation",
 		filters=base_filters,
@@ -1445,8 +1575,8 @@ def get_quotations(company=None, filters=None, page=0, page_size=20):
 			"status",
 		],
 		order_by="transaction_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -1455,11 +1585,11 @@ def get_pipeline_summary(company=None, period="month"):
 	"""Return counts + values for the 4 pipeline stages: Quotes, Orders, Invoices, Payments."""
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
 	t = today()
 
-	# A submitted Quotation's status is "Open" (ERPNext has no "Submitted"
+	# A submitted Quotation's status is "Open" (there is no "Submitted"
 	# status); the prior ["Draft", "Submitted"] filter silently excluded every
 	# submitted quote from this KPI. These are the real in-play statuses.
 	open_quotes = frappe.get_list(
@@ -1524,8 +1654,10 @@ def get_pipeline_summary(company=None, period="month"):
 def get_ap_invoices(company=None, filters=None, page=0, page_size=20, include_draft=0):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ap_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
+	include_draft = _request_flag(include_draft, "Include draft invoices")
 	base_filters = [["company", "=", company]]
 	if frappe.utils.cint(include_draft):
 		# Pending-approval view: draft invoices only
@@ -1537,10 +1669,7 @@ def get_ap_invoices(company=None, filters=None, page=0, page_size=20, include_dr
 				["outstanding_amount", ">", 0],
 			]
 		)
-	if filters:
-		if isinstance(filters, str):
-			filters = json.loads(filters)
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	rows = erpnext_adapter.get_list(
 		"Purchase Invoice",
 		filters=base_filters,
@@ -1554,8 +1683,8 @@ def get_ap_invoices(company=None, filters=None, page=0, page_size=20, include_dr
 			"status",
 		],
 		order_by="due_date asc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 	today_str = today()
 	for r in rows:
@@ -1568,20 +1697,18 @@ def get_ap_invoices(company=None, filters=None, page=0, page_size=20, include_dr
 def get_purchase_orders(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ap_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	base_filters = [["company", "=", company], ["docstatus", "=", 1]]
-	if filters:
-		if isinstance(filters, str):
-			filters = json.loads(filters)
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"Purchase Order",
 		filters=base_filters,
 		fields=["name", "supplier", "transaction_date", "grand_total", "status", "billing_status"],
 		order_by="transaction_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -1589,17 +1716,15 @@ def get_purchase_orders(company=None, filters=None, page=0, page_size=20):
 def get_supplier_payments(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ap_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	base_filters = [
 		["company", "=", company],
 		["payment_type", "=", "Pay"],
 		["docstatus", "=", 1],
 	]
-	if filters:
-		if isinstance(filters, str):
-			filters = json.loads(filters)
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"Payment Entry",
 		filters=base_filters,
@@ -1613,8 +1738,8 @@ def get_supplier_payments(company=None, filters=None, page=0, page_size=20):
 			"unallocated_amount",
 		],
 		order_by="posting_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -1622,14 +1747,15 @@ def get_supplier_payments(company=None, filters=None, page=0, page_size=20):
 def get_suppliers(company=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ap_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	return erpnext_adapter.get_list(
 		"Supplier",
 		fields=["name", "supplier_name", "supplier_group", "supplier_type"],
 		order_by="supplier_name asc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -1642,39 +1768,36 @@ def get_suppliers(company=None, page=0, page_size=20):
 def get_expense_claims(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ap_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	from crm.finance.hrms_adapter import get_expense_claims as _get_claims
 
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
-	return _get_claims(company, filters or [], int(page), int(page_size))
+	return _get_claims(company, _request_filters(filters), page, page_size)
 
 
 @frappe.whitelist()
 def get_employee_advances(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ap_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	from crm.finance.hrms_adapter import get_employee_advances as _get_advances
 
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
-	return _get_advances(company, filters or [], int(page), int(page_size))
+	return _get_advances(company, _request_filters(filters), page, page_size)
 
 
 @frappe.whitelist()
 def get_expense_journals(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ap_access(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	from crm.finance.hrms_adapter import get_expense_journals as _get_journals
 
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
-	return _get_journals(company, filters or [], int(page), int(page_size))
+	return _get_journals(company, _request_filters(filters), page, page_size)
 
 
 @frappe.whitelist()
@@ -1693,9 +1816,9 @@ def mark_expense_claim_paid(name: str) -> dict:
 def get_rebate_vouchers(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not (_has_ar_access(roles) or "Partner RM" in roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	page, page_size = _page_args(page, page_size)
+	filters = _request_filters(filters)
 	base_filters = [["docstatus", "!=", 2]]
 	if "Partner RM" in roles and "Accounts Manager" not in roles and "Accounts User" not in roles:
 		own_partners = frappe.get_list(
@@ -1706,8 +1829,7 @@ def get_rebate_vouchers(company=None, filters=None, page=0, page_size=20):
 		if not own_partners:
 			return []
 		base_filters.append(["partner", "in", own_partners])
-	if filters:
-		base_filters.extend(filters)
+	base_filters.extend(filters)
 	return frappe.get_list(
 		"CRM Partner Rebate Voucher",
 		fields=[
@@ -1723,8 +1845,8 @@ def get_rebate_vouchers(company=None, filters=None, page=0, page_size=20):
 			"creation",
 		],
 		filters=base_filters,
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 		order_by="creation desc",
 	)
 
@@ -1733,9 +1855,9 @@ def get_rebate_vouchers(company=None, filters=None, page=0, page_size=20):
 def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not (_has_ar_access(roles) or "Sales Manager" in roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	page, page_size = _page_args(page, page_size)
+	filters = _request_filters(filters)
 	base_filters = [["docstatus", "!=", 2]]
 	if "Sales Manager" in roles and "Accounts Manager" not in roles and "Accounts User" not in roles:
 		own_deals = frappe.get_list(
@@ -1744,8 +1866,7 @@ def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 			pluck="name",
 		) or ["__none__"]
 		base_filters.append(["deal", "in", own_deals])
-	if filters:
-		base_filters.extend(filters)
+	base_filters.extend(filters)
 	return frappe.get_list(
 		"CRM Sales Commission",
 		fields=[
@@ -1761,8 +1882,8 @@ def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 			"creation",
 		],
 		filters=base_filters,
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 		order_by="creation desc",
 	)
 
@@ -1771,7 +1892,8 @@ def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 def approve_rebate_voucher(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
 	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and not _is_admin(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	name = _require_document_permission("CRM Partner Rebate Voucher", name, "write")
 	doc = frappe.get_doc("CRM Partner Rebate Voucher", name)
 	doc.status = "Approved"
 	doc.approved_by = frappe.session.user
@@ -1794,7 +1916,9 @@ def approve_rebate_voucher(name: str, company: str | None = None) -> dict:
 def reject_rebate_voucher(name: str, reason: str = "", company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
 	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and not _is_admin(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	name = _require_document_permission("CRM Partner Rebate Voucher", name, "write")
+	reason = _request_text(reason, "Rejection reason")
 	doc = frappe.get_doc("CRM Partner Rebate Voucher", name)
 	doc.status = "Rejected"
 	doc.rejection_reason = reason
@@ -1816,7 +1940,8 @@ def reject_rebate_voucher(name: str, reason: str = "", company: str | None = Non
 def mark_rebate_paid(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
 	if not is_manager(roles=roles):
-		frappe.throw("Accounts Manager role required to mark rebates as paid", frappe.PermissionError)
+		frappe.throw(_("Accounts Manager access is required to mark rebates as paid."), frappe.PermissionError)
+	name = _require_document_permission("CRM Partner Rebate Voucher", name, "write")
 	doc = frappe.get_doc("CRM Partner Rebate Voucher", name)
 	if doc.status != "Approved":
 		frappe.throw("Rebate must be Approved before marking Paid")
@@ -1840,7 +1965,8 @@ def mark_rebate_paid(name: str, company: str | None = None) -> dict:
 def confirm_commission(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
 	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and not _is_admin(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	name = _require_document_permission("CRM Sales Commission", name, "write")
 	doc = frappe.get_doc("CRM Sales Commission", name)
 	doc.status = "Confirmed"
 	doc.confirmed_by = frappe.session.user
@@ -1862,7 +1988,8 @@ def confirm_commission(name: str, company: str | None = None) -> dict:
 def reject_commission(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
 	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and not _is_admin(roles):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	name = _require_document_permission("CRM Sales Commission", name, "write")
 	doc = frappe.get_doc("CRM Sales Commission", name)
 	doc.status = "Rejected"
 	doc.save()
@@ -1882,7 +2009,8 @@ def reject_commission(name: str, company: str | None = None) -> dict:
 def mark_commission_paid(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
 	if not is_manager(roles=roles):
-		frappe.throw("Accounts Manager role required to mark commissions as paid", frappe.PermissionError)
+		frappe.throw(_("Accounts Manager access is required to mark commissions as paid."), frappe.PermissionError)
+	name = _require_document_permission("CRM Sales Commission", name, "write")
 	doc = frappe.get_doc("CRM Sales Commission", name)
 	if doc.status != "Confirmed":
 		frappe.throw("Commission must be Confirmed before marking Paid")
@@ -1917,7 +2045,7 @@ def _invalidate_kpi_cache(user, company):
 def get_bank_accounts(company=None):
 	roles = frappe.get_roles(frappe.session.user)
 	if not (_has_ar_access(roles) or _has_ap_access(roles)):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
 	if not frappe.db.exists("DocType", "Bank Account"):
 		return []
@@ -1933,21 +2061,19 @@ def get_bank_accounts(company=None):
 def get_bank_transactions(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not (_has_ar_access(roles) or _has_ap_access(roles)):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	if not frappe.db.exists("DocType", "Bank Transaction"):
 		return []
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
 	base_filters = [["company", "=", company]]
-	if filters:
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"Bank Transaction",
 		fields=["name", "date", "description", "deposit", "withdrawal", "currency", "status", "bank_account"],
 		filters=base_filters,
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 		order_by="date desc",
 	)
 
@@ -1956,7 +2082,8 @@ def get_bank_transactions(company=None, filters=None, page=0, page_size=20):
 def approve_purchase_invoice(name: str) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
 	if "Accounts Manager" not in roles and not _is_admin(roles):
-		frappe.throw("Only Accounts Manager can approve purchase invoices", frappe.PermissionError)
+		frappe.throw(_("Only Accounts Manager can approve purchase invoices."), frappe.PermissionError)
+	name = _require_document_permission("Purchase Invoice", name, "write")
 	doc = frappe.get_doc("Purchase Invoice", name)
 	frappe.has_permission("Company", doc=doc.company, ptype="read", throw=True)
 	doc.submit()
@@ -2111,7 +2238,7 @@ def get_dashboard_charts(company=None, period="month"):
 	company = _resolve_company(company)
 	roles = frappe.get_roles(frappe.session.user)
 	if not (_has_ar_access(roles) or _has_ap_access(roles) or _is_admin(roles)):
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 
 	from_date, to_date = _get_date_filter(period)
 	result = {"cashflow": _get_cashflow_series(company)}
@@ -2145,18 +2272,16 @@ def _require_finance_manager():
 def get_journal_entries(company=None, filters=None, page=0, page_size=20):
 	_require_finance_manager()
 	company = _resolve_company(company)
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
+	page, page_size = _page_args(page, page_size)
 	base_filters = [["company", "=", company], ["docstatus", "!=", 2]]
-	if filters:
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"Journal Entry",
 		filters=base_filters,
 		fields=["name", "posting_date", "entry_type", "total_debit", "remark", "docstatus"],
 		order_by="posting_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -2164,11 +2289,9 @@ def get_journal_entries(company=None, filters=None, page=0, page_size=20):
 def get_gl_entries(company=None, filters=None, page=0, page_size=50):
 	_require_finance_manager()
 	company = _resolve_company(company)
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
+	page, page_size = _page_args(page, page_size, maximum=200)
 	base_filters = [["company", "=", company], ["is_cancelled", "=", 0]]
-	if filters:
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"GL Entry",
 		filters=base_filters,
@@ -2186,8 +2309,8 @@ def get_gl_entries(company=None, filters=None, page=0, page_size=50):
 			"remarks",
 		],
 		order_by="posting_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -2195,6 +2318,7 @@ def get_gl_entries(company=None, filters=None, page=0, page_size=50):
 def get_period_closing_vouchers(company=None, page=0, page_size=20):
 	_require_finance_manager()
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	if not frappe.db.exists("DocType", "Period Closing Voucher"):
 		return []
 	return erpnext_adapter.get_list(
@@ -2202,8 +2326,8 @@ def get_period_closing_vouchers(company=None, page=0, page_size=20):
 		filters=[["company", "=", company]],
 		fields=["name", "transaction_date", "fiscal_year", "closing_account_head", "remarks"],
 		order_by="transaction_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -2211,20 +2335,18 @@ def get_period_closing_vouchers(company=None, page=0, page_size=20):
 def get_subscriptions(company=None, filters=None, page=0, page_size=20):
 	_require_finance_manager()
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	if not frappe.db.exists("DocType", "Subscription"):
 		return []
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
 	base_filters = [["company", "=", company]]
-	if filters:
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"Subscription",
 		filters=base_filters,
 		fields=["name", "party", "status", "current_invoice_start", "current_invoice_end", "days_until_due"],
 		order_by="current_invoice_end asc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -2232,13 +2354,11 @@ def get_subscriptions(company=None, filters=None, page=0, page_size=20):
 def get_assets(company=None, filters=None, page=0, page_size=20):
 	_require_finance_manager()
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	if not frappe.db.exists("DocType", "Asset"):
 		return []
-	if filters and isinstance(filters, str):
-		filters = json.loads(filters)
 	base_filters = [["company", "=", company], ["docstatus", "!=", 2]]
-	if filters:
-		base_filters.extend(filters)
+	base_filters.extend(_request_filters(filters))
 	return erpnext_adapter.get_list(
 		"Asset",
 		filters=base_filters,
@@ -2253,8 +2373,8 @@ def get_assets(company=None, filters=None, page=0, page_size=20):
 			"status",
 		],
 		order_by="purchase_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -2262,6 +2382,7 @@ def get_assets(company=None, filters=None, page=0, page_size=20):
 def get_depreciation_schedule(company=None, page=0, page_size=20):
 	_require_finance_manager()
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	if not frappe.db.exists("DocType", "Asset Depreciation Schedule"):
 		return []
 	cutoff = add_months(today(), 1)
@@ -2277,8 +2398,8 @@ def get_depreciation_schedule(company=None, page=0, page_size=20):
 			"fiscal_year",
 		],
 		order_by="schedule_date asc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -2286,6 +2407,7 @@ def get_depreciation_schedule(company=None, page=0, page_size=20):
 def get_asset_movements(company=None, page=0, page_size=20):
 	_require_finance_manager()
 	company = _resolve_company(company)
+	page, page_size = _page_args(page, page_size)
 	if not frappe.db.exists("DocType", "Asset Movement"):
 		return []
 	return erpnext_adapter.get_list(
@@ -2293,8 +2415,8 @@ def get_asset_movements(company=None, page=0, page_size=20):
 		filters=[["company", "=", company], ["docstatus", "!=", 2]],
 		fields=["name", "transaction_date", "purpose", "company"],
 		order_by="transaction_date desc",
-		limit_page_length=int(page_size),
-		limit_start=int(page) * int(page_size),
+		limit_page_length=page_size,
+		limit_start=page * page_size,
 	)
 
 
@@ -2306,9 +2428,10 @@ def get_asset_movements(company=None, page=0, page_size=20):
 @frappe.whitelist()
 def global_search(query, company=None, limit=20):
 	"""Search across financial records. LIKE on name/party fields only."""
+	query = _request_text(query, "Search text", required=True)
+	limit = _request_page(limit, "Result limit", 20, 20)
 	roles = frappe.get_roles(frappe.session.user)
 	company = _resolve_company(company)
-	limit = min(int(limit), 20)
 	per_dt = 5
 
 	# Build a safe LIKE pattern — let the query builder parameterize it
@@ -2415,7 +2538,7 @@ def global_search(query, company=None, limit=20):
 
 # Keep the public boundary fail-closed even when a new endpoint does not need a
 # document-specific role check. The individual handlers retain their native
-# ERPNext/company permission checks; this guard only controls entry to the
+# Document/company permission checks; this guard only controls entry to the
 # accounting workspace itself.
 _PUBLIC_FINANCE_API_NAMES = (
 	"get_accessible_companies",

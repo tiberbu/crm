@@ -129,7 +129,7 @@
           <div class="fc-header-context flex shrink-0 items-center gap-3 text-xs text-ink-gray-5">
             <span class="hidden items-center gap-1.5 sm:flex">
               <span class="fc-live-dot" aria-hidden="true" />
-              Native ERPNext data
+              Live accounting data
             </span>
             <span class="max-w-48 truncate">{{ company || 'Select company' }}</span>
           </div>

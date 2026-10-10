@@ -285,7 +285,7 @@ const props = defineProps({
   title: { type: String, default: '' },
   subtitle: {
     type: String,
-    default: 'Native ERPNext records, permissions, and next actions.',
+    default: 'Live records, permissions, and next actions.',
   },
   columns: { type: Array, default: () => [] },
   listResourceUrl: { type: String, required: true },
@@ -295,7 +295,7 @@ const props = defineProps({
   // Optional custom component used for the "New" flow instead of FinanceForm.
   newComponent: { type: [Object, Function], default: null },
   // Optional "Create From" (mapped-doc) flows. Each entry renders a button that
-  // opens an inline source picker, calls a whitelisted ERPNext mapper, and seeds
+  // opens an inline source picker, calls a whitelisted accounting mapper, and seeds
   // FinanceForm with the returned (unsaved) target doc for review + save. Shape:
   //   { key, label, sourceDoctype, sourceLabel, subtitleField?, mapMethod, targetDoctype }
   createFrom: { type: Array, default: () => [] },

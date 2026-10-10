@@ -68,7 +68,7 @@
                     ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
                     : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
                 ]"
-                >{{ report.source === 'crm' ? 'CRM' : 'ERPNext' }}</span
+                >{{ report.source === 'crm' ? 'CRM' : 'Accounting' }}</span
               >
             </div>
             <a

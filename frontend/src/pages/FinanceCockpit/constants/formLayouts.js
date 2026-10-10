@@ -4,7 +4,7 @@
  * There is NO backend get_form_meta anymore. This file is the SOLE source of
  * truth for which fields a doctype exposes in the cockpit, their types, labels,
  * options, and required flags. The CRUD components read from here directly and
- * talk to Frappe's native client endpoints (frappe.client.*) for persistence.
+ * talk to the native client endpoints (frappe.client.*) for persistence.
  *
  * Field shape (normalized — used by FieldRenderer & LineItemsGrid):
  *   {
