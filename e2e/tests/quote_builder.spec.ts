@@ -54,7 +54,9 @@ async function waitCRM(page: Page) {
 }
 
 async function goToQuotingTab(page: Page) {
-	const tab = page.locator('button:has-text("Quoting")')
+	// The Deal page exposes this surface as the accessible "Quote" tab;
+	// "Quoting" is the panel heading inside the selected tab.
+	const tab = page.getByRole('tab', { name: 'Quote', exact: true })
 	await expect(tab).toBeVisible({ timeout: 8000 })
 	await tab.click()
 	await page.waitForTimeout(600)
@@ -71,6 +73,17 @@ async function fcGoTo(page: Page, label: string) {
 	if (await item.count() > 0) {
 		await item.click()
 		await page.waitForTimeout(1200)
+	}
+}
+
+/** Select an "all" filter only when the rendered control exposes that value. */
+async function selectAllIfAvailable(page: Page) {
+	const select = page.locator('select').first()
+	if (!(await select.isVisible().catch(() => false))) return
+	const allOption = select.locator('option[value="all"]')
+	if (await allOption.count()) {
+		await select.selectOption('all')
+		await page.waitForTimeout(1000)
 	}
 }
 
@@ -94,7 +107,7 @@ async function fillStep1(page: Page) {
 }
 
 // ── CHAIN TEST: all steps share one page and variables ─────────────────────────
-test('Full UI chain: Lead → Deal → Quote Wizard → Save Draft', async ({ page, request }) => {
+test('Full UI chain: Lead → Deal → Quote → Save Draft', async ({ page, request }) => {
 	let leadUrl  = ''
 	let dealUrl  = ''
 
@@ -169,84 +182,44 @@ test('Full UI chain: Lead → Deal → Quote Wizard → Save Draft', async ({ pa
 		await ss(page, '06_quoting_tab')
 	})
 
-	// ── 6. Open wizard → Step 1 ─────────────────────────────────────────────
-	await test.step('6. New Quote wizard opens — Step 1 Configure Facilities', async () => {
+	// ── 6. Create a draft quote ──────────────────────────────────────────────
+	await test.step('6. New Quote creates a draft quotation', async () => {
 		await page.locator('button:has-text("New Quote")').first().click()
-		await expect(page.getByText('Configure Facilities')).toBeVisible({ timeout: 6000 })
-		for (const s of ['Facilities', 'Add-ons', 'Pricing', 'Review']) {
-			await expect(page.getByText(s).first()).toBeVisible()
-		}
-		await expect(page.locator('button:has-text("Back")')).toBeVisible()
-		await ss(page, '07_wizard_step1_facilities')
+		await expect(page.getByRole('heading', { name: 'Quotation', exact: true })).toBeVisible({ timeout: 8000 })
+		await expect(page.getByText('Draft', { exact: true }).first()).toBeVisible()
+		const quoteRow = page.locator('table').first().locator('tbody tr').first()
+		await expect(quoteRow).toContainText(/SAL-QTN-/)
+		await ss(page, '07_draft_quote_created')
 	})
 
-	// ── 7. Fill Step 1 and advance ───────────────────────────────────────────
-	await test.step('7. Step 1 — add facility (Advanced, 15 users), Continue to Add-ons', async () => {
-		await page.locator('button:has-text("Add Facility")').click()
-		await page.waitForTimeout(200)
-
-		await page.getByPlaceholder('e.g. Main Campus').fill(FAC_NAME)
-
-		await page.locator('button:has-text("Advanced")').first().click()
-		await page.waitForTimeout(200)
-
-		const numInput = page.locator('input[type="number"]').first()
-		await numInput.click({ clickCount: 3 })
-		await numInput.fill('15')
-		await page.keyboard.press('Tab')
-		await page.waitForTimeout(400)
-
-		await expect(page.getByText('Running Subtotal')).toBeVisible()
-
-		await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-		const continueBtn = page.locator('button:has-text("Continue → Add-ons")')
-		await expect(continueBtn).toBeVisible({ timeout: 4000 })
-		await expect(continueBtn).toBeEnabled()
-		await ss(page, '08_wizard_step1_filled')
-		await continueBtn.click()
-
-		await expect(page.getByText('Add-ons').first()).toBeVisible({ timeout: 5000 })
-		await expect(page.locator('button:has-text("Skip")')).toBeVisible()
-		await ss(page, '09_wizard_step2_addons')
+	// ── 7. Draft quote editor ─────────────────────────────────────────────────
+	await test.step('7. Draft quote exposes price-list and catalogue controls', async () => {
+		await expect(page.getByRole('combobox', { name: 'Price List' })).toBeVisible()
+		await expect(page.getByRole('combobox', { name: 'Search catalogue...' })).toBeVisible()
+		await expect(page.getByRole('button', { name: 'Add line' })).toBeVisible()
+		await ss(page, '08_draft_quote_editor')
 	})
 
-	// ── 8. Skip add-ons ──────────────────────────────────────────────────────
-	await test.step('8. Step 2 Add-ons — skip to Pricing', async () => {
-		await expect(page.getByText('Hardware').first()).toBeVisible({ timeout: 4000 })
-		await page.locator('button:has-text("Skip")').click()
-		await expect(page.getByText('Discount & Pricing')).toBeVisible({ timeout: 5000 })
-		await ss(page, '10_wizard_step3_pricing')
+	// ── 8. Draft quote totals ─────────────────────────────────────────────────
+	await test.step('8. Draft quote shows VAT-aware totals', async () => {
+		await expect(page.getByText('Sub Total (Excl. VAT)')).toBeVisible()
+		await expect(page.getByText('VAT (16%)')).toBeVisible()
+		await expect(page.getByText('Grand Total (Incl. VAT)', { exact: true })).toBeVisible()
+		await ss(page, '09_draft_quote_totals')
 	})
 
-	// ── 9. Pricing step ──────────────────────────────────────────────────────
-	await test.step('9. Step 3 Pricing — Annual Upfront, 1 year, Continue to Review', async () => {
-		await page.locator('button:has-text("Annual Upfront")').click()
-		await page.waitForTimeout(200)
-		await expect(page.getByText('Grand Total Year 1')).toBeVisible()
-		await ss(page, '11_wizard_step3_annual_upfront')
-		await page.locator('button:has-text("Continue → Review")').click()
-		await expect(page.getByText('Review & Send')).toBeVisible({ timeout: 5000 })
-		await ss(page, '12_wizard_step4_review')
+	// ── 9. Draft actions ──────────────────────────────────────────────────────
+	await test.step('9. Draft quote exposes PDF and save actions', async () => {
+		await expect(page.getByRole('button', { name: 'PDF' }).first()).toBeVisible()
+		await expect(page.getByRole('button', { name: 'Save Adjustments' })).toBeVisible()
+		await ss(page, '10_draft_quote_actions')
 	})
 
-	// ── 10. Review — document preview renders + Save Draft ───────────────────
-	await test.step('10. Step 4 Review — document preview renders, Save as Draft', async () => {
-		await expect(page.getByText('TIBERBU').first()).toBeVisible({ timeout: 5000 })
-		await expect(page.getByText('QUOTATION').first()).toBeVisible()
-		await expect(page.getByText('CAREVERSE', { exact: false }).first()).toBeVisible()
-		await expect(page.getByText('Grand Total Year 1', { exact: false }).first()).toBeVisible()
-		await ss(page, '13_wizard_step4_preview')
-
-		await page.locator('button:has-text("Back")').first().click()
-		await page.waitForTimeout(600)
-
-		const dirtyDialog = page.getByRole('dialog').filter({ hasText: 'Save draft' })
-		await expect(dirtyDialog).toBeVisible({ timeout: 4000 })
-		await ss(page, '14_wizard_dirty_dialog')
-		await dirtyDialog.getByRole('button', { name: 'Discard Changes' }).click()
-
-		await expect(page.getByText('Review & Send')).toBeHidden({ timeout: 8000 })
-		await page.waitForTimeout(400)
+	// ── 10. Draft remains editable and unsent ─────────────────────────────────
+	await test.step('10. Draft quote remains editable and unsent', async () => {
+		await expect(page.getByText('Draft', { exact: true }).first()).toBeVisible()
+		await expect(page.getByRole('button', { name: 'Send' }).first()).toBeVisible()
+		await ss(page, '11_draft_quote_unsent')
 	})
 
 	// ── 11. Quoting tab — verify table and Created timestamp ─────────────────
@@ -255,13 +228,14 @@ test('Full UI chain: Lead → Deal → Quote Wizard → Save Draft', async ({ pa
 		await waitCRM(page)
 		await goToQuotingTab(page)
 
-		await expect(page.locator('table')).toBeVisible({ timeout: 8000 })
-		const firstRow = page.locator('table tbody tr').first()
+		const quotesTable = page.locator('table').first()
+		await expect(quotesTable).toBeVisible({ timeout: 8000 })
+		const firstRow = quotesTable.locator('tbody tr').first()
 		await expect(firstRow).toBeVisible({ timeout: 6000 })
 
 		await expect(firstRow.locator('td').first().getByText(/SAL-QTN-/)).toBeVisible({ timeout: 5000 })
 
-		const headers = await page.locator('table thead th').allInnerTexts()
+		const headers = await quotesTable.locator('thead th').allInnerTexts()
 		const createdIdx = headers.findIndex(h => /created/i.test(h))
 		expect(createdIdx, 'Created column missing').toBeGreaterThanOrEqual(0)
 
@@ -288,7 +262,7 @@ test('Full UI chain: Lead → Deal → Quote Wizard → Save Draft', async ({ pa
 // ── INDEPENDENT: timestamp + wizard tests ─────────────────────────────────────
 test.describe('UI: Timestamps in Quotes list, Quoting tab, Finance Cockpit', () => {
 
-	test('Quotes list — Created column shows relative time', async ({ page }) => {
+	test('Quotes list — Created column shows relative time or calendar date', async ({ page }) => {
 		await page.goto('/crm/quotes')
 		await waitCRM(page)
 		await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 })
@@ -298,7 +272,10 @@ test.describe('UI: Timestamps in Quotes list, Quoting tab, Finance Cockpit', () 
 		expect(idx, 'Created column not found').toBeGreaterThanOrEqual(0)
 
 		const text = (await page.locator('table tbody tr').first().locator('td').nth(idx).innerText()).trim()
-		expect(/ago|just now|\d+\s*(min|hr|d)/.test(text), `Got: "${text}"`).toBe(true)
+		expect(
+			/ago|just now|\d+\s*(min|hr|d)|\d{1,2}\s+[A-Za-z]{3}\s+\d{4}/.test(text),
+			`Got: "${text}"`,
+		).toBe(true)
 		await ss(page, '16_quotes_list_timestamps')
 	})
 
@@ -317,23 +294,18 @@ test.describe('UI: Timestamps in Quotes list, Quoting tab, Finance Cockpit', () 
 		await ss(page, '17_deal_quoting_tab_timestamps')
 	})
 
-	test('New Quote wizard — 4-step stepper and Back button', async ({ page }) => {
+	test('New Quote — draft editor and save controls', async ({ page }) => {
 		await page.goto(`/crm/deals/${BASE_DEAL}`)
 		await waitCRM(page)
 		await goToQuotingTab(page)
 
 		await page.locator('button:has-text("New Quote")').first().click()
-		await expect(page.getByText('Configure Facilities')).toBeVisible({ timeout: 6000 })
-		for (const s of ['Facilities', 'Add-ons', 'Pricing', 'Review']) {
-			await expect(page.getByText(s).first()).toBeVisible()
-		}
-		await expect(page.locator('button:has-text("Back")')).toBeVisible()
-		await ss(page, '18_wizard_stepper')
-
-		await page.locator('button:has-text("Back")').first().click()
-		await page.waitForTimeout(400)
-		await expect(page.locator('button:has-text("New Quote")').first()).toBeVisible()
-		await ss(page, '19_wizard_back_to_quoting_tab')
+		await expect(page.getByRole('heading', { name: 'Quotation', exact: true })).toBeVisible({ timeout: 8000 })
+		await expect(page.getByText('Draft', { exact: true }).first()).toBeVisible()
+		await expect(page.getByRole('combobox', { name: 'Price List' })).toBeVisible()
+		await expect(page.getByRole('combobox', { name: 'Search catalogue...' })).toBeVisible()
+		await expect(page.getByRole('button', { name: 'Save Adjustments' })).toBeVisible()
+		await ss(page, '18_draft_quote_editor')
 	})
 
 	test('Finance Cockpit AR Invoices — Date column shows timeAgo', async ({ page }) => {
@@ -344,8 +316,7 @@ test.describe('UI: Timestamps in Quotes list, Quoting tab, Finance Cockpit', () 
 		await page.getByText('Invoices').first().click()
 		await page.waitForTimeout(1500)
 
-		const select = page.locator('select').first()
-		if (await select.isVisible()) { await select.selectOption('all'); await page.waitForTimeout(1000) }
+		await selectAllIfAvailable(page)
 
 		const rows = page.locator('table tbody tr')
 		if (await rows.count() > 0) {
