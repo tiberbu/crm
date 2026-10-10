@@ -23,7 +23,7 @@ RESOURCE_COPY = {
 			"This workspace is reserved for users with the Accounts User or Accounts Manager role."
 		),
 		"next_step": _(
-			"Ask your administrator to assign one of those native ERPNext roles, then sign in again."
+			"Ask your administrator to assign Accounts User or Accounts Manager access, then sign in again."
 		),
 		"home_label": _("Return to CRM"),
 		"home_route": "/crm",

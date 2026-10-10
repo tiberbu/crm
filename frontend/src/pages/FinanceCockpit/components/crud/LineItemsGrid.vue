@@ -274,7 +274,7 @@ function updateCell(idx, fieldname, value) {
   const next = props.rows.slice()
   const updated = { ...next[idx], [fieldname]: value }
 
-  // Mirror account_head → description when description is blank (ERPNext convention).
+  // Mirror account_head → description when description is blank.
   if (
     props.isTaxes &&
     fieldname === 'account_head' &&

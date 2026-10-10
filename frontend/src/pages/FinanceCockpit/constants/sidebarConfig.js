@@ -1,5 +1,5 @@
 // Finance Workspace navigation. Labels describe the finance job, while the
-// underlying native CRM/ERPNext document sections remain unchanged.
+// underlying CRM and accounting document sections remain unchanged.
 // iconClass must be a full static lucide-* Tailwind class (JIT requires static strings).
 export const SIDEBAR_SECTIONS = [
   {

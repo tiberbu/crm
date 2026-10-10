@@ -2,11 +2,27 @@ import frappe
 from frappe.utils import nowdate
 
 
+def _page_arg(value, label, default, maximum):
+	if value in (None, ""):
+		return default
+	if isinstance(value, (dict, list, tuple, set, bool)):
+		frappe.throw(f"{label} must be a whole number.", frappe.ValidationError)
+	try:
+		value = int(value)
+	except (TypeError, ValueError):
+		frappe.throw(f"{label} must be a whole number.", frappe.ValidationError)
+	if value < 0 or value > maximum:
+		frappe.throw(f"{label} must be between 0 and {maximum}.", frappe.ValidationError)
+	return value
+
+
 def is_hrms_installed():
 	return "hrms" in frappe.get_installed_apps()
 
 
 def get_expense_claims(company, filters=None, page=0, page_size=20):
+	page = _page_arg(page, "Page", 0, 100000)
+	page_size = _page_arg(page_size, "Page size", 20, 200)
 	if not is_hrms_installed():
 		return {"items": [], "hrms_not_installed": True}
 	base_filters = [["company", "=", company]]
@@ -36,6 +52,8 @@ def get_expense_claims(company, filters=None, page=0, page_size=20):
 
 
 def get_employee_advances(company, filters=None, page=0, page_size=20):
+	page = _page_arg(page, "Page", 0, 100000)
+	page_size = _page_arg(page_size, "Page size", 20, 200)
 	if not is_hrms_installed():
 		return {"items": [], "hrms_not_installed": True}
 	base_filters = [
@@ -67,7 +85,9 @@ def get_employee_advances(company, filters=None, page=0, page_size=20):
 
 
 def get_expense_journals(company, filters=None, page=0, page_size=20):
-	# Journal Entry is a core ERPNext doctype — no HRMS dependency
+	page = _page_arg(page, "Page", 0, 100000)
+	page_size = _page_arg(page_size, "Page size", 20, 200)
+	# Journal Entry is available without the optional expense module.
 	base_filters = [
 		["company", "=", company],
 		["docstatus", "!=", 2],
@@ -87,10 +107,16 @@ def get_expense_journals(company, filters=None, page=0, page_size=20):
 
 def mark_expense_claim_paid(name):
 	if not is_hrms_installed():
-		frappe.throw("HRMS is not installed")
+		frappe.throw("Expense processing is not available in this installation.")
 	roles = frappe.get_roles(frappe.session.user)
 	if not any(r in roles for r in ("Accounts User", "Accounts Manager")) and frappe.session.user != "Administrator":
-		frappe.throw("Insufficient permissions", frappe.PermissionError)
+		frappe.throw(
+			"Finance access requires the Accounts User or Accounts Manager role.",
+			frappe.PermissionError,
+		)
+	if not isinstance(name, str) or not name.strip():
+		frappe.throw("Expense Claim must be plain text.", frappe.ValidationError)
+	frappe.has_permission("Expense Claim", doc=name, ptype="write", throw=True)
 	frappe.db.set_value(
 		"Expense Claim",
 		name,

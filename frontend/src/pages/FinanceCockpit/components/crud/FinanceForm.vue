@@ -213,7 +213,7 @@ import { resolveLayout } from '../../constants/formLayouts.js'
 const props = defineProps({
   doctype: { type: String, required: true },
   name: { type: String, default: null },
-  // Optional pre-filled document (e.g. an ERPNext mapped doc from a "Create From"
+  // Optional pre-filled document (e.g. a mapped accounting document from a "Create From"
   // flow). When provided and there is no `name`, the form hydrates from the seed
   // instead of bare defaults, then saves through the normal insert path.
   seed: { type: Object, default: null },
@@ -395,7 +395,7 @@ function hydrate(source) {
   Object.assign(doc, source)
 }
 
-// Strip Frappe meta flags + identity from a seed (e.g. an ERPNext mapped doc)
+// Strip transport meta flags + identity from a mapped accounting document.
 // so it always flows through the clean insert path. Extra business fields the
 // layout doesn't render are preserved and ride along on save. Child-table rows
 // are shallow-cleaned the same way (their name/docname must not survive insert).

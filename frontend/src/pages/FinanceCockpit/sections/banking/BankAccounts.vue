@@ -4,10 +4,7 @@
       Loading bank accounts…
     </div>
 
-    <div v-else-if="error" class="text-sm text-red-600 dark:text-red-400">
-      Failed to load bank accounts.
-      <button class="underline ml-1" @click="refetch">Retry</button>
-    </div>
+    <FinanceErrorState v-else-if="error" :error="error" @retry="refetch" />
 
     <div
       v-else-if="!accounts.length"
@@ -55,6 +52,7 @@ import { computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import LucideRefreshCw from '~icons/lucide/refresh-cw'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
+import FinanceErrorState from '../../components/FinanceErrorState.vue'
 
 const { company } = useCompanyContext()
 

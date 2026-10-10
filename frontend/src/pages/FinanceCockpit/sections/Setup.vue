@@ -5,7 +5,7 @@
         Setup
       </h2>
       <p class="mt-1 text-xs text-gray-400">
-        Accounts Manager configuration links. Opens ERPNext in a new tab.
+        Accounts Manager configuration links. Opens the accounting setup in a new tab.
       </p>
     </div>
 

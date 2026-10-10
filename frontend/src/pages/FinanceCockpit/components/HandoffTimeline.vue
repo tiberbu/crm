@@ -6,7 +6,7 @@
           Signed facility handoffs
         </h3>
         <p class="text-xs text-ink-gray-5 mt-0.5">
-          Year 1 quotation → Q1 order → invoice, using native ERPNext records.
+          Year 1 quotation → Q1 order → invoice, using the live accounting records.
         </p>
       </div>
       <button
@@ -24,18 +24,7 @@
       <div v-for="n in 2" :key="n" class="h-28 rounded-lg bg-surface-gray-2 animate-pulse" />
     </div>
 
-    <div
-      v-else-if="resource.error"
-      class="p-5 text-sm text-ink-red-6"
-      role="alert"
-      aria-live="assertive"
-    >
-      <p class="font-medium">Could not load signed facility handoffs.</p>
-      <p class="mt-1 text-xs">{{ errorMessage }}</p>
-      <button type="button" class="mt-2 underline font-medium" @click="refresh">
-        Retry
-      </button>
-    </div>
+    <FinanceErrorState v-else-if="resource.error" :error="resource.error" @retry="refresh" />
 
     <div v-else-if="!handoffs.length" class="p-8 text-center text-sm text-ink-gray-4">
       No signed facility handoffs are waiting for finance action.
@@ -96,7 +85,7 @@
                   class="mt-2 inline-block text-[11px] font-medium text-ink-gray-6 underline underline-offset-2 hover:text-ink-gray-9"
                   @click.stop
                 >
-                  Open native record
+                  Open record
                 </a>
               </div>
             </div>
@@ -122,7 +111,7 @@
 import { computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
-import { readableError } from '../composables/useCrud.js'
+import FinanceErrorState from './FinanceErrorState.vue'
 
 defineEmits(['navigate'])
 const { company } = useCompanyContext()
@@ -136,9 +125,6 @@ const resource = createResource({
 })
 
 const handoffs = computed(() => resource.data || [])
-const errorMessage = computed(
-  () => readableError(resource.error?.value) || 'Check the selected company and try again.',
-)
 
 function refresh() {
   resource.fetch()

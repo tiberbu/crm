@@ -63,7 +63,7 @@ const columns = [
 ]
 
 // Default ("Active") = quotes still in play. A submitted Quotation's status is
-// "Open" (ERPNext has no "Submitted" status), so the prior ['Draft','Submitted']
+// "Open" (submitted quotations use the native "Open" status), so the prior ['Draft','Submitted']
 // default silently hid every submitted quote. These are the real in-play values.
 const ACTIVE_STATUSES = ['Draft', 'Open', 'Replied', 'Partially Ordered']
 const hasFilters = computed(() => !!statusFilter.value)

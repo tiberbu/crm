@@ -1,7 +1,7 @@
 /**
  * Reads boot-time values from the correct location depending on context:
  * - Standalone www page: vars are at window.* (set by Jinja boot injection)
- * - Frappe Desk embed (legacy): vars are at window.frappe.boot.*
+ * - Desk embed (legacy): vars are at window.frappe.boot.*
  *
  * Desk embed is being phased out; the www path is the primary one.
  */

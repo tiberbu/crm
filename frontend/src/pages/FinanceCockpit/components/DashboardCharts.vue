@@ -10,16 +10,7 @@
     </div>
 
     <!-- Error -->
-    <div
-      v-else-if="error"
-      class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-6"
-      role="alert"
-      aria-live="polite"
-    >
-      <p class="font-medium">Could not load chart data.</p>
-      <p class="mt-1 text-xs text-ink-red-5">{{ errorMessage }}</p>
-      <button class="mt-2 underline font-medium" @click="refetch">Retry</button>
-    </div>
+    <FinanceErrorState v-else-if="error" :error="error" @retry="refetch" />
 
     <!-- Charts grid -->
     <div v-else-if="chartData" class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -55,8 +46,8 @@ import CashflowChart from './charts/CashflowChart.vue'
 import ArAgingChart from './charts/ArAgingChart.vue'
 import ApAgingChart from './charts/ApAgingChart.vue'
 import PlSummaryBar from './charts/PlSummaryBar.vue'
+import FinanceErrorState from './FinanceErrorState.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
-import { readableError } from '../composables/useCrud.js'
 
 const props = defineProps({
   period: { type: String, default: 'month' },
@@ -75,11 +66,6 @@ const resource = createResource({
 const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
 const chartData = computed(() => resource.data || null)
-const errorMessage = computed(
-  () =>
-    readableError(error.value) ||
-    'Chart data could not be loaded. Check the selected company and retry.',
-)
 
 function refetch() {
   resource.fetch()

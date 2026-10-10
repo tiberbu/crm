@@ -63,16 +63,7 @@
     </div>
 
     <!-- Error state -->
-    <div
-      v-else-if="error"
-      class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-6"
-      role="alert"
-      aria-live="polite"
-    >
-      <p class="font-medium">Could not load inbox actions.</p>
-      <p class="mt-1 text-xs text-ink-red-5">{{ errorMessage }}</p>
-      <button class="mt-2 underline font-medium" @click="refetch">Retry</button>
-    </div>
+    <FinanceErrorState v-else-if="error" :error="error" @retry="refetch" />
 
     <!-- Empty state -->
     <div
@@ -123,7 +114,7 @@ import { createResource } from 'frappe-ui'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 import InboxUrgencyBand from './InboxUrgencyBand.vue'
 import InboxItem from './InboxItem.vue'
-import { readableError } from '../composables/useCrud.js'
+import FinanceErrorState from './FinanceErrorState.vue'
 
 const { company } = useCompanyContext()
 
@@ -165,11 +156,6 @@ const inboxResource = createResource({
 
 const loading = computed(() => inboxResource.loading)
 const error = computed(() => inboxResource.error)
-const errorMessage = computed(
-  () =>
-    readableError(error.value) ||
-    'Inbox actions could not be loaded. Check the selected company and retry.',
-)
 
 const allItems = computed(() => inboxResource.data || [])
 const totalCount = computed(() => allItems.value.length)

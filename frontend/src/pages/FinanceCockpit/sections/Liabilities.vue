@@ -63,7 +63,7 @@
     <!-- Deferred Revenue/Expense -->
     <div v-else-if="activeTab === 'deferred'" class="py-6 text-center">
       <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
-        View Deferred Revenue and Expense report in ERPNext
+        View the Deferred Revenue and Expense report
       </p>
       <a
         :href="deferredUrl"
@@ -96,6 +96,7 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import FinanceTable from '../components/FinanceTable.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
+import { readableError } from '../composables/financeErrors.js'
 
 const { company } = useCompanyContext()
 const activeTab = ref('subscriptions')
@@ -147,7 +148,7 @@ async function generateInvoice(name) {
     })
     subRes.fetch()
   } catch (err) {
-    genError.value = err?.message || 'Failed to generate invoice'
+    genError.value = readableError(err)
   } finally {
     genPending.value = null
   }

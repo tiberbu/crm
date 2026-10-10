@@ -62,6 +62,7 @@ def submit_doc(doctype, name):
 		doc = client.get_doc(doctype, name)
 		doc["docstatus"] = 1
 		return client.update(doc)
+	frappe.has_permission(doctype, doc=name, ptype="submit", throw=True)
 	doc = frappe.get_doc(doctype, name)
 	doc.submit()
 	return doc.as_dict()

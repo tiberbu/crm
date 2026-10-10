@@ -5,10 +5,10 @@ import { getErrorPresentation, readableError } from './financeErrors.js'
 export { getErrorPresentation, readableError }
 
 /**
- * Native Frappe CRUD factory for the Finance Cockpit.
+ * Native CRUD factory for the Finance Cockpit.
  *
- * NO custom backend facade. Every operation hits Frappe's native, permission-
- * enforced client endpoints via frappe-ui createResource:
+ * Every operation hits the permission-enforced client endpoints through the
+ * resource client:
  *
  *   load   -> frappe.client.get      (doctype, name)
  *   insert -> frappe.client.insert   (doc: full JSON incl. doctype + child arrays)
@@ -21,7 +21,7 @@ export { getErrorPresentation, readableError }
  * constants/formLayouts.js (resolveLayout). Child tables travel as nested
  * arrays inside the same doc object, exactly as Frappe expects.
  *
- * frappe-ui unwraps the RPC envelope, so `resource.submit()` resolves to the
+ * The resource client unwraps the RPC envelope, so `resource.submit()` resolves to the
  * returned doc dict directly. Every throw is normalized to a readable string.
  */
 

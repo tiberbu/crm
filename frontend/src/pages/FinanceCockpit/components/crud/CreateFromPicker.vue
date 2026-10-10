@@ -94,6 +94,8 @@ import SectionCard from './SectionCard.vue'
 import FcIcon from './FcIcon.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
 import { useMappedDoc } from '../../composables/useMappedDoc.js'
+import { readableError } from '../../composables/financeErrors.js'
+import { recordName } from '../../composables/financeInputs.js'
 
 const props = defineProps({
   // Flow config: { key, label, sourceDoctype, sourceLabel, subtitleField, mapMethod, targetDoctype }
@@ -177,18 +179,20 @@ async function runQuery(query) {
   } catch (err) {
     if (my === req) {
       sourceResults.value = []
-      sourceError.value =
-        (err && (Array.isArray(err.messages) ? err.messages.join('\n') : err.message)) ||
-        'Could not load source records. Check company access and try again.'
+      sourceError.value = readableError(err)
     }
   }
 }
 
 const onQuery = debounce(runQuery, 250)
 
-async function onSelect(val) {
+async function onSelect(rawValue) {
+  const val = recordName(rawValue)
+  if (!val) {
+    errorMsg.value = 'Choose a record from the list before continuing.'
+    return
+  }
   source.value = val
-  if (!val) return
   errorMsg.value = ''
   mapping.value = true
   try {
@@ -206,13 +210,7 @@ async function onSelect(val) {
     const doc = await mapDoc(props.flow.mapMethod, val)
     emit('mapped', doc)
   } catch (err) {
-    // readableError already normalized inside useMappedDoc; surface the message.
-    errorMsg.value =
-      (err &&
-        (Array.isArray(err.messages)
-          ? err.messages.join('\n')
-          : err.message)) ||
-      `Could not prepare a ${targetLabel.value} from ${val}.`
+    errorMsg.value = readableError(err)
     source.value = null
   } finally {
     mapping.value = false

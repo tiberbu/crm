@@ -49,33 +49,7 @@
     </div>
 
     <!-- Error state -->
-    <div
-      v-else-if="kpisResource.error"
-      class="bg-surface-red-1 border border-outline-red-2 rounded-xl px-4 py-3 text-sm text-ink-red-6 flex items-start gap-2"
-      role="alert"
-      aria-live="polite"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <circle cx="12" cy="12" r="10" />
-        <line x1="12" x2="12" y1="8" y2="12" />
-        <line x1="12" x2="12.01" y1="16" y2="16" />
-      </svg>
-      <div>
-        <p class="font-medium">Could not load KPIs.</p>
-        <p class="mt-1 text-xs text-ink-red-5">{{ errorMessage }}</p>
-        <button class="underline font-medium mt-1" @click="refresh">Retry</button>
-      </div>
-    </div>
+    <FinanceErrorState v-else-if="kpisResource.error" :error="kpisResource.error" @retry="refresh" />
 
     <!-- Empty state -->
     <div
@@ -108,8 +82,8 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import KpiTile from './KpiTile.vue'
 import PeriodSelector from './PeriodSelector.vue'
+import FinanceErrorState from './FinanceErrorState.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
-import { readableError } from '../composables/useCrud.js'
 
 defineProps({
   userRoles: { type: Array, default: () => [] },
@@ -127,12 +101,6 @@ const kpisResource = createResource({
   },
   auto: true,
 })
-
-const errorMessage = computed(
-  () =>
-    readableError(kpisResource.error) ||
-    'KPI data could not be loaded. Check the selected company and retry.',
-)
 
 function onPeriodChange(val) {
   period.value = val
