@@ -129,9 +129,37 @@
               <template #prefix><FcIcon name="file-plus" :size="14" /></template>
               Generate invoice
             </Button>
+            <Button
+              v-if="doctype === 'Quotation' && docstatus === 1"
+              theme="blue"
+              variant="solid"
+              :loading="busy || mapping"
+              :disabled="!canWrite || mapping"
+              :title="!canWrite ? 'Requires Accounts User or Accounts Manager' : ''"
+              @click="canWrite && onMakeSalesOrder()"
+            >
+              <template #prefix><FcIcon name="copy-plus" :size="14" /></template>
+              Make order
+            </Button>
+            <Button
+              v-if="doctype === 'Sales Invoice' && docstatus === 1 && Number(doc.outstanding_amount || 0) > 0"
+              theme="blue"
+              variant="solid"
+              :loading="busy || mapping"
+              :disabled="!canWrite || mapping"
+              :title="!canWrite ? 'Requires Accounts User or Accounts Manager' : ''"
+              @click="canWrite && onMakePayment()"
+            >
+              <template #prefix><FcIcon name="banknote" :size="14" /></template>
+              Create payment
+            </Button>
             <Button variant="outline" theme="gray" @click="printDoc">
               <template #prefix><FcIcon name="printer" :size="14" /></template>
               Print
+            </Button>
+            <Button variant="outline" theme="gray" @click="showSendDialog = true">
+              <template #prefix><FcIcon name="mail" :size="14" /></template>
+              Email copy
             </Button>
             <Button
               v-if="!readOnly"
@@ -214,6 +242,51 @@
             <span v-else class="text-ink-gray-6">
               No invoice generated from this order yet.
             </span>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          v-if="doctype === 'Sales Invoice'"
+          title="Payment history"
+          icon="banknote"
+          tone="positive"
+        >
+          <div v-if="paymentHistoryLoading" class="space-y-2">
+            <div v-for="n in 3" :key="n" class="h-9 rounded bg-surface-gray-2 animate-pulse" />
+          </div>
+          <div v-else-if="paymentHistoryError" class="text-sm text-ink-red-6" role="alert">
+            {{ paymentHistoryError }}
+            <button class="ml-2 underline font-medium" @click="loadPaymentHistory">Retry</button>
+          </div>
+          <div v-else-if="!paymentHistory.length" class="text-sm text-ink-gray-5">
+            No submitted payments have been allocated to this invoice.
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-outline-gray-1 text-left text-xs uppercase tracking-wide text-ink-gray-5">
+                  <th class="py-2 pr-3">Payment</th>
+                  <th class="py-2 pr-3">Date</th>
+                  <th class="py-2 pr-3">Mode</th>
+                  <th class="py-2 text-right">Allocated</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="payment in paymentHistory" :key="payment.name" class="border-b border-outline-gray-1 last:border-0">
+                  <td class="py-2 pr-3">
+                    <a :href="`/app/payment-entry/${encodeURIComponent(payment.name)}`" class="font-medium text-ink-gray-8 underline underline-offset-2">{{ payment.name }}</a>
+                    <div v-if="payment.reference_no" class="text-xs text-ink-gray-4">{{ payment.reference_no }}</div>
+                  </td>
+                  <td class="py-2 pr-3 text-ink-gray-6">{{ payment.posting_date || '—' }}</td>
+                  <td class="py-2 pr-3 text-ink-gray-6">{{ payment.mode_of_payment || '—' }}</td>
+                  <td class="py-2 text-right tabular-nums text-ink-gray-8">{{ formatCurrency(payment.allocated_amount, doc.currency) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-3 flex flex-wrap justify-between gap-2 border-t border-outline-gray-1 pt-3 text-sm">
+            <span class="text-ink-gray-5">Outstanding balance</span>
+            <strong class="tabular-nums text-ink-gray-9">{{ formatCurrency(doc.outstanding_amount, doc.currency) }}</strong>
           </div>
         </SectionCard>
 
@@ -335,6 +408,13 @@
         </SectionCard>
       </div>
     </template>
+    <SendDocumentDialog
+      v-if="doc"
+      v-model:open="showSendDialog"
+      :doctype="doctype"
+      :name="name"
+      :doc="doc"
+    />
   </div>
 </template>
 
@@ -346,10 +426,13 @@ import SectionCard from './SectionCard.vue'
 import SummaryBar from './SummaryBar.vue'
 import LineItemsGrid from './LineItemsGrid.vue'
 import FcIcon from './FcIcon.vue'
+import SendDocumentDialog from './SendDocumentDialog.vue'
 import { useCrud, readableError } from '../../composables/useCrud.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { useBoot } from '../../composables/useBoot.js'
 import { resolveLayout, isNumericType } from '../../constants/formLayouts.js'
+import { printUrl } from '../../constants/printFormats.js'
+import { useMappedDoc } from '../../composables/useMappedDoc.js'
 
 const props = defineProps({
   doctype: { type: String, required: true },
@@ -358,7 +441,7 @@ const props = defineProps({
   allowLifecycleActions: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['edit', 'deleted', 'close'])
+const emit = defineEmits(['edit', 'mapped', 'deleted', 'close'])
 
 const crud = useCrud(props.doctype)
 const { formatCurrency } = useCurrency()
@@ -374,9 +457,18 @@ const invoiceStateError = ref('')
 const invoiceStateResource = createResource({
   url: 'crm.finance.api.get_sales_order_invoice_state',
 })
+const paymentHistoryResource = createResource({
+  url: 'crm.finance.api.get_sales_invoice_payments',
+})
 const generateInvoiceResource = createResource({
   url: 'crm.finance.api.make_sales_invoice_from_order',
 })
+const paymentHistory = ref([])
+const paymentHistoryLoading = ref(false)
+const paymentHistoryError = ref('')
+const showSendDialog = ref(false)
+const mapping = ref(false)
+const { mapDoc } = useMappedDoc()
 
 /* ---- Header facets ---- */
 const statusValue = computed(() => doc.value?.[layout.statusField] || '')
@@ -580,8 +672,27 @@ async function load() {
   try {
     doc.value = await crud.loadDoc(props.name)
     await loadInvoiceState()
+    await loadPaymentHistory()
   } finally {
     loading.value = false
+  }
+}
+
+async function loadPaymentHistory() {
+  if (props.doctype !== 'Sales Invoice') return
+  paymentHistoryLoading.value = true
+  paymentHistoryError.value = ''
+  try {
+    paymentHistory.value =
+      (await paymentHistoryResource.submit({
+        invoice_name: props.name,
+        company: doc.value?.company,
+      })) || []
+  } catch (err) {
+    paymentHistory.value = []
+    paymentHistoryError.value = readableError(err) || 'Could not load payment history.'
+  } finally {
+    paymentHistoryLoading.value = false
   }
 }
 onMounted(load)
@@ -625,6 +736,35 @@ async function onGenerateInvoice() {
     await loadInvoiceState()
   } finally {
     busy.value = false
+  }
+}
+
+async function onMakeSalesOrder() {
+  mapping.value = true
+  try {
+    const mapped = await mapDoc(
+      'erpnext.selling.doctype.quotation.quotation.make_sales_order',
+      props.name,
+    )
+    toast.success('Sales Order draft is ready to review')
+    emit('mapped', mapped)
+  } catch (err) {
+    toast.error(readableError(err) || 'The Sales Order could not be prepared.')
+  } finally {
+    mapping.value = false
+  }
+}
+
+async function onMakePayment() {
+  mapping.value = true
+  try {
+    const mapped = await mapDoc('crm.finance.api.make_payment_entry_from_invoice', props.name)
+    toast.success('Payment draft is ready to review')
+    emit('mapped', mapped)
+  } catch (err) {
+    toast.error(readableError(err) || 'The payment could not be prepared.')
+  } finally {
+    mapping.value = false
   }
 }
 
@@ -674,7 +814,6 @@ function onDelete() {
 }
 
 function printDoc() {
-  const url = `/printview?doctype=${encodeURIComponent(props.doctype)}&name=${encodeURIComponent(props.name)}&trigger_print=1`
-  window.open(url, '_blank')
+  window.open(printUrl(props.doctype, props.name), '_blank')
 }
 </script>
