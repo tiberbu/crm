@@ -1,6 +1,16 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { call } from 'frappe-ui'
+import {
+  facilityLabel,
+  findOpenOrder,
+  invoiceStatus,
+  oisForReference,
+  packageLabel,
+  paymentFailureMessage,
+  referenceFromSearch,
+  verificationOutcome,
+} from '@/utils/portalOrderState'
 
 const loading = ref(true)
 const errorMessage = ref('')
@@ -9,7 +19,10 @@ const purchaseOis = ref('')
 const purchaseFacility = ref('')
 const purchaseBusy = ref(false)
 const purchaseMessage = ref('')
-const purchaseKey = ref('')
+const confirmOrder = ref('')
+const busyId = ref('')
+const notice = ref(null)
+const bankTransferOis = ref('')
 
 function stepClass(step) {
   if (step.status === 'complete') return 'bg-emerald-600 text-white'
@@ -37,29 +50,109 @@ function money(value, currency) {
   }).format(value || 0)
 }
 
+function unwrap(response) {
+  return (
+    response?.message?.data ||
+    response?.data ||
+    response?.message ||
+    response ||
+    {}
+  )
+}
+
+async function refreshContext() {
+  const refreshed = await call('crm.api.website_redirect.get_portal_context')
+  context.value = unwrap(refreshed) || context.value
+}
+
 async function startPayment(orderName) {
+  busyId.value = orderName
+  notice.value = null
   try {
-    const response = await call(
-      'crm.api.customer_experience.start_token_payment',
-      { sales_order: orderName },
-    )
-    const payload =
-      response?.message?.data ||
-      response?.data ||
-      response?.message ||
-      response ||
-      {}
-    if (payload.checkout_url) window.location.href = payload.checkout_url
+    await call('crm.api.customer_experience.start_token_payment', {
+      sales_order: orderName,
+    })
+    confirmOrder.value = ''
+    await refreshContext()
+    notice.value = {
+      tone: 'success',
+      text: 'Your invoice is ready. Use Pay now to complete payment.',
+    }
   } catch (error) {
-    errorMessage.value =
-      error?.messages?.[0] || 'We could not start payment for this order.'
+    notice.value = {
+      tone: 'error',
+      text:
+        error?.messages?.[0] || 'We could not start payment for this order.',
+    }
+  } finally {
+    busyId.value = ''
   }
 }
 
+async function payInvoice(oisName, invoice) {
+  busyId.value = invoice.name
+  notice.value = null
+  bankTransferOis.value = ''
+  try {
+    const data = unwrap(
+      await call('crm.api.checkout.initialize_portal_paystack_payment', {
+        ois_number: oisName,
+        invoice: invoice.name,
+      }),
+    )
+    if (data.authorization_url) {
+      window.location.href = data.authorization_url
+      return
+    }
+    notice.value = { tone: 'error', text: 'Payment could not be started.' }
+  } catch (error) {
+    const failure = paymentFailureMessage(error)
+    notice.value = { tone: 'error', text: failure.message }
+    if (failure.offerBankTransfer) bankTransferOis.value = oisName
+  } finally {
+    busyId.value = ''
+  }
+}
+
+async function verifyReturnedPayment() {
+  const reference = referenceFromSearch(window.location.search)
+  if (!reference) return
+  const oisName = oisForReference(
+    reference,
+    (context.value.ois || []).map((item) => item.name),
+  )
+  window.history.replaceState({}, '', window.location.pathname)
+  if (!oisName) return
+  try {
+    const result = unwrap(
+      await call('crm.api.checkout.verify_portal_paystack_payment', {
+        ois_number: oisName,
+        reference,
+      }),
+    )
+    notice.value = verificationOutcome(result)
+    if (result.paid) await refreshContext()
+  } catch (error) {
+    notice.value = {
+      tone: 'error',
+      text: error?.messages?.[0] || 'We could not confirm the payment yet.',
+    }
+  }
+}
+
+function currentSubmission() {
+  return context.value.ois?.find((item) => item.name === purchaseOis.value)
+}
+
 function purchaseFacilities() {
-  return (
-    context.value.ois?.find((item) => item.name === purchaseOis.value)?.progress
-      ?.facilities || []
+  return currentSubmission()?.progress?.facilities || []
+}
+
+function existingOrder(item) {
+  return findOpenOrder(
+    currentSubmission()?.open_orders,
+    purchaseFacility.value,
+    item.item_code,
   )
 }
 
@@ -72,31 +165,15 @@ async function buyPackage(item) {
   }
   purchaseBusy.value = true
   try {
-    if (!purchaseKey.value) purchaseKey.value = crypto.randomUUID()
-    const response = await call(
-      'crm.api.customer_experience.create_token_order',
-      {
+    const payload = unwrap(
+      await call('crm.api.customer_experience.create_token_order', {
         ois_number: purchaseOis.value,
         facility_mfl: purchaseFacility.value,
         package_item_code: item.item_code,
-        purchase_key: purchaseKey.value,
-      },
+      }),
     )
-    const payload =
-      response?.message?.data ||
-      response?.data ||
-      response?.message ||
-      response ||
-      {}
-    purchaseMessage.value = `Order ${payload.sales_order || 'created'} is ready. Start payment from the facility card below.`
-    purchaseKey.value = ''
-    const refreshed = await call('crm.api.website_redirect.get_portal_context')
-    context.value =
-      refreshed?.message?.data ||
-      refreshed?.data ||
-      refreshed?.message ||
-      refreshed ||
-      context.value
+    purchaseMessage.value = `Order ${payload.sales_order || ''} is ready${payload.idempotent ? ' (resumed)' : ''}. Review it under Open orders, then start payment.`
+    await refreshContext()
   } catch (error) {
     purchaseMessage.value =
       error?.messages?.[0] || 'We could not create the token order.'
@@ -107,11 +184,10 @@ async function buyPackage(item) {
 
 onMounted(async () => {
   try {
-    const response = await call('crm.api.website_redirect.get_portal_context')
-    const payload = response?.message || response || {}
-    context.value = payload.data || payload
+    await refreshContext()
     purchaseOis.value = context.value.ois?.[0]?.name || ''
     purchaseFacility.value = purchaseFacilities()?.[0]?.mfl_code || ''
+    await verifyReturnedPayment()
   } catch (error) {
     errorMessage.value =
       error?.messages?.[0] || 'We could not load your facility portal.'
@@ -128,7 +204,9 @@ onMounted(async () => {
         class="mx-auto flex max-w-5xl items-center justify-between px-5 py-4 sm:px-8"
       >
         <div>
-          <p class="text-sm font-semibold tracking-tight">Tiberbu Customer Experience</p>
+          <p class="text-sm font-semibold tracking-tight">
+            Tiberbu Customer Experience
+          </p>
           <p class="text-xs text-ink-gray-5">Secure facility portal</p>
         </div>
         <a
@@ -155,6 +233,25 @@ onMounted(async () => {
         </p>
       </section>
 
+      <div
+        v-if="notice"
+        :role="notice.tone === 'error' ? 'alert' : 'status'"
+        class="mt-6 rounded-lg px-4 py-3 text-sm"
+        :class="{
+          'bg-emerald-50 text-emerald-800': notice.tone === 'success',
+          'bg-amber-50 text-amber-800': notice.tone === 'pending',
+          'border border-outline-red-2 bg-surface-red-1 text-ink-red-7':
+            notice.tone === 'error',
+        }"
+      >
+        {{ notice.text }}
+        <a
+          v-if="bankTransferOis"
+          :href="`/payment-checkout?ois=${encodeURIComponent(bankTransferOis)}`"
+          class="ml-1 font-semibold underline underline-offset-4"
+          >Other payment options</a
+        >
+      </div>
       <p v-if="loading" class="mt-8 text-sm text-ink-gray-5" aria-live="polite">
         Loading your secure portal…
       </p>
@@ -186,7 +283,7 @@ onMounted(async () => {
         <article
           v-for="submission in context.ois"
           :key="submission.name"
-          class="border border-outline-gray-2 bg-surface-white p-5 shadow-sm"
+          class="min-w-0 border border-outline-gray-2 bg-surface-white p-5 shadow-sm"
         >
           <p
             class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-gray-5"
@@ -308,21 +405,36 @@ onMounted(async () => {
               <div
                 v-for="invoice in submission.open_invoices"
                 :key="invoice.name"
-                class="mt-2 flex items-center justify-between gap-3 rounded-md border border-outline-gray-2 bg-surface-white px-3 py-2 text-xs"
+                class="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-outline-gray-2 bg-surface-white px-3 py-2 text-xs"
               >
                 <span
                   ><span class="block font-medium">{{
                     invoice.invoice_number
                   }}</span
                   ><span class="text-ink-gray-5"
-                    >Due {{ invoice.due_date || 'on request' }}</span
+                    >Due {{ invoice.due_date || 'on request' }} ·
+                    <span
+                      :class="
+                        invoiceStatus(invoice).key === 'overdue'
+                          ? 'font-semibold text-ink-red-7'
+                          : ''
+                      "
+                      >{{ invoiceStatus(invoice).label }}</span
+                    ></span
                   ></span
                 >
-                <a
-                  :href="`/payment-checkout?ois=${encodeURIComponent(submission.name)}`"
-                  class="rounded-md bg-[#bc1823] px-3 py-2 font-semibold text-white"
-                  >Pay {{ money(invoice.amount, invoice.currency) }}</a
+                <button
+                  type="button"
+                  class="min-h-10 rounded-md bg-[#bc1823] px-4 py-2 font-semibold text-white disabled:opacity-50"
+                  :disabled="busyId === invoice.name"
+                  @click="payInvoice(submission.name, invoice)"
                 >
+                  {{
+                    busyId === invoice.name
+                      ? 'Opening checkout…'
+                      : `Pay now ${money(invoice.amount, invoice.currency)}`
+                  }}
+                </button>
               </div>
             </div>
             <div
@@ -337,22 +449,71 @@ onMounted(async () => {
               <div
                 v-for="order in submission.open_orders"
                 :key="order.name"
-                class="mt-2 flex items-center justify-between gap-3 rounded-md border border-outline-gray-2 bg-surface-white px-3 py-2 text-xs"
+                class="mt-2 rounded-md border border-outline-gray-2 bg-surface-white px-3 py-2 text-xs"
               >
-                <span
-                  ><span class="block font-medium">{{ order.name }}</span
-                  ><span class="text-ink-gray-5"
-                    >{{ order.crm_token_facility_mfl }} ·
-                    {{ order.status || 'Open' }}</span
-                  ></span
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <span
+                    ><span class="block font-medium">{{
+                      packageLabel(
+                        order.crm_token_package_item,
+                        context.token_packages,
+                      )
+                    }}</span
+                    ><span class="text-ink-gray-5"
+                      >{{
+                        facilityLabel(
+                          order.crm_token_facility_mfl,
+                          submission.progress?.facilities,
+                        )
+                      }}
+                      · {{ order.name }} ·
+                      {{ money(order.grand_total, order.currency) }} incl.
+                      VAT</span
+                    ></span
+                  >
+                  <button
+                    v-if="confirmOrder !== order.name"
+                    type="button"
+                    class="min-h-10 rounded-md bg-[#bc1823] px-4 py-2 font-semibold text-white"
+                    @click="confirmOrder = order.name"
+                  >
+                    Start payment
+                  </button>
+                </div>
+                <div
+                  v-if="confirmOrder === order.name"
+                  class="mt-3 rounded-md bg-surface-gray-1 p-3"
+                  role="group"
+                  aria-label="Confirm payment start"
                 >
-                <button
-                  type="button"
-                  class="rounded-md bg-[#bc1823] px-3 py-2 font-semibold text-white"
-                  @click="startPayment(order.name)"
-                >
-                  Start payment
-                </button>
+                  <p class="leading-5 text-ink-gray-6">
+                    This creates your invoice for
+                    {{ money(order.grand_total, order.currency) }}. Nothing is
+                    charged until you choose Pay now.
+                  </p>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      class="min-h-10 rounded-md bg-[#bc1823] px-4 py-2 font-semibold text-white disabled:opacity-50"
+                      :disabled="busyId === order.name"
+                      @click="startPayment(order.name)"
+                    >
+                      {{
+                        busyId === order.name
+                          ? 'Creating invoice…'
+                          : 'Create invoice'
+                      }}
+                    </button>
+                    <button
+                      type="button"
+                      class="min-h-10 rounded-md px-4 py-2 font-medium text-ink-gray-6"
+                      :disabled="busyId === order.name"
+                      @click="confirmOrder = ''"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -378,7 +539,7 @@ onMounted(async () => {
         <div class="mt-5 grid gap-3 sm:grid-cols-2">
           <select
             v-model="purchaseOis"
-            class="rounded-lg border border-outline-gray-2 px-3 py-2 text-sm"
+            class="w-full min-w-0 rounded-lg border border-outline-gray-2 px-3 py-2 text-sm"
             @change="
               purchaseFacility = purchaseFacilities()?.[0]?.mfl_code || ''
             "
@@ -392,7 +553,7 @@ onMounted(async () => {
             </option></select
           ><select
             v-model="purchaseFacility"
-            class="rounded-lg border border-outline-gray-2 px-3 py-2 text-sm"
+            class="w-full min-w-0 rounded-lg border border-outline-gray-2 px-3 py-2 text-sm"
           >
             <option
               v-for="facility in purchaseFacilities()"
@@ -419,18 +580,30 @@ onMounted(async () => {
               {{ item.display_name || item.item_code }}
             </p>
             <p class="mt-2 text-base font-semibold">
-              {{ money(item.price, item.currency) }}
+              {{ money(item.price_ex_vat ?? item.price, item.currency) }}
+              <span class="text-xs font-normal text-ink-gray-5">excl. VAT</span>
+            </p>
+            <p v-if="item.gross_total" class="mt-1 text-xs text-ink-gray-5">
+              {{ item.vat_label || 'VAT' }}
+              {{ money(item.vat_amount, item.currency) }} · Total
+              {{ money(item.gross_total, item.currency) }}
             </p>
             <p class="mt-2 text-xs leading-5 text-ink-gray-5">
               {{ item.coverage_summary || item.description }}
             </p>
             <button
-              class="mt-4 rounded-md bg-[#bc1823] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              class="mt-4 min-h-10 rounded-md bg-[#bc1823] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
               type="button"
               :disabled="purchaseBusy"
               @click="buyPackage(item)"
             >
-              {{ purchaseBusy ? 'Creating order…' : 'Buy this package' }}
+              {{
+                purchaseBusy
+                  ? 'Working…'
+                  : existingOrder(item)
+                    ? `Resume order ${existingOrder(item).name}`
+                    : 'Create order'
+              }}
             </button>
           </article>
         </div>
