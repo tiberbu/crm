@@ -312,6 +312,10 @@ const brandDropdownOptions = computed(() => {
 const searchOpen = ref(false)
 </script>
 
+<style>
+@import './styles/list-system.css';
+</style>
+
 <style scoped>
 .fc-sidebar-wrap {
   isolation: isolate;
