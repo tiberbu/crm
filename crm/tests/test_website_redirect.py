@@ -216,3 +216,18 @@ class TestCustomerExperienceAccess(UnitTestCase):
 			("portal_invitation_status", "Failed"),
 			[(call.args[1], call.args[2]) for call in set_field.call_args_list],
 		)
+
+
+class TestPortalTokenCatalog(UnitTestCase):
+	def test_portal_catalog_carries_server_resolved_vat_totals(self):
+		from crm.api.website_redirect import _portal_token_catalog
+
+		package = {"item_code": "TOK-1", "price_ex_vat": 100.0, "vat_amount": 16.0, "gross_total": 116.0}
+		with patch("crm.api.facility_onboarding._catalog_packages", return_value=[package]):
+			self.assertEqual(_portal_token_catalog(), [package])
+
+	def test_portal_catalog_is_empty_when_pricing_is_unavailable(self):
+		from crm.api.website_redirect import _portal_token_catalog
+
+		with patch("crm.api.facility_onboarding._catalog_packages", side_effect=RuntimeError("config")):
+			self.assertEqual(_portal_token_catalog(), [])
