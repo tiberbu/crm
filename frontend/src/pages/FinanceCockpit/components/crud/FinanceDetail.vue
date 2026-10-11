@@ -76,6 +76,22 @@
 
           <!-- Actions (RBAC-gated, visible-but-disabled) -->
           <div class="flex items-center gap-2 flex-wrap">
+            <!-- Dynamic Workflow Action Buttons (Frappe Workflow System) -->
+            <template v-if="workflowInfo && workflowInfo.transitions && workflowInfo.transitions.length">
+              <Button
+                v-for="t in workflowInfo.transitions"
+                :key="t.action"
+                variant="solid"
+                theme="blue"
+                :loading="busy"
+                :disabled="!canWrite"
+                @click="onApplyWorkflow(t.action)"
+              >
+                <template #prefix><FcIcon name="check-circle" :size="14" /></template>
+                {{ t.action }}
+              </Button>
+            </template>
+
             <Button
               v-if="!readOnly"
               variant="outline"
@@ -88,7 +104,7 @@
               Edit
             </Button>
             <Button
-              v-if="isSubmittable && docstatus === 0 && (!readOnly || allowLifecycleActions)"
+              v-if="(!workflowInfo || !workflowInfo.has_workflow) && isSubmittable && docstatus === 0 && (!readOnly || allowLifecycleActions)"
               theme="green"
               variant="subtle"
               :loading="busy"
@@ -100,7 +116,7 @@
               Submit
             </Button>
             <Button
-              v-if="isSubmittable && docstatus === 1 && (!readOnly || allowLifecycleActions)"
+              v-if="(!workflowInfo || !workflowInfo.has_workflow) && isSubmittable && docstatus === 1 && (!readOnly || allowLifecycleActions)"
               theme="gray"
               variant="outline"
               :loading="busy"
@@ -463,6 +479,13 @@ const paymentHistoryResource = createResource({
 const generateInvoiceResource = createResource({
   url: 'crm.finance.api.make_sales_invoice_from_order',
 })
+const workflowTransitionsResource = createResource({
+  url: 'crm.finance.api.get_document_workflow_transitions',
+})
+const applyWorkflowResource = createResource({
+  url: 'crm.finance.api.apply_document_workflow_action',
+})
+const workflowInfo = ref(null)
 const paymentHistory = ref([])
 const paymentHistoryLoading = ref(false)
 const paymentHistoryError = ref('')
@@ -673,8 +696,38 @@ async function load() {
     doc.value = await crud.loadDoc(props.name)
     await loadInvoiceState()
     await loadPaymentHistory()
+    await loadWorkflowTransitions()
   } finally {
     loading.value = false
+  }
+}
+
+async function loadWorkflowTransitions() {
+  try {
+    const res = await workflowTransitionsResource.submit({
+      doctype: props.doctype,
+      name: props.name,
+    })
+    workflowInfo.value = res
+  } catch {
+    workflowInfo.value = null
+  }
+}
+
+async function onApplyWorkflow(action) {
+  busy.value = true
+  try {
+    await applyWorkflowResource.submit({
+      doctype: props.doctype,
+      name: props.name,
+      action,
+    })
+    toast.success(`Workflow action "${action}" applied successfully`)
+    await load()
+  } catch (err) {
+    toast.error(readableError(err) || `Failed to apply workflow action "${action}"`)
+  } finally {
+    busy.value = false
   }
 }
 
@@ -743,7 +796,7 @@ async function onMakeSalesOrder() {
   mapping.value = true
   try {
     const mapped = await mapDoc(
-      'erpnext.selling.doctype.quotation.quotation.make_sales_order',
+      'crm.finance.api.make_sales_order_from_quotation',
       props.name,
     )
     toast.success('Sales Order draft is ready to review')

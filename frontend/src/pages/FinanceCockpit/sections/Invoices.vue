@@ -92,9 +92,9 @@ function isoDate(offset = 0) {
 const createFrom = [
   {
     key: 'from-order',
-    label: 'Generate invoice from order',
+    label: 'Generate Invoice from Order',
     sourceDoctype: 'Sales Order',
-    sourceLabel: 'Sales Order',
+    sourceLabel: 'Order',
     subtitleField: 'customer',
     sourceFilters: [
       ['docstatus', '=', 1],
@@ -108,7 +108,7 @@ const createFrom = [
     key: 'receive-payment',
     label: 'Receive Payment',
     sourceDoctype: 'Sales Invoice',
-    sourceLabel: 'Sales Invoice',
+    sourceLabel: 'Invoice',
     subtitleField: 'customer',
     // Only submitted (docstatus=1) invoices with outstanding balance are valid sources.
     sourceFilters: [

@@ -69,9 +69,9 @@ const createFrom = [
     key: 'from-quotation',
     label: 'Create from Quote',
     sourceDoctype: 'Quotation',
-    sourceLabel: 'Quotation',
+    sourceLabel: 'Quote',
     subtitleField: 'customer_name',
-    mapMethod: 'erpnext.selling.doctype.quotation.quotation.make_sales_order',
+    mapMethod: 'crm.finance.api.make_sales_order_from_quotation',
     targetDoctype: 'Sales Order',
   },
 ]
