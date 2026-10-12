@@ -138,9 +138,16 @@
     <template v-else>
       <div class="mb-5">
         <p class="text-xs font-medium text-ink-gray-5">New Document</p>
-        <h2 class="text-xl font-bold text-ink-gray-9">Receive Payment</h2>
+        <h2 class="text-xl font-bold text-ink-gray-9">
+          {{ isMappedPayment ? 'Create Invoice Payment' : 'Receive Payment' }}
+        </h2>
         <p class="text-sm text-ink-gray-5 mt-0.5">
+          <template v-if="isMappedPayment">
+            Review the payment for {{ mappedInvoiceId }}. The allocation stays within its current outstanding amount.
+          </template>
+          <template v-else>
           Record a customer receipt and allocate it across outstanding invoices.
+          </template>
         </p>
       </div>
 
@@ -177,7 +184,14 @@
               <label class="block text-xs font-medium text-ink-gray-6 mb-1">
                 Customer<span class="text-red-500 ml-0.5">*</span>
               </label>
+              <div
+                v-if="isMappedPayment"
+                class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-sm text-ink-gray-8"
+              >
+                {{ customer || 'Unavailable' }}
+              </div>
               <Combobox
+                v-else
                 :model-value="customer"
                 :options="customerOptions"
                 :filterable="false"
@@ -200,7 +214,7 @@
                 {{ customerSearchError }}
               </p>
               <p
-                v-else-if="!customerOptions.length"
+                v-else-if="!isMappedPayment && !customerOptions.length"
                 class="mt-1.5 text-xs text-ink-gray-5"
                 role="status"
               >
@@ -565,8 +579,16 @@ import FcIcon from './FcIcon.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { readableError } from '../../composables/financeErrors.js'
+import {
+  clampInvoiceAllocation,
+  resolveMappedInvoicePayment,
+} from './paymentAllocationSeed.js'
 
+const props = defineProps({
+  seed: { type: Object, default: null },
+})
 const emit = defineEmits(['saved', 'close'])
+const isMappedPayment = computed(() => !!props.seed)
 
 const { company } = useCompanyContext()
 const { formatCurrency } = useCurrency()
@@ -593,6 +615,8 @@ const paidAmount = ref(null)
 const saving = ref(false)
 const errorMsg = ref('')
 const invoices = ref([])
+const mappedInvoiceId = ref('')
+const mappedSeedRejected = ref(false)
 const reviewing = ref(false)
 const reviewError = ref('')
 const successPe = ref('')
@@ -734,6 +758,18 @@ async function loadPaymentContext(mode = modeOfPayment.value) {
 }
 
 watch(company, () => {
+  if (props.seed && props.seed.company !== company.value) {
+    mappedSeedRejected.value = true
+    errorMsg.value = 'The active company changed. Close this payment and prepare it again from the invoice.'
+    customer.value = null
+    invoices.value = []
+    invoicesCompany.value = ''
+    paidAmount.value = null
+    reviewing.value = false
+    paymentContext.value = null
+    paymentContextCompany.value = ''
+    return
+  }
   // A company switch invalidates the entire draft so no old-company balance,
   // allocation, or resolved account can be posted under the new context.
   invoiceRequest += 1
@@ -854,6 +890,15 @@ async function onCustomerChange(val) {
       _selected: false,
       _allocated: 0,
     }))
+    if (mappedInvoiceId.value) {
+      const mappedInvoice = invoices.value.find(
+        (invoice) => invoice.name === mappedInvoiceId.value,
+      )
+      invoices.value = mappedInvoice ? [mappedInvoice] : []
+      if (!mappedInvoice) {
+        errorMsg.value = `Invoice ${mappedInvoiceId.value} is no longer outstanding for ${val}. Refresh the invoice and prepare the payment again.`
+      }
+    }
     // Compute balance chip values.
     customerInvoiceCount.value = invoices.value.length
     customerBalance.value = invoices.value.reduce(
@@ -875,11 +920,7 @@ function toggleRow(row, checked) {
   row._allocated = checked ? Number(row.outstanding_amount) : 0
 }
 function onAllocInput(row, raw) {
-  const n = parseFloat(raw)
-  const capped = Number.isNaN(n)
-    ? 0
-    : Math.min(Math.max(n, 0), Number(row.outstanding_amount))
-  row._allocated = capped
+  row._allocated = clampInvoiceAllocation(raw, row.outstanding_amount)
 }
 
 /* ---- FC-09: Auto-allocate ---- */
@@ -927,10 +968,50 @@ const canReview = computed(
     totalAllocated.value > 0 &&
     !!paymentContext.value?.configured &&
     !paymentContextLoading.value &&
+    !mappedSeedRejected.value &&
     (!paymentContext.value.requires_reference ||
       (!!referenceNo.value.trim() && !!referenceDate.value)) &&
     !saving.value,
 )
+
+async function initializeMappedPayment() {
+  const mapped = resolveMappedInvoicePayment(props.seed, company.value)
+  if (mapped.error) {
+    mappedSeedRejected.value = true
+    errorMsg.value = mapped.error
+    return
+  }
+
+  mappedInvoiceId.value = mapped.invoice
+  customer.value = mapped.customer
+  postingDate.value = mapped.postingDate || localToday()
+  modeOfPayment.value = mapped.modeOfPayment
+  paidAmount.value = mapped.amount
+
+  await onCustomerChange(mapped.customer)
+  if (errorMsg.value) {
+    mappedSeedRejected.value = true
+    return
+  }
+
+  const invoice = invoices.value.find((row) => row.name === mapped.invoice)
+  if (!invoice) return
+  if (mapped.amount > Number(invoice.outstanding_amount) + 0.005) {
+    mappedSeedRejected.value = true
+    errorMsg.value = `Invoice ${mapped.invoice}'s outstanding amount changed since the payment was prepared. Refresh the invoice and try again.`
+    return
+  }
+  const allocationAmount = clampInvoiceAllocation(
+    mapped.amount,
+    invoice.outstanding_amount,
+  )
+  paidAmount.value = allocationAmount
+  referenceNo.value = mapped.referenceNo
+  referenceDate.value = mapped.referenceDate
+  invoice._selected = true
+  invoice._allocated = allocationAmount
+  if (mapped.modeOfPayment) await loadPaymentContext(mapped.modeOfPayment)
+}
 
 function onBack() {
   if (reviewing.value) {
@@ -987,7 +1068,8 @@ async function onConfirmPost() {
 }
 
 onMounted(async () => {
-  onCustomerQuery('')
+  if (props.seed) await initializeMappedPayment()
+  else onCustomerQuery('')
   try {
     const rows = await modeRes.submit({
       doctype: 'Mode of Payment',

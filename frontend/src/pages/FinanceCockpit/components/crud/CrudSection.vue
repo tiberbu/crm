@@ -256,12 +256,12 @@
       @close="goBackFromForm"
     />
 
-    <!-- NEW via custom composer (e.g. payment allocation). A mapped seed always
-         wins so a Create-From result can never be swallowed by a section that
-         also defines a custom newComponent. -->
+    <!-- Use a mapped composer only for explicitly configured target doctypes;
+         ordinary New and other mapped forms keep their existing behavior. -->
     <component
-      :is="newComponent"
-      v-else-if="mode === 'new' && newComponent && !seedDoc"
+      :is="seedDoc ? mappedNewComponents[seedDoc.doctype] : newComponent"
+      v-else-if="mode === 'new' && (seedDoc ? mappedNewComponents[seedDoc.doctype] : newComponent)"
+      :seed="seedDoc"
       @saved="onSaved"
       @close="goBackFromForm"
     />
@@ -313,6 +313,8 @@ const props = defineProps({
   // FinanceForm with the returned (unsaved) target doc for review + save. Shape:
   //   { key, label, sourceDoctype, sourceLabel, subtitleField?, mapMethod, targetDoctype }
   createFrom: { type: Array, default: () => [] },
+  // Optional custom composer overrides for mapped target doctypes.
+  mappedNewComponents: { type: Object, default: () => ({}) },
   // Finance may inspect quotations and orders without editing their fields.
   // Create-from flows remain independently enabled where the section exposes
   // a native downstream operation (for example Quote -> Sales Order).
