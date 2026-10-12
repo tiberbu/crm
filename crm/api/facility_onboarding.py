@@ -45,6 +45,10 @@ ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .'/-]{2,63}$")
 PARTNER_ID_RE = re.compile(r"^\d{6}$")
 
 
+class FacilityOwnershipUnavailable(frappe.ValidationError):
+	"""Temporary ownership lookup failure; the verified OTP remains retryable."""
+
+
 def _text(value: Any) -> str:
 	return frappe.utils.cstr(value or "").strip()
 
@@ -221,6 +225,8 @@ def _session(token: str) -> dict[str, Any] | None:
 			payload["person"] = frappe.parse_json(decrypt(payload.pop("person_sealed")))
 		if payload and payload.get("facilities_sealed"):
 			payload["facilities"] = frappe.parse_json(decrypt(payload.pop("facilities_sealed")))
+		if payload and payload.get("identity_number_sealed"):
+			payload["identity_number"] = decrypt(payload.pop("identity_number_sealed"))
 		if payload and int(payload.get("expires_at") or 0) > int(time.time()):
 			return payload
 		if value:
@@ -237,6 +243,8 @@ def _save_session(token: str, payload: dict[str, Any]) -> None:
 		to_store["person_sealed"] = encrypt(json.dumps(to_store.pop("person")))
 	if "facilities" in to_store:
 		to_store["facilities_sealed"] = encrypt(json.dumps(to_store.pop("facilities")))
+	if "identity_number" in to_store:
+		to_store["identity_number_sealed"] = encrypt(to_store.pop("identity_number"))
 	frappe.cache().set_value(_session_key(token), json.dumps(to_store), expires_in_sec=SESSION_TTL_SECONDS)
 
 
@@ -418,7 +426,7 @@ def _token_packages() -> list[dict[str, Any]]:
 # nosemgrep: guest-whitelisted-method -- generic identity responses, rate limiting, HFR ownership binding, and OTP verification prevent enumeration and unauthorised facility access.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def start_identity(identification_type: Any, identification_number: Any):
-	"""Resolve facilities through HFR first, then the owner's contacts through Client Registry."""
+	"""Find the verified contact in Client Registry and start OTP before HFR ownership lookup."""
 	id_type = _text(identification_type)
 	id_number = _text(identification_number)
 	if not id_type or not ID_RE.fullmatch(id_number) or _rate_limited("start:%s" % _client_ip()):
@@ -426,28 +434,27 @@ def start_identity(identification_type: Any, identification_number: Any):
 			_("We could not verify those details. Please check and try again."), frappe.ValidationError
 		)
 	try:
-		facilities = _hfr_facilities_for_owner(id_number)
-		person = _client_registry_person(id_type, id_number) if facilities else None
+		person = _client_registry_person(id_type, id_number)
 	except Exception as exc:
 		frappe.log_error(
 			title="CRM facility onboarding identity lookup", message="Lookup failed (%s)" % type(exc).__name__
 		)
-		person, facilities = None, []
+		person = None
 
 	token = secrets.token_urlsafe(32)
 	otp = "%06d" % secrets.randbelow(1_000_000)
 	contact_email = _text(person.get("email")).lower() if person else ""
 	contact_phone = _text(person.get("phone")) if person else ""
-	lookup_valid = bool(person and facilities and (contact_email or contact_phone))
+	lookup_valid = bool(person and (contact_email or contact_phone))
 	if not lookup_valid:
 		person = {}
-		facilities = []
 	identity_hash = hashlib.sha256((id_type.lower() + "|" + id_number.lower()).encode()).hexdigest()
 	now = int(time.time())
 	payload = {
 		"verified": False,
 		"lookup_valid": lookup_valid,
 		"id_type": id_type,
+		"identity_number": id_number if lookup_valid else "",
 		"identity_hash": identity_hash,
 		"person": {
 			"first_name": _text(person.get("first_name")),
@@ -455,7 +462,7 @@ def start_identity(identification_type: Any, identification_number: Any):
 			"email": contact_email,
 			"phone": contact_phone,
 		},
-		"facilities": [_facility_row(row) for row in facilities],
+		"facilities": [],
 		"otp_hash": _otp_hash(otp),
 		"otp_attempts": 0,
 		"otp_expires_at": now + OTP_TTL_SECONDS,
@@ -487,9 +494,8 @@ def start_identity(identification_type: Any, identification_number: Any):
 			outcome="ok" if payload["delivery"]["status"] == "sent" else "failed",
 			channel=payload["delivery"]["channel"] or "",
 		)
-	# Unknown IDs, missing facilities, and upstream failures return the same
-	# challenge shape. Verification is the only point at which facility data is
-	# released; only a masked destination and delivery state are shown before it.
+	# Unknown IDs and registry failures return the same challenge shape. HFR is
+	# queried only after contact ownership is proven by OTP.
 	return {
 		"success": True,
 		"data": {
@@ -508,7 +514,10 @@ def resend_otp(session_token: Any):
 		frappe.throw(_("Too many code requests. Please wait and try again."), frappe.ValidationError)
 	session = _session_or_error(token)
 	now = int(time.time())
-	if now - int(session.get("otp_sent_at") or 0) < OTP_RESEND_SECONDS:
+	if (
+		(session.get("delivery") or {}).get("status") != "unavailable"
+		and now - int(session.get("otp_sent_at") or 0) < OTP_RESEND_SECONDS
+	):
 		return {"success": True, "data": {"sent": True, "delivery": _delivery_payload(session, now)}}
 	if int(session.get("resend_count") or 0) >= OTP_MAX_RESENDS:
 		frappe.throw(_("Too many code requests. Please start again."), frappe.ValidationError)
@@ -544,10 +553,10 @@ def verify_otp(session_token: Any, otp: Any):
 	if int(time.time()) > int(session.get("otp_expires_at") or 0):
 		_evidence("otp_failed", token, session, outcome="failed", detail="expired", commit=True)
 		frappe.throw(_("That code has expired. Please request a new one."), frappe.PermissionError)
-	session["otp_attempts"] = int(session.get("otp_attempts") or 0) + 1
-	if session["otp_attempts"] > OTP_MAX_ATTEMPTS or not hmac.compare_digest(
+	if session.get("otp_attempts", 0) >= OTP_MAX_ATTEMPTS or not hmac.compare_digest(
 		session.get("otp_hash", ""), _otp_hash(_text(otp))
 	):
+		session["otp_attempts"] = int(session.get("otp_attempts") or 0) + 1
 		_save_session(token, session)
 		if session["otp_attempts"] <= OTP_MAX_ATTEMPTS + 1:
 			_evidence(
@@ -563,9 +572,29 @@ def verify_otp(session_token: Any, otp: Any):
 		_evidence("otp_failed", token, session, outcome="failed", detail="unmatched", commit=True)
 		frappe.cache().delete_value(_session_key(token))
 		frappe.throw(_("The verification code is incorrect or expired."), frappe.PermissionError)
+	try:
+		facilities = _hfr_facilities_for_owner(session["identity_number"])
+	except Exception as exc:
+		frappe.log_error(
+			title="CRM facility onboarding ownership lookup",
+			message="Ownership lookup failed (%s)" % type(exc).__name__,
+		)
+		_evidence("lookup", token, session, outcome="failed", detail="facility ownership unavailable", commit=True)
+		frappe.throw(
+			_("We could not check facility ownership just now. Please enter the code again to retry."),
+			FacilityOwnershipUnavailable,
+		)
+	if not facilities:
+		_evidence("lookup", token, session, outcome="failed", detail="no eligible facilities", commit=True)
+		frappe.throw(
+			_("No eligible facilities were found for these details. Check the ID or start again."),
+			frappe.ValidationError,
+		)
+	session["facilities"] = [_facility_row(row) for row in facilities]
 	session["verified"] = True
 	session["otp_hash"] = ""
 	_save_session(token, session)
+	_evidence("lookup", token, session, outcome="ok", detail="facility ownership verified")
 	_evidence("otp_verified", token, session, channel=(session.get("delivery") or {}).get("channel") or "")
 	return {
 		"success": True,

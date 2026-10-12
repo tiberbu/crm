@@ -67,3 +67,14 @@ export function deliveryState(delivery) {
   if (!delivery) return 'none'
   return delivery.status === 'unavailable' ? 'unavailable' : 'sent'
 }
+
+export function canResendOtp(delivery, resendIn, busy = false) {
+  return (
+    !busy &&
+    (delivery?.status === 'unavailable' || Number(resendIn || 0) <= 0)
+  )
+}
+
+export function shouldClearOtpAfterVerificationError(errorType) {
+  return String(errorType || '') !== 'FacilityOwnershipUnavailable'
+}
