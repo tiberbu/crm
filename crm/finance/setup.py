@@ -77,3 +77,40 @@ def ensure_network_payout_mappings():
 				).insert(ignore_permissions=True)
 
 	return all(frappe.db.has_column("CRM Opt-In Network", field["fieldname"]) for field in fields)
+
+
+def ensure_optin_supplier_attribution_fields():
+	"""Carry the optional Opt-In Supplier choice onto generated billing lines."""
+	if not frappe.db.exists("DocType", "Supplier"):
+		return False
+	field_definitions = [
+		{
+			"fieldname": "crm_optin_facility_mfl_code",
+			"fieldtype": "Data",
+			"label": "Opt-In Facility Code",
+			"read_only": 1,
+			"no_copy": 0,
+			"in_list_view": 0,
+		},
+		{
+			"fieldname": "crm_rebate_supplier",
+			"fieldtype": "Link",
+			"label": "Rebate Supplier",
+			"options": "Supplier",
+			"read_only": 1,
+			"no_copy": 0,
+			"in_list_view": 0,
+		},
+	]
+	available = {
+		doctype: field_definitions
+		for doctype in ("Quotation Item", "Sales Order Item", "Sales Invoice Item")
+		if frappe.db.exists("DocType", doctype)
+	}
+	if not available:
+		return False
+	create_custom_fields(available, ignore_validate=True)
+	return all(
+		all(frappe.db.has_column(doctype, field["fieldname"]) for field in fields)
+		for doctype, fields in available.items()
+	)

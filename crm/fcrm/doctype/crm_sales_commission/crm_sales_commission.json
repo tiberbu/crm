@@ -7,10 +7,13 @@
  "field_order": [
   "naming_series",
   "sales_person",
+  "employee",
   "deal",
   "customer",
   "payment_reference",
+  "source_invoice",
   "commission_pct",
+  "calculation_basis",
   "commission_amount",
   "currency",
   "status",
@@ -36,6 +39,14 @@
    "reqd": 1
   },
   {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
    "fieldname": "deal",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -58,11 +69,26 @@
    "reqd": 1
   },
   {
+   "fieldname": "source_invoice",
+   "fieldtype": "Link",
+   "label": "Source Invoice",
+   "options": "Sales Invoice",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
    "fieldname": "commission_pct",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Commission %",
    "reqd": 1
+  },
+  {
+   "fieldname": "calculation_basis",
+   "fieldtype": "Currency",
+   "label": "Calculation Basis",
+   "options": "currency",
+   "read_only": 1
   },
   {
    "fieldname": "commission_amount",

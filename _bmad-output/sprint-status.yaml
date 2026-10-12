@@ -4,9 +4,9 @@
 # Updated: 2026-10-12
 
 summary:
-  total: 65
+  total: 66
   ready-for-dev: 33
-  in-progress: 2
+  in-progress: 3
   review: 22
   done: 3
   cancelled: 0
@@ -123,6 +123,7 @@ development_status:
   fc-s7-6-company-scoped-payment-selectors: review        # [dev-story] return only customers with eligible invoices in the active Company
   fc-s7-7-quotation-context-panel: review            # [dev-story] Facility/Opt-In/Network context, native SO fallback, company validation; 4 focused tests and blind review passed
   fc-s7-8-optin-handoff-proof: in-progress           # [dev-story] 4 orchestration tests pass; native document-level proof remains; shared cr-dev was not mutated
+  fc-s7-9-finance-workspace-remediation: in-progress # [dev-story] payment-based rebate/commission rules, per-facility Supplier, canonical-link conflict inventory, CRM Setup forms and finance list updates; FE 173 and focused BE 23 pass, build passes; cr-dev UI/data walkthrough pending
 
   # QA — full cockpit integration pass (all 18 stories complete)
   fc-qa-full-cockpit: qa                 # [qa] Full Finance Cockpit end-to-end QA pass: all roles, all sections, mobile, dark/light mode

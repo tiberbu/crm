@@ -58,179 +58,19 @@
           </div>
         </div>
 
-        <!-- Loading -->
-        <div v-if="listLoading" class="p-4 space-y-2">
-          <div
-            v-for="n in 6"
-            :key="n"
-            class="h-11 bg-surface-gray-2 rounded-lg animate-pulse"
-          />
-        </div>
-
-        <!-- Error -->
-        <div v-else-if="listError" class="p-6">
-          <FinanceErrorState
-            :error="listError"
-            @retry="refetch"
-          />
-        </div>
-
-        <!-- Empty -->
-        <div
-          v-else-if="!rows.length"
-          class="text-center py-12 text-sm text-ink-gray-4"
-        >
-          {{ emptyLabel }}
-        </div>
-
-        <template v-else>
-          <!-- Desktop: frappe-ui ListView -->
-          <ListView
-            v-if="!isMobile"
-            :columns="listColumns"
-            :rows="rows"
-            row-key="name"
-            :options="listOptions"
-            class="fc-listview border-t border-outline-gray-1"
-          >
-            <template #cell="{ item, row, column }">
-              <StatusBadge v-if="column.type === 'status'" :status="item" />
-              <span
-                v-else-if="column.type === 'currency'"
-                class="font-medium text-ink-gray-8 tabular-nums"
-                >{{ formatCurrency(item, row.currency) }}</span
-              >
-              <span
-                v-else-if="column.type === 'due-date'"
-                class="flex flex-col leading-tight"
-              >
-                <span class="font-medium text-ink-gray-8">{{ formatDate(item) }}</span>
-                <span
-                  v-if="Number(row.days_overdue || 0) > 0"
-                  class="text-xs text-ink-red-6"
-                >
-                  {{ row.days_overdue }}
-                  {{ Number(row.days_overdue) === 1 ? 'day' : 'days' }} overdue
-                </span>
-                <span v-else class="text-xs text-ink-gray-4">Due on time</span>
-              </span>
-              <span
-                v-else-if="column.type === 'overdue'"
-                :class="[
-                  'text-xs font-medium whitespace-nowrap',
-                  Number(item || 0) > 0 ? 'text-ink-red-6' : 'text-ink-gray-5',
-                ]"
-              >
-                {{ Number(item || 0) > 0 ? `${item}d overdue` : 'Not overdue' }}
-              </span>
-              <span
-                v-else-if="column.type === 'datetime'"
-                class="flex flex-col leading-tight"
-              >
-                <span class="font-medium text-ink-gray-8">{{ timeAgo(item) }}</span>
-                <span class="text-xs text-ink-gray-4">{{ formatDateTime(item) }}</span>
-              </span>
-              <span
-                v-else-if="column.type === 'owner'"
-                class="truncate"
-                :title="item || ''"
-              >
-                {{ ownerLabel(item) }}
-              </span>
-              <span v-else-if="column.type === 'date'" class="text-ink-gray-6">{{
-                item || '—'
-              }}</span>
-              <span
-                v-else-if="column.type === 'timeago'"
-                class="flex flex-col leading-tight"
-              >
-                <span class="font-medium text-ink-gray-8">{{
-                  timeAgo(item)
-                }}</span>
-                <span class="text-xs text-ink-gray-4">{{ item || '' }}</span>
-              </span>
-              <button
-                v-else-if="column.type === 'print-action'"
-                class="text-xs text-ink-gray-5 hover:text-ink-gray-8 px-2 py-0.5 rounded border border-outline-gray-2 hover:bg-surface-gray-2 transition-colors"
-                @click.stop="printRow(row)"
-              >
-                Print
-              </button>
-              <span v-else class="text-ink-gray-7">{{ item ?? '—' }}</span>
-            </template>
-          </ListView>
-
-          <!-- Mobile: CareVerse HQ styled card list -->
-          <div v-else class="p-3 space-y-3">
-            <button
-              v-for="row in rows"
-              :key="row.name"
-              type="button"
-              class="fc-mobile-card w-full text-left transition-colors"
-              @click="goView(row)"
-            >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="font-semibold text-ink-gray-9 text-sm truncate">
-                    {{ row[primaryKey] || row.name }}
-                  </p>
-                  <p
-                    v-if="secondaryKey"
-                    class="text-xs text-ink-gray-5 mt-0.5 truncate"
-                  >
-                    {{ row[secondaryKey] }}
-                  </p>
-                </div>
-                <div class="text-right flex-shrink-0 space-y-1">
-                  <p
-                    v-if="amountKey"
-                    class="font-bold text-ink-gray-9 text-sm tabular-nums"
-                  >
-                    {{ formatCurrency(row[amountKey], row.currency) }}
-                  </p>
-                  <StatusBadge v-if="statusKey" :status="row[statusKey]" />
-                </div>
-              </div>
-              <div
-                v-if="row.modified || row.owner"
-                class="mt-3 pt-2 border-t border-outline-gray-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-gray-5"
-              >
-                <span v-if="row.modified">Updated {{ timeAgo(row.modified) }}</span>
-                <span v-if="row.owner">By {{ ownerLabel(row.owner) }}</span>
-              </div>
-            </button>
-          </div>
-
-          <!-- Pagination -->
-          <div
-            v-if="rows.length === pageSize || page > 0"
-            class="flex items-center justify-between px-4 py-3 bg-surface-gray-1 border-t border-outline-gray-1 text-xs"
-          >
-            <div class="text-ink-gray-5">
-              Showing page {{ page + 1 }}
-            </div>
-            <div class="flex items-center gap-2">
-              <Button
-                variant="outline"
-                theme="gray"
-                size="sm"
-                :disabled="page <= 0"
-                @click="onPage(page - 1)"
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                theme="gray"
-                size="sm"
-                :disabled="rows.length < pageSize"
-                @click="onPage(page + 1)"
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        </template>
+        <FinanceTable
+          :columns="columns"
+          :rows="rows"
+          :loading="listLoading"
+          :error="listError"
+          :empty-label="emptyLabel"
+          :page="page"
+          :page-size="pageSize"
+          collapsible
+          @row-click="goView"
+          @retry="refetch"
+          @update:page="onPage"
+        />
       </div>
     </template>
 
@@ -281,16 +121,13 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { createResource, Button, ListView, Breadcrumbs } from 'frappe-ui'
+import { createResource, Button, Breadcrumbs } from 'frappe-ui'
 import FinanceDetail from './FinanceDetail.vue'
 import FinanceForm from './FinanceForm.vue'
 import CreateFromPicker from './CreateFromPicker.vue'
 import FcIcon from './FcIcon.vue'
-import StatusBadge from './StatusBadge.vue'
+import FinanceTable from '../FinanceTable.vue'
 import { useBoot } from '../../composables/useBoot.js'
-import { useCurrency } from '../../composables/useCurrency.js'
-import { useBreakpoint } from '../../composables/useBreakpoint.js'
-import FinanceErrorState from '../FinanceErrorState.vue'
 import { printUrl } from '../../constants/printFormats.js'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
 
@@ -335,8 +172,6 @@ const props = defineProps({
 
 const { getRoles, isAdministrator } = useBoot()
 const { company } = useCompanyContext()
-const { formatCurrency } = useCurrency()
-const { isMobile } = useBreakpoint()
 
 const mode = ref('list')
 const activeName = ref(null)
@@ -353,7 +188,7 @@ const listResource = createResource({
   url: props.listResourceUrl,
   makeParams() {
     return {
-      ...props.listParams(),
+      ...props.listParams(page.value, props.pageSize),
       page: page.value,
       page_size: props.pageSize,
     }
@@ -365,41 +200,6 @@ const rows = ref([])
 const listLoading = ref(false)
 const listError = ref(null)
 let listRequest = 0
-// ListView column shape: {label, key, width, align, getLabel, type(custom)}.
-// getLabel drives the tooltip/plain value; the #cell slot handles rendering.
-const listColumns = computed(() =>
-  props.columns.map((c) => ({
-    label: c.label,
-    key: c.key,
-    type: c.type,
-    align: c.align || 'left',
-    width: c.width || 1,
-    getLabel: ({ row }) => {
-      const v = row[c.key]
-      if (c.type === 'currency') return formatCurrency(v, row.currency)
-      return v == null || v === '' ? '—' : String(v)
-    },
-  })),
-)
-
-const listOptions = computed(() => ({
-  selectable: false,
-  showTooltip: false,
-  resizeColumn: false,
-  rowHeight: 44,
-  onRowClick: (row) => goView(row),
-  emptyState: { title: props.emptyLabel, description: '' },
-}))
-
-// Mobile card key hints derived from columns.
-const primaryKey = computed(() => props.columns[0]?.key || 'name')
-const secondaryKey = computed(() => props.columns[1]?.key || '')
-const amountKey = computed(
-  () => props.columns.find((c) => c.type === 'currency')?.key || '',
-)
-const statusKey = computed(
-  () => props.columns.find((c) => c.type === 'status')?.key || '',
-)
 
 const roles = computed(() => getRoles())
 const canCreate = computed(

@@ -146,6 +146,21 @@
         <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
           MFL: {{ facility.mfl_code }}
         </p>
+        <label v-if="!facility.already_quoted" class="mt-3 block text-xs font-medium text-gray-600 dark:text-gray-300" @click.stop>
+          Rebate Supplier (optional)
+          <select
+            :value="selectedSuppliers[facility.mfl_code] || ''"
+            class="mt-1 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800"
+            :disabled="supplierLoading || !supplierOptions.length"
+            @click.stop
+            @change="setSupplier(facility.mfl_code, $event.target.value)"
+          >
+            <option value="">Use Network Supplier</option>
+            <option v-for="supplier in supplierOptions" :key="supplier.name" :value="supplier.name">
+              {{ supplier.supplier_name || supplier.name }}
+            </option>
+          </select>
+        </label>
 
         <!-- Already-quoted note -->
         <div
@@ -173,8 +188,12 @@
       class="rounded-xl border border-gray-200 py-12 text-center dark:border-gray-700"
     >
       <p class="text-sm text-gray-500 dark:text-gray-400">
-        No facilities found for your account.
+        No facilities are available for your account.
       </p>
+    </div>
+    <div v-if="supplierError" class="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200" role="status">
+      {{ supplierError }} A Network Supplier can still be used for the rebate.
+      <button type="button" class="ml-1 underline" @click="loadSupplierOptions">Try again</button>
     </div>
 
     <!-- Min selection hint -->
@@ -206,7 +225,8 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { createResource } from 'frappe-ui'
 import { useOptInStore } from './useOptInStore.js'
 
 const props = defineProps({
@@ -232,6 +252,39 @@ const selected = ref(
     .map((f) => f.mfl_code)
     .filter((code) => !lockedCodes.value.has(code)),
 )
+const supplierOptions = ref([])
+const supplierLoading = ref(false)
+const supplierError = ref('')
+const selectedSuppliers = ref(Object.fromEntries(
+  (store.selectedFacilities || [])
+    .filter((facility) => facility.rebate_supplier)
+    .map((facility) => [facility.mfl_code, facility.rebate_supplier]),
+))
+const supplierResource = createResource({ url: 'crm.api.optin.get_optin_supplier_options' })
+
+onMounted(loadSupplierOptions)
+
+async function loadSupplierOptions() {
+  supplierLoading.value = true
+  supplierError.value = ''
+  try {
+    supplierOptions.value = await supplierResource.fetch({
+      signing_token: store.signingToken,
+      email: store.contact.email,
+      network_slug: store.networkSlug,
+      expiry: store.signingExpiry,
+    }) || []
+  } catch (error) {
+    supplierError.value = error?.messages?.[0] || 'Supplier choices could not be loaded.'
+  } finally {
+    supplierLoading.value = false
+  }
+}
+
+function setSupplier(mflCode, supplier) {
+  if (supplier) selectedSuppliers.value[mflCode] = supplier
+  else delete selectedSuppliers.value[mflCode]
+}
 
 function isSelected(mflCode) {
   return selected.value.includes(mflCode)
@@ -274,7 +327,10 @@ function kephBadgeClass(keph) {
 function handleContinue() {
   const selectedFacilities = props.facilities.filter((f) =>
     selected.value.includes(f.mfl_code),
-  )
+  ).map((facility) => ({
+    ...facility,
+    rebate_supplier: selectedSuppliers.value[facility.mfl_code] || '',
+  }))
   store.setSelectedFacilities(selectedFacilities)
   emit('continue', selectedFacilities)
 }

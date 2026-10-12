@@ -32,3 +32,15 @@ UAT/test site provided by user: `cr-dev` (`cr-dev.tiberbu.app` in this bench).
 ## Completion proof
 
 Close each row only with an attached code/test result or UAT evidence. Frontend and backend unit suites passed; the site's runtime behavior and deployment commit have not been verified for FIN-UAT-01 through FIN-UAT-06. The responsible site owner is still unidentified for FIN-UAT-01 and FIN-UAT-03 through FIN-UAT-06. Do not mark these fixed from source inspection alone.
+
+## PR 85 — Finance remediation status
+
+**Status: In progress; owner review and cr-dev walkthrough are still required.**
+
+| Work item | Code state | Proof / remaining action |
+|---|---|---|
+| Canonical Opt-In links | Conservative backfill and conflict inventory implemented; populated conflicting links are left unchanged. | 3 link-conflict unit tests pass. Read-only cr-dev inventory found 0 conflicting references; no repair was run. |
+| Payment-based rebates and commissions | Received invoice allocations accrue configured rates; facility Supplier takes precedence over the Network fallback; commission uses the Deal User's unique active Employee. | 13 focused finance unit tests pass. Confirm configuration and example results in cr-dev. |
+| Finance Settings and accounting Setup | Rate screens and CRM Setup forms are implemented for the listed accounting records. | 173 frontend tests and production build pass. Walk through create/edit permissions and saved records in cr-dev. |
+| Finance list and Opt-In Supplier capture | Payment result details and filters were updated; Opt-In facility cards accept an optional Supplier and carry attribution into billing lines. | 7 Opt-In Supplier tests pass. Run the Opt-In flow and inspect quote/order/invoice attribution in cr-dev. |
+| Remaining Desk destinations | Setup destinations now open CRM screens. Other finance record/report actions still include native accounting destinations and need a complete path audit. | Keep this remediation in progress until each in-scope action opens a CRM screen. |

@@ -6,7 +6,7 @@
         {{ name ? 'Editing' : 'New Document' }}
       </p>
       <h2 class="text-xl font-bold text-ink-gray-9 truncate">
-        {{ name || 'New ' + doctype }}
+        {{ name && title ? title : name || 'New ' + doctype }}
       </h2>
     </div>
 
@@ -212,6 +212,7 @@ import { resolveLayout } from '../../constants/formLayouts.js'
 
 const props = defineProps({
   doctype: { type: String, required: true },
+  title: { type: String, default: '' },
   name: { type: String, default: null },
   // Optional pre-filled document (e.g. a mapped accounting document from a "Create From"
   // flow). When provided and there is no `name`, the form hydrates from the seed
