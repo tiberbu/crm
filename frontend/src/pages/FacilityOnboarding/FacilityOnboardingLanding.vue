@@ -5,7 +5,9 @@
         class="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8"
       >
         <div>
-          <p class="text-base font-semibold tracking-tight">Tiberbu Customer Experience</p>
+          <p class="text-base font-semibold tracking-tight">
+            Tiberbu Customer Experience
+          </p>
           <p class="text-xs text-ink-gray-5">Secure facility onboarding</p>
         </div>
         <div class="flex items-center gap-4 text-sm">
@@ -110,10 +112,16 @@
           {{ __('About Tiberbu HMIS') }}
         </p>
         <h2 id="hmis-about-title" class="mt-2 text-xl font-semibold">
-          {{ __('One connected path from verification to Customer Experience') }}
+          {{
+            __('One connected path from verification to Customer Experience')
+          }}
         </h2>
         <p class="mt-3 max-w-3xl text-sm leading-6 text-ink-gray-6">
-          {{ __('Tiberbu HMIS connects identity checks, facility selection, package review, signatures and Customer Experience access. This wizard is for facility owners and administrators.') }}
+          {{
+            __(
+              'Tiberbu HMIS connects identity checks, facility selection, package review, signatures and Customer Experience access. This wizard is for facility owners and administrators.',
+            )
+          }}
         </p>
         <a
           href="/login?redirect-to=/crm"
@@ -144,34 +152,42 @@
         <ol
           v-if="stage !== 'success'"
           class="mb-8 grid grid-cols-4 gap-2"
-          aria-label="Onboarding steps"
+          :aria-label="__('Onboarding steps')"
         >
           <li
             v-for="item in progressSteps"
             :key="item.key"
             class="text-xs"
+            :aria-current="item.status === 'current' ? 'step' : undefined"
             :class="
-              stepIndex(item.key) <= stepIndex(stage)
-                ? 'text-[#bc1823]'
-                : 'text-ink-gray-5'
+              item.status === 'upcoming' ? 'text-ink-gray-5' : 'text-[#bc1823]'
             "
           >
             <span
               class="mb-2 block h-1 rounded-full"
               :class="
-                stepIndex(item.key) <= stepIndex(stage)
-                  ? 'bg-[#bc1823]'
-                  : 'bg-surface-gray-3'
+                item.status === 'upcoming'
+                  ? 'bg-surface-gray-3'
+                  : 'bg-[#bc1823]'
               "
-            />{{ item.label }}
+            />{{ item.label
+            }}<span class="sr-only"> — {{ item.statusLabel }}</span>
           </li>
         </ol>
         <div
           v-if="errorMessage"
-          class="mb-5 rounded-xl border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-7"
+          class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-7"
           role="alert"
         >
-          {{ errorMessage }}
+          <span>{{ errorMessage }}</span
+          ><button
+            v-if="sessionExpired"
+            type="button"
+            class="font-semibold underline underline-offset-4"
+            @click="reset"
+          >
+            {{ __('Start again') }}
+          </button>
         </div>
         <form
           v-if="stage === 'identity'"
@@ -225,34 +241,54 @@
           class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
           @submit.prevent="verifyOtp"
         >
-          <p class="text-sm leading-6 text-ink-gray-6">
+          <div
+            v-if="deliveryStatus === 'unavailable'"
+            class="rounded-xl bg-surface-amber-1 px-4 py-3 text-sm leading-6 text-ink-amber-3"
+            role="status"
+          >
             {{
               __(
-                'If your details match a registered facility owner, a one-time code has been sent to the contact on file. Enter it below to continue.',
+                'We could not deliver a code just now. Try again in a moment, or start over.',
               )
             }}
-          </p>
-          <label class="mt-7 block text-sm font-medium"
-            >{{ __('Verification code')
-            }}<input
-              v-model.trim="otp"
-              required
-              inputmode="numeric"
-              maxlength="6"
-              class="mt-2 block w-full rounded-lg border border-outline-gray-2 px-3 py-3 text-center text-2xl tracking-[.4em]"
-              placeholder="000000" /></label
-          ><button
-            :disabled="busy"
+          </div>
+          <div v-else class="text-center" role="status">
+            <p class="text-sm leading-6 text-ink-gray-6">
+              {{ __('We sent a 6-digit code by') }}
+              <strong>{{ channelLabel }}</strong>
+              {{ __('to') }}
+            </p>
+            <p class="mt-1 text-lg font-semibold tracking-wide">
+              {{ delivery.masked_destination }}
+            </p>
+            <p class="mt-2 text-xs text-ink-gray-5">
+              {{ __('The code expires in {0} minutes.', [expiryMinutes]) }}
+            </p>
+          </div>
+          <div class="mt-7">
+            <OtpCodeInput
+              v-model="otp"
+              :disabled="busy"
+              :error="otpError"
+              :label="__('Verification code')"
+            />
+          </div>
+          <button
+            :disabled="busy || otp.length !== 6"
             class="mt-7 min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
           >
             {{ busy ? __('Verifying…') : __('Verify and continue') }}</button
           ><button
             type="button"
-            :disabled="busy"
-            class="mt-4 w-full text-sm font-medium text-[#bc1823]"
+            :disabled="busy || resendIn > 0"
+            class="mt-4 min-h-11 w-full text-sm font-medium text-[#bc1823] disabled:text-ink-gray-4"
             @click="resendOtp"
           >
-            {{ __('Resend code') }}
+            {{
+              resendIn > 0
+                ? __('Resend code in {0}', [formatCountdown(resendIn)])
+                : __('Resend code')
+            }}
           </button>
         </form>
         <form
@@ -380,10 +416,15 @@
                   item.display_name || item.item_code
                 }}</strong>
                 <p class="mt-2 text-sm font-semibold">
-                  {{ money(item.price, item.currency) }}
+                  {{ money(item.price_ex_vat ?? item.price, item.currency) }}
                   <span class="font-normal text-ink-gray-5">{{
                     __('excl. VAT')
                   }}</span>
+                </p>
+                <p v-if="item.gross_total" class="mt-1 text-xs text-ink-gray-5">
+                  {{ item.vat_label || __('VAT') }}
+                  {{ money(item.vat_amount, item.currency) }} ·
+                  {{ __('Total') }} {{ money(item.gross_total, item.currency) }}
                 </p>
                 <p class="mt-2 text-xs leading-5 text-ink-gray-5">
                   {{ item.coverage_summary || item.description }}
@@ -395,7 +436,13 @@
             :disabled="!catalog.network || !packageCode"
             class="min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {{ __('Review Opt-In and signatures') }}
+            {{ __('Review Opt-In and signatures') }}</button
+          ><button
+            type="button"
+            class="min-h-11 w-full text-sm font-medium text-ink-gray-6"
+            @click="goBack"
+          >
+            {{ __('Back to facilities') }}
           </button>
         </form>
         <form
@@ -419,13 +466,71 @@
                 <dd class="font-medium">{{ catalog.network?.display_name }}</dd>
               </div>
               <div class="flex justify-between gap-4">
-                <dt class="text-ink-gray-5">{{ __('Facilities') }}</dt>
-                <dd class="font-medium">{{ selectedFacilities.length }}</dd>
+                <dt class="text-ink-gray-5">
+                  {{ __('Facilities') }}
+                  <button
+                    type="button"
+                    class="ml-2 min-h-8 text-xs font-medium text-[#bc1823] underline underline-offset-4"
+                    @click="stage = 'facilities'"
+                  >
+                    {{ __('Edit') }}
+                  </button>
+                </dt>
+                <dd class="text-right font-medium">
+                  <span
+                    v-for="facility in chosenFacilities"
+                    :key="facility.facility_id"
+                    class="block"
+                    >{{ facility.facility_name || facility.mfl_code }}</span
+                  >
+                </dd>
               </div>
               <div class="flex justify-between gap-4">
-                <dt class="text-ink-gray-5">{{ __('Package') }}</dt>
+                <dt class="text-ink-gray-5">
+                  {{ __('Package') }}
+                  <button
+                    type="button"
+                    class="ml-2 min-h-8 text-xs font-medium text-[#bc1823] underline underline-offset-4"
+                    @click="stage = 'pricing'"
+                  >
+                    {{ __('Edit') }}
+                  </button>
+                </dt>
                 <dd class="font-medium">{{ selectedPackage?.display_name }}</dd>
               </div>
+            </dl>
+            <dl
+              v-if="totals"
+              class="mt-5 space-y-2 border-t border-outline-gray-2 pt-4 text-sm"
+            >
+              <div class="flex justify-between gap-4">
+                <dt class="text-ink-gray-5">
+                  {{ __('Price excl. VAT') }} ({{ totals.count }} ×
+                  {{ money(totals.perFacility.exVat, totals.currency) }})
+                </dt>
+                <dd class="font-medium">
+                  {{ money(totals.exVat, totals.currency) }}
+                </dd>
+              </div>
+              <div class="flex justify-between gap-4">
+                <dt class="text-ink-gray-5">{{ totals.vatLabel }}</dt>
+                <dd class="font-medium">
+                  {{ money(totals.vat, totals.currency) }}
+                </dd>
+              </div>
+              <div class="flex justify-between gap-4 text-base">
+                <dt class="font-semibold">{{ __('Total incl. VAT') }}</dt>
+                <dd class="font-semibold">
+                  {{ money(totals.gross, totals.currency) }}
+                </dd>
+              </div>
+              <p class="pt-1 text-xs text-ink-gray-5">
+                {{
+                  __(
+                    'Final amounts are confirmed by the server when you submit. No payment is taken at this step.',
+                  )
+                }}
+              </p>
             </dl>
           </div>
           <div
@@ -471,10 +576,19 @@
             >
           </div>
           <button
-            :disabled="busy"
+            :disabled="busy || !reviewReady"
             class="min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {{ busy ? __('Submitting…') : __('Submit facility onboarding') }}
+            {{
+              busy ? __('Submitting…') : __('Submit facility onboarding')
+            }}</button
+          ><button
+            type="button"
+            :disabled="busy"
+            class="min-h-11 w-full text-sm font-medium text-ink-gray-6"
+            @click="goBack"
+          >
+            {{ __('Back to package') }}
           </button>
         </form>
         <section
@@ -518,8 +632,18 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { call } from 'frappe-ui'
+import OtpCodeInput from '@/components/FacilityOnboarding/OtpCodeInput.vue'
+import {
+  STEPS,
+  canAdvance,
+  deliveryState,
+  formatCountdown,
+  packageTotals,
+  previousStage,
+  stepStatus,
+} from '@/utils/onboardingSteps'
 
 const props = defineProps({
   networkSlug: { type: String, default: '' },
@@ -543,6 +667,32 @@ const packageCode = ref('')
 const witness = ref({ name: '', email: '', phone: '' })
 const termsAccepted = ref(false)
 const submissions = ref([])
+const delivery = ref({})
+const resendIn = ref(0)
+const otpError = ref('')
+const sessionExpired = ref(false)
+let resendTimer = null
+const deliveryStatus = computed(() => deliveryState(delivery.value))
+const channelLabel = computed(() =>
+  delivery.value.channel === 'sms' ? __('SMS') : __('email'),
+)
+const expiryMinutes = computed(() =>
+  Math.max(1, Math.round((delivery.value.expires_in || 600) / 60)),
+)
+const chosenFacilities = computed(() =>
+  facilities.value.filter((item) =>
+    selectedFacilities.value.includes(item.facility_id),
+  ),
+)
+const totals = computed(() =>
+  packageTotals(selectedPackage.value, selectedFacilities.value.length),
+)
+const reviewReady = computed(() =>
+  canAdvance('review', {
+    witness: witness.value,
+    termsAccepted: termsAccepted.value,
+  }),
+)
 const networkName = computed(() => catalog.value.network?.display_name || '')
 const supportEmail = computed(() => catalog.value.network?.contact_email || '')
 const selectedPackage = computed(() =>
@@ -583,19 +733,22 @@ const journey = [
     ),
   },
 ]
-const progressSteps = [
-  { key: 'identity', label: __('Identity') },
-  { key: 'facilities', label: __('Facilities') },
-  { key: 'pricing', label: __('Package') },
-  { key: 'review', label: __('Submit') },
-]
-function stepIndex(value) {
-  return (
-    { identity: 0, otp: 0, facilities: 1, pricing: 2, review: 3, success: 4 }[
-      value
-    ] ?? 0
-  )
-}
+const progressSteps = computed(() =>
+  STEPS.map((step) => {
+    const status = stepStatus(step.key, stage.value)
+    return {
+      key: step.key,
+      label: __(step.label),
+      status,
+      statusLabel:
+        status === 'complete'
+          ? __('complete')
+          : status === 'current'
+            ? __('current step')
+            : __('upcoming'),
+    }
+  }),
+)
 function money(value, currency) {
   return new Intl.NumberFormat('en-KE', {
     style: 'currency',
@@ -615,8 +768,29 @@ function unwrap(response) {
 async function request(method, args) {
   return unwrap(await call(`crm.api.facility_onboarding.${method}`, args))
 }
+function isSessionError(error) {
+  return (
+    error?.exc_type === 'PermissionError' ||
+    /expired|session/i.test(error?.messages?.[0] || '')
+  )
+}
+function stopResendTimer() {
+  if (resendTimer) clearInterval(resendTimer)
+  resendTimer = null
+}
+function applyDelivery(next) {
+  delivery.value = next || {}
+  resendIn.value = Number(next?.resend_after ?? 60)
+  stopResendTimer()
+  resendTimer = setInterval(() => {
+    if (resendIn.value > 0) resendIn.value -= 1
+    else stopResendTimer()
+  }, 1000)
+}
+onBeforeUnmount(stopResendTimer)
 async function startIdentity() {
   errorMessage.value = ''
+  sessionExpired.value = false
   busy.value = true
   try {
     const data = await request('start_identity', {
@@ -625,6 +799,9 @@ async function startIdentity() {
     })
     sessionToken.value = data.session_token
     identityPreview.value = data.identity || {}
+    otp.value = ''
+    otpError.value = ''
+    applyDelivery(data.delivery)
     stage.value = 'otp'
   } catch (error) {
     errorMessage.value =
@@ -636,15 +813,22 @@ async function startIdentity() {
 }
 async function resendOtp() {
   errorMessage.value = ''
+  otpError.value = ''
   try {
-    await request('resend_otp', { session_token: sessionToken.value })
+    const data = await request('resend_otp', {
+      session_token: sessionToken.value,
+    })
+    otp.value = ''
+    applyDelivery(data.delivery)
   } catch (error) {
+    sessionExpired.value = isSessionError(error)
     errorMessage.value =
       error?.messages?.[0] || __('We could not resend the code.')
   }
 }
 async function verifyOtp() {
   errorMessage.value = ''
+  otpError.value = ''
   busy.value = true
   try {
     const data = await request('verify_otp', {
@@ -654,12 +838,18 @@ async function verifyOtp() {
     identityPreview.value = data.identity || identityPreview.value
     facilities.value = data.facilities || []
     stage.value = 'facilities'
+    stopResendTimer()
   } catch (error) {
-    errorMessage.value =
+    otp.value = ''
+    otpError.value =
       error?.messages?.[0] || __('The code is incorrect or expired.')
   } finally {
     busy.value = false
   }
+}
+function goBack() {
+  const previous = previousStage(stage.value)
+  if (previous) stage.value = previous
 }
 function continueFacilities() {
   if (selectedFacilities.value.length) stage.value = 'pricing'
@@ -698,6 +888,7 @@ async function submit() {
     submissions.value = data.submissions || []
     stage.value = 'success'
   } catch (error) {
+    sessionExpired.value = isSessionError(error)
     errorMessage.value =
       error?.messages?.[0] ||
       __('We could not complete onboarding. Please try again.')
@@ -708,7 +899,12 @@ async function submit() {
 function reset() {
   stage.value = 'welcome'
   errorMessage.value = ''
+  sessionExpired.value = false
   sessionToken.value = ''
+  otp.value = ''
+  otpError.value = ''
+  delivery.value = {}
+  stopResendTimer()
   facilities.value = []
   selectedFacilities.value = []
   catalog.value = { network: null, packages: [] }

@@ -1,0 +1,123 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-11 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "event",
+  "outcome",
+  "occurred_at",
+  "column_break_refs",
+  "session_ref",
+  "subject_ref",
+  "channel",
+  "section_break_link",
+  "reference_doctype",
+  "reference_name",
+  "detail"
+ ],
+ "fields": [
+  {
+   "fieldname": "event",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Event",
+   "options": "lookup\notp_sent\notp_failed\notp_verified\nfacility_selected\nterms_accepted\ndocument_linked",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "default": "ok",
+   "fieldname": "outcome",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Outcome",
+   "options": "ok\nfailed\nblocked",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "occurred_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Occurred At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_refs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Keyed digest of the onboarding session token; never the token.",
+   "fieldname": "session_ref",
+   "fieldtype": "Data",
+   "label": "Session Ref",
+   "length": 64,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Keyed digest of the identity; never the identity number.",
+   "fieldname": "subject_ref",
+   "fieldtype": "Data",
+   "label": "Subject Ref",
+   "length": 64,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "channel",
+   "fieldtype": "Data",
+   "label": "Channel",
+   "length": 16,
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_link",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Plain text, not a Link, so evidence never blocks deleting the linked record.",
+   "fieldname": "reference_doctype",
+   "fieldtype": "Data",
+   "label": "Reference DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Data",
+   "label": "Reference Name",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Short, redacted context. Identity numbers, contacts and codes are rejected.",
+   "fieldname": "detail",
+   "fieldtype": "Small Text",
+   "label": "Detail",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-10-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Onboarding Evidence",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

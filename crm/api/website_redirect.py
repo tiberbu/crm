@@ -421,9 +421,9 @@ def _portal_network(network_name: str) -> dict:
 
 def _portal_token_catalog() -> list[dict]:
 	try:
-		from crm.api.facility_onboarding import _token_packages
+		from crm.api.facility_onboarding import _catalog_packages
 
-		return _token_packages()
+		return _catalog_packages()
 	except Exception:
 		return []
 

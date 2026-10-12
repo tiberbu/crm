@@ -51,176 +51,187 @@
 
     <!-- LIST -->
     <template v-if="mode === 'list'">
-      <div class="flex flex-wrap items-center gap-2 mb-3">
-        <slot name="filters" />
-      </div>
+      <div class="fc-card-frame mb-4">
+        <div class="fc-toolbar-bar">
+          <div class="flex flex-wrap items-center gap-2 flex-1">
+            <slot name="filters" />
+          </div>
+        </div>
 
-      <!-- Loading -->
-      <div v-if="listLoading" class="space-y-2">
+        <!-- Loading -->
+        <div v-if="listLoading" class="p-4 space-y-2">
+          <div
+            v-for="n in 6"
+            :key="n"
+            class="h-11 bg-surface-gray-2 rounded-lg animate-pulse"
+          />
+        </div>
+
+        <!-- Error -->
+        <div v-else-if="listError" class="p-6">
+          <FinanceErrorState
+            :error="listError"
+            @retry="refetch"
+          />
+        </div>
+
+        <!-- Empty -->
         <div
-          v-for="n in 6"
-          :key="n"
-          class="h-11 bg-surface-gray-2 rounded-lg animate-pulse"
-        />
-      </div>
-
-      <!-- Error -->
-      <FinanceErrorState
-        v-else-if="listError"
-        :error="listError"
-        @retry="refetch"
-      />
-
-      <!-- Empty -->
-      <div
-        v-else-if="!rows.length"
-        class="text-center py-12 text-sm text-ink-gray-4"
-      >
-        {{ emptyLabel }}
-      </div>
-
-      <template v-else>
-        <!-- Desktop: frappe-ui ListView -->
-        <ListView
-          v-if="!isMobile"
-          :columns="listColumns"
-          :rows="rows"
-          row-key="name"
-          :options="listOptions"
-          class="fc-listview border border-outline-gray-1 rounded-lg"
+          v-else-if="!rows.length"
+          class="text-center py-12 text-sm text-ink-gray-4"
         >
-          <template #cell="{ item, row, column }">
-            <StatusBadge v-if="column.type === 'status'" :status="item" />
-            <span
-              v-else-if="column.type === 'currency'"
-              class="font-medium text-ink-gray-8 tabular-nums"
-              >{{ formatCurrency(item, row.currency) }}</span
-            >
-            <span
-              v-else-if="column.type === 'due-date'"
-              class="flex flex-col leading-tight"
-            >
-              <span class="font-medium text-ink-gray-8">{{ formatDate(item) }}</span>
+          {{ emptyLabel }}
+        </div>
+
+        <template v-else>
+          <!-- Desktop: frappe-ui ListView -->
+          <ListView
+            v-if="!isMobile"
+            :columns="listColumns"
+            :rows="rows"
+            row-key="name"
+            :options="listOptions"
+            class="fc-listview border-t border-outline-gray-1"
+          >
+            <template #cell="{ item, row, column }">
+              <StatusBadge v-if="column.type === 'status'" :status="item" />
               <span
-                v-if="Number(row.days_overdue || 0) > 0"
-                class="text-xs text-ink-red-6"
+                v-else-if="column.type === 'currency'"
+                class="font-medium text-ink-gray-8 tabular-nums"
+                >{{ formatCurrency(item, row.currency) }}</span
               >
-                {{ row.days_overdue }}
-                {{ Number(row.days_overdue) === 1 ? 'day' : 'days' }} overdue
+              <span
+                v-else-if="column.type === 'due-date'"
+                class="flex flex-col leading-tight"
+              >
+                <span class="font-medium text-ink-gray-8">{{ formatDate(item) }}</span>
+                <span
+                  v-if="Number(row.days_overdue || 0) > 0"
+                  class="text-xs text-ink-red-6"
+                >
+                  {{ row.days_overdue }}
+                  {{ Number(row.days_overdue) === 1 ? 'day' : 'days' }} overdue
+                </span>
+                <span v-else class="text-xs text-ink-gray-4">Due on time</span>
               </span>
-              <span v-else class="text-xs text-ink-gray-4">Due on time</span>
-            </span>
-            <span
-              v-else-if="column.type === 'overdue'"
-              :class="[
-                'text-xs font-medium whitespace-nowrap',
-                Number(item || 0) > 0 ? 'text-ink-red-6' : 'text-ink-gray-5',
-              ]"
-            >
-              {{ Number(item || 0) > 0 ? `${item}d overdue` : 'Not overdue' }}
-            </span>
-            <span
-              v-else-if="column.type === 'datetime'"
-              class="flex flex-col leading-tight"
-            >
-              <span class="font-medium text-ink-gray-8">{{ timeAgo(item) }}</span>
-              <span class="text-xs text-ink-gray-4">{{ formatDateTime(item) }}</span>
-            </span>
-            <span
-              v-else-if="column.type === 'owner'"
-              class="truncate"
-              :title="item || ''"
-            >
-              {{ ownerLabel(item) }}
-            </span>
-            <span v-else-if="column.type === 'date'" class="text-ink-gray-6">{{
-              item || '—'
-            }}</span>
-            <span
-              v-else-if="column.type === 'timeago'"
-              class="flex flex-col leading-tight"
-            >
-              <span class="font-medium text-ink-gray-8">{{
-                timeAgo(item)
+              <span
+                v-else-if="column.type === 'overdue'"
+                :class="[
+                  'text-xs font-medium whitespace-nowrap',
+                  Number(item || 0) > 0 ? 'text-ink-red-6' : 'text-ink-gray-5',
+                ]"
+              >
+                {{ Number(item || 0) > 0 ? `${item}d overdue` : 'Not overdue' }}
+              </span>
+              <span
+                v-else-if="column.type === 'datetime'"
+                class="flex flex-col leading-tight"
+              >
+                <span class="font-medium text-ink-gray-8">{{ timeAgo(item) }}</span>
+                <span class="text-xs text-ink-gray-4">{{ formatDateTime(item) }}</span>
+              </span>
+              <span
+                v-else-if="column.type === 'owner'"
+                class="truncate"
+                :title="item || ''"
+              >
+                {{ ownerLabel(item) }}
+              </span>
+              <span v-else-if="column.type === 'date'" class="text-ink-gray-6">{{
+                item || '—'
               }}</span>
-              <span class="text-xs text-ink-gray-4">{{ item || '' }}</span>
-            </span>
+              <span
+                v-else-if="column.type === 'timeago'"
+                class="flex flex-col leading-tight"
+              >
+                <span class="font-medium text-ink-gray-8">{{
+                  timeAgo(item)
+                }}</span>
+                <span class="text-xs text-ink-gray-4">{{ item || '' }}</span>
+              </span>
+              <button
+                v-else-if="column.type === 'print-action'"
+                class="text-xs text-ink-gray-5 hover:text-ink-gray-8 px-2 py-0.5 rounded border border-outline-gray-2 hover:bg-surface-gray-2 transition-colors"
+                @click.stop="printRow(row)"
+              >
+                Print
+              </button>
+              <span v-else class="text-ink-gray-7">{{ item ?? '—' }}</span>
+            </template>
+          </ListView>
+
+          <!-- Mobile: CareVerse HQ styled card list -->
+          <div v-else class="p-3 space-y-3">
             <button
-              v-else-if="column.type === 'print-action'"
-              class="text-xs text-ink-gray-5 hover:text-ink-gray-8 px-2 py-0.5 rounded border border-outline-gray-2 hover:bg-surface-gray-2 transition-colors"
-              @click.stop="printRow(row)"
+              v-for="row in rows"
+              :key="row.name"
+              type="button"
+              class="fc-mobile-card w-full text-left transition-colors"
+              @click="goView(row)"
             >
-              Print
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="font-semibold text-ink-gray-9 text-sm truncate">
+                    {{ row[primaryKey] || row.name }}
+                  </p>
+                  <p
+                    v-if="secondaryKey"
+                    class="text-xs text-ink-gray-5 mt-0.5 truncate"
+                  >
+                    {{ row[secondaryKey] }}
+                  </p>
+                </div>
+                <div class="text-right flex-shrink-0 space-y-1">
+                  <p
+                    v-if="amountKey"
+                    class="font-bold text-ink-gray-9 text-sm tabular-nums"
+                  >
+                    {{ formatCurrency(row[amountKey], row.currency) }}
+                  </p>
+                  <StatusBadge v-if="statusKey" :status="row[statusKey]" />
+                </div>
+              </div>
+              <div
+                v-if="row.modified || row.owner"
+                class="mt-3 pt-2 border-t border-outline-gray-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-gray-5"
+              >
+                <span v-if="row.modified">Updated {{ timeAgo(row.modified) }}</span>
+                <span v-if="row.owner">By {{ ownerLabel(row.owner) }}</span>
+              </div>
             </button>
-            <span v-else class="text-ink-gray-7">{{ item ?? '—' }}</span>
-          </template>
-        </ListView>
+          </div>
 
-        <!-- Mobile: frappe-ui-styled card fallback -->
-        <div v-else class="space-y-3">
-          <button
-            v-for="row in rows"
-            :key="row.name"
-            type="button"
-            class="w-full text-left bg-surface-white rounded-lg border border-outline-gray-1 p-3 shadow-sm active:bg-surface-gray-1 transition-colors"
-            @click="goView(row)"
+          <!-- Pagination -->
+          <div
+            v-if="rows.length === pageSize || page > 0"
+            class="flex items-center justify-between px-4 py-3 bg-surface-gray-1 border-t border-outline-gray-1 text-xs"
           >
-            <div class="flex items-start justify-between gap-2">
-              <div class="min-w-0">
-                <p class="font-medium text-ink-gray-8 text-sm truncate">
-                  {{ row[primaryKey] || row.name }}
-                </p>
-                <p
-                  v-if="secondaryKey"
-                  class="text-xs text-ink-gray-5 mt-0.5 truncate"
-                >
-                  {{ row[secondaryKey] }}
-                </p>
-              </div>
-              <div class="text-right flex-shrink-0 space-y-1">
-                <p
-                  v-if="amountKey"
-                  class="font-semibold text-ink-gray-8 text-sm tabular-nums"
-                >
-                  {{ formatCurrency(row[amountKey], row.currency) }}
-                </p>
-                <StatusBadge v-if="statusKey" :status="row[statusKey]" />
-              </div>
+            <div class="text-ink-gray-5">
+              Showing page {{ page + 1 }}
             </div>
-            <div
-              v-if="row.modified || row.owner"
-              class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-gray-5"
-            >
-              <span v-if="row.modified">Updated {{ timeAgo(row.modified) }}</span>
-              <span v-if="row.owner">By {{ ownerLabel(row.owner) }}</span>
+            <div class="flex items-center gap-2">
+              <Button
+                variant="outline"
+                theme="gray"
+                size="sm"
+                :disabled="page <= 0"
+                @click="onPage(page - 1)"
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                theme="gray"
+                size="sm"
+                :disabled="rows.length < pageSize"
+                @click="onPage(page + 1)"
+              >
+                Next
+              </Button>
             </div>
-          </button>
-        </div>
-
-        <!-- Pagination -->
-        <div
-          v-if="rows.length === pageSize || page > 0"
-          class="flex items-center justify-end gap-2 mt-3"
-        >
-          <Button
-            variant="outline"
-            theme="gray"
-            size="sm"
-            :disabled="page <= 0"
-            @click="onPage(page - 1)"
-            >Previous</Button
-          >
-          <span class="text-xs text-ink-gray-5">Page {{ page + 1 }}</span>
-          <Button
-            variant="outline"
-            theme="gray"
-            size="sm"
-            :disabled="rows.length < pageSize"
-            @click="onPage(page + 1)"
-            >Next</Button
-          >
-        </div>
-      </template>
+          </div>
+        </template>
+      </div>
     </template>
 
     <!-- VIEW -->

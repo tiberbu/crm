@@ -76,3 +76,5 @@ crm.patches.v1_0.reconcile_signed_optin_finance_handoffs_v1
 crm.patches.v1_0.configure_finance_print_formats_v1
 crm.patches.v1_0.seed_finance_payment_workflow
 crm.patches.v1_0.configure_finance_network_payout_mappings
+crm.patches.v1_0.add_facility_onboarding_otp_channel
+crm.patches.v1_0.seed_cx_e2e_fixture

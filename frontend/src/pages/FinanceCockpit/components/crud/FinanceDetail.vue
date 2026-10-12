@@ -76,6 +76,20 @@
 
           <!-- Actions (RBAC-gated, visible-but-disabled) -->
           <div class="flex items-center gap-2 flex-wrap">
+            <template v-if="workflowInfo?.transitions?.length">
+              <Button
+                v-for="transition in workflowInfo.transitions"
+                :key="transition.action"
+                variant="solid"
+                theme="blue"
+                :loading="busy"
+                :disabled="!canWrite"
+                @click="onApplyWorkflow(transition.action)"
+              >
+                <template #prefix><FcIcon name="check-circle" :size="14" /></template>
+                {{ transition.action }}
+              </Button>
+            </template>
             <Button
               v-if="!isDetailReadOnly"
               variant="outline"
@@ -88,7 +102,7 @@
               Edit
             </Button>
             <Button
-              v-if="isSubmittable && docstatus === 0 && (!readOnly || allowLifecycleActions)"
+              v-if="(!workflowInfo || !workflowInfo.has_workflow) && isSubmittable && docstatus === 0 && (!readOnly || allowLifecycleActions)"
               theme="green"
               variant="subtle"
               :loading="busy"
@@ -100,7 +114,7 @@
               Submit
             </Button>
             <Button
-              v-if="isSubmittable && docstatus === 1 && (!readOnly || allowLifecycleActions)"
+              v-if="(!workflowInfo || !workflowInfo.has_workflow) && isSubmittable && docstatus === 1 && (!readOnly || allowLifecycleActions)"
               theme="gray"
               variant="outline"
               :loading="busy"
@@ -519,28 +533,28 @@
         >
           <div v-if="paymentRefs.length" class="divide-y divide-outline-gray-1">
             <div
-              v-for="ref in paymentRefs"
-              :key="`${ref.reference_doctype || 'unknown'}:${ref.reference_name || 'missing'}`"
+              v-for="paymentRef in paymentRefs"
+              :key="`${paymentRef.reference_doctype || 'unknown'}:${paymentRef.reference_name || 'missing'}`"
               class="flex flex-wrap items-center justify-between gap-3 py-2"
             >
               <div class="min-w-0">
                 <a
-                  v-if="paymentRefHref(ref)"
-                  :href="paymentRefHref(ref)"
+                  v-if="paymentRefHref(paymentRef)"
+                  :href="paymentRefHref(paymentRef)"
                   class="text-sm font-medium text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
                 >
-                  {{ ref.reference_name }}
+                  {{ paymentRef.reference_name }}
                 </a>
                 <span v-else class="text-sm font-medium text-ink-gray-6">
-                  {{ ref.reference_name || 'Reference unavailable' }}
+                  {{ paymentRef.reference_name || 'Reference unavailable' }}
                 </span>
                 <p class="text-xs text-ink-gray-5">
-                  {{ ref.reference_doctype || 'Unknown document type' }}
-                  <span v-if="!paymentRefHref(ref)"> · Native record link unavailable</span>
+                  {{ paymentRef.reference_doctype || 'Unknown document type' }}
+                  <span v-if="!paymentRefHref(paymentRef)"> · Native record link unavailable</span>
                 </p>
               </div>
               <span class="text-sm tabular-nums text-ink-gray-6">{{
-                formatCurrency(ref.allocated_amount, doc.currency)
+                formatCurrency(paymentRef.allocated_amount, doc.currency)
               }}</span>
             </div>
           </div>
@@ -610,6 +624,13 @@ const paymentHistoryResource = createResource({
 const generateInvoiceResource = createResource({
   url: 'crm.finance.api.make_sales_invoice_from_order',
 })
+const workflowTransitionsResource = createResource({
+  url: 'crm.finance.api.get_document_workflow_transitions',
+})
+const applyWorkflowResource = createResource({
+  url: 'crm.finance.api.apply_document_workflow_action',
+})
+const workflowInfo = ref(null)
 const paymentHistory = ref([])
 const paymentHistoryLoading = ref(false)
 const paymentHistoryError = ref('')
@@ -877,14 +898,22 @@ function nativePaymentDocHref(doctype, name, company) {
     !name ||
     typeof doctype !== 'string' ||
     typeof name !== 'string' ||
-    /[\\/\u0000-\u001f]/.test(doctype) ||
-    /[\\/\u0000-\u001f]/.test(name)
+    hasUnsafePathCharacters(doctype) ||
+    hasUnsafePathCharacters(name)
   ) {
     return ''
   }
   const slug = doctype.trim().toLowerCase().replace(/\s+/g, '-')
   const companyQuery = company ? `?company=${encodeURIComponent(company)}` : ''
   return `/app/${encodeURIComponent(slug)}/${encodeURIComponent(name)}${companyQuery}`
+}
+
+function hasUnsafePathCharacters(value) {
+  return (
+    value.includes('/') ||
+    value.includes('\\') ||
+    [...value].some((character) => character.charCodeAt(0) < 32)
+  )
 }
 
 function isNum(f) {
@@ -916,8 +945,37 @@ async function load() {
     await loadInvoiceState()
     await loadPaymentHistory()
     await loadQuotationContext()
+    await loadWorkflowTransitions()
   } finally {
     loading.value = false
+  }
+}
+
+async function loadWorkflowTransitions() {
+  try {
+    workflowInfo.value = await workflowTransitionsResource.submit({
+      doctype: props.doctype,
+      name: props.name,
+    })
+  } catch {
+    workflowInfo.value = null
+  }
+}
+
+async function onApplyWorkflow(action) {
+  busy.value = true
+  try {
+    await applyWorkflowResource.submit({
+      doctype: props.doctype,
+      name: props.name,
+      action,
+    })
+    toast.success(`Workflow action "${action}" applied successfully`)
+    await load()
+  } catch (err) {
+    toast.error(readableError(err) || `Failed to apply workflow action "${action}"`)
+  } finally {
+    busy.value = false
   }
 }
 

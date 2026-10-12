@@ -19,6 +19,7 @@ from typing import Any
 import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
+from frappe.utils.synchronization import filelock
 
 from crm.api._email import (
 	OTP_QUEUE_REDACTION,
@@ -347,10 +348,7 @@ def verify_payment_otp(ois_number: Any, otp: Any):
 	}
 
 
-# nosemgrep: guest-whitelisted-method -- access requires the short-lived checkout session and the invoice is rechecked against that session.
-@frappe.whitelist(allow_guest=True)
-def get_payment_checkout(session_token: Any):
-	session, submission = _require_session(_normalise(session_token))
+def _checkout_payload(submission):
 	settings = _settings()
 	secret = _setting_secret(settings, "paystack_secret_key")
 	public = _normalise(getattr(settings, "paystack_public_key", "") if settings else "")
@@ -365,6 +363,32 @@ def get_payment_checkout(session_token: Any):
 	}
 
 
+# nosemgrep: guest-whitelisted-method -- generic responses, per-IP throttling, and the subsequent OTP gate prevent payment-session enumeration.
+@frappe.whitelist(allow_guest=True)
+def get_payment_checkout(session_token: Any):
+	_, submission = _require_session(_normalise(session_token))
+	return _checkout_payload(submission)
+
+
+def _portal_submission(ois_number):
+	"""Authorise a signed-in Website User from the server-side OIS User Permission only."""
+	from crm.api.website_redirect import require_portal_user
+
+	ois_number = _normalise(ois_number)
+	if ois_number not in require_portal_user():
+		frappe.throw(_("That facility record is not linked to your account."), frappe.PermissionError)
+	submission = _get_submission(ois_number)
+	if not submission:
+		frappe.throw(_("That facility record is not linked to your account."), frappe.PermissionError)
+	return submission
+
+
+@frappe.whitelist(methods=["GET"])
+def get_portal_checkout(ois_number: Any):
+	"""Checkout data for a signed-in Website User; no second OTP is needed."""
+	return _checkout_payload(_portal_submission(ois_number))
+
+
 def _invoice_for_session(submission, invoice_name):
 	return next((row for row in _invoice_rows(submission) if row["name"] == _normalise(invoice_name)), None)
 
@@ -375,7 +399,7 @@ def _paystack_settings():
 	public = _normalise(getattr(settings, "paystack_public_key", "") if settings else "")
 	if not secret or not public or not cint(getattr(settings, "paystack_enabled", 0)):
 		frappe.throw(
-			_("Paystack is not configured. Use bank transfer or contact finance."), frappe.ConfigurationError
+			_("Paystack is not configured. Use bank transfer or contact finance."), frappe.ValidationError
 		)
 	return secret, public
 
@@ -388,23 +412,16 @@ def _paystack_request(method, url, secret, **kwargs):
 	return (make_get_request if method == "GET" else make_post_request)(url, **kwargs)
 
 
-# nosemgrep: guest-whitelisted-method -- Paystack verification is server-side and the invoice is scoped to the verified checkout session.
-@frappe.whitelist(allow_guest=True)
-def initialize_paystack_payment(session_token: Any, invoice: Any):
-	_, submission = _require_session(_normalise(session_token))
-	invoice_row = _invoice_for_session(submission, invoice)
+def _start_paystack(submission, invoice_name, callback_path):
+	"""Start Checkout for an invoice the caller is already authorised for; amount comes from the invoice."""
+	invoice_row = _invoice_for_session(submission, invoice_name)
 	if not invoice_row:
 		frappe.throw(_("That invoice is no longer available for payment."), frappe.ValidationError)
-	secret, _ = _paystack_settings()
+	secret = _paystack_settings()[0]
 	reference = "OIS-%s-%s-%s" % (
 		submission.name.replace("/", "-"),
 		invoice_row["name"].replace("/", "-"),
 		secrets.token_hex(5),
-	)
-	callback = "%s/payment-checkout?ois=%s&reference=%s" % (
-		frappe.utils.get_url(),
-		submission.name,
-		reference,
 	)
 	response = _paystack_request(
 		"POST",
@@ -412,10 +429,10 @@ def initialize_paystack_payment(session_token: Any, invoice: Any):
 		secret,
 		json={
 			"email": _submission_email(submission),
-			"amount": int(round(flt(invoice_row["amount"]) * 100)),
+			"amount": round(flt(invoice_row["amount"]) * 100),
 			"currency": invoice_row["currency"] or "KES",
 			"reference": reference,
-			"callback_url": callback,
+			"callback_url": frappe.utils.get_url() + callback_path.format(reference=reference),
 			"metadata": {"ois_number": submission.name, "invoice": invoice_row["name"]},
 		},
 	)
@@ -428,6 +445,21 @@ def initialize_paystack_payment(session_token: Any, invoice: Any):
 		"authorization_url": response["data"]["authorization_url"],
 		"reference": response["data"].get("reference") or reference,
 	}
+
+
+# nosemgrep: guest-whitelisted-method -- Paystack verification is server-side and the invoice is scoped to the verified checkout session.
+@frappe.whitelist(allow_guest=True)
+def initialize_paystack_payment(session_token: Any, invoice: Any):
+	_, submission = _require_session(_normalise(session_token))
+	return _start_paystack(
+		submission, invoice, "/payment-checkout?ois=%s&reference={reference}" % submission.name
+	)
+
+
+@frappe.whitelist(methods=["POST"])
+def initialize_portal_paystack_payment(ois_number: Any, invoice: Any):
+	"""Start Paystack Checkout for an open invoice of the signed-in user's own OIS."""
+	return _start_paystack(_portal_submission(ois_number), invoice, "/cx-portal?reference={reference}")
 
 
 def _payment_entry_for_invoice(
@@ -460,43 +492,56 @@ def _set_checkout_fields(pe, provider, reference, submission):
 			continue
 
 
-def _record_verified_paystack_payment(submission, invoice_row, reference, amount_subunits):
-	expected = int(round(flt(invoice_row["amount"]) * 100))
+def _existing_payment_entry(reference, submission_name=None):
+	if not frappe.db.has_column("Payment Entry", "crm_checkout_reference"):
+		return None
+	filters = {"crm_checkout_reference": reference}
+	if submission_name and frappe.db.has_column("Payment Entry", "crm_optin_submission"):
+		filters["crm_optin_submission"] = submission_name
+	rows = frappe.get_list(
+		"Payment Entry", filters=filters, fields=["name", "docstatus"], limit=1, ignore_permissions=True
+	)
+	return rows[0] if rows else None
+
+
+def _record_verified_paystack_payment(submission, invoice_row, reference, amount_subunits, currency=None):
+	expected = round(flt(invoice_row["amount"]) * 100)
 	if int(amount_subunits or 0) != expected:
 		frappe.throw(_("The payment amount does not match the invoice balance."), frappe.ValidationError)
-	if frappe.db.has_column("Payment Entry", "crm_checkout_reference"):
-		existing = frappe.get_list(
-			"Payment Entry",
-			filters={"crm_checkout_reference": reference},
-			fields=["name", "docstatus"],
-			limit=1,
-			ignore_permissions=True,
-		)
+	if currency and _normalise(currency).upper() != _normalise(invoice_row["currency"]).upper():
+		frappe.throw(_("The payment currency does not match the invoice."), frappe.ValidationError)
+	# The webhook and the browser verification can arrive together; serialise per reference.
+	from crm.api.customer_experience import _system_user
+
+	lock = hashlib.sha256(reference.encode()).hexdigest()[:32]
+	# Ownership, amount and currency are verified above; the caller (Guest or Website User) cannot read bank accounts.
+	with filelock("crm_paystack_%s" % lock, timeout=60), _system_user():
+		existing = _existing_payment_entry(reference)
 		if existing:
 			return {
-				"paid": existing[0].docstatus == 1,
-				"payment_entry": existing[0].name,
+				"paid": existing.docstatus == 1,
+				"payment_entry": existing.name,
 				"invoice": invoice_row["name"],
 			}
-	pe = _payment_entry_for_invoice(
-		invoice_row["name"],
-		invoice_row["amount"],
-		mode_of_payment="Paystack",
-		reference_no=reference,
-		reference_date=nowdate(),
-	)
-	_set_checkout_fields(pe, "Paystack", reference, submission)
-	pe.insert(ignore_permissions=True)
-	pe.submit()
-	return {"paid": True, "payment_entry": pe.name, "invoice": invoice_row["name"]}
+		pe = _payment_entry_for_invoice(
+			invoice_row["name"],
+			invoice_row["amount"],
+			mode_of_payment="Paystack",
+			reference_no=reference,
+			reference_date=nowdate(),
+		)
+		_set_checkout_fields(pe, "Paystack", reference, submission)
+		pe.insert(ignore_permissions=True)
+		pe.submit()
+		return {"paid": True, "payment_entry": pe.name, "invoice": invoice_row["name"]}
 
 
-# nosemgrep: guest-whitelisted-method -- Paystack signature verification, metadata matching, invoice ownership, and idempotent reconciliation are enforced below.
-@frappe.whitelist(allow_guest=True)
-def verify_paystack_payment(session_token: Any, reference: Any):
-	_, submission = _require_session(_normalise(session_token))
-	secret, _ = _paystack_settings()
+def _verify_paystack(submission, reference):
 	reference = _normalise(reference)
+	existing = _existing_payment_entry(reference, submission.name)
+	if existing:
+		return {"paid": existing.docstatus == 1, "payment_entry": existing.name}
+	secret = _paystack_settings()[0]
 	response = _paystack_request("GET", "https://api.paystack.co/transaction/verify/%s" % reference, secret)
 	data = response.get("data") if response else None
 	if not response or not response.get("status") or not data or data.get("status") != "success":
@@ -507,14 +552,29 @@ def verify_paystack_payment(session_token: Any, reference: Any):
 	invoice_row = _invoice_for_session(submission, metadata.get("invoice"))
 	if not invoice_row:
 		frappe.throw(_("The invoice is no longer outstanding."), frappe.ValidationError)
-	return _record_verified_paystack_payment(submission, invoice_row, reference, data.get("amount"))
+	return _record_verified_paystack_payment(
+		submission, invoice_row, reference, data.get("amount"), data.get("currency")
+	)
+
+
+# nosemgrep: guest-whitelisted-method -- Paystack signature verification, metadata matching, invoice ownership, and idempotent reconciliation are enforced below.
+@frappe.whitelist(allow_guest=True)
+def verify_paystack_payment(session_token: Any, reference: Any):
+	_, submission = _require_session(_normalise(session_token))
+	return _verify_paystack(submission, reference)
+
+
+@frappe.whitelist(methods=["POST"])
+def verify_portal_paystack_payment(ois_number: Any, reference: Any):
+	"""Reconcile a Paystack reference for the signed-in user's own OIS; replays return the same Payment Entry."""
+	return _verify_paystack(_portal_submission(ois_number), reference)
 
 
 # nosemgrep: guest-whitelisted-method -- the webhook is accepted only after Paystack HMAC signature verification and server-side invoice reconciliation.
 @frappe.whitelist(allow_guest=True)
 def paystack_webhook():
 	"""Receive Paystack's signed charge.success event for closed-browser payments."""
-	secret, _ = _paystack_settings()
+	secret = _paystack_settings()[0]
 	request = getattr(frappe.local, "request", None)
 	body = request.get_data() if request else b""
 	signature = _normalise(request.headers.get("x-paystack-signature", "") if request else "")
@@ -536,7 +596,7 @@ def paystack_webhook():
 	if not invoice_row:
 		return {"ok": True}
 	_record_verified_paystack_payment(
-		submission, invoice_row, _normalise(data.get("reference")), data.get("amount")
+		submission, invoice_row, _normalise(data.get("reference")), data.get("amount"), data.get("currency")
 	)
 	return {"ok": True}
 

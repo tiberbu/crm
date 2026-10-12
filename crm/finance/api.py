@@ -1804,6 +1804,107 @@ def make_payment_entry_from_invoice(source_name):
 
 
 @frappe.whitelist()
+def make_sales_order_from_quotation(source_name):
+	"""Seed an unsaved Sales Order from a submitted Quotation.
+	Carries forward all Quotation commercial data plus derives delivery_date
+	from the linked CRM Opt-In billing schedule's first invoice date when available.
+	"""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	source_name = _request_text(source_name, "Quotation", required=True)
+	_require_document_permission("Quotation", source_name, "read")
+	frappe.has_permission("Sales Order", ptype="create", throw=True)
+
+	from erpnext.selling.doctype.quotation.quotation import make_sales_order
+
+	so_dict = make_sales_order(source_name)
+	if isinstance(so_dict, dict):
+		so = frappe.get_doc(so_dict)
+	else:
+		so = so_dict
+
+	# Check for linked CRM Opt-In Submission and first invoice date
+	quote = frappe.get_doc("Quotation", source_name)
+	submission_name = getattr(quote, "crm_optin_submission", None)
+	if not submission_name and quote.get("crm_deal"):
+		submission_name = frappe.db.get_value("CRM Opt-In Submission", {"deal": quote.get("crm_deal")}, "name")
+
+	first_invoice_date = None
+	if submission_name and frappe.db.exists("DocType", "CRM Opt-In Submission"):
+		sub = frappe.get_doc("CRM Opt-In Submission", submission_name)
+		schedule = _handoff_schedule(sub)
+		if schedule and schedule.get("invoice_date"):
+			first_invoice_date = schedule.get("invoice_date")
+
+	if first_invoice_date:
+		so.delivery_date = first_invoice_date
+		for item in so.get("items", []):
+			item.delivery_date = first_invoice_date
+	elif not so.delivery_date:
+		so.delivery_date = frappe.utils.add_days(so.transaction_date or frappe.utils.today(), 30)
+		for item in so.get("items", []):
+			if not item.delivery_date:
+				item.delivery_date = so.delivery_date
+
+	return so.as_dict()
+
+
+@frappe.whitelist()
+def get_document_workflow_transitions(doctype, name):
+	"""Return allowed workflow transitions and status for a document under the current session."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	doctype = _request_text(doctype, "DocType", required=True)
+	name = _request_text(name, "Document Name", required=True)
+	_require_document_permission(doctype, name, "read")
+
+	from frappe.model.workflow import get_workflow, get_transitions
+
+	workflow = get_workflow(doctype)
+	if not workflow:
+		return {"has_workflow": False, "transitions": [], "workflow_state": None}
+
+	doc = frappe.get_doc(doctype, name)
+	current_state = doc.get(workflow.workflow_state_field)
+	try:
+		transitions = get_transitions(doc, workflow)
+	except Exception:
+		transitions = []
+
+	return {
+		"has_workflow": True,
+		"workflow_name": workflow.name,
+		"state_field": workflow.workflow_state_field,
+		"workflow_state": current_state,
+		"transitions": transitions,
+	}
+
+
+@frappe.whitelist()
+def apply_document_workflow_action(doctype, name, action):
+	"""Apply a workflow transition action to a document."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	doctype = _request_text(doctype, "DocType", required=True)
+	name = _request_text(name, "Document Name", required=True)
+	action = _request_text(action, "Workflow Action", required=True)
+	_require_document_permission(doctype, name, "write")
+
+	from frappe.model.workflow import apply_workflow
+
+	doc = frappe.get_doc(doctype, name)
+	updated_doc = apply_workflow(doc, action)
+	return {
+		"name": updated_doc.name,
+		"doctype": updated_doc.doctype,
+		"docstatus": updated_doc.docstatus,
+	}
+
+
+@frappe.whitelist()
 def get_customers(company=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
@@ -3249,6 +3350,9 @@ _PUBLIC_FINANCE_API_NAMES = (
 	"get_customer_outstanding_invoices",
 	"create_customer_payment",
 	"make_payment_entry_from_invoice",
+	"make_sales_order_from_quotation",
+	"get_document_workflow_transitions",
+	"apply_document_workflow_action",
 	"get_customers",
 	"get_quotations",
 	"get_pipeline_summary",
