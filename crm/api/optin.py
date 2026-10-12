@@ -782,12 +782,16 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 		)
 
 	requested_codes = []
+	requested_suppliers = {}
 	for facility in payload.get("facilities") or []:
 		if not isinstance(facility, dict):
 			continue
 		mfl_code = frappe.utils.cstr(facility.get("mfl_code") or "").strip()
 		if mfl_code:
 			requested_codes.append(mfl_code)
+			supplier = frappe.utils.cstr(facility.get("rebate_supplier") or "").strip()
+			if supplier:
+				requested_suppliers[mfl_code] = supplier
 
 	if not requested_codes:
 		frappe.throw(_("Select at least one facility before submitting."), frappe.ValidationError)
@@ -823,6 +827,12 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 			_("One or more selected facilities are no longer available. Please review your selection."),
 			frappe.ValidationError,
 		)
+	for supplier in requested_suppliers.values():
+		if not frappe.db.exists("Supplier", {"name": supplier, "disabled": 0}):
+			frappe.throw(
+				_("Choose an active Supplier for each facility or clear the Supplier selection."),
+				frappe.ValidationError,
+			)
 
 	invalid_rows = [
 		row
@@ -870,11 +880,23 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 			"mfl_code": row.get("mfl_code"),
 			"facility_name": row.get("facility_name"),
 			"keph_level": row.get("keph_level"),
+			"rebate_supplier": requested_suppliers.get(
+				frappe.utils.cstr(row.get("mfl_code") or "").strip(), ""
+			),
 		}
 		for row in pricing
 	]
+	for row in pricing:
+		row["rebate_supplier"] = requested_suppliers.get(
+			frappe.utils.cstr(row.get("mfl_code") or "").strip(), ""
+		)
 	payload["pricing"] = pricing
 	payload["pricing_plans"] = pricing_plans
+	for plan in pricing_plans:
+		for row in plan.get("facilities") or []:
+			row["rebate_supplier"] = requested_suppliers.get(
+				frappe.utils.cstr(row.get("mfl_code") or "").strip(), ""
+			)
 	payload["selected_years"] = selected_years
 	payload["optional_items"] = optional_items
 	return payload
@@ -1703,6 +1725,24 @@ def _price_plan_from_facilities(plan, selected_plans, facility_map, selected_mfl
 		"vat_rate": monthly_tax.vat_rate,
 		"vat_label": monthly_tax.vat_label,
 	}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_optin_supplier_options(signing_token: Any, email: Any, network_slug: Any, expiry: Any):
+	"""Return active Supplier choices only to a verified Opt-In wizard session."""
+	email = frappe.utils.cstr(email or "").strip().lower()
+	network_slug = frappe.utils.cstr(network_slug or "").strip()
+	_validate_signing_token(signing_token, email, network_slug, expiry)
+	if not frappe.db.exists("DocType", "Supplier"):
+		return []
+	return frappe.get_list(
+		"Supplier",
+		filters={"disabled": 0},
+		fields=["name", "supplier_name"],
+		order_by="supplier_name asc, name asc",
+		limit_page_length=500,
+		ignore_permissions=True,  # SYSTEM-INTERNAL — exposed only through the signed wizard token
+	)
 
 
 def _fmt_kes(value):
@@ -3305,6 +3345,19 @@ def _set_doc_value_if_available(doc, fieldname, value):
 	return False
 
 
+def _set_facility_attribution_if_available(item, facility):
+	"""Copy canonical facility and Supplier attribution to billing line metadata."""
+	for fieldname, value in (
+		("crm_optin_facility_mfl_code", facility.get("mfl_code")),
+		("crm_rebate_supplier", facility.get("rebate_supplier")),
+	):
+		try:
+			if item.meta.has_field(fieldname) and value:
+				setattr(item, fieldname, value)
+		except Exception:
+			continue
+
+
 def _quote_for_year(base_quote, plan, deal_name, submission):
 	"""Create one annual subscription Quotation for a non-primary year."""
 	from crm.api.quotes import _ensure_customer
@@ -3345,6 +3398,7 @@ def _quote_for_year(base_quote, plan, deal_name, submission):
 				"facility_name": frappe.utils.cstr(product.get("facility_name") or ""),
 			},
 		)
+		_set_facility_attribution_if_available(quote.items[-1], product)
 	_set_doc_value_if_available(quote, "crm_optin_submission", submission.name)
 	_set_doc_value_if_available(quote, "crm_optin_year", frappe.utils.cint(plan.get("year_number")))
 	_set_doc_value_if_available(
@@ -3721,6 +3775,7 @@ def _process_deal_invitation_submission(sub, payload):
 					"facility_name": frappe.utils.cstr(product.get("facility_name") or ""),
 				},
 			)
+			_set_facility_attribution_if_available(quote.items[-1], product)
 		quote.flags.ignore_permissions = True  # SYSTEM-INTERNAL
 		quote.flags.ignore_validate = True
 		quote.flags.ignore_mandatory = True
@@ -4055,6 +4110,7 @@ def _process_submission(submission_ref):
 						"uom": "Nos",
 					},
 				)
+				_set_facility_attribution_if_available(q.items[-1], prod)
 
 			# (D-3) The opt-in quote is pre-Sent: the customer already
 			# accepted this exact pricing in the wizard, so it is
@@ -6560,6 +6616,7 @@ def build_ois_quote(deal: Any):
 				"uom": "Nos",
 			},
 		)
+		_set_facility_attribution_if_available(q.items[-1], prod)
 
 	# The opt-in quote is pre-Sent: the customer already accepted this pricing
 	# in the wizard, so it is immediately Accept-able without a manual Send.

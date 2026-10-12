@@ -15,6 +15,7 @@ from frappe import _
 from frappe.utils import getdate, now_datetime, nowdate
 
 from crm.utils.optin_bundles import add_months
+from crm.utils.optin_network import set_network_link
 
 
 def _json(value, default):
@@ -54,6 +55,8 @@ def _quarter_items(quotation, quarter_number):
 				"rate": quarter_amount,
 				"price_list_rate": quarter_amount,
 				"discount_percentage": 0,
+				"crm_optin_facility_mfl_code": row.get("crm_optin_facility_mfl_code"),
+				"crm_rebate_supplier": row.get("crm_rebate_supplier"),
 			}
 		)
 	return items
@@ -170,6 +173,7 @@ def _create_order_and_invoice(schedule, quotation, submission, issue_date, creat
 		_field(order, "crm_optin_quotation", quotation.name)
 		_field(order, "crm_optin_billing_key", billing_key)
 		_field(order, "quotation", quotation.name)
+		set_network_link(order, submission.network_slug)
 		order.flags.ignore_permissions = True  # SYSTEM-INTERNAL
 		order.flags.ignore_validate = True
 		order.flags.ignore_mandatory = True

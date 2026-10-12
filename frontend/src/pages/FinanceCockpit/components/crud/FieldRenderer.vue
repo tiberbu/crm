@@ -193,8 +193,10 @@ const displayValue = computed(() => {
 
 const selectOptions = computed(() => {
   const o = props.field.options
-  if (Array.isArray(o)) return o
-  return (o || '').split('\n')
+  const options = Array.isArray(o) ? o : (o || '').split('\n')
+  return options.map((option) =>
+    typeof option === 'string' ? { label: option, value: option } : option,
+  )
 })
 
 function emitValue(v) {

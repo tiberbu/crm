@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   STEPS,
   canAdvance,
+  canResendOtp,
   deliveryState,
   formatCountdown,
   packageTotals,
   previousStage,
+  shouldClearOtpAfterVerificationError,
   stepStatus,
 } from '@/utils/onboardingSteps'
 
@@ -91,5 +93,18 @@ describe('onboardingSteps', () => {
     expect(deliveryState(undefined)).toBe('none')
     expect(deliveryState({ status: 'sent' })).toBe('sent')
     expect(deliveryState({ status: 'unavailable' })).toBe('unavailable')
+  })
+
+  it('allows immediate retry after failed delivery while keeping the cooldown for sent codes', () => {
+    expect(canResendOtp({ status: 'unavailable' }, 60)).toBe(true)
+    expect(canResendOtp({ status: 'sent' }, 60)).toBe(false)
+    expect(canResendOtp({ status: 'sent' }, 0)).toBe(true)
+    expect(canResendOtp({ status: 'unavailable' }, 60, true)).toBe(false)
+  })
+
+  it('keeps the entered code only when the ownership service can be retried', () => {
+    expect(shouldClearOtpAfterVerificationError('FacilityOwnershipUnavailable')).toBe(false)
+    expect(shouldClearOtpAfterVerificationError('ValidationError')).toBe(true)
+    expect(shouldClearOtpAfterVerificationError()).toBe(true)
   })
 })

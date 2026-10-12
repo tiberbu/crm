@@ -1846,6 +1846,11 @@ def make_sales_order_from_quotation(source_name):
 		for item in so.get("items", []):
 			if not item.delivery_date:
 				item.delivery_date = so.delivery_date
+	set_network_link(
+		so,
+		getattr(quote, "optin_network", "")
+		or (frappe.db.get_value("CRM Opt-In Submission", submission_name, "optin_network") if submission_name else ""),
+	)
 
 	return so.as_dict()
 
@@ -2532,7 +2537,12 @@ def get_rebate_vouchers(company=None, filters=None, page=0, page_size=20):
 		"deal",
 		"customer",
 		"payment_reference",
+		"source_invoice",
+		"facility_mfl_code",
+		"facility_name",
+		"payee_supplier",
 		"rebate_pct",
+		"calculation_basis",
 		"rebate_amount",
 		"currency",
 		"status",
@@ -2566,10 +2576,13 @@ def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 	fields = [
 		"name",
 		"sales_person",
+		"employee",
 		"deal",
 		"customer",
 		"payment_reference",
+		"source_invoice",
 		"commission_pct",
+		"calculation_basis",
 		"commission_amount",
 		"currency",
 		"status",
@@ -2582,6 +2595,175 @@ def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 	)
 	rows = _add_finance_network_labels(rows, company)
 	return _add_legacy_payout_labels(_add_finance_employee_labels(rows, company))
+
+
+@frappe.whitelist()
+def get_employee_commission_rates(company=None, filters=None):
+	"""List configured Employee commission rates for Finance Setup."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not (_is_admin(roles) or "Accounts Manager" in roles):
+		frappe.throw(_("Only an Accounts Manager can view commission settings."), frappe.PermissionError)
+	if not frappe.db.exists("DocType", "CRM Employee Commission Structure"):
+		return []
+	filters = _request_filters(filters)
+	if company:
+		filters.append(["employee", "in", frappe.get_all("Employee", filters={"company": company}, pluck="name") or ["__none__"]])
+	return frappe.get_list(
+		"CRM Employee Commission Structure",
+		filters=filters,
+		fields=["name", "employee", "commission_pct", "enabled", "modified"],
+		order_by="modified desc",
+		limit_page_length=500,
+	)
+
+
+@frappe.whitelist()
+def get_finance_rule_options():
+	"""Return active Employee and Supplier choices for Finance Settings."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not (_is_admin(roles) or "Accounts Manager" in roles):
+		frappe.throw(_("Only an Accounts Manager can view Finance settings."), frappe.PermissionError)
+	employees = []
+	if frappe.db.exists("DocType", "Employee"):
+		employees = frappe.get_all(
+			"Employee",
+			filters={"status": "Active"},
+			fields=["name", "employee_name"],
+			order_by="employee_name asc, name asc",
+			limit=500,
+		)
+	suppliers = []
+	if frappe.db.exists("DocType", "Supplier"):
+		suppliers = frappe.get_all(
+			"Supplier",
+			filters={"disabled": 0},
+			fields=["name", "supplier_name"],
+			order_by="supplier_name asc, name asc",
+			limit=500,
+		)
+	return {"employees": employees, "suppliers": suppliers}
+
+
+@frappe.whitelist()
+def get_optin_network_conflicts():
+	"""Return read-only Opt-In Network link conflicts for Finance review."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not (_is_admin(roles) or "Accounts Manager" in roles):
+		frappe.throw(_("Only an Accounts Manager can review Network link conflicts."), frappe.PermissionError)
+	from crm.patches.v1_0.link_optin_records_to_network import collect_conflict_inventory
+
+	return collect_conflict_inventory()
+
+
+@frappe.whitelist()
+def save_employee_commission_rate(employee: str, commission_pct: float, enabled: int = 1, notes: str | None = None):
+	"""Create or update one Employee commission rate from Finance Setup."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not (_is_admin(roles) or "Accounts Manager" in roles):
+		frappe.throw(_("Only an Accounts Manager can change commission rates."), frappe.PermissionError)
+	employee = _request_text(employee, _("Employee"), required=True)
+	if not frappe.db.exists("Employee", employee):
+		frappe.throw(_("Select an Employee that exists."), frappe.ValidationError)
+	employee_doc = frappe.get_doc("Employee", employee)
+	if employee_doc.status != "Active":
+		frappe.throw(_("Commission rates can only be set for active Employees."), frappe.ValidationError)
+	try:
+		rate = float(commission_pct)
+	except (TypeError, ValueError):
+		frappe.throw(_("Enter a valid commission percentage."), frappe.ValidationError)
+	if not 0 <= rate <= 100:
+		frappe.throw(_("Commission percentage must be between 0 and 100."), frappe.ValidationError)
+	if enabled not in (0, 1, True, False, "0", "1"):
+		frappe.throw(_("Enabled must be selected or cleared."), frappe.ValidationError)
+	name = frappe.db.get_value("CRM Employee Commission Structure", {"employee": employee}, "name")
+	doc = frappe.get_doc("CRM Employee Commission Structure", name) if name else frappe.new_doc(
+		"CRM Employee Commission Structure"
+	)
+	doc.employee = employee
+	doc.commission_pct = rate
+	doc.enabled = int(enabled)
+	doc.notes = _request_text(notes, _("Notes")) if notes is not None else ""
+	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL after explicit Accounts Manager check
+	return {"name": doc.name, "employee": doc.employee, "commission_pct": doc.commission_pct, "enabled": doc.enabled}
+
+
+@frappe.whitelist()
+def get_network_rebate_settings():
+	"""List each Opt-In Network's rebate rate and configured fallback Supplier."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not (_is_admin(roles) or "Accounts Manager" in roles):
+		frappe.throw(_("Only an Accounts Manager can view rebate settings."), frappe.PermissionError)
+	if not frappe.db.exists("DocType", "CRM Opt-In Network"):
+		return []
+	fields = ["name", "display_name", "partner_id"]
+	for fieldname in ("finance_rebate_structure", "finance_supplier"):
+		if frappe.db.has_column("CRM Opt-In Network", fieldname):
+			fields.append(fieldname)
+	rows = frappe.get_all("CRM Opt-In Network", fields=fields, order_by="display_name asc, name asc", limit=500)
+	for row in rows:
+		structure = row.get("finance_rebate_structure")
+		row["rebate_pct"] = (
+			flt(frappe.db.get_value("CRM Rebate Structure", structure, "rebate_pct"))
+			if structure and frappe.db.exists("CRM Rebate Structure", structure)
+			else None
+		)
+		row["supplier_name"] = (
+			frappe.db.get_value("Supplier", row.finance_supplier, "supplier_name")
+			if row.get("finance_supplier") and frappe.db.exists("Supplier", row.finance_supplier)
+			else ""
+		)
+	return rows
+
+
+@frappe.whitelist()
+def save_network_rebate_settings(network: str, rebate_pct: float, supplier: str = ""):
+	"""Save one Network's rebate percentage and optional fallback Supplier."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not (_is_admin(roles) or "Accounts Manager" in roles):
+		frappe.throw(_("Only an Accounts Manager can change rebate settings."), frappe.PermissionError)
+	network = _request_text(network, _("Opt-In Network"), required=True)
+	if not frappe.db.exists("CRM Opt-In Network", network):
+		frappe.throw(_("Select an available Opt-In Network."), frappe.ValidationError)
+	try:
+		rate = float(rebate_pct)
+	except (TypeError, ValueError):
+		frappe.throw(_("Enter a valid rebate percentage."), frappe.ValidationError)
+	if not 0 <= rate <= 100:
+		frappe.throw(_("Rebate percentage must be between 0 and 100."), frappe.ValidationError)
+	supplier = _request_text(supplier, _("Supplier"))
+	if supplier:
+		if not frappe.db.exists("DocType", "Supplier") or not frappe.db.exists(
+			"Supplier", {"name": supplier, "disabled": 0}
+		):
+			frappe.throw(_("Select an active Supplier or clear the Supplier selection."), frappe.ValidationError)
+	if not frappe.db.has_column("CRM Opt-In Network", "finance_rebate_structure"):
+		frappe.throw(_("Rebate settings are not available until the Finance setup is refreshed."), frappe.ValidationError)
+	structure_name = frappe.db.get_value("CRM Opt-In Network", network, "finance_rebate_structure")
+	used_by = frappe.get_all(
+		"CRM Opt-In Network",
+		filters={"finance_rebate_structure": structure_name, "name": ["!=", network]},
+		pluck="name",
+		limit=1,
+	) if structure_name else []
+	if not structure_name or used_by or not frappe.db.exists("CRM Rebate Structure", structure_name):
+		network_label = frappe.db.get_value("CRM Opt-In Network", network, "display_name") or network
+		structure = frappe.get_doc(
+			{
+				"doctype": "CRM Rebate Structure",
+				"structure_name": f"Network rebate {network}",
+				"rebate_pct": rate,
+				"notes": _("Configured for Opt-In Network {0}.").format(network_label),
+			}
+		).insert(ignore_permissions=True)
+		structure_name = structure.name
+	else:
+		frappe.db.set_value("CRM Rebate Structure", structure_name, "rebate_pct", rate)
+	if frappe.db.has_column("CRM Opt-In Network", "finance_supplier"):
+		frappe.db.set_value("CRM Opt-In Network", network, "finance_supplier", supplier, update_modified=True)
+	frappe.db.set_value(
+		"CRM Opt-In Network", network, "finance_rebate_structure", structure_name, update_modified=True
+	)
+	return {"network": network, "finance_rebate_structure": structure_name, "rebate_pct": rate, "finance_supplier": supplier}
 
 
 def _add_legacy_payout_labels(rows):
