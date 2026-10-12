@@ -1,21 +1,12 @@
 <template>
   <div class="crm-reports space-y-5">
     <!-- Report selector tabs -->
-    <div class="flex items-center gap-1 border-b border-outline-gray-1">
-      <button
-        v-for="r in REPORT_DEFS"
-        :key="r.key"
-        class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors"
-        :class="
-          active === r.key
-            ? 'border-blue-500 text-blue-600'
-            : 'border-transparent text-ink-gray-5 hover:text-ink-gray-7'
-        "
-        @click="selectReport(r.key)"
-      >
-        {{ r.label }}
-      </button>
-    </div>
+    <FinanceSectionTabs
+      :model-value="active"
+      :tabs="REPORT_DEFS"
+      aria-label="Finance reports"
+      @update:model-value="selectReport"
+    />
 
     <!-- Report body -->
     <div v-if="loading" class="space-y-2">
@@ -26,15 +17,10 @@
       />
     </div>
 
-    <div
-      v-else-if="error"
-      class="rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/20 px-4 py-3 text-sm text-red-600 dark:text-red-400"
-    >
-      {{ error }}
-    </div>
+    <FinanceErrorState v-else-if="error" :error="resource.error" @retry="resource.fetch()" />
 
     <div
-      v-else-if="columns.length"
+      v-else-if="columns.length && rows.length"
       class="rounded-xl border border-outline-gray-1 overflow-auto"
     >
       <table class="w-full text-sm">
@@ -75,8 +61,9 @@
       </div>
     </div>
 
-    <div v-else class="py-16 text-center text-sm text-ink-gray-4">
-      No data for the selected period.
+    <div v-else class="rounded-xl border border-dashed border-outline-gray-2 bg-surface-white px-5 py-12 text-center" role="status">
+      <span class="mx-auto flex size-10 items-center justify-center rounded-xl bg-surface-gray-1 text-ink-gray-5"><span class="lucide-chart-no-axes-combined size-5" aria-hidden="true" /></span>
+      <p class="mt-3 text-sm font-medium text-ink-gray-7">No report data for this Company and period.</p>
     </div>
   </div>
 </template>
@@ -85,6 +72,8 @@
 import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
+import FinanceSectionTabs from '../components/FinanceSectionTabs.vue'
+import FinanceErrorState from '../components/FinanceErrorState.vue'
 
 const { company } = useCompanyContext()
 

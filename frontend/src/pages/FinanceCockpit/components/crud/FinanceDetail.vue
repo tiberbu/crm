@@ -76,24 +76,22 @@
 
           <!-- Actions (RBAC-gated, visible-but-disabled) -->
           <div class="flex items-center gap-2 flex-wrap">
-            <!-- Dynamic Workflow Action Buttons (Frappe Workflow System) -->
-            <template v-if="workflowInfo && workflowInfo.transitions && workflowInfo.transitions.length">
+            <template v-if="workflowInfo?.transitions?.length">
               <Button
-                v-for="t in workflowInfo.transitions"
-                :key="t.action"
+                v-for="transition in workflowInfo.transitions"
+                :key="transition.action"
                 variant="solid"
                 theme="blue"
                 :loading="busy"
                 :disabled="!canWrite"
-                @click="onApplyWorkflow(t.action)"
+                @click="onApplyWorkflow(transition.action)"
               >
                 <template #prefix><FcIcon name="check-circle" :size="14" /></template>
-                {{ t.action }}
+                {{ transition.action }}
               </Button>
             </template>
-
             <Button
-              v-if="!readOnly"
+              v-if="!isDetailReadOnly"
               variant="outline"
               theme="gray"
               :disabled="!canWrite || isCancelled"
@@ -178,7 +176,7 @@
               Email copy
             </Button>
             <Button
-              v-if="!readOnly"
+              v-if="!isDetailReadOnly"
               theme="red"
               variant="subtle"
               :loading="busy"
@@ -228,6 +226,122 @@
 
       <!-- Detail sections -->
       <div class="mt-5 space-y-5">
+        <SectionCard
+          v-if="doctype === 'Quotation'"
+          title="Facility and Network context"
+          icon="building-2"
+          tone="neutral"
+        >
+          <div v-if="quotationContextLoading" class="space-y-2">
+            <div class="h-8 rounded bg-surface-gray-2 animate-pulse" />
+            <div class="h-8 rounded bg-surface-gray-2 animate-pulse" />
+          </div>
+          <div v-else-if="quotationContextError" class="text-sm text-ink-red-6" role="alert">
+            {{ quotationContextError }}
+            <button class="ml-2 underline font-medium" @click="loadQuotationContext">Retry</button>
+          </div>
+          <div v-else-if="quotationContext" class="space-y-4">
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg bg-surface-gray-1 px-3 py-2 text-sm">
+              <span><span class="text-ink-gray-5">Quote total</span> <strong class="ml-1 text-ink-gray-8">{{ formatCurrency(quotationContext.quotation?.grand_total, quotationContext.quotation?.currency) }}</strong></span>
+              <span><span class="text-ink-gray-5">Quote state</span> <strong class="ml-1 text-ink-gray-8">{{ quotationContext.quotation?.finance_state || 'Unavailable' }}</strong></span>
+              <span><span class="text-ink-gray-5">Handoff</span> <strong class="ml-1 text-ink-gray-8">{{ quotationContext.handoff_state || 'Unavailable' }}</strong></span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+              <div>
+                <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">Company</p>
+                <p class="mt-1 font-medium text-ink-gray-8">{{ quotationContext.company || 'Unavailable' }}</p>
+              </div>
+              <div>
+                <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">Customer</p>
+                <a
+                  v-if="quotationContext.customer?.available && contextHref('Customer', quotationContext.customer?.name)"
+                  :href="contextHref('Customer', quotationContext.customer?.name)"
+                  class="mt-1 inline-block font-medium text-ink-gray-8 underline underline-offset-2"
+                >{{ quotationContext.customer?.label || quotationContext.customer?.name }}</a>
+                <p v-else class="mt-1 text-ink-gray-6">{{ quotationContext.customer?.label || 'Unavailable' }}</p>
+              </div>
+              <div>
+                <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">Opt-In Network · contracting and billing</p>
+                <a
+                  v-if="quotationContext.network?.available && contextHref('CRM Opt-In Network', quotationContext.network?.name)"
+                  :href="contextHref('CRM Opt-In Network', quotationContext.network?.name)"
+                  class="mt-1 inline-block font-medium text-ink-gray-8 underline underline-offset-2"
+                >{{ quotationContext.network?.label }}</a>
+                <p v-else class="mt-1 text-ink-gray-6">{{ quotationContext.network?.label || 'Not linked' }} · record unavailable</p>
+                <p v-if="quotationContext.network?.partner_id" class="text-xs text-ink-gray-5">Partner ID {{ quotationContext.network.partner_id }}</p>
+              </div>
+            </div>
+
+            <div class="border-t border-outline-gray-1 pt-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">Originating Facilities</p>
+              <div v-if="quotationContext.facilities?.length" class="mt-2 flex flex-wrap gap-2">
+                <template v-for="facility in quotationContext.facilities" :key="facility.mfl_code || facility.label">
+                  <a
+                    v-if="facility.available"
+                    :href="contextHref('CRM Pre-Qualified Facility', facility.name)"
+                    class="rounded-md border border-outline-gray-1 px-2.5 py-1.5 text-sm text-ink-gray-7 underline underline-offset-2"
+                  >{{ facility.label }}<span v-if="facility.mfl_code" class="ml-1 text-xs text-ink-gray-5">· {{ facility.mfl_code }}</span></a>
+                  <span v-else class="rounded-md border border-outline-gray-1 px-2.5 py-1.5 text-sm text-ink-gray-7">
+                    {{ facility.label }}<span v-if="facility.mfl_code" class="ml-1 text-xs text-ink-gray-5">· {{ facility.mfl_code }}</span><span class="ml-1 text-xs text-ink-gray-5">· record unavailable</span>
+                  </span>
+                </template>
+              </div>
+              <p v-else class="mt-1 text-sm text-ink-gray-5">Facility details are unavailable in the saved Opt-In record.</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-outline-gray-1 pt-3 text-sm">
+              <div>
+                <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">Opt-In submission</p>
+                <a
+                  v-if="quotationContext.submission?.available"
+                  :href="contextHref('CRM Opt-In Submission', quotationContext.submission.name)"
+                  class="mt-1 inline-block font-medium text-ink-gray-8 underline underline-offset-2"
+                >{{ quotationContext.submission.name }}</a>
+                <p v-else class="mt-1 text-ink-gray-6">{{ quotationContext.submission?.name || 'Not linked' }} · record unavailable</p>
+                <StatusBadge v-if="quotationContext.submission?.status" :status="quotationContext.submission.status" class="mt-1" />
+              </div>
+              <div>
+                <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">Facility contract</p>
+                <a
+                  v-if="quotationContext.contract?.available"
+                  :href="contextHref('CRM Contract', quotationContext.contract.name)"
+                  class="mt-1 inline-block font-medium text-ink-gray-8 underline underline-offset-2"
+                >{{ quotationContext.contract.name }}</a>
+                <p v-else class="mt-1 text-ink-gray-6">{{ quotationContext.contract?.name || 'Not created' }} · record unavailable</p>
+                <p class="text-xs text-ink-gray-5">{{ quotationContext.contract?.status || 'Status unavailable' }}<span v-if="quotationContext.contract?.signed_at"> · Facility signed {{ quotationContext.contract.signed_at }}</span></p>
+              </div>
+            </div>
+
+            <div class="border-t border-outline-gray-1 pt-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">Billing schedule and handoff</p>
+              <div class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <div><p class="text-xs text-ink-gray-5">Order date</p><p class="mt-0.5 text-ink-gray-8">{{ quotationContext.schedule?.order_date || '—' }}</p></div>
+                <div><p class="text-xs text-ink-gray-5">Invoice timing</p><p class="mt-0.5 text-ink-gray-8">{{ quotationContext.schedule?.issue_timing || 'Network schedule unavailable' }}</p></div>
+                <div><p class="text-xs text-ink-gray-5">Invoice date</p><p class="mt-0.5 text-ink-gray-8">{{ quotationContext.schedule?.invoice_date || 'Not scheduled' }}</p></div>
+                <div><p class="text-xs text-ink-gray-5">Due date</p><p class="mt-0.5 text-ink-gray-8">{{ quotationContext.schedule?.due_date || '—' }}</p></div>
+              </div>
+              <p v-if="quotationContext.schedule?.error || quotationContext.schedule?.handoff_note" class="mt-2 text-sm text-ink-gray-6">{{ quotationContext.schedule.error || quotationContext.schedule.handoff_note }}</p>
+            </div>
+
+            <div class="border-t border-outline-gray-1 pt-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">Linked finance records</p>
+              <div class="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                <template v-for="record in quotationContext.sales_orders || []" :key="`order-${record.name}`">
+                  <a :href="contextHref('Sales Order', record.name, quotationContext.company)" class="font-medium text-ink-gray-8 underline underline-offset-2">Sales Order {{ record.name }} · {{ record.status || 'Draft' }} · {{ formatCurrency(record.grand_total, record.currency) }}</a>
+                </template>
+                <template v-for="record in quotationContext.sales_invoices || []" :key="`invoice-${record.name}`">
+                  <a :href="contextHref('Sales Invoice', record.name, quotationContext.company)" class="font-medium text-ink-gray-8 underline underline-offset-2">Sales Invoice {{ record.name }} · {{ record.status || 'Draft' }} · {{ formatCurrency(record.grand_total, record.currency) }} · outstanding {{ formatCurrency(record.outstanding_amount, record.currency) }}</a>
+                </template>
+                <template v-for="record in quotationContext.payments || []" :key="`payment-${record.name}`">
+                  <a :href="contextHref('Payment Entry', record.name, quotationContext.company)" class="font-medium text-ink-gray-8 underline underline-offset-2">Payment Entry {{ record.name }} · {{ record.finance_state || record.workflow_state || 'Draft' }} · {{ record.posting_date || 'No date' }} · {{ formatCurrency(record.paid_amount, record.payment_type === 'Receive' ? record.paid_to_account_currency : record.paid_from_account_currency) }}</a>
+                </template>
+                <span v-if="!quotationContext.sales_orders?.length && !quotationContext.sales_invoices?.length && !quotationContext.payments?.length" class="text-ink-gray-5">No Sales Order, invoice, or payment has been created yet.</span>
+              </div>
+            </div>
+          </div>
+          <p v-else class="text-sm text-ink-gray-5">Quotation context is unavailable.</p>
+        </SectionCard>
+
         <SectionCard
           v-if="doctype === 'Sales Order'"
           title="Billing"
@@ -373,6 +487,16 @@
                 <template v-else-if="f.type === 'currency'">{{
                   formatCurrency(doc[f.fieldname], doc.currency)
                 }}</template>
+                <a
+                  v-else-if="isFinanceNetworkField(f) && financeNetworkHref(f)"
+                  :href="financeNetworkHref(f)"
+                  class="underline underline-offset-2 hover:text-ink-gray-9"
+                >{{ displayVal(doc[f.fieldname]) }}</a>
+                <a
+                  v-else-if="doctype === 'Payment Entry' && f.type === 'link' && doc[f.fieldname] && paymentFieldHref(f)"
+                  :href="paymentFieldHref(f)"
+                  class="underline underline-offset-2 hover:text-ink-gray-9"
+                >{{ displayVal(doc[f.fieldname]) }}</a>
                 <template v-else>{{ displayVal(doc[f.fieldname]) }}</template>
               </dd>
             </div>
@@ -401,26 +525,42 @@
 
         <!-- FC-14: Payment Entry references (invoice allocations) -->
         <SectionCard
-          v-if="doctype === 'Payment Entry' && paymentRefs.length"
-          title="Allocated Invoices"
+          v-if="doctype === 'Payment Entry'"
+          title="Referenced Documents"
           icon="receipt"
           tone="positive"
           :badge="paymentRefs.length"
         >
-          <div class="divide-y divide-outline-gray-1">
+          <div v-if="paymentRefs.length" class="divide-y divide-outline-gray-1">
             <div
-              v-for="ref in paymentRefs"
-              :key="ref.reference_name"
-              class="flex items-center justify-between py-2"
+              v-for="paymentRef in paymentRefs"
+              :key="`${paymentRef.reference_doctype || 'unknown'}:${paymentRef.reference_name || 'missing'}`"
+              class="flex flex-wrap items-center justify-between gap-3 py-2"
             >
-              <span class="text-sm font-medium text-ink-gray-8">{{
-                ref.reference_name
-              }}</span>
+              <div class="min-w-0">
+                <a
+                  v-if="paymentRefHref(paymentRef)"
+                  :href="paymentRefHref(paymentRef)"
+                  class="text-sm font-medium text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
+                >
+                  {{ paymentRef.reference_name }}
+                </a>
+                <span v-else class="text-sm font-medium text-ink-gray-6">
+                  {{ paymentRef.reference_name || 'Reference unavailable' }}
+                </span>
+                <p class="text-xs text-ink-gray-5">
+                  {{ paymentRef.reference_doctype || 'Unknown document type' }}
+                  <span v-if="!paymentRefHref(paymentRef)"> · Native record link unavailable</span>
+                </p>
+              </div>
               <span class="text-sm tabular-nums text-ink-gray-6">{{
-                formatCurrency(ref.allocated_amount, doc.currency)
+                formatCurrency(paymentRef.allocated_amount, doc.currency)
               }}</span>
             </div>
           </div>
+          <p v-else class="text-sm text-ink-gray-5">
+            This Payment Entry has no allocated document references.
+          </p>
         </SectionCard>
       </div>
     </template>
@@ -446,6 +586,7 @@ import SendDocumentDialog from './SendDocumentDialog.vue'
 import { useCrud, readableError } from '../../composables/useCrud.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { useBoot } from '../../composables/useBoot.js'
+import { useCompanyContext } from '../../composables/useCompanyContext.js'
 import { resolveLayout, isNumericType } from '../../constants/formLayouts.js'
 import { printUrl } from '../../constants/printFormats.js'
 import { useMappedDoc } from '../../composables/useMappedDoc.js'
@@ -462,6 +603,7 @@ const emit = defineEmits(['edit', 'mapped', 'deleted', 'close'])
 const crud = useCrud(props.doctype)
 const { formatCurrency } = useCurrency()
 const { getRoles, isAdministrator } = useBoot()
+const { company } = useCompanyContext()
 
 const layout = resolveLayout(props.doctype)
 const doc = ref(null)
@@ -472,6 +614,9 @@ const invoiceStateLoading = ref(false)
 const invoiceStateError = ref('')
 const invoiceStateResource = createResource({
   url: 'crm.finance.api.get_sales_order_invoice_state',
+})
+const quotationContextResource = createResource({
+  url: 'crm.finance.api.get_quotation_finance_context',
 })
 const paymentHistoryResource = createResource({
   url: 'crm.finance.api.get_sales_invoice_payments',
@@ -489,6 +634,9 @@ const workflowInfo = ref(null)
 const paymentHistory = ref([])
 const paymentHistoryLoading = ref(false)
 const paymentHistoryError = ref('')
+const quotationContext = ref(null)
+const quotationContextLoading = ref(false)
+const quotationContextError = ref('')
 const showSendDialog = ref(false)
 const mapping = ref(false)
 const { mapDoc } = useMappedDoc()
@@ -498,6 +646,9 @@ const statusValue = computed(() => doc.value?.[layout.statusField] || '')
 const isSubmittable = computed(() => layout.isSubmittable)
 const docstatus = computed(() => Number(doc.value?.docstatus || 0))
 const isCancelled = computed(() => docstatus.value === 2)
+const isDetailReadOnly = computed(
+  () => props.readOnly || props.doctype === 'Payment Entry',
+)
 
 const subtitle = computed(() => {
   const d = doc.value
@@ -556,7 +707,19 @@ const summaryFacts = computed(() => {
   // to first-5 scalar fields (excluding check/textarea) as before.
   const fieldNames = layout.summaryFields
   if (fieldNames) {
-    return fieldNames.map((fn) => buildFact(fn, d)).filter(Boolean)
+    return fieldNames
+      .map((fn) => buildFact(fn, d))
+      .filter((fact) => {
+        if (!fact) return false
+        if (
+          props.doctype === 'Payment Entry' &&
+          ['party_type', 'party'].includes(fact.fieldname) &&
+          !d[fact.fieldname]
+        ) {
+          return false
+        }
+        return true
+      })
   }
 
   const fields = []
@@ -577,7 +740,7 @@ function buildFact(fieldname, d) {
     if (sec.kind === 'fields') allFields.push(...(sec.fields || []))
   }
   const fieldMeta = allFields.find((f) => f.fieldname === fieldname)
-  const label = fieldMeta?.label || fieldname
+  const label = paymentFieldLabel(fieldname, d) || fieldMeta?.label || fieldname
   const type = fieldMeta?.type || 'data'
   const val = d[fieldname]
 
@@ -627,8 +790,13 @@ const detailFields = computed(() => {
       if (shownNames.has(f.fieldname) || seen.has(f.fieldname)) continue
       seen.add(f.fieldname)
       const v = doc.value[f.fieldname]
+      if (!paymentFieldIsVisible(f.fieldname, doc.value)) continue
       if (v === null || v === undefined || v === '') continue
-      out.push(f)
+      out.push(
+        props.doctype === 'Payment Entry'
+          ? { ...f, label: paymentFieldLabel(f.fieldname, doc.value) || f.label }
+          : f,
+      )
     }
   }
   return out
@@ -660,13 +828,93 @@ const relatedItems = computed(() => {
   return items
 })
 
-// Payment Entry: invoice references from child table.
+// Payment Entry references from the native child table.
 const paymentRefs = computed(() => {
   if (props.doctype !== 'Payment Entry') return []
-  return (doc.value?.references || []).filter(
-    (r) => r.reference_doctype === 'Sales Invoice' && r.allocated_amount > 0,
-  )
+  return doc.value?.references || []
 })
+
+function paymentFieldLabel(fieldname, payment) {
+  if (props.doctype !== 'Payment Entry') return ''
+  if (fieldname === 'party') return payment?.party_type || 'Party'
+  if (fieldname === 'paid_from') {
+    return payment?.payment_type === 'Internal Transfer'
+      ? 'Source Account'
+      : 'Paid From Account'
+  }
+  if (fieldname === 'paid_to') {
+    return payment?.payment_type === 'Internal Transfer'
+      ? 'Destination Account'
+      : 'Paid To Account'
+  }
+  return ''
+}
+
+function paymentFieldIsVisible(fieldname, payment) {
+  if (props.doctype !== 'Payment Entry') return true
+  if (fieldname === 'party' || fieldname === 'party_type') {
+    return payment?.payment_type !== 'Internal Transfer' && !!payment?.party
+  }
+  if (fieldname === 'paid_from') {
+    return payment?.payment_type !== 'Receive' || !!payment?.paid_from
+  }
+  if (fieldname === 'paid_to') {
+    return payment?.payment_type !== 'Pay' || !!payment?.paid_to
+  }
+  return true
+}
+
+function paymentFieldHref(field) {
+  const payment = doc.value
+  let doctype = field.options
+  if (field.fieldname === 'party') doctype = payment?.party_type
+  return nativePaymentDocHref(doctype, payment?.[field.fieldname], payment?.company)
+}
+
+function isFinanceNetworkField(field) {
+  return (
+    field?.fieldname === 'optin_network' &&
+    ['CRM Partner Rebate Voucher', 'CRM Sales Commission'].includes(props.doctype)
+  )
+}
+
+function financeNetworkHref(field) {
+  const network = doc.value?.[field?.fieldname]
+  const linkCompany = doc.value?.company || company.value
+  return nativePaymentDocHref('CRM Opt-In Network', network, linkCompany)
+}
+
+function paymentRefHref(reference) {
+  return nativePaymentDocHref(
+    reference?.reference_doctype,
+    reference?.reference_name,
+    doc.value?.company,
+  )
+}
+
+function nativePaymentDocHref(doctype, name, company) {
+  if (
+    !doctype ||
+    !name ||
+    typeof doctype !== 'string' ||
+    typeof name !== 'string' ||
+    hasUnsafePathCharacters(doctype) ||
+    hasUnsafePathCharacters(name)
+  ) {
+    return ''
+  }
+  const slug = doctype.trim().toLowerCase().replace(/\s+/g, '-')
+  const companyQuery = company ? `?company=${encodeURIComponent(company)}` : ''
+  return `/app/${encodeURIComponent(slug)}/${encodeURIComponent(name)}${companyQuery}`
+}
+
+function hasUnsafePathCharacters(value) {
+  return (
+    value.includes('/') ||
+    value.includes('\\') ||
+    [...value].some((character) => character.charCodeAt(0) < 32)
+  )
+}
 
 function isNum(f) {
   return isNumericType(f.type)
@@ -696,6 +944,7 @@ async function load() {
     doc.value = await crud.loadDoc(props.name)
     await loadInvoiceState()
     await loadPaymentHistory()
+    await loadQuotationContext()
     await loadWorkflowTransitions()
   } finally {
     loading.value = false
@@ -704,11 +953,10 @@ async function load() {
 
 async function loadWorkflowTransitions() {
   try {
-    const res = await workflowTransitionsResource.submit({
+    workflowInfo.value = await workflowTransitionsResource.submit({
       doctype: props.doctype,
       name: props.name,
     })
-    workflowInfo.value = res
   } catch {
     workflowInfo.value = null
   }
@@ -729,6 +977,27 @@ async function onApplyWorkflow(action) {
   } finally {
     busy.value = false
   }
+}
+
+async function loadQuotationContext() {
+  if (props.doctype !== 'Quotation') return
+  quotationContextLoading.value = true
+  quotationContextError.value = ''
+  try {
+    quotationContext.value = await quotationContextResource.submit({
+      quotation_name: props.name,
+      company: doc.value?.company,
+    })
+  } catch (err) {
+    quotationContext.value = null
+    quotationContextError.value = readableError(err) || 'Could not load the quotation handoff context.'
+  } finally {
+    quotationContextLoading.value = false
+  }
+}
+
+function contextHref(doctype, name, company = quotationContext.value?.company) {
+  return nativePaymentDocHref(doctype, name, company)
 }
 
 async function loadPaymentHistory() {
@@ -796,7 +1065,7 @@ async function onMakeSalesOrder() {
   mapping.value = true
   try {
     const mapped = await mapDoc(
-      'crm.finance.api.make_sales_order_from_quotation',
+      'erpnext.selling.doctype.quotation.quotation.make_sales_order',
       props.name,
     )
     toast.success('Sales Order draft is ready to review')

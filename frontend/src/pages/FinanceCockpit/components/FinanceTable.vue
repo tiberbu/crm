@@ -16,12 +16,14 @@
     </div>
 
     <!-- Loading state: Skeleton rows -->
-    <div v-if="loading" class="p-4 space-y-3">
-      <div
-        v-for="n in 5"
-        :key="n"
-        class="h-12 bg-surface-gray-2 rounded-lg animate-pulse"
-      />
+    <div v-if="loading" class="p-4 space-y-3" role="status" aria-live="polite">
+      <span class="sr-only">Loading finance records…</span>
+      <div v-for="n in 5" :key="n" class="grid h-12 grid-cols-2 gap-3 rounded-lg bg-surface-gray-1 px-3 py-2 sm:grid-cols-4">
+        <span class="animate-pulse rounded bg-surface-gray-2" />
+        <span class="animate-pulse rounded bg-surface-gray-2" />
+        <span class="hidden animate-pulse rounded bg-surface-gray-2 sm:block" />
+        <span class="hidden animate-pulse rounded bg-surface-gray-2 sm:block" />
+      </div>
     </div>
 
     <!-- Error state -->
@@ -32,10 +34,12 @@
     <!-- Empty state -->
     <div
       v-else-if="!rows || !rows.length"
-      class="text-center py-12 px-4 text-sm text-ink-gray-5"
+      class="rounded-xl border border-dashed border-outline-gray-2 bg-surface-white px-5 py-10 text-center text-sm text-ink-gray-5"
+      role="status"
     >
-      <p class="font-medium text-ink-gray-7">{{ emptyLabel || 'No records found.' }}</p>
-      <p class="text-xs text-ink-gray-4 mt-1">Try clearing or adjusting your active filters.</p>
+      <span class="mx-auto flex size-10 items-center justify-center rounded-xl bg-surface-gray-1 text-ink-gray-5"><span class="lucide-inbox size-5" aria-hidden="true" /></span>
+      <p class="mt-3 font-medium text-ink-gray-7">{{ emptyLabel || 'No records found.' }}</p>
+      <p class="mt-1 text-xs text-ink-gray-4">Try clearing filters or checking the selected Company.</p>
     </div>
 
     <!-- Desktop table with collapsible rows -->
@@ -43,7 +47,8 @@
       v-else-if="!isMobile"
       class="overflow-x-auto"
     >
-      <table class="w-full text-sm border-collapse">
+      <table class="w-full border-collapse text-sm">
+        <caption class="sr-only">Finance records for the selected Company</caption>
         <thead class="bg-surface-gray-1 border-b border-outline-gray-1 text-ink-gray-6">
           <tr>
             <th v-if="collapsible" class="w-8 px-3 py-2.5"></th>
@@ -68,8 +73,13 @@
         <tbody class="divide-y divide-outline-gray-1">
           <template v-for="row in rows" :key="row.name">
             <tr
-              class="hover:bg-surface-gray-1 cursor-pointer transition-colors group"
+              class="group cursor-pointer transition-colors hover:bg-surface-gray-1 focus-visible:bg-surface-gray-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-outline-blue-3"
+              tabindex="0"
+              :aria-label="`Open ${row.name || 'finance record'}`"
+              :aria-expanded="collapsible ? expandedRowKeys.includes(row.name) : undefined"
               @click="handleRowClick(row)"
+              @keydown.enter.self.prevent="handleRowClick(row)"
+              @keydown.space.self.prevent="handleRowClick(row)"
             >
               <!-- Expand toggle -->
               <td
@@ -96,6 +106,15 @@
                 </span>
                 <span v-else-if="col.type === 'date'" class="text-xs text-ink-gray-6">
                   {{ row[col.key] || '—' }}
+                </span>
+                <a
+                  v-else-if="col.type === 'link' && linkHref(row, col)"
+                  :href="linkHref(row, col)"
+                  class="font-medium text-ink-blue-6 underline underline-offset-2 hover:text-ink-blue-7"
+                  @click.stop
+                >{{ row[col.key] }}</a>
+                <span v-else-if="col.type === 'link'" class="text-ink-gray-5">
+                  {{ linkFallback(row, col) }}
                 </span>
                 <span v-else-if="col.type === 'owner'" class="text-xs text-ink-gray-5">
                   {{ row[col.key] || '—' }}
@@ -147,19 +166,20 @@
 
     <!-- Mobile Card View inspired by CareVerse HQ MobileCardView -->
     <div v-else class="p-3 space-y-3">
-      <div
+      <article
         v-for="row in rows"
         :key="row.name"
-        class="fc-mobile-card cursor-pointer"
-        @click="handleRowClick(row)"
+        class="fc-mobile-card"
       >
         <div class="flex items-start justify-between gap-2 mb-2">
           <div class="min-w-0 flex-1">
-            <p class="font-semibold text-ink-gray-9 text-sm truncate">
+            <button type="button" class="truncate rounded text-left text-sm font-semibold text-ink-gray-9 hover:text-ink-red-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-blue-3" :aria-label="`Open ${row.name || 'finance record'}`" @click="handleRowClick(row)">
               {{ row[columns[0]?.key] || row.name }}
-            </p>
-            <p v-if="columns[1]" class="text-xs text-ink-gray-5 mt-0.5 truncate">
-              {{ row[columns[1]?.key] }}
+            </button>
+            <p v-if="columns[1]" class="mt-0.5 truncate text-xs text-ink-gray-5">
+              <a v-if="columns[1]?.type === 'link' && linkHref(row, columns[1])" :href="linkHref(row, columns[1])" class="underline underline-offset-2 text-ink-blue-6 hover:text-ink-blue-7" @click.stop>{{ row[columns[1]?.key] }}</a>
+              <template v-else-if="columns[1]?.type === 'link'">{{ linkFallback(row, columns[1]) }}</template>
+              <template v-else>{{ row[columns[1]?.key] }}</template>
             </p>
           </div>
           <div class="text-right flex-shrink-0">
@@ -171,10 +191,10 @@
         </div>
 
         <!-- Collapsible toggle button for mobile -->
-        <div v-if="collapsible" class="mt-2 pt-2 border-t border-outline-gray-1 flex items-center justify-between text-xs text-ink-gray-5" @click.stop="toggleExpand(row.name)">
+        <button v-if="collapsible" type="button" class="mt-2 flex w-full items-center justify-between border-t border-outline-gray-1 pt-2 text-left text-xs text-ink-gray-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-blue-3" :aria-expanded="expandedRowKeys.includes(row.name)" @click="toggleExpand(row.name)">
           <span>{{ expandedRowKeys.includes(row.name) ? 'Hide details' : 'Show details' }}</span>
           <span class="lucide-chevron-right size-3.5 transition-transform" :class="{ 'rotate-90': expandedRowKeys.includes(row.name) }" />
-        </div>
+        </button>
 
         <!-- Mobile expanded details -->
         <div v-if="collapsible && expandedRowKeys.includes(row.name)" class="mt-2 pt-2 border-t border-outline-gray-2 text-xs">
@@ -189,7 +209,7 @@
         <div v-if="$slots.actions" class="mt-3 pt-2 border-t border-outline-gray-1 flex flex-col gap-1.5" @click.stop>
           <slot name="actions" :row="row" />
         </div>
-      </div>
+      </article>
     </div>
 
     <!-- Pagination -->
@@ -261,4 +281,27 @@ const amountCol = computed(() =>
   props.columns.find((c) => c.type === 'currency'),
 )
 const statusCol = computed(() => props.columns.find((c) => c.type === 'status'))
+
+function linkHref(row, col) {
+  const name = row?.[col.linkKey]
+  const doctype = col.linkDoctype
+  if (
+    !name ||
+    !doctype ||
+    row?.[col.availableKey || 'network_available'] !== true ||
+    typeof name !== 'string' ||
+    name.includes('/') ||
+    name.includes('\\') ||
+    [...name].some((character) => character.charCodeAt(0) < 32)
+  ) return ''
+  const slug = doctype.trim().toLowerCase().replace(/\s+/g, '-')
+  const company = row.company
+  const companyQuery = company ? `?company=${encodeURIComponent(company)}` : ''
+  return `/app/${encodeURIComponent(slug)}/${encodeURIComponent(name)}${companyQuery}`
+}
+
+function linkFallback(row, col) {
+  if (row?.[col.key]) return row[col.key]
+  return row?.[col.linkKey] ? 'Record unavailable' : 'Not linked'
+}
 </script>

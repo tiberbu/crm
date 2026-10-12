@@ -190,100 +190,108 @@ def _company_currency(company):
 	return rows[0].default_currency if rows else ""
 
 
+def _sum_query_value(doctype, filters, field):
+	"""Return a permission-checked SUM for one DocType field on Frappe v15/v16."""
+	get_query = getattr(frappe.qb, "get_query", None)
+	if get_query:
+		rows = get_query(
+			doctype,
+			fields=[{"SUM": field, "as": "total"}],
+			filters=filters,
+			ignore_permissions=False,
+		).run(as_dict=True)
+		total = rows[0].get("total") if rows else 0
+		return flt(total or 0)
+
+	# Frappe v15 lacks the permission-aware Query Builder aggregate API. get_list
+	# enforces document and user permissions, so summing its numeric rows retains
+	# the same visibility rules without passing an aggregate expression to it.
+	rows = frappe.get_list(doctype, filters=filters, fields=[field])
+	return sum(flt(row.get(field) or 0) for row in rows)
+
+
 def _get_ar_outstanding(company, currency):
-	rows = frappe.get_list(
+	total = _sum_query_value(
 		"Sales Invoice",
-		filters=[
+		[
 			["company", "=", company],
 			["docstatus", "=", 1],
 			["outstanding_amount", ">", 0],
 		],
-		fields=[{"SUM": "outstanding_amount", "as": "total"}],
-		limit=1,
+		"outstanding_amount",
 	)
-	total = rows[0].total if rows else 0
 	return {"value": float(total or 0), "currency": currency, "delta_pct": 0, "delta_direction": "neutral"}
 
 
 def _get_ar_overdue(company, currency):
-	rows = frappe.get_list(
+	total = _sum_query_value(
 		"Sales Invoice",
-		filters=[
+		[
 			["company", "=", company],
 			["docstatus", "=", 1],
 			["outstanding_amount", ">", 0],
 			["due_date", "<", today()],
 		],
-		fields=[{"SUM": "outstanding_amount", "as": "total"}],
-		limit=1,
+		"outstanding_amount",
 	)
-	total = rows[0].total if rows else 0
 	return {"value": float(total or 0), "currency": currency, "delta_pct": 0, "delta_direction": "neutral"}
 
 
 def _get_invoiced_mtd(company, currency, date_filter):
 	from_date, to_date = date_filter
-	rows = frappe.get_list(
+	total = _sum_query_value(
 		"Sales Invoice",
-		filters=[
+		[
 			["company", "=", company],
 			["docstatus", "=", 1],
 			["posting_date", ">=", from_date],
 			["posting_date", "<=", to_date],
 		],
-		fields=[{"SUM": "grand_total", "as": "total"}],
-		limit=1,
+		"grand_total",
 	)
-	total = rows[0].total if rows else 0
 	return {"value": float(total or 0), "currency": currency, "delta_pct": 0, "delta_direction": "neutral"}
 
 
 def _get_collected_mtd(company, currency, date_filter):
 	from_date, to_date = date_filter
-	rows = frappe.get_list(
+	total = _sum_query_value(
 		"Payment Entry",
-		filters=[
+		[
 			["company", "=", company],
 			["docstatus", "=", 1],
 			["payment_type", "=", "Receive"],
 			["posting_date", ">=", from_date],
 			["posting_date", "<=", to_date],
 		],
-		fields=[{"SUM": "paid_amount", "as": "total"}],
-		limit=1,
+		"paid_amount",
 	)
-	total = rows[0].total if rows else 0
 	return {"value": float(total or 0), "currency": currency, "delta_pct": 0, "delta_direction": "neutral"}
 
 
 def _get_ap_outstanding(company, currency):
-	rows = frappe.get_list(
+	total = _sum_query_value(
 		"Purchase Invoice",
-		filters=[
+		[
 			["company", "=", company],
 			["docstatus", "=", 1],
 			["outstanding_amount", ">", 0],
 		],
-		fields=[{"SUM": "outstanding_amount", "as": "total"}],
-		limit=1,
+		"outstanding_amount",
 	)
-	total = rows[0].total if rows else 0
 	return {"value": float(total or 0), "currency": currency, "delta_pct": 0, "delta_direction": "neutral"}
 
 
 def _get_ap_overdue(company, currency):
-	rows = frappe.get_list(
+	total = _sum_query_value(
 		"Purchase Invoice",
-		filters=[
+		[
 			["company", "=", company],
 			["docstatus", "=", 1],
 			["outstanding_amount", ">", 0],
 			["due_date", "<", today()],
 		],
-		fields=[{"SUM": "outstanding_amount", "as": "total"}],
-		limit=1,
+		"outstanding_amount",
 	)
-	total = rows[0].total if rows else 0
 	return {"value": float(total or 0), "currency": currency, "delta_pct": 0, "delta_direction": "neutral"}
 
 
@@ -307,13 +315,11 @@ def _get_pending_rebates(company, roles):
 		if not own_partners:
 			return {"value": 0, "currency": currency, "delta_pct": 0, "delta_direction": "neutral"}
 		filters.append(["partner", "in", own_partners])
-	rows = frappe.get_list(
+	total = _sum_query_value(
 		"CRM Partner Rebate Voucher",
-		filters=filters,
-		fields=[{"SUM": "rebate_amount", "as": "total"}],
-		limit=1,
+		filters,
+		"rebate_amount",
 	)
-	total = rows[0].total if rows else 0
 	return {"value": float(total or 0), "currency": currency, "delta_pct": 0, "delta_direction": "neutral"}
 
 
@@ -335,22 +341,40 @@ def _get_unpaid_commissions(company, roles):
 			pluck="name",
 		) or ["__none__"]
 		filters.append(["deal", "in", own_deals])
-	rows = frappe.get_list(
+	total = _sum_query_value(
 		"CRM Sales Commission",
-		filters=filters,
-		fields=[{"SUM": "commission_amount", "as": "total"}],
-		limit=1,
+		filters,
+		"commission_amount",
 	)
-	total = rows[0].total if rows else 0
 	return {"value": float(total or 0), "currency": currency, "delta_pct": 0, "delta_direction": "neutral"}
 
 
 @frappe.whitelist()
 def get_finance_kpis(company=None, period="month", force=0):
 	period = _request_text(period, "Period", default="month")
-	date_filter = _get_date_filter(period)
 	force = _request_flag(force, "Refresh KPIs")
 	company = _resolve_company(company)
+	try:
+		return _get_finance_kpis_payload(company, period, force)
+	except (frappe.PermissionError, frappe.ValidationError):
+		raise
+	except Exception:
+		try:
+			error_log = frappe.log_error(
+				title="Finance KPI Load Failed",
+				message=frappe.get_traceback(),
+			)
+			reference = getattr(error_log, "name", "FINANCE-KPI")
+		except Exception:
+			reference = "FINANCE-KPI"
+		frappe.throw(
+			_("Finance KPI data could not be loaded. Retry this section. If it continues, contact Finance support with reference {0}.").format(reference),
+			frappe.ValidationError,
+		)
+
+
+def _get_finance_kpis_payload(company, period, force):
+	date_filter = _get_date_filter(period)
 	roles = frappe.get_roles(frappe.session.user)
 	cache_key = "fc_kpis_%s_%s_%s" % (frappe.session.user, company, period)
 	if not force:
@@ -1346,21 +1370,24 @@ def get_customer_payments(company=None, filters=None, page=0, page_size=20):
 	base_filters = [
 		["company", "=", company],
 		["payment_type", "=", "Receive"],
-		["docstatus", "=", 1],
+		["docstatus", "!=", 2],
 	]
 	base_filters.extend(_request_filters(filters))
+	fields = [
+		"name",
+		"party",
+		"posting_date",
+		"paid_amount",
+		"mode_of_payment",
+		"total_allocated_amount",
+		"unallocated_amount",
+	]
+	if frappe.db.has_column("Payment Entry", "workflow_state"):
+		fields.append("workflow_state")
 	return erpnext_adapter.get_list(
 		"Payment Entry",
 		filters=base_filters,
-		fields=[
-			"name",
-			"party",
-			"posting_date",
-			"paid_amount",
-			"mode_of_payment",
-			"total_allocated_amount",
-			"unallocated_amount",
-		],
+		fields=fields,
 		order_by="posting_date desc",
 		limit_page_length=page_size,
 		limit_start=page * page_size,
@@ -1459,6 +1486,179 @@ def get_customer_outstanding_invoices(company=None, customer=None):
 
 
 @frappe.whitelist()
+def get_customer_payment_options(company=None, search_term=""):
+	"""Customers with currently outstanding submitted invoices in one Company.
+
+	Build choices from permission-filtered Sales Invoice rows so a Customer is
+	never offered based on another Company's receivables or a stale Customer
+	record with no eligible invoice. Customer IDs remain the option values.
+	"""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	company = _resolve_company(company)
+	search_term = _request_text(search_term, "Customer search").casefold()
+	page_size = 100 if search_term else 20
+	filters = [
+		["company", "=", company],
+		["docstatus", "=", 1],
+		["outstanding_amount", ">", 0],
+	]
+	options = []
+	seen = set()
+	limit_start = 0
+	while len(options) < 20:
+		rows = erpnext_adapter.get_list(
+			"Sales Invoice",
+			filters=filters,
+			fields=["customer"],
+			group_by="customer",
+			order_by="customer asc",
+			limit_start=limit_start,
+			limit_page_length=page_size,
+		)
+		if not rows:
+			break
+
+		customer_ids = list(dict.fromkeys(_safe_text(row.get("customer")) for row in rows if row.get("customer")))
+		customer_ids = [customer for customer in customer_ids if customer and customer not in seen]
+		seen.update(customer_ids)
+		if customer_ids:
+			customer_rows = erpnext_adapter.get_list(
+				"Customer",
+				filters=[["name", "in", customer_ids]],
+				fields=["name", "customer_name"],
+				order_by="name asc",
+				limit_page_length=len(customer_ids),
+			)
+			customer_names = {
+				_safe_text(row.get("name")): _safe_text(row.get("customer_name"), _safe_text(row.get("name")))
+				for row in customer_rows
+				if row.get("name")
+			}
+			for customer in customer_ids:
+				customer_name = customer_names.get(customer, customer)
+				if search_term and search_term not in customer.casefold() and search_term not in customer_name.casefold():
+					continue
+				# Keep IDs visible even when a search returns one of two records
+				# sharing a display name. Values remain the stable Customer IDs.
+				options.append({"label": _("{0} · {1}").format(customer_name, customer), "value": customer})
+				if len(options) == 20:
+					break
+
+		limit_start += len(rows)
+		if len(rows) < page_size:
+			break
+	return options
+
+
+def _get_customer_payment_context(company, mode_of_payment):
+	"""Resolve a receipt Mode of Payment to its account for the selected Company."""
+	mode_of_payment = _request_text(mode_of_payment, "Mode of Payment", required=True)
+	context = {
+		"company": company,
+		"mode_of_payment": mode_of_payment,
+		"mode_type": None,
+		"configured": False,
+		"account": None,
+		"account_type": None,
+		"requires_reference": False,
+		"message": "",
+	}
+	if not frappe.db.exists("Mode of Payment", mode_of_payment):
+		context["message"] = _("Mode of Payment {0} could not be found.").format(mode_of_payment)
+		return context
+	mode_type = frappe.db.get_value("Mode of Payment", mode_of_payment, "type")
+	context["mode_type"] = mode_type
+
+	configured_account = frappe.db.get_value(
+		"Mode of Payment Account",
+		{"parent": mode_of_payment, "company": company},
+		"default_account",
+	)
+	if not configured_account:
+		context["message"] = _(
+			"{0} has no account configured for {1}. Configure a company account before posting."
+		).format(mode_of_payment, company)
+		return context
+
+	# Keep this call compatible with ERPNext v15 and v16. Both public APIs accept
+	# company and mode_of_payment; do not pass v16-only optional keywords here.
+	from erpnext.accounts.doctype.journal_entry.journal_entry import get_default_bank_cash_account
+
+	resolved = get_default_bank_cash_account(company, mode_of_payment=mode_of_payment)
+	account = resolved.get("account") if resolved else None
+	if account != configured_account:
+		context["message"] = _(
+			"The account configured for {0} in {1} could not be resolved. Review the Mode of Payment setup."
+		).format(mode_of_payment, company)
+		return context
+
+	account_details = frappe.db.get_value(
+		"Account", account, ["company", "account_type", "is_group", "disabled"], as_dict=True
+	)
+	if (
+		not account_details
+		or account_details.company != company
+		or account_details.account_type not in ("Bank", "Cash")
+		or account_details.is_group
+		or account_details.disabled
+	):
+		context["message"] = _(
+			"The account configured for {0} must be an active Bank or Cash account belonging to {1}."
+		).format(mode_of_payment, company)
+		return context
+
+	if mode_type in ("Cash", "Bank") and mode_type != account_details.account_type:
+		context["message"] = _(
+			"{0} Mode of Payment is mapped to a {1} account for {2}; configure a {0} account before posting."
+		).format(mode_type, account_details.account_type, company)
+		return context
+
+	context.update(
+		{
+			"configured": True,
+			"account": account,
+			"account_type": account_details.account_type,
+			"requires_reference": account_details.account_type == "Bank",
+		}
+	)
+	return context
+
+
+@frappe.whitelist()
+def get_customer_payment_context(company=None, mode_of_payment=None):
+	"""Return the company-resolved account and native reference rules for a receipt."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	company = _resolve_company(company)
+	return _get_customer_payment_context(company, mode_of_payment)
+
+
+def _get_customer_payment_entry(invoice, amount, bank_account):
+	"""Build a receipt with ERPNext's public mapper and its shared v15/v16 account argument."""
+	from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+
+	pe = get_payment_entry(
+		"Sales Invoice", invoice, party_amount=amount, bank_account=bank_account
+	)
+	# ERPNext's mapper can prefer the invoice's own mode account over bank_account.
+	# The Finance composer selection is authoritative, so align the mapped account
+	# and its currency/type before native Payment Entry validation runs.
+	if pe.paid_to != bank_account:
+		account_details = frappe.db.get_value(
+			"Account", bank_account, ["account_currency", "account_type"], as_dict=True
+		)
+		if not account_details:
+			frappe.throw(_("The selected payment account is no longer available."), frappe.ValidationError)
+		pe.paid_to = bank_account
+		pe.paid_to_account_currency = account_details.account_currency
+		pe.paid_to_account_type = account_details.account_type
+	return pe
+
+
+@frappe.whitelist()
 def create_customer_payment(
 	company=None,
 	customer=None,
@@ -1476,14 +1676,15 @@ def create_customer_payment(
 	remaining invoices are appended as additional references. When no invoice is
 	allocated, an on-account (unallocated) receipt is created instead.
 	"""
-	from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
-
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
 		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
 	frappe.has_permission("Payment Entry", ptype="create", throw=True)
 	customer = _request_text(customer, "Customer", required=True)
+	payment_context = _get_customer_payment_context(company, mode_of_payment)
+	if not payment_context["configured"]:
+		frappe.throw(payment_context["message"], frappe.ValidationError)
 
 	if isinstance(allocations, str):
 		try:
@@ -1514,7 +1715,9 @@ def create_customer_payment(
 	if allocations:
 		# Seed from the first allocated invoice so accounts + rates resolve natively.
 		first = allocations[0]
-		pe = get_payment_entry("Sales Invoice", first.get("invoice"), party_amount=flt(first.get("amount")))
+		pe = _get_customer_payment_entry(
+			first.get("invoice"), flt(first.get("amount")), payment_context["account"]
+		)
 		if frappe.db.has_column("Sales Invoice", "optin_network"):
 			set_network_link(
 				pe,
@@ -1542,8 +1745,7 @@ def create_customer_payment(
 		frappe.throw("Allocate the receipt to at least one invoice")
 
 	pe.company = company
-	if mode_of_payment:
-		pe.mode_of_payment = mode_of_payment
+	pe.mode_of_payment = payment_context["mode_of_payment"]
 	if posting_date:
 		pe.posting_date = posting_date
 	if reference_no:
@@ -1554,9 +1756,19 @@ def create_customer_payment(
 	pe.set_amounts()
 	pe.insert()
 	if int(submit or 0):
-		pe.submit()
+		from frappe.model.workflow import apply_workflow
+
+		pe = apply_workflow(pe.as_json(), "Submit for Approval")
+	warning_map = getattr(frappe.flags, "crm_finance_payment_warnings", {})
+	integration_warnings = warning_map.pop(pe.name, []) if isinstance(warning_map, dict) else []
 	_invalidate_kpi_cache(frappe.session.user, company)
-	return {"name": pe.name, "docstatus": pe.docstatus, "paid_amount": pe.paid_amount}
+	return {
+		"name": pe.name,
+		"docstatus": pe.docstatus,
+		"workflow_state": pe.get("workflow_state"),
+		"paid_amount": pe.paid_amount,
+		"integration_warnings": integration_warnings,
+	}
 
 
 @frappe.whitelist()
@@ -1709,15 +1921,327 @@ def get_customers(company=None, page=0, page_size=20):
 
 
 @frappe.whitelist()
+def get_quotation_finance_context(quotation_name=None, company=None):
+	"""Return Opt-In provenance and Company-matched accounting links for a quote."""
+	roles = frappe.get_roles(frappe.session.user)
+	if not _has_ar_access(roles):
+		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	company = _resolve_company(company)
+	quotation_name = _request_text(quotation_name, "Quotation", required=True)
+	quotation_rows = erpnext_adapter.get_list(
+		"Quotation",
+		filters=[["name", "=", quotation_name], ["company", "=", company]],
+		fields=["name", "company", "party_name", "currency", "grand_total", "docstatus", "crm_optin_submission", "optin_network", "crm_deal"],
+		limit_page_length=1,
+	)
+	quotation = next((row for row in quotation_rows if row.get("company") == company), None)
+	if not quotation:
+		frappe.throw(_("Quotation is unavailable in the selected Company."), frappe.PermissionError)
+	customer_name = _safe_text(quotation.get("party_name"))
+	customer_label = customer_name
+	customer_available = False
+	if customer_name:
+		try:
+			customer_rows = erpnext_adapter.get_list(
+				"Customer",
+				filters=[["name", "=", customer_name]],
+				fields=["name", "customer_name"],
+				limit_page_length=1,
+			)
+			if customer_rows:
+				customer_label = _safe_text(customer_rows[0].get("customer_name"), customer_name)
+				customer_available = True
+		except frappe.PermissionError:
+			pass
+
+	submission = None
+	submission_name = _safe_text(quotation.get("crm_optin_submission"))
+	if submission_name and frappe.db.exists("DocType", "CRM Opt-In Submission"):
+		fields = ["name"]
+		for field in ("network_slug", "contract", "deal", "status", "raw_json", "billing_schedule_json", "submitted_at"):
+			if frappe.db.has_column("CRM Opt-In Submission", field):
+				fields.append(field)
+		try:
+			rows = frappe.get_list(
+				"CRM Opt-In Submission",
+				filters=[["name", "=", submission_name]],
+				fields=fields,
+				limit_page_length=1,
+			)
+			submission = rows[0] if rows else None
+		except frappe.PermissionError:
+			submission = None
+
+	network_reference = _safe_text((submission or {}).get("network_slug")) or _safe_text(quotation.get("optin_network"))
+	network = None
+	if network_reference and frappe.db.exists("DocType", "CRM Opt-In Network"):
+		try:
+			rows = frappe.get_list(
+				"CRM Opt-In Network",
+				filters=[["name", "=", network_reference]],
+				fields=["name", "slug", "display_name", "partner_id"],
+				limit_page_length=1,
+			)
+			if not rows:
+				rows = frappe.get_list(
+					"CRM Opt-In Network",
+					filters=[["slug", "=", network_reference]],
+					fields=["name", "slug", "display_name", "partner_id"],
+					limit_page_length=1,
+				)
+			network = rows[0] if rows else None
+		except frappe.PermissionError:
+			network = None
+	network_slug = _safe_text(network.get("slug")) if network else network_reference
+
+	payload = {}
+	try:
+		payload = json.loads((submission or {}).get("raw_json") or "{}")
+	except (TypeError, ValueError, json.JSONDecodeError):
+		payload = {}
+	if not isinstance(payload, dict):
+		payload = {}
+	facility_rows = payload.get("pricing") or payload.get("facilities") or []
+	if not facility_rows and isinstance(payload.get("pricing_plans"), list):
+		facility_rows = [
+			facility
+			for plan in payload["pricing_plans"] if isinstance(plan, dict)
+			for facility in (plan.get("facilities") or []) if isinstance(facility, dict)
+		]
+	if not facility_rows and frappe.db.exists("DocType", "Quotation Item"):
+		try:
+			item_fields = ["item_name"]
+			if frappe.db.has_column("Quotation Item", "facility_name"):
+				item_fields.append("facility_name")
+			quote_items = erpnext_adapter.get_list(
+				"Quotation Item",
+				filters=[["parent", "=", quotation_name], ["parenttype", "=", "Quotation"]],
+				fields=item_fields,
+				limit_page_length=100,
+			)
+			facility_rows = [
+				{"facility_name": _safe_text(row.get("facility_name")) or _safe_text(row.get("item_name"))}
+				for row in quote_items
+				if _safe_text(row.get("facility_name")) or _safe_text(row.get("item_name"))
+			]
+		except frappe.PermissionError:
+			facility_rows = []
+	mfl_codes = list(dict.fromkeys(
+		_safe_text(row.get("mfl_code")) for row in facility_rows
+		if isinstance(row, dict) and _safe_text(row.get("mfl_code"))
+	))
+	facilities = []
+	if mfl_codes and frappe.db.exists("DocType", "CRM Pre-Qualified Facility"):
+		try:
+			facilities = frappe.get_list(
+				"CRM Pre-Qualified Facility",
+				filters=[["mfl_code", "in", mfl_codes]],
+				fields=["name", "mfl_code", "facility_name"],
+				limit_page_length=min(len(mfl_codes), 100),
+			)
+		except frappe.PermissionError:
+			facilities = []
+	facility_by_code = {_safe_text(row.get("mfl_code")): row for row in facilities}
+	facility_context = []
+	for item in facility_rows:
+		if not isinstance(item, dict):
+			continue
+		code = _safe_text(item.get("mfl_code"))
+		name = _safe_text(item.get("facility_name"), code)
+		facility = facility_by_code.get(code)
+		facility_context.append({
+			"name": _safe_text(facility.get("name")) if facility else "",
+			"mfl_code": code,
+			"label": _safe_text(facility.get("facility_name"), name) if facility else name,
+			"available": bool(facility),
+		})
+
+	contract = None
+	contract_name = _safe_text((submission or {}).get("contract"))
+	if contract_name and frappe.db.exists("DocType", "CRM Contract"):
+		try:
+			rows = frappe.get_list(
+				"CRM Contract",
+				filters=[["name", "=", contract_name]],
+				fields=["name", "status"],
+				limit_page_length=1,
+			)
+			contract = rows[0] if rows else None
+		except frappe.PermissionError:
+			contract = None
+
+	schedule = _handoff_schedule(submission) if submission else {}
+	if not schedule and isinstance(payload.get("billing_schedule"), list):
+		schedule = next((row for row in payload["billing_schedule"] if isinstance(row, dict) and int(row.get("year_number") or 0) == 1 and int(row.get("quarter_number") or 0) == 1), {})
+	contract_signature = {"status": _safe_text((contract or {}).get("status")), "signed_at": ""}
+	if contract_name and frappe.db.exists("DocType", "CRM Contract Signatory"):
+		try:
+			signatures = frappe.get_list(
+				"CRM Contract Signatory",
+				filters=[
+					["parent", "=", contract_name],
+					["parenttype", "=", "CRM Contract"],
+					["signatory_role", "=", "Facility Signatory"],
+					["status", "=", "Signed"],
+				],
+				fields=["signed_at"],
+				order_by="signed_at desc",
+				limit_page_length=1,
+			)
+			contract_signature["signed_at"] = _safe_text(signatures[0].get("signed_at")) if signatures else ""
+		except frappe.PermissionError:
+			pass
+	docstatus = int(quotation.get("docstatus") or 0)
+	submit_allowed = bool(
+		docstatus == 0
+		and frappe.has_permission("Quotation", doc=quotation_name, ptype="submit")
+	)
+	if docstatus == 2:
+		quotation_state = "Cancelled"
+	elif docstatus == 1:
+		quotation_state = "Submitted · read-only"
+	elif submit_allowed:
+		quotation_state = "Draft · submit with ERPNext checks"
+	else:
+		quotation_state = "Ineligible · no submit permission"
+	quotation_record = {
+		"name": quotation_name,
+		"company": company,
+		"currency": _safe_text(quotation.get("currency")),
+		"grand_total": float(quotation.get("grand_total") or 0),
+		"docstatus": docstatus,
+		"finance_state": quotation_state,
+		"submit_allowed": submit_allowed,
+	}
+	order_filter_groups = []
+	if frappe.db.has_column("Sales Order", "crm_optin_quotation"):
+		order_filter_groups.append([["crm_optin_quotation", "=", quotation_name]])
+	if frappe.db.exists("DocType", "Sales Order Item"):
+		try:
+			order_items = erpnext_adapter.get_list(
+				"Sales Order Item",
+				filters=[["prevdoc_docname", "=", quotation_name]],
+				fields=["parent"],
+				limit_page_length=100,
+			)
+		except frappe.PermissionError:
+			order_items = []
+		order_names = list(dict.fromkeys(_safe_text(row.get("parent")) for row in order_items if row.get("parent")))
+		if order_names:
+			order_filter_groups.append([["name", "in", order_names]])
+	orders_by_name = {}
+	for order_filters in order_filter_groups:
+		try:
+			matched_orders = erpnext_adapter.get_list(
+				"Sales Order",
+				filters=[["company", "=", company], ["docstatus", "in", [0, 1]], *order_filters],
+				fields=["name", "company", "customer", "docstatus", "status", "currency", "grand_total"],
+				order_by="creation desc",
+				limit_page_length=20,
+			)
+		except frappe.PermissionError:
+			matched_orders = []
+		for row in matched_orders:
+			if row.get("company") == company and row.get("name"):
+				orders_by_name[row["name"]] = row
+	orders = list(orders_by_name.values())
+	order_names = list(dict.fromkeys(_safe_text(row.get("name")) for row in orders if row.get("name")))
+	invoices = []
+	if order_names and frappe.db.exists("DocType", "Sales Invoice Item"):
+		try:
+			invoice_items = erpnext_adapter.get_list(
+				"Sales Invoice Item",
+				filters=[["sales_order", "in", order_names]],
+				fields=["parent"],
+				limit_page_length=100,
+			)
+		except frappe.PermissionError:
+			invoice_items = []
+		invoice_names = list(dict.fromkeys(_safe_text(row.get("parent")) for row in invoice_items if row.get("parent")))
+		if invoice_names:
+			try:
+				invoices = erpnext_adapter.get_list(
+					"Sales Invoice",
+					filters=[["name", "in", invoice_names], ["company", "=", company], ["docstatus", "in", [0, 1]]],
+					fields=["name", "company", "customer", "docstatus", "status", "currency", "grand_total", "outstanding_amount", "posting_date", "due_date"],
+					order_by="creation desc",
+					limit_page_length=20,
+				)
+			except frappe.PermissionError:
+				invoices = []
+	invoices = [row for row in invoices if row.get("company") == company]
+	invoice_names = list(dict.fromkeys(_safe_text(row.get("name")) for row in invoices if row.get("name")))
+	payments = []
+	if invoice_names and frappe.db.exists("DocType", "Payment Entry Reference"):
+		try:
+			payment_refs = erpnext_adapter.get_list(
+				"Payment Entry Reference",
+				filters=[["reference_doctype", "=", "Sales Invoice"], ["reference_name", "in", invoice_names]],
+				fields=["parent"],
+				limit_page_length=100,
+			)
+		except frappe.PermissionError:
+			payment_refs = []
+		payment_names = list(dict.fromkeys(_safe_text(row.get("parent")) for row in payment_refs if row.get("parent")))
+		if payment_names:
+			try:
+				payments = erpnext_adapter.get_list(
+					"Payment Entry",
+					filters=[["name", "in", payment_names], ["company", "=", company], ["docstatus", "in", [0, 1]]],
+					fields=["name", "company", "docstatus", "payment_type", "posting_date", "paid_amount", "paid_from_account_currency", "paid_to_account_currency"]
+					+ (["workflow_state"] if frappe.db.has_column("Payment Entry", "workflow_state") else []),
+					order_by="posting_date desc",
+					limit_page_length=20,
+				)
+			except frappe.PermissionError:
+				payments = []
+	payments = [row for row in payments if row.get("company") == company]
+	if payments:
+		for payment in payments:
+			payment["finance_state"] = _safe_text(payment.get("workflow_state")) or (
+				"Submitted" if int(payment.get("docstatus") or 0) == 1 else "Draft"
+			)
+	if payments:
+		handoff_state = "Payment recorded"
+	elif invoices:
+		handoff_state = "Invoice created"
+	elif orders:
+		handoff_state = "Sales Order created"
+	elif docstatus == 2:
+		handoff_state = "Cancelled"
+	elif docstatus == 0:
+		handoff_state = "Waiting for Quotation submission"
+	elif (contract or {}).get("status") != "Fully Executed":
+		handoff_state = "Waiting for Facility contract completion"
+	else:
+		handoff_state = "Waiting for scheduled Sales Order"
+
+	return {
+		"quotation": quotation_record,
+		"company": company,
+		"customer": {"name": customer_name, "label": customer_label, "available": customer_available},
+		"submission": {"name": submission_name, "status": _safe_text((submission or {}).get("status")), "available": bool(submission)},
+		"network": {"name": _safe_text(network.get("name")) if network else network_slug, "label": _safe_text(network.get("display_name"), network_slug) if network else network_slug, "partner_id": _safe_text(network.get("partner_id")) if network else "", "available": bool(network)},
+		"facilities": facility_context,
+		"contract": {"name": _safe_text(contract.get("name")) if contract else contract_name, "status": _safe_text(contract.get("status")) if contract else contract_signature.get("status", ""), "signed_at": contract_signature.get("signed_at", ""), "available": bool(contract)},
+		"schedule": {"order_date": _safe_text(schedule.get("scheduled_order_date")), "invoice_date": _safe_text(schedule.get("invoice_date")), "due_date": _safe_text(schedule.get("invoice_due_date")), "issue_timing": _safe_text(schedule.get("invoice_issue_timing")), "invoice_schedule_configured": schedule.get("invoice_schedule_configured"), "error": _safe_text(schedule.get("error")), "handoff_note": _safe_text(schedule.get("handoff_note"))},
+		"handoff_state": handoff_state,
+		"sales_orders": orders,
+		"sales_invoices": invoices,
+		"payments": payments,
+	}
+
+
+@frappe.whitelist()
 def get_quotations(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not _has_ar_access(roles):
 		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
 	company = _resolve_company(company)
 	page, page_size = _page_args(page, page_size)
-	base_filters = [["company", "=", company], ["docstatus", "in", [0, 1]]]
+	base_filters = [["company", "=", company]]
 	base_filters.extend(_request_filters(filters))
-	return erpnext_adapter.get_list(
+	rows = erpnext_adapter.get_list(
 		"Quotation",
 		filters=base_filters,
 		fields=[
@@ -1730,11 +2254,25 @@ def get_quotations(company=None, filters=None, page=0, page_size=20):
 			"owner",
 			"grand_total",
 			"status",
+			"docstatus",
 		],
 		order_by="transaction_date desc",
 		limit_page_length=page_size,
 		limit_start=page * page_size,
 	)
+	for row in rows:
+		docstatus = int(row.get("docstatus") or 0)
+		if docstatus == 2:
+			row["finance_state"] = "Cancelled"
+		elif docstatus == 1:
+			row["finance_state"] = "Submitted · read-only"
+		elif row.get("status") != "Draft":
+			row["finance_state"] = "Ineligible · {0}".format(_safe_text(row.get("status"), "status unavailable"))
+		elif frappe.has_permission("Quotation", doc=row.get("name"), ptype="submit"):
+			row["finance_state"] = "Draft · submit with ERPNext checks"
+		else:
+			row["finance_state"] = "Ineligible · no submit permission"
+	return rows
 
 
 @frappe.whitelist()
@@ -1974,6 +2512,7 @@ def get_rebate_vouchers(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not (_has_ar_access(roles) or "Partner RM" in roles):
 		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	company = _resolve_company(company)
 	page, page_size = _page_args(page, page_size)
 	filters = _request_filters(filters)
 	base_filters = [["docstatus", "!=", 2]]
@@ -1987,25 +2526,24 @@ def get_rebate_vouchers(company=None, filters=None, page=0, page_size=20):
 			return []
 		base_filters.append(["partner", "in", own_partners])
 	base_filters.extend(filters)
-	return frappe.get_list(
-		"CRM Partner Rebate Voucher",
-		fields=[
-			"name",
-			"partner",
-			"deal",
-			"customer",
-			"payment_reference",
-			"rebate_pct",
-			"rebate_amount",
-			"currency",
-			"status",
-			"creation",
-		],
-		filters=base_filters,
-		limit_page_length=page_size,
-		limit_start=page * page_size,
-		order_by="creation desc",
+	fields = [
+		"name",
+		"partner",
+		"deal",
+		"customer",
+		"payment_reference",
+		"rebate_pct",
+		"rebate_amount",
+		"currency",
+		"status",
+		"creation",
+	]
+	if frappe.db.has_column("CRM Partner Rebate Voucher", "optin_network"):
+		fields.append("optin_network")
+	rows = _get_company_scoped_finance_rows(
+		"CRM Partner Rebate Voucher", base_filters, fields, company, page, page_size
 	)
+	return _add_legacy_payout_labels(_add_finance_network_labels(rows, company))
 
 
 @frappe.whitelist()
@@ -2013,6 +2551,7 @@ def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 	roles = frappe.get_roles(frappe.session.user)
 	if not (_has_ar_access(roles) or "Sales Manager" in roles):
 		frappe.throw(_("Finance access requires the Accounts User or Accounts Manager role."), frappe.PermissionError)
+	company = _resolve_company(company)
 	page, page_size = _page_args(page, page_size)
 	filters = _request_filters(filters)
 	base_filters = [["docstatus", "!=", 2]]
@@ -2024,25 +2563,156 @@ def get_sales_commissions(company=None, filters=None, page=0, page_size=20):
 		) or ["__none__"]
 		base_filters.append(["deal", "in", own_deals])
 	base_filters.extend(filters)
-	return frappe.get_list(
-		"CRM Sales Commission",
-		fields=[
-			"name",
-			"sales_person",
-			"deal",
-			"customer",
-			"payment_reference",
-			"commission_pct",
-			"commission_amount",
-			"currency",
-			"status",
-			"creation",
-		],
-		filters=base_filters,
-		limit_page_length=page_size,
-		limit_start=page * page_size,
-		order_by="creation desc",
+	fields = [
+		"name",
+		"sales_person",
+		"deal",
+		"customer",
+		"payment_reference",
+		"commission_pct",
+		"commission_amount",
+		"currency",
+		"status",
+		"creation",
+	]
+	if frappe.db.has_column("CRM Sales Commission", "optin_network"):
+		fields.append("optin_network")
+	rows = _get_company_scoped_finance_rows(
+		"CRM Sales Commission", base_filters, fields, company, page, page_size
 	)
+	rows = _add_finance_network_labels(rows, company)
+	return _add_legacy_payout_labels(_add_finance_employee_labels(rows, company))
+
+
+def _add_legacy_payout_labels(rows):
+	"""Avoid presenting historical status-only Paid flags as verified payouts."""
+	for row in rows:
+		row.finance_status = (
+			_("Legacy Paid · payout not linked") if row.get("status") == "Paid" else row.get("status")
+		)
+	return rows
+
+
+def _get_company_scoped_finance_rows(doctype, filters, fields, company, page, page_size):
+	"""Page CRM records only after validating their linked Payment Entry Company."""
+	start = page * page_size
+	stop = start + page_size
+	scan_start = 0
+	scan_size = max(page_size, 100)
+	company_rows = []
+
+	while len(company_rows) < stop:
+		candidates = frappe.get_list(
+			doctype,
+			fields=fields,
+			filters=filters,
+			limit_page_length=scan_size,
+			limit_start=scan_start,
+			order_by="creation desc",
+		)
+		if not candidates:
+			break
+
+		payment_names = sorted(
+			{row.get("payment_reference") for row in candidates if row.get("payment_reference")}
+		)
+		valid_payments = set()
+		if payment_names:
+			valid_payments = {
+				row.get("name")
+				for row in erpnext_adapter.get_list(
+					"Payment Entry",
+					filters=[
+						["company", "=", company],
+						["name", "in", payment_names],
+					],
+					fields=["name"],
+					limit_page_length=len(payment_names),
+				)
+				if row.get("name")
+			}
+		company_rows.extend(
+			row for row in candidates if row.get("payment_reference") in valid_payments
+		)
+		scan_start += len(candidates)
+		if len(candidates) < scan_size:
+			break
+
+	return company_rows[start:stop]
+
+
+def _add_finance_network_labels(rows, company):
+	"""Add permission-checked Network labels and Company context to finance rows."""
+	if not rows:
+		return rows
+
+	network_names = sorted({row.get("optin_network") for row in rows if row.get("optin_network")})
+	networks = {}
+	if network_names:
+		for network in frappe.get_list(
+			"CRM Opt-In Network",
+			filters={"name": ["in", network_names]},
+			fields=["name", "display_name"],
+			limit_page_length=len(network_names),
+		):
+			networks[network.name] = network
+
+	for row in rows:
+		name = row.get("optin_network")
+		network = networks.get(name)
+		row.company = company
+		row.network_label = (network.get("display_name") or name) if network else ""
+		row.network_available = bool(network)
+	return rows
+
+
+def _add_finance_employee_labels(rows, company):
+	"""Resolve CRM salespeople to one active, company-scoped ERPNext Employee."""
+	if not rows:
+		return rows
+
+	users = sorted({row.get("sales_person") for row in rows if row.get("sales_person")})
+	employees_by_user = {}
+	if users:
+		try:
+			employees = erpnext_adapter.get_list(
+				"Employee",
+				filters=[
+					["company", "=", company],
+					["user_id", "in", users],
+					["status", "=", "Active"],
+				],
+				fields=["name", "user_id", "employee_name", "company", "status"],
+				limit_page_length=max(len(users) * 2, 20),
+			)
+			for employee in employees:
+				if employee.get("company") != company or employee.get("status") != "Active":
+					continue
+				employees_by_user.setdefault(employee.get("user_id"), []).append(employee)
+		except Exception:
+			frappe.logger("crm.finance").warning(
+				"Could not resolve Finance commission Employee mappings for company %s", company
+			)
+			employees_by_user = None
+
+	for row in rows:
+		matches = employees_by_user.get(row.get("sales_person"), []) if employees_by_user is not None else []
+		if employees_by_user is None:
+			row.employee = ""
+			row.employee_name = "Employee mapping unavailable"
+		elif len(matches) == 1:
+			employee = matches[0]
+			row.employee = employee.get("name")
+			row.employee_name = employee.get("employee_name") or employee.get("name")
+		elif len(matches) > 1:
+			row.employee = ""
+			row.employee_name = "Multiple active Employees match this user"
+		else:
+			row.employee = ""
+			row.employee_name = "No active Employee linked for this Company"
+		row.employee_available = len(matches) == 1 if employees_by_user is not None else False
+		row.company = company
+	return rows
 
 
 @frappe.whitelist()
@@ -2098,24 +2768,10 @@ def mark_rebate_paid(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
 	if not is_manager(roles=roles):
 		frappe.throw(_("Accounts Manager access is required to mark rebates as paid."), frappe.PermissionError)
-	name = _require_document_permission("CRM Partner Rebate Voucher", name, "write")
-	doc = frappe.get_doc("CRM Partner Rebate Voucher", name)
-	if doc.status != "Approved":
-		frappe.throw("Rebate must be Approved before marking Paid")
-	doc.status = "Paid"
-	doc.paid_date = frappe.utils.nowdate()
-	doc.save()
-	partner_rm = frappe.db.get_value("CRM Partner", doc.partner, "partner_rm")
-	if partner_rm:
-		frappe.publish_realtime(
-			"crm_notification",
-			{
-				"message": "Rebate voucher %s marked as paid" % name,
-				"user": partner_rm,
-			},
-		)
-	_invalidate_kpi_cache(frappe.session.user, company)
-	return doc.as_dict()
+	frappe.throw(
+		_("Rebate payout is unavailable until Finance configures the native payable and payment flow. No status was changed."),
+		frappe.ValidationError,
+	)
 
 
 @frappe.whitelist()
@@ -2167,23 +2823,10 @@ def mark_commission_paid(name: str, company: str | None = None) -> dict:
 	roles = frappe.get_roles(frappe.session.user)
 	if not is_manager(roles=roles):
 		frappe.throw(_("Accounts Manager access is required to mark commissions as paid."), frappe.PermissionError)
-	name = _require_document_permission("CRM Sales Commission", name, "write")
-	doc = frappe.get_doc("CRM Sales Commission", name)
-	if doc.status != "Confirmed":
-		frappe.throw("Commission must be Confirmed before marking Paid")
-	doc.status = "Paid"
-	doc.paid_date = frappe.utils.nowdate()
-	doc.save()
-	if doc.sales_person:
-		frappe.publish_realtime(
-			"crm_notification",
-			{
-				"message": "Commission %s marked as paid" % name,
-				"user": doc.sales_person,
-			},
-		)
-	_invalidate_kpi_cache(frappe.session.user, company)
-	return doc.as_dict()
+	frappe.throw(
+		_("Commission payout is unavailable until Finance configures the payroll component and period. No status was changed."),
+		frappe.ValidationError,
+	)
 
 
 def _invalidate_kpi_cache(user, company):
@@ -2269,35 +2912,33 @@ def _get_cashflow_series(company, months=6):
 		last = date(y, m, last_day).isoformat()
 		label = date(y, m, 1).strftime("%b %Y")
 
-		inflow_rows = frappe.get_list(
+		inflow = _sum_query_value(
 			"Payment Entry",
-			filters=[
+			[
 				["company", "=", company],
 				["docstatus", "=", 1],
 				["payment_type", "=", "Receive"],
 				["posting_date", ">=", first],
 				["posting_date", "<=", last],
 			],
-			fields=[{"SUM": "paid_amount", "as": "total"}],
-			limit=1,
+			"paid_amount",
 		)
-		outflow_rows = frappe.get_list(
+		outflow = _sum_query_value(
 			"Payment Entry",
-			filters=[
+			[
 				["company", "=", company],
 				["docstatus", "=", 1],
 				["payment_type", "=", "Pay"],
 				["posting_date", ">=", first],
 				["posting_date", "<=", last],
 			],
-			fields=[{"SUM": "paid_amount", "as": "total"}],
-			limit=1,
+			"paid_amount",
 		)
 		result.append(
 			{
 				"month": label,
-				"inflow": float(inflow_rows[0].total or 0) if inflow_rows else 0,
-				"outflow": float(outflow_rows[0].total or 0) if outflow_rows else 0,
+				"inflow": float(inflow or 0),
+				"outflow": float(outflow or 0),
 			}
 		)
 	return result
@@ -2358,30 +2999,28 @@ def _get_ap_aging_buckets(company):
 
 
 def _get_pl_summary(company, from_date, to_date):
-	income_rows = frappe.get_list(
+	income = _sum_query_value(
 		"Sales Invoice",
-		filters=[
+		[
 			["company", "=", company],
 			["docstatus", "=", 1],
 			["posting_date", ">=", from_date],
 			["posting_date", "<=", to_date],
 		],
-		fields=[{"SUM": "grand_total", "as": "total"}],
-		limit=1,
+		"grand_total",
 	)
-	expense_rows = frappe.get_list(
+	expenses = _sum_query_value(
 		"Purchase Invoice",
-		filters=[
+		[
 			["company", "=", company],
 			["docstatus", "=", 1],
 			["posting_date", ">=", from_date],
 			["posting_date", "<=", to_date],
 		],
-		fields=[{"SUM": "grand_total", "as": "total"}],
-		limit=1,
+		"grand_total",
 	)
-	income = float(income_rows[0].total or 0) if income_rows else 0
-	expenses = float(expense_rows[0].total or 0) if expense_rows else 0
+	income = float(income or 0)
+	expenses = float(expenses or 0)
 	return {
 		"income": income,
 		"expenses": expenses,

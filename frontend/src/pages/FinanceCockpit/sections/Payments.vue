@@ -25,6 +25,7 @@ const sectionRef = ref(null)
 const columns = [
   { key: 'name', label: 'Payment' },
   { key: 'party', label: 'Customer' },
+  { key: 'workflow_state', label: 'Approval' },
   { key: 'posting_date', label: 'Date', type: 'timeago' },
   { key: 'paid_amount', label: 'Paid', type: 'currency', align: 'right' },
   {

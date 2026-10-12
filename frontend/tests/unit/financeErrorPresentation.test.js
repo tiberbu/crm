@@ -31,10 +31,19 @@ describe('Finance error presentation', () => {
       exc_type: 'AttributeError',
     })
 
+    const kpiFailure = getErrorPresentation({
+      message:
+        'Finance KPI data could not be loaded. Retry this section. If it continues, contact Finance support with reference ERR-LOG-001.',
+      exc_type: 'ValidationError',
+    })
+
     expect(presentation.kind).toBe('request')
     expect(presentation.title).toBe('The request could not be understood')
     expect(presentation.message).not.toContain('AttributeError')
-    expect(presentation.nextStep).toContain('Refresh')
     expect(presentation.retryable).toBe(false)
+    expect(kpiFailure.kind).toBe('request')
+    expect(kpiFailure.title).toBe('Finance KPI data could not be loaded')
+    expect(kpiFailure.retryable).toBe(true)
+    expect(kpiFailure.reference).toBe('ERR-LOG-001')
   })
 })

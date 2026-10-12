@@ -173,6 +173,7 @@ permission_query_conditions = {
 }
 
 has_permission = {
+	"Payment Entry": "crm.finance.workflow.payment_entry_has_permission",
 	"CRM Lead": "crm.permissions.org_hierarchy.has_lead_permission",
 	"CRM Deal": "crm.permissions.org_hierarchy.has_deal_permission",
 	"CRM Notification": "crm.fcrm.doctype.crm_notification.crm_notification.has_permission",
@@ -387,6 +388,7 @@ before_job = ["crm.email.queue_patch.apply_queue_builder_patches"]
 
 after_migrate = [
 	"crm.fcrm.doctype.fcrm_settings.fcrm_settings.after_migrate",
+	"crm.finance.setup.ensure_network_payout_mappings",
 	"crm.api.whatsapp.add_roles",
 	"crm.domain_enrichment.install.seed_default_rules_and_mappings",
 	"crm.install.add_default_scripts",

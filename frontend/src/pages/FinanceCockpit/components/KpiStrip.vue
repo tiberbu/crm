@@ -49,7 +49,11 @@
     </div>
 
     <!-- Error state -->
-    <FinanceErrorState v-else-if="kpisResource.error" :error="kpisResource.error" @retry="refresh" />
+    <FinanceErrorState
+      v-else-if="kpisResource.error"
+      :error="kpisResource.error"
+      @retry="refresh"
+    />
 
     <!-- Empty state -->
     <div

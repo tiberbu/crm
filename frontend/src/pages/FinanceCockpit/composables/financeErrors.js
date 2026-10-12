@@ -40,6 +40,12 @@ function serverMessage(err) {
   return stripMarkup(value.message || value.exception || value.exc || '')
 }
 
+function supportReference(value, message) {
+  const explicit = value?.request_id || value?.support_reference || value?.error_log
+  if (explicit) return String(explicit)
+  return message.match(/\breference\s+([A-Za-z0-9-]+)/i)?.[1] || ''
+}
+
 export function readableError(err) {
   const message = serverMessage(err)
   if (!message) return 'Finance could not complete this request.'
@@ -57,6 +63,18 @@ export function getErrorPresentation(err) {
   const serverText = serverMessage(value)
   const message = readableError(value)
   const haystack = `${serverText} ${value?.exc_type || ''} ${value?.status || ''}`.toLowerCase()
+  const reference = supportReference(value, serverText)
+
+  if (/finance kpi data could not be loaded/.test(haystack)) {
+    return {
+      kind: 'request',
+      title: 'Finance KPI data could not be loaded',
+      message: 'The Finance totals are unavailable right now.',
+      nextStep: 'Retry this section. If the problem continues, contact Finance support and share the reference below.',
+      retryable: true,
+      reference,
+    }
+  }
 
   if (/not whitelisted|whitelist|method not found|deployment|service unavailable/.test(haystack)) {
     return {
@@ -65,7 +83,7 @@ export function getErrorPresentation(err) {
       message: 'This Finance action is not available yet.',
       nextStep: 'Ask an administrator to finish the Finance Workspace deployment, then refresh this page.',
       retryable: false,
-      reference: value?.request_id || value?.exc_type || '',
+      reference,
     }
   }
   if (/permission|not permitted|unauthori[sz]ed|forbidden|access denied|role required/.test(haystack)) {
@@ -75,7 +93,7 @@ export function getErrorPresentation(err) {
       message: 'Finance Workspace requires the Accounts User or Accounts Manager role.',
       nextStep: 'Ask your administrator to assign Accounts User or Accounts Manager access, then sign in again.',
       retryable: false,
-      reference: value?.request_id || '',
+      reference,
     }
   }
   if (/attributeerror|typeerror|traceback|has no attribute|unexpected keyword/.test(haystack)) {
@@ -85,7 +103,7 @@ export function getErrorPresentation(err) {
       message: 'Some information sent by the page was in an unsupported format.',
       nextStep: 'Refresh the page and try again. If it continues, contact Finance support and include the reference below.',
       retryable: false,
-      reference: value?.request_id || '',
+      reference,
     }
   }
   if (/mandatory|missing|required|invalid|validation|cannot be empty/.test(haystack)) {
@@ -95,7 +113,7 @@ export function getErrorPresentation(err) {
       message,
       nextStep: 'Correct the highlighted fields and submit again.',
       retryable: false,
-      reference: value?.request_id || '',
+      reference,
     }
   }
   if (/already exists|duplicate|already generated|idempot/.test(haystack)) {
@@ -105,7 +123,7 @@ export function getErrorPresentation(err) {
       message: 'A matching record already exists, so nothing new was created.',
       nextStep: 'Open the existing record and continue from there.',
       retryable: false,
-      reference: value?.request_id || '',
+      reference,
     }
   }
   if (/closed period|fiscal period|period is closed|posting date/.test(haystack)) {
@@ -115,7 +133,7 @@ export function getErrorPresentation(err) {
       message: 'The selected posting date is not available for accounting entries.',
       nextStep: 'Choose an allowed posting date or ask an Accounts Manager to review the period.',
       retryable: false,
-      reference: value?.request_id || '',
+      reference,
     }
   }
   if (/timeout|timed out|network|fetch failed|502|503|504|temporar/.test(haystack)) {
@@ -125,7 +143,7 @@ export function getErrorPresentation(err) {
       message: 'The request did not reach Finance successfully.',
       nextStep: 'Check your connection and try again in a moment.',
       retryable: true,
-      reference: value?.request_id || '',
+      reference,
     }
   }
   return {
@@ -134,6 +152,6 @@ export function getErrorPresentation(err) {
     message,
     nextStep: 'Review the record, then try again. Contact Finance support if the problem continues.',
     retryable: true,
-    reference: value?.request_id || '',
+    reference,
   }
 }

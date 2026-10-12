@@ -71,28 +71,25 @@
             <div
               class="-mx-2 mt-2 flex flex-1 flex-col gap-1 overflow-y-auto px-2"
             >
-              <SidebarItem
-                v-for="section in SIDEBAR_SECTIONS"
-                :key="section.key"
-                :label="section.label"
-                :active="activeSection === section.key"
-                @click="onNavigate(section.key)"
-              >
-                <template #prefix>
-                  <span
-                    :class="[section.iconClass, 'size-4 text-ink-gray-7']"
-                    aria-hidden="true"
-                  />
-                </template>
-                <Tooltip
-                  :text="section.label"
-                  placement="right"
-                  :hover-delay="1.5"
-                  :disabled="!sidebarCollapsed"
+              <template v-for="(section, index) in visibleSections" :key="section.key">
+                <p
+                  v-if="!sidebarCollapsed && (!index || visibleSections[index - 1].group !== section.group)"
+                  class="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-gray-4"
+                >{{ section.group }}</p>
+                <SidebarItem
+                  :label="section.label"
+                  :active="activeSection === section.key"
+                  :aria-current="activeSection === section.key ? 'page' : undefined"
+                  @click="onNavigate(section.key)"
                 >
-                  <span class="truncate text-sm">{{ section.label }}</span>
-                </Tooltip>
-              </SidebarItem>
+                  <template #prefix>
+                    <span :class="[section.iconClass, 'size-4 text-ink-gray-7']" aria-hidden="true" />
+                  </template>
+                  <Tooltip :text="section.label" placement="right" :hover-delay="1.5" :disabled="!sidebarCollapsed">
+                    <span class="truncate text-sm">{{ section.label }}</span>
+                  </Tooltip>
+                </SidebarItem>
+              </template>
             </div>
 
             <!-- Footer — collapse toggle (mirrors CRM) -->
@@ -119,25 +116,94 @@
         class="fc-content-col flex-1 flex flex-col h-full overflow-auto bg-surface-base"
       >
         <!-- Finance context header: job, current company, and data authority. -->
-        <div class="fc-app-header flex items-center justify-between gap-4 px-5">
-          <div class="min-w-0">
-            <p class="fc-header-eyebrow">Finance Workspace</p>
-            <h1 class="truncate text-base font-semibold text-ink-gray-9">
-              {{ headerTitle }}
-            </h1>
+        <div class="fc-app-header flex items-center justify-between gap-3 px-3 sm:gap-4 sm:px-5">
+          <div class="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-ink-gray-6 hover:bg-surface-gray-2 sm:hidden"
+              :aria-label="sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'"
+              @click="sidebarCollapsed = !sidebarCollapsed"
+            >
+              <span :class="[sidebarCollapsed ? 'lucide-panel-left-open' : 'lucide-panel-left-close', 'size-4']" aria-hidden="true" />
+            </button>
+            <div class="min-w-0">
+              <p class="fc-header-eyebrow">Finance Workspace</p>
+              <h1 class="truncate text-base font-semibold text-ink-gray-9">
+                {{ headerTitle }}
+              </h1>
+            </div>
           </div>
-          <div class="fc-header-context flex shrink-0 items-center gap-3 text-xs text-ink-gray-5">
+          <div class="fc-header-context flex shrink-0 items-center gap-2 text-xs text-ink-gray-5 sm:gap-3">
             <span class="hidden items-center gap-1.5 sm:flex">
               <span class="fc-live-dot" aria-hidden="true" />
               Live accounting data
             </span>
-            <span class="max-w-48 truncate">{{ company || 'Select company' }}</span>
+            <Dropdown :options="companyDropdownOptions">
+              <template #default="{ open }">
+                <button
+                  type="button"
+                  class="flex max-w-44 items-center gap-2 rounded-md border border-outline-gray-2 bg-surface-white px-2.5 py-1.5 text-left text-ink-gray-8 shadow-sm hover:bg-surface-gray-1 sm:max-w-64"
+                  aria-label="Select Finance company"
+                  :aria-expanded="open"
+                  :disabled="companiesResource.loading || !companiesResource.data?.length"
+                >
+                  <span class="fc-live-dot shrink-0" aria-hidden="true" />
+                  <span class="truncate">{{ company || 'Loading companies…' }}</span>
+                  <span class="lucide-chevron-down size-3.5 shrink-0" aria-hidden="true" />
+                </button>
+              </template>
+            </Dropdown>
           </div>
         </div>
 
         <!-- Page body -->
         <div class="flex-1 overflow-auto">
-          <div class="mx-auto w-full max-w-screen-2xl px-6 py-5">
+          <div class="mx-auto w-full max-w-screen-2xl px-3 py-4 sm:px-6 sm:py-5">
+            <div v-if="companiesResource.loading" class="mx-auto max-w-3xl space-y-4" role="status" aria-live="polite">
+              <span class="sr-only">Loading available companies…</span>
+              <div class="h-24 animate-pulse rounded-xl border border-outline-gray-1 bg-surface-white" />
+              <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div v-for="n in 4" :key="n" class="h-28 animate-pulse rounded-xl border border-outline-gray-1 bg-surface-white" />
+              </div>
+              <div class="h-64 animate-pulse rounded-xl border border-outline-gray-1 bg-surface-white" />
+            </div>
+            <FinanceErrorState
+              v-else-if="companiesResource.error"
+              :error="companiesResource.error"
+              @retry="companiesResource.fetch()"
+            />
+            <section
+              v-else-if="!companiesResource.data?.length"
+              class="mx-auto max-w-xl rounded-xl border border-outline-gray-1 bg-surface-white px-6 py-10 text-center shadow-sm"
+              aria-labelledby="finance-no-company-title"
+            >
+              <span class="mx-auto flex size-11 items-center justify-center rounded-xl bg-surface-gray-2 text-ink-gray-6">
+                <span class="lucide-building-2 size-5" aria-hidden="true" />
+              </span>
+              <h2 id="finance-no-company-title" class="mt-4 text-base font-semibold text-ink-gray-9">No Finance company available</h2>
+              <p class="mx-auto mt-1 max-w-sm text-sm text-ink-gray-5">Ask your administrator for access to a Company before opening Finance data.</p>
+            </section>
+            <section
+              v-else-if="!company"
+              class="mx-auto max-w-xl rounded-xl border border-outline-gray-1 bg-surface-white px-6 py-10 text-center shadow-sm"
+              aria-labelledby="finance-company-required-title"
+            >
+              <span class="mx-auto flex size-11 items-center justify-center rounded-xl bg-surface-gray-2 text-ink-gray-6">
+                <span class="lucide-building-2 size-5" aria-hidden="true" />
+              </span>
+              <h2 id="finance-company-required-title" class="mt-4 text-base font-semibold text-ink-gray-9">Choose a Company</h2>
+              <p class="mx-auto mt-1 max-w-sm text-sm text-ink-gray-5">Finance totals, records, and actions are scoped to the selected Company.</p>
+              <div class="mt-4 flex flex-wrap justify-center gap-2">
+                <button
+                  v-for="item in companiesResource.data"
+                  :key="item.name"
+                  type="button"
+                  class="rounded-md border border-outline-gray-2 px-3 py-2 text-sm font-medium text-ink-gray-7 hover:border-outline-red-4 hover:bg-surface-gray-1"
+                  @click="setCompany(item.name)"
+                >{{ item.name }}</button>
+              </div>
+            </section>
+            <template v-else>
             <template v-if="activeSection === 'dashboard'"
               ><CrmDashboard @navigate="onNavigate"
             /></template>
@@ -153,12 +219,19 @@
             <template v-else-if="activeSection === 'payments'"
               ><Payments
             /></template>
+            <template v-else-if="activeSection === 'payables'"><Payables /></template>
+            <template v-else-if="activeSection === 'expenses'"><Expenses /></template>
+            <template v-else-if="activeSection === 'banking'"><Banking /></template>
             <template v-else-if="activeSection === 'partner_commission'"
               ><PartnerCommission
             /></template>
+            <template v-else-if="activeSection === 'assets'"><Assets /></template>
+            <template v-else-if="activeSection === 'liabilities'"><Liabilities /></template>
+            <template v-else-if="activeSection === 'general_ledger'"><GeneralLedger /></template>
             <template v-else-if="activeSection === 'reports'"
               ><CrmReports
             /></template>
+            <template v-else-if="activeSection === 'setup'"><Setup /></template>
 
             <!-- Preferences — full-page view (no modal), hosts the ported CRM ThemeSwitcher -->
             <template v-else-if="activeSection === 'settings'">
@@ -181,6 +254,7 @@
                   <ThemeSwitcher :logo="fcLogo" name="Finance" />
                 </div>
               </div>
+            </template>
             </template>
           </div>
         </div>
@@ -214,9 +288,17 @@ import Quotes from './sections/Quotes.vue'
 import Orders from './sections/Orders.vue'
 import Invoices from './sections/Invoices.vue'
 import Payments from './sections/Payments.vue'
+import Payables from './sections/Payables.vue'
+import Expenses from './sections/Expenses.vue'
+import Banking from './sections/Banking.vue'
+import Assets from './sections/Assets.vue'
+import Liabilities from './sections/Liabilities.vue'
+import GeneralLedger from './sections/GeneralLedger.vue'
+import Setup from './sections/Setup.vue'
 import PartnerCommission from './sections/PartnerCommission.vue'
 import CrmReports from './sections/CrmReports.vue'
-import { SIDEBAR_SECTIONS } from './constants/sidebarConfig.js'
+import FinanceErrorState from './components/FinanceErrorState.vue'
+import { SIDEBAR_SECTIONS, getFinanceSections } from './constants/sidebarConfig.js'
 import { provideCompanyContext } from './composables/useCompanyContext.js'
 import { useBoot } from './composables/useBoot.js'
 
@@ -249,6 +331,7 @@ const activeSection = ref('dashboard')
 const ALL_SECTION_KEYS = [...SIDEBAR_SECTIONS.map((s) => s.key), 'settings']
 
 function onNavigate(key) {
+  if (key !== 'settings' && !getFinanceSections(getRoles()).some((section) => section.key === key)) return
   activeSection.value = key
   window.location.hash = '#/' + key.replace(/_/g, '-')
 }
@@ -256,11 +339,12 @@ onMounted(() => {
   const hash = window.location.hash
   if (hash?.startsWith('#/')) {
     const key = hash.slice(2).replace(/-/g, '_')
-    if (ALL_SECTION_KEYS.includes(key)) activeSection.value = key
+    if (ALL_SECTION_KEYS.includes(key)) onNavigate(key)
   }
 })
 
 const userRoles = computed(() => getRoles())
+const visibleSections = computed(() => getFinanceSections(userRoles.value))
 
 const headerTitle = computed(() => {
   if (activeSection.value === 'settings') return 'Preferences'
@@ -308,6 +392,17 @@ const brandDropdownOptions = computed(() => {
   })
   return groups
 })
+
+const companyDropdownOptions = computed(() => [
+  {
+    group: 'Company',
+    items: (companiesResource?.data || []).map((item) => ({
+      label: item.name,
+      icon: item.name === company.value ? 'check' : '',
+      onClick: () => setCompany(item.name),
+    })),
+  },
+])
 
 const searchOpen = ref(false)
 </script>

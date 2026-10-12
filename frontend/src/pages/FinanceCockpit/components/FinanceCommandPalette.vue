@@ -115,6 +115,7 @@ import LucideCompass from '~icons/lucide/compass'
 import LucideBarChart2 from '~icons/lucide/bar-chart-2'
 import LucideFileText from '~icons/lucide/file-text'
 import { REPORTS } from '../constants/reportsConfig.js'
+import { getFinanceSections } from '../constants/sidebarConfig.js'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 
 const props = defineProps({
@@ -183,13 +184,18 @@ const apiData = computed(
 )
 
 const navigateItems = computed(() =>
-  (apiData.value.navigate || []).map((i) => ({
-    name: 'nav-' + (i.section || i.label || i.key),
-    title: i.label,
-    description: i.subtitle || '',
+  getFinanceSections(props.userRoles)
+    .filter((section) => {
+      const q = query.value.trim().toLowerCase()
+      return !q || section.label.toLowerCase().includes(q) || section.group.toLowerCase().includes(q)
+    })
+    .map((section) => ({
+    name: 'nav-' + section.key,
+    title: section.label,
+    description: section.group,
     icon: LucideCompass,
     type: 'navigate',
-    section: i.section || i.key,
+    section: section.key,
   })),
 )
 
@@ -219,7 +225,9 @@ const recordItems = computed(() =>
     description: i.doctype || '',
     icon: LucideFileText,
     type: 'record',
-    url: i.url || '/app/' + slug(i.doctype) + '/' + encodeURIComponent(i.name),
+    url: company.value
+      ? `${i.url || '/app/' + slug(i.doctype) + '/' + encodeURIComponent(i.name)}${(i.url || '').includes('?') ? '&' : '?'}company=${encodeURIComponent(company.value)}`
+      : i.url || '/app/' + slug(i.doctype) + '/' + encodeURIComponent(i.name),
   })),
 )
 

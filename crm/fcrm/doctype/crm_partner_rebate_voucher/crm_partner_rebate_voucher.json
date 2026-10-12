@@ -33,9 +33,9 @@
    "fieldname": "partner",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Partner",
+   "label": "Legacy CRM Partner",
    "options": "CRM Partner",
-   "reqd": 1
+   "reqd": 0
   },
   {
    "fieldname": "deal",

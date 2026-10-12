@@ -547,6 +547,14 @@ export const FORM_LAYOUTS = {
     remarksField: 'remarks',
     remarksLabel: 'Remarks',
     totals: null,
+    summaryFields: [
+      'party_type',
+      'party',
+      'company',
+      'paid_amount',
+      'workflow_state',
+      'status',
+    ],
     sections: [
       {
         key: 'main',
@@ -555,8 +563,26 @@ export const FORM_LAYOUTS = {
         kind: 'fields',
         fields: [
           {
+            fieldname: 'workflow_state',
+            label: 'Approval State',
+            type: 'data',
+            readOnly: true,
+          },
+          {
+            fieldname: 'payment_type',
+            label: 'Transaction Type',
+            type: 'select',
+            readOnly: true,
+          },
+          {
+            fieldname: 'party_type',
+            label: 'Party Type',
+            type: 'data',
+            readOnly: true,
+          },
+          {
             fieldname: 'party',
-            label: 'Customer',
+            label: 'Party',
             type: 'link',
             options: 'Customer',
             readOnly: true,
@@ -582,8 +608,35 @@ export const FORM_LAYOUTS = {
             readOnly: true,
           },
           {
+            fieldname: 'paid_from',
+            label: 'Paid From Account',
+            type: 'link',
+            options: 'Account',
+            readOnly: true,
+          },
+          {
+            fieldname: 'paid_to',
+            label: 'Paid To Account',
+            type: 'link',
+            options: 'Account',
+            readOnly: true,
+          },
+          {
+            fieldname: 'currency',
+            label: 'Currency',
+            type: 'link',
+            options: 'Currency',
+            readOnly: true,
+          },
+          {
             fieldname: 'paid_amount',
             label: 'Paid Amount',
+            type: 'currency',
+            readOnly: true,
+          },
+          {
+            fieldname: 'received_amount',
+            label: 'Received Amount',
             type: 'currency',
             readOnly: true,
           },
@@ -603,6 +656,12 @@ export const FORM_LAYOUTS = {
             fieldname: 'reference_date',
             label: 'Reference Date',
             type: 'date',
+            readOnly: true,
+          },
+          {
+            fieldname: 'status',
+            label: 'Status',
+            type: 'data',
             readOnly: true,
           },
         ],
@@ -625,10 +684,17 @@ export const FORM_LAYOUTS = {
         fields: [
           {
             fieldname: 'partner',
-            label: 'Partner',
+            label: 'Legacy CRM Partner',
             type: 'link',
             options: 'CRM Partner',
-            required: true,
+            required: false,
+          },
+          {
+            fieldname: 'optin_network',
+            label: 'Network',
+            type: 'link',
+            options: 'CRM Opt-In Network',
+            readOnly: true,
           },
           {
             fieldname: 'deal',
@@ -704,6 +770,13 @@ export const FORM_LAYOUTS = {
         icon: 'handshake',
         kind: 'fields',
         fields: [
+          {
+            fieldname: 'optin_network',
+            label: 'Network',
+            type: 'link',
+            options: 'CRM Opt-In Network',
+            readOnly: true,
+          },
           {
             fieldname: 'sales_person',
             label: 'Sales Person',

@@ -36,10 +36,12 @@
 
     <!-- ── KPI tiles ── -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <div
+      <button
         v-for="tile in kpiTiles"
         :key="tile.key"
+        type="button"
         class="fc-glass-card group cursor-pointer"
+        :aria-label="`${tile.label}: ${tile.formatted}. Open ${sectionName(tile.section)}`"
         @click="$emit('navigate', tile.section)"
       >
         <div class="flex items-start justify-between mb-3">
@@ -78,7 +80,7 @@
           </template>
           <span v-else class="text-ink-gray-4">—</span>
         </div>
-      </div>
+      </button>
     </div>
 
     <!-- ── Pipeline bar ── -->
@@ -100,10 +102,12 @@
         v-else
         class="grid grid-cols-2 sm:grid-cols-4 divide-x divide-outline-gray-1/40"
       >
-        <div
+        <button
           v-for="stage in pipelineStages"
           :key="stage.key"
-          class="px-5 py-4 cursor-pointer hover:bg-surface-gray-1/60 transition-colors group"
+          type="button"
+          class="px-5 py-4 text-left hover:bg-surface-gray-1/60 transition-colors group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-outline-blue-3"
+          :aria-label="`${stage.label}: ${stage.count}, ${stage.amount}. Open ${sectionName(stage.section)}`"
           @click="$emit('navigate', stage.section)"
         >
           <div class="flex items-center gap-1.5 mb-1.5">
@@ -119,7 +123,7 @@
           <p class="text-xs text-ink-gray-5 tabular-nums mt-0.5">
             {{ stage.amount }}
           </p>
-        </div>
+        </button>
       </div>
     </div>
 
@@ -158,40 +162,45 @@
       >
         No outstanding invoices.
       </div>
-      <div v-else class="divide-y divide-outline-gray-1/40">
-        <div
-          v-for="inv in recentInvoices"
-          :key="inv.name"
-          class="flex items-center gap-4 px-5 py-3 hover:bg-surface-gray-1/60 cursor-pointer transition-colors"
-          @click="$emit('navigate', 'invoices')"
-        >
-          <span
-            class="w-32 font-mono text-xs font-semibold text-ink-gray-7 truncate flex-shrink-0"
-            >{{ inv.name }}</span
+      <div v-else>
+        <div class="hidden divide-y divide-outline-gray-1/40 sm:block">
+          <a
+            v-for="inv in recentInvoices"
+            :key="inv.name"
+            :href="invoiceHref(inv)"
+            class="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-surface-gray-1/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-outline-blue-3"
           >
-          <span class="flex-1 text-sm text-ink-gray-6 truncate">{{
-            inv.customer
-          }}</span>
-          <span class="flex flex-col text-xs flex-shrink-0 w-28 text-right">
-            <span class="text-ink-gray-6">Due {{ fmtDate(inv.due_date) }}</span>
-            <span
-              :class="inv.days_overdue > 0 ? 'text-ink-red-6' : 'text-ink-gray-4'"
-            >
-              {{ inv.days_overdue > 0 ? `${inv.days_overdue}d overdue` : 'On time' }}
+            <span class="w-32 shrink-0 truncate font-mono text-xs font-semibold text-ink-gray-7">{{ inv.name }}</span>
+            <span class="flex-1 truncate text-sm text-ink-gray-6">{{ inv.customer }}</span>
+            <span class="flex w-28 shrink-0 flex-col text-right text-xs">
+              <span class="text-ink-gray-6">Due {{ fmtDate(inv.due_date) }}</span>
+              <span :class="inv.days_overdue > 0 ? 'text-ink-red-6' : 'text-ink-gray-4'">
+                {{ inv.days_overdue > 0 ? `${inv.days_overdue}d overdue` : 'On time' }}
+              </span>
             </span>
-          </span>
-          <span
-            class="text-sm font-semibold text-ink-gray-8 tabular-nums flex-shrink-0 w-28 text-right"
-            >{{ fmtCurrency(inv.outstanding_amount, inv.currency) }}</span
+            <span class="w-28 shrink-0 text-right text-sm font-semibold tabular-nums text-ink-gray-8">{{ fmtCurrency(inv.outstanding_amount, inv.currency) }}</span>
+            <span :class="[statusClass(inv.status), 'inline-flex w-24 shrink-0 justify-center rounded-full px-2 py-0.5 text-xs font-medium']">{{ inv.status }}</span>
+          </a>
+        </div>
+        <div class="divide-y divide-outline-gray-1/40 sm:hidden">
+          <a
+            v-for="inv in recentInvoices"
+            :key="`mobile-${inv.name}`"
+            :href="invoiceHref(inv)"
+            class="block px-4 py-3 transition-colors hover:bg-surface-gray-1/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-outline-blue-3"
           >
-          <span
-            :class="[
-              statusClass(inv.status),
-              'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 w-24 justify-center',
-            ]"
-          >
-            {{ inv.status }}
-          </span>
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <span class="font-mono text-xs font-semibold text-ink-gray-7">{{ inv.name }}</span>
+                <p class="mt-1 truncate text-sm text-ink-gray-6">{{ inv.customer }}</p>
+              </div>
+              <span :class="[statusClass(inv.status), 'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium']">{{ inv.status }}</span>
+            </div>
+            <div class="mt-2 flex items-end justify-between gap-3">
+              <span class="text-xs text-ink-gray-5">Due {{ fmtDate(inv.due_date) }}<span v-if="inv.days_overdue > 0" class="text-ink-red-6"> · {{ inv.days_overdue }}d overdue</span></span>
+              <span class="shrink-0 text-sm font-semibold tabular-nums text-ink-gray-8">{{ fmtCurrency(inv.outstanding_amount, inv.currency) }}</span>
+            </div>
+          </a>
         </div>
       </div>
     </div>
@@ -280,6 +289,16 @@ function refreshOverview() {
 
 function refreshInvoices() {
   recentResource.fetch()
+}
+
+function sectionName(section) {
+  return ({ invoices: 'Receivables', payments: 'Payments', quotes: 'Quotations', orders: 'Sales Orders' })[section] || 'Finance'
+}
+
+function invoiceHref(invoice) {
+  const name = encodeURIComponent(invoice.name)
+  const selectedCompany = company.value ? `?company=${encodeURIComponent(company.value)}` : ''
+  return `/app/sales-invoice/${name}${selectedCompany}`
 }
 
 // Finance-semantic tones. Chip = pale surface-*-2 fill + ink-*-6 glyph.
