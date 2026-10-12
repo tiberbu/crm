@@ -1,31 +1,38 @@
 <template>
   <div class="fc-finance-table">
     <!-- Loading state -->
-    <div v-if="loading" class="space-y-2">
-      <div
-        v-for="n in 5"
-        :key="n"
-        class="h-12 bg-surface-gray-2 rounded animate-pulse"
-      />
+    <div v-if="loading" class="overflow-hidden rounded-xl border border-outline-gray-1 bg-surface-white p-3 sm:p-4" role="status" aria-live="polite">
+      <span class="sr-only">Loading finance records…</span>
+      <div class="mb-3 hidden h-8 animate-pulse rounded bg-surface-gray-1 sm:block" />
+      <div class="space-y-2">
+        <div v-for="n in 5" :key="n" class="grid h-12 grid-cols-2 gap-3 rounded-lg bg-surface-gray-1 px-3 py-2 sm:grid-cols-4">
+          <span class="animate-pulse rounded bg-surface-gray-2" />
+          <span class="animate-pulse rounded bg-surface-gray-2" />
+          <span class="hidden animate-pulse rounded bg-surface-gray-2 sm:block" />
+          <span class="hidden animate-pulse rounded bg-surface-gray-2 sm:block" />
+        </div>
+      </div>
     </div>
 
     <!-- Error state -->
     <FinanceErrorState v-else-if="error" :error="error" @retry="$emit('retry')" />
 
     <!-- Empty state -->
-    <div
-      v-else-if="!rows || !rows.length"
-      class="text-center py-10 text-sm text-ink-gray-4"
-    >
-      {{ emptyLabel || 'No records found.' }}
+    <div v-else-if="!rows || !rows.length" class="rounded-xl border border-dashed border-outline-gray-2 bg-surface-white px-5 py-10 text-center" role="status">
+      <span class="mx-auto flex size-10 items-center justify-center rounded-xl bg-surface-gray-1 text-ink-gray-5">
+        <span class="lucide-inbox size-5" aria-hidden="true" />
+      </span>
+      <p class="mt-3 text-sm font-medium text-ink-gray-7">{{ emptyLabel || 'No records found.' }}</p>
+      <p class="mt-1 text-xs text-ink-gray-5">Try another status or check the selected Company.</p>
     </div>
 
     <!-- Desktop table -->
     <div
       v-else-if="!isMobile"
-      class="overflow-x-auto rounded border border-outline-gray-1"
+      class="overflow-x-auto rounded-xl border border-outline-gray-1 bg-surface-white shadow-sm"
     >
       <table class="w-full text-sm">
+        <caption class="sr-only">Finance records for the selected Company</caption>
         <thead
           class="sticky top-0 bg-surface-gray-1 border-b border-outline-gray-1"
         >
@@ -52,8 +59,12 @@
           <tr
             v-for="row in rows"
             :key="row.name"
-            class="hover:bg-surface-gray-1 cursor-pointer transition-colors"
+            class="cursor-pointer transition-colors hover:bg-surface-gray-1 focus-visible:bg-surface-gray-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-outline-blue-3"
+            tabindex="0"
+            :aria-label="`Open ${row.name || 'finance record'}`"
             @click="$emit('row-click', row)"
+            @keydown.enter.self.prevent="$emit('row-click', row)"
+            @keydown.space.self.prevent="$emit('row-click', row)"
           >
             <td
               v-for="col in columns"
@@ -94,14 +105,13 @@
       <div
         v-for="row in rows"
         :key="row.name"
-        class="bg-surface-white rounded-lg border border-outline-gray-1 p-3 shadow-sm cursor-pointer"
-        @click="$emit('row-click', row)"
+        class="rounded-xl border border-outline-gray-1 bg-surface-white p-3 shadow-sm"
       >
         <div class="flex items-start justify-between gap-2 mb-2">
           <div>
-            <p class="font-medium text-ink-gray-8 text-sm">
+            <button type="button" class="rounded text-left font-medium text-ink-gray-8 text-sm hover:text-ink-red-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-blue-3" :aria-label="`Open ${row.name || 'finance record'}`" @click="$emit('row-click', row)">
               {{ row[columns[0]?.key] || row.name }}
-            </p>
+            </button>
             <p class="text-xs text-ink-gray-5 mt-0.5">
               <a
                 v-if="columns[1]?.type === 'link' && linkHref(row, columns[1])"
@@ -189,7 +199,9 @@ function linkHref(row, col) {
     !doctype ||
     row?.[col.availableKey || 'network_available'] !== true ||
     typeof name !== 'string' ||
-    /[\\/\u0000-\u001f]/.test(name)
+    name.includes('/') ||
+    name.includes('\\') ||
+    [...name].some((character) => character.charCodeAt(0) < 32)
   ) {
     return ''
   }

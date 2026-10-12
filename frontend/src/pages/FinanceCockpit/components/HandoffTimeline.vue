@@ -162,7 +162,8 @@ function nativeHref(step) {
     sales_invoice: 'sales-invoice',
     payment: 'payment-entry',
   }
-  return `/app/${routes[step.key]}/${encodeURIComponent(step.name)}`
+  const companyQuery = company.value ? `?company=${encodeURIComponent(company.value)}` : ''
+  return `/app/${routes[step.key]}/${encodeURIComponent(step.name)}${companyQuery}`
 }
 
 function steps(handoff) {
