@@ -74,3 +74,5 @@ crm.patches.v1_0.refresh_checkout_bank_details_terms_v1
 crm.patches.v1_0.restrict_finance_cockpit_to_accounts
 crm.patches.v1_0.reconcile_signed_optin_finance_handoffs_v1
 crm.patches.v1_0.configure_finance_print_formats_v1
+crm.patches.v1_0.seed_finance_payment_workflow
+crm.patches.v1_0.configure_finance_network_payout_mappings

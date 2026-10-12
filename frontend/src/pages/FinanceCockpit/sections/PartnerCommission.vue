@@ -2,7 +2,7 @@
   <div class="fc-partner-commission space-y-4">
     <div class="flex items-center gap-2">
       <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-        Partner &amp; Commission
+        Network &amp; Commission
       </h2>
     </div>
 

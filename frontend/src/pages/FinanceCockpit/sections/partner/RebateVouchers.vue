@@ -2,6 +2,9 @@
   <div class="space-y-3">
     <!-- LIST -->
     <template v-if="mode === 'list'">
+      <div class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+        Approved rebates are not marked Paid here. Configure the Finance payable and payout flow before recording disbursements.
+      </div>
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap items-center gap-2">
           <label class="text-xs text-gray-500 dark:text-gray-400"
@@ -68,14 +71,6 @@
                 Reject
               </button>
             </template>
-            <button
-              v-if="canMarkPaid && row.status === 'Approved'"
-              class="text-xs px-2.5 py-1 rounded bg-green-600 text-white hover:bg-green-700 transition-colors whitespace-nowrap"
-              :disabled="actionPending === row.name"
-              @click.stop="markPaid(row.name)"
-            >
-              Mark Paid
-            </button>
           </div>
         </template>
       </FinanceTable>
@@ -132,20 +127,23 @@ const canApproveReject =
       'Accounts Manager',
     ].includes(r),
   )
-const canMarkPaid =
-  admin ||
-  userRoles.includes('Accounts Manager')
 const canCreate =
   admin ||
   userRoles.includes('Accounts Manager')
 
 const columns = [
   { key: 'name', label: 'Voucher' },
-  { key: 'partner', label: 'Partner' },
+  {
+    key: 'network_label',
+    label: 'Network',
+    type: 'link',
+    linkKey: 'optin_network',
+    linkDoctype: 'CRM Opt-In Network',
+  },
   { key: 'customer', label: 'Customer' },
   { key: 'rebate_pct', label: 'Rebate %', align: 'right' },
   { key: 'rebate_amount', label: 'Amount', type: 'currency', align: 'right' },
-  { key: 'status', label: 'Status', type: 'status' },
+  { key: 'finance_status', label: 'Status' },
 ]
 
 const resource = createResource({
@@ -216,7 +214,6 @@ const approveRes = createResource({
 const rejectRes = createResource({
   url: 'crm.finance.api.reject_rebate_voucher',
 })
-const paidRes = createResource({ url: 'crm.finance.api.mark_rebate_paid' })
 
 async function approveVoucher(name) {
   actionPending.value = name
@@ -231,15 +228,6 @@ async function rejectVoucher(name) {
   actionPending.value = name
   try {
     await rejectRes.submit({ name, company: company.value })
-    resource.fetch()
-  } finally {
-    actionPending.value = null
-  }
-}
-async function markPaid(name) {
-  actionPending.value = name
-  try {
-    await paidRes.submit({ name, company: company.value })
     resource.fetch()
   } finally {
     actionPending.value = null

@@ -8,6 +8,7 @@
     :columns="columns"
     empty-label="No quotations found."
     :read-only="true"
+    :allow-lifecycle-actions="true"
     :create-roles="[]"
   >
     <template #filters>
@@ -26,6 +27,7 @@
         <option value="Ordered">Ordered</option>
         <option value="Lost">Lost</option>
         <option value="Expired">Expired</option>
+        <option value="Cancelled">Cancelled</option>
       </select>
       <button
         v-if="hasFilters"
@@ -36,7 +38,7 @@
         Clear filters
       </button>
       <span class="ml-auto text-xs text-ink-gray-4">
-        Sales-owned · read only for Finance
+        Finance can submit eligible drafts; ERPNext controls validation.
       </span>
     </template>
   </CrudSection>

@@ -1,13 +1,13 @@
 # Sprint Status
 # Project: tiberbu Express — CRM implementation
 # Tracking: Claude Code Studio
-# Updated: 2026-08-26
+# Updated: 2026-10-12
 
 summary:
-  total: 62
+  total: 65
   ready-for-dev: 33
   in-progress: 2
-  review: 19
+  review: 22
   done: 3
   cancelled: 0
 
@@ -97,7 +97,7 @@ development_status:
   # Sprint 3 — Expenses, Banking, Partner & Commission
   fc-s3-1-rebate-commission-doctypes: review        # [dev-story] CRM Partner Rebate Voucher + CRM Sales Commission DocTypes; Payment Entry on_submit hook
   fc-s3-2-expenses-section: review                  # [dev-story] Expense Claims + Employee Advances + Expense Journals; hrms_adapter.py
-  fc-s3-3-partner-commission-section: review        # [dev-story] Rebate Vouchers + Sales Commissions tabs; approve/confirm/mark-paid APIs; role-scoped
+  fc-s3-3-partner-commission-section: in-progress   # [dev-story] canonical Network rebate rate, Supplier/payroll recipient mappings, Network links, and seeded Payment Entry approval workflow; native payout posting still awaits Finance accounting policy
   fc-s3-4-banking-section: review                   # [dev-story] Bank Accounts + Bank Transactions; reconciliation link
 
   # Sprint 4 — Dashboard charts, Reports, GL/Assets/Liabilities
@@ -112,6 +112,17 @@ development_status:
 
   # Sprint 6 — Create-From (mapped-doc) flows
   fc-s6-1-create-from-mapped-docs: review           # [dev-story] Orders "Create from Quote" + Invoices "Create from Quote"/"Create from Order" via native ERPNext mappers; inline submitted-source picker (company+docstatus=1, name+party search); FinanceForm seed path
+
+  # Sprint 7 — Finance workspace UX and ERPNext alignment (2026-10-12)
+  # Implementation ready for owner review: fc-s7-1 through fc-s7-7. Latest run: 52 Finance backend tests passed, 1 migrated-workflow assertion skipped; frontend: 143 passed; production build passed.
+  fc-s7-1-kpi-aggregate-fix: review                # [dev-story] permission-safe v15/v16 SUMs for KPIs and Finance reports; repair Today 500
+  fc-s7-2-quotation-submit-readonly: review         # [dev-story] Finance can submit eligible draft quotation without edit/new/delete; authenticated screenshot unavailable
+  fc-s7-3-payment-mode-account-alignment: review # [dev-story] resolve company Mode of Payment account before Payment Entry; account-driven reference requirements; 9 focused tests, bench restart, and production build passed
+  fc-s7-4-payment-entry-details-links: review # [dev-story] company-scoped party/account/reference links and Receive/Pay/Transfer context; production build passed; screenshot unavailable because local route redirects to login
+  fc-s7-5-company-refresh-scope: review              # [dev-story] clear/refetch mounted Finance views and payment composer on Company change; production build passed, authenticated screenshot unavailable
+  fc-s7-6-company-scoped-payment-selectors: review        # [dev-story] return only customers with eligible invoices in the active Company
+  fc-s7-7-quotation-context-panel: review            # [dev-story] Facility/Opt-In/Network context, native SO fallback, company validation; 4 focused tests and blind review passed
+  fc-s7-8-optin-handoff-proof: in-progress           # [dev-story] 4 orchestration tests pass; native document-level proof remains; shared cr-dev was not mutated
 
   # QA — full cockpit integration pass (all 18 stories complete)
   fc-qa-full-cockpit: qa                 # [qa] Full Finance Cockpit end-to-end QA pass: all roles, all sections, mobile, dark/light mode

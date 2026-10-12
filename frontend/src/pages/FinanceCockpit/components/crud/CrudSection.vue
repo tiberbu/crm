@@ -269,7 +269,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { createResource, Button, ListView, Breadcrumbs } from 'frappe-ui'
 import FinanceDetail from './FinanceDetail.vue'
 import FinanceForm from './FinanceForm.vue'
@@ -281,6 +281,7 @@ import { useCurrency } from '../../composables/useCurrency.js'
 import { useBreakpoint } from '../../composables/useBreakpoint.js'
 import FinanceErrorState from '../FinanceErrorState.vue'
 import { printUrl } from '../../constants/printFormats.js'
+import { useCompanyContext } from '../../composables/useCompanyContext.js'
 
 const props = defineProps({
   doctype: { type: String, required: true },
@@ -320,6 +321,7 @@ const props = defineProps({
 })
 
 const { getRoles, isAdministrator } = useBoot()
+const { company } = useCompanyContext()
 const { formatCurrency } = useCurrency()
 const { isMobile } = useBreakpoint()
 
@@ -343,12 +345,13 @@ const listResource = createResource({
       page_size: props.pageSize,
     }
   },
-  auto: true,
+  auto: false,
 })
 
-const rows = computed(() => listResource.data || [])
-const listLoading = computed(() => listResource.loading)
-const listError = computed(() => listResource.error)
+const rows = ref([])
+const listLoading = ref(false)
+const listError = ref(null)
+let listRequest = 0
 // ListView column shape: {label, key, width, align, getLabel, type(custom)}.
 // getLabel drives the tooltip/plain value; the #cell slot handles rendering.
 const listColumns = computed(() =>
@@ -458,9 +461,47 @@ function ownerLabel(owner) {
   return String(owner).split('@')[0]
 }
 
-function refetch() {
-  listResource.fetch()
+async function refetch() {
+  const request = ++listRequest
+  const requestedCompany = company.value
+  if (!requestedCompany) {
+    rows.value = []
+    listLoading.value = false
+    listError.value = null
+    return
+  }
+  listLoading.value = true
+  listError.value = null
+  try {
+    const result = await listResource.fetch()
+    if (request !== listRequest || requestedCompany !== company.value) return
+    rows.value = result || []
+  } catch (error) {
+    if (request === listRequest && requestedCompany === company.value) {
+      listError.value = error
+    }
+  } finally {
+    if (request === listRequest) listLoading.value = false
+  }
 }
+
+watch(
+  company,
+  () => {
+    page.value = 0
+    rows.value = []
+    if (!company.value) {
+      // Fail closed while the accessible-company list initializes or resets.
+      // Invalidate any earlier response so it cannot repopulate this section.
+      listRequest += 1
+      listLoading.value = false
+      listError.value = null
+      return
+    }
+    refetch()
+  },
+  { immediate: true },
+)
 function onPage(p) {
   page.value = p
   refetch()

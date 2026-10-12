@@ -70,6 +70,15 @@
               <span v-else-if="col.type === 'date'" class="text-xs">{{
                 row[col.key] || '—'
               }}</span>
+              <a
+                v-else-if="col.type === 'link' && linkHref(row, col)"
+                :href="linkHref(row, col)"
+                class="font-medium text-ink-blue-6 underline underline-offset-2 hover:text-ink-blue-7"
+                @click.stop
+              >{{ row[col.key] }}</a>
+              <span v-else-if="col.type === 'link'" class="text-ink-gray-5">
+                {{ linkFallback(row, col) }}
+              </span>
               <span v-else>{{ row[col.key] ?? '—' }}</span>
             </td>
             <td v-if="$slots.actions" class="px-3 py-2.5 text-right">
@@ -94,7 +103,16 @@
               {{ row[columns[0]?.key] || row.name }}
             </p>
             <p class="text-xs text-ink-gray-5 mt-0.5">
-              {{ row[columns[1]?.key] }}
+              <a
+                v-if="columns[1]?.type === 'link' && linkHref(row, columns[1])"
+                :href="linkHref(row, columns[1])"
+                class="underline underline-offset-2 text-ink-blue-6 hover:text-ink-blue-7"
+                @click.stop
+              >{{ row[columns[1]?.key] }}</a>
+              <template v-else-if="columns[1]?.type === 'link'">
+                {{ linkFallback(row, columns[1]) }}
+              </template>
+              <template v-else>{{ row[columns[1]?.key] }}</template>
             </p>
           </div>
           <div class="text-right flex-shrink-0">
@@ -162,4 +180,27 @@ const amountCol = computed(() =>
   props.columns.find((c) => c.type === 'currency'),
 )
 const statusCol = computed(() => props.columns.find((c) => c.type === 'status'))
+
+function linkHref(row, col) {
+  const name = row?.[col.linkKey]
+  const doctype = col.linkDoctype
+  if (
+    !name ||
+    !doctype ||
+    row?.[col.availableKey || 'network_available'] !== true ||
+    typeof name !== 'string' ||
+    /[\\/\u0000-\u001f]/.test(name)
+  ) {
+    return ''
+  }
+  const slug = doctype.trim().toLowerCase().replace(/\s+/g, '-')
+  const company = row.company
+  const companyQuery = company ? `?company=${encodeURIComponent(company)}` : ''
+  return `/app/${encodeURIComponent(slug)}/${encodeURIComponent(name)}${companyQuery}`
+}
+
+function linkFallback(row, col) {
+  if (row?.[col.key]) return row[col.key]
+  return row?.[col.linkKey] ? 'Network unavailable' : 'Network not linked'
+}
 </script>

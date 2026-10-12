@@ -2,7 +2,7 @@
   <Dialog v-model:open="open" :title="`Email ${documentLabel}`" :size="'md'">
     <div class="space-y-4">
       <p class="text-sm text-ink-gray-6">
-        Send a PDF copy with the configured ERPNext Letter Head.
+      Queue a PDF copy with the configured ERPNext Letter Head.
       </p>
       <FormControl
         v-model="recipient"
@@ -74,17 +74,18 @@ async function send() {
   errorMessage.value = ''
   sending.value = true
   try {
-    await call('frappe.core.doctype.communication.email.make', {
+    const result = await call('crm.finance.email.send_document_copy', {
       doctype: props.doctype,
       name: props.name,
-      recipients: recipient.value.trim(),
       subject: subject.value.trim(),
-      content: message.value,
-      send_email: 1,
+      recipient: recipient.value.trim(),
+      message: message.value,
       print_format: printFormatFor(props.doctype) || undefined,
       print_letterhead: 1,
+      company: props.doc.company || undefined,
     })
-    toast.success(`Sent ${documentLabel.value.toLowerCase()} copy`)
+    if (!result?.queued) throw new Error('The copy was not added to the Email Queue.')
+    toast.success(`Queued ${documentLabel.value.toLowerCase()} copy`)
     open.value = false
   } catch (error) {
     errorMessage.value = readableError(error) || 'The document could not be sent.'

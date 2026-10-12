@@ -4,7 +4,7 @@
     <template v-if="reviewing">
       <div class="mb-5">
         <p class="text-xs font-medium text-ink-gray-5">Review Payment</p>
-        <h2 class="text-xl font-bold text-ink-gray-9">Confirm & Post</h2>
+        <h2 class="text-xl font-bold text-ink-gray-9">Confirm Payment</h2>
       </div>
 
       <div
@@ -13,6 +13,13 @@
       >
         <FcIcon name="alert-circle" :size="18" class="mt-0.5 flex-shrink-0" />
         <span>{{ reviewError }}</span>
+      </div>
+      <div
+        v-if="paymentContextError || paymentContext?.message"
+        class="mb-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300 text-sm px-4 py-3"
+        role="status"
+      >
+        {{ paymentContextError || paymentContext.message }}
       </div>
 
       <SectionCard title="Payment Summary" icon="banknote" tone="positive">
@@ -32,6 +39,15 @@
             <dd class="text-sm text-ink-gray-8">{{ modeOfPayment || '—' }}</dd>
           </div>
           <div
+            v-if="paymentContext?.configured"
+            class="flex items-center justify-between py-2.5"
+          >
+            <dt class="text-xs font-medium text-ink-gray-5">Posting account</dt>
+            <dd class="text-sm text-ink-gray-8">
+              {{ paymentContext.account }} · {{ paymentContext.account_type }}
+            </dd>
+          </div>
+          <div
             v-if="refFields.refNo"
             class="flex items-center justify-between py-2.5"
           >
@@ -39,6 +55,15 @@
               {{ refFields.refNo }}
             </dt>
             <dd class="text-sm text-ink-gray-8">{{ referenceNo || '—' }}</dd>
+          </div>
+          <div
+            v-if="refFields.refDate"
+            class="flex items-center justify-between py-2.5"
+          >
+            <dt class="text-xs font-medium text-ink-gray-5">
+              {{ refFields.refDate }}
+            </dt>
+            <dd class="text-sm text-ink-gray-8">{{ referenceDate || '—' }}</dd>
           </div>
           <div class="flex items-center justify-between py-2.5">
             <dt class="text-xs font-medium text-ink-gray-5">Date</dt>
@@ -91,7 +116,7 @@
         class="mt-4 rounded-lg border border-outline-green-1 bg-surface-green-1 px-4 py-3 flex items-center justify-between"
       >
         <span class="text-sm font-medium text-ink-green-7"
-          >{{ successPe }} posted</span
+          >{{ successPe }} sent for approval</span
         >
         <a
           :href="'/app/payment-entry/' + successPe"
@@ -99,6 +124,13 @@
           class="text-xs text-ink-green-6 hover:underline font-medium"
           >View in Accounts →</a
         >
+      </div>
+      <div
+        v-if="integrationWarning"
+        class="mt-3 rounded-lg border border-outline-amber-2 bg-surface-amber-1 px-4 py-3 text-sm text-ink-amber-8 whitespace-pre-line"
+        role="status"
+      >
+        {{ integrationWarning }}
       </div>
     </template>
 
@@ -121,6 +153,21 @@
         <span>{{ errorMsg }}</span>
       </div>
 
+      <div
+        v-if="paymentContextError || paymentContext?.message"
+        class="mb-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300 text-sm px-4 py-3"
+        role="status"
+      >
+        {{ paymentContextError || paymentContext.message }}
+      </div>
+      <div
+        v-else-if="paymentContext?.configured"
+        class="mb-4 rounded-lg border border-outline-gray-1 bg-surface-gray-1 text-ink-gray-6 text-xs px-4 py-2.5"
+      >
+        Posting to {{ paymentContext.account }} · {{ paymentContext.account_type }} account
+        <span v-if="paymentContext.requires_reference"> · Reference number and date required</span>
+      </div>
+
       <form class="space-y-5" @submit.prevent>
         <!-- Payment details -->
         <SectionCard title="Payment Details" icon="banknote" tone="positive">
@@ -138,6 +185,27 @@
                 @update:model-value="onCustomerChange"
                 @update:query="onCustomerQuery"
               />
+              <p
+                v-if="customerSearchLoading"
+                class="mt-1.5 text-xs text-ink-gray-5"
+                role="status"
+              >
+                Searching eligible customers for {{ company }}…
+              </p>
+              <p
+                v-else-if="customerSearchError"
+                class="mt-1.5 text-xs text-red-600"
+                role="alert"
+              >
+                {{ customerSearchError }}
+              </p>
+              <p
+                v-else-if="!customerOptions.length"
+                class="mt-1.5 text-xs text-ink-gray-5"
+                role="status"
+              >
+                No customers with outstanding invoices in {{ company }}.
+              </p>
               <!-- FC-08: Balance chip -->
               <div
                 v-if="customer && customerBalance !== null"
@@ -248,6 +316,9 @@
                   </div>
                 </div>
               </div>
+              <p v-if="!modeOfPayment" class="mt-1.5 text-xs text-ink-gray-5">
+                Choose a mode to resolve its account for the active company.
+              </p>
             </div>
 
             <!-- FC-12: Reference labels adapt to payment mode -->
@@ -457,11 +528,11 @@
             variant="solid"
             theme="blue"
             :loading="saving"
-            :disabled="saving || !!successPe"
+            :disabled="!canReview || !!successPe"
             @click="onConfirmPost"
           >
             <template #prefix><FcIcon name="send" :size="15" /></template>
-            Confirm & Post
+            Send for Approval
           </Button>
           <Button
             v-else
@@ -479,7 +550,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   Button,
   FormControl,
@@ -503,17 +574,6 @@ const { formatCurrency } = useCurrency()
 const MOP_STORAGE_KEY = 'fc_recent_modes'
 const DEFAULT_MODES = ['Cash', 'Bank Transfer']
 
-// FC-12: Reference field labels per mode.
-const REF_LABELS = {
-  'Bank Transfer': {
-    refNo: 'Bank Reference / RTGS Ref',
-    refDate: 'Value Date',
-  },
-  'M-Pesa': { refNo: 'M-Pesa Transaction ID', refDate: 'Transaction Date' },
-  Cheque: { refNo: 'Cheque Number', refDate: 'Cheque Date' },
-  Cash: { refNo: null, refDate: null },
-}
-
 function localToday() {
   const d = new Date()
   const off = d.getTimezoneOffset() * 60000
@@ -523,6 +583,10 @@ function localToday() {
 const customer = ref(null)
 const postingDate = ref(localToday())
 const modeOfPayment = ref('')
+const paymentContext = ref(null)
+const paymentContextLoading = ref(false)
+const paymentContextError = ref('')
+const paymentContextCompany = ref('')
 const referenceNo = ref('')
 const referenceDate = ref('')
 const paidAmount = ref(null)
@@ -532,6 +596,7 @@ const invoices = ref([])
 const reviewing = ref(false)
 const reviewError = ref('')
 const successPe = ref('')
+const integrationWarning = ref('')
 
 // FC-10: sort state (default: due_date asc — oldest first)
 const sortField = ref('due_date')
@@ -628,26 +693,87 @@ function selectMode(mode) {
     /* ignore */
   }
   moreOpen.value = false
-  // Clear ref fields when switching to Cash (FC-12).
-  if (mode === 'Cash') {
-    referenceNo.value = ''
-    referenceDate.value = ''
+  loadPaymentContext(mode)
+}
+
+const paymentContextRes = createResource({
+  url: 'crm.finance.api.get_customer_payment_context',
+})
+let paymentContextRequest = 0
+
+async function loadPaymentContext(mode = modeOfPayment.value) {
+  const request = ++paymentContextRequest
+  const requestedCompany = company.value
+  paymentContextError.value = ''
+  paymentContext.value = null
+  paymentContextCompany.value = ''
+  if (!mode || !requestedCompany) {
+    paymentContextLoading.value = false
+    return
+  }
+  paymentContextLoading.value = true
+  try {
+    const result = await paymentContextRes.submit({
+      company: requestedCompany,
+      mode_of_payment: mode,
+    })
+    if (request !== paymentContextRequest || requestedCompany !== company.value) return
+    paymentContext.value = result
+    paymentContextCompany.value = requestedCompany
+    if (result?.configured && result.account_type === 'Cash') {
+      referenceNo.value = ''
+      referenceDate.value = ''
+    }
+  } catch (err) {
+    if (request === paymentContextRequest && requestedCompany === company.value) {
+      paymentContextError.value = readableError(err)
+    }
+  } finally {
+    if (request === paymentContextRequest) paymentContextLoading.value = false
   }
 }
 
-// FC-12: computed ref field labels.
+watch(company, () => {
+  // A company switch invalidates the entire draft so no old-company balance,
+  // allocation, or resolved account can be posted under the new context.
+  invoiceRequest += 1
+  customerRequest += 1
+  customer.value = null
+  customerResults.value = []
+  customerSearchLoading.value = false
+  customerSearchError.value = ''
+  invoices.value = []
+  invoicesCompany.value = ''
+  invoicesLoading.value = false
+  customerBalance.value = null
+  customerInvoiceCount.value = 0
+  paidAmount.value = null
+  referenceNo.value = ''
+  referenceDate.value = ''
+  reviewing.value = false
+  reviewError.value = ''
+  errorMsg.value = ''
+  successPe.value = ''
+  loadPaymentContext()
+  onCustomerQuery('')
+})
+
+// Native Payment Entry requires both transaction references only for Bank accounts.
 const refFields = computed(() => {
-  return (
-    REF_LABELS[modeOfPayment.value] || {
-      refNo: 'Reference No.',
-      refDate: 'Reference Date',
-    }
-  )
+  if (!paymentContext.value?.configured || !paymentContext.value.requires_reference) {
+    return { refNo: null, refDate: null }
+  }
+  return { refNo: 'Reference No. *', refDate: 'Reference Date *' }
 })
 
 /* ---- FC-08: Customer smart search ---- */
 const customerResults = ref([])
-const customerListRes = createResource({ url: 'frappe.client.get_list' })
+const customerOptionsRes = createResource({
+  url: 'crm.finance.api.get_customer_payment_options',
+})
+let customerRequest = 0
+const customerSearchLoading = ref(false)
+const customerSearchError = ref('')
 const customerOptions = computed(() => {
   const opts = customerResults.value.slice()
   if (customer.value && !opts.some((o) => o.value === customer.value)) {
@@ -655,30 +781,35 @@ const customerOptions = computed(() => {
   }
   return opts
 })
-const onCustomerQuery = debounce(async (query) => {
+const fetchCustomerOptions = debounce(async (searchTerm, request, requestedCompany) => {
   try {
-    const rows = await customerListRes.submit({
-      doctype: 'Customer',
-      // Search both name (code) and customer_name (display name).
-      or_filters: query
-        ? JSON.stringify([
-            ['name', 'like', `%${query}%`],
-            ['customer_name', 'like', `%${query}%`],
-          ])
-        : '[]',
-      filters: '[]',
-      fields: JSON.stringify(['name', 'customer_name']),
-      limit_page_length: 10,
-      order_by: 'modified desc',
+    const rows = await customerOptionsRes.submit({
+      company: requestedCompany,
+      search_term: searchTerm,
     })
-    customerResults.value = (rows || []).map((r) => ({
-      label: r.customer_name || r.name,
-      value: r.name,
-    }))
-  } catch {
-    customerResults.value = []
+    if (request !== customerRequest || requestedCompany !== company.value) return
+    customerResults.value = rows || []
+  } catch (err) {
+    if (request === customerRequest && requestedCompany === company.value) {
+      customerResults.value = []
+      customerSearchError.value = readableError(err)
+    }
+  } finally {
+    if (request === customerRequest) customerSearchLoading.value = false
   }
 }, 250)
+function onCustomerQuery(query) {
+  const request = ++customerRequest
+  const requestedCompany = company.value
+  customerResults.value = []
+  customerSearchError.value = ''
+  if (!requestedCompany) {
+    customerSearchLoading.value = false
+    return
+  }
+  customerSearchLoading.value = true
+  fetchCustomerOptions(String(query || '').trim(), request, requestedCompany)
+}
 
 /* ---- FC-08: Customer balance chip ---- */
 const customerBalance = ref(null)
@@ -689,24 +820,35 @@ const invoicesRes = createResource({
   url: 'crm.finance.api.get_customer_outstanding_invoices',
 })
 const invoicesLoading = ref(false)
+const invoicesCompany = ref('')
+let invoiceRequest = 0
 
 async function onCustomerChange(val) {
+  const request = ++invoiceRequest
+  const requestedCompany = company.value
   customer.value = val
   invoices.value = []
+  invoicesCompany.value = ''
+  invoicesLoading.value = false
   customerBalance.value = null
   customerInvoiceCount.value = 0
   paidAmount.value = null
   // FC-07: do NOT reset modeOfPayment on customer change (spec FC-07: delete line 231).
   referenceNo.value = ''
   referenceDate.value = ''
-  if (!val) return
+  if (!val || !requestedCompany) return
   invoicesLoading.value = true
   errorMsg.value = ''
   try {
     const rows = await invoicesRes.submit({
-      company: company.value,
+      company: requestedCompany,
       customer: val,
     })
+    if (
+      request !== invoiceRequest ||
+      requestedCompany !== company.value ||
+      customer.value !== val
+    ) return
     invoices.value = (rows || []).map((r) => ({
       ...r,
       _selected: false,
@@ -718,10 +860,13 @@ async function onCustomerChange(val) {
       (s, r) => s + Number(r.outstanding_amount || 0),
       0,
     )
+    invoicesCompany.value = requestedCompany
   } catch (err) {
-    errorMsg.value = readableError(err)
+    if (request === invoiceRequest && requestedCompany === company.value) {
+      errorMsg.value = readableError(err)
+    }
   } finally {
-    invoicesLoading.value = false
+    if (request === invoiceRequest) invoicesLoading.value = false
   }
 }
 
@@ -774,7 +919,17 @@ const unallocated = computed(() =>
   Math.max(0, (paidAmount.value || 0) - totalAllocated.value),
 )
 const canReview = computed(
-  () => !!customer.value && totalAllocated.value > 0 && !saving.value,
+  () =>
+    !!customer.value &&
+    invoicesCompany.value === company.value &&
+    paymentContextCompany.value === company.value &&
+    !invoicesLoading.value &&
+    totalAllocated.value > 0 &&
+    !!paymentContext.value?.configured &&
+    !paymentContextLoading.value &&
+    (!paymentContext.value.requires_reference ||
+      (!!referenceNo.value.trim() && !!referenceDate.value)) &&
+    !saving.value,
 )
 
 function onBack() {
@@ -792,6 +947,7 @@ const createRes = createResource({
 
 async function onConfirmPost() {
   if (!canReview.value) return
+  const submittedCompany = company.value
   saving.value = true
   reviewError.value = ''
   try {
@@ -800,7 +956,7 @@ async function onConfirmPost() {
       amount: Number(r._allocated),
     }))
     const res = await createRes.submit({
-      company: company.value,
+      company: submittedCompany,
       customer: customer.value,
       mode_of_payment: modeOfPayment.value || undefined,
       posting_date: postingDate.value || undefined,
@@ -809,11 +965,22 @@ async function onConfirmPost() {
       allocations: JSON.stringify(allocations),
       submit: 1,
     })
+    integrationWarning.value = (res?.integration_warnings || []).join('\n')
+    if (submittedCompany !== company.value) {
+      toast.success(
+        `Payment ${res?.name || ''} sent for approval in ${submittedCompany}${integrationWarning.value ? '. CRM follow-up is needed.' : ''}`,
+      )
+      return
+    }
     successPe.value = res?.name || ''
-    toast.success('Payment ' + (res?.name || '') + ' recorded')
+    toast.success(`Payment ${res?.name || ''} sent for approval`)
     emit('saved', res)
   } catch (err) {
-    reviewError.value = readableError(err)
+    if (submittedCompany === company.value) {
+      reviewError.value = readableError(err)
+    } else {
+      toast.error(`Payment approval request failed for ${submittedCompany}: ${readableError(err)}`)
+    }
   } finally {
     saving.value = false
   }
