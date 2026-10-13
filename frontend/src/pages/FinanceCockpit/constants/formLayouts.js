@@ -840,6 +840,112 @@ export const FORM_LAYOUTS = {
   },
 }
 
+const setupField = (fieldname, label, type = 'data', options = null, required = false) => ({
+  fieldname,
+  label,
+  type,
+  ...(options ? { options } : {}),
+  ...(required ? { required: true } : {}),
+})
+
+const setupFields = (title, fields) => ({
+  isSubmittable: false,
+  statusField: 'status',
+  remarksField: null,
+  remarksLabel: 'Notes',
+  totals: null,
+  sections: [{ key: 'setup', title, icon: 'settings', kind: 'fields', fields }],
+})
+
+// Curated, CRM-native forms for the accounting setup records previously opened
+// through external navigation. Persistence still uses native document permissions.
+Object.assign(FORM_LAYOUTS, {
+  Account: setupFields('Account details', [
+    setupField('account_name', 'Account Name', 'data', null, true),
+    setupField('account_number', 'Account Number'),
+    setupField('company', 'Company', 'link', 'Company', true),
+    setupField('root_type', 'Root Type', 'select', ['Asset', 'Liability', 'Income', 'Expense', 'Equity']),
+    setupField('report_type', 'Report Type', 'select', ['Balance Sheet', 'Profit and Loss']),
+    setupField('parent_account', 'Parent Account', 'link', 'Account'),
+    setupField('account_type', 'Account Type', 'select', ['Accumulated Depreciation', 'Asset Received But Not Billed', 'Bank', 'Cash', 'Chargeable', 'Capital Work in Progress', 'Cost of Goods Sold', 'Current Asset', 'Current Liability', 'Depreciation', 'Direct Expense', 'Direct Income', 'Equity', 'Expense Account', 'Expenses Included In Asset Valuation', 'Expenses Included In Valuation', 'Fixed Asset', 'Income Account', 'Indirect Expense', 'Indirect Income', 'Liability', 'Payable', 'Receivable', 'Round Off', 'Round Off for Opening', 'Stock', 'Stock Adjustment', 'Stock Received But Not Billed', 'Service Received But Not Billed', 'Tax', 'Temporary']),
+    setupField('account_currency', 'Account Currency', 'link', 'Currency'),
+    setupField('is_group', 'Group Account', 'check'),
+    setupField('freeze_account', 'Freeze Account', 'select', ['No', 'Yes']),
+    setupField('disabled', 'Disabled', 'check'),
+  ]),
+  'Cost Center': setupFields('Cost Centre details', [
+    setupField('cost_center_name', 'Cost Centre Name', 'data', null, true),
+    setupField('cost_center_number', 'Cost Centre Number'),
+    setupField('company', 'Company', 'link', 'Company', true),
+    setupField('parent_cost_center', 'Parent Cost Centre', 'link', 'Cost Center'),
+    setupField('is_group', 'Group Cost Centre', 'check'),
+    setupField('disabled', 'Disabled', 'check'),
+  ]),
+  'Accounting Dimension': setupFields('Dimension details', [
+    setupField('label', 'Dimension Name', 'data', null, true),
+    setupField('fieldname', 'Field Name', 'data', null, true),
+    setupField('document_type', 'Reference Document', 'link', 'DocType', true),
+    setupField('disabled', 'Disabled', 'check'),
+  ]),
+  'Sales Taxes and Charges Template': {
+    ...setupFields('Tax template details', [
+      setupField('title', 'Title', 'data', null, true),
+      setupField('company', 'Company', 'link', 'Company', true),
+      setupField('tax_category', 'Tax Category', 'link', 'Tax Category'),
+      setupField('is_default', 'Default Template', 'check'),
+      setupField('disabled', 'Disabled', 'check'),
+    ]),
+    sections: [
+      { key: 'setup', title: 'Tax template details', icon: 'settings', kind: 'fields', fields: [
+        setupField('title', 'Title', 'data', null, true), setupField('company', 'Company', 'link', 'Company', true),
+        setupField('tax_category', 'Tax Category', 'link', 'Tax Category'), setupField('is_default', 'Default Template', 'check'), setupField('disabled', 'Disabled', 'check'),
+      ] },
+      { key: 'taxes', title: 'Tax rows', icon: 'receipt', kind: 'lineItems', tableField: 'taxes', columns: [
+        setupField('charge_type', 'Calculation', 'select', ['Actual', 'On Net Total', 'On Previous Row Amount', 'On Previous Row Total', 'On Item Quantity'], true),
+        setupField('account_head', 'Account', 'link', 'Account', true), setupField('description', 'Description', 'data', null, true),
+        setupField('rate', 'Rate (%)', 'float'), setupField('tax_amount', 'Amount', 'currency'),
+      ] },
+    ],
+  },
+  'Payment Terms Template': {
+    ...setupFields('Payment terms', [
+      setupField('template_name', 'Template Name', 'data', null, true),
+      setupField('allocate_payment_based_on_payment_terms', 'Allocate by Payment Terms', 'check'),
+    ]),
+    sections: [
+      { key: 'setup', title: 'Template details', icon: 'settings', kind: 'fields', fields: [setupField('template_name', 'Template Name', 'data', null, true), setupField('allocate_payment_based_on_payment_terms', 'Allocate by Payment Terms', 'check')] },
+      { key: 'terms', title: 'Payment schedule', icon: 'clock', kind: 'lineItems', tableField: 'terms', columns: [
+        setupField('payment_term', 'Payment Term', 'link', 'Payment Term'), setupField('invoice_portion', 'Invoice Portion (%)', 'float', null, true),
+        setupField('due_date_based_on', 'Due Date Basis', 'select', ['Day(s) after invoice date', 'Day(s) after the end of the invoice month', 'Month(s) after the end of the invoice month'], true),
+        setupField('credit_days', 'Credit Days', 'int'), setupField('credit_months', 'Credit Months', 'int'),
+        setupField('mode_of_payment', 'Payment Method', 'link', 'Mode of Payment'),
+      ] },
+    ],
+  },
+  'Mode of Payment': {
+    ...setupFields('Payment method', [setupField('mode_of_payment', 'Payment Method', 'data', null, true), setupField('type', 'Type', 'select', ['Cash', 'Bank', 'General', 'Phone']), setupField('enabled', 'Enabled', 'check')]),
+    sections: [
+      { key: 'setup', title: 'Payment method', icon: 'credit-card', kind: 'fields', fields: [setupField('mode_of_payment', 'Payment Method', 'data', null, true), setupField('type', 'Type', 'select', ['Cash', 'Bank', 'General', 'Phone']), setupField('enabled', 'Enabled', 'check')] },
+      { key: 'accounts', title: 'Company accounts', icon: 'building', kind: 'lineItems', tableField: 'accounts', columns: [setupField('company', 'Company', 'link', 'Company'), setupField('default_account', 'Default Account', 'link', 'Account')] },
+    ],
+  },
+  'Fiscal Year': {
+    ...setupFields('Fiscal year', [setupField('year', 'Year Name', 'data', null, true), setupField('year_start_date', 'Start Date', 'date', null, true), setupField('year_end_date', 'End Date', 'date', null, true), setupField('disabled', 'Disabled', 'check')]),
+    sections: [
+      { key: 'setup', title: 'Fiscal year', icon: 'calendar', kind: 'fields', fields: [setupField('year', 'Year Name', 'data', null, true), setupField('year_start_date', 'Start Date', 'date', null, true), setupField('year_end_date', 'End Date', 'date', null, true), setupField('disabled', 'Disabled', 'check')] },
+      { key: 'companies', title: 'Companies', icon: 'building', kind: 'lineItems', tableField: 'companies', columns: [setupField('company', 'Company', 'link', 'Company', true)] },
+    ],
+  },
+  'Currency Exchange Settings': {
+    ...setupFields('Exchange settings', [setupField('api_endpoint', 'Exchange rate service address', 'data', null, true), setupField('url', 'Example address'), setupField('service_provider', 'Rate source', 'select', [{ label: 'Standard rates service', value: 'frankfurter.dev' }, { label: 'Licensed rates service', value: 'exchangerate.host' }, { label: 'Other service', value: 'Custom' }], true), setupField('access_key', 'Service access key'), setupField('disabled', 'Inactive', 'check'), setupField('use_http', 'Use a non-secure connection', 'check')]),
+    sections: [
+      { key: 'setup', title: 'Exchange settings', icon: 'settings', kind: 'fields', fields: [setupField('api_endpoint', 'Exchange rate service address', 'data', null, true), setupField('url', 'Example address'), setupField('service_provider', 'Rate source', 'select', [{ label: 'Standard rates service', value: 'frankfurter.dev' }, { label: 'Licensed rates service', value: 'exchangerate.host' }, { label: 'Other service', value: 'Custom' }], true), setupField('access_key', 'Service access key'), setupField('disabled', 'Inactive', 'check'), setupField('use_http', 'Use a non-secure connection', 'check')] },
+      { key: 'params', title: 'Request parameters', icon: 'list', kind: 'lineItems', tableField: 'req_params', columns: [setupField('key', 'Name', 'data', null, true), setupField('value', 'Value', 'data', null, true)] },
+      { key: 'results', title: 'Response fields', icon: 'list', kind: 'lineItems', tableField: 'result_key', columns: [setupField('key', 'Name', 'data', null, true)] },
+    ],
+  },
+})
+
 const NUMERIC_TYPES = new Set(['int', 'float', 'currency'])
 
 /**

@@ -10,8 +10,13 @@
   "deal",
   "customer",
   "payment_reference",
+  "source_invoice",
+  "facility_mfl_code",
+  "facility_name",
+  "payee_supplier",
   "rebate_structure",
   "rebate_pct",
+  "calculation_basis",
   "rebate_amount",
   "currency",
   "status",
@@ -60,6 +65,36 @@
    "reqd": 1
   },
   {
+   "fieldname": "source_invoice",
+   "fieldtype": "Link",
+   "label": "Source Invoice",
+   "options": "Sales Invoice",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "facility_mfl_code",
+   "fieldtype": "Data",
+   "label": "Facility Code",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "facility_name",
+   "fieldtype": "Data",
+   "label": "Facility",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "payee_supplier",
+   "fieldtype": "Link",
+   "label": "Payee Supplier",
+   "options": "Supplier",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
    "fieldname": "rebate_structure",
    "fieldtype": "Link",
    "label": "Rebate Structure",
@@ -69,6 +104,13 @@
    "fieldname": "rebate_pct",
    "fieldtype": "Float",
    "label": "Rebate %",
+   "read_only": 1
+  },
+  {
+   "fieldname": "calculation_basis",
+   "fieldtype": "Currency",
+   "label": "Calculation Basis",
+   "options": "currency",
    "read_only": 1
   },
   {

@@ -250,6 +250,8 @@ def _session(token: str) -> dict[str, Any] | None:
 			payload["person"] = frappe.parse_json(decrypt(payload.pop("person_sealed")))
 		if payload and payload.get("facilities_sealed"):
 			payload["facilities"] = frappe.parse_json(decrypt(payload.pop("facilities_sealed")))
+		if payload and payload.get("identity_number_sealed"):
+			payload["identity_number"] = decrypt(payload.pop("identity_number_sealed"))
 		if payload and int(payload.get("expires_at") or 0) > int(time.time()):
 			return payload
 		if value:
@@ -266,6 +268,8 @@ def _save_session(token: str, payload: dict[str, Any]) -> None:
 		to_store["person_sealed"] = encrypt(json.dumps(to_store.pop("person")))
 	if "facilities" in to_store:
 		to_store["facilities_sealed"] = encrypt(json.dumps(to_store.pop("facilities")))
+	if "identity_number" in to_store:
+		to_store["identity_number_sealed"] = encrypt(to_store.pop("identity_number"))
 	frappe.cache().set_value(_session_key(token), json.dumps(to_store), expires_in_sec=SESSION_TTL_SECONDS)
 
 
@@ -447,7 +451,7 @@ def _token_packages() -> list[dict[str, Any]]:
 # nosemgrep: guest-whitelisted-method -- generic identity responses, rate limiting, HFR ownership binding, and OTP verification prevent enumeration and unauthorised facility access.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def start_identity(identification_type: Any, identification_number: Any):
-	"""Resolve facilities through HFR first, then the owner's contacts through Client Registry."""
+	"""Require independent HFR ownership and Client Registry contact matches before OTP."""
 	id_type = _text(identification_type)
 	id_number = _text(identification_number)
 	if not id_type or not ID_RE.fullmatch(id_number) or _rate_limited("start:%s" % _client_ip()):
@@ -494,6 +498,8 @@ def start_identity(identification_type: Any, identification_number: Any):
 	lookup_valid = not gate_failures
 	if not lookup_valid:
 		person = {}
+		contact_email = ""
+		contact_phone = ""
 		facilities = []
 	identity_hash = hashlib.sha256((id_type.lower() + "|" + id_number.lower()).encode()).hexdigest()
 	now = int(time.time())
@@ -540,9 +546,8 @@ def start_identity(identification_type: Any, identification_number: Any):
 			outcome="ok" if payload["delivery"]["status"] == "sent" else "failed",
 			channel=payload["delivery"]["channel"] or "",
 		)
-	# Unknown IDs, missing facilities, and upstream failures return the same
-	# challenge shape. Verification is the only point at which facility data is
-	# released; only a masked destination and delivery state are shown before it.
+	# Unknown IDs, no-facility results, and registry failures return the same
+	# challenge shape. Both required gates run before OTP delivery.
 	return {
 		"success": True,
 		"data": {
@@ -561,7 +566,10 @@ def resend_otp(session_token: Any):
 		frappe.throw(_("Too many code requests. Please wait and try again."), frappe.ValidationError)
 	session = _session_or_error(token)
 	now = int(time.time())
-	if now - int(session.get("otp_sent_at") or 0) < OTP_RESEND_SECONDS:
+	if (
+		(session.get("delivery") or {}).get("status") != "unavailable"
+		and now - int(session.get("otp_sent_at") or 0) < OTP_RESEND_SECONDS
+	):
 		return {"success": True, "data": {"sent": True, "delivery": _delivery_payload(session, now)}}
 	if int(session.get("resend_count") or 0) >= OTP_MAX_RESENDS:
 		frappe.throw(_("Too many code requests. Please start again."), frappe.ValidationError)
@@ -597,10 +605,10 @@ def verify_otp(session_token: Any, otp: Any):
 	if int(time.time()) > int(session.get("otp_expires_at") or 0):
 		_evidence("otp_failed", token, session, outcome="failed", detail="expired", commit=True)
 		frappe.throw(_("That code has expired. Please request a new one."), frappe.PermissionError)
-	session["otp_attempts"] = int(session.get("otp_attempts") or 0) + 1
-	if session["otp_attempts"] > OTP_MAX_ATTEMPTS or not hmac.compare_digest(
+	if session.get("otp_attempts", 0) >= OTP_MAX_ATTEMPTS or not hmac.compare_digest(
 		session.get("otp_hash", ""), _otp_hash(_text(otp))
 	):
+		session["otp_attempts"] = int(session.get("otp_attempts") or 0) + 1
 		_save_session(token, session)
 		if session["otp_attempts"] <= OTP_MAX_ATTEMPTS + 1:
 			_evidence(

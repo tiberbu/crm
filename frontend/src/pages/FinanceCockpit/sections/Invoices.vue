@@ -8,6 +8,7 @@
     :list-params="listParams"
     :columns="columns"
     :create-from="createFrom"
+    :mapped-new-components="mappedNewComponents"
     empty-label="No invoices found."
   >
     <template #filters>
@@ -51,12 +52,14 @@
 <script setup>
 import { ref, computed } from 'vue'
 import CrudSection from '../components/crud/CrudSection.vue'
+import PaymentAllocationForm from '../components/crud/PaymentAllocationForm.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 
 const { company } = useCompanyContext()
 const statusFilter = ref('')
 const dueFilter = ref('all')
 const sectionRef = ref(null)
+const mappedNewComponents = { 'Payment Entry': PaymentAllocationForm }
 
 const columns = [
   { key: 'name', label: 'Invoice' },

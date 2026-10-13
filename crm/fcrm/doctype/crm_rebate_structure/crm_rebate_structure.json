@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "structure_name",
+  "partner",
   "partner_type",
   "rebate_pct",
   "notes"
@@ -18,6 +19,13 @@
    "label": "Structure Name",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "partner",
+   "fieldtype": "Link",
+   "label": "Partner",
+   "options": "CRM Partner",
+   "in_list_view": 1
   },
   {
    "fieldname": "partner_type",

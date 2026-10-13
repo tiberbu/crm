@@ -1,6 +1,7 @@
 import copy
 import json
 import re
+import time
 from typing import ClassVar
 from unittest.mock import Mock, patch
 
@@ -20,6 +21,17 @@ class TestFacilityOnboardingRegistryConfig(UnitTestCase):
 
 		self.assertTrue(key.startswith("crm_facility_onboarding:"))
 		self.assertNotIn("opaque-session-token", key)
+
+	def test_identity_number_is_encrypted_in_cached_session(self):
+		cache = Mock()
+		with patch.object(fo.frappe, "cache", return_value=cache):
+			fo._save_session("opaque-session-token", {"identity_number": ID_NUMBER})
+			stored = cache.set_value.call_args.args[1]
+			self.assertNotIn(ID_NUMBER, stored)
+			cache.get_value.return_value = stored
+			session = fo._session("opaque-session-token")
+
+		self.assertEqual(session["identity_number"], ID_NUMBER)
 
 	def test_onboarding_reuses_crm_hfr_credentials(self):
 		hfr = Mock(
@@ -202,9 +214,11 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			return re.search(r"<strong>(\d{6})</strong>", self.sent[-1]["message"]).group(1)
 		return re.search(r"\b(\d{6})\b", self.sms[-1][1]).group(1)
 
-	def test_hfr_is_resolved_before_client_registry(self):
-		self._start()
+	def test_both_registry_gates_pass_before_otp(self):
+		token = self._start()["session_token"]
 		self.assertEqual([c[0] for c in self.calls.mock_calls], ["hfr", "registry"])
+		self.assertEqual(self.sent[0]["recipients"], [PERSON["email"]])
+		fo.verify_otp(token, self._captured_otp())
 		self.hfr.assert_called_once_with(ID_NUMBER)
 
 	def test_client_registry_is_checked_when_hfr_has_no_facilities(self):
@@ -294,10 +308,15 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(delivery["status"], "unavailable")
 		self.assertIsNone(delivery["channel"])
 		self.assertNotIn("owner@example.com", repr(self.log_error.call_args_list))
+		token = self._start()["session_token"]
+		self.store.data[token]["delivery"]["status"] = "unavailable"
+		self.store.data[token]["otp_sent_at"] = int(time.time())
+		self.email_fails = False
+		self.assertEqual(fo.resend_otp(token)["data"]["delivery"]["status"], "sent")
 
 	def test_unknown_id_returns_same_shape_with_stable_decoy(self):
 		real = self._start()
-		self.hfr.return_value = []
+		self.registry.return_value = None
 		first = self._start("99999999")
 		second = self._start("99999999")
 		self.assertEqual(set(first), set(real))
@@ -321,7 +340,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			fo.verify_otp(token, otp)
 
 	def test_unknown_id_can_never_verify(self):
-		self.hfr.return_value = []
+		self.registry.return_value = None
 		token = self._start("99999999")["session_token"]
 		for code in ("000000", "123456"):
 			with self.assertRaises(frappe.PermissionError):
@@ -357,7 +376,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			fo.resend_otp(token)
 
 	def test_resend_for_unknown_id_sends_nothing(self):
-		self.hfr.return_value = []
+		self.registry.return_value = None
 		token = self._start("99999999")["session_token"]
 		self.store.data[token]["otp_sent_at"] = 1
 		self.assertEqual(fo.resend_otp(token)["data"]["delivery"]["status"], "sent")
@@ -381,7 +400,14 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		fo.verify_otp(token, self._captured_otp())
 		self.assertEqual(
 			self._events(token),
-			sorted([("lookup", "ok"), ("otp_sent", "ok"), ("otp_failed", "failed"), ("otp_verified", "ok")]),
+			sorted(
+				[
+					("lookup", "ok"),
+					("otp_sent", "ok"),
+					("otp_failed", "failed"),
+					("otp_verified", "ok"),
+				]
+			),
 		)
 		self.assertEqual(
 			{row.subject_ref for row in self._evidence_rows(token)}, {evidence_ref(self._subject(token))}
@@ -391,7 +417,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		return self.store.data[token]["identity_hash"]
 
 	def test_unknown_id_records_a_failed_lookup_and_no_delivery(self):
-		self.hfr.return_value = []
+		self.registry.return_value = None
 		token = self._start("99999999")["session_token"]
 		self.assertEqual(self._events(token), [("lookup", "failed")])
 

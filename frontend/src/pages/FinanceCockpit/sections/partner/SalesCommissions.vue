@@ -21,6 +21,9 @@
             <option value="Rejected">Rejected</option>
             <option value="Paid">Paid</option>
           </select>
+          <label class="text-xs text-gray-500 dark:text-gray-400">Invoice
+            <input v-model.trim="invoiceFilter" class="ml-1 min-h-8 w-40 rounded border border-gray-300 bg-white px-2 text-xs dark:border-gray-600 dark:bg-gray-800" type="search" placeholder="Invoice number" @input="refetchFirstPage" />
+          </label>
         </div>
         <Button
           variant="solid"
@@ -51,6 +54,14 @@
         @row-click="goView"
         @retry="refetch"
       >
+        <template #expanded-row="{ row }">
+          <div class="grid grid-cols-2 gap-3 p-4 text-xs sm:grid-cols-4">
+            <div><span class="text-ink-gray-5">Source invoice</span><div class="mt-1 font-medium">{{ row.source_invoice || 'Unavailable' }}</div></div>
+            <div><span class="text-ink-gray-5">Payment</span><div class="mt-1 font-medium">{{ row.payment_reference || 'Unavailable' }}</div></div>
+            <div><span class="text-ink-gray-5">Calculation basis</span><div class="mt-1 font-medium">{{ formatCurrency(row.calculation_basis, row.currency) }}</div></div>
+            <div><span class="text-ink-gray-5">Rate used</span><div class="mt-1 font-medium">{{ row.commission_pct }}%</div></div>
+          </div>
+        </template>
         <template #actions="{ row }">
           <div class="flex gap-1.5 flex-wrap">
             <template v-if="canConfirmReject">
@@ -106,11 +117,13 @@ import FinanceDetail from '../../components/crud/FinanceDetail.vue'
 import FcIcon from '../../components/crud/FcIcon.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
 import { useBoot } from '../../composables/useBoot.js'
+import { useCurrency } from '../../composables/useCurrency.js'
 
 const { company } = useCompanyContext()
 const { getRoles, isAdministrator } = useBoot()
 const page = ref(0)
 const statusFilter = ref('')
+const invoiceFilter = ref('')
 const actionPending = ref(null)
 
 const mode = ref('list')
@@ -133,24 +146,16 @@ const canCreate =
 
 const columns = [
   { key: 'name', label: 'Commission' },
-  {
-    key: 'network_label',
-    label: 'Network',
-    type: 'link',
-    linkKey: 'optin_network',
-    linkDoctype: 'CRM Opt-In Network',
-  },
+  { key: 'network_label', label: 'Network' },
   { key: 'sales_person', label: 'Sales Person' },
   {
     key: 'employee_name',
     label: 'Payroll Employee',
-    type: 'link',
-    linkKey: 'employee',
-    linkDoctype: 'Employee',
-    availableKey: 'employee_available',
   },
   { key: 'customer', label: 'Customer' },
+  { key: 'source_invoice', label: 'Invoice' },
   { key: 'commission_pct', label: 'Commission %', align: 'right' },
+  { key: 'calculation_basis', label: 'Basis', type: 'currency', align: 'right' },
   {
     key: 'commission_amount',
     label: 'Amount',
@@ -165,6 +170,7 @@ const resource = createResource({
   makeParams() {
     const filters = []
     if (statusFilter.value) filters.push(['status', '=', statusFilter.value])
+    if (invoiceFilter.value) filters.push(['source_invoice', 'like', `%${invoiceFilter.value}%`])
     return {
       company: company.value,
       filters: JSON.stringify(filters),
@@ -178,6 +184,7 @@ const resource = createResource({
 const loading = computed(() => resource.loading)
 const error = computed(() => resource.error)
 const commissions = computed(() => resource.data || [])
+const { formatCurrency } = useCurrency()
 
 function refetch() {
   resource.fetch()

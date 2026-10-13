@@ -279,15 +279,25 @@
             {{ busy ? __('Verifying…') : __('Verify and continue') }}</button
           ><button
             type="button"
-            :disabled="busy || resendIn > 0"
+            :disabled="!canResendOtp(delivery, resendIn, busy)"
             class="mt-4 min-h-11 w-full text-sm font-medium text-[#bc1823] disabled:text-ink-gray-4"
             @click="resendOtp"
           >
             {{
-              resendIn > 0
+              deliveryStatus === 'unavailable'
+                ? __('Retry code delivery')
+                : resendIn > 0
                 ? __('Resend code in {0}', [formatCountdown(resendIn)])
                 : __('Resend code')
             }}
+          </button>
+          <button
+            type="button"
+            :disabled="busy"
+            class="min-h-11 w-full text-sm font-medium text-ink-gray-6 disabled:text-ink-gray-4"
+            @click="editIdentity"
+          >
+            {{ __('Edit ID details') }}
           </button>
         </form>
         <form
@@ -637,10 +647,12 @@ import OtpCodeInput from '@/components/FacilityOnboarding/OtpCodeInput.vue'
 import {
   STEPS,
   canAdvance,
+  canResendOtp,
   deliveryState,
   formatCountdown,
   packageTotals,
   previousStage,
+  shouldClearOtpAfterVerificationError,
   stepStatus,
 } from '@/utils/onboardingSteps'
 
@@ -810,6 +822,7 @@ async function startIdentity() {
 async function resendOtp() {
   errorMessage.value = ''
   otpError.value = ''
+  busy.value = true
   try {
     const data = await request('resend_otp', {
       session_token: sessionToken.value,
@@ -820,6 +833,8 @@ async function resendOtp() {
     sessionExpired.value = isSessionError(error)
     errorMessage.value =
       error?.messages?.[0] || __('We could not resend the code.')
+  } finally {
+    busy.value = false
   }
 }
 async function verifyOtp() {
@@ -836,12 +851,23 @@ async function verifyOtp() {
     stage.value = 'facilities'
     stopResendTimer()
   } catch (error) {
-    otp.value = ''
+    if (shouldClearOtpAfterVerificationError(error?.exc_type)) otp.value = ''
     otpError.value =
       error?.messages?.[0] || __('The code is incorrect or expired.')
   } finally {
     busy.value = false
   }
+}
+function editIdentity() {
+  stopResendTimer()
+  sessionToken.value = ''
+  otp.value = ''
+  otpError.value = ''
+  delivery.value = {}
+  resendIn.value = 0
+  sessionExpired.value = false
+  errorMessage.value = ''
+  stage.value = 'identity'
 }
 function goBack() {
   const previous = previousStage(stage.value)

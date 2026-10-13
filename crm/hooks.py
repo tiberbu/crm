@@ -389,6 +389,7 @@ before_job = ["crm.email.queue_patch.apply_queue_builder_patches"]
 after_migrate = [
 	"crm.fcrm.doctype.fcrm_settings.fcrm_settings.after_migrate",
 	"crm.finance.setup.ensure_network_payout_mappings",
+	"crm.finance.setup.ensure_optin_supplier_attribution_fields",
 	"crm.api.whatsapp.add_roles",
 	"crm.domain_enrichment.install.seed_default_rules_and_mappings",
 	"crm.install.add_default_scripts",
