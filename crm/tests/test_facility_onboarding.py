@@ -50,6 +50,69 @@ class TestFacilityOnboardingRegistryConfig(UnitTestCase):
 		self.assertEqual(config["owner_path"], "/owner-facilities")
 		self.assertEqual(config["client_path"], "/client")
 
+	def test_client_registry_selects_the_unique_exact_id_and_type_match(self):
+		person = {
+			"identification_number": ID_NUMBER,
+			"identification_type": "National ID",
+			"email": "owner@example.com",
+		}
+		response = {
+			"message": {
+				"total": 2,
+				"result": [
+					{"identification_number": "87654321", "identification_type": "National ID"},
+					person,
+				],
+			}
+		}
+		with (
+			patch.object(fo, "_onboarding_config", return_value={"client_path": "/client"}),
+			patch.object(fo, "_request", return_value=response),
+		):
+			self.assertEqual(fo._client_registry_person("national_id", ID_NUMBER), person)
+
+	def test_client_registry_rejects_ambiguous_exact_rows(self):
+		person = {"identification_number": ID_NUMBER, "identification_type": "National ID"}
+		response = {"message": {"total": 2, "result": [person, dict(person)]}}
+		with (
+			patch.object(fo, "_onboarding_config", return_value={"client_path": "/client"}),
+			patch.object(fo, "_request", return_value=response),
+		):
+			self.assertIsNone(fo._client_registry_person("national_id", ID_NUMBER))
+
+	def test_client_registry_rejects_matching_number_with_wrong_id_type(self):
+		response = {
+			"message": {
+				"total": 1,
+				"result": [{"identification_number": ID_NUMBER, "identification_type": "Passport"}],
+			}
+		}
+		with (
+			patch.object(fo, "_onboarding_config", return_value={"client_path": "/client"}),
+			patch.object(fo, "_request", return_value=response),
+		):
+			self.assertIsNone(fo._client_registry_person("national_id", ID_NUMBER))
+
+	def test_hfr_no_facilities_response_normalizes_to_empty_list(self):
+		response = {
+			"message": {
+				"data": None,
+				"message": "No facilities found for this owner",
+				"status": "error",
+			}
+		}
+		with (
+			patch.object(fo, "_onboarding_config", return_value={"owner_path": "/owners"}),
+			patch.object(fo, "_request", return_value=response) as request,
+		):
+			self.assertEqual(fo._hfr_facilities_for_owner(ID_NUMBER), [])
+		request.assert_called_once_with(
+			{"owner_path": "/owners"},
+			"/owners",
+			{"owner_id_number": ID_NUMBER},
+			allow_no_facilities=True,
+		)
+
 
 ID_NUMBER = "12345678"
 PERSON = {
@@ -144,12 +207,54 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual([c[0] for c in self.calls.mock_calls], ["hfr", "registry"])
 		self.hfr.assert_called_once_with(ID_NUMBER)
 
-	def test_client_registry_is_skipped_when_hfr_has_no_facilities(self):
+	def test_client_registry_is_checked_when_hfr_has_no_facilities(self):
 		self.hfr.return_value = []
 		data = self._start()
-		self.registry.assert_not_called()
+		self.registry.assert_called_once_with("national_id", ID_NUMBER)
 		self.assertEqual(self.sent, [])
 		self.assertEqual(data["delivery"]["status"], "sent")
+		self.assertIn("HFR: no facilities", self._evidence_rows(data["session_token"])[0].detail)
+
+	def test_hfr_is_checked_when_client_registry_has_no_exact_match(self):
+		self.registry.return_value = None
+		data = self._start()
+		self.hfr.assert_called_once_with(ID_NUMBER)
+		self.assertEqual(self.sent, [])
+		self.assertIn("CR/Afyangu: no exact match", self._evidence_rows(data["session_token"])[0].detail)
+
+	def test_hfr_failure_does_not_skip_client_registry(self):
+		self.hfr.side_effect = RuntimeError("HFR unavailable")
+		data = self._start()
+		self.registry.assert_called_once_with("national_id", ID_NUMBER)
+		self.assertEqual(self.sent, [])
+		self.assertIn("HFR: lookup failed", self._evidence_rows(data["session_token"])[0].detail)
+
+	def test_client_registry_failure_does_not_skip_hfr(self):
+		self.registry.side_effect = RuntimeError("CR unavailable")
+		data = self._start()
+		self.hfr.assert_called_once_with(ID_NUMBER)
+		self.assertEqual(self.sent, [])
+		self.assertIn("CR/Afyangu: lookup failed", self._evidence_rows(data["session_token"])[0].detail)
+
+	def test_client_registry_without_a_deliverable_contact_fails_its_gate(self):
+		self.registry.return_value = {**PERSON, "email": "", "phone": ""}
+		data = self._start()
+		self.assertEqual(self.sent, [])
+		self.assertIn("CR/Afyangu: no usable contact", self._evidence_rows(data["session_token"])[0].detail)
+
+	def test_both_failed_gates_are_recorded_without_public_disclosure(self):
+		valid = self._start()
+		self.hfr.return_value = []
+		self.registry.return_value = None
+		failed = self._start("87654321")
+		self.assertEqual(set(failed), set(valid))
+		self.assertEqual(set(failed["delivery"]), set(valid["delivery"]))
+		self.assertEqual(len(self.sent), 1)
+		self.assertNotIn("CR/Afyangu", json.dumps(failed))
+		self.assertNotIn("HFR", json.dumps(failed))
+		rows = self._evidence_rows(failed["session_token"])
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0].detail, "CR/Afyangu: no exact match; HFR: no facilities")
 
 	def test_email_is_the_default_channel(self):
 		delivery = self._start()["delivery"]
@@ -521,6 +626,43 @@ class TestFacilityOnboardingLogging(UnitTestCase):
 			with self.assertRaises(frappe.ValidationError):
 				fo._request(config, "/owners", {"owner_id_number": ID_NUMBER})
 		self.assertNotIn(ID_NUMBER, repr(log_error.call_args_list))
+
+	def test_hfr_not_found_no_facilities_response_is_returned_for_gate_diagnosis(self):
+		response = Mock(status_code=404)
+		response.json.return_value = {
+			"message": {"message": "No facilities found for this owner", "status": "error"},
+			"status": "error",
+			"status_code": 404,
+		}
+		with (
+			patch.object(fo, "_jwt_token", return_value="jwt"),
+			patch.object(fo.requests, "get", return_value=response),
+		):
+			body = fo._request(
+				{"base_url": "https://registry.example.test"},
+				"/owners",
+				{"owner_id_number": ID_NUMBER},
+				allow_no_facilities=True,
+			)
+		self.assertEqual(body["message"]["message"], "No facilities found for this owner")
+		response.raise_for_status.assert_not_called()
+
+	def test_other_hfr_404_responses_remain_upstream_errors(self):
+		response = Mock(status_code=404)
+		response.json.return_value = {"message": {"message": "Route not found"}}
+		response.raise_for_status.side_effect = requests.exceptions.HTTPError("404")
+		with (
+			patch.object(fo, "_jwt_token", return_value="jwt"),
+			patch.object(fo.requests, "get", return_value=response),
+			patch.object(fo.frappe, "log_error"),
+		):
+			with self.assertRaises(frappe.ValidationError):
+				fo._request(
+					{"base_url": "https://registry.example.test"},
+					"/owners",
+					{"owner_id_number": ID_NUMBER},
+					allow_no_facilities=True,
+				)
 
 
 class TestFacilityOnboardingCatalog(UnitTestCase):

@@ -620,9 +620,55 @@ The CRM adapter accepts the upstream `message.data.facilities`,
 result to allow-listed facility fields. It retains raw upstream data only in
 the encrypted server-side onboarding session.
 
-CRM normalizes unknown identity, no-facility, upstream-error, and invalid
-response cases to the same public failure response. Credentials, upstream
-tokens, raw identity values, and registry sessions never reach the browser.
+#### UAT contract probe (2026-10-13)
+
+From `cr-dev.tiberbu.app`, the configured HIE host was `uat.dha.go.ke`. Both
+requests use `GET`, CRM's bearer JWT, JSON `Accept` / `Content-Type` headers,
+and a 30-second timeout. A synthetic identifier (`CXCONTRACTTEST20261013`)
+was used; only statuses and response field names/counts were inspected.
+
+- **Client Registry** `/client-registry/fetch-client`: HTTP 200 JSON with
+  top-level `message`; `message.total` was an integer and `message.result` a
+  list with zero rows for the synthetic identifier. This confirms the no-match
+  shape only. A separate positive-match lookup below confirmed CR rows include
+  `identification_number`, `identification_type`, `email`, and `phone`.
+- **HFR owner lookup** `/v1/hfr/fetch-facilities-by-owner`: HTTP 404 JSON with
+  top-level `message`, `status`, and `status_code`; `message` contained
+  `data`, `message`, `pagination`, and `status`. No facilities were returned.
+  The nested `message.message` was `No facilities found for this owner`.
+  This describes only the unmatched synthetic identifier; the successful
+  response observed with the user-supplied identifier is recorded below.
+
+The HFR UAT response represents an owner with no matching facilities as HTTP
+404 with `message.message` equal to `No facilities found for this owner`. CRM
+will treat that exact response as an empty facility list; other HFR HTTP errors
+remain upstream failures. A separate read-only lookup on 2026-10-13 used the
+identifier supplied by the user for the reported issue; its value is omitted
+here. CR returned one row (`total: 1`) whose
+`identification_number` matched, and HFR returned one facility with fields
+`facility_fid`, `facility_level`, `facility_name`, `facility_owner_type`,
+`facility_type`, and `registration_number`. The CR contact row included
+`email` and `phone`. Its email mask was `s***@tiberbu.com`, which differs from
+the `w***@outlook.com` displayed in the report. The current CRM dev site's
+deterministic email decoy for this identifier is `s***@outlook.com`, which also
+does not match the report. No OTP was requested or sent, and the full
+identifier and contact values were not retained here.
+
+The backend sends to and masks the CR row's email when email delivery succeeds.
+Since the public `start_identity` method was not called, this lookup does not
+prove which response path produced the reported screen. Inspect the identity
+lookup outcome and site configuration in the CRM runtime that displayed the
+mismatch. In current dev UAT, the reported mask matches neither the positive
+CR contact nor the local decoy. Use a synthetic UAT identity for repeatable
+verification.
+
+Both CR and HFR lookups are independent required gates: CRM runs both for every
+syntactically valid ID. CR passes only with one exact ID/type match and a
+usable CR contact; HFR passes only with at least one facility. The protected
+`CRM Onboarding Evidence.detail` records the gate and short reason for failure
+(for example, `CR/Afyangu: no exact match` or `HFR: no facilities`). The guest
+response remains generic across gate failures. Credentials, upstream tokens,
+raw identity values, contacts, and registry sessions never reach the browser.
 
 ### 10.4 ERPNext accounting
 

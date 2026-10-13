@@ -49,6 +49,10 @@ def _text(value: Any) -> str:
 	return frappe.utils.cstr(value or "").strip()
 
 
+def _normalize_id_type(value: Any) -> str:
+	return re.sub(r"[^a-z0-9]", "", _text(value).lower())
+
+
 def _client_ip() -> str:
 	try:
 		request = getattr(frappe.local, "request", None)
@@ -113,7 +117,9 @@ def _jwt_token(config: dict[str, Any]) -> str:
 	)
 
 
-def _request(config: dict[str, Any], path: str, params: dict[str, Any]) -> Any:
+def _request(
+	config: dict[str, Any], path: str, params: dict[str, Any], *, allow_no_facilities: bool = False
+) -> Any:
 	try:
 		response = requests.get(
 			config["base_url"].rstrip("/") + "/" + path.lstrip("/"),
@@ -125,6 +131,14 @@ def _request(config: dict[str, Any], path: str, params: dict[str, Any]) -> Any:
 			},
 			timeout=30,
 		)
+		if allow_no_facilities and response.status_code == 404:
+			body = response.json()
+			message = body.get("message") if isinstance(body, dict) else None
+			if (
+				isinstance(message, dict)
+				and _text(message.get("message")).casefold() == "no facilities found for this owner"
+			):
+				return body
 		response.raise_for_status()
 		return response.json()
 	except requests.exceptions.Timeout:
@@ -166,12 +180,27 @@ def _client_registry_person(id_type: str, id_number: str) -> dict[str, Any] | No
 	if int(message.get("total") or 0) < 1:
 		return None
 	rows = message.get("result") or []
-	return rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+	if not isinstance(rows, list):
+		return None
+	expected_type = id_type_map.get(id_type.lower(), id_type)
+	matches = [
+		row
+		for row in rows
+		if isinstance(row, dict)
+		and _text(row.get("identification_number")).casefold() == id_number.casefold()
+		and _normalize_id_type(row.get("identification_type")) == _normalize_id_type(expected_type)
+	]
+	return matches[0] if len(matches) == 1 else None
 
 
 def _hfr_facilities_for_owner(id_number: str) -> list[dict[str, Any]]:
 	config = _onboarding_config()
-	response = _request(config, config["owner_path"], {"owner_id_number": id_number})
+	response = _request(
+		config,
+		config["owner_path"],
+		{"owner_id_number": id_number},
+		allow_no_facilities=True,
+	)
 	message = response.get("message") if isinstance(response, dict) else {}
 	data = message if isinstance(message, dict) else response if isinstance(response, dict) else {}
 	if isinstance(data.get("data"), dict):
@@ -425,20 +454,44 @@ def start_identity(identification_type: Any, identification_number: Any):
 		frappe.throw(
 			_("We could not verify those details. Please check and try again."), frappe.ValidationError
 		)
+	# Evaluate both registries independently so one failure never masks the other
+	# gate. Detailed outcomes are written only to protected onboarding evidence.
+	hfr_failure = ""
 	try:
 		facilities = _hfr_facilities_for_owner(id_number)
-		person = _client_registry_person(id_type, id_number) if facilities else None
 	except Exception as exc:
 		frappe.log_error(
-			title="CRM facility onboarding identity lookup", message="Lookup failed (%s)" % type(exc).__name__
+			title="CRM facility onboarding HFR lookup", message="Lookup failed (%s)" % type(exc).__name__
 		)
-		person, facilities = None, []
+		facilities = []
+		hfr_failure = "lookup failed"
+	if not facilities and not hfr_failure:
+		hfr_failure = "no facilities"
+
+	cr_failure = ""
+	try:
+		person = _client_registry_person(id_type, id_number)
+	except Exception as exc:
+		frappe.log_error(
+			title="CRM facility onboarding CR lookup", message="Lookup failed (%s)" % type(exc).__name__
+		)
+		person = None
+		cr_failure = "lookup failed"
+	if not person and not cr_failure:
+		cr_failure = "no exact match"
 
 	token = secrets.token_urlsafe(32)
 	otp = "%06d" % secrets.randbelow(1_000_000)
 	contact_email = _text(person.get("email")).lower() if person else ""
 	contact_phone = _text(person.get("phone")) if person else ""
-	lookup_valid = bool(person and facilities and (contact_email or contact_phone))
+	if person and not (contact_email or contact_phone):
+		cr_failure = "no usable contact"
+	gate_failures = []
+	if cr_failure:
+		gate_failures.append("CR/Afyangu: %s" % cr_failure)
+	if hfr_failure:
+		gate_failures.append("HFR: %s" % hfr_failure)
+	lookup_valid = not gate_failures
 	if not lookup_valid:
 		person = {}
 		facilities = []
@@ -477,7 +530,7 @@ def start_identity(identification_type: Any, identification_number: Any):
 		token,
 		payload,
 		outcome="ok" if lookup_valid else "failed",
-		detail="%d facilities" % len(payload["facilities"]),
+		detail="; ".join(gate_failures) if gate_failures else "%d facilities" % len(payload["facilities"]),
 	)
 	if lookup_valid:
 		_evidence(
