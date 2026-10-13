@@ -45,12 +45,12 @@ ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .'/-]{2,63}$")
 PARTNER_ID_RE = re.compile(r"^\d{6}$")
 
 
-class FacilityOwnershipUnavailable(frappe.ValidationError):
-	"""Temporary ownership lookup failure; the verified OTP remains retryable."""
-
-
 def _text(value: Any) -> str:
 	return frappe.utils.cstr(value or "").strip()
+
+
+def _normalize_id_type(value: Any) -> str:
+	return re.sub(r"[^a-z0-9]", "", _text(value).lower())
 
 
 def _client_ip() -> str:
@@ -117,7 +117,9 @@ def _jwt_token(config: dict[str, Any]) -> str:
 	)
 
 
-def _request(config: dict[str, Any], path: str, params: dict[str, Any]) -> Any:
+def _request(
+	config: dict[str, Any], path: str, params: dict[str, Any], *, allow_no_facilities: bool = False
+) -> Any:
 	try:
 		response = requests.get(
 			config["base_url"].rstrip("/") + "/" + path.lstrip("/"),
@@ -129,6 +131,14 @@ def _request(config: dict[str, Any], path: str, params: dict[str, Any]) -> Any:
 			},
 			timeout=30,
 		)
+		if allow_no_facilities and response.status_code == 404:
+			body = response.json()
+			message = body.get("message") if isinstance(body, dict) else None
+			if (
+				isinstance(message, dict)
+				and _text(message.get("message")).casefold() == "no facilities found for this owner"
+			):
+				return body
 		response.raise_for_status()
 		return response.json()
 	except requests.exceptions.Timeout:
@@ -170,12 +180,27 @@ def _client_registry_person(id_type: str, id_number: str) -> dict[str, Any] | No
 	if int(message.get("total") or 0) < 1:
 		return None
 	rows = message.get("result") or []
-	return rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+	if not isinstance(rows, list):
+		return None
+	expected_type = id_type_map.get(id_type.lower(), id_type)
+	matches = [
+		row
+		for row in rows
+		if isinstance(row, dict)
+		and _text(row.get("identification_number")).casefold() == id_number.casefold()
+		and _normalize_id_type(row.get("identification_type")) == _normalize_id_type(expected_type)
+	]
+	return matches[0] if len(matches) == 1 else None
 
 
 def _hfr_facilities_for_owner(id_number: str) -> list[dict[str, Any]]:
 	config = _onboarding_config()
-	response = _request(config, config["owner_path"], {"owner_id_number": id_number})
+	response = _request(
+		config,
+		config["owner_path"],
+		{"owner_id_number": id_number},
+		allow_no_facilities=True,
+	)
 	message = response.get("message") if isinstance(response, dict) else {}
 	data = message if isinstance(message, dict) else response if isinstance(response, dict) else {}
 	if isinstance(data.get("data"), dict):
@@ -426,35 +451,62 @@ def _token_packages() -> list[dict[str, Any]]:
 # nosemgrep: guest-whitelisted-method -- generic identity responses, rate limiting, HFR ownership binding, and OTP verification prevent enumeration and unauthorised facility access.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def start_identity(identification_type: Any, identification_number: Any):
-	"""Find the verified contact in Client Registry and start OTP before HFR ownership lookup."""
+	"""Require independent HFR ownership and Client Registry contact matches before OTP."""
 	id_type = _text(identification_type)
 	id_number = _text(identification_number)
 	if not id_type or not ID_RE.fullmatch(id_number) or _rate_limited("start:%s" % _client_ip()):
 		frappe.throw(
 			_("We could not verify those details. Please check and try again."), frappe.ValidationError
 		)
+	# Evaluate both registries independently so one failure never masks the other
+	# gate. Detailed outcomes are written only to protected onboarding evidence.
+	hfr_failure = ""
+	try:
+		facilities = _hfr_facilities_for_owner(id_number)
+	except Exception as exc:
+		frappe.log_error(
+			title="CRM facility onboarding HFR lookup", message="Lookup failed (%s)" % type(exc).__name__
+		)
+		facilities = []
+		hfr_failure = "lookup failed"
+	if not facilities and not hfr_failure:
+		hfr_failure = "no facilities"
+
+	cr_failure = ""
 	try:
 		person = _client_registry_person(id_type, id_number)
 	except Exception as exc:
 		frappe.log_error(
-			title="CRM facility onboarding identity lookup", message="Lookup failed (%s)" % type(exc).__name__
+			title="CRM facility onboarding CR lookup", message="Lookup failed (%s)" % type(exc).__name__
 		)
 		person = None
+		cr_failure = "lookup failed"
+	if not person and not cr_failure:
+		cr_failure = "no exact match"
 
 	token = secrets.token_urlsafe(32)
 	otp = "%06d" % secrets.randbelow(1_000_000)
 	contact_email = _text(person.get("email")).lower() if person else ""
 	contact_phone = _text(person.get("phone")) if person else ""
-	lookup_valid = bool(person and (contact_email or contact_phone))
+	if person and not (contact_email or contact_phone):
+		cr_failure = "no usable contact"
+	gate_failures = []
+	if cr_failure:
+		gate_failures.append("CR/Afyangu: %s" % cr_failure)
+	if hfr_failure:
+		gate_failures.append("HFR: %s" % hfr_failure)
+	lookup_valid = not gate_failures
 	if not lookup_valid:
 		person = {}
+		contact_email = ""
+		contact_phone = ""
+		facilities = []
 	identity_hash = hashlib.sha256((id_type.lower() + "|" + id_number.lower()).encode()).hexdigest()
 	now = int(time.time())
 	payload = {
 		"verified": False,
 		"lookup_valid": lookup_valid,
 		"id_type": id_type,
-		"identity_number": id_number if lookup_valid else "",
 		"identity_hash": identity_hash,
 		"person": {
 			"first_name": _text(person.get("first_name")),
@@ -462,7 +514,7 @@ def start_identity(identification_type: Any, identification_number: Any):
 			"email": contact_email,
 			"phone": contact_phone,
 		},
-		"facilities": [],
+		"facilities": [_facility_row(row) for row in facilities],
 		"otp_hash": _otp_hash(otp),
 		"otp_attempts": 0,
 		"otp_expires_at": now + OTP_TTL_SECONDS,
@@ -484,7 +536,7 @@ def start_identity(identification_type: Any, identification_number: Any):
 		token,
 		payload,
 		outcome="ok" if lookup_valid else "failed",
-		detail="%d facilities" % len(payload["facilities"]),
+		detail="; ".join(gate_failures) if gate_failures else "%d facilities" % len(payload["facilities"]),
 	)
 	if lookup_valid:
 		_evidence(
@@ -494,8 +546,8 @@ def start_identity(identification_type: Any, identification_number: Any):
 			outcome="ok" if payload["delivery"]["status"] == "sent" else "failed",
 			channel=payload["delivery"]["channel"] or "",
 		)
-	# Unknown IDs and registry failures return the same challenge shape. HFR is
-	# queried only after contact ownership is proven by OTP.
+	# Unknown IDs, no-facility results, and registry failures return the same
+	# challenge shape. Both required gates run before OTP delivery.
 	return {
 		"success": True,
 		"data": {
@@ -572,29 +624,9 @@ def verify_otp(session_token: Any, otp: Any):
 		_evidence("otp_failed", token, session, outcome="failed", detail="unmatched", commit=True)
 		frappe.cache().delete_value(_session_key(token))
 		frappe.throw(_("The verification code is incorrect or expired."), frappe.PermissionError)
-	try:
-		facilities = _hfr_facilities_for_owner(session["identity_number"])
-	except Exception as exc:
-		frappe.log_error(
-			title="CRM facility onboarding ownership lookup",
-			message="Ownership lookup failed (%s)" % type(exc).__name__,
-		)
-		_evidence("lookup", token, session, outcome="failed", detail="facility ownership unavailable", commit=True)
-		frappe.throw(
-			_("We could not check facility ownership just now. Please enter the code again to retry."),
-			FacilityOwnershipUnavailable,
-		)
-	if not facilities:
-		_evidence("lookup", token, session, outcome="failed", detail="no eligible facilities", commit=True)
-		frappe.throw(
-			_("No eligible facilities were found for these details. Check the ID or start again."),
-			frappe.ValidationError,
-		)
-	session["facilities"] = [_facility_row(row) for row in facilities]
 	session["verified"] = True
 	session["otp_hash"] = ""
 	_save_session(token, session)
-	_evidence("lookup", token, session, outcome="ok", detail="facility ownership verified")
 	_evidence("otp_verified", token, session, channel=(session.get("delivery") or {}).get("channel") or "")
 	return {
 		"success": True,

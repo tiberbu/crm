@@ -254,12 +254,11 @@
           </div>
           <div v-else class="text-center" role="status">
             <p class="text-sm leading-6 text-ink-gray-6">
-              {{ __('We sent a 6-digit code by') }}
-              <strong>{{ channelLabel }}</strong>
-              {{ __('to') }}
-            </p>
-            <p class="mt-1 text-lg font-semibold tracking-wide">
-              {{ delivery.masked_destination }}
+              {{
+                __(
+                  'If your details match our records, a 6-digit code was sent to the registered contact.',
+                )
+              }}
             </p>
             <p class="mt-2 text-xs text-ink-gray-5">
               {{ __('The code expires in {0} minutes.', [expiryMinutes]) }}
@@ -685,9 +684,6 @@ const otpError = ref('')
 const sessionExpired = ref(false)
 let resendTimer = null
 const deliveryStatus = computed(() => deliveryState(delivery.value))
-const channelLabel = computed(() =>
-  delivery.value.channel === 'sms' ? __('SMS') : __('email'),
-)
 const expiryMinutes = computed(() =>
   Math.max(1, Math.round((delivery.value.expires_in || 600) / 60)),
 )
