@@ -42,13 +42,13 @@ describe('onboardingSteps', () => {
       canAdvance('pricing', { hasNetwork: true, packageCode: 'TOK' }),
     ).toBe(true)
     const ready = {
-      witness: { name: 'Wanjiru', email: 'w@example.com' },
+      accountEmail: 'sam@example.com',
       termsAccepted: true,
     }
     expect(canAdvance('review', ready)).toBe(true)
     expect(canAdvance('review', { ...ready, termsAccepted: false })).toBe(false)
     expect(
-      canAdvance('review', { ...ready, witness: { name: 'W', email: 'nope' } }),
+      canAdvance('review', { ...ready, accountEmail: 'nope' }),
     ).toBe(false)
   })
 

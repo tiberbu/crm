@@ -1,7 +1,10 @@
 import copy
 import json
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from typing import ClassVar
 from unittest.mock import Mock, patch
 
@@ -15,6 +18,15 @@ from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evi
 
 
 class TestFacilityOnboardingRegistryConfig(UnitTestCase):
+	def test_identity_reference_uses_normalized_identity_with_the_keyed_helper(self):
+		with patch.object(fo, "evidence_ref", side_effect=lambda value: "keyed:" + value) as keyed:
+			first = fo._identity_reference("National ID", "AbC 123")
+			second = fo._identity_reference("national_id", "aBc 123")
+
+		self.assertEqual(first, "keyed:nationalid|abc 123")
+		self.assertEqual(second, first)
+		self.assertEqual(keyed.call_count, 2)
+
 	def test_session_cache_key_is_keyed_and_does_not_expose_token(self):
 		with patch("crm.api.facility_onboarding._password_setting", return_value="test-secret"):
 			key = _session_key("opaque-session-token")
@@ -125,6 +137,32 @@ class TestFacilityOnboardingRegistryConfig(UnitTestCase):
 			allow_no_facilities=True,
 		)
 
+	def test_hfr_explicit_empty_facility_list_is_valid(self):
+		for response in (
+			{"message": {"data": {"facilities": []}}},
+			{"message": {"facilities": []}},
+			{"data": {"facilities": []}},
+			{"facilities": []},
+		):
+			with (
+				patch.object(fo, "_onboarding_config", return_value={"owner_path": "/owners"}),
+				patch.object(fo, "_request", return_value=response),
+			):
+				self.assertEqual(fo._hfr_facilities_for_owner(ID_NUMBER), [])
+
+	def test_hfr_unrecognized_or_malformed_response_is_retryable_error(self):
+		for response in (
+			{"message": {"data": None, "status": "success"}},
+			{"message": {"data": {"facilities": {"unexpected": True}}}},
+			{"facilities": ["not-a-facility-row"]},
+		):
+			with (
+				patch.object(fo, "_onboarding_config", return_value={"owner_path": "/owners"}),
+				patch.object(fo, "_request", return_value=response),
+			):
+				with self.assertRaises(frappe.ValidationError):
+					fo._hfr_facilities_for_owner(ID_NUMBER)
+
 
 ID_NUMBER = "12345678"
 PERSON = {
@@ -214,39 +252,104 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			return re.search(r"<strong>(\d{6})</strong>", self.sent[-1]["message"]).group(1)
 		return re.search(r"\b(\d{6})\b", self.sms[-1][1]).group(1)
 
-	def test_both_registry_gates_pass_before_otp(self):
+	def test_cr_lookup_and_otp_precede_hfr_ownership_lookup(self):
 		token = self._start()["session_token"]
-		self.assertEqual([c[0] for c in self.calls.mock_calls], ["hfr", "registry"])
+		self.assertEqual([c[0] for c in self.calls.mock_calls], ["registry"])
 		self.assertEqual(self.sent[0]["recipients"], [PERSON["email"]])
-		fo.verify_otp(token, self._captured_otp())
+		data = fo.verify_otp(token, self._captured_otp())["data"]
+		self.assertEqual(data["facilities"][0]["facility_id"], "FID-1")
+		self.assertEqual([c[0] for c in self.calls.mock_calls], ["registry", "hfr"])
 		self.hfr.assert_called_once_with(ID_NUMBER)
 
-	def test_client_registry_is_checked_when_hfr_has_no_facilities(self):
+	def test_hfr_no_facilities_is_resolved_only_after_otp(self):
 		self.hfr.return_value = []
 		data = self._start()
 		self.registry.assert_called_once_with("national_id", ID_NUMBER)
-		self.assertEqual(self.sent, [])
+		self.assertEqual(len(self.sent), 1)
 		self.assertEqual(data["delivery"]["status"], "sent")
-		self.assertIn("HFR: no facilities", self._evidence_rows(data["session_token"])[0].detail)
+		self.assertEqual(fo.verify_otp(data["session_token"], self._captured_otp())["data"]["facilities"], [])
+		self.hfr.assert_called_once_with(ID_NUMBER)
 
-	def test_hfr_is_checked_when_client_registry_has_no_exact_match(self):
+	def test_hfr_is_not_checked_when_client_registry_has_no_exact_match(self):
 		self.registry.return_value = None
 		data = self._start()
-		self.hfr.assert_called_once_with(ID_NUMBER)
+		self.hfr.assert_not_called()
 		self.assertEqual(self.sent, [])
 		self.assertIn("CR/Afyangu: no exact match", self._evidence_rows(data["session_token"])[0].detail)
 
-	def test_hfr_failure_does_not_skip_client_registry(self):
+	def test_hfr_failure_after_otp_is_recoverable_without_a_second_otp(self):
 		self.hfr.side_effect = RuntimeError("HFR unavailable")
-		data = self._start()
+		token = self._start()["session_token"]
 		self.registry.assert_called_once_with("national_id", ID_NUMBER)
-		self.assertEqual(self.sent, [])
-		self.assertIn("HFR: lookup failed", self._evidence_rows(data["session_token"])[0].detail)
+		self.hfr.assert_not_called()
+		result = fo.verify_otp(token, self._captured_otp())["data"]
+		self.assertEqual(result, {"state": "hfr_pending", "retryable": True})
+		with self.assertRaises(frappe.PermissionError):
+			fo.verify_otp(token, self._captured_otp())
+		self.assertEqual(len(self.sent), 1)
+		self.hfr.side_effect = None
+		result = fo.retry_hfr(token)["data"]
+		self.assertEqual(result["facilities"][0]["facility_id"], "FID-1")
+		self.assertEqual(len(self.sent), 1)
+		self.assertEqual(self._events(token).count(("otp_verified", "ok")), 1)
+		self.assertEqual(self._events(token).count(("lookup", "failed")), 1)
+		self.assertEqual(self._events(token).count(("lookup", "ok")), 2)
 
-	def test_client_registry_failure_does_not_skip_hfr(self):
+	def test_hfr_retry_requires_verified_session_and_has_a_lookup_limit(self):
+		token = self._start()["session_token"]
+		with self.assertRaises(frappe.PermissionError):
+			fo.retry_hfr(token)
+		self.hfr.side_effect = RuntimeError("HFR unavailable")
+		first = fo.verify_otp(token, self._captured_otp())["data"]
+		self.assertTrue(first["retryable"])
+		for _ in range(fo.HFR_MAX_LOOKUPS - 1):
+			result = fo.retry_hfr(token)["data"]
+		self.assertEqual(result, {"state": "hfr_pending", "retryable": False})
+		self.assertEqual(self.hfr.call_count, fo.HFR_MAX_LOOKUPS)
+
+	def test_concurrent_hfr_retries_share_one_session_lookup(self):
+		self.hfr.side_effect = RuntimeError("HFR unavailable")
+		token = self._start()["session_token"]
+		fo.verify_otp(token, self._captured_otp())
+		self.log_error.reset_mock()
+
+		self.hfr.reset_mock()
+
+		def slow_lookup(number):
+			time.sleep(0.1)
+			return FACILITIES
+
+		self.hfr.side_effect = slow_lookup
+		locks = {}
+		locks_guard = threading.Lock()
+
+		@contextmanager
+		def synchronized(lock_name, timeout=30):
+			with locks_guard:
+				lock = locks.setdefault(lock_name, threading.Lock())
+			if not lock.acquire(timeout=timeout):
+				raise TimeoutError("test file lock timed out")
+			try:
+				yield
+			finally:
+				lock.release()
+
+		with patch.object(fo, "filelock", synchronized), patch.object(fo, "_evidence"):
+			with ThreadPoolExecutor(max_workers=2) as pool:
+				first = pool.submit(fo.retry_hfr, token)
+				second = pool.submit(fo.retry_hfr, token)
+				first_result = first.result(timeout=5)["data"]
+				second_result = second.result(timeout=5)["data"]
+
+		self.assertFalse(self.log_error.call_args_list, repr(self.log_error.call_args_list))
+		self.assertEqual(first_result["state"], "ready")
+		self.assertEqual(second_result["state"], "ready")
+		self.hfr.assert_called_once_with(ID_NUMBER)
+
+	def test_client_registry_failure_does_not_call_hfr_or_send_otp(self):
 		self.registry.side_effect = RuntimeError("CR unavailable")
 		data = self._start()
-		self.hfr.assert_called_once_with(ID_NUMBER)
+		self.hfr.assert_not_called()
 		self.assertEqual(self.sent, [])
 		self.assertIn("CR/Afyangu: lookup failed", self._evidence_rows(data["session_token"])[0].detail)
 
@@ -258,22 +361,22 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 
 	def test_both_failed_gates_are_recorded_without_public_disclosure(self):
 		valid = self._start()
-		self.hfr.return_value = []
 		self.registry.return_value = None
 		failed = self._start("87654321")
 		self.assertEqual(set(failed), set(valid))
 		self.assertEqual(set(failed["delivery"]), set(valid["delivery"]))
 		self.assertEqual(len(self.sent), 1)
 		self.assertNotIn("CR/Afyangu", json.dumps(failed))
-		self.assertNotIn("HFR", json.dumps(failed))
+		self.assertNotIn("facilities", json.dumps(failed))
 		rows = self._evidence_rows(failed["session_token"])
 		self.assertEqual(len(rows), 1)
-		self.assertEqual(rows[0].detail, "CR/Afyangu: no exact match; HFR: no facilities")
+		self.assertEqual(rows[0].detail, "CR/Afyangu: no exact match")
 
 	def test_email_is_the_default_channel(self):
 		delivery = self._start()["delivery"]
 		self.assertEqual(delivery["channel"], "email")
-		self.assertEqual(delivery["masked_destination"], "o***@example.com")
+		self.assertRegex(delivery["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
+		self.assertNotIn("example.com", delivery["masked_destination"])
 		self.assertEqual(delivery["status"], "sent")
 		self.assertEqual(len(self.sent), 1)
 		self.assertEqual(self.sms, [])
@@ -282,35 +385,46 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.channel_setting = "SMS"
 		delivery = self._start()["delivery"]
 		self.assertEqual(delivery["channel"], "sms")
-		self.assertEqual(delivery["masked_destination"], "254******78")
+		self.assertRegex(delivery["masked_destination"], r"^254\*\*\*\*\*\*[0-9]{2}$")
+		self.assertNotEqual(delivery["masked_destination"], "254******78")
 		self.assertEqual(len(self.sms), 1)
 		self.assertEqual(self.sent, [])
 
 	def test_email_failure_falls_back_to_sms(self):
 		self.email_fails = True
-		delivery = self._start()["delivery"]
-		self.assertEqual(delivery["channel"], "sms")
+		started = self._start()
+		delivery = started["delivery"]
+		self.assertEqual(delivery["channel"], "email")
+		self.assertEqual(self.store.get(started["session_token"])["delivery"]["channel"], "sms")
 		self.assertEqual(delivery["status"], "sent")
 
 	def test_missing_sms_gateway_falls_back_to_email(self):
 		self.channel_setting = "SMS"
 		self.gateway = False
-		self.assertEqual(self._start()["delivery"]["channel"], "email")
+		started = self._start()
+		self.assertEqual(started["delivery"]["channel"], "sms")
+		self.assertEqual(self.store.get(started["session_token"])["delivery"]["channel"], "email")
 
 	def test_phone_only_contact_uses_sms(self):
 		self.registry.return_value = {**PERSON, "email": ""}
-		self.assertEqual(self._start()["delivery"]["channel"], "sms")
+		started = self._start()
+		self.assertEqual(started["delivery"]["channel"], "email")
+		self.assertEqual(self.store.get(started["session_token"])["delivery"]["channel"], "sms")
 
 	def test_no_deliverable_channel_is_reported_without_leaking_contacts(self):
 		self.email_fails = True
 		self.gateway = False
-		delivery = self._start()["delivery"]
-		self.assertEqual(delivery["status"], "unavailable")
-		self.assertIsNone(delivery["channel"])
+		started = self._start()
+		delivery = started["delivery"]
+		self.assertEqual(delivery["status"], "sent")
+		self.assertEqual(delivery["channel"], "email")
+		self.assertRegex(delivery["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
 		self.assertNotIn("owner@example.com", repr(self.log_error.call_args_list))
-		token = self._start()["session_token"]
-		self.store.data[token]["delivery"]["status"] = "unavailable"
-		self.store.data[token]["otp_sent_at"] = int(time.time())
+		unknown = self._start("87654321")["delivery"]
+		for field in ("channel", "status", "resend_after"):
+			self.assertEqual(delivery[field], unknown[field])
+		self.assertRegex(unknown["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
+		token = started["session_token"]
 		self.email_fails = False
 		self.assertEqual(fo.resend_otp(token)["data"]["delivery"]["status"], "sent")
 
@@ -324,12 +438,19 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(first["delivery"]["channel"], "email")
 		self.assertRegex(first["delivery"]["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
 		self.assertEqual(first["delivery"]["masked_destination"], second["delivery"]["masked_destination"])
+		self.assertEqual(first["delivery"]["channel"], real["delivery"]["channel"])
+		self.assertEqual(first["delivery"]["status"], real["delivery"]["status"])
+		self.assertNotEqual(real["delivery"]["masked_destination"], "o***@example.com")
 
 	def test_nothing_sensitive_is_disclosed_before_verification(self):
-		body = json.dumps(self._start())
+		data = self._start()
+		body = json.dumps(data)
 		otp = self._captured_otp()
 		for secret in ("owner@example.com", "254712345678", "Alpha Clinic", "Amina", "FID-1", "10001", otp):
 			self.assertNotIn(secret, body)
+		self.assertNotIn("identity", data)
+		self.assertNotIn("facilities", self.store.data[data["session_token"]])
+		self.assertNotIn("Alpha Clinic", json.dumps(self._evidence_rows(data["session_token"]), default=str))
 
 	def test_verified_otp_releases_facilities_and_replay_fails(self):
 		token = self._start()["session_token"]
@@ -337,7 +458,57 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		data = fo.verify_otp(token, otp)["data"]
 		self.assertEqual(data["facilities"][0]["facility_id"], "FID-1")
 		with self.assertRaises(frappe.PermissionError):
+			fo.resend_otp(token)
+		self.assertEqual(len(self.sent), 1)
+		with self.assertRaises(frappe.PermissionError):
 			fo.verify_otp(token, otp)
+
+	def test_concurrent_resend_cannot_overwrite_verified_session(self):
+		token = self._start()["session_token"]
+		otp = self._captured_otp()
+		hfr_started = threading.Event()
+		release_hfr = threading.Event()
+
+		def slow_hfr(_identity):
+			hfr_started.set()
+			self.assertTrue(release_hfr.wait(timeout=5))
+			return FACILITIES
+
+		self.hfr.side_effect = slow_hfr
+		locks = {}
+		locks_guard = threading.Lock()
+
+		@contextmanager
+		def synchronized(lock_name, timeout=30):
+			with locks_guard:
+				lock = locks.setdefault(lock_name, threading.Lock())
+			if not lock.acquire(timeout=timeout):
+				raise TimeoutError("test file lock timed out")
+			try:
+				yield
+			finally:
+				lock.release()
+
+		def throw(_message, exception):
+			raise exception
+
+		with (
+			patch.object(fo, "filelock", synchronized),
+			patch.object(fo, "_client_ip", return_value="127.0.0.1"),
+			patch.object(fo, "_evidence"),
+			patch.object(fo.frappe, "throw", side_effect=throw),
+			ThreadPoolExecutor(max_workers=2) as pool,
+		):
+			verification = pool.submit(fo.verify_otp, token, otp)
+			if not hfr_started.wait(timeout=5):
+				verification.result(timeout=1)
+			resend = pool.submit(fo.resend_otp, token)
+			release_hfr.set()
+			self.assertEqual(verification.result(timeout=5)["data"]["state"], "ready")
+			with self.assertRaises(frappe.PermissionError):
+				resend.result(timeout=5)
+		self.assertTrue(self.store.get(token)["verified"])
+		self.assertEqual(len(self.sent), 1)
 
 	def test_unknown_id_can_never_verify(self):
 		self.registry.return_value = None
@@ -367,7 +538,8 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		token = self._start()["session_token"]
 		cooling = fo.resend_otp(token)["data"]
 		self.assertEqual(len(self.sent), 1)
-		self.assertGreater(cooling["delivery"]["resend_after"], 0)
+		self.assertEqual(cooling["delivery"]["resend_after"], 0)
+		self.assertEqual(self.store.data[token]["resend_count"], 0)
 		for _ in range(fo.OTP_MAX_RESENDS):
 			self.store.data[token]["otp_sent_at"] = 1
 			self.assertEqual(fo.resend_otp(token)["data"]["delivery"]["channel"], "email")
@@ -403,6 +575,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			sorted(
 				[
 					("lookup", "ok"),
+					("lookup", "ok"),
 					("otp_sent", "ok"),
 					("otp_failed", "failed"),
 					("otp_verified", "ok"),
@@ -426,7 +599,6 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.gateway = False
 		token = self._start()["session_token"]
 		self.assertIn(("otp_sent", "failed"), self._events(token))
-		self.store.data[token]["otp_sent_at"] = 1
 		fo.resend_otp(token)
 		self.assertEqual(self._events(token).count(("otp_sent", "failed")), 2)
 
@@ -473,6 +645,14 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 
 	def _submit_env(self):
 		"""Fake the OIS store and processing so submit_onboarding runs without real CRM records."""
+		self._terms_environment(
+			"Self-Onboarding Terms",
+			"Legacy Terms",
+			{
+				"Self-Onboarding Terms": {"name": "Self-Onboarding Terms", "terms": "<p>Current terms.</p>"},
+				"Legacy Terms": {"name": "Legacy Terms", "terms": "<p>Legacy terms.</p>"},
+			},
+		)
 		self.ois = {}
 		self.processed = []
 		self.fail_processing = False
@@ -480,11 +660,22 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			"exists": frappe.db.exists,
 			"get_value": frappe.db.get_value,
 			"set_value": frappe.db.set_value,
+			"get_all": frappe.get_all,
 		}
 
-		def create(partner, package, witness, person, facility):
+		def create(partner, package, account_email, person, facility, terms_snapshot, identity_ref):
 			name = "OIS-T%d" % (len(self.ois) + 1)
-			self.ois[name] = {"status": "Pending", "facility": facility["facility_id"]}
+			self.ois[name] = {
+				"status": "Pending",
+				"network_slug": partner["name"],
+				"onboarding_source": "token_self_onboarding",
+				"onboarding_identity_ref": identity_ref,
+				"cx_account_email": account_email,
+				"raw_json": json.dumps({"facilities": [facility]}),
+				"self_onboarding_tc_document": terms_snapshot["document"],
+				"self_onboarding_tc_hash": terms_snapshot["hash"],
+				"self_onboarding_tc_accepted_at": terms_snapshot["accepted_at"],
+			}
 			return name
 
 		def exists(doctype, name=None, *args, **kwargs):
@@ -493,8 +684,13 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			return original["exists"](doctype, name, *args, **kwargs)
 
 		def get_value(doctype, name=None, *args, **kwargs):
+			if name is None and "filters" in kwargs:
+				return original["get_value"](doctype, **kwargs)
 			if doctype == "CRM Opt-In Submission":
-				return self.ois[name]["status"]
+				field = args[0] if args else "status"
+				return self.ois[name].get(field)
+			if doctype == "CRM Pre-Qualified Facility":
+				return None
 			return original["get_value"](doctype, name, *args, **kwargs)
 
 		def set_value(doctype, name, field, value=None, *args, **kwargs):
@@ -502,6 +698,17 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				self.ois[name][field] = value
 				return None
 			return original["set_value"](doctype, name, field, value, *args, **kwargs)
+
+		def get_all(doctype, filters=None, fields=None, *args, **kwargs):
+			if doctype != "CRM Opt-In Submission":
+				return original["get_all"](doctype, filters, fields, *args, **kwargs)
+			filters = filters or {}
+			rows = []
+			for name, values in self.ois.items():
+				if any(values.get(key) != value for key, value in filters.items()):
+					continue
+				rows.append({"name": name, **values})
+			return rows
 
 		def process(name):
 			self.processed.append(name)
@@ -513,10 +720,17 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			patch.object(fo, "_token_packages", return_value=[self.PACKAGE]),
 			patch.object(fo, "_upsert_facility_membership", return_value=_named("PQF-1")),
 			patch.object(fo, "_create_submission", side_effect=create),
+			patch.object(fo, "_ensure_customer_experience_access", return_value={"status": "sent"}),
 			patch.object(fo, "_link_documents"),
+			patch(
+				"crm.api.customer_experience.create_initial_token_order",
+				return_value={"success": True, "data": {"quotation": "QTN-X", "sales_order": "SO-X"}},
+			),
 			patch.object(fo.frappe.db, "exists", side_effect=exists),
 			patch.object(fo.frappe.db, "get_value", side_effect=get_value),
 			patch.object(fo.frappe.db, "set_value", side_effect=set_value),
+			patch.object(fo.frappe.db, "has_column", return_value=True),
+			patch.object(fo.frappe, "get_all", side_effect=get_all),
 			patch("crm.api.optin._process_submission", side_effect=process),
 		):
 			item.start()
@@ -527,15 +741,288 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		fo.verify_otp(token, self._captured_otp())
 		return token
 
+	def _terms_environment(self, dedicated, legacy, documents):
+		"""Install configurable Terms fixtures for endpoint and submission tests."""
+		settings = {
+			"self_onboarding_tc_document": dedicated,
+			"active_tc_document": legacy,
+		}
+		self.terms_settings = settings
+		original_exists = fo.frappe.db.exists
+		original_get_doc = fo.frappe.get_doc
+
+		def exists(doctype, name=None, *args, **kwargs):
+			if doctype == "Terms and Conditions":
+				return name if name in documents else None
+			return original_exists(doctype, name, *args, **kwargs)
+
+		def get_doc(doctype, name=None, *args, **kwargs):
+			if doctype == "Terms and Conditions":
+				return documents[name]
+			if name is None:
+				return original_get_doc(doctype, *args, **kwargs)
+			return original_get_doc(doctype, name, *args, **kwargs)
+
+		for item in (
+			patch.object(
+				fo,
+				"_setting",
+				side_effect=lambda name, default="": settings.get(
+					name,
+					self.channel_setting if name == "facility_onboarding_preferred_otp_channel" else default,
+				),
+			),
+			patch.object(fo.frappe.db, "exists", side_effect=exists),
+			patch.object(fo.frappe, "get_doc", side_effect=get_doc),
+			patch("crm.utils.jinja.render_terms_template", side_effect=lambda template, context: template),
+		):
+			item.start()
+			self.addCleanup(item.stop)
+		self.terms_documents = documents
+
+	def _accepted_terms(self, token):
+		return fo.get_self_onboarding_terms(token)
+
 	def _submit(self, token, facility_ids=("FID-1",), package="TOK-1"):
+		terms = self._accepted_terms(token)
 		return fo.submit_onboarding(
 			token,
 			"123456",
 			json.dumps(list(facility_ids)),
 			package,
-			json.dumps({"name": "Witness", "email": "witness@example.com"}),
+			"sam@example.com",
 			1,
+			terms["content_hash"],
 		)["data"]["submissions"]
+
+	def test_self_onboarding_terms_uses_dedicated_setting_and_returns_rendered_hash(self):
+		self._terms_environment(
+			"Self-Onboarding Terms",
+			"Legacy Terms",
+			{
+				"Self-Onboarding Terms": {"name": "Self-Onboarding Terms", "terms": "<p>Dedicated terms.</p>"},
+				"Legacy Terms": {"name": "Legacy Terms", "terms": "<p>Legacy.</p>"},
+			},
+		)
+		token = self._verified_token()
+
+		result = self._accepted_terms(token)
+
+		self.assertEqual(set(result), {"document", "rendered_html", "content_hash"})
+		self.assertEqual(result["document"], "Self-Onboarding Terms")
+		self.assertEqual(result["rendered_html"], "<p>Dedicated terms.</p>")
+		self.assertEqual(result["content_hash"], fo.hashlib.sha256(result["rendered_html"].encode()).hexdigest())
+		self.assertEqual(self.store.get(token)["accepted_terms_document"], result["document"])
+		self.assertEqual(self.store.get(token)["accepted_terms_hash"], result["content_hash"])
+
+	def test_self_onboarding_terms_falls_back_to_active_legacy_setting(self):
+		self._terms_environment(
+			"",
+			"Legacy Terms",
+			{"Legacy Terms": {"name": "Legacy Terms", "terms": "<p>Legacy terms.</p>"}},
+		)
+		token = self._verified_token()
+
+		result = self._accepted_terms(token)
+
+		self.assertEqual(result["document"], "Legacy Terms")
+		self.assertEqual(result["rendered_html"], "<p>Legacy terms.</p>")
+
+	def test_submit_rejects_terms_changed_after_customer_review(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+		self.terms_documents["Self-Onboarding Terms"]["terms"] = "<p>Changed terms.</p>"
+
+		with self.assertRaises(frappe.ValidationError):
+			fo.submit_onboarding(
+				token,
+				"123456",
+				'["FID-1"]',
+				"TOK-1",
+				"sam@example.com",
+				1,
+				terms["content_hash"],
+			)
+
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
+
+	def test_submit_rejects_invalid_account_email_before_creating_records(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+
+		with self.assertRaisesRegex(frappe.ValidationError, "one valid email"):
+			fo.submit_onboarding(
+				token,
+				"123456",
+				'["FID-1"]',
+				"TOK-1",
+				"not-an-email",
+				1,
+				terms["content_hash"],
+			)
+
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
+
+	def test_submit_rejects_internal_account_email_before_creating_records(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+
+		def user_lookup(doctype, name=None, *args, **kwargs):
+			if doctype == "User" and isinstance(name, dict):
+				return "staff@example.com"
+			if doctype == "User":
+				return frappe._dict(user_type="System User", enabled=1)
+			return None
+
+		with patch.object(fo.frappe.db, "get_value", side_effect=user_lookup):
+			with self.assertRaisesRegex(frappe.ValidationError, "cannot be used"):
+				fo.submit_onboarding(
+					token,
+					"123456",
+					'["FID-1"]',
+					"TOK-1",
+					"staff@example.com",
+					1,
+					terms["content_hash"],
+				)
+
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
+
+	def test_submit_rejects_disabled_website_account_before_creating_records(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+
+		def user_lookup(doctype, name=None, *args, **kwargs):
+			if doctype == "User" and isinstance(name, dict):
+				return "disabled@example.com"
+			if doctype == "User":
+				return frappe._dict(user_type="Website User", enabled=0)
+			return None
+
+		with patch.object(fo.frappe.db, "get_value", side_effect=user_lookup):
+			with self.assertRaisesRegex(frappe.ValidationError, "cannot be used"):
+				fo.submit_onboarding(
+					token,
+					"123456",
+					'["FID-1"]',
+					"TOK-1",
+					"disabled@example.com",
+					1,
+					terms["content_hash"],
+				)
+
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
+
+	def test_submit_rejects_non_ascii_or_malformed_terms_hash(self):
+		self._submit_env()
+		token = self._verified_token()
+		self._accepted_terms(token)
+
+		for bad_hash in ("é" + "a" * 63, "A" * 64, "a" * 63, " " + "a" * 64):
+			with self.subTest(bad_hash=bad_hash), self.assertRaises(frappe.ValidationError):
+				fo.submit_onboarding(
+					token,
+					"123456",
+					'["FID-1"]',
+					"TOK-1",
+					"sam@example.com",
+					1,
+					bad_hash,
+				)
+		self.assertEqual(self.ois, {})
+
+	def test_submit_pending_hfr_session_returns_controlled_retry_error(self):
+		self._submit_env()
+		token = self._start()["session_token"]
+		self.hfr.side_effect = RuntimeError("HFR unavailable")
+		self.assertEqual(
+			fo.verify_otp(token, self._captured_otp())["data"],
+			{"state": "hfr_pending", "retryable": True},
+		)
+		self._accepted_terms(token)
+		with self.assertRaisesRegex(frappe.ValidationError, "Facility details are not ready"):
+			self._submit(token)
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
+
+	def test_submit_revalidates_terms_inside_lock_before_creating_records(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+		original_filelock = fo.filelock
+
+		@contextmanager
+		def change_terms_after_lock(lock_name, timeout=60):
+			with original_filelock(lock_name, timeout=timeout):
+				if lock_name.startswith("crm_onboarding_submit_"):
+					self.terms_documents["Self-Onboarding Terms"]["terms"] = "<p>Changed under lock.</p>"
+				yield
+
+		with patch.object(fo, "filelock", change_terms_after_lock):
+			with self.assertRaisesRegex(frappe.ValidationError, "Terms and Conditions have changed"):
+				fo.submit_onboarding(
+					token,
+					"123456",
+					'["FID-1"]',
+					"TOK-1",
+					"sam@example.com",
+					1,
+					terms["content_hash"],
+				)
+
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
+
+	def test_submit_rejects_document_switch_even_when_rendered_content_matches(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+		self.terms_documents["Legacy Terms"]["terms"] = "<p>Current terms.</p>"
+		self.terms_settings["self_onboarding_tc_document"] = "Legacy Terms"
+
+		with self.assertRaises(frappe.ValidationError):
+			fo.submit_onboarding(
+				token,
+				"123456",
+				'["FID-1"]',
+				"TOK-1",
+				"sam@example.com",
+				1,
+				terms["content_hash"],
+			)
+
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
+
+	def test_missing_self_onboarding_terms_blocks_request_and_submit_before_records(self):
+		self._submit_env()
+		# Both configuration fields are blank and no usable Terms document exists.
+		self._terms_environment("", "", {})
+		token = self._verified_token()
+
+		with self.assertRaises(frappe.ValidationError):
+			self._accepted_terms(token)
+		with self.assertRaises(frappe.ValidationError):
+			fo.submit_onboarding(
+				token,
+				"123456",
+				'["FID-1"]',
+				"TOK-1",
+				"sam@example.com",
+				1,
+				"a" * 64,
+			)
+
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
 
 	def test_submit_records_terms_and_facility_selection(self):
 		self._submit_env()
@@ -544,6 +1031,10 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		rows = {row.event: row for row in self._evidence_rows(token)}
 		self.assertEqual(rows["terms_accepted"].reference_name, "net-a")
 		self.assertEqual(rows["facility_selected"].reference_name, "PQF-1")
+		stored_terms = self.ois["OIS-T1"]
+		self.assertEqual(stored_terms["self_onboarding_tc_document"], "Self-Onboarding Terms")
+		self.assertEqual(len(stored_terms["self_onboarding_tc_hash"]), 64)
+		self.assertTrue(stored_terms["self_onboarding_tc_accepted_at"])
 
 	def test_repeated_submit_resumes_one_submission_per_facility(self):
 		self._submit_env()
@@ -553,9 +1044,126 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(first, second)
 		self.assertEqual(len(self.ois), 1)
 		self.assertEqual(self.processed, ["OIS-T1"])
+		self.assertIn(
+			"replay: staged submission resumed",
+			[row.detail for row in self._evidence_rows(token)],
+		)
 		self.assertEqual(
 			[e for e in self._events(token) if e[0] == "facility_selected"], [("facility_selected", "ok")]
 		)
+
+	def test_conflict_preflight_requires_otp_and_limits_ids_to_the_verified_session(self):
+		token = self._start()["session_token"]
+		with self.assertRaises(frappe.PermissionError):
+			fo.check_onboarding_conflicts(token, '["FID-1"]')
+
+		fo.verify_otp(token, self._captured_otp())
+		with patch.object(fo, "_public_network", return_value={"name": "net-a"}):
+			with self.assertRaises(frappe.ValidationError):
+				fo.check_onboarding_conflicts(token, '["FID-TAMPERED"]')
+			self.assertEqual(
+				fo.check_onboarding_conflicts(token, '["FID-1"]'),
+				{"outcome": "new", "allowed_facility_ids": ["FID-1"]},
+			)
+
+	def test_duplicate_identity_preflight_returns_only_allow_listed_state(self):
+		self._submit_env()
+		first_token = self._verified_token()
+		self._submit(first_token)
+		second_token = self._verified_token()
+
+		result = fo.check_onboarding_conflicts(second_token, '["FID-1"]', "123456")
+
+		self.assertEqual(result, {"outcome": "existing_identity", "allowed_facility_ids": []})
+		self.assertNotIn("owner@example.com", json.dumps(result))
+		self.assertNotIn("OIS-T1", json.dumps(result))
+		self.assertNotIn(ID_NUMBER, json.dumps(result))
+
+	def test_legacy_identity_without_reference_is_not_claimed_but_facility_conflict_blocks(self):
+		self._submit_env()
+		self.ois["OIS-LEGACY"] = {
+			"status": "Processed",
+			"network_slug": "net-a",
+			"raw_json": json.dumps({"facilities": [{"mfl_code": "10001"}]}),
+		}
+		token = self._verified_token()
+
+		result = fo.submit_onboarding(
+			token,
+			"123456",
+			'["FID-1"]',
+			"TOK-1",
+			"sam@example.com",
+			1,
+			self._accepted_terms(token)["content_hash"],
+		)
+
+		self.assertEqual(result["data"], {"outcome": "facility_review", "allowed_facility_ids": []})
+		self.assertEqual(set(self.ois), {"OIS-LEGACY"})
+		fo._upsert_facility_membership.assert_not_called()
+
+	def test_concurrent_sessions_share_identity_lock_and_create_one_record_set(self):
+		self._submit_env()
+		tokens = [self._verified_token(), self._verified_token()]
+		args = []
+		for token in tokens:
+			terms = self._accepted_terms(token)
+			args.append(
+				(
+					token,
+					"123456",
+					'["FID-1"]',
+					"TOK-1",
+					"sam@example.com",
+					1,
+					terms["content_hash"],
+				)
+			)
+		locks = {}
+		guard = threading.Lock()
+		created = []
+
+		@contextmanager
+		def synchronized(lock_name, timeout=60):
+			with guard:
+				lock = locks.setdefault(lock_name, threading.Lock())
+			if not lock.acquire(timeout=timeout):
+				raise TimeoutError("submit lock timed out")
+			try:
+				yield
+			finally:
+				lock.release()
+
+		def check(session, selected, network):
+			# Model the database recheck under the lock; the waiter sees the first
+			# submission after the lock holder creates it.
+			time.sleep(0.05)
+			if created:
+				return {"outcome": "existing_identity", "allowed_facility_ids": []}
+			return {"outcome": "new", "allowed_facility_ids": sorted(selected)}
+
+		def create(*args):
+			created.append("OIS-T1")
+			return {"success": True, "data": {"submissions": [{"submission": "OIS-T1"}]}}
+
+		with (
+			patch.object(fo, "filelock", synchronized),
+			patch.object(fo, "evidence_ref", side_effect=lambda value: "keyed:" + value),
+			patch.object(fo, "_session_or_error", side_effect=lambda token, verified=False: self.store.get(token)),
+			patch.object(fo, "_validate_self_onboarding_terms", return_value={"hash": "a" * 64}),
+			patch.object(fo, "_validate_account_email", return_value="sam@example.com"),
+			patch.object(fo, "_public_network", return_value={"name": "net-a"}),
+			patch.object(fo, "_token_packages", return_value=[self.PACKAGE]),
+			patch.object(fo, "_check_onboarding_conflicts", side_effect=check),
+			patch.object(fo, "_submit_selected_facilities", side_effect=create),
+		):
+			with ThreadPoolExecutor(max_workers=2) as pool:
+				results = [pool.submit(fo.submit_onboarding, *submit_args) for submit_args in args]
+				data = [result.result(timeout=5)["data"] for result in results]
+
+		self.assertEqual(len(locks), 1)
+		self.assertEqual(len(created), 1)
+		self.assertCountEqual([row.get("outcome", "new") for row in data], ["new", "existing_identity"])
 
 	def test_retry_after_processing_failure_reuses_the_staged_submission(self):
 		self._submit_env()
@@ -602,6 +1210,19 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(len(self._submit(token, facility_ids=("FID-1", "FID-2"))), 2)
 		self.assertEqual(len(self.ois), 2)
 
+	def test_password_setup_failure_is_retryable_after_records_are_saved(self):
+		self._submit_env()
+		token = self._verified_token()
+		with patch.object(fo, "_ensure_customer_experience_access", return_value={"status": "failed"}):
+			with self.assertRaises(frappe.ValidationError):
+				self._submit(token)
+
+		self.assertEqual(len(self.ois), 1)
+		self.assertEqual(self.processed, ["OIS-T1"])
+		result = self._submit(token)
+		self.assertEqual(len(result), 1)
+		self.assertEqual(len(self.ois), 1)
+
 	def test_submission_pricing_comes_from_the_server_package(self):
 		captured = {}
 
@@ -612,16 +1233,32 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		facility = fo._facility_row(FACILITIES[0])
 		with (
 			patch.object(fo.frappe, "get_doc", side_effect=get_doc),
+			patch.object(fo.frappe.db, "has_column", return_value=True),
 			patch.object(fo, "_setting", side_effect=lambda name, default="": default),
 		):
 			fo._create_submission(
-				{"name": "net-a"}, self.PACKAGE, {"name": "W", "email": "w@example.com"}, PERSON, facility
+				{"name": "net-a"},
+				self.PACKAGE,
+				"sam@example.com",
+				PERSON,
+				facility,
+				{"document": "Terms", "hash": "a" * 64, "accepted_at": "2026-10-13 12:00:00"},
+				"keyed-identity-reference",
 			)
 		payload = json.loads(captured["raw_json"])
 		row = payload["pricing"][0]
 		self.assertEqual((row["item_code"], row["annual_kes"], row["price_list"]), ("TOK-1", 1000.0, "PL"))
 		self.assertEqual(payload["token_package"]["price"], 1000.0)
 		self.assertEqual(row["mfl_code"], "10001")
+		self.assertEqual(captured["self_onboarding_tc_document"], "Terms")
+		self.assertEqual(captured["self_onboarding_tc_hash"], "a" * 64)
+		self.assertEqual(captured["self_onboarding_tc_accepted_at"], "2026-10-13 12:00:00")
+		self.assertEqual(captured["onboarding_source"], "token_self_onboarding")
+		self.assertEqual(captured["onboarding_identity_ref"], "keyed-identity-reference")
+		self.assertEqual(captured["cx_account_email"], "sam@example.com")
+		self.assertNotIn("witness", payload)
+		self.assertEqual(payload["tc_doc_name"], "Terms")
+		self.assertEqual(payload["tc_doc_hash"], "a" * 64)
 
 	def test_link_documents_stamps_package_and_records_each_quotation(self):
 		token = self._start()["session_token"]
@@ -723,6 +1360,22 @@ class TestFacilityOnboardingCatalog(UnitTestCase):
 		self.assertEqual(row["vat_label"], "VAT (16%)")
 		self.assertNotIn("price_list", row)
 		self.assertEqual(row["price"], 1000.0)
+
+	def test_catalog_loads_global_packages_without_partner_id_and_keeps_default_network_optional(self):
+		with (
+			patch.object(fo, "_public_network", return_value=None) as public_network,
+			patch.object(fo, "_token_packages", return_value=[]),
+			patch("crm.utils.quotation_tax.calculate_vat_totals"),
+		):
+			data = fo.get_catalog()["data"]
+
+		self.assertEqual(data, {"network": {}, "packages": []})
+		public_network.assert_called_once_with("")
+
+	def test_invalid_nonblank_partner_id_never_falls_back_to_default_network(self):
+		with patch.object(fo, "_public_network", return_value=None):
+			with self.assertRaisesRegex(frappe.ValidationError, "Partner ID"):
+				fo.get_catalog("12345x")
 
 	def test_invalid_vat_configuration_is_reported_generically(self):
 		with (

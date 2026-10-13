@@ -50,7 +50,7 @@
           >
             {{
               __(
-                'Verify your facility ownership, choose the applicable package, review the terms, complete signatures, and receive secure Customer Experience access by email.',
+                'Verify your identity, select your facilities and token package, accept the Terms, and get secure Customer Experience access.',
               )
             }}
           </p>
@@ -119,7 +119,7 @@
         <p class="mt-3 max-w-3xl text-sm leading-6 text-ink-gray-6">
           {{
             __(
-              'Tiberbu HMIS connects identity checks, facility selection, package review, signatures and Customer Experience access. This wizard is for facility owners and administrators.',
+              'Tiberbu HMIS connects identity checks, facility selection, token package orders and Customer Experience access. This wizard is for facility owners and administrators.',
             )
           }}
         </p>
@@ -197,7 +197,7 @@
           <p class="text-sm leading-6 text-ink-gray-6">
             {{
               __(
-                'Enter the ID used to register as the facility owner. We will find the facilities associated with it in the Client Registry and Health Facility Registry.',
+                'Enter the ID used to register as the facility owner. We will check the registered contact first and look up facility details after you verify the code.',
               )
             }}
           </p>
@@ -242,63 +242,93 @@
           @submit.prevent="verifyOtp"
         >
           <div
-            v-if="deliveryStatus === 'unavailable'"
+            v-if="hfrRetryPending"
             class="rounded-xl bg-surface-amber-1 px-4 py-3 text-sm leading-6 text-ink-amber-3"
             role="status"
           >
-            {{
-              __(
-                'We could not deliver a code just now. Try again in a moment, or start over.',
-              )
-            }}
-          </div>
-          <div v-else class="text-center" role="status">
-            <p class="text-sm leading-6 text-ink-gray-6">
+            <p>
               {{
-                __(
-                  'If your details match our records, a 6-digit code was sent to the registered contact.',
-                )
+                hfrRetryExhausted
+                  ? __(
+                      'We could not load facility details. Please contact support for help continuing.',
+                    )
+                  : __(
+                      'Your contact is verified, but facility details are temporarily unavailable. Retry to continue without requesting another code.',
+                    )
               }}
             </p>
-            <p class="mt-2 text-xs text-ink-gray-5">
-              {{ __('The code expires in {0} minutes.', [expiryMinutes]) }}
-            </p>
-          </div>
-          <div class="mt-7">
-            <OtpCodeInput
-              v-model="otp"
+            <button
+              v-if="!hfrRetryExhausted"
+              type="button"
               :disabled="busy"
-              :error="otpError"
-              :label="__('Verification code')"
-            />
+              class="mt-3 font-semibold underline underline-offset-4 disabled:opacity-50"
+              @click="retryHfr"
+            >
+              {{
+                busy ? __('Checking facilities…') : __('Retry facility lookup')
+              }}
+            </button>
           </div>
-          <button
-            :disabled="busy || otp.length !== 6"
-            class="mt-7 min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {{ busy ? __('Verifying…') : __('Verify and continue') }}</button
-          ><button
-            type="button"
-            :disabled="!canResendOtp(delivery, resendIn, busy)"
-            class="mt-4 min-h-11 w-full text-sm font-medium text-[#bc1823] disabled:text-ink-gray-4"
-            @click="resendOtp"
-          >
-            {{
-              deliveryStatus === 'unavailable'
-                ? __('Retry code delivery')
-                : resendIn > 0
-                ? __('Resend code in {0}', [formatCountdown(resendIn)])
-                : __('Resend code')
-            }}
-          </button>
-          <button
-            type="button"
-            :disabled="busy"
-            class="min-h-11 w-full text-sm font-medium text-ink-gray-6 disabled:text-ink-gray-4"
-            @click="editIdentity"
-          >
-            {{ __('Edit ID details') }}
-          </button>
+          <template v-else>
+            <div
+              v-if="deliveryStatus === 'unavailable'"
+              class="rounded-xl bg-surface-amber-1 px-4 py-3 text-sm leading-6 text-ink-amber-3"
+              role="status"
+            >
+              {{
+                __(
+                  'We could not deliver a code just now. Retry delivery to this verified contact session.',
+                )
+              }}
+            </div>
+            <div v-else class="text-center" role="status">
+              <p class="text-sm leading-6 text-ink-gray-6">
+                {{
+                  __(
+                    'If your details match our records, a 6-digit code was sent to the registered contact.',
+                  )
+                }}
+              </p>
+              <p class="mt-2 text-xs text-ink-gray-5">
+                {{ __('The code expires in {0} minutes.', [expiryMinutes]) }}
+              </p>
+            </div>
+            <div class="mt-7">
+              <OtpCodeInput
+                v-model="otp"
+                :disabled="busy"
+                :error="otpError"
+                :label="__('Verification code')"
+              />
+            </div>
+            <button
+              :disabled="busy || otp.length !== 6"
+              class="mt-7 min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {{ busy ? __('Verifying…') : __('Verify and continue') }}</button
+            ><button
+              type="button"
+              :disabled="!canResendOtp(delivery, resendIn, busy)"
+              class="mt-4 min-h-11 w-full text-sm font-medium text-[#bc1823] disabled:text-ink-gray-4"
+              @click="resendOtp"
+            >
+              {{
+                deliveryStatus === 'unavailable'
+                  ? __('Retry code delivery')
+                  : resendIn > 0
+                    ? __('Resend code in {0}', [formatCountdown(resendIn)])
+                    : __('Resend code')
+              }}
+            </button>
+            <button
+              type="button"
+              :disabled="busy"
+              class="min-h-11 w-full text-sm font-medium text-ink-gray-6 disabled:text-ink-gray-4"
+              @click="editIdentity"
+            >
+              {{ __('Edit ID details') }}
+            </button>
+          </template>
         </form>
         <form
           v-else-if="stage === 'facilities'"
@@ -311,7 +341,18 @@
             <p class="text-sm leading-6 text-ink-gray-6">
               {{
                 __(
-                  'Select every facility you want to onboard. Each selected facility receives its own Opt-In Request, order, and Customer Experience access mapping.',
+                  'Select every facility you want to onboard. We will create a separate network application and token order for each facility.',
+                )
+              }}
+            </p>
+            <p
+              v-if="!facilities.length"
+              class="mt-5 rounded-xl bg-surface-gray-1 px-4 py-3 text-sm leading-6 text-ink-gray-6"
+              role="status"
+            >
+              {{
+                __(
+                  'No eligible facilities were returned for this verified identity. Contact support if you think this is an error.',
                 )
               }}
             </p>
@@ -358,36 +399,6 @@
           @submit.prevent="continuePricing"
         >
           <div
-            class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
-          >
-            <label class="block text-sm font-medium"
-              >{{ __('Network Partner ID')
-              }}<span class="ml-2 text-xs font-normal text-ink-gray-5">{{
-                __('optional when a default Network is configured')
-              }}</span
-              ><input
-                v-model.trim="partnerId"
-                inputmode="numeric"
-                maxlength="6"
-                class="mt-2 block w-full rounded-lg border border-outline-gray-2 px-3 py-3 font-mono text-sm"
-                placeholder="000000"
-              /><span class="mt-2 block text-xs text-ink-gray-5">{{
-                __(
-                  'This six-digit ID identifies the Network configured for your onboarding. Leave blank to use the preconfigured Network.',
-                )
-              }}</span></label
-            ><button
-              type="button"
-              :disabled="catalogBusy"
-              class="mt-4 text-sm font-medium text-[#bc1823]"
-              @click="loadCatalog"
-            >
-              {{
-                catalogBusy ? __('Checking…') : __('Load Network and packages')
-              }}
-            </button>
-          </div>
-          <div
             v-if="catalog.network"
             class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
           >
@@ -402,7 +413,7 @@
             <p class="mt-2 text-sm text-ink-gray-6">
               {{
                 __(
-                  'Token packages are global catalog items. Network-specific negotiated prices do not change this token onboarding path.',
+                  'Choose the token package you want for your selected facilities.',
                 )
               }}
             </p>
@@ -442,10 +453,12 @@
             </div>
           </div>
           <button
-            :disabled="!catalog.network || !packageCode"
+            :disabled="!catalog.network || !packageCode || termsBusy"
             class="min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {{ __('Review Opt-In and signatures') }}</button
+            {{
+              termsBusy ? __('Loading Terms…') : __('Confirm your data')
+            }}</button
           ><button
             type="button"
             class="min-h-11 w-full text-sm font-medium text-ink-gray-6"
@@ -465,7 +478,7 @@
             <p class="text-sm leading-6 text-ink-gray-6">
               {{
                 __(
-                  'Review the facilities and token package. This creates one Opt-In Request per facility and starts the existing contract signature process.',
+                  'Confirm your facilities and token package, provide the email for your Customer Experience account, then accept the Terms to submit.',
                 )
               }}
             </p>
@@ -507,6 +520,14 @@
                 </dt>
                 <dd class="font-medium">{{ selectedPackage?.display_name }}</dd>
               </div>
+              <div class="flex justify-between gap-4">
+                <dt class="text-ink-gray-5">
+                  {{ __('Customer Experience email') }}
+                </dt>
+                <dd class="font-medium">
+                  {{ accountEmail || __('Add below') }}
+                </dd>
+              </div>
             </dl>
             <dl
               v-if="totals"
@@ -533,57 +554,85 @@
                   {{ money(totals.gross, totals.currency) }}
                 </dd>
               </div>
-              <p class="pt-1 text-xs text-ink-gray-5">
-                {{
-                  __(
-                    'Final amounts are confirmed by the server when you submit. No payment is taken at this step.',
-                  )
-                }}
-              </p>
             </dl>
           </div>
-          <div
+          <section
+            v-if="termsSnapshot"
             class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
+            aria-labelledby="self-onboarding-terms-title"
+            data-testid="self-onboarding-terms"
           >
-            <h2 class="text-lg font-semibold">{{ __('Required witness') }}</h2>
+            <h2 id="self-onboarding-terms-title" class="text-lg font-semibold">
+              {{ __('Terms and Conditions') }}
+            </h2>
+            <p class="mt-1 text-sm text-ink-gray-5">
+              {{ termsSnapshot.document }}
+            </p>
+            <div
+              class="prose prose-sm mt-4 max-h-96 overflow-y-auto rounded-lg border border-outline-gray-2 p-4"
+              v-html="termsSnapshot.rendered_html"
+            />
+          </section>
+          <section
+            class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
+            aria-labelledby="cx-account-title"
+          >
+            <h2 id="cx-account-title" class="text-lg font-semibold">
+              {{ __('Set up your Customer Experience account') }}
+            </h2>
             <p class="mt-2 text-sm text-ink-gray-6">
               {{
                 __(
-                  'The existing signature workflow requires all applicable network signatories and a facility witness.',
+                  'We will send secure password setup or recovery instructions to this email.',
                 )
               }}
             </p>
-            <div class="mt-5 grid gap-4 sm:grid-cols-2">
+            <label class="mt-5 block text-sm font-medium">
+              {{ __('Account email') }}
               <input
-                v-model.trim="witness.name"
-                required
-                class="rounded-lg border border-outline-gray-2 px-3 py-3 text-sm"
-                :placeholder="__('Witness name')"
-              /><input
-                v-model.trim="witness.email"
+                v-model.trim="accountEmail"
                 required
                 type="email"
-                class="rounded-lg border border-outline-gray-2 px-3 py-3 text-sm"
-                :placeholder="__('Witness email')"
-              /><input
-                v-model.trim="witness.phone"
-                class="rounded-lg border border-outline-gray-2 px-3 py-3 text-sm sm:col-span-2"
-                :placeholder="__('Witness phone (optional)')"
+                autocomplete="email"
+                class="mt-2 block w-full rounded-lg border border-outline-gray-2 px-3 py-3 text-sm"
+                :placeholder="__('you@example.com')"
               />
-            </div>
+            </label>
+            <label class="mt-5 block text-sm font-medium">
+              {{ __('Partner ID') }}
+              <span class="ml-2 text-xs font-normal text-ink-gray-5">{{
+                __('optional')
+              }}</span>
+              <input
+                v-model.trim="partnerId"
+                inputmode="numeric"
+                maxlength="6"
+                class="mt-2 block w-full rounded-lg border border-outline-gray-2 px-3 py-3 font-mono text-sm"
+                placeholder="000000"
+                @change="loadCatalog"
+              />
+              <span class="mt-2 block text-xs text-ink-gray-5">
+                {{
+                  __(
+                    'Enter the six-digit ID once to link all selected facilities to a partner network. If you leave it blank, we will use the default network.',
+                  )
+                }}
+              </span>
+            </label>
             <label class="mt-5 flex gap-3 text-sm text-ink-gray-6"
               ><input
                 v-model="termsAccepted"
                 required
+                :disabled="!termsSnapshot?.content_hash"
                 type="checkbox"
                 class="mt-1 accent-[#bc1823]"
               />{{
                 __(
-                  'I accept the Opt-In terms and authorise the signature process to begin.',
+                  'I have reviewed and accept the displayed Terms and Conditions.',
                 )
               }}</label
             >
-          </div>
+          </section>
           <button
             :disabled="busy || !reviewReady"
             class="min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
@@ -615,7 +664,7 @@
           <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-ink-gray-6">
             {{
               __(
-                'We created a separate Opt-In Request for each facility. Check your email for the contract signature request and Customer Experience login invitation.',
+                'We created a separate network application and token order for each facility. Check this email for instructions to set up your password or recover access to an existing account. Then sign in to your portal to track progress.',
               )
             }}
           </p>
@@ -675,13 +724,17 @@ const selectedFacilities = ref([])
 const partnerId = ref('')
 const catalog = ref({ network: null, packages: [] })
 const packageCode = ref('')
-const witness = ref({ name: '', email: '', phone: '' })
+const accountEmail = ref('')
 const termsAccepted = ref(false)
+const termsSnapshot = ref(null)
+const termsBusy = ref(false)
 const submissions = ref([])
 const delivery = ref({})
 const resendIn = ref(0)
 const otpError = ref('')
 const sessionExpired = ref(false)
+const hfrRetryPending = ref(false)
+const hfrRetryExhausted = ref(false)
 let resendTimer = null
 const deliveryStatus = computed(() => deliveryState(delivery.value))
 const expiryMinutes = computed(() =>
@@ -695,11 +748,13 @@ const chosenFacilities = computed(() =>
 const totals = computed(() =>
   packageTotals(selectedPackage.value, selectedFacilities.value.length),
 )
-const reviewReady = computed(() =>
-  canAdvance('review', {
-    witness: witness.value,
-    termsAccepted: termsAccepted.value,
-  }),
+const reviewReady = computed(
+  () =>
+    Boolean(termsSnapshot.value?.content_hash) &&
+    canAdvance('review', {
+      accountEmail: accountEmail.value,
+      termsAccepted: termsAccepted.value,
+    }),
 )
 const networkName = computed(() => catalog.value.network?.display_name || '')
 const supportEmail = computed(() => catalog.value.network?.contact_email || '')
@@ -729,15 +784,15 @@ const journey = [
     ),
   },
   {
-    title: __('Start signatures'),
+    title: __('Accept Terms'),
     description: __(
-      'Create the Opt-In Requests and send the required signature invitations.',
+      'Confirm your facilities, accept the Terms, and submit your token package order.',
     ),
   },
   {
     title: __('Track progress'),
     description: __(
-      'Use Customer Experience to follow implementation through GoLive.',
+      'Track your progress in the portal through launch.',
     ),
   },
 ]
@@ -799,6 +854,8 @@ onBeforeUnmount(stopResendTimer)
 async function startIdentity() {
   errorMessage.value = ''
   sessionExpired.value = false
+  termsSnapshot.value = null
+  termsAccepted.value = false
   busy.value = true
   try {
     const data = await request('start_identity', {
@@ -809,6 +866,8 @@ async function startIdentity() {
     identityPreview.value = data.identity || {}
     otp.value = ''
     otpError.value = ''
+    hfrRetryPending.value = false
+    hfrRetryExhausted.value = false
     applyDelivery(data.delivery)
     stage.value = 'otp'
   } catch (error) {
@@ -846,14 +905,61 @@ async function verifyOtp() {
       session_token: sessionToken.value,
       otp: otp.value,
     })
-    identityPreview.value = data.identity || identityPreview.value
-    facilities.value = data.facilities || []
-    stage.value = 'facilities'
-    stopResendTimer()
+    if (data.state === 'hfr_pending') {
+      hfrRetryPending.value = true
+      hfrRetryExhausted.value = !data.retryable
+    } else {
+      acceptFacilities(data)
+    }
   } catch (error) {
     if (shouldClearOtpAfterVerificationError(error?.exc_type)) otp.value = ''
-    otpError.value =
-      error?.messages?.[0] || __('The code is incorrect or expired.')
+    // The server may have consumed the code and started HFR before a proxy or
+    // connection dropped the response. Probe only the verified-session retry
+    // endpoint; an unverified session receives the same generic denial.
+    try {
+      const recovered = await request('retry_hfr', {
+        session_token: sessionToken.value,
+      })
+      if (recovered.state === 'hfr_pending') {
+        hfrRetryPending.value = true
+        hfrRetryExhausted.value = !recovered.retryable
+      } else {
+        acceptFacilities(recovered)
+      }
+      return
+    } catch {
+      otpError.value =
+        error?.messages?.[0] || __('The code is incorrect or expired.')
+    }
+  } finally {
+    busy.value = false
+  }
+}
+function acceptFacilities(data) {
+  identityPreview.value = data.identity || identityPreview.value
+  facilities.value = data.facilities || []
+  hfrRetryPending.value = false
+  hfrRetryExhausted.value = false
+  stage.value = 'facilities'
+  stopResendTimer()
+}
+async function retryHfr() {
+  errorMessage.value = ''
+  busy.value = true
+  try {
+    const data = await request('retry_hfr', {
+      session_token: sessionToken.value,
+    })
+    if (data.state === 'hfr_pending') {
+      hfrRetryPending.value = true
+      hfrRetryExhausted.value = !data.retryable
+    } else {
+      acceptFacilities(data)
+    }
+  } catch (error) {
+    sessionExpired.value = isSessionError(error)
+    errorMessage.value =
+      error?.messages?.[0] || __('We could not retry the facility lookup.')
   } finally {
     busy.value = false
   }
@@ -866,6 +972,10 @@ function editIdentity() {
   delivery.value = {}
   resendIn.value = 0
   sessionExpired.value = false
+  hfrRetryPending.value = false
+  hfrRetryExhausted.value = false
+  termsSnapshot.value = null
+  termsAccepted.value = false
   errorMessage.value = ''
   stage.value = 'identity'
 }
@@ -874,16 +984,24 @@ function goBack() {
   if (previous) stage.value = previous
 }
 function continueFacilities() {
-  if (selectedFacilities.value.length) stage.value = 'pricing'
+  if (selectedFacilities.value.length) {
+    stage.value = 'pricing'
+    loadCatalog()
+  }
 }
 async function loadCatalog() {
   errorMessage.value = ''
   catalogBusy.value = true
   try {
+    const previousPackage = packageCode.value
     catalog.value = await request('get_catalog', {
       partner_id: partnerId.value,
     })
-    packageCode.value = catalog.value.packages?.[0]?.item_code || ''
+    packageCode.value = catalog.value.packages?.some(
+      (item) => item.item_code === previousPackage,
+    )
+      ? previousPackage
+      : catalog.value.packages?.[0]?.item_code || ''
   } catch (error) {
     catalog.value = { network: null, packages: [] }
     errorMessage.value =
@@ -892,28 +1010,107 @@ async function loadCatalog() {
     catalogBusy.value = false
   }
 }
-function continuePricing() {
-  if (catalog.value.network && packageCode.value) stage.value = 'review'
+async function loadSelfOnboardingTerms() {
+  errorMessage.value = ''
+  termsAccepted.value = false
+  termsSnapshot.value = null
+  termsBusy.value = true
+  try {
+    termsSnapshot.value = await request('get_self_onboarding_terms', {
+      session_token: sessionToken.value,
+    })
+    return true
+  } catch (error) {
+    errorMessage.value =
+      error?.messages?.[0] ||
+      __('We could not load the current Terms and Conditions.')
+    return false
+  } finally {
+    termsBusy.value = false
+  }
+}
+async function continuePricing() {
+  if (!catalog.value.network || !packageCode.value || termsBusy.value) return
+  if (await loadSelfOnboardingTerms()) stage.value = 'review'
+}
+function conflictMessage(result) {
+  if (result?.outcome === 'existing_identity') {
+    return __(
+      'An onboarding request already exists for this identity. Contact support if you need help.',
+    )
+  }
+  if (result?.outcome === 'facility_review') {
+    const allowed = new Set(result.allowed_facility_ids || [])
+    const names = facilities.value
+      .filter(
+        (facility) =>
+          selectedFacilities.value.includes(facility.facility_id) &&
+          !allowed.has(facility.facility_id),
+      )
+      .map((facility) => facility.facility_name || facility.mfl_code)
+    const selectedNames = names.length ? `: ${names.join(', ')}` : ''
+    return `${__('One or more selected facilities already have an onboarding request for this Network')}${selectedNames}. ${__('Remove them from your selection and try again.')}`
+  }
+  return ''
 }
 async function submit() {
+  if (!reviewReady.value) return
   errorMessage.value = ''
   busy.value = true
   try {
+    const conflict = await request('check_onboarding_conflicts', {
+      session_token: sessionToken.value,
+      partner_id: partnerId.value,
+      selected_facility_ids: JSON.stringify(selectedFacilities.value),
+    })
+    const preflightMessage = conflictMessage(conflict)
+    if (preflightMessage) {
+      errorMessage.value = preflightMessage
+      return
+    }
+    if (conflict?.outcome !== 'new') {
+      errorMessage.value = __(
+        'We could not verify this onboarding selection. Please try again.',
+      )
+      return
+    }
     const data = await request('submit_onboarding', {
       session_token: sessionToken.value,
       partner_id: partnerId.value,
       selected_facility_ids: JSON.stringify(selectedFacilities.value),
       package_item_code: packageCode.value,
-      witness: JSON.stringify(witness.value),
+      account_email: accountEmail.value,
       terms_accepted: termsAccepted.value ? 1 : 0,
+      accepted_terms_hash: termsSnapshot.value.content_hash,
     })
+    const submitConflict = conflictMessage(data)
+    if (submitConflict) {
+      errorMessage.value = submitConflict
+      return
+    }
+    if (data?.outcome && data.outcome !== 'new') {
+      errorMessage.value = __(
+        'We could not verify this onboarding selection. Please try again.',
+      )
+      return
+    }
     submissions.value = data.submissions || []
     stage.value = 'success'
   } catch (error) {
     sessionExpired.value = isSessionError(error)
-    errorMessage.value =
+    const message =
       error?.messages?.[0] ||
       __('We could not complete onboarding. Please try again.')
+    if (/terms/i.test(message)) {
+      const refreshed = await loadSelfOnboardingTerms()
+      errorMessage.value = refreshed
+        ? __(
+            'The Terms have changed. Review and accept the updated Terms before submitting.',
+          )
+        : message
+    } else {
+      errorMessage.value = message
+    }
   } finally {
     busy.value = false
   }
@@ -922,6 +1119,8 @@ function reset() {
   stage.value = 'welcome'
   errorMessage.value = ''
   sessionExpired.value = false
+  hfrRetryPending.value = false
+  hfrRetryExhausted.value = false
   sessionToken.value = ''
   otp.value = ''
   otpError.value = ''
@@ -931,5 +1130,7 @@ function reset() {
   selectedFacilities.value = []
   catalog.value = { network: null, packages: [] }
   packageCode.value = ''
+  termsSnapshot.value = null
+  termsAccepted.value = false
 }
 </script>

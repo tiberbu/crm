@@ -132,10 +132,27 @@ class TestTokenPurchaseChain(IntegrationTestCase):
 		rows = cx.get_purchase_context()["data"]["ois"]
 		self.assertEqual([row["ois"] for row in rows], [self.ois])
 		self.assertEqual([o["name"] for o in rows[0]["orders"]], [order])
+		self.assertTrue(rows[0]["orders"][0]["can_create_invoice"])
 		invoice = cx.start_token_payment(order)["data"]["invoice"]
 		rows = cx.get_purchase_context()["data"]["ois"]
 		self.assertEqual(rows[0]["orders"], [])
 		self.assertEqual([i["name"] for i in rows[0]["invoices"]], [invoice])
+
+	def test_partially_billed_orders_only_offer_invoices_when_the_status_allows_it(self):
+		order = self._order()["sales_order"]
+		frappe.db.set_value("Sales Order", order, "per_billed", 35)
+		for status, can_create_invoice in (
+			("To Deliver and Bill", True),
+			("On Hold", False),
+			("Closed", False),
+		):
+			frappe.db.set_value("Sales Order", order, "status", status)
+			rows = cx.get_purchase_context()["data"]["ois"]
+			projected_order = rows[0]["orders"][0]
+			self.assertEqual(projected_order["can_create_invoice"], can_create_invoice)
+			if not can_create_invoice:
+				with self.assertRaises(frappe.ValidationError):
+					cx.start_token_payment(order)
 
 	def test_another_customers_selectors_are_denied(self):
 		order = self._order()["sales_order"]

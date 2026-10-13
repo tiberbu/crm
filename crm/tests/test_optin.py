@@ -68,6 +68,8 @@ from crm.api.optin import (
 	enqueue_submission_processing,
 	get_pricing,
 	list_submissions,
+	requires_contract_signature,
+	should_send_legacy_payment_link,
 	teardown_submission,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
@@ -1111,6 +1113,24 @@ class TestSignatureAuditContext(UnitTestCase):
 
 
 class TestOptInContractAutomation(UnitTestCase):
+	def test_signature_requirement_defaults_to_legacy_for_existing_sources(self):
+		self.assertTrue(requires_contract_signature(SimpleNamespace()))
+		self.assertTrue(requires_contract_signature(SimpleNamespace(onboarding_source="legacy")))
+		self.assertTrue(requires_contract_signature(SimpleNamespace(onboarding_source="unknown")))
+		self.assertTrue(should_send_legacy_payment_link(SimpleNamespace()))
+		self.assertFalse(should_send_legacy_payment_link(SimpleNamespace(onboarding_source="token_self_onboarding")))
+
+	def test_self_onboarding_source_skips_contract_automation(self):
+		submission = SimpleNamespace(onboarding_source="token_self_onboarding")
+		self.assertFalse(requires_contract_signature(submission))
+		with (
+			patch("crm.api.optin._should_auto_generate_contract") as should_generate,
+			patch("crm.api.optin._generate_contract_for_submission") as generate_contract,
+		):
+			self.assertEqual(_auto_generate_contract_if_ready(submission), "")
+		should_generate.assert_not_called()
+		generate_contract.assert_not_called()
+
 	def test_auto_contract_setting_defaults_on_for_legacy_settings_rows(self):
 		with patch(
 			"crm.api.optin.frappe.get_single",
