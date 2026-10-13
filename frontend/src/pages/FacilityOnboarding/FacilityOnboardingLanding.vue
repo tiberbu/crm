@@ -341,7 +341,7 @@
             <p class="text-sm leading-6 text-ink-gray-6">
               {{
                 __(
-                  'Select every facility you want to onboard. Each selected facility receives its own Opt-In Request, order, and Customer Experience access mapping.',
+                  'Select every facility you want to onboard. We will create a separate network application and token order for each facility.',
                 )
               }}
             </p>
@@ -413,7 +413,7 @@
             <p class="mt-2 text-sm text-ink-gray-6">
               {{
                 __(
-                  'Token packages are global catalog items. Network-specific negotiated prices do not change this token onboarding path.',
+                  'Choose the token package you want for your selected facilities.',
                 )
               }}
             </p>
@@ -599,9 +599,9 @@
               />
             </label>
             <label class="mt-5 block text-sm font-medium">
-              {{ __('Network Partner ID') }}
+              {{ __('Partner ID') }}
               <span class="ml-2 text-xs font-normal text-ink-gray-5">{{
-                __('optional, like a coupon code')
+                __('optional')
               }}</span>
               <input
                 v-model.trim="partnerId"
@@ -614,7 +614,7 @@
               <span class="mt-2 block text-xs text-ink-gray-5">
                 {{
                   __(
-                    'Enter it once for all selected facilities, or leave blank to use the configured Network.',
+                    'Enter the six-digit ID once to link all selected facilities to a partner network. If you leave it blank, we will use the default network.',
                   )
                 }}
               </span>
@@ -664,7 +664,7 @@
           <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-ink-gray-6">
             {{
               __(
-                'We created an Opt-In Request and token order for each facility. Check your email for password setup instructions, then sign in to Customer Experience to track your journey.',
+                'We created a separate network application and token order for each facility. Check this email for instructions to set up your password or recover access to an existing account. Then sign in to your portal to track progress.',
               )
             }}
           </p>
@@ -792,7 +792,7 @@ const journey = [
   {
     title: __('Track progress'),
     description: __(
-      'Use Customer Experience to follow implementation through GoLive.',
+      'Track your progress in the portal through launch.',
     ),
   },
 ]

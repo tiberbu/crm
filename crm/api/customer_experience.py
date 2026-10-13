@@ -120,7 +120,7 @@ def _record_link(doctype, name):
 def _order_rows(submission):
 	if not frappe.db.has_column("Sales Order", "crm_optin_submission"):
 		return []
-	return frappe.get_list(
+	orders = frappe.get_list(
 		"Sales Order",
 		filters={"crm_optin_submission": submission.name, "docstatus": 1, "per_billed": ["<", 100]},
 		fields=[
@@ -137,6 +137,14 @@ def _order_rows(submission):
 		limit_page_length=200,
 		ignore_permissions=True,
 	)
+	for order in orders:
+		order["can_create_invoice"] = _invoice_status_allows(order.get("status"))
+	return orders
+
+
+def _invoice_status_allows(status):
+	"""Keep the portal's invoice action aligned with the server-side status guard."""
+	return _text(status).casefold() not in {"closed", "on hold", "cancelled"}
 
 
 @frappe.whitelist(methods=["GET"])
@@ -405,7 +413,7 @@ def _start_or_resume_payment(order):
 			invoice.flags.ignore_permissions = True  # SYSTEM-INTERNAL
 			invoice.submit()
 	else:
-		if order.docstatus != 1 or order.status in ("Closed", "On Hold", "Cancelled"):
+		if order.docstatus != 1 or not _invoice_status_allows(order.status):
 			frappe.throw(_("Only an open Sales Order can start payment."), frappe.ValidationError)
 		invoice = _make_invoice(order, key)
 		_record_link("Sales Invoice", invoice.name)

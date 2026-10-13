@@ -22,9 +22,12 @@ const facilityCount = computed(() =>
     0,
   ),
 )
-const openOrderCount = computed(() =>
+const invoiceReadyOrderCount = computed(() =>
   (context.value.ois || []).reduce(
-    (total, submission) => total + (submission.open_orders?.length || 0),
+    (total, submission) =>
+      total +
+      (submission.open_orders || []).filter((order) => order.can_create_invoice)
+        .length,
     0,
   ),
 )
@@ -52,6 +55,19 @@ function stepLabel(step) {
   if (step.status === 'complete') return 'Complete'
   if (step.status === 'current') return 'In progress'
   return 'Up next'
+}
+
+function customerStepLabel(step) {
+  return step.label === 'GoLive' ? 'Service activation' : step.label
+}
+
+function invoiceUnavailableMessage(order) {
+  const status = String(order.status || '').toLowerCase()
+  if (status === 'on hold')
+    return 'This order is on hold. Contact support if you need help.'
+  if (status === 'closed' || status === 'cancelled')
+    return 'This order is closed and cannot be invoiced.'
+  return 'An invoice is not available for this order.'
 }
 
 function contractSummary(progress) {
@@ -99,11 +115,11 @@ async function createInvoice(orderName) {
       tone: 'success',
       text: 'Your invoice is ready. It will appear above so you can make payment when due.',
     }
-  } catch (error) {
+  } catch {
     notice.value = {
       tone: 'error',
       text:
-        error?.messages?.[0] || 'We could not start payment for this order.',
+        'We could not create an invoice for this order. Please try again or contact support.',
     }
   } finally {
     busyId.value = ''
@@ -193,7 +209,7 @@ async function buyPackage(item) {
         package_item_code: item.item_code,
       }),
     )
-    purchaseMessage.value = `Order ${payload.sales_order || ''} is ready${payload.idempotent ? ' (resumed)' : ''}. Review it under Open orders, then create its invoice when you're ready.`
+    purchaseMessage.value = `Order ${payload.sales_order || ''} is ready${payload.idempotent ? ' (resumed)' : ''}. Review it under Token orders, then create its invoice when you're ready.`
     await refreshContext()
   } catch (error) {
     purchaseMessage.value =
@@ -297,15 +313,15 @@ onMounted(async () => {
               <p
                 class="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-gray-5"
               >
-                Open orders
+                Orders ready for invoicing
               </p>
               <p
                 class="mt-1 text-2xl font-bold leading-none tracking-tight text-[#bc1823]"
               >
-                {{ openOrderCount }}
+                {{ invoiceReadyOrderCount }}
               </p>
               <p class="mt-2 text-[11px] text-ink-gray-5">
-                Ready for invoicing
+                Ready to invoice
               </p>
             </div>
             <div
@@ -431,7 +447,7 @@ onMounted(async () => {
                 </span>
                 <span>
                   <span class="block font-medium text-ink-gray-8">{{
-                    step.label
+                    customerStepLabel(step)
                   }}</span>
                   <span class="block text-ink-gray-5">{{
                     stepLabel(step)
@@ -456,7 +472,7 @@ onMounted(async () => {
               >
                 {{
                   submission.progress?.steps?.at(-1)?.status === 'complete'
-                    ? 'GoLive ready'
+                    ? 'Ready for service activation'
                     : 'In progress'
                 }}
               </span>
@@ -469,12 +485,11 @@ onMounted(async () => {
                 </span>
                 Payment status:
                 {{ submission.progress?.payment_status || 'Not started' }}.
-                Token balance appears after payment and Network allocation.
               </template>
               <template v-else>
                 {{ contractSummary(submission.progress) }}.
               </template>
-              Your Network Contact’s GoLive status is shown below.
+              Your network’s service status is shown below.
             </p>
             <div class="mt-3 space-y-2">
               <div
@@ -501,8 +516,8 @@ onMounted(async () => {
                 >
                   {{
                     facility.network_contact?.go_live
-                      ? 'GoLive'
-                      : 'Not yet GoLive'
+                      ? 'Live'
+                      : 'Not yet live'
                   }}
                 </span>
               </div>
@@ -558,7 +573,7 @@ onMounted(async () => {
               <p
                 class="text-xs font-semibold uppercase tracking-[0.12em] text-ink-gray-5"
               >
-                Open orders
+                Token orders
               </p>
               <div
                 v-for="order in submission.open_orders"
@@ -586,6 +601,7 @@ onMounted(async () => {
                     ></span
                   >
                   <button
+                    v-if="order.can_create_invoice"
                     type="button"
                     class="min-h-10 rounded-md bg-[#bc1823] px-4 py-2 font-semibold text-white disabled:opacity-50"
                     :disabled="busyId === order.name"
@@ -597,8 +613,11 @@ onMounted(async () => {
                         : 'Create invoice'
                     }}
                   </button>
+                  <p v-else class="text-ink-gray-5">
+                    {{ invoiceUnavailableMessage(order) }}
+                  </p>
                 </div>
-                <p class="mt-2 text-ink-gray-5">
+                <p v-if="order.can_create_invoice" class="mt-2 text-ink-gray-5">
                   Create an invoice for this order. When it is due, return here
                   and make payment.
                 </p>

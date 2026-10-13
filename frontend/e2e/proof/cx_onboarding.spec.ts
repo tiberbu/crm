@@ -451,6 +451,7 @@ function selfOnboardedPortalState() {
           grand_total: 34800,
           currency: 'KES',
           status: 'To Deliver and Bill',
+          can_create_invoice: true,
           crm_token_facility_mfl: '10001',
           crm_token_package_item: 'TOK-CORE',
         },
@@ -463,6 +464,7 @@ function selfOnboardedPortalState() {
         grand_total: 34800,
         currency: 'KES',
         status: 'To Deliver and Bill',
+        can_create_invoice: true,
         crm_token_facility_mfl: '10001',
         crm_token_package_item: 'TOK-CORE',
       },
@@ -510,6 +512,7 @@ for (const vp of VIEWPORTS) {
               grand_total: 34800,
               currency: 'KES',
               status: 'To Deliver and Bill',
+              can_create_invoice: true,
               crm_token_facility_mfl: body.facility_mfl,
               crm_token_package_item: body.package_item_code,
             })
@@ -606,7 +609,7 @@ for (const vp of VIEWPORTS) {
       expect(page.url()).not.toContain('reference=')
     })
 
-    test('self-onboarded progress shows package, order, payment and GoLive without signature steps', async ({
+    test('self-onboarded progress shows package, order, payment and service activation without signature steps', async ({
       page,
     }) => {
       await page.route(
@@ -631,7 +634,7 @@ for (const vp of VIEWPORTS) {
         'Token package selected',
         'Quote and order ready',
         'Payment',
-        'GoLive',
+        'Service activation',
       ])
         await expect(page.getByText(milestone, { exact: true })).toBeVisible()
       await expect(
@@ -649,6 +652,45 @@ for (const vp of VIEWPORTS) {
         /signature|contract/i,
       )
       await shot(page, `${vp.name}-portal-self-onboarding-progress`)
+    })
+
+    test('held and closed orders do not offer invoice creation', async ({
+      page,
+    }) => {
+      const submission = selfOnboardedPortalState()
+      submission.open_orders[0].status = 'On Hold'
+      submission.open_orders[0].can_create_invoice = false
+      submission.open_orders.push({
+        ...submission.open_orders[0],
+        name: 'SAL-ORD-2026-00032',
+        status: 'Closed',
+      })
+      await page.route(
+        '**/api/method/crm.api.website_redirect.get_portal_context',
+        async (route) =>
+          ok(route, {
+            success: true,
+            data: {
+              route: '/cx-portal',
+              user: 'sam@example.com',
+              ois: [submission],
+              token_packages: PACKAGES,
+            },
+          }),
+      )
+      await page.goto(`${origin}/cx-portal`)
+      await expect(
+        page.getByText('This order is on hold. Contact support if you need help.'),
+      ).toBeVisible()
+      await expect(
+        page.getByText('This order is closed and cannot be invoiced.'),
+      ).toBeVisible()
+      await expect(
+        page.getByRole('button', { name: 'Create invoice' }),
+      ).toHaveCount(0)
+      await expect(
+        page.locator('[aria-label="Account overview"]'),
+      ).toContainText(/Orders ready for invoicing\s*0/)
     })
 
     test('a reference for someone else’s OIS is never verified and an unconfigured gateway offers bank transfer', async ({

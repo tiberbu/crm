@@ -276,11 +276,7 @@ def _self_onboarding_progress(submission, contacts, opted_in, all_live):
 		"orders": orders,
 		"invoices": invoices,
 		"payment_status": "Paid" if payment_complete else ("Open" if invoices else "Not started"),
-		"token_credit_status": (
-			"Payment received; token allocation is confirmed by your Network."
-			if payment_complete
-			else "Token balance appears after payment and Network allocation."
-		),
+		"token_credit_status": "Token allocation status is not available in the portal yet.",
 		"package": {key: package.get(key) for key in ("item_code", "display_name", "token_quantity", "currency") if package.get(key)},
 	}
 
