@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import UnitTestCase
@@ -14,6 +14,61 @@ from crm.api.website_redirect import (
 
 
 class TestCustomerExperienceProgress(UnitTestCase):
+	def test_self_onboarding_progress_omits_signature_and_tracks_package_order_payment(self):
+		submission = frappe._dict(
+			{
+				"name": "OIS-SELF-0001",
+				"status": "Processed",
+				"onboarding_source": "token_self_onboarding",
+				"network_slug": "network-a",
+				"contract": "CONT-SHOULD-NOT-BE-READ",
+				"quote_names_json": "[]",
+				"raw_json": '{"facilities":[{"mfl_code":"1001","facility_name":"First Clinic"}],"token_package":{"item_code":"TOK-1","display_name":"Starter","token_quantity":100}}',
+			}
+		)
+		with (
+			patch("crm.api.website_redirect.frappe.db.has_column", return_value=False),
+			patch("crm.api.website_redirect.frappe.get_all", return_value=[]),
+			patch("crm.api.website_redirect.frappe.db.exists") as exists,
+			patch("crm.api.customer_experience._order_rows", return_value=[]),
+			patch("crm.api.website_redirect._portal_invoices", return_value=[]),
+		):
+			result = _portal_progress(submission)
+
+		keys = [step["key"] for step in result["steps"]]
+		self.assertEqual(keys, ["identity", "facility", "optin", "package", "order", "payment", "golive"])
+		self.assertNotIn("signatures", keys)
+		self.assertNotIn("contract", result)
+		self.assertNotEqual(result["current"], "sign_contract")
+		self.assertEqual(result["steps"][3]["status"], "complete")
+		self.assertIn("allocation", result["token_credit_status"].lower())
+		exists.assert_not_called()
+
+	def test_self_onboarding_order_next_action_creates_invoice_before_payment(self):
+		submission = frappe._dict(
+			{
+				"name": "OIS-SELF-0002",
+				"status": "Processed",
+				"onboarding_source": "token_self_onboarding",
+				"quote_names_json": "[]",
+				"raw_json": '{"facilities":[{"mfl_code":"1001","facility_name":"First Clinic"}],"token_package":{"item_code":"TOK-1","display_name":"Starter","token_quantity":100}}',
+			}
+		)
+		with (
+			patch("crm.api.website_redirect.frappe.db.has_column", return_value=False),
+			patch("crm.api.website_redirect.frappe.get_all", return_value=[]),
+			patch("crm.api.website_redirect.frappe.db.exists", return_value=False),
+			patch(
+				"crm.api.customer_experience._order_rows",
+				return_value=[{"name": "SAL-ORD-0001"}],
+			),
+			patch("crm.api.website_redirect._portal_invoices", return_value=[]),
+		):
+			result = _portal_progress(submission)
+
+		self.assertEqual(result["next_action"]["key"], "review_order")
+		self.assertEqual(result["next_action"]["label"], "Create an invoice for your token order")
+
 	def test_progress_projects_network_contact_golive(self):
 		submission = frappe._dict(
 			{
@@ -64,6 +119,95 @@ class TestCustomerExperienceProgress(UnitTestCase):
 
 
 class TestCustomerExperienceAccess(UnitTestCase):
+	def test_self_onboarding_never_falls_back_to_facility_contact_email(self):
+		submission = frappe._dict(
+			{
+				"name": "OIS-SELF-0001",
+				"onboarding_source": "token_self_onboarding",
+				"facility_signatory_email": "facility@example.com",
+				"submitter_email": "submitter@example.com",
+			}
+		)
+		with patch("crm.api.website_redirect._set_submission_portal_field") as set_field:
+			result = ensure_website_user_for_ois(submission)
+
+		self.assertEqual(result["status"], "blocked")
+		self.assertIn(
+			("portal_invitation_status", "Blocked"),
+			[(call.args[1], call.args[2]) for call in set_field.call_args_list],
+		)
+
+	def test_self_onboarding_linked_account_requires_exact_account_email(self):
+		submission = frappe._dict(
+			{
+				"name": "OIS-SELF-0002",
+				"onboarding_source": "token_self_onboarding",
+				"portal_user": "linked@example.com",
+				"cx_account_email": "different@example.com",
+			}
+		)
+		with (
+			patch("crm.api.website_redirect.frappe.db.exists", return_value=True),
+			patch("crm.api.website_redirect.frappe.db.get_value", return_value="linked@example.com"),
+			patch("crm.api.website_redirect.frappe.get_doc") as get_doc,
+			patch("crm.api.website_redirect.frappe.get_all") as get_all,
+			patch("crm.api.website_redirect._set_submission_portal_field") as set_field,
+		):
+			result = ensure_website_user_for_ois(submission)
+
+		self.assertEqual(result["status"], "blocked")
+		get_doc.assert_not_called()
+		get_all.assert_not_called()
+		self.assertIn(
+			("portal_invitation_status", "Blocked"),
+			[(call.args[1], call.args[2]) for call in set_field.call_args_list],
+		)
+
+	def test_self_onboarding_existing_link_uses_native_password_reset_once(self):
+		submission = frappe._dict(
+			{
+				"name": "OIS-SELF-0003",
+				"onboarding_source": "token_self_onboarding",
+				"portal_user": "sam@example.com",
+				"cx_account_email": "sam@example.com",
+			}
+		)
+		user = frappe._dict(
+			{
+				"name": "sam@example.com",
+				"email": "sam@example.com",
+				"user_type": "Website User",
+				"enabled": 1,
+				"db_set": Mock(),
+				"_reset_password": Mock(),
+			}
+		)
+		permission = frappe._dict()
+		permission.insert = lambda **kwargs: None
+		def get_value(doctype, name=None, fieldname=None, **kwargs):
+			if name == "OIS-SELF-0003":
+				return None
+			return "sam@example.com"
+
+		with (
+			patch("crm.api.website_redirect.frappe.db.exists", return_value=True),
+			patch("crm.api.website_redirect.frappe.db.get_value", side_effect=get_value),
+			patch("crm.api.website_redirect.frappe.get_doc", return_value=user),
+			patch("crm.api.website_redirect.frappe.get_all", return_value=[]),
+			patch("crm.api.website_redirect.frappe.new_doc", return_value=permission),
+			patch("crm.api.website_redirect.frappe.utils.now_datetime", return_value="2026-10-13 12:00:00"),
+			patch("crm.api.website_redirect._set_submission_portal_field") as set_field,
+		):
+			result = ensure_website_user_for_ois(submission)
+
+		self.assertEqual(result, {"status": "reset_sent", "user": "sam@example.com"})
+		user.db_set.assert_called_once_with("redirect_url", "/cx-portal", update_modified=False)
+		user._reset_password.assert_called_once_with(send_email=True)
+		self.assertIn(
+			("portal_invitation_status", "Sent"),
+			[(call.args[1], call.args[2]) for call in set_field.call_args_list],
+		)
+
 	def test_branded_login_uses_selected_team_route(self):
 		with (
 			patch(

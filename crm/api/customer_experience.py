@@ -174,10 +174,81 @@ def create_token_order(ois_number: Any, facility_mfl: Any, package_item_code: An
 		frappe.throw(_("That token package is not available."), frappe.ValidationError)
 	key = _purchase_key(submission, facility_mfl, package)
 	with filelock("crm_cx_order_%s" % key, timeout=60), _system_user():
-		return _create_or_resume_order(submission, facility_mfl, package, key)
+		source_quote = _initial_onboarding_quote(submission, facility_mfl, package)
+		return _create_or_resume_order(submission, facility_mfl, package, key, source_quote=source_quote)
 
 
-def _create_or_resume_order(submission, facility_mfl, package, key):
+def create_initial_token_order(submission_name, facility_mfl, package_item_code):
+	"""Create the initial self-onboarding Sales Order without requiring a portal login."""
+	# This coordinator runs in the Guest request that completed the public wizard.
+	# Catalog, OIS, Customer, and source Quotation reads are internal operations.
+	with _system_user():
+		submission = frappe.get_doc("CRM Opt-In Submission", submission_name)
+		if _text(getattr(submission, "onboarding_source", "")) != "token_self_onboarding":
+			frappe.throw(
+				_("Initial token orders are available only to self-onboarding submissions."),
+				frappe.PermissionError,
+			)
+		facility_mfl = _text(facility_mfl)
+		if not any(_text(row.get("mfl_code")) == facility_mfl for row in _snapshot_facilities(submission)):
+			frappe.throw(_("That facility is not part of this Opt-In Request."), frappe.PermissionError)
+		package = _package(package_item_code)
+		if not package:
+			frappe.throw(_("That token package is not available."), frappe.ValidationError)
+		key = _purchase_key(submission, facility_mfl, package)
+		with filelock("crm_cx_order_%s" % key, timeout=60):
+			source_quote = _initial_onboarding_quote(submission, facility_mfl, package)
+			if not source_quote:
+				frappe.throw(
+					_("The onboarding quote could not be matched to this facility and token package."),
+					frappe.ValidationError,
+				)
+			return _create_or_resume_order(
+				submission, facility_mfl, package, key, source_quote=source_quote
+			)
+
+
+def _initial_onboarding_quote(submission, facility_mfl, package):
+	"""Return the exact quote already raised by the self-onboarding OIS, if it matches."""
+	if _text(getattr(submission, "onboarding_source", "")) != "token_self_onboarding":
+		return None
+	try:
+		quote_names = json.loads(getattr(submission, "quote_names_json", "[]") or "[]")
+	except (TypeError, ValueError):
+		quote_names = []
+	if not isinstance(quote_names, list):
+		return None
+	customer = _customer(submission)
+	for quote_name in quote_names:
+		if not isinstance(quote_name, str) or not frappe.db.exists("Quotation", quote_name):
+			continue
+		quotation = frappe.get_doc("Quotation", quote_name)
+		if quotation.docstatus == 2 or _text(getattr(quotation, "crm_deal", "")) != _text(submission.deal):
+			continue
+		if _text(getattr(quotation, "party_name", "")) != customer:
+			continue
+		if _text(getattr(quotation, "currency", "")) != _text(package.get("currency")):
+			continue
+		if frappe.db.has_column("Quotation", "crm_token_facility_mfl"):
+			stamped_facility = _text(getattr(quotation, "crm_token_facility_mfl", ""))
+			if stamped_facility and stamped_facility != facility_mfl:
+				continue
+		if frappe.db.has_column("Quotation", "crm_token_package_item"):
+			stamped_package = _text(getattr(quotation, "crm_token_package_item", ""))
+			if stamped_package and stamped_package != package["item_code"]:
+				continue
+		items = [row for row in quotation.items or [] if _text(row.item_code) == package["item_code"]]
+		if len(items) != 1 or len(quotation.items or []) != 1:
+			continue
+		if int(frappe.utils.flt(items[0].qty) or 0) != 1:
+			continue
+		if abs(float(frappe.utils.flt(items[0].rate)) - float(package["price"])) > 0.01:
+			continue
+		return quotation.name
+	return None
+
+
+def _create_or_resume_order(submission, facility_mfl, package, key, source_quote=None):
 	order_name = _existing_document("Sales Order", key)
 	quotation_name = _existing_document("Quotation", key)
 	if order_name:
@@ -211,6 +282,17 @@ def _create_or_resume_order(submission, facility_mfl, package, key):
 	}
 	if quotation_name:
 		quotation = frappe.get_doc("Quotation", quotation_name)
+	elif source_quote:
+		quotation = frappe.get_doc("Quotation", source_quote)
+		for fieldname, value in (
+			("crm_token_purchase_key", key),
+			("crm_token_facility_mfl", facility_mfl),
+			("crm_token_package_item", package["item_code"]),
+		):
+			if frappe.db.has_column("Quotation", fieldname):
+				setattr(quotation, fieldname, value)
+		quotation.save(ignore_permissions=True)  # SYSTEM-INTERNAL: verified onboarding source quote
+		_record_link("Quotation", quotation.name)
 	else:
 		quotation = frappe.get_doc(
 			{

@@ -17,7 +17,6 @@ from frappe.tests import IntegrationTestCase
 from crm.api import checkout
 from crm.api import customer_experience as cx
 from crm.api import facility_onboarding as fo
-from crm.api.website_redirect import ensure_website_user_for_ois
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref
 from crm.tests.test_customer_experience import OTHER, _submission, _website_user
 
@@ -55,12 +54,62 @@ class TestOnboardingToCheckout(IntegrationTestCase):
 		self.paystack = Mock()
 
 		def process(name):
-			frappe.db.set_value("CRM Opt-In Submission", name, "status", "Processed")
+			# Model the CRM pipeline's persisted quote so this test exercises the
+			# real initial quote reuse and Sales Order creation after OIS processing.
+			previous_user = frappe.session.user
+			frappe.set_user("Administrator")
+			try:
+				submission = frappe.get_doc("CRM Opt-In Submission", name)
+				customer = cx._customer(submission)
+				quotation = frappe.get_doc(
+					{
+					"doctype": "Quotation",
+					"quotation_to": "Customer",
+					"party_name": customer,
+					"company": cx._company(),
+					"transaction_date": frappe.utils.today(),
+					"valid_till": frappe.utils.add_days(frappe.utils.today(), 30),
+					"selling_price_list": self.package["price_list"],
+					"currency": self.package["currency"],
+					"order_type": "Sales",
+					"crm_deal": submission.deal,
+					}
+				)
+				quotation.append(
+					"items",
+					{
+					"item_code": self.package["item_code"],
+					"qty": 1,
+					"price_list_rate": self.package["price"],
+					"rate": self.package["price"],
+					}
+				)
+				quotation.flags.ignore_mandatory = True
+				quotation.flags.ignore_permissions = True
+				quotation.set_missing_values()
+				for row in quotation.items:
+					row.price_list_rate = self.package["price"]
+					row.rate = self.package["price"]
+				from crm.utils.quotation_tax import apply_quotation_taxes
+
+				apply_quotation_taxes(quotation)
+				quotation.insert(ignore_permissions=True, ignore_mandatory=True)
+				if frappe.db.has_column("CRM Opt-In Submission", "quote_names_json"):
+					submission.quote_names_json = json.dumps([quotation.name])
+					submission.save(ignore_permissions=True)
+				frappe.db.set_value("CRM Opt-In Submission", name, "status", "Processed")
+			finally:
+				frappe.set_user(previous_user)
 
 		cache = {}
 		patches = [
 			patch.object(fo, "_hfr_facilities_for_owner", self.order.hfr),
 			patch.object(fo, "_client_registry_person", self.order.registry),
+			patch.object(
+				fo,
+				"_resolve_self_onboarding_terms",
+				return_value=("E2E Terms", "<p>Terms reviewed in the onboarding wizard.</p>"),
+			),
 			patch.object(fo, "_session", side_effect=lambda token: cache.get(token)),
 			patch.object(
 				fo,
@@ -68,7 +117,11 @@ class TestOnboardingToCheckout(IntegrationTestCase):
 				side_effect=lambda token, payload: cache.__setitem__(token, json.loads(json.dumps(payload))),
 			),
 			patch.object(fo, "_rate_limited", return_value=False),
-			patch.object(fo.frappe, "sendmail", side_effect=lambda **kw: self.mail.append(kw) or Mock()),
+			patch.object(
+				fo.frappe,
+				"sendmail",
+				side_effect=lambda **kw: self.mail.append(kw) or frappe._dict(name="EMAIL-QUEUE-E2E"),
+			),
 			patch.object(fo, "schedule_email_queue_redaction"),
 			patch.object(fo.frappe.db, "commit"),
 			patch("crm.api.optin._process_submission", side_effect=process),
@@ -90,26 +143,30 @@ class TestOnboardingToCheckout(IntegrationTestCase):
 		self.otp = self._otp()
 		verified = fo.verify_otp(token, self.otp)["data"]
 		catalog = fo.get_catalog(self.network.partner_id)["data"]
-		witness = json.dumps({"name": "Witness", "email": "cx-e2e-witness@example.com"})
+		terms = fo.get_self_onboarding_terms(token)
 		args = (
 			token,
 			self.network.partner_id,
 			json.dumps(["FID-E2E"]),
 			self.package["item_code"],
-			witness,
+			OWNER_EMAIL,
 			1,
+			terms["content_hash"],
 		)
 		first = fo.submit_onboarding(*args)["data"]["submissions"]
 		second = fo.submit_onboarding(*args)["data"]["submissions"]
 		frappe.set_user("Administrator")
-		return start, verified, catalog, first, second, token
+		return start, verified, catalog, first, second, token, terms
 
 	def test_identity_to_paid_invoice_with_retries_and_isolation(self):
-		start, verified, catalog, first, second, token = self._onboard()
+		start, verified, catalog, first, second, token, terms = self._onboard()
 
-		# Identity: HFR first, masked delivery, nothing disclosed before the code.
-		self.assertEqual([c[0] for c in self.order.mock_calls], ["hfr", "registry"])
-		self.assertEqual(start["delivery"]["masked_destination"], "c***@example.com")
+		# Identity: CR contact is resolved first; facilities follow successful OTP.
+		self.assertEqual([c[0] for c in self.order.mock_calls], ["registry", "hfr"])
+		self.assertRegex(
+			start["delivery"]["masked_destination"],
+			r"^[a-z]\*\*\*@(gmail|yahoo|outlook|hotmail)\.com$",
+		)
 		self.assertNotIn(OWNER_EMAIL, json.dumps(start))
 		self.assertEqual(verified["facilities"][0]["facility_id"], "FID-E2E")
 
@@ -121,6 +178,20 @@ class TestOnboardingToCheckout(IntegrationTestCase):
 		ois = first[0]["submission"]
 		payload = json.loads(frappe.db.get_value("CRM Opt-In Submission", ois, "raw_json"))
 		self.assertEqual(payload["pricing"][0]["annual_kes"], self.package["price"])
+		self.assertEqual(payload["tc_doc_name"], terms["document"])
+		self.assertEqual(payload["tc_doc_hash"], terms["content_hash"])
+		self.assertEqual(
+			frappe.db.get_value("CRM Opt-In Submission", ois, "self_onboarding_tc_hash"),
+			terms["content_hash"],
+		)
+		self.assertEqual(
+			frappe.db.get_value("CRM Opt-In Submission", ois, "onboarding_source"),
+			"token_self_onboarding",
+		)
+		self.assertEqual(
+			frappe.db.get_value("CRM Opt-In Submission", ois, "cx_account_email"),
+			OWNER_EMAIL,
+		)
 		self.assertEqual(frappe.db.count("CRM Opt-In Submission", {"submitter_email": OWNER_EMAIL}), 1)
 
 		# Network membership for the selected facility.
@@ -132,12 +203,18 @@ class TestOnboardingToCheckout(IntegrationTestCase):
 		)
 		self.assertTrue(memberships)
 
-		# Website User access, then the purchase chain with retries.
-		ensure_website_user_for_ois(frappe.get_doc("CRM Opt-In Submission", ois), email=OWNER_EMAIL)
+		# Submission creates one portal identity, permission, initial quote reuse,
+		# and submitted order. It must not create an invoice until Sam starts payment.
+		self.assertTrue(frappe.db.exists("User", OWNER_EMAIL))
+		self.assertEqual(frappe.db.count("Sales Invoice", {"crm_optin_submission": ois}), 0)
+		source_quotes = json.loads(
+			frappe.db.get_value("CRM Opt-In Submission", ois, "quote_names_json") or "[]"
+		)
 		frappe.set_user(OWNER_EMAIL)
 		order = cx.create_token_order(ois, MFL, self.package["item_code"])["data"]
 		again = cx.create_token_order(ois, MFL, self.package["item_code"])["data"]
 		self.assertEqual(order["sales_order"], again["sales_order"])
+		self.assertEqual(order["quotation"], source_quotes[0])
 		self.assertTrue(again["idempotent"])
 		self.assertEqual(frappe.db.get_value("Sales Order", order["sales_order"], "docstatus"), 1)
 		self.assertEqual(frappe.db.count("Sales Invoice", {"crm_optin_submission": ois}), 0)

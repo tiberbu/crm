@@ -3029,6 +3029,18 @@ def _should_auto_generate_contract():
 		return True
 
 
+def requires_contract_signature(submission):
+	"""Keep legacy Opt-In signing, while self-onboarding records require no contract."""
+	return frappe.utils.cstr(getattr(submission, "onboarding_source", "") or "").strip() != "token_self_onboarding"
+
+
+def should_send_legacy_payment_link(submission):
+	"""Only the legacy Opt-In flow sends its signatory a separate checkout link."""
+	return frappe.utils.cstr(getattr(submission, "onboarding_source", "") or "").strip() != (
+		"token_self_onboarding"
+	)
+
+
 def _provision_customer_experience_access(submission):
 	"""Create the facility Website User after a completed Opt-In, idempotently."""
 	try:
@@ -3269,7 +3281,7 @@ def _auto_generate_contract_if_ready(submission):
 	jobs without marking a valid submission failed when the signatory details or
 	quotation are not available yet.
 	"""
-	if not submission or not _should_auto_generate_contract():
+	if not submission or not requires_contract_signature(submission) or not _should_auto_generate_contract():
 		return ""
 	if getattr(submission, "contract", None) and frappe.db.exists("CRM Contract", submission.contract):
 		return submission.contract
@@ -3795,7 +3807,7 @@ def _process_deal_invitation_submission(sub, payload):
 	_update_job_step(sub.name, "quote", "done", "Quote ready")
 
 	contract_invitation_queued = False
-	if _should_auto_generate_contract():
+	if requires_contract_signature(sub) and _should_auto_generate_contract():
 		_update_job_step(sub.name, "contract", "in_progress", "Preparing your contract...")
 		_generate_contract_for_submission(sub, quote.name)
 		_update_job_step(sub.name, "contract", "done", "Contract ready — signing invitation sending")
@@ -4150,7 +4162,7 @@ def _process_submission(submission_ref):
 		_update_job_step(submission_ref, "quote", "done", "Draft quote ready")
 
 		contract_invitation_queued = False
-		if _should_auto_generate_contract():
+		if requires_contract_signature(sub) and _should_auto_generate_contract():
 			_update_job_step(submission_ref, "contract", "in_progress", "Preparing your contract...")
 			_generate_contract_for_submission(sub, q.name if pricing else "")
 			_update_job_step(
@@ -4182,10 +4194,15 @@ def _process_submission(submission_ref):
 		# ── Mark submission complete ──────────────────────────────────────────
 		sub.status = "Processed"
 		sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-		_provision_customer_experience_access(sub)
-		# Give the facility signatory a direct path to invoices. The link itself is
-		# harmless without the OTP, which is sent only to the stored signatory email.
-		_queue_payment_link_email(sub, network)
+		# Self-onboarding provisions one Sam-owned Website User after every
+		# selected facility has been processed by the onboarding coordinator.
+		# Keep the historic per-OIS behavior for existing Opt-In submissions.
+		if requires_contract_signature(sub):
+			_provision_customer_experience_access(sub)
+		# Existing Opt-In customers keep their signatory checkout link. Self-onboarded
+		# customers use the new CX account email and portal journey instead.
+		if should_send_legacy_payment_link(sub):
+			_queue_payment_link_email(sub, network)
 		frappe.db.commit()
 
 		data = _get_job_progress(submission_ref) or {}

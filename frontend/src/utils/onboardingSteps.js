@@ -28,9 +28,8 @@ export function canAdvance(stage, state) {
   if (stage === 'facilities') return state.selectedFacilityCount > 0
   if (stage === 'pricing') return Boolean(state.hasNetwork && state.packageCode)
   if (stage === 'review') {
-    const email = String(state.witness?.email || '').trim()
+    const email = String(state.accountEmail || '').trim()
     return Boolean(
-      String(state.witness?.name || '').trim() &&
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
       state.termsAccepted,
     )

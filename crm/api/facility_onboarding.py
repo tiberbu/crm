@@ -38,6 +38,7 @@ OTP_TTL_SECONDS = 10 * 60
 OTP_MAX_ATTEMPTS = 5
 OTP_RESEND_SECONDS = 60
 OTP_MAX_RESENDS = 5
+HFR_MAX_LOOKUPS = 6
 OTP_SUBJECT = "tiberbu Express facility onboarding verification code"
 OTP_BRAND = "tiberbu Express"
 _DECOY_DOMAINS = ("gmail.com", "yahoo.com", "outlook.com", "hotmail.com")
@@ -51,6 +52,13 @@ def _text(value: Any) -> str:
 
 def _normalize_id_type(value: Any) -> str:
 	return re.sub(r"[^a-z0-9]", "", _text(value).lower())
+
+
+def _identity_reference(id_type: Any, id_number: Any) -> str:
+	"""Return a stable keyed reference for an identity without retaining its raw ID."""
+	normalized_type = _normalize_id_type(id_type)
+	normalized_number = _text(id_number).casefold()
+	return evidence_ref("%s|%s" % (normalized_type, normalized_number))
 
 
 def _client_ip() -> str:
@@ -201,12 +209,32 @@ def _hfr_facilities_for_owner(id_number: str) -> list[dict[str, Any]]:
 		{"owner_id_number": id_number},
 		allow_no_facilities=True,
 	)
-	message = response.get("message") if isinstance(response, dict) else {}
-	data = message if isinstance(message, dict) else response if isinstance(response, dict) else {}
-	if isinstance(data.get("data"), dict):
-		data = data["data"]
-	rows = data.get("facilities") or (response.get("facilities") if isinstance(response, dict) else []) or []
-	return [row for row in rows if isinstance(row, dict)]
+	if not isinstance(response, dict):
+		frappe.throw(_("The registry returned an invalid response. Please try again shortly."), frappe.ValidationError)
+	message = response.get("message")
+	if isinstance(message, dict):
+		if _text(message.get("message")).casefold() == "no facilities found for this owner":
+			return []
+		data = message.get("data")
+		if isinstance(data, dict) and "facilities" in data:
+			rows = data["facilities"]
+		elif "facilities" in message:
+			rows = message["facilities"]
+		else:
+			rows = None
+	else:
+		rows = None
+	if rows is None and isinstance(response.get("data"), dict) and "facilities" in response["data"]:
+		rows = response["data"]["facilities"]
+	if rows is None and "facilities" in response:
+		rows = response["facilities"]
+	if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+		frappe.throw(_("The registry returned an invalid response. Please try again shortly."), frappe.ValidationError)
+	return rows
+
+
+def _challenge_lock_name(token: str) -> str:
+	return "crm_facility_onboarding_challenge_%s" % _otp_hash(token)[:24]
 
 
 def _facility_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -372,13 +400,21 @@ def _evidence(
 
 
 def _delivery_payload(session: dict[str, Any], now: int) -> dict[str, Any]:
-	delivery = session.get("delivery") or {}
+	identity_hash = _text(session.get("identity_hash"))
+	# Keep every challenge response identical with respect to contact existence,
+	# delivery channel, and destination. Delivery itself remains server-side.
+	channel = _preferred_channel()
+	masked_destination = _decoy_destination(identity_hash, channel)
+	status = "sent"
+	# The API enforces the resend cooldown for successful deliveries. Keeping the
+	# public affordance open lets failed and decoy challenges share one response.
+	resend_after = 0
 	return {
-		"channel": delivery.get("channel") or None,
-		"masked_destination": delivery.get("masked_destination") or "",
-		"status": delivery.get("status") or "sent",
+		"channel": channel or None,
+		"masked_destination": masked_destination,
+		"status": status,
 		"expires_in": max(0, int(session.get("otp_expires_at") or 0) - now),
-		"resend_after": max(0, OTP_RESEND_SECONDS - (now - int(session.get("otp_sent_at") or 0))),
+		"resend_after": resend_after,
 	}
 
 
@@ -448,30 +484,100 @@ def _token_packages() -> list[dict[str, Any]]:
 	return packages
 
 
+def _resolve_self_onboarding_terms() -> tuple[str, str]:
+	"""Return the configured, rendered self-onboarding Terms document."""
+	document_name = _text(_setting("self_onboarding_tc_document"))
+	if not document_name:
+		document_name = _text(_setting("active_tc_document"))
+	if not document_name or not frappe.db.exists("Terms and Conditions", document_name):
+		frappe.throw(
+			_("The Terms and Conditions are currently unavailable. Please contact support."),
+			frappe.ValidationError,
+		)
+
+	try:
+		terms_document = frappe.get_doc("Terms and Conditions", document_name)
+		terms_source = _text(terms_document.get("terms"))
+		if not terms_source:
+			frappe.throw(
+				_("The Terms and Conditions are currently unavailable. Please contact support."),
+				frappe.ValidationError,
+			)
+
+		# No partner or pricing has been selected yet. Reuse the shared renderer
+		# with an empty, server-owned context.
+		from crm.utils.jinja import render_terms_template
+
+		rendered_html = str(render_terms_template(terms_source, {}))
+	except Exception:
+		frappe.throw(
+			_("The Terms and Conditions are currently unavailable. Please contact support."),
+			frappe.ValidationError,
+		)
+	if not rendered_html.strip():
+		frappe.throw(
+			_("The Terms and Conditions are currently unavailable. Please contact support."),
+			frappe.ValidationError,
+		)
+	return _text(terms_document.get("name")) or document_name, rendered_html
+
+
+# nosemgrep: guest-whitelisted-method -- terms are returned only to an OTP-verified onboarding session.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def get_self_onboarding_terms(session_token: Any):
+	"""Return the current self-onboarding Terms and bind its snapshot to the session."""
+	token = _text(session_token)
+	session = _session_or_error(token, verified=True)
+	document_name, rendered_html = _resolve_self_onboarding_terms()
+	content_hash = hashlib.sha256(rendered_html.encode()).hexdigest()
+	session["accepted_terms_document"] = document_name
+	session["accepted_terms_hash"] = content_hash
+	_save_session(token, session)
+	return {"document": document_name, "rendered_html": rendered_html, "content_hash": content_hash}
+
+
+def _validate_self_onboarding_terms(session: dict[str, Any], accepted_terms_hash: Any):
+	"""Require the submitted hash to match the displayed and current Terms snapshot."""
+	accepted_hash = frappe.utils.cstr(accepted_terms_hash or "")
+	accepted_document = _text(session.get("accepted_terms_document"))
+	accepted_session_hash = _text(session.get("accepted_terms_hash"))
+	if (
+		not re.fullmatch(r"[0-9a-f]{64}", accepted_hash, flags=re.ASCII)
+		or not accepted_document
+		or not accepted_session_hash
+	):
+		frappe.throw(
+			_("Please review the current Terms and Conditions before continuing."), frappe.ValidationError
+		)
+
+	current_document, current_html = _resolve_self_onboarding_terms()
+	current_hash = hashlib.sha256(current_html.encode()).hexdigest()
+	if not (
+		current_document == accepted_document
+		and hmac.compare_digest(accepted_hash, accepted_session_hash)
+		and hmac.compare_digest(current_hash, accepted_session_hash)
+	):
+		frappe.throw(
+			_("The Terms and Conditions have changed. Please review the current Terms before continuing."),
+			frappe.ValidationError,
+		)
+	return {
+		"document": current_document,
+		"hash": current_hash,
+		"accepted_at": frappe.utils.now_datetime(),
+	}
+
+
 # nosemgrep: guest-whitelisted-method -- generic identity responses, rate limiting, HFR ownership binding, and OTP verification prevent enumeration and unauthorised facility access.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def start_identity(identification_type: Any, identification_number: Any):
-	"""Require independent HFR ownership and Client Registry contact matches before OTP."""
+	"""Resolve a Client Registry contact and send its OTP before any HFR lookup."""
 	id_type = _text(identification_type)
 	id_number = _text(identification_number)
 	if not id_type or not ID_RE.fullmatch(id_number) or _rate_limited("start:%s" % _client_ip()):
 		frappe.throw(
 			_("We could not verify those details. Please check and try again."), frappe.ValidationError
 		)
-	# Evaluate both registries independently so one failure never masks the other
-	# gate. Detailed outcomes are written only to protected onboarding evidence.
-	hfr_failure = ""
-	try:
-		facilities = _hfr_facilities_for_owner(id_number)
-	except Exception as exc:
-		frappe.log_error(
-			title="CRM facility onboarding HFR lookup", message="Lookup failed (%s)" % type(exc).__name__
-		)
-		facilities = []
-		hfr_failure = "lookup failed"
-	if not facilities and not hfr_failure:
-		hfr_failure = "no facilities"
-
 	cr_failure = ""
 	try:
 		person = _client_registry_person(id_type, id_number)
@@ -490,31 +596,26 @@ def start_identity(identification_type: Any, identification_number: Any):
 	contact_phone = _text(person.get("phone")) if person else ""
 	if person and not (contact_email or contact_phone):
 		cr_failure = "no usable contact"
-	gate_failures = []
-	if cr_failure:
-		gate_failures.append("CR/Afyangu: %s" % cr_failure)
-	if hfr_failure:
-		gate_failures.append("HFR: %s" % hfr_failure)
-	lookup_valid = not gate_failures
+	lookup_valid = not cr_failure
 	if not lookup_valid:
 		person = {}
 		contact_email = ""
 		contact_phone = ""
-		facilities = []
 	identity_hash = hashlib.sha256((id_type.lower() + "|" + id_number.lower()).encode()).hexdigest()
+	identity_ref = _identity_reference(id_type, id_number)
 	now = int(time.time())
 	payload = {
 		"verified": False,
 		"lookup_valid": lookup_valid,
 		"id_type": id_type,
 		"identity_hash": identity_hash,
+		"identity_ref": identity_ref,
 		"person": {
 			"first_name": _text(person.get("first_name")),
 			"last_name": _text(person.get("last_name")),
 			"email": contact_email,
 			"phone": contact_phone,
 		},
-		"facilities": [_facility_row(row) for row in facilities],
 		"otp_hash": _otp_hash(otp),
 		"otp_attempts": 0,
 		"otp_expires_at": now + OTP_TTL_SECONDS,
@@ -522,8 +623,14 @@ def start_identity(identification_type: Any, identification_number: Any):
 		"resend_count": 0,
 	}
 	if lookup_valid:
+		# HFR receives the identity only after OTP succeeds. Keep it encrypted in
+		# the opaque session until then, and never put facility rows in this state.
+		payload["identity_number"] = id_number
+	if lookup_valid:
 		payload["delivery"] = _send_otp(payload["person"], otp)
+		payload["delivery_mask_decoy"] = payload["delivery"]["status"] == "unavailable"
 	else:
+		payload["delivery_mask_decoy"] = True
 		channel = _preferred_channel()
 		payload["delivery"] = {
 			"channel": channel,
@@ -536,7 +643,7 @@ def start_identity(identification_type: Any, identification_number: Any):
 		token,
 		payload,
 		outcome="ok" if lookup_valid else "failed",
-		detail="; ".join(gate_failures) if gate_failures else "%d facilities" % len(payload["facilities"]),
+		detail="contact resolved" if lookup_valid else ("CR/Afyangu: %s" % cr_failure),
 	)
 	if lookup_valid:
 		_evidence(
@@ -546,8 +653,8 @@ def start_identity(identification_type: Any, identification_number: Any):
 			outcome="ok" if payload["delivery"]["status"] == "sent" else "failed",
 			channel=payload["delivery"]["channel"] or "",
 		)
-	# Unknown IDs, no-facility results, and registry failures return the same
-	# challenge shape. Both required gates run before OTP delivery.
+	# Unknown IDs, missing contacts, and registry failures return the same
+	# challenge shape. Facility ownership is deliberately checked after OTP.
 	return {
 		"success": True,
 		"data": {
@@ -564,7 +671,14 @@ def resend_otp(session_token: Any):
 	token = _text(session_token)
 	if _rate_limited("resend:%s" % _client_ip(), limit=10):
 		frappe.throw(_("Too many code requests. Please wait and try again."), frappe.ValidationError)
+	with filelock(_challenge_lock_name(token), timeout=60):
+		return _resend_otp_locked(token)
+
+
+def _resend_otp_locked(token: str):
 	session = _session_or_error(token)
+	if session.get("verified"):
+		frappe.throw(_("This onboarding session has already verified its contact."), frappe.PermissionError)
 	now = int(time.time())
 	if (
 		(session.get("delivery") or {}).get("status") != "unavailable"
@@ -585,6 +699,8 @@ def resend_otp(session_token: Any):
 	)
 	if session.get("lookup_valid"):
 		session["delivery"] = _send_otp(session["person"], otp)
+		if session["delivery"]["status"] == "unavailable":
+			session["delivery_mask_decoy"] = True
 		_evidence(
 			"otp_sent",
 			token,
@@ -601,6 +717,11 @@ def resend_otp(session_token: Any):
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def verify_otp(session_token: Any, otp: Any):
 	token = _text(session_token)
+	with filelock(_challenge_lock_name(token), timeout=60):
+		return _verify_otp_locked(token, otp)
+
+
+def _verify_otp_locked(token: str, otp: Any):
 	session = _session_or_error(token)
 	if int(time.time()) > int(session.get("otp_expires_at") or 0):
 		_evidence("otp_failed", token, session, outcome="failed", detail="expired", commit=True)
@@ -626,23 +747,81 @@ def verify_otp(session_token: Any, otp: Any):
 		frappe.throw(_("The verification code is incorrect or expired."), frappe.PermissionError)
 	session["verified"] = True
 	session["otp_hash"] = ""
+	# Consume the challenge before any downstream HFR call. If the registry call
+	# is interrupted, the same OTP cannot be replayed to create duplicate evidence.
 	_save_session(token, session)
 	_evidence("otp_verified", token, session, channel=(session.get("delivery") or {}).get("channel") or "")
-	return {
-		"success": True,
-		"data": {"identity": _person_preview(session["person"]), "facilities": session["facilities"]},
-	}
+	return _resolve_verified_hfr(token, session)
+
+
+def _resolve_verified_hfr(token: str, session: dict[str, Any]) -> dict[str, Any]:
+	"""Resolve and bind HFR facilities to an OTP-verified session, with bounded retries."""
+	lock_name = "crm_facility_onboarding_hfr_%s" % _otp_hash(token)[:24]
+	with filelock(lock_name, timeout=60):
+		# Read and reserve the next attempt under a per-session lock so concurrent
+		# retries cannot race the persisted retry cap or overwrite ready state.
+		session = _session_or_error(token, verified=True)
+		if session.get("hfr_state") == "ready":
+			return {
+				"success": True,
+				"data": {
+					"identity": _person_preview(session["person"]),
+					"facilities": session.get("facilities") or [],
+					"state": "ready",
+				},
+			}
+		lookup_count = int(session.get("hfr_lookup_count") or 0)
+		if lookup_count >= HFR_MAX_LOOKUPS:
+			return {"success": True, "data": {"state": "hfr_pending", "retryable": False}}
+		session["hfr_lookup_count"] = lookup_count + 1
+		_save_session(token, session)
+		try:
+			facilities = _hfr_facilities_for_owner(session["identity_number"])
+		except Exception as exc:
+			frappe.log_error(
+				title="CRM facility onboarding HFR lookup",
+				message="Lookup failed (%s)" % type(exc).__name__,
+			)
+			session["hfr_state"] = "pending"
+			_save_session(token, session)
+			_evidence("lookup", token, session, outcome="failed", detail="HFR: lookup failed")
+			return {
+				"success": True,
+				"data": {"state": "hfr_pending", "retryable": session["hfr_lookup_count"] < HFR_MAX_LOOKUPS},
+			}
+
+		session["facilities"] = [_facility_row(row) for row in facilities]
+		session["hfr_state"] = "ready"
+		_save_session(token, session)
+		_evidence("lookup", token, session, outcome="ok", detail="HFR: %d facilities" % len(session["facilities"]))
+		return {
+			"success": True,
+			"data": {
+				"identity": _person_preview(session["person"]),
+				"facilities": session["facilities"],
+				"state": "ready",
+			},
+		}
+
+
+# nosemgrep: guest-whitelisted-method -- reuses an opaque session that has already passed OTP verification; bounded HFR retries reveal only owned facilities.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def retry_hfr(session_token: Any):
+	token = _text(session_token)
+	session = _session_or_error(token, verified=True)
+	return _resolve_verified_hfr(token, session)
 
 
 # nosemgrep: guest-whitelisted-method -- only public package metadata is returned after strict six-digit Network validation.
 @frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
-def get_catalog(partner_id: Any):
-	partner = _public_network(_text(partner_id))
-	if not partner:
+def get_catalog(partner_id: Any = None):
+	partner_id = _text(partner_id)
+	partner = _public_network(partner_id)
+	if partner_id and not partner:
 		frappe.throw(
 			_("That Partner ID is not available. Check the six digits and try again."), frappe.ValidationError
 		)
-	return {"success": True, "data": {"network": partner, "packages": _catalog_packages()}}
+	return {"success": True, "data": {"network": partner or {}, "packages": _catalog_packages()}}
 
 
 def _catalog_packages() -> list[dict[str, Any]]:
@@ -707,47 +886,177 @@ def _upsert_facility_membership(facility: dict[str, Any], network: str, person: 
 	return facility_doc
 
 
-# nosemgrep: guest-whitelisted-method -- submission requires a verified session, HFR-bound facility selection, valid Network, package, witness, and terms.
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def submit_onboarding(
-	session_token: Any,
-	partner_id: Any,
-	selected_facility_ids: Any,
-	package_item_code: Any,
-	witness: Any,
-	terms_accepted: Any = 0,
-):
-	token = _text(session_token)
-	session = _session_or_error(token, verified=True)
-	partner_id = _text(partner_id)
-	partner = _public_network(partner_id)
-	if not partner:
-		frappe.throw(_("That Partner ID does not exist or is not available."), frappe.ValidationError)
+def _parse_selected_ids(selected_facility_ids: Any) -> set[str]:
 	try:
 		selected = (
 			json.loads(selected_facility_ids)
 			if isinstance(selected_facility_ids, str)
 			else selected_facility_ids
 		)
-	except Exception:
-		selected = []
-	selected = {_text(value) for value in selected or [] if _text(value)}
+	except (TypeError, ValueError):
+		selected = None
+	if not isinstance(selected, (list, tuple, set)):
+		frappe.throw(_("Select at least one facility to continue."), frappe.ValidationError)
+	return {_text(value) for value in selected if _text(value)}
+
+
+def _ois_contains_facility(raw_json: Any, mfl_code: str) -> bool:
+	try:
+		payload = json.loads(raw_json or "{}") if isinstance(raw_json, str) else raw_json or {}
+	except (TypeError, ValueError):
+		return False
+	if not isinstance(payload, dict):
+		return False
+	for facility in payload.get("facilities") or []:
+		if not isinstance(facility, dict):
+			continue
+		canonical_mfl = _text(
+			facility.get("mfl_code")
+			or facility.get("facility_code")
+			or facility.get("facility_mfl")
+		)
+		if canonical_mfl and canonical_mfl.casefold() == mfl_code.casefold():
+			return True
+	return False
+
+
+def _ois_facility_codes(raw_json: Any) -> set[str]:
+	try:
+		payload = json.loads(raw_json or "{}") if isinstance(raw_json, str) else raw_json or {}
+	except (TypeError, ValueError):
+		return set()
+	if not isinstance(payload, dict):
+		return set()
+	codes = set()
+	for facility in payload.get("facilities") or []:
+		if isinstance(facility, dict):
+			code = _text(
+				facility.get("mfl_code") or facility.get("facility_code") or facility.get("facility_mfl")
+			)
+			if code:
+				codes.add(code.casefold())
+	return codes
+
+
+def _facility_conflicts(facilities: list[dict[str, Any]], network: str | None, session: dict[str, Any]):
+	"""Return canonical facility IDs already enrolled or requested in this Network."""
+	if not facilities:
+		return set()
+	submitted = set((session.get("submitted") or {}).values())
+	filters = {"network_slug": network} if network else {}
+	ois_rows = frappe.get_all(
+		"CRM Opt-In Submission",
+		filters=filters,
+		fields=["name", "status", "raw_json"],
+		limit_page_length=0,
+	)
+	# This map also lets a retry resume this session's own membership/OIS pair.
+	own_mfls = set().union(
+		*(_ois_facility_codes(row.get("raw_json")) for row in ois_rows if _text(row.get("name")) in submitted)
+	) if submitted else set()
+	conflicts = set()
+	for facility in facilities:
+		facility_id = _text(facility.get("facility_id"))
+		mfl_code = _text(facility.get("mfl_code") or facility_id)
+		facility_name = frappe.db.get_value(
+			"CRM Pre-Qualified Facility", {"mfl_code": mfl_code}, "name"
+		)
+		if facility_name and mfl_code.casefold() not in own_mfls:
+			facility_doc = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
+			if any(
+				(network is None or _text(membership.get("network")) == network)
+				and _text(membership.get("status") or "Active").casefold()
+				in {"pending", "active", "opted in", "completed", "processed"}
+				for membership in facility_doc.memberships or []
+			):
+				conflicts.add(facility_id)
+				continue
+		for row in ois_rows:
+			if (
+				_text(row.get("name")) not in submitted
+				and _text(row.get("status")).casefold() in {"pending", "processing", "processed"}
+				and _ois_contains_facility(row.get("raw_json"), mfl_code)
+			):
+				conflicts.add(facility_id)
+				break
+	return conflicts
+
+
+def _check_onboarding_conflicts(session: dict[str, Any], selected: set[str], network: str | None = None):
+	verified_facilities = session.get("facilities") or []
+	by_id = {_text(row.get("facility_id")): row for row in verified_facilities if isinstance(row, dict)}
+	if not selected or not selected.issubset(by_id):
+		frappe.throw(
+			_("One or more facilities are no longer available in this session."), frappe.ValidationError
+		)
+	identity_ref = _text(session.get("identity_ref"))
+	if identity_ref and frappe.db.has_column("CRM Opt-In Submission", "onboarding_identity_ref"):
+		filters = {"onboarding_identity_ref": identity_ref}
+		if frappe.db.has_column("CRM Opt-In Submission", "onboarding_source"):
+			filters["onboarding_source"] = "token_self_onboarding"
+		prior = frappe.get_all(
+			"CRM Opt-In Submission", filters=filters, fields=["name"], limit_page_length=0
+		)
+		own_submissions = set((session.get("submitted") or {}).values())
+		if any(_text(row.get("name")) not in own_submissions for row in prior):
+			return {"outcome": "existing_identity", "allowed_facility_ids": []}
+	facilities = [by_id[facility_id] for facility_id in sorted(selected)]
+	conflicts = _facility_conflicts(facilities, network, session)
+	allowed = [facility_id for facility_id in sorted(selected) if facility_id not in conflicts]
+	if conflicts:
+		return {"outcome": "facility_review", "allowed_facility_ids": allowed}
+	return {"outcome": "new", "allowed_facility_ids": allowed}
+
+
+# nosemgrep: guest-whitelisted-method -- only OTP-verified session facilities and allow-listed outcomes are returned.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def check_onboarding_conflicts(session_token: Any, selected_facility_ids: Any, partner_id: Any = None):
+	token = _text(session_token)
+	session = _session_or_error(token, verified=True)
+	selected = _parse_selected_ids(selected_facility_ids)
+	partner = _public_network(_text(partner_id))
+	if not partner:
+		frappe.throw(_("The configured Network or Partner ID is not available."), frappe.ValidationError)
+	network = partner["name"]
+	result = _check_onboarding_conflicts(session, selected, network)
+	if result["outcome"] != "new":
+		_evidence("lookup", token, session, outcome="blocked", detail="conflict: " + result["outcome"])
+	return result
+
+
+# nosemgrep: guest-whitelisted-method -- submission requires a verified session, HFR-bound facility selection, valid Network, package, account email, and terms.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def submit_onboarding(
+	session_token: Any,
+	partner_id: Any,
+	selected_facility_ids: Any,
+	package_item_code: Any,
+	account_email: Any,
+	terms_accepted: Any = 0,
+	accepted_terms_hash: Any = "",
+):
+	token = _text(session_token)
+	session = _session_or_error(token, verified=True)
+	terms_snapshot = _validate_self_onboarding_terms(session, accepted_terms_hash)
+	account_email = _validate_account_email(account_email)
+	partner_id = _text(partner_id)
+	partner = _public_network(partner_id)
+	if not partner:
+		frappe.throw(_("That Partner ID does not exist or is not available."), frappe.ValidationError)
+	selected = _parse_selected_ids(selected_facility_ids)
 	if not selected:
 		frappe.throw(_("Select at least one facility to continue."), frappe.ValidationError)
 	package = next((row for row in _token_packages() if row["item_code"] == _text(package_item_code)), None)
 	if not package:
 		frappe.throw(_("Select an available token package."), frappe.ValidationError)
-	try:
-		witness = json.loads(witness) if isinstance(witness, str) else witness
-	except Exception:
-		witness = {}
-	if (
-		not int(terms_accepted)
-		or not _text(witness.get("name"))
-		or not frappe.utils.validate_email_address(_text(witness.get("email")).lower())
-	):
+	if not frappe.utils.cint(terms_accepted):
 		frappe.throw(
-			_("Accept the terms and add a valid facility witness before continuing."), frappe.ValidationError
+			_("Accept the current Terms and Conditions before continuing."), frappe.ValidationError
+		)
+	if session.get("hfr_state") != "ready" or not isinstance(session.get("facilities"), list):
+		frappe.throw(
+			_("Facility details are not ready. Retry the facility lookup before continuing."),
+			frappe.ValidationError,
 		)
 	facilities = [row for row in session["facilities"] if _text(row.get("facility_id")) in selected]
 	if len(facilities) != len(selected):
@@ -755,23 +1064,82 @@ def submit_onboarding(
 			_("One or more facilities are no longer available in this session."), frappe.ValidationError
 		)
 
-	with filelock("crm_onboarding_submit_%s" % evidence_ref(token)[:24], timeout=60):
-		return _submit_selected_facilities(token, partner, package, witness, facilities)
+	identity_ref = _text(session.get("identity_ref"))
+	lock_ref = evidence_ref(identity_ref) if identity_ref else evidence_ref(token)
+	with filelock("crm_onboarding_submit_%s" % lock_ref[:24], timeout=60):
+		# Re-read the verified server session and repeat all checks while holding an
+		# identity-scoped lock shared by every session for this identity.
+		session = _session_or_error(token, verified=True)
+		_validate_account_email(account_email, session)
+		conflicts = _check_onboarding_conflicts(session, selected, partner["name"])
+		if conflicts["outcome"] != "new":
+			_evidence(
+				"lookup",
+				token,
+				session,
+				outcome="blocked",
+				detail="conflict: " + conflicts["outcome"],
+			)
+			return {"success": True, "data": conflicts}
+		return _submit_selected_facilities(
+			token, partner, package, account_email, facilities, terms_snapshot
+		)
 
 
-def _submit_selected_facilities(token, partner, package, witness, facilities):
+def _validate_account_email(value: Any, session: dict[str, Any] | None = None) -> str:
+	"""Validate the requested portal address before any onboarding side effect."""
+	account_email = _text(value).lower()
+	validated = frappe.utils.validate_email_address(account_email).strip().lower()
+	if not account_email or validated != account_email:
+		frappe.throw(_("Enter one valid email address for your Customer Experience account."), frappe.ValidationError)
+
+	user_name = frappe.db.get_value("User", {"email": account_email}, "name")
+	if user_name:
+		user = frappe.db.get_value("User", user_name, ["user_type", "enabled"], as_dict=True) or {}
+		if user.get("user_type") != "Website User" or not frappe.utils.cint(user.get("enabled")):
+			frappe.throw(
+				_("This email cannot be used for Customer Experience access. Use an active facility account email or contact support."),
+				frappe.ValidationError,
+			)
+
+	for submission_name in (session or {}).get("submitted", {}).values():
+		if not frappe.db.exists("CRM Opt-In Submission", submission_name):
+			continue
+		prior_email = _text(
+			frappe.db.get_value("CRM Opt-In Submission", submission_name, "cx_account_email") or ""
+		).lower()
+		if prior_email and prior_email != account_email:
+			frappe.throw(
+				_("Use the same Customer Experience email to resume this onboarding."), frappe.ValidationError
+			)
+	return account_email
+
+
+def _submit_selected_facilities(token, partner, package, account_email, facilities, terms_snapshot):
 	"""Create or resume exactly one processed OIS per facility for this session."""
 	from crm.api.optin import _process_submission
 
 	# Re-read under the lock so a concurrent or repeated request sees earlier work.
 	session = _session_or_error(token, verified=True)
+	# Terms may have changed while this request waited for the submission lock.
+	# Revalidate before evidence, membership, or OIS records are created.
+	terms_snapshot = _validate_self_onboarding_terms(session, terms_snapshot["hash"])
 	person = session["person"]
 	submitted = session.setdefault("submitted", {})
 	submissions = []
-	for facility in facilities:
+	portal_status = "linked"
+	for facility_index, facility in enumerate(facilities):
 		facility_id = _text(facility.get("facility_id"))
 		name = submitted.get(facility_id)
 		is_new = not (name and frappe.db.exists("CRM Opt-In Submission", name))
+		if not is_new:
+			_evidence(
+				"lookup",
+				token,
+				session,
+				outcome="ok",
+				detail="replay: staged submission resumed",
+			)
 		if is_new:
 			_evidence(
 				"terms_accepted",
@@ -788,7 +1156,15 @@ def _submit_selected_facilities(token, partner, package, witness, facilities):
 				reference_doctype="CRM Pre-Qualified Facility",
 				reference_name=facility_doc.name,
 			)
-			name = _create_submission(partner, package, witness, person, facility)
+			name = _create_submission(
+				partner,
+				package,
+				account_email,
+				person,
+				facility,
+				terms_snapshot,
+				session.get("identity_ref", ""),
+			)
 			submitted[facility_id] = name
 			# Persist the mapping and the staged record before processing so a retry resumes it.
 			_save_session(token, session)
@@ -807,10 +1183,56 @@ def _submit_selected_facilities(token, partner, package, witness, facilities):
 			is_new = True
 		if is_new:
 			_link_documents(token, session, name, facility, package)
-		submissions.append(
-			{"submission": name, "status": "Processed", "facility": _text(facility.get("facility_name"))}
+		from crm.api.customer_experience import create_initial_token_order
+
+		order_result = create_initial_token_order(name, _text(facility.get("mfl_code")), package["item_code"])
+		order_data = order_result.get("data") or {}
+		portal_result = _ensure_customer_experience_access(
+			name,
+			account_email,
+			"%s %s" % (person.get("first_name", ""), person.get("last_name", "")),
+			send_password_setup=facility_index == 0,
 		)
-	return {"success": True, "data": {"submissions": submissions}}
+		portal_status = portal_result.get("status") or portal_status
+		if portal_status in {"failed", "blocked"}:
+			frappe.throw(
+				_("Your onboarding records are saved, but Customer Experience access needs attention. Retry submission or contact support with reference {0}.").format(
+					name
+				),
+				frappe.ValidationError,
+			)
+		submissions.append(
+			{
+				"submission": name,
+				"status": "Processed",
+				"facility": _text(facility.get("facility_name")),
+				"quotation": order_data.get("quotation"),
+				"sales_order": order_data.get("sales_order"),
+			}
+		)
+	return {
+		"success": True,
+		"data": {
+			"outcome": "new",
+			"allowed_facility_ids": [_text(facility.get("facility_id")) for facility in facilities],
+			"submissions": submissions,
+			"portal_status": portal_status,
+		},
+	}
+
+
+def _ensure_customer_experience_access(
+	submission_name, account_email, display_name, send_password_setup=True
+):
+	"""Create the Website User and OIS-scoped access after processing succeeds."""
+	from crm.api.website_redirect import ensure_website_user_for_ois
+
+	return ensure_website_user_for_ois(
+		frappe.get_doc("CRM Opt-In Submission", submission_name),
+		email=account_email,
+		display_name=display_name,
+		send_password_setup=send_password_setup,
+	)
 
 
 def _link_documents(token, session, submission_name, facility, package):
@@ -847,7 +1269,7 @@ def _link_documents(token, session, submission_name, facility, package):
 		)
 
 
-def _create_submission(partner, package, witness, person, facility) -> str:
+def _create_submission(partner, package, account_email, person, facility, terms_snapshot, identity_ref) -> str:
 	"""Insert the staged OIS from server-resolved package pricing only."""
 	price = float(package["price"])
 	pricing_row = {
@@ -876,16 +1298,9 @@ def _create_submission(partner, package, witness, person, facility) -> str:
 			"email": person["email"],
 			"phone": person.get("phone", ""),
 		},
-		"witness": {
-			"name": _text(witness.get("name")),
-			"email": _text(witness.get("email")).lower(),
-			"phone": _text(witness.get("phone")),
-		},
 		"terms_accepted": 1,
-		"tc_doc_name": _text(_setting("active_tc_document")) or "tiberbu Express Opt-In Terms",
-		"tc_doc_hash": hashlib.sha256(
-			("tiberbu-express:%s:%s" % (partner["name"], package["item_code"])).encode()
-		).hexdigest(),
+		"tc_doc_name": terms_snapshot["document"],
+		"tc_doc_hash": terms_snapshot["hash"],
 		"facilities": [facility],
 		"pricing": [pricing_row],
 		"pricing_plans": [
@@ -899,24 +1314,30 @@ def _create_submission(partner, package, witness, person, facility) -> str:
 		"selected_years": [1],
 		"token_package": package,
 	}
-	submission = frappe.get_doc(
-		{
+	submission_values = {
 			"doctype": "CRM Opt-In Submission",
 			"naming_series": "OIS-.YYYY.-",
 			"status": "Pending",
 			"network_slug": partner["name"],
+			"onboarding_source": "token_self_onboarding",
+			"onboarding_identity_ref": identity_ref,
+			"cx_account_email": account_email,
 			"submitter_email": person["email"],
 			"facility_signatory_name": payload["signatory"]["name"],
 			"facility_signatory_email": person["email"],
 			"facility_signatory_phone": person.get("phone", ""),
-			"facility_witness_name": payload["witness"]["name"],
-			"facility_witness_email": payload["witness"]["email"],
-			"facility_witness_phone": payload["witness"]["phone"],
 			"submitted_at": frappe.utils.now_datetime(),
 			"raw_json": json.dumps(payload),
 			"terms_acknowledgement": "authorised_signatory_acceptance",
-		}
-	)
+			"self_onboarding_tc_document": terms_snapshot["document"],
+			"self_onboarding_tc_hash": terms_snapshot["hash"],
+			"self_onboarding_tc_accepted_at": terms_snapshot["accepted_at"],
+	}
+	if frappe.db.has_column("CRM Opt-In Submission", "onboarding_source"):
+		submission_values["onboarding_source"] = "token_self_onboarding"
+	if frappe.db.has_column("CRM Opt-In Submission", "onboarding_identity_ref"):
+		submission_values["onboarding_identity_ref"] = identity_ref
+	submission = frappe.get_doc(submission_values)
 	submission.flags.skip_auto_processing = True
 	submission.insert(ignore_permissions=True)
 	return submission.name

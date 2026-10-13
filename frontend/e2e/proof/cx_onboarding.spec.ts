@@ -137,7 +137,7 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: join(OUT, `${name}.png`), fullPage: true })
 }
 
-function mockOnboarding(page: Page) {
+function mockOnboarding(page: Page, resendAfter = 60) {
   const seen: string[] = []
   return page
     .route('**/api/method/crm.api.facility_onboarding.*', async (route) => {
@@ -155,7 +155,7 @@ function mockOnboarding(page: Page) {
               masked_destination: 'o***@example.com',
               status: 'sent',
               expires_in: 600,
-              resend_after: 60,
+              resend_after: resendAfter,
             },
           },
         })
@@ -169,7 +169,7 @@ function mockOnboarding(page: Page) {
               masked_destination: '254******78',
               status: 'sent',
               expires_in: 600,
-              resend_after: 60,
+              resend_after: resendAfter,
             },
           },
         })
@@ -199,15 +199,33 @@ function mockOnboarding(page: Page) {
             packages: PACKAGES,
           },
         })
+      if (method === 'get_self_onboarding_terms')
+        return ok(route, {
+          success: true,
+          data: {
+            document: 'Self-Onboarding Terms',
+            rendered_html: '<p>Terms for self-onboarded facilities.</p>',
+            content_hash: 'terms-hash',
+          },
+        })
+      if (method === 'check_onboarding_conflicts')
+        return ok(route, {
+          success: true,
+          data: { outcome: 'new', allowed_facility_ids: ['FID-1', 'FID-2'] },
+        })
       if (method === 'submit_onboarding')
         return ok(route, {
           success: true,
           data: {
+            outcome: 'new',
+            portal_status: 'sent',
             submissions: [
               {
                 submission: 'OIS-2026-00031',
                 status: 'Processed',
                 facility: 'Alpha Community Clinic',
+                quotation: 'QTN-2026-00031',
+                sales_order: 'SAL-ORD-2026-00031',
               },
             ],
           },
@@ -231,7 +249,7 @@ for (const vp of VIEWPORTS) {
   test.describe(`onboarding wizard (${vp.name})`, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } })
 
-    test('identity to submission with masked delivery, keyboard OTP, VAT review and back/edit', async ({
+    test('identity to submission with privacy-safe delivery, keyboard OTP, VAT review and back/edit', async ({
       page,
     }) => {
       const calls = await mockOnboarding(page)
@@ -245,8 +263,10 @@ for (const vp of VIEWPORTS) {
       await shot(page, `${vp.name}-onboarding-2-identity`)
       await page.getByRole('button', { name: 'Find my facilities' }).click()
 
-      // Masked destination and delivery status; never the OTP or raw contact.
-      await expect(page.getByText('o***@example.com')).toBeVisible()
+      // Delivery status is privacy-safe and does not reveal whether an ID matched.
+      await expect(
+        page.getByText(/If your details match our records/),
+      ).toBeVisible()
       await expect(page.getByText(/expires in 10 minutes/)).toBeVisible()
       await expect(
         page.getByRole('button', { name: /Resend code in/ }),
@@ -275,24 +295,22 @@ for (const vp of VIEWPORTS) {
       await shot(page, `${vp.name}-onboarding-5-facilities`)
       await page.getByRole('button', { name: 'Continue to pricing' }).click()
 
-      await page
-        .getByRole('button', { name: 'Load Network and packages' })
-        .click()
       await expect(page.getByText('Choose your token package')).toBeVisible()
       await expect(page.getByText(/Total\s+\S*\s*34,800/).first()).toBeVisible()
       await shot(page, `${vp.name}-onboarding-6-packages`)
-      await page
-        .getByRole('button', { name: 'Review Opt-In and signatures' })
-        .click()
+      await page.getByRole('button', { name: 'Confirm your data' }).click()
 
       // Review shows server-supplied totals for two facilities and offers Edit/Back.
       await expect(page.getByText('Total incl. VAT')).toBeVisible()
       await expect(page.getByText(/69,600/).first()).toBeVisible()
+      await expect(page.locator('body')).not.toContainText(
+        /invoice|payment|pay now/i,
+      )
       await expect(
         page.getByRole('button', { name: 'Submit facility onboarding' }),
       ).toBeDisabled()
-      await page.getByPlaceholder('Witness name').fill('Wanjiru Kamau')
-      await page.getByPlaceholder('Witness email').fill('witness@example.com')
+      await page.getByPlaceholder('you@example.com').fill('sam@example.com')
+      await page.getByPlaceholder('000000').fill('123456')
       await page.getByRole('checkbox').check()
       await expect(
         page.getByRole('button', { name: 'Submit facility onboarding' }),
@@ -301,28 +319,32 @@ for (const vp of VIEWPORTS) {
 
       await page.getByRole('button', { name: 'Back to package' }).click()
       await expect(page.getByText('Choose your token package')).toBeVisible()
-      await page
-        .getByRole('button', { name: 'Review Opt-In and signatures' })
-        .click()
+      await page.getByRole('button', { name: 'Confirm your data' }).click()
+      await expect(page.getByText('Terms and Conditions').first()).toBeVisible()
+      await page.getByPlaceholder('you@example.com').fill('sam@example.com')
+      await page.getByRole('checkbox').check()
       await page
         .getByRole('button', { name: 'Submit facility onboarding' })
         .click()
       await expect(page.getByText('Your onboarding has started')).toBeVisible()
+      await expect(page.getByText(/password setup instructions/i)).toBeVisible()
+      await expect(page.locator('body')).not.toContainText(
+        /invoice|payment|pay now/i,
+      )
       await shot(page, `${vp.name}-onboarding-8-success`)
       expect(calls).toContain('submit_onboarding')
     })
 
-    test('OTP accepts a pasted code and resend reports the fallback channel', async ({
+    test('OTP accepts a pasted code and resend uses the available fallback channel', async ({
       page,
     }) => {
-      await mockOnboarding(page)
+      const calls = await mockOnboarding(page, 0)
       await page.goto(`${origin}/facility-onboarding`)
       await page
         .getByRole('button', { name: /Start secure onboarding/ })
         .click()
       await page.getByPlaceholder('Enter your ID number').fill('12345678')
       await page.getByRole('button', { name: 'Find my facilities' }).click()
-      await page.clock.install()
       await page.getByLabel(/Verification code: 1 \/ 6/).focus()
       await page.evaluate(() => {
         const data = new DataTransfer()
@@ -341,9 +363,11 @@ for (const vp of VIEWPORTS) {
       await expect(
         page.getByRole('button', { name: 'Verify and continue' }),
       ).toBeEnabled()
-      await page.clock.fastForward(61_000)
       await page.getByRole('button', { name: 'Resend code' }).click()
-      await expect(page.getByText('254******78')).toBeVisible()
+      await expect(
+        page.getByText(/If your details match our records/),
+      ).toBeVisible()
+      expect(calls).toContain('resend_otp')
       await shot(page, `${vp.name}-onboarding-9-resend-sms`)
     })
   })
@@ -388,6 +412,63 @@ function portalState() {
     open_invoices: state.invoices,
   })
   return { state, ois }
+}
+
+function selfOnboardedPortalState() {
+  return {
+    name: 'OIS-2026-00031',
+    status: 'Processed',
+    onboarding_source: 'token_self_onboarding',
+    network_slug: 'Example Health Network',
+    progress: {
+      next_action: { label: 'Create an invoice for your token order' },
+      package: {
+        item_code: 'TOK-CORE',
+        display_name: 'Core care operations',
+        token_quantity: 100,
+      },
+      payment_status: 'Not started',
+      steps: [
+        { key: 'identity', label: 'Identity verified', status: 'complete' },
+        { key: 'facility', label: 'Facilities confirmed', status: 'complete' },
+        { key: 'optin', label: 'Opt-In submitted', status: 'complete' },
+        { key: 'package', label: 'Token package selected', status: 'complete' },
+        { key: 'order', label: 'Quote and order ready', status: 'complete' },
+        { key: 'payment', label: 'Payment', status: 'current' },
+        { key: 'golive', label: 'GoLive', status: 'locked' },
+      ],
+      facilities: [
+        {
+          mfl_code: '10001',
+          facility_name: 'Alpha Community Clinic',
+          membership_status: 'Active',
+          network_contact: { go_live: false },
+        },
+      ],
+      orders: [
+        {
+          name: 'SAL-ORD-2026-00031',
+          grand_total: 34800,
+          currency: 'KES',
+          status: 'To Deliver and Bill',
+          crm_token_facility_mfl: '10001',
+          crm_token_package_item: 'TOK-CORE',
+        },
+      ],
+      invoices: [],
+    },
+    open_orders: [
+      {
+        name: 'SAL-ORD-2026-00031',
+        grand_total: 34800,
+        currency: 'KES',
+        status: 'To Deliver and Bill',
+        crm_token_facility_mfl: '10001',
+        crm_token_package_item: 'TOK-CORE',
+      },
+    ],
+    open_invoices: [],
+  }
 }
 
 for (const vp of VIEWPORTS) {
@@ -502,21 +583,14 @@ for (const vp of VIEWPORTS) {
       expect(calls).not.toContain(
         'crm.api.customer_experience.start_token_payment',
       )
-      await page.getByRole('button', { name: 'Start payment' }).click()
-      await expect(
-        page.getByText(/Nothing is\s+charged until you choose Pay now/),
-      ).toBeVisible()
-      await shot(page, `${vp.name}-portal-3-confirm-invoice`)
-      expect(calls).not.toContain(
-        'crm.api.customer_experience.start_token_payment',
-      )
-
       await page.getByRole('button', { name: 'Create invoice' }).click()
       await expect(page.getByText(/Your invoice is ready/)).toBeVisible()
-      await expect(page.getByRole('button', { name: /Pay now/ })).toBeVisible()
+      await expect(
+        page.getByRole('button', { name: /Make payment/ }),
+      ).toBeVisible()
       await shot(page, `${vp.name}-portal-4-invoice-open`)
 
-      await page.getByRole('button', { name: /Pay now/ }).click()
+      await page.getByRole('button', { name: /Make payment/ }).click()
       await expect(
         page.getByText('Paystack sandbox checkout (mock)'),
       ).toBeVisible()
@@ -525,9 +599,56 @@ for (const vp of VIEWPORTS) {
         `${origin}/cx-portal?reference=OIS-OIS-2026-00001-ACC-SINV-2026-00001-ab12cd`,
       )
       await expect(page.getByText('Payment received. Thank you.')).toBeVisible()
-      await expect(page.getByRole('button', { name: /Pay now/ })).toHaveCount(0)
+      await expect(
+        page.getByRole('button', { name: /Make payment/ }),
+      ).toHaveCount(0)
       await shot(page, `${vp.name}-portal-5-paid`)
       expect(page.url()).not.toContain('reference=')
+    })
+
+    test('self-onboarded progress shows package, order, payment and GoLive without signature steps', async ({
+      page,
+    }) => {
+      await page.route(
+        '**/api/method/crm.api.website_redirect.get_portal_context',
+        async (route) =>
+          ok(route, {
+            success: true,
+            data: {
+              route: '/cx-portal',
+              user: 'sam@example.com',
+              ois: [selfOnboardedPortalState()],
+              token_packages: PACKAGES,
+            },
+          }),
+      )
+      await page.goto(`${origin}/cx-portal`)
+      await expect(page.getByText('Your facility journey')).toBeVisible()
+      for (const milestone of [
+        'Identity verified',
+        'Facilities confirmed',
+        'Opt-In submitted',
+        'Token package selected',
+        'Quote and order ready',
+        'Payment',
+        'GoLive',
+      ])
+        await expect(page.getByText(milestone, { exact: true })).toBeVisible()
+      await expect(
+        page.getByText('Selected package: Core care operations.', {
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole('button', { name: 'Create invoice' }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole('button', { name: /Resume order SAL-ORD-2026-00031/ }),
+      ).toBeVisible()
+      await expect(page.locator('body')).not.toContainText(
+        /signature|contract/i,
+      )
+      await shot(page, `${vp.name}-portal-self-onboarding-progress`)
     })
 
     test('a reference for someone else’s OIS is never verified and an unconfigured gateway offers bank transfer', async ({
@@ -569,7 +690,7 @@ for (const vp of VIEWPORTS) {
         'crm.api.checkout.verify_portal_paystack_payment',
       )
       await expect(page.getByText('Overdue')).toBeVisible()
-      await page.getByRole('button', { name: /Pay now/ }).click()
+      await page.getByRole('button', { name: /Make payment/ }).click()
       await expect(page.getByRole('alert')).toContainText('not configured')
       await expect(
         page.getByRole('link', { name: 'Other payment options' }),

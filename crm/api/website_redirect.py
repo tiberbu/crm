@@ -86,7 +86,10 @@ def _portal_progress(submission):
 	while the response remains an allow-listed projection rather than raw docs.
 	"""
 	network = cstr(submission.get("network_slug") or "").strip()
-	contract = _contract_progress(submission.get("contract"))
+	is_self_onboarding = cstr(getattr(submission, "onboarding_source", "") or "").strip() == (
+		"token_self_onboarding"
+	)
+	contract = None if is_self_onboarding else _contract_progress(submission.get("contract"))
 	facility_snapshots = _submission_facilities(submission)
 	mfl_codes = list(
 		{
@@ -154,6 +157,9 @@ def _portal_progress(submission):
 
 	opted_in = any(row.get("membership_status") == "Opted In" for row in contacts)
 	all_live = bool(contacts) and all(row.get("go_live") for row in contacts)
+	if is_self_onboarding:
+		return _self_onboarding_progress(submission, contacts, opted_in, all_live)
+
 	if all_live:
 		next_action = {"key": "complete", "label": "Your facility is ready to go live"}
 	elif not contract["complete"]:
@@ -190,19 +196,116 @@ def _portal_progress(submission):
 	}
 
 
+def _self_onboarding_progress(submission, contacts, opted_in, all_live):
+	"""Project self-onboarding without signature fields or actions."""
+	payload = _json_object(submission.get("raw_json"))
+	package = payload.get("token_package") if isinstance(payload.get("token_package"), dict) else {}
+	package_selected = bool(cstr(package.get("item_code") or "").strip())
+	from crm.api.customer_experience import _order_rows
+
+	orders = _order_rows(submission)
+	invoices = _portal_invoices(submission)
+	paid_invoice = False
+	try:
+		filters = {"docstatus": 1, "outstanding_amount": ["<=", 0]}
+		if frappe.db.has_column("Sales Invoice", "crm_optin_submission"):
+			filters["crm_optin_submission"] = submission.name
+		elif getattr(submission, "deal", None) and frappe.db.has_column("Sales Invoice", "crm_deal"):
+			filters["crm_deal"] = submission.deal
+		if len(filters) > 2:
+			paid_invoice = bool(
+				frappe.get_all(
+					"Sales Invoice",
+					filters=filters,
+					fields=["name"],
+					limit_page_length=1,
+					ignore_permissions=True,
+				)
+			)
+	except Exception:
+		# A missing finance projection must not block the onboarding portal.
+		paid_invoice = False
+
+	quote_names = _json_object(getattr(submission, "quote_names_json", "[]"))
+	if not isinstance(quote_names, list):
+		try:
+			quote_names = json.loads(getattr(submission, "quote_names_json", "[]") or "[]")
+		except (TypeError, ValueError):
+			quote_names = []
+	quote_ready = bool(orders) or any(
+		frappe.db.exists("Quotation", name) for name in quote_names if isinstance(name, str)
+	)
+	payment_complete = paid_invoice
+	if all_live:
+		next_action = {"key": "complete", "label": "Your facility is ready to go live"}
+	elif invoices:
+		next_action = {"key": "pay_invoice", "label": "Pay your open invoice when you are ready"}
+	elif orders:
+		next_action = {"key": "review_order", "label": "Create an invoice for your token order"}
+	elif not quote_ready:
+		next_action = {"key": "order_preparing", "label": "Your token quote and order are being prepared"}
+	else:
+		next_action = {"key": "implementation", "label": "Your implementation is in progress"}
+
+	steps = [
+		{"key": "identity", "label": "Identity verified", "status": "complete"},
+		{"key": "facility", "label": "Facilities confirmed", "status": "complete" if contacts else "current"},
+		{
+			"key": "optin",
+			"label": "Opt-In submitted",
+			"status": "complete" if cstr(getattr(submission, "status", "")) == "Processed" else "current",
+		},
+		{"key": "package", "label": "Token package selected", "status": "complete" if package_selected else "upcoming"},
+		{"key": "order", "label": "Quote and order ready", "status": "complete" if quote_ready else ("current" if package_selected else "upcoming")},
+		{
+			"key": "payment",
+			"label": "Payment",
+			"status": "complete" if payment_complete else ("current" if orders or invoices else "upcoming"),
+		},
+		{
+			"key": "golive",
+			"label": "GoLive",
+			"status": "complete" if all_live else ("current" if opted_in and payment_complete else "locked"),
+		},
+	]
+	return {
+		"facilities": contacts,
+		"current": next_action["key"],
+		"next_action": next_action,
+		"steps": steps,
+		"orders": orders,
+		"invoices": invoices,
+		"payment_status": "Paid" if payment_complete else ("Open" if invoices else "Not started"),
+		"token_credit_status": (
+			"Payment received; token allocation is confirmed by your Network."
+			if payment_complete
+			else "Token balance appears after payment and Network allocation."
+		),
+		"package": {key: package.get(key) for key in ("item_code", "display_name", "token_quantity", "currency") if package.get(key)},
+	}
+
+
 def _set_submission_portal_field(submission, fieldname, value):
 	if frappe.get_meta(OIS_DOCTYPE).has_field(fieldname):
 		frappe.db.set_value(OIS_DOCTYPE, submission.name, fieldname, value, update_modified=False)
 
 
-def ensure_website_user_for_ois(submission, email=None, display_name=None):
+def ensure_website_user_for_ois(submission, email=None, display_name=None, send_password_setup=True):
 	"""Create/reconcile a Website User and OIS permission exactly once."""
 	requested_email = cstr(email or "").strip().lower()
-	if not requested_email:
+	is_self_onboarding = cstr(getattr(submission, "onboarding_source", "") or "").strip() == (
+		"token_self_onboarding"
+	)
+	if not requested_email and is_self_onboarding:
+		requested_email = cstr(getattr(submission, "cx_account_email", "") or "").strip().lower()
+	if not requested_email and not is_self_onboarding:
 		requested_email = (
 			cstr(submission.facility_signatory_email or submission.submitter_email or "").strip().lower()
 		)
-	if not requested_email or "@" not in requested_email:
+	if (
+		not requested_email
+		or frappe.utils.validate_email_address(requested_email).strip().lower() != requested_email
+	):
 		_set_submission_portal_field(submission, "portal_invitation_status", "Blocked")
 		_set_submission_portal_field(
 			submission, "portal_invitation_error", "No valid facility email is available."
@@ -213,6 +316,16 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None):
 	# idempotent when the Network Contact email changes after the first invite.
 	linked_user = cstr(getattr(submission, "portal_user", "") or "").strip()
 	user_name = linked_user if linked_user and frappe.db.exists("User", linked_user) else None
+	if is_self_onboarding and user_name:
+		linked_email = cstr(frappe.db.get_value("User", user_name, "email") or "").strip().lower()
+		if linked_email != requested_email:
+			_set_submission_portal_field(submission, "portal_invitation_status", "Blocked")
+			_set_submission_portal_field(
+				submission,
+				"portal_invitation_error",
+				"Enter the email already linked to this facility account to receive a password reset.",
+			)
+			return {"status": "blocked", "reason": "Account email does not match linked portal user"}
 	if not user_name:
 		user_name = frappe.db.get_value("User", {"email": requested_email}, "name")
 	created = False
@@ -231,6 +344,30 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None):
 				submission, "portal_invitation_error", "The facility account is disabled."
 			)
 			return {"status": "blocked", "reason": "Website User is disabled"}
+		previous_invitation = frappe.db.get_value(
+			OIS_DOCTYPE, submission.name, "portal_invitation_status"
+		)
+		if (
+			is_self_onboarding
+			and send_password_setup
+			and previous_invitation not in {"Sent", "Already active"}
+		):
+			try:
+				user.db_set("redirect_url", PORTAL_ROUTE, update_modified=False)
+				user._reset_password(send_email=True)
+			except Exception as exc:
+				frappe.log_error(
+				title="CRM CX password setup email",
+					message="Native password reset failed (%s)" % type(exc).__name__,
+				)
+				_set_submission_portal_field(submission, "portal_invitation_status", "Failed")
+				_set_submission_portal_field(
+					submission,
+					"portal_invitation_error",
+					"We could not send password setup instructions. Please try again or contact support.",
+				)
+				return {"status": "failed", "user": user_name}
+			welcome_email_sent = True
 	else:
 		user = frappe.new_doc("User")
 		user.update(
@@ -261,7 +398,7 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None):
 		# added. Set the native one-shot redirect without changing their account
 		# or password state.
 		try:
-			if hasattr(user, "db_set"):
+			if hasattr(user, "db_set") and not (is_self_onboarding and welcome_email_sent):
 				user.db_set("redirect_url", PORTAL_ROUTE, update_modified=False)
 			else:
 				# Keeps lightweight unit-test doubles and migration-time stubs safe.
@@ -297,12 +434,17 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None):
 		)
 		return {"status": "failed", "user": user_name}
 	_set_submission_portal_field(
-		submission, "portal_invitation_status", "Sent" if created else "Already active"
+		submission,
+		"portal_invitation_status",
+		"Sent" if created or welcome_email_sent else "Already active",
 	)
-	if created and welcome_email_sent:
+	if welcome_email_sent:
 		_set_submission_portal_field(submission, "portal_invitation_sent_at", frappe.utils.now_datetime())
 	_set_submission_portal_field(submission, "portal_invitation_error", "")
-	return {"status": "sent" if created else "linked", "user": user_name}
+	return {
+		"status": "sent" if created else ("reset_sent" if welcome_email_sent else "linked"),
+		"user": user_name,
+	}
 
 
 def get_user_ois_numbers(user: str | None = None) -> list[str]:
@@ -452,17 +594,22 @@ def get_portal_context():
 	ois_numbers = require_portal_user()
 	rows = []
 	for ois_number in ois_numbers:
+		fields = [
+			"name",
+			"status",
+			"network_slug",
+			"facility_signatory_name",
+			"contract",
+			"raw_json",
+		]
+		if frappe.get_meta(OIS_DOCTYPE).has_field("onboarding_source"):
+			fields.append("onboarding_source")
+		if frappe.get_meta(OIS_DOCTYPE).has_field("quote_names_json"):
+			fields.append("quote_names_json")
 		row = frappe.db.get_value(
 			OIS_DOCTYPE,
 			ois_number,
-			[
-				"name",
-				"status",
-				"network_slug",
-				"facility_signatory_name",
-				"contract",
-				"raw_json",
-			],
+			fields,
 			as_dict=True,
 		)
 		if row:
