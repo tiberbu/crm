@@ -83,7 +83,8 @@ class TestCxSelfOnboardingFields(IntegrationTestCase):
 		self.assertFalse(accepted_at.default)
 
 		settings_field = frappe.get_meta("CRM Opt-In Settings", cached=False).get_field(SETTINGS_FIELD)
-		self.assertEqual(settings_field.fieldtype, "Data")
+		self.assertEqual(settings_field.fieldtype, "Link")
+		self.assertEqual(settings_field.options, "Terms and Conditions")
 		self.assertFalse(settings_field.default)
 
 		for fieldname in OIS_FIELDS:

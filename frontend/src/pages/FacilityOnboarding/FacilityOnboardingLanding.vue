@@ -180,6 +180,18 @@
           role="alert"
         >
           <span>{{ errorMessage }}</span
+          ><a
+            v-if="registrationConflictDetected"
+            href="/login?redirect-to=/cx-portal"
+            data-testid="duplicate-signin"
+            class="font-semibold underline underline-offset-4"
+            >{{ __('Sign in to Customer Experience') }}</a
+          ><a
+            v-if="registrationConflictDetected && supportEmail"
+            :href="`mailto:${supportEmail}`"
+            data-testid="duplicate-support"
+            class="font-semibold underline underline-offset-4"
+            >{{ __('Contact support') }}</a
           ><button
             v-if="sessionExpired"
             type="button"
@@ -284,9 +296,9 @@
             <div v-else class="text-center" role="status">
               <p class="text-sm leading-6 text-ink-gray-6">
                 {{
-                  __(
-                    'If your details match our records, a 6-digit code was sent to the registered contact.',
-                  )
+                  delivery.masked_destination
+                    ? __('A 6-digit code was sent by {0} to {1}.', [deliveryChannelLabel, delivery.masked_destination])
+                    : __('If your details match our records, a 6-digit code was sent to the registered contact.')
                 }}
               </p>
               <p class="mt-2 text-xs text-ink-gray-5">
@@ -338,6 +350,22 @@
           <div
             class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
           >
+            <section
+              v-if="identityPreview.full_name || identityPreview.email || identityPreview.phone"
+              class="mb-6 rounded-xl bg-surface-gray-1 p-4"
+              :aria-label="__('Verified identity')"
+            >
+              <h2 class="text-sm font-semibold">{{ __('Verified identity') }}</h2>
+              <p v-if="identityPreview.full_name" class="mt-1 text-sm text-ink-gray-6">
+                {{ identityPreview.full_name }}
+              </p>
+              <p v-if="identityPreview.email" class="mt-1 text-xs text-ink-gray-5">
+                {{ __('Email: {0}', [identityPreview.email]) }}
+              </p>
+              <p v-if="identityPreview.phone" class="mt-1 text-xs text-ink-gray-5">
+                {{ __('Phone: {0}', [identityPreview.phone]) }}
+              </p>
+            </section>
             <p class="text-sm leading-6 text-ink-gray-6">
               {{
                 __(
@@ -360,16 +388,19 @@
               <label
                 v-for="facility in facilities"
                 :key="facility.facility_id"
-                class="flex cursor-pointer gap-4 rounded-xl border p-4"
+                class="flex gap-4 rounded-xl border p-4"
                 :class="
-                  selectedFacilities.includes(facility.facility_id)
-                    ? 'border-[#bc1823] bg-[#fdf2f3]'
-                    : 'border-outline-gray-2'
+                  facility.onboarding_eligible !== true
+                    ? 'cursor-not-allowed border-outline-gray-2 bg-surface-gray-1 opacity-70'
+                    : selectedFacilities.includes(facility.facility_id)
+                      ? 'cursor-pointer border-[#bc1823] bg-[#fdf2f3]'
+                      : 'cursor-pointer border-outline-gray-2'
                 "
                 ><input
                   v-model="selectedFacilities"
                   type="checkbox"
                   :value="facility.facility_id"
+                  :disabled="facility.onboarding_eligible !== true"
                   class="mt-1 size-4 accent-[#bc1823]"
                 /><span
                   ><strong class="block text-sm">{{
@@ -381,6 +412,14 @@
                       facility.classification || __('Classification pending')
                     }}
                     · {{ facility.mfl_code }}</span
+                  ><span
+                    v-if="facility.onboarding_eligible !== true"
+                    class="mt-2 block text-xs font-medium text-ink-gray-6"
+                    >{{
+                      facility.facility_eligibility_reason === 'missing_level'
+                        ? __('Unavailable for token self-onboarding because HFR did not return a Facility Level.')
+                        : __('Unavailable for token self-onboarding because this Facility Level is not approved.')
+                    }}</span
                   ></span
                 ></label
               >
@@ -664,22 +703,22 @@
           <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-ink-gray-6">
             {{
               __(
-                'We created a separate network application and token order for each facility. Check this email for instructions to set up your password or recover access to an existing account. Then sign in to your portal to track progress.',
+                'We created your customer account and linked the selected facilities to the Network. Check this email for password setup instructions, then sign in to your portal to view your facilities.',
               )
             }}
           </p>
           <div class="mx-auto mt-7 max-w-xl space-y-2 text-left">
             <div
               v-for="item in submissions"
-              :key="item.submission"
+              :key="item.mfl_code"
               class="flex justify-between gap-4 rounded-lg bg-surface-gray-1 px-4 py-3 text-sm"
             >
               <span>{{ item.facility }}</span
-              ><strong class="font-mono text-xs">{{ item.submission }}</strong>
+              ><strong class="font-mono text-xs">{{ item.mfl_code }}</strong>
             </div>
           </div>
           <a
-            href="/login"
+            href="/login?redirect-to=/cx-portal"
             class="mt-8 inline-flex min-h-11 items-center rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white"
             >{{ __('Go to sign in') }}</a
           >
@@ -733,10 +772,14 @@ const delivery = ref({})
 const resendIn = ref(0)
 const otpError = ref('')
 const sessionExpired = ref(false)
+const registrationConflictDetected = ref(false)
 const hfrRetryPending = ref(false)
 const hfrRetryExhausted = ref(false)
 let resendTimer = null
 const deliveryStatus = computed(() => deliveryState(delivery.value))
+const deliveryChannelLabel = computed(() =>
+  delivery.value.channel === 'sms' ? __('text message') : __('email'),
+)
 const expiryMinutes = computed(() =>
   Math.max(1, Math.round((delivery.value.expires_in || 600) / 60)),
 )
@@ -1034,9 +1077,37 @@ async function continuePricing() {
   if (await loadSelfOnboardingTerms()) stage.value = 'review'
 }
 function conflictMessage(result) {
+  if (result?.outcome === 'facility_level_ineligible') {
+    const ineligible = new Set(result.ineligible_facility_ids || [])
+    const eligibilityById = new Map(
+      (result.facility_eligibility || []).map((status) => [
+        status.facility_id,
+        status,
+      ]),
+    )
+    facilities.value = facilities.value.map((facility) =>
+      eligibilityById.has(facility.facility_id) ||
+      ineligible.has(facility.facility_id)
+        ? {
+            ...facility,
+            ...(eligibilityById.get(facility.facility_id) || {
+              onboarding_eligible: false,
+              facility_eligibility_reason: 'level_not_allowed',
+            }),
+          }
+        : facility,
+    )
+    selectedFacilities.value = selectedFacilities.value.filter(
+      (facilityId) => !ineligible.has(facilityId),
+    )
+    stage.value = 'facilities'
+    return __(
+      'Facility level eligibility changed while you were onboarding. Review the facilities and continue with approved levels.',
+    )
+  }
   if (result?.outcome === 'existing_identity') {
     return __(
-      'An onboarding request already exists for this identity. Contact support if you need help.',
+      'An onboarding request already exists for this identity. Sign in to your Customer Experience account or contact support for help.',
     )
   }
   if (result?.outcome === 'facility_review') {
@@ -1056,6 +1127,7 @@ function conflictMessage(result) {
 async function submit() {
   if (!reviewReady.value) return
   errorMessage.value = ''
+  registrationConflictDetected.value = false
   busy.value = true
   try {
     const conflict = await request('check_onboarding_conflicts', {
@@ -1066,6 +1138,9 @@ async function submit() {
     const preflightMessage = conflictMessage(conflict)
     if (preflightMessage) {
       errorMessage.value = preflightMessage
+      registrationConflictDetected.value = ['existing_identity', 'facility_review'].includes(
+        conflict?.outcome,
+      )
       return
     }
     if (conflict?.outcome !== 'new') {
@@ -1086,6 +1161,9 @@ async function submit() {
     const submitConflict = conflictMessage(data)
     if (submitConflict) {
       errorMessage.value = submitConflict
+      registrationConflictDetected.value = ['existing_identity', 'facility_review'].includes(
+        data?.outcome,
+      )
       return
     }
     if (data?.outcome && data.outcome !== 'new') {
@@ -1094,7 +1172,7 @@ async function submit() {
       )
       return
     }
-    submissions.value = data.submissions || []
+    submissions.value = data.enrollments || []
     stage.value = 'success'
   } catch (error) {
     sessionExpired.value = isSessionError(error)
@@ -1118,6 +1196,7 @@ async function submit() {
 function reset() {
   stage.value = 'welcome'
   errorMessage.value = ''
+  registrationConflictDetected.value = false
   sessionExpired.value = false
   hfrRetryPending.value = false
   hfrRetryExhausted.value = false

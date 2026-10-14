@@ -252,8 +252,23 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
-  if (isLoggedIn && to.name !== 'Not Permitted' && !isCrmUser()) {
-    next({ name: 'Not Permitted' })
+  if (isLoggedIn && !isCrmUser()) {
+    try {
+      const portalRoute = await call(
+        'crm.api.website_redirect.get_current_user_portal_route',
+      )
+      if (portalRoute === '/cx-portal') {
+        window.location.replace(portalRoute)
+        return
+      }
+    } catch (error) {
+      // Keep the CRM access boundary if the server cannot confirm portal access.
+    }
+    if (to.name === 'Not Permitted') {
+      next()
+    } else {
+      next({ name: 'Not Permitted' })
+    }
   } else if (to.name === 'Home' && isLoggedIn) {
     const { views, getDefaultView } = viewsStore()
     await views.promise

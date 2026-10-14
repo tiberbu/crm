@@ -10,6 +10,7 @@
   "sales_tax_template",
   "section_break_tc",
   "active_tc_document",
+  "self_onboarding_allowed_facility_levels",
   "section_break_contract_automation",
   "auto_generate_contract_on_submission",
   "col_break_2",
@@ -58,8 +59,14 @@
   {
    "fieldname": "active_tc_document",
    "fieldtype": "Data",
-   "label": "Active T&C Document",
-   "description": "Name of the Terms and Conditions document to render for opt-in submissions"
+   "label": "Default Terms and Conditions",
+   "description": "Configured default Terms and Conditions document for standard opt-in and as the fallback for token-based self-onboarding."
+  },
+  {
+   "fieldname": "self_onboarding_allowed_facility_levels",
+   "fieldtype": "Text",
+   "label": "Allowed Facility Levels for Token Self-Onboarding",
+   "description": "Enter one HFR Facility Level per line. Matching ignores surrounding whitespace and letter case. Leave blank to allow no facility levels."
   },
   {
    "fieldname": "section_break_contract_automation",

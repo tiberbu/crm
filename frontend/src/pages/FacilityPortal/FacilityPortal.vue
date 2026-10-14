@@ -14,12 +14,15 @@ import {
 
 const loading = ref(true)
 const errorMessage = ref('')
-const context = ref({ user: '', ois: [] })
+const context = ref({ user: '', ois: [], customer_accounts: [] })
 const facilityCount = computed(() =>
-  (context.value.ois || []).reduce(
+  (context.value.customer_accounts || []).reduce(
+    (total, account) => total + (account.facilities?.length || 0),
+    (context.value.ois || []).reduce(
     (total, submission) =>
       total + (submission.progress?.facilities?.length || 0),
     0,
+    ),
   ),
 )
 const invoiceReadyOrderCount = computed(() =>
@@ -281,12 +284,12 @@ onMounted(async () => {
             <p
               class="mt-3 max-w-2xl text-sm leading-6 text-ink-gray-6 sm:text-base sm:leading-7"
             >
-              Follow Opt-In progress, review token orders, create invoices, and
-              make payments from one secure place.
+              Track your linked facilities and account activity from one secure
+              place.
             </p>
           </div>
           <div
-            v-if="!loading && !errorMessage && context.ois?.length"
+          v-if="!loading && !errorMessage && (context.ois?.length || context.customer_accounts?.length)"
             class="grid grid-cols-2 gap-3 sm:grid-cols-3"
             aria-label="Account overview"
           >
@@ -377,7 +380,7 @@ onMounted(async () => {
         {{ errorMessage }}
       </p>
       <section
-        v-else-if="!context.ois?.length"
+        v-if="!loading && !errorMessage && !context.ois?.length && !context.customer_accounts?.length"
         class="mt-8 max-w-2xl rounded-2xl border border-white/80 bg-white/90 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-sm"
       >
         <p
@@ -393,7 +396,55 @@ onMounted(async () => {
           linked, your progress and next actions will appear here.
         </p>
       </section>
-      <section v-else class="mt-8 grid gap-4 sm:grid-cols-2">
+      <section
+        v-if="!loading && !errorMessage && context.customer_accounts?.length"
+        class="mt-8 grid gap-4 sm:grid-cols-2"
+      >
+        <article
+          v-for="account in context.customer_accounts"
+          :key="account.customer"
+          class="min-w-0 rounded-2xl border border-white/80 bg-white/90 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6"
+        >
+          <p class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-gray-5">
+            Facility account
+          </p>
+          <h2 class="mt-2 text-lg font-semibold">{{ account.organization }}</h2>
+          <dl class="mt-4 space-y-2 text-sm">
+            <div class="flex justify-between gap-4">
+              <dt class="text-ink-gray-5">Customer</dt>
+              <dd class="font-mono text-xs">{{ account.customer }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-ink-gray-5">Network</dt>
+              <dd class="font-medium">{{ account.network || 'Being confirmed' }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-ink-gray-5">Account</dt>
+              <dd class="font-medium text-emerald-700">Onboarded</dd>
+            </div>
+          </dl>
+          <div class="mt-5 space-y-2">
+            <div
+              v-for="facility in account.facilities || []"
+              :key="facility.mfl_code"
+              class="flex items-center justify-between gap-3 rounded-lg border border-outline-gray-1 bg-white/85 px-3 py-3 text-xs"
+            >
+              <span>
+                <span class="block font-medium text-ink-gray-8">{{ facility.facility_name }}</span>
+                <span class="text-ink-gray-5">{{ facility.membership_status }} · {{ facility.mfl_code }}</span>
+              </span>
+              <span class="shrink-0 rounded-full bg-surface-gray-2 px-2 py-1 text-ink-gray-6">
+                {{ facility.go_live ? 'Live' : 'In progress' }}
+              </span>
+            </div>
+          </div>
+          <p v-if="account.selected_package" class="mt-4 text-xs text-ink-gray-5">
+            Selected package: {{ account.selected_package }}. Your enrollment is saved.
+          </p>
+        </article>
+      </section>
+
+      <section v-if="!loading && !errorMessage && context.ois?.length" class="mt-8 grid gap-4 sm:grid-cols-2">
         <article
           v-for="submission in context.ois"
           :key="submission.name"
@@ -627,7 +678,7 @@ onMounted(async () => {
         </article>
       </section>
       <section
-        v-if="!loading && !errorMessage && context.token_packages?.length"
+        v-if="!loading && !errorMessage && context.ois?.length && context.token_packages?.length"
         class="mt-8 rounded-2xl border border-white/80 bg-white/90 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-sm sm:p-6"
       >
         <div class="flex items-end justify-between gap-4">

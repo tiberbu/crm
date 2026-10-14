@@ -66,8 +66,10 @@ def execute():
 			"CRM Opt-In Settings": [
 				{
 					"fieldname": "self_onboarding_tc_document",
-					"fieldtype": "Data",
-					"label": "Self-Onboarding T&C Document",
+					"fieldtype": "Link",
+					"options": "Terms and Conditions",
+					"label": "Token-Based Self-Onboarding Terms Document",
+					"description": "Terms shown in token-based facility onboarding. Leave blank to use the configured Default Terms and Conditions above.",
 					"insert_after": "active_tc_document",
 				}
 			],

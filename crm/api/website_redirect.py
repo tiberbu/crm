@@ -1,14 +1,14 @@
 """Website-user routing and facility portal identity resolution.
 
-Facility portal access is bound to an explicit Frappe ``User Permission``:
+Legacy facility portal access is bound to an explicit Frappe ``User Permission``:
 
     user     = the Website User
     allow    = CRM Opt-In Submission
     for_value = the OIS number
 
-The browser never supplies the OIS number for authorization.  The portal
-resolves it from the logged-in user on the server, which prevents a query-string
-OIS from becoming an IDOR/BOLA primitive.
+New no-OIS enrollment access is bound to a Customer User Permission and
+Customer-linked Network Memberships. The browser never supplies either record
+as authority; the portal resolves both from the logged-in user on the server.
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ LOGIN_TEAM_ROUTES = {
 }
 OIS_DOCTYPE = "CRM Opt-In Submission"
 OIS_PERMISSION_ALLOW = OIS_DOCTYPE
-MAX_OIS_PER_USER = 100
 
 
 def _json_object(value):
@@ -405,20 +404,14 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None, send_
 				"Could not set CX password redirect for %s", user_name, exc_info=True
 			)
 
-	permission = frappe.get_all(
-		"User Permission",
-		filters={"user": user_name, "allow": OIS_PERMISSION_ALLOW, "for_value": submission.name},
-		fields=["name"],
-		limit_page_length=1,
-	)
-	if not permission:
-		permission = frappe.new_doc("User Permission")
-		permission.user = user_name
-		permission.allow = OIS_PERMISSION_ALLOW
-		permission.for_value = submission.name
-		permission.apply_to_all_doctypes = 0
-		permission.applicable_for = OIS_DOCTYPE
-		permission.insert(ignore_permissions=True)
+	if not _ensure_ois_user_permission(user_name, submission.name):
+		_set_submission_portal_field(submission, "portal_invitation_status", "Failed")
+		_set_submission_portal_field(
+			submission,
+			"portal_invitation_error",
+			"We could not link this account to the facility record. Please try again or contact support.",
+		)
+		return {"status": "failed", "user": user_name}
 
 	_set_submission_portal_field(submission, "portal_user", user_name)
 	if created and not welcome_email_sent:
@@ -444,11 +437,11 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None, send_
 
 
 def get_user_ois_numbers(user: str | None = None) -> list[str]:
-	"""Return existing OIS records explicitly permitted for ``user``.
+	"""Resolve OIS records explicitly linked to ``user`` and repair missing grants.
 
-	This is the only authorization source for the facility portal.  Invalid,
-	stale, duplicate, or empty User Permission values are ignored.  The helper is
-	server-side and intentionally does not accept a browser-supplied OIS.
+	Valid OIS-scoped User Permissions are primary. A missing grant may be repaired
+	from the server-owned OIS.portal_user link. Invalid, stale, duplicate, broad,
+	or empty permissions are ignored. No browser-supplied OIS is accepted.
 	"""
 	user = user or frappe.session.user
 	if not user or user == "Guest":
@@ -457,15 +450,20 @@ def get_user_ois_numbers(user: str | None = None) -> list[str]:
 	try:
 		rows = frappe.get_all(
 			"User Permission",
-			filters={"user": user, "allow": OIS_PERMISSION_ALLOW},
+			filters={
+				"user": user,
+				"allow": OIS_PERMISSION_ALLOW,
+				"apply_to_all_doctypes": 0,
+				"applicable_for": OIS_DOCTYPE,
+			},
 			fields=["for_value", "creation"],
 			order_by="creation asc",
-			limit_page_length=MAX_OIS_PER_USER,
+			limit_page_length=0,
 		)
 	except Exception:
-		# Login routing must fail closed if permissions are not available during a
-		# migration or site bootstrap.  Do not turn an auth request into a 500.
-		return []
+		# Try the server-owned OIS.portal_user recovery path below. If that lookup
+		# also fails, authorization resolves to an empty set without a 500.
+		rows = []
 
 	resolved: list[str] = []
 	seen: set[str] = set()
@@ -478,7 +476,153 @@ def get_user_ois_numbers(user: str | None = None) -> list[str]:
 		seen.add(ois_number)
 		resolved.append(ois_number)
 
+	# Recover a missing/stale permission only from the server-owned OIS.portal_user
+	# link, which is written after the account is validated as a Website User.
+	# Never infer ownership from a browser selector, contact email, or facility ID.
+	linked_submissions = []
+	try:
+		if frappe.get_meta(OIS_DOCTYPE).has_field("portal_user"):
+			linked_submissions = frappe.get_all(
+				OIS_DOCTYPE,
+				filters={"portal_user": user},
+				pluck="name",
+				ignore_permissions=True,
+				limit_page_length=0,
+			)
+	except Exception:
+		linked_submissions = []
+
+	for ois_number in linked_submissions:
+		ois_number = cstr(ois_number or "").strip()
+		if not ois_number or ois_number in seen or not _ois_exists(ois_number):
+			continue
+		try:
+			if not _ensure_ois_user_permission(user, ois_number):
+				continue
+		except Exception as exc:
+			frappe.log_error(
+				title="CRM CX portal permission reconciliation",
+				message="User Permission reconciliation failed (%s)" % type(exc).__name__,
+			)
+			continue
+		seen.add(ois_number)
+		resolved.append(ois_number)
+
 	return resolved
+
+
+def _ensure_ois_user_permission(user: str, ois_number: str) -> bool:
+	"""Ensure one least-privilege User Permission links a Website User to one OIS."""
+	filters = {
+		"user": user,
+		"allow": OIS_PERMISSION_ALLOW,
+		"for_value": ois_number,
+		"apply_to_all_doctypes": 0,
+		"applicable_for": OIS_DOCTYPE,
+	}
+	if frappe.get_all("User Permission", filters=filters, fields=["name"], limit_page_length=1):
+		return True
+
+	permission = frappe.new_doc("User Permission")
+	permission.user = user
+	permission.allow = OIS_PERMISSION_ALLOW
+	permission.for_value = ois_number
+	permission.apply_to_all_doctypes = 0
+	permission.applicable_for = OIS_DOCTYPE
+	permission.insert(ignore_permissions=True)
+	return bool(frappe.get_all("User Permission", filters=filters, fields=["name"], limit_page_length=1))
+
+
+def _ensure_customer_user_permission(user: str, customer: str) -> bool:
+	"""Ensure one least-privilege Customer permission for a verified portal account."""
+	filters = {
+		"user": user,
+		"allow": "Customer",
+		"for_value": customer,
+		"apply_to_all_doctypes": 0,
+		"applicable_for": "CRM Deal",
+	}
+	if frappe.get_all("User Permission", filters=filters, fields=["name"], limit_page_length=1):
+		return True
+	permission = frappe.new_doc("User Permission")
+	permission.update(filters)
+	permission.insert(ignore_permissions=True)
+	return bool(frappe.get_all("User Permission", filters=filters, fields=["name"], limit_page_length=1))
+
+
+def ensure_website_user_for_customer(customer, email=None, display_name=None):
+	"""Create/reconcile a Website User with exactly one Customer-scoped grant."""
+	customer = cstr(customer or "").strip()
+	requested_email = cstr(email or "").strip().lower()
+	if not customer or not frappe.db.exists("Customer", customer):
+		return {"status": "blocked", "reason": "Customer account is missing"}
+	if not requested_email or frappe.utils.validate_email_address(requested_email).strip().lower() != requested_email:
+		return {"status": "blocked", "reason": "No valid portal email is available"}
+
+	user_name = frappe.db.get_value("User", {"email": requested_email}, "name")
+	created = False
+	if user_name:
+		user = frappe.get_doc("User", user_name)
+		if user.user_type != "Website User" or not user.enabled:
+			return {"status": "blocked", "reason": "Email is not an active Website User"}
+	else:
+		user = frappe.new_doc("User")
+		user.update({
+			"email": requested_email,
+			"first_name": cstr(display_name or requested_email.split("@")[0]),
+			"user_type": "Website User",
+			"enabled": 1,
+			"send_welcome_email": 0,
+			"redirect_url": PORTAL_ROUTE,
+		})
+		user.flags.ignore_password_policy = True
+		user.insert(ignore_permissions=True)
+		user_name = user.name
+		created = True
+
+	try:
+		user.db_set("redirect_url", PORTAL_ROUTE, update_modified=False)
+		if not _ensure_customer_user_permission(user_name, customer):
+			return {"status": "failed", "user": user_name}
+		if created:
+			user._reset_password(send_email=True)
+	except Exception as exc:
+		frappe.log_error(
+			title="CRM CX Customer portal provisioning",
+			message="Customer account access setup failed (%s)" % type(exc).__name__,
+		)
+		return {"status": "failed", "user": user_name}
+	return {"status": "sent" if created else "linked", "user": user_name}
+
+
+def get_user_customer_names(user: str | None = None) -> list[str]:
+	"""Resolve only exact Customer grants belonging to the authenticated Website User."""
+	user = user or frappe.session.user
+	if not user or user == "Guest":
+		return []
+	try:
+		user_type = frappe.db.get_value("User", user, "user_type")
+		if user_type != "Website User":
+			return []
+		rows = frappe.get_all(
+			"User Permission",
+			filters={
+				"user": user,
+				"allow": "Customer",
+				"apply_to_all_doctypes": 0,
+				"applicable_for": "CRM Deal",
+			},
+			fields=["for_value"],
+			limit_page_length=0,
+		)
+		names = []
+		for row in rows:
+			name = cstr(row.get("for_value") or "").strip()
+			if name and frappe.db.exists("Customer", name) and name not in names:
+				names.append(name)
+		return names
+	except Exception:
+		return []
 
 
 def _ois_exists(ois_number: str) -> bool:
@@ -503,6 +647,12 @@ def get_portal_route(user: str | None = None) -> str | None:
 		return None
 
 	return PORTAL_ROUTE
+
+
+@frappe.whitelist(methods=["GET"])
+def get_current_user_portal_route() -> str | None:
+	"""Expose only the current session's Website User portal destination."""
+	return get_portal_route()
 
 
 def get_login_team_route(team: str | None = None) -> str:
@@ -584,10 +734,80 @@ def _portal_orders(submission) -> list[dict]:
 		return []
 
 
+def _customer_portal_accounts(user: str) -> list[dict]:
+	"""Project Customer-linked deals and facility memberships for a Website User."""
+	customer_names = get_user_customer_names(user)
+	if not customer_names or not frappe.db.has_column("CRM Facility Membership", "customer"):
+		return []
+	if not frappe.db.has_column("CRM Deal", "cx_customer"):
+		return []
+	deal_fields = ["name", "cx_customer", "organization"]
+	for fieldname in ("optin_network", "cx_onboarding_source", "cx_onboarding_package_item"):
+		if frappe.db.has_column("CRM Deal", fieldname):
+			deal_fields.append(fieldname)
+	deals = frappe.get_all(
+		"CRM Deal",
+		filters={"cx_customer": ["in", customer_names]},
+		fields=deal_fields,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: exact Customer User Permission scoped this projection.
+		limit_page_length=0,
+	)
+	if not deals:
+		return []
+	deal_by_customer = {row.get("cx_customer"): row for row in deals}
+	memberships = frappe.get_all(
+		"CRM Facility Membership",
+		filters={"customer": ["in", customer_names]},
+		fields=["name", "parent", "network", "status", "contact_name", "go_live", "customer"],
+		ignore_permissions=True,  # SYSTEM-INTERNAL: exact Customer User Permission scoped this projection.
+		limit_page_length=0,
+	)
+	parent_names = list({row.get("parent") for row in memberships if row.get("parent")})
+	facilities = frappe.get_all(
+		"CRM Pre-Qualified Facility",
+		filters={"name": ["in", parent_names]},
+		fields=["name", "mfl_code", "facility_name", "keph_level"],
+		ignore_permissions=True,  # SYSTEM-INTERNAL: parent was selected from Customer-linked memberships.
+		limit_page_length=0,
+	) if parent_names else []
+	facility_by_name = {row.name: row for row in facilities}
+	accounts = []
+	for customer in customer_names:
+		deal = deal_by_customer.get(customer)
+		if not deal:
+			continue
+		rows = []
+		for membership in memberships:
+			if membership.get("customer") != customer:
+				continue
+			facility = facility_by_name.get(membership.get("parent"))
+			if not facility:
+				continue
+			rows.append({
+				"facility_name": cstr(facility.get("facility_name") or "Facility"),
+				"mfl_code": cstr(facility.get("mfl_code") or ""),
+				"keph_level": cstr(facility.get("keph_level") or ""),
+				"network": membership.get("network"),
+				"membership_status": cstr(membership.get("status") or "Active"),
+				"go_live": bool(frappe.utils.cint(membership.get("go_live"))),
+			})
+		accounts.append({
+			"customer": customer,
+			"deal": deal.get("name"),
+			"organization": cstr(deal.get("organization") or customer),
+			"network": deal.get("optin_network"),
+			"source": deal.get("cx_onboarding_source"),
+			"selected_package": deal.get("cx_onboarding_package_item"),
+			"facilities": rows,
+		})
+	return accounts
+
+
 @frappe.whitelist(methods=["GET"])
 def get_portal_context():
-	"""Return the authenticated user's safe, OIS-scoped portal context."""
+	"""Return legacy OIS records and no-OIS Customer enrollment for this Website User."""
 	ois_numbers = require_portal_user()
+	customer_accounts = _customer_portal_accounts(frappe.session.user)
 	rows = []
 	for ois_number in ois_numbers:
 		fields = [
@@ -624,6 +844,7 @@ def get_portal_context():
 			"route": PORTAL_ROUTE,
 			"user": frappe.session.user,
 			"ois": rows,
+			"customer_accounts": customer_accounts,
 			"token_packages": _portal_token_catalog(),
 		},
 	}
