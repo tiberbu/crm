@@ -117,6 +117,19 @@
             "
             @update:modelValue="markDirty"
           />
+          <FormControl
+            v-model="form.self_onboarding_allowed_facility_levels"
+            class="mt-4"
+            :label="__('Allowed Facility Levels for Token Self-Onboarding')"
+            :description="
+              __(
+                'Enter one HFR Facility Level per line. Level 2, Level 3B, and Level 3C are seeded by the migration. Clear the list to disable facility self-onboarding.',
+              )
+            "
+            type="textarea"
+            :rows="4"
+            @update:modelValue="markDirty"
+          />
           <div class="mt-4 grid gap-4 md:grid-cols-2">
             <FormControl
               v-model="form.token_sales_order_validity_days"
@@ -593,6 +606,7 @@ const form = reactive({
   tiberbu_contacts: [],
   token_price_list: '',
   facility_onboarding_default_partner_id: '',
+  self_onboarding_allowed_facility_levels: '',
   token_sales_order_validity_days: 30,
   token_invoice_due_days: 30,
   token_packages: [],

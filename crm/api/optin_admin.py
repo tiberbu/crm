@@ -696,6 +696,8 @@ def get_optin_settings():
 		"token_price_list": settings.get("token_price_list") or "",
 		"facility_onboarding_default_partner_id": settings.get("facility_onboarding_default_partner_id")
 		or "",
+		"self_onboarding_allowed_facility_levels": settings.get("self_onboarding_allowed_facility_levels")
+		or "",
 		"token_sales_order_validity_days": int(settings.get("token_sales_order_validity_days") or 30),
 		"token_invoice_due_days": int(settings.get("token_invoice_due_days") or 30),
 		"token_packages": token_packages,
@@ -729,6 +731,11 @@ def update_optin_settings(settings: Any):
 	default_partner_id = frappe.utils.cstr(
 		settings.get("facility_onboarding_default_partner_id") or ""
 	).strip()
+	allowed_facility_levels = (
+		_normalize_facility_level_allowlist(settings.get("self_onboarding_allowed_facility_levels"))
+		if "self_onboarding_allowed_facility_levels" in settings
+		else None
+	)
 	token_sales_order_validity_days = int(settings.get("token_sales_order_validity_days") or 30)
 	token_invoice_due_days = int(settings.get("token_invoice_due_days") or 30)
 	token_packages = settings.get("token_packages") or []
@@ -867,6 +874,10 @@ def update_optin_settings(settings: Any):
 		doc.token_price_list = token_price_list
 	if frappe.get_meta("CRM Opt-In Settings").has_field("facility_onboarding_default_partner_id"):
 		doc.facility_onboarding_default_partner_id = default_partner_id
+	if allowed_facility_levels is not None and frappe.get_meta("CRM Opt-In Settings").has_field(
+		"self_onboarding_allowed_facility_levels"
+	):
+		doc.self_onboarding_allowed_facility_levels = allowed_facility_levels
 	if frappe.get_meta("CRM Opt-In Settings").has_field("token_price_list"):
 		doc.token_sales_order_validity_days = token_sales_order_validity_days
 		doc.token_invoice_due_days = token_invoice_due_days
@@ -887,6 +898,19 @@ def list_optin_tax_templates():
 # ---------------------------------------------------------------------------
 # Negotiated price lists and item prices
 # ---------------------------------------------------------------------------
+
+
+def _normalize_facility_level_allowlist(value):
+	"""Keep one trimmed, non-empty entry per facility level, case-insensitively."""
+	result = []
+	seen = set()
+	for line in frappe.utils.cstr(value or "").splitlines():
+		level = line.strip()
+		key = level.casefold()
+		if level and key not in seen:
+			result.append(level)
+			seen.add(key)
+	return "\n".join(result)
 
 
 def _is_standard_selling_price_list(name):
