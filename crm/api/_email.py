@@ -261,7 +261,7 @@ def branded_email_html(
 <div style="background:#f4f5f6;margin:0;padding:24px 12px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif">
   <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
     <tr><td align="center">
-      <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="width:480px;max-width:480px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(16,24,40,0.08)">
+      <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="width:100%%;max-width:480px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(16,24,40,0.08)">
         <tr><td style="height:4px;line-height:4px;font-size:0;background:%(brand)s">&nbsp;</td></tr>
         <tr><td align="center" style="padding:32px 32px 4px">%(header)s</td></tr>
         <tr><td align="center" style="padding:12px 32px 0">

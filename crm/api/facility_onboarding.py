@@ -393,17 +393,23 @@ def _send_otp(person: dict[str, Any], otp: str) -> dict[str, str]:
 				reference = secrets.token_hex(6).upper()
 				queue = frappe.sendmail(
 					recipients=[email],
-					subject="%s facility onboarding verification · OTP ID %s" % (OTP_BRAND, reference),
+					subject="CareverseHIMS — Facility verification code %s · OTP ID %s" % (otp, reference),
 					message=branded_email_html(
-						heading="Verify your identity",
+						heading="Your CareverseHIMS verification code",
 						intro_html=(
-							"<p style='margin:0'>Use this code to continue onboarding your facility "
-							"with Tiberbu HMIS.</p>"
+							"<p style='margin:0'>Enter this one-time code to verify your email address "
+							"and continue onboarding your facility.</p>"
 						),
-						highlight_html=otp_code_block(otp),
+						highlight_html=(
+							"<div style='text-align:center'>"
+							"<p style='margin:0 0 10px;color:#6b7280;font-size:11px;font-weight:700;"
+							"letter-spacing:1.2px;text-transform:uppercase'>One-time passcode</p>%s</div>"
+							% otp_code_block(otp)
+						),
 						note_html=(
-							"This code expires in 10 minutes. Do not share it. "
-							"Email reference: <strong>%s</strong>." % reference
+							"This code expires in 10 minutes. Never share it; Tiberbu support will never ask for it. "
+							"If you did not request it, you can ignore this email. "
+							"Reference: <strong>%s</strong>." % reference
 						),
 					),
 					now=True,
