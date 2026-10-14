@@ -204,6 +204,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.sent = []
 		self.sms = []
 		self.channel_setting = "Email"
+		self.allowed_facility_levels = "Level 3"
 		self.gateway = True
 		self.email_fails = False
 		self.hfr = Mock(return_value=FACILITIES)
@@ -230,7 +231,11 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				fo,
 				"_setting",
 				side_effect=lambda name, default="": (
-					self.channel_setting if name == "facility_onboarding_preferred_otp_channel" else default
+					self.channel_setting
+					if name == "facility_onboarding_preferred_otp_channel"
+					else self.allowed_facility_levels
+					if name == "self_onboarding_allowed_facility_levels"
+					else default
 				),
 			),
 			patch.object(fo.frappe, "sendmail", side_effect=sendmail),
@@ -249,7 +254,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 
 	def _captured_otp(self):
 		if self.sent:
-			return re.search(r"<strong>(\d{6})</strong>", self.sent[-1]["message"]).group(1)
+			return re.search(r">(\d{6})</span>", self.sent[-1]["message"]).group(1)
 		return re.search(r"\b(\d{6})\b", self.sms[-1][1]).group(1)
 
 	def test_cr_lookup_and_otp_precede_hfr_ownership_lookup(self):
@@ -260,6 +265,46 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(data["facilities"][0]["facility_id"], "FID-1")
 		self.assertEqual([c[0] for c in self.calls.mock_calls], ["registry", "hfr"])
 		self.hfr.assert_called_once_with(ID_NUMBER)
+
+	def test_hfr_facilities_keep_category_separate_and_refresh_eligibility(self):
+		self.hfr.return_value = [
+			{**FACILITIES[0], "facility_level": " Level 3 ", "category": "Clinic"},
+			{"facility_id": "FID-2", "facility_name": "No level", "category": "Level 3"},
+		]
+		token = self._start()["session_token"]
+		data = fo.verify_otp(token, self._captured_otp())["data"]
+
+		self.assertEqual(data["facilities"][0]["facility_level"], "Level 3")
+		self.assertEqual(data["facilities"][0]["facility_category"], "Clinic")
+		self.assertTrue(data["facilities"][0]["onboarding_eligible"])
+		self.assertFalse(data["facilities"][1]["onboarding_eligible"])
+		self.assertEqual(data["facilities"][1]["facility_eligibility_reason"], "missing_level")
+
+		self.allowed_facility_levels = "Level 30"
+		refreshed = fo.retry_hfr(token)["data"]["facilities"]
+		self.assertFalse(refreshed[0]["onboarding_eligible"])
+		self.assertEqual(refreshed[0]["facility_eligibility_reason"], "level_not_allowed")
+
+	def test_facility_level_whitelist_uses_trimmed_case_insensitive_exact_matches(self):
+		facility = fo._facility_row({**FACILITIES[0], "facility_level": "  LEVEL 3  "})
+
+		self.assertTrue(fo._facility_level_eligibility(facility, {"level 3"})["onboarding_eligible"])
+		self.assertFalse(fo._facility_level_eligibility(facility, {"level 30"})["onboarding_eligible"])
+		self.assertFalse(fo._facility_level_eligibility(facility, set())["onboarding_eligible"])
+		category_only = fo._facility_row({"facility_id": "FID-CATEGORY", "category": "Level 3"})
+		self.assertFalse(category_only["facility_level"])
+		self.assertFalse(fo._facility_level_eligibility(category_only, {"level 3"})["onboarding_eligible"])
+		fallback_level = fo._facility_row(
+			{**FACILITIES[0], "facility_level": "  ", "kephl_level": " Level 3 "}
+		)
+		self.assertEqual(fallback_level["facility_level"], "Level 3")
+		self.assertTrue(
+			fo._facility_level_eligibility(fallback_level, {"level 3"})["onboarding_eligible"]
+		)
+		primary_level = fo._facility_row(
+			{**FACILITIES[0], "facility_level": "Level 4", "kephl_level": "Level 3"}
+		)
+		self.assertEqual(primary_level["facility_level"], "Level 4")
 
 	def test_hfr_no_facilities_is_resolved_only_after_otp(self):
 		self.hfr.return_value = []
@@ -375,8 +420,8 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 	def test_email_is_the_default_channel(self):
 		delivery = self._start()["delivery"]
 		self.assertEqual(delivery["channel"], "email")
-		self.assertRegex(delivery["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
-		self.assertNotIn("example.com", delivery["masked_destination"])
+		self.assertEqual(delivery["masked_destination"], "o***@example.com")
+		self.assertNotIn("owner@example.com", delivery["masked_destination"])
 		self.assertEqual(delivery["status"], "sent")
 		self.assertEqual(len(self.sent), 1)
 		self.assertEqual(self.sms, [])
@@ -385,8 +430,8 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.channel_setting = "SMS"
 		delivery = self._start()["delivery"]
 		self.assertEqual(delivery["channel"], "sms")
-		self.assertRegex(delivery["masked_destination"], r"^254\*\*\*\*\*\*[0-9]{2}$")
-		self.assertNotEqual(delivery["masked_destination"], "254******78")
+		self.assertEqual(delivery["masked_destination"], "254******78")
+		self.assertNotIn("254712345678", delivery["masked_destination"])
 		self.assertEqual(len(self.sms), 1)
 		self.assertEqual(self.sent, [])
 
@@ -394,7 +439,8 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.email_fails = True
 		started = self._start()
 		delivery = started["delivery"]
-		self.assertEqual(delivery["channel"], "email")
+		self.assertEqual(delivery["channel"], "sms")
+		self.assertEqual(delivery["masked_destination"], "254******78")
 		self.assertEqual(self.store.get(started["session_token"])["delivery"]["channel"], "sms")
 		self.assertEqual(delivery["status"], "sent")
 
@@ -402,13 +448,14 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.channel_setting = "SMS"
 		self.gateway = False
 		started = self._start()
-		self.assertEqual(started["delivery"]["channel"], "sms")
+		self.assertEqual(started["delivery"]["channel"], "email")
 		self.assertEqual(self.store.get(started["session_token"])["delivery"]["channel"], "email")
 
 	def test_phone_only_contact_uses_sms(self):
 		self.registry.return_value = {**PERSON, "email": ""}
 		started = self._start()
-		self.assertEqual(started["delivery"]["channel"], "email")
+		self.assertEqual(started["delivery"]["channel"], "sms")
+		self.assertEqual(started["delivery"]["masked_destination"], "254******78")
 		self.assertEqual(self.store.get(started["session_token"])["delivery"]["channel"], "sms")
 
 	def test_no_deliverable_channel_is_reported_without_leaking_contacts(self):
@@ -416,7 +463,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.gateway = False
 		started = self._start()
 		delivery = started["delivery"]
-		self.assertEqual(delivery["status"], "sent")
+		self.assertEqual(delivery["status"], "unavailable")
 		self.assertEqual(delivery["channel"], "email")
 		self.assertRegex(delivery["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
 		self.assertNotIn("owner@example.com", repr(self.log_error.call_args_list))
@@ -436,11 +483,12 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(set(first), set(real))
 		self.assertEqual(set(first["delivery"]), set(real["delivery"]))
 		self.assertEqual(first["delivery"]["channel"], "email")
+		self.assertEqual(first["delivery"]["status"], "unavailable")
 		self.assertRegex(first["delivery"]["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
 		self.assertEqual(first["delivery"]["masked_destination"], second["delivery"]["masked_destination"])
 		self.assertEqual(first["delivery"]["channel"], real["delivery"]["channel"])
-		self.assertEqual(first["delivery"]["status"], real["delivery"]["status"])
-		self.assertNotEqual(real["delivery"]["masked_destination"], "o***@example.com")
+		self.assertEqual(real["delivery"]["status"], "sent")
+		self.assertEqual(real["delivery"]["masked_destination"], "o***@example.com")
 
 	def test_nothing_sensitive_is_disclosed_before_verification(self):
 		data = self._start()
@@ -538,7 +586,8 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		token = self._start()["session_token"]
 		cooling = fo.resend_otp(token)["data"]
 		self.assertEqual(len(self.sent), 1)
-		self.assertEqual(cooling["delivery"]["resend_after"], 0)
+		self.assertGreaterEqual(cooling["delivery"]["resend_after"], 1)
+		self.assertLessEqual(cooling["delivery"]["resend_after"], fo.OTP_RESEND_SECONDS)
 		self.assertEqual(self.store.data[token]["resend_count"], 0)
 		for _ in range(fo.OTP_MAX_RESENDS):
 			self.store.data[token]["otp_sent_at"] = 1
@@ -551,7 +600,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.registry.return_value = None
 		token = self._start("99999999")["session_token"]
 		self.store.data[token]["otp_sent_at"] = 1
-		self.assertEqual(fo.resend_otp(token)["data"]["delivery"]["status"], "sent")
+		self.assertEqual(fo.resend_otp(token)["data"]["delivery"]["status"], "unavailable")
 		self.assertEqual(self.sent, [])
 
 	def _evidence_rows(self, token):
@@ -746,6 +795,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		settings = {
 			"self_onboarding_tc_document": dedicated,
 			"active_tc_document": legacy,
+			"self_onboarding_allowed_facility_levels": self.allowed_facility_levels,
 		}
 		self.terms_settings = settings
 		original_exists = fo.frappe.db.exists
@@ -1065,6 +1115,45 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				fo.check_onboarding_conflicts(token, '["FID-1"]'),
 				{"outcome": "new", "allowed_facility_ids": ["FID-1"]},
 			)
+
+	def test_conflict_preflight_rechecks_current_facility_level_whitelist(self):
+		token = self._verified_token()
+		self.allowed_facility_levels = " Level 3 "
+		with patch.object(fo, "_public_network", return_value={"name": "net-a"}):
+			self.assertEqual(
+				fo.check_onboarding_conflicts(token, '["FID-1"]'),
+				{"outcome": "new", "allowed_facility_ids": ["FID-1"]},
+			)
+			self.allowed_facility_levels = "Level 30"
+			self.assertEqual(
+				fo.check_onboarding_conflicts(token, '["FID-1"]'),
+				{
+					"outcome": "facility_level_ineligible",
+					"allowed_facility_ids": [],
+					"ineligible_facility_ids": ["FID-1"],
+					"facility_eligibility": [
+						{
+							"facility_id": "FID-1",
+							"onboarding_eligible": False,
+							"facility_eligibility_reason": "level_not_allowed",
+						}
+					],
+				},
+			)
+
+	def test_submit_rechecks_current_facility_level_whitelist_before_side_effects(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+		self.terms_settings["self_onboarding_allowed_facility_levels"] = "Level 30"
+
+		result = fo.submit_onboarding(
+			token, "123456", '["FID-1"]', "TOK-1", "sam@example.com", 1, terms["content_hash"]
+		)
+
+		self.assertEqual(result["data"]["outcome"], "facility_level_ineligible")
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
 
 	def test_duplicate_identity_preflight_returns_only_allow_listed_state(self):
 		self._submit_env()

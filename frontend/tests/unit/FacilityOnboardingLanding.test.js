@@ -87,7 +87,12 @@ describe('FacilityOnboardingLanding', () => {
         message: {
           data: {
             session_token: 'opaque-session',
-            delivery: { status: 'sent', resend_after: 60 },
+            delivery: {
+              channel: 'sms',
+              masked_destination: '254******78',
+              status: 'sent',
+              resend_after: 60,
+            },
           },
         },
       })
@@ -98,9 +103,31 @@ describe('FacilityOnboardingLanding', () => {
         message: {
           data: {
             state: 'ready',
-            identity: { full_name: 'Amina Otieno' },
+            identity: {
+              full_name: 'Amina Otieno',
+              email: 'a***@example.test',
+              phone: '254******78',
+            },
             facilities: [
-              { facility_id: 'FID-1', facility_name: 'Alpha Clinic' },
+              {
+                facility_id: 'FID-1',
+                facility_name: 'Alpha Clinic',
+                facility_level: 'Level 3',
+                onboarding_eligible: true,
+              },
+              {
+                facility_id: 'FID-2',
+                facility_name: 'Unapproved Clinic',
+                facility_level: 'Level 2',
+                onboarding_eligible: false,
+                facility_eligibility_reason: 'level_not_allowed',
+              },
+              {
+                facility_id: 'FID-3',
+                facility_name: 'Facility without a level',
+                onboarding_eligible: false,
+                facility_eligibility_reason: 'missing_level',
+              },
             ],
           },
         },
@@ -121,6 +148,9 @@ describe('FacilityOnboardingLanding', () => {
 
     await submitIdentity(host)
     expect(call.mock.calls[0][0]).toContain('start_identity')
+    expect(host.textContent).toContain('text message')
+    expect(host.textContent).toContain('254******78')
+    expect(host.textContent).not.toContain('Amina Otieno')
 
     await submitOtp(host)
     expect(host.textContent).toContain('Your contact is verified')
@@ -133,6 +163,16 @@ describe('FacilityOnboardingLanding', () => {
     await settle()
 
     expect(host.textContent).toContain('Alpha Clinic')
+    expect(host.textContent).toContain('Unapproved Clinic')
+    expect(host.textContent).toContain('this Facility Level is not approved')
+    expect(host.textContent).toContain('Facility without a level')
+    expect(host.textContent).toContain('HFR did not return a Facility Level')
+    expect(host.querySelectorAll('input[type="checkbox"]')[0].disabled).toBe(false)
+    expect(host.querySelectorAll('input[type="checkbox"]')[1].disabled).toBe(true)
+    expect(host.querySelectorAll('input[type="checkbox"]')[2].disabled).toBe(true)
+    expect(host.textContent).toContain('Verified identity')
+    expect(host.textContent).toContain('Amina Otieno')
+    expect(host.textContent).toContain('a***@example.test')
     expect(call.mock.calls.map(([method]) => method.split('.').at(-1))).toEqual(
       ['start_identity', 'verify_otp', 'retry_hfr'],
     )
@@ -156,7 +196,11 @@ describe('FacilityOnboardingLanding', () => {
             state: 'ready',
             identity: { full_name: 'Amina Otieno' },
             facilities: [
-              { facility_id: 'FID-1', facility_name: 'Alpha Clinic' },
+              {
+                facility_id: 'FID-1',
+                facility_name: 'Alpha Clinic',
+                onboarding_eligible: true,
+              },
             ],
           },
         },
@@ -179,6 +223,8 @@ describe('FacilityOnboardingLanding', () => {
     await submitOtp(host)
 
     expect(host.textContent).toContain('Alpha Clinic')
+    expect(host.textContent).toContain('Verified identity')
+    expect(host.textContent).toContain('Amina Otieno')
     expect(call.mock.calls.map(([method]) => method.split('.').at(-1))).toEqual(
       ['start_identity', 'verify_otp', 'retry_hfr'],
     )
@@ -237,7 +283,11 @@ describe('FacilityOnboardingLanding', () => {
             state: 'ready',
             identity: { full_name: 'Amina Otieno' },
             facilities: [
-              { facility_id: 'FID-1', facility_name: 'Alpha Clinic' },
+              {
+                facility_id: 'FID-1',
+                facility_name: 'Alpha Clinic',
+                onboarding_eligible: true,
+              },
             ],
           },
         },
@@ -343,6 +393,28 @@ describe('FacilityOnboardingLanding', () => {
       { outcome: 'facility_review', allowed_facility_ids: [] },
       'Alpha Clinic',
     ],
+    [
+      'facility level eligibility changed',
+      {
+        outcome: 'facility_level_ineligible',
+        allowed_facility_ids: [],
+        ineligible_facility_ids: ['FID-1'],
+        facility_eligibility: [
+          {
+            facility_id: 'FID-1',
+            onboarding_eligible: false,
+            facility_eligibility_reason: 'level_not_allowed',
+          },
+          {
+            facility_id: 'FID-2',
+            onboarding_eligible: false,
+            facility_eligibility_reason: 'missing_level',
+          },
+        ],
+      },
+      null,
+      'Facility level eligibility changed while you were onboarding',
+    ],
   ])(
     'stops submission safely for a %s conflict',
     async (_outcome, conflict, submitConflict, expectedCopy) => {
@@ -361,7 +433,16 @@ describe('FacilityOnboardingLanding', () => {
               state: 'ready',
               identity: { full_name: 'Amina Otieno' },
               facilities: [
-                { facility_id: 'FID-1', facility_name: 'Alpha Clinic' },
+                {
+                  facility_id: 'FID-1',
+                  facility_name: 'Alpha Clinic',
+                  onboarding_eligible: true,
+                },
+                {
+                  facility_id: 'FID-2',
+                  facility_name: 'Facility without a level',
+                  onboarding_eligible: true,
+                },
               ],
             },
           },
@@ -369,7 +450,10 @@ describe('FacilityOnboardingLanding', () => {
         .mockResolvedValueOnce({
           message: {
             data: {
-              network: { display_name: 'Network A' },
+              network: {
+                display_name: 'Network A',
+                contact_email: 'support@example.test',
+              },
               packages: [
                 { item_code: 'TOK-1', display_name: 'Starter', price: 1000 },
               ],
@@ -417,6 +501,22 @@ describe('FacilityOnboardingLanding', () => {
       })
       expect(host.textContent).toContain(expectedCopy)
       expect(host.textContent).not.toContain('Your onboarding has started')
+      if (_outcome === 'existing_identity' || submitConflict) {
+        expect(host.querySelector('[data-testid="duplicate-signin"]')?.textContent)
+          .toContain('Sign in to Customer Experience')
+        expect(host.querySelector('[data-testid="duplicate-support"]')?.textContent)
+          .toContain('Contact support')
+      }
+      if (_outcome === 'facility level eligibility changed') {
+        expect(host.querySelector('[data-testid="duplicate-signin"]')).toBeNull()
+        expect(host.querySelector('[data-testid="duplicate-support"]')).toBeNull()
+        expect(
+          [...host.querySelectorAll('input[type="checkbox"]')].every(
+            (input) => input.disabled,
+          ),
+        ).toBe(true)
+        expect(host.textContent).toContain('HFR did not return a Facility Level')
+      }
     },
   )
 })
