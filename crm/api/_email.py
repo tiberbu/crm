@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import frappe
 
-DEFAULT_BRAND_COLOUR = "#b91c1c"  # Tiberbu red — used when a network has no colour set
+DEFAULT_BRAND_COLOUR = "#bc1823"  # Tiberbu CRM primary — used when a network has no colour set
 
 OTP_QUEUE_REDACTION = "OTP email content redacted after delivery."
 
@@ -190,7 +190,8 @@ def _header_html(display_name, logo_url, brand):
 		)
 	return (
 		'<div style="font-size:20px;font-weight:700;color:%s;'
-		'font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif">%s</div>'
+		'letter-spacing:-.02em;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'
+		'\'Segoe UI\',Roboto,Arial,sans-serif">%s</div>'
 		% (brand, frappe.utils.escape_html(display_name))
 	)
 
@@ -226,7 +227,7 @@ def branded_email_html(
 
 	highlight_row = ""
 	if highlight_html:
-		highlight_row = '<tr><td align="center" style="padding:20px 32px 4px">%s</td></tr>' % highlight_html
+		highlight_row = '<tr><td align="center" style="padding:24px 32px 4px">%s</td></tr>' % highlight_html
 
 	cta_row = ""
 	if cta_label and cta_url:
@@ -234,22 +235,23 @@ def branded_email_html(
 			'<tr><td align="center" style="padding:22px 32px 4px">'
 			'<a href="%s" style="display:inline-block;background:%s;color:#ffffff;'
 			"font-size:15px;font-weight:600;text-decoration:none;padding:13px 34px;"
-			'border-radius:10px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif">%s</a>'
+			'border-radius:10px;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Arial,sans-serif">%s</a>'
 			"</td></tr>" % (cta_url, brand, frappe.utils.escape_html(cta_label))
 		)
 
 	note_row = ""
 	if note_html:
 		note_row = (
-			'<tr><td align="center" style="padding:6px 32px 24px">'
-			'<p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.5">%s</p>'
-			"</td></tr>" % note_html
+			'<p style="margin:0;font-size:13px;color:#667075;line-height:1.65;'
+			'font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Arial,sans-serif">%s</p>'
+			% note_html
 		)
 
 	help_line = ""
 	if contact_email:
 		help_line = (
-			'<p style="font-size:12px;color:#9ca3af;margin:0 0 6px">Need help? Contact '
+			'<p style="font-size:12px;line-height:1.5;color:#667075;margin:0 0 6px;'
+			'font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Arial,sans-serif">Need help? Contact '
 			'<a href="mailto:%s" style="color:%s;text-decoration:none">%s</a></p>'
 			% (contact_email, brand, contact_email)
 		)
@@ -258,25 +260,26 @@ def branded_email_html(
 	footer_line = frappe.utils.escape_html(" · ".join(footer_bits))
 
 	return """\
-<div style="background:#f4f5f6;margin:0;padding:24px 12px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif">
-  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-    <tr><td align="center">
-      <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="width:100%%;max-width:480px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(16,24,40,0.08)">
+<div style="background:#f5f7fa;margin:0;padding:24px 12px;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
+  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f5f7fa">
+    <tr><td align="center" style="padding:40px 16px">
+      <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="width:100%%;max-width:560px;background:#ffffff;border:1px solid #e8e8e8;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
         <tr><td style="height:4px;line-height:4px;font-size:0;background:%(brand)s">&nbsp;</td></tr>
-        <tr><td align="center" style="padding:32px 32px 4px">%(header)s</td></tr>
-        <tr><td align="center" style="padding:12px 32px 0">
-          <h1 style="margin:0;font-size:20px;font-weight:700;color:#111827">%(heading)s</h1>
+        <tr><td align="left" style="padding:28px 40px 20px">%(header)s</td></tr>
+        <tr><td style="padding:0 40px"><div style="border-top:1px solid #e8e8e8;font-size:0;line-height:0">&nbsp;</div></td></tr>
+        <tr><td align="left" style="padding:28px 40px 0">
+          <h1 style="margin:0;font-size:22px;line-height:1.3;font-weight:700;letter-spacing:-.02em;color:#1f272e;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">%(heading)s</h1>
         </td></tr>
-        <tr><td align="center" style="padding:8px 32px 0">
-          <div style="margin:0;font-size:14px;line-height:1.5;color:#4b5563">%(intro_html)s</div>
+        <tr><td align="left" style="padding:12px 40px 0">
+          <div style="margin:0;font-size:15px;line-height:1.65;color:#4c5257;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">%(intro_html)s</div>
         </td></tr>
         %(highlight_row)s
         %(cta_row)s
-        %(note_row)s
-        <tr><td style="padding:0 32px"><div style="border-top:1px solid #eceef0;font-size:0;line-height:0">&nbsp;</div></td></tr>
-        <tr><td align="center" style="padding:18px 32px 30px">
+        <tr><td align="left" style="padding:18px 40px 24px;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">%(note_row)s</td></tr>
+        <tr><td style="padding:0 40px"><div style="border-top:1px solid #e8e8e8;font-size:0;line-height:0">&nbsp;</div></td></tr>
+        <tr><td align="left" style="padding:18px 40px 24px">
           %(help_line)s
-          <p style="margin:0;font-size:11px;color:#b6bcc4">%(footer_line)s</p>
+          <p style="margin:0;font-size:11px;line-height:1.5;color:#8c8c8c;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">%(footer_line)s</p>
         </td></tr>
       </table>
     </td></tr>

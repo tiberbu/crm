@@ -109,10 +109,10 @@
           <FormControl
             v-model="form.facility_onboarding_default_partner_id"
             class="mt-4"
-            :label="__('Default Network Partner ID')"
+            :label="__('Default Network ID')"
             :description="
               __(
-                'Optional six-digit Network ID used when a facility leaves Partner ID blank during self-onboarding.',
+                'Default six-digit Network ID used when the facility owner leaves the referring partner’s Network ID blank during self-onboarding.',
               )
             "
             @update:modelValue="markDirty"

@@ -96,6 +96,46 @@ class TestFacilityOnboardingLevelWhitelistPatch(UnitTestCase):
 
 
 class TestFacilityOnboardingRegistryConfig(UnitTestCase):
+	def test_blank_referring_network_id_resolves_the_configured_default(self):
+		network = {"name": "network-a", "partner_id": "654321"}
+		with (
+			patch.object(fo, "_setting", return_value="654321"),
+			patch.object(fo.frappe, "get_list", return_value=[network]) as get_networks,
+		):
+			self.assertEqual(fo._public_network(""), network)
+
+		self.assertEqual(get_networks.call_args.kwargs["filters"], {"partner_id": "654321", "enabled": 1})
+
+	def test_facility_membership_links_existing_network_and_verified_contact(self):
+		facility_doc = Mock()
+		facility_doc.memberships = []
+		facility = {
+			"mfl_code": "10001",
+			"facility_name": "Alpha Clinic",
+			"classification": "Level 2",
+		}
+		with (
+			patch.object(fo.frappe.db, "get_value", return_value=None),
+			patch.object(fo.frappe, "get_doc", return_value=facility_doc),
+			patch.object(fo.frappe, "get_meta", return_value=Mock(has_field=Mock(return_value=True))),
+		):
+			fo._upsert_facility_membership(facility, "network-a", PERSON, customer="customer-a")
+
+		self.assertEqual(
+			facility_doc.append.call_args.args,
+			(
+				"memberships",
+				{
+					"network": "network-a",
+					"customer": "customer-a",
+					"status": "Active",
+					"contact_name": "Amina Otieno",
+					"contact_email": "owner@example.com",
+					"contact_phone": "254712345678",
+				},
+			),
+		)
+
 	def test_identity_reference_uses_normalized_identity_with_the_keyed_helper(self):
 		with patch.object(fo, "evidence_ref", side_effect=lambda value: "keyed:" + value) as keyed:
 			first = fo._identity_reference("National ID", "AbC 123")
@@ -511,13 +551,17 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 
 		self.assertIn("CareverseHIMS", message)
 		self.assertIn('role="presentation"', message)
-		self.assertIn("Segoe UI,Roboto,Helvetica,Arial,sans-serif", message)
 		self.assertIn("Your CareverseHIMS verification code", message)
 		self.assertIn("One-time passcode", message)
 		self.assertIn("This code expires in 10 minutes", message)
 		self.assertIn("Never share it", message)
 		self.assertIn("One-time passcode", message)
-		self.assertIn("width:100%;max-width:480px", message)
+		self.assertIn("max-width:560px", message)
+		self.assertIn("align=\"left\"", message)
+		self.assertIn("font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif", message)
+		self.assertIn("background:#f5f7fa", message)
+		self.assertIn("background:#bc1823", message)
+		self.assertNotIn("max-width:480px", message)
 		self.assertRegex(subject, r"CareverseHIMS.*\b\d{6}\b.*OTP ID [A-F0-9]{12}")
 		self.assertIn(self._captured_otp(), subject)
 
@@ -1211,6 +1255,12 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				{"outcome": "new", "allowed_facility_ids": ["FID-1"]},
 			)
 
+	def test_conflict_preflight_reports_invalid_referring_network_id(self):
+		token = self._verified_token()
+		with patch.object(fo, "_public_network", return_value=None):
+			with self.assertRaisesRegex(frappe.ValidationError, "That Network ID"):
+				fo.check_onboarding_conflicts(token, '["FID-1"]', "123456")
+
 	def test_conflict_preflight_rechecks_current_facility_level_whitelist(self):
 		token = self._verified_token()
 		self.allowed_facility_levels = " Level 3 "
@@ -1558,7 +1608,7 @@ class TestFacilityOnboardingCatalog(UnitTestCase):
 
 	def test_invalid_nonblank_partner_id_never_falls_back_to_default_network(self):
 		with patch.object(fo, "_public_network", return_value=None):
-			with self.assertRaisesRegex(frappe.ValidationError, "Partner ID"):
+			with self.assertRaisesRegex(frappe.ValidationError, "Network ID"):
 				fo.get_catalog("12345x")
 
 	def test_invalid_vat_configuration_is_reported_generically(self):

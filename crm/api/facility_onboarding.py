@@ -897,7 +897,7 @@ def get_catalog(partner_id: Any = None):
 	partner = _public_network(partner_id)
 	if partner_id and not partner:
 		frappe.throw(
-			_("That Partner ID is not available. Check the six digits and try again."), frappe.ValidationError
+			_("That Network ID is not available. Check the six digits and try again."), frappe.ValidationError
 		)
 	return {"success": True, "data": {"network": partner or {}, "packages": _catalog_packages()}}
 
@@ -1156,7 +1156,12 @@ def check_onboarding_conflicts(session_token: Any, selected_facility_ids: Any, p
 	selected = _parse_selected_ids(selected_facility_ids)
 	partner = _public_network(_text(partner_id))
 	if not partner:
-		frappe.throw(_("The configured Network or Partner ID is not available."), frappe.ValidationError)
+		message = (
+			_("That Network ID does not exist or is not available.")
+			if _text(partner_id)
+			else _("The configured default Network ID is not available.")
+		)
+		frappe.throw(message, frappe.ValidationError)
 	network = partner["name"]
 	result = _check_onboarding_conflicts(session, selected, network)
 	if result["outcome"] != "new":
@@ -1182,7 +1187,7 @@ def submit_onboarding(
 	partner_id = _text(partner_id)
 	partner = _public_network(partner_id)
 	if not partner:
-		frappe.throw(_("That Partner ID does not exist or is not available."), frappe.ValidationError)
+		frappe.throw(_("That Network ID does not exist or is not available."), frappe.ValidationError)
 	selected = _parse_selected_ids(selected_facility_ids)
 	if not selected:
 		frappe.throw(_("Select at least one facility to continue."), frappe.ValidationError)

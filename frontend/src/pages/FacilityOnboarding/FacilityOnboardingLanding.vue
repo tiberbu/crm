@@ -369,7 +369,7 @@
             <p class="text-sm leading-6 text-ink-gray-6">
               {{
                 __(
-                  'Select every facility you want to onboard. We will create a separate network application and token order for each facility.',
+                  'Select all eligible facilities you want to add under the same Opt-In Network.',
                 )
               }}
             </p>
@@ -438,10 +438,10 @@
           @submit.prevent="continuePricing"
         >
           <div
-            v-if="catalog.network"
             class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
           >
             <p
+              v-if="catalog.network?.display_name"
               class="text-xs font-semibold uppercase tracking-[.15em] text-ink-gray-5"
             >
               {{ catalog.network.display_name }}
@@ -449,12 +449,15 @@
             <h2 class="mt-2 text-xl font-semibold">
               {{ __('Choose your token package') }}
             </h2>
-            <p class="mt-2 text-sm text-ink-gray-6">
+            <p v-if="catalog.network?.display_name" class="mt-2 text-sm text-ink-gray-6">
               {{
                 __(
                   'Choose the token package you want for your selected facilities.',
                 )
               }}
+            </p>
+            <p v-else class="mt-2 text-sm text-ink-gray-6">
+              {{ __('The token catalogue is available before you select the referring partner Network.') }}
             </p>
             <div class="mt-6 grid gap-3 sm:grid-cols-2">
               <label
@@ -492,7 +495,7 @@
             </div>
           </div>
           <button
-            :disabled="!catalog.network || !packageCode || termsBusy"
+            :disabled="!packageCode || termsBusy"
             class="min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
           >
             {{
@@ -524,7 +527,7 @@
             <dl class="mt-6 space-y-3 text-sm">
               <div class="flex justify-between gap-4">
                 <dt class="text-ink-gray-5">{{ __('Network') }}</dt>
-                <dd class="font-medium">{{ catalog.network?.display_name }}</dd>
+                <dd class="font-medium">{{ catalog.network?.display_name || __('Resolve from Network ID below') }}</dd>
               </div>
               <div class="flex justify-between gap-4">
                 <dt class="text-ink-gray-5">
@@ -638,7 +641,7 @@
               />
             </label>
             <label class="mt-5 block text-sm font-medium">
-              {{ __('Partner ID') }}
+              {{ __('Referring partner’s Network ID') }}
               <span class="ml-2 text-xs font-normal text-ink-gray-5">{{
                 __('optional')
               }}</span>
@@ -653,7 +656,7 @@
               <span class="mt-2 block text-xs text-ink-gray-5">
                 {{
                   __(
-                    'Enter the six-digit ID once to link all selected facilities to a partner network. If you leave it blank, we will use the default network.',
+                    'Enter the six-digit Network ID from the partner who referred you. The same existing Network will be linked to every selected facility, with your verified registry contact recorded as the Network Contact. Leave blank to use the configured default Network ID. If no default Network is configured, enter the partner’s Network ID to continue.',
                   )
                 }}
               </span>
@@ -794,6 +797,7 @@ const totals = computed(() =>
 const reviewReady = computed(
   () =>
     Boolean(termsSnapshot.value?.content_hash) &&
+    Boolean(catalog.value.network?.name) &&
     canAdvance('review', {
       accountEmail: accountEmail.value,
       termsAccepted: termsAccepted.value,
@@ -1048,7 +1052,7 @@ async function loadCatalog() {
   } catch (error) {
     catalog.value = { network: null, packages: [] }
     errorMessage.value =
-      error?.messages?.[0] || __('That Partner ID is not available.')
+      error?.messages?.[0] || __('That Network ID is not available.')
   } finally {
     catalogBusy.value = false
   }
@@ -1073,7 +1077,7 @@ async function loadSelfOnboardingTerms() {
   }
 }
 async function continuePricing() {
-  if (!catalog.value.network || !packageCode.value || termsBusy.value) return
+  if (!packageCode.value || termsBusy.value) return
   if (await loadSelfOnboardingTerms()) stage.value = 'review'
 }
 function conflictMessage(result) {
@@ -1107,7 +1111,7 @@ function conflictMessage(result) {
   }
   if (result?.outcome === 'existing_identity') {
     return __(
-      'An onboarding request already exists for this identity. Sign in to your Customer Experience account or contact support for help.',
+      'An enrollment already exists for this verified identity. Sign in to your Customer Experience account or contact support for help.',
     )
   }
   if (result?.outcome === 'facility_review') {
@@ -1120,7 +1124,7 @@ function conflictMessage(result) {
       )
       .map((facility) => facility.facility_name || facility.mfl_code)
     const selectedNames = names.length ? `: ${names.join(', ')}` : ''
-    return `${__('One or more selected facilities already have an onboarding request for this Network')}${selectedNames}. ${__('Remove them from your selection and try again.')}`
+    return `${__('One or more selected facilities are already linked to this Network')}${selectedNames}. ${__('Remove them from your selection and try again.')}`
   }
   return ''
 }
