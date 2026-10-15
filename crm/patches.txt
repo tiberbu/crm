@@ -82,3 +82,4 @@ crm.patches.v1_0.configure_token_self_onboarding_terms_setting
 crm.patches.v1_0.add_customer_scoped_facility_enrollment
 crm.patches.v1_0.seed_self_onboarding_facility_level_whitelist
 crm.patches.v1_0.seed_cx_e2e_fixture
+crm.patches.v1_0.add_facility_token_package_selection

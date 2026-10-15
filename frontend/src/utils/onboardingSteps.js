@@ -33,10 +33,12 @@ export function canAdvance(stage, state) {
   if (stage === 'pricing') return Boolean(state.packageCode)
   if (stage === 'review') {
     const email = String(state.accountEmail || '').trim()
+    const hasPackageSelections =
+      state.packageSelectionsComplete ?? Boolean(state.packageCode)
     return Boolean(
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
       state.hasNetwork &&
-      state.packageCode &&
+      hasPackageSelections &&
       state.hasTerms &&
       state.termsAccepted,
     )

@@ -371,7 +371,7 @@ def get_payment_checkout(session_token: Any):
 
 
 def _portal_submission(ois_number):
-	"""Authorise a signed-in Website User from the server-side OIS User Permission only."""
+	"""Authorise a signed-in user from the server-side OIS User Permission only."""
 	from crm.api.website_redirect import require_portal_user
 
 	ois_number = _normalise(ois_number)
@@ -385,7 +385,7 @@ def _portal_submission(ois_number):
 
 @frappe.whitelist(methods=["GET"])
 def get_portal_checkout(ois_number: Any):
-	"""Checkout data for a signed-in Website User; no second OTP is needed."""
+	"""Checkout data for a signed-in permitted user; no second OTP is needed."""
 	return _checkout_payload(_portal_submission(ois_number))
 
 

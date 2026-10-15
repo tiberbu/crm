@@ -410,7 +410,7 @@
                 :key="facility.facility_id"
                 class="flex gap-4 rounded-xl border p-4"
                 :class="
-                  facility.onboarding_eligible !== true
+                  facility.onboarding_eligible !== true || facility.onboarding_blocked
                     ? 'cursor-not-allowed border-outline-gray-2 bg-surface-gray-1 opacity-70'
                     : selectedFacilities.includes(facility.facility_id)
                       ? 'cursor-pointer border-[#bc1823] bg-[#fdf2f3]'
@@ -420,7 +420,7 @@
                   v-model="selectedFacilities"
                   type="checkbox"
                   :value="facility.facility_id"
-                  :disabled="facility.onboarding_eligible !== true"
+                  :disabled="facility.onboarding_eligible !== true || facility.onboarding_blocked"
                   class="mt-1 size-4 accent-[#bc1823]"
                 /><span
                   ><strong class="block text-sm">{{
@@ -433,7 +433,14 @@
                     }}
                     · {{ facility.mfl_code }}</span
                   ><span
-                    v-if="facility.onboarding_eligible !== true"
+                  v-if="facility.onboarding_blocked"
+                  class="mt-2 block text-xs font-semibold text-ink-red-7"
+                  data-testid="facility-already-onboarded"
+                  >{{
+                    __('Already onboarded. This facility cannot be selected to proceed.')
+                  }}</span
+                ><span
+                  v-else-if="facility.onboarding_eligible !== true"
                     class="mt-2 block text-xs font-medium text-ink-gray-6"
                     >{{
                       facility.facility_eligibility_reason === 'missing_level'
@@ -471,7 +478,7 @@
               {{ catalog.network.display_name }}
             </p>
             <h2 class="mt-2 text-xl font-semibold">
-              {{ __('Choose your token package') }}
+              {{ __('Choose a package for each facility') }}
             </h2>
             <p
               v-if="catalog.network?.display_name"
@@ -479,7 +486,7 @@
             >
               {{
                 __(
-                  'Choose the token package you want for your selected facilities.',
+                  'Choose each facility’s package separately. Consider its size and expected token use.',
                 )
               }}
             </p>
@@ -489,6 +496,15 @@
                   'The token catalogue is available before you select the referring partner Network.',
                 )
               }}
+            </p>
+            <p
+              v-if="catalogBusy"
+              class="mt-3 text-sm text-ink-gray-5"
+              role="status"
+              aria-live="polite"
+              data-testid="catalog-loading"
+            >
+              {{ __('Loading token packages and current pricing…') }}
             </p>
             <section
               class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4"
@@ -520,7 +536,6 @@
                   class="mt-2 block w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-3 font-mono text-sm"
                   placeholder="123456"
                   @input="onPartnerIdInput"
-                  @change="loadCatalog"
                 />
               </label>
               <span
@@ -545,49 +560,117 @@
                 }}
               </span>
             </section>
-            <div class="mt-6 grid gap-3 sm:grid-cols-2">
-              <label
-                v-for="item in catalog.packages"
-                :key="item.item_code"
-                class="cursor-pointer rounded-xl border p-4"
-                :class="
-                  packageCode === item.item_code
-                    ? 'border-[#bc1823] bg-[#fdf2f3]'
-                    : 'border-outline-gray-2'
-                "
-                ><input
-                  v-model="packageCode"
-                  type="radio"
-                  :value="item.item_code"
-                  class="mr-2 accent-[#bc1823]"
-                /><strong class="text-sm">{{
-                  item.display_name || item.item_code
-                }}</strong>
-                <p class="mt-2 text-sm font-semibold">
-                  {{ money(item.price_ex_vat ?? item.price, item.currency) }}
-                  <span class="font-normal text-ink-gray-5">{{
-                    __('excl. VAT')
-                  }}</span>
-                </p>
-                <p v-if="item.gross_total" class="mt-1 text-xs text-ink-gray-5">
-                  {{ item.vat_label || __('VAT') }}
-                  {{ money(item.vat_amount, item.currency) }} ·
-                  {{ __('Total') }} {{ money(item.gross_total, item.currency) }}
-                </p>
-                <p class="mt-2 text-xs leading-5 text-ink-gray-5">
-                  {{ item.coverage_summary || item.description }}
-                </p></label
+            <div
+              v-if="catalogBusy"
+              class="mt-6 grid gap-3 sm:grid-cols-2"
+              aria-hidden="true"
+            >
+              <div
+                v-for="placeholder in 2"
+                :key="placeholder"
+                class="animate-pulse rounded-xl border border-outline-gray-2 p-4"
               >
+                <div class="h-4 w-2/3 rounded bg-surface-gray-2"></div>
+                <div class="mt-4 h-4 w-1/3 rounded bg-surface-gray-2"></div>
+                <div class="mt-4 h-3 w-full rounded bg-surface-gray-2"></div>
+              </div>
+            </div>
+            <div
+              v-else-if="catalogError"
+              class="mt-6 rounded-xl border border-outline-red-2 bg-surface-red-1 p-4 text-sm"
+              role="alert"
+              data-testid="catalog-error"
+            >
+              <p>{{ catalogError }}</p>
+              <button
+                type="button"
+                class="mt-3 font-semibold text-[#bc1823] underline underline-offset-4"
+                @click="loadCatalog(true)"
+              >
+                {{ __('Try loading packages again') }}
+              </button>
+            </div>
+            <div
+              v-else-if="partnerId && partnerId.length !== 6"
+              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 text-sm text-ink-gray-6"
+              role="status"
+              data-testid="catalog-partner-incomplete"
+            >
+              {{ __('Enter all six digits to load this Network’s packages, or clear the field to use the configured default.') }}
+            </div>
+            <div
+              v-else-if="!catalog.packages?.length"
+              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 text-sm text-ink-gray-6"
+              role="status"
+              data-testid="catalog-empty"
+            >
+              <p>{{ __('No token packages are available right now.') }}</p>
+              <button
+                type="button"
+                class="mt-3 font-semibold text-[#bc1823] underline underline-offset-4"
+                @click="loadCatalog(true)"
+              >
+                {{ __('Try loading packages again') }}
+              </button>
+            </div>
+            <div v-else class="mt-6 space-y-5">
+              <section
+                v-for="facility in chosenFacilities"
+                :key="facility.facility_id"
+                class="rounded-xl border border-outline-gray-2 p-4"
+                :data-testid="`facility-package-${facility.facility_id}`"
+              >
+                <div class="mb-4">
+                  <h3 class="font-semibold">{{ facility.facility_name || facility.mfl_code }}</h3>
+                  <p class="mt-1 text-xs text-ink-gray-5">
+                    {{ facility.facility_type || __('Facility') }} · {{ facility.classification }}
+                    <span v-if="facility.number_of_beds"> · {{ facility.number_of_beds }} {{ __('beds') }}</span>
+                    · {{ facility.mfl_code }}
+                  </p>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label
+                    v-for="item in catalog.packages"
+                    :key="`${facility.facility_id}-${item.item_code}`"
+                    class="cursor-pointer rounded-xl border p-4"
+                    :class="packageSelections[facility.facility_id] === item.item_code
+                      ? 'border-[#bc1823] bg-[#fdf2f3]'
+                      : 'border-outline-gray-2'"
+                  >
+                    <input
+                      v-model="packageSelections[facility.facility_id]"
+                      type="radio"
+                      :name="`package-${facility.facility_id}`"
+                      :value="item.item_code"
+                      class="mr-2 accent-[#bc1823]"
+                    />
+                    <strong class="text-sm">{{ item.display_name || item.item_code }}</strong>
+                    <p class="mt-2 text-sm font-semibold">
+                      {{ money(item.price_ex_vat ?? item.price, item.currency) }}
+                      <span class="font-normal text-ink-gray-5">{{ __('excl. VAT') }}</span>
+                    </p>
+                    <p v-if="item.gross_total" class="mt-1 text-xs text-ink-gray-5">
+                      {{ item.vat_label || __('VAT') }} {{ money(item.vat_amount, item.currency) }} ·
+                      {{ __('Total') }} {{ money(item.gross_total, item.currency) }}
+                    </p>
+                    <p class="mt-2 text-xs leading-5 text-ink-gray-5">
+                      {{ item.coverage_summary || item.description }}
+                    </p>
+                  </label>
+                </div>
+              </section>
             </div>
           </div>
           <button
-            :disabled="!packageCode || termsBusy"
+            :disabled="catalogBusy || catalogError || !catalogCurrent || !allPackagesSelected || termsBusy"
             class="min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
           >
             {{
-              termsBusy
-                ? __('Loading Terms…')
-                : __('Continue to submission review')
+              catalogBusy
+                ? __('Loading token packages…')
+                : termsBusy
+                  ? __('Loading Terms…')
+                  : __('Continue to submission review')
             }}</button
           ><button
             type="button"
@@ -659,7 +742,20 @@
                     {{ __('Edit') }}
                   </button>
                 </dt>
-                <dd class="font-medium">{{ selectedPackage?.display_name }}</dd>
+                <dd class="text-right font-medium">
+                  <span
+                    v-for="facility in chosenFacilities"
+                    :key="facility.facility_id"
+                    class="block"
+                  >
+                    {{ facility.facility_name || facility.mfl_code }} —
+                    {{ selectedPackageFor(facility.facility_id)?.display_name || selectedPackageFor(facility.facility_id)?.item_code }}
+                    <span class="block text-xs text-ink-gray-5">
+                      {{ money(selectedPackageFor(facility.facility_id)?.gross_total, selectedPackageFor(facility.facility_id)?.currency) }}
+                      · {{ selectedPackageFor(facility.facility_id)?.token_quantity }} {{ __('tokens') }}
+                    </span>
+                  </span>
+                </dd>
               </div>
               <div class="flex justify-between gap-4">
                 <dt class="text-ink-gray-5">
@@ -738,8 +834,7 @@
             >
               <div class="flex justify-between gap-4">
                 <dt class="text-ink-gray-5">
-                  {{ __('Price excl. VAT') }} ({{ totals.count }} ×
-                  {{ money(totals.perFacility.exVat, totals.currency) }})
+                  {{ __('Price excl. VAT') }}
                 </dt>
                 <dd class="font-medium">
                   {{ money(totals.exVat, totals.currency) }}
@@ -789,10 +884,21 @@
           </h2>
           <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-ink-gray-6">
             {{
-              __(
-                'We created your customer account and linked the selected facilities to the Network. Check this email for password setup instructions, then sign in to your portal to view your facilities.',
-              )
+              portalStatus === 'linked'
+                ? __(
+                    'Your selected facilities have been added to your existing Customer Experience account. Sign in with your existing credentials to view them.',
+                  )
+                : __(
+                    'We created your customer account and linked the selected facilities to the Network. Check this email for password setup instructions, then sign in to your portal to view your facilities.',
+                  )
             }}
+          </p>
+          <p
+            v-if="accountEmail"
+            class="mx-auto mt-3 max-w-xl text-sm font-medium text-ink-gray-8"
+            data-testid="success-account-email"
+          >
+            {{ __('Customer Experience login: {0}', [accountEmail]) }}
           </p>
           <div class="mx-auto mt-7 max-w-xl space-y-2 text-left">
             <div
@@ -827,7 +933,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { call, Dialog } from 'frappe-ui'
 import OtpCodeInput from '@/components/FacilityOnboarding/OtpCodeInput.vue'
 import {
@@ -836,7 +942,6 @@ import {
   canResendOtp,
   deliveryState,
   formatCountdown,
-  packageTotals,
   previousStage,
   shouldClearOtpAfterVerificationError,
   stepStatus,
@@ -850,6 +955,7 @@ const props = defineProps({
 const stage = ref('welcome')
 const busy = ref(false)
 const catalogBusy = ref(false)
+const catalogError = ref('')
 const errorMessage = ref('')
 const sessionToken = ref('')
 const identityType = ref('national_id')
@@ -860,13 +966,14 @@ const facilities = ref([])
 const selectedFacilities = ref([])
 const partnerId = ref('')
 const catalog = ref({ network: null, packages: [] })
-const packageCode = ref('')
+const packageSelections = ref({})
 const accountEmail = ref('')
 const termsAccepted = ref(false)
 const termsSnapshot = ref(null)
 const termsBusy = ref(false)
 const termsDialogOpen = ref(false)
 const submissions = ref([])
+const portalStatus = ref('')
 const delivery = ref({})
 const resendIn = ref(0)
 const otpError = ref('')
@@ -875,6 +982,8 @@ const registrationConflictDetected = ref(false)
 const hfrRetryPending = ref(false)
 const hfrRetryExhausted = ref(false)
 let resendTimer = null
+let catalogRequestId = 0
+let loadedCatalogPartnerId = null
 const deliveryStatus = computed(() => deliveryState(delivery.value))
 const deliveryChannelLabel = computed(() =>
   delivery.value.channel === 'sms' ? __('text message') : __('email'),
@@ -887,9 +996,34 @@ const chosenFacilities = computed(() =>
     selectedFacilities.value.includes(item.facility_id),
   ),
 )
-const totals = computed(() =>
-  packageTotals(selectedPackage.value, selectedFacilities.value.length),
+const allPackagesSelected = computed(
+  () =>
+    chosenFacilities.value.length > 0 &&
+    chosenFacilities.value.every((facility) =>
+      catalog.value.packages.some(
+        (item) => item.item_code === packageSelections.value[facility.facility_id],
+      ),
+    ),
 )
+const totals = computed(() => {
+  const packages = chosenFacilities.value.map((facility) =>
+    selectedPackageFor(facility.facility_id),
+  )
+  if (!allPackagesSelected.value || packages.some((item) => !item)) return null
+  const currency = packages[0]?.currency || 'KES'
+  if (packages.some((item) => (item.currency || 'KES') !== currency)) return null
+  return packages.reduce(
+    (sum, item) => ({
+      currency,
+      vatLabel: item.vat_label || sum.vatLabel || 'VAT',
+      exVat: sum.exVat + Number(item.price_ex_vat ?? item.price ?? 0),
+      vat: sum.vat + Number(item.vat_amount || 0),
+      gross: sum.gross + Number(item.gross_total ?? item.price_ex_vat ?? item.price ?? 0),
+      count: sum.count + 1,
+    }),
+    { currency, vatLabel: '', exVat: 0, vat: 0, gross: 0, count: 0 },
+  )
+})
 const reviewReady = computed(
   () =>
     Boolean(termsSnapshot.value?.content_hash) &&
@@ -897,16 +1031,21 @@ const reviewReady = computed(
     canAdvance('review', {
       accountEmail: accountEmail.value,
       hasNetwork: Boolean(catalog.value.network?.name),
-      packageCode: packageCode.value,
+      packageSelectionsComplete: allPackagesSelected.value,
       hasTerms: Boolean(termsSnapshot.value?.content_hash),
       termsAccepted: termsAccepted.value,
     }),
 )
 const networkName = computed(() => catalog.value.network?.display_name || '')
 const supportEmail = computed(() => catalog.value.network?.contact_email || '')
-const selectedPackage = computed(() =>
-  catalog.value.packages.find((item) => item.item_code === packageCode.value),
+const catalogCurrent = computed(
+  () => loadedCatalogPartnerId === partnerId.value && Boolean(catalog.value.network),
 )
+function selectedPackageFor(facilityId) {
+  return catalog.value.packages.find(
+    (item) => item.item_code === packageSelections.value[facilityId],
+  )
+}
 const stageTitle = computed(
   () =>
     ({
@@ -994,7 +1133,11 @@ function applyDelivery(next) {
     else stopResendTimer()
   }, 1000)
 }
-onBeforeUnmount(stopResendTimer)
+onMounted(() => loadCatalog())
+onBeforeUnmount(() => {
+  stopResendTimer()
+  catalogRequestId += 1
+})
 async function startIdentity() {
   errorMessage.value = ''
   sessionExpired.value = false
@@ -1134,35 +1277,78 @@ function goBack() {
 }
 function continueFacilities() {
   if (selectedFacilities.value.length) {
+    packageSelections.value = Object.fromEntries(
+      Object.entries(packageSelections.value).filter(([facilityId]) =>
+        selectedFacilities.value.includes(facilityId),
+      ),
+    )
     stage.value = 'pricing'
     loadCatalog()
   }
 }
-async function loadCatalog() {
-  errorMessage.value = ''
-  catalogBusy.value = true
-  try {
-    const previousPackage = packageCode.value
-    catalog.value = await request('get_catalog', {
-      partner_id: partnerId.value,
-    })
-    packageCode.value = catalog.value.packages?.some(
-      (item) => item.item_code === previousPackage,
+async function loadCatalog(force = false) {
+  const requestedPartnerId = partnerId.value
+  if (!force && loadedCatalogPartnerId === requestedPartnerId) {
+    packageSelections.value = Object.fromEntries(
+      selectedFacilities.value.map((facilityId) => [
+        facilityId,
+        catalog.value.packages?.some(
+          (item) => item.item_code === packageSelections.value[facilityId],
+        )
+          ? packageSelections.value[facilityId]
+          : '',
+      ]),
     )
-      ? previousPackage
-      : catalog.value.packages?.[0]?.item_code || ''
+    return true
+  }
+  const requestId = ++catalogRequestId
+  catalogError.value = ''
+  catalogBusy.value = true
+  catalog.value = { network: null, packages: [] }
+  try {
+    const previousSelections = packageSelections.value
+    const nextCatalog = await request('get_catalog', {
+      partner_id: requestedPartnerId,
+    })
+    if (requestId !== catalogRequestId) return false
+    catalog.value = nextCatalog
+    loadedCatalogPartnerId = requestedPartnerId
+    packageSelections.value = Object.fromEntries(
+      selectedFacilities.value.map((facilityId) => {
+        const previousCode = previousSelections[facilityId]
+        const packageCode = catalog.value.packages?.some(
+          (item) => item.item_code === previousCode,
+        )
+          ? previousCode
+          : ''
+        return [facilityId, packageCode]
+      }),
+    )
+    return true
   } catch (error) {
+    if (requestId !== catalogRequestId) return false
     catalog.value = { network: null, packages: [] }
-    errorMessage.value =
+    loadedCatalogPartnerId = null
+    catalogError.value =
       error?.messages?.[0] || __('That Network ID is not available.')
+    return false
   } finally {
-    catalogBusy.value = false
+    if (requestId === catalogRequestId) catalogBusy.value = false
   }
 }
 function onPartnerIdInput(event) {
-  partnerId.value = String(event?.target?.value || '')
+  const nextPartnerId = String(event?.target?.value || '')
     .replace(/\D/g, '')
     .slice(0, 6)
+  if (nextPartnerId === partnerId.value) return
+  partnerId.value = nextPartnerId
+  catalogRequestId += 1
+  catalogBusy.value = false
+  catalogError.value = ''
+  loadedCatalogPartnerId = null
+  catalog.value = { network: null, packages: [] }
+  packageSelections.value = {}
+  if (!nextPartnerId || nextPartnerId.length === 6) loadCatalog(true)
 }
 async function loadSelfOnboardingTerms() {
   errorMessage.value = ''
@@ -1184,7 +1370,14 @@ async function loadSelfOnboardingTerms() {
   }
 }
 async function continuePricing() {
-  if (!packageCode.value || termsBusy.value || catalogBusy.value) return
+  if (
+    !allPackagesSelected.value ||
+    termsBusy.value ||
+    catalogBusy.value ||
+    catalogError.value ||
+    !catalogCurrent.value
+  )
+    return
   if (await loadSelfOnboardingTerms()) stage.value = 'review'
 }
 function conflictMessage(result) {
@@ -1216,10 +1409,25 @@ function conflictMessage(result) {
       'Facility level eligibility changed while you were onboarding. Review the facilities and continue with approved levels.',
     )
   }
-  if (result?.outcome === 'existing_identity') {
-    return __(
-      'An enrollment already exists for this verified identity. Sign in to your Customer Experience account or contact support for help.',
+  if (result?.already_onboarded_facility_ids?.length) {
+    const blocked = new Set(result.already_onboarded_facility_ids)
+    const names = facilities.value
+      .filter((facility) => blocked.has(facility.facility_id))
+      .map((facility) => facility.facility_name || facility.mfl_code)
+    facilities.value = facilities.value.map((facility) =>
+      blocked.has(facility.facility_id)
+        ? {
+            ...facility,
+            onboarding_blocked: true,
+            onboarding_block_reason: 'already_onboarded',
+          }
+        : facility,
     )
+    selectedFacilities.value = selectedFacilities.value.filter(
+      (facilityId) => !blocked.has(facilityId),
+    )
+    stage.value = 'facilities'
+    return `${__('Already onboarded and cannot be selected to proceed')}: ${names.join(', ')}`
   }
   if (result?.outcome === 'facility_review') {
     const allowed = new Set(result.allowed_facility_ids || [])
@@ -1249,10 +1457,7 @@ async function submit() {
     const preflightMessage = conflictMessage(conflict)
     if (preflightMessage) {
       errorMessage.value = preflightMessage
-      registrationConflictDetected.value = [
-        'existing_identity',
-        'facility_review',
-      ].includes(conflict?.outcome)
+      registrationConflictDetected.value = conflict?.outcome === 'facility_review'
       return
     }
     if (conflict?.outcome !== 'new') {
@@ -1265,7 +1470,15 @@ async function submit() {
       session_token: sessionToken.value,
       partner_id: partnerId.value,
       selected_facility_ids: JSON.stringify(selectedFacilities.value),
-      package_item_code: packageCode.value,
+      package_item_code: packageSelections.value[selectedFacilities.value[0]] || '',
+      facility_package_items: JSON.stringify(
+        Object.fromEntries(
+          selectedFacilities.value.map((facilityId) => [
+            facilityId,
+            packageSelections.value[facilityId],
+          ]),
+        ),
+      ),
       account_email: accountEmail.value,
       terms_accepted: termsAccepted.value ? 1 : 0,
       accepted_terms_hash: termsSnapshot.value.content_hash,
@@ -1273,10 +1486,7 @@ async function submit() {
     const submitConflict = conflictMessage(data)
     if (submitConflict) {
       errorMessage.value = submitConflict
-      registrationConflictDetected.value = [
-        'existing_identity',
-        'facility_review',
-      ].includes(data?.outcome)
+      registrationConflictDetected.value = data?.outcome === 'facility_review'
       return
     }
     if (data?.outcome && data.outcome !== 'new') {
@@ -1286,6 +1496,7 @@ async function submit() {
       return
     }
     submissions.value = data.enrollments || []
+    portalStatus.value = data.portal_status || ''
     stage.value = 'success'
   } catch (error) {
     sessionExpired.value = isSessionError(error)
@@ -1321,8 +1532,14 @@ function reset() {
   stopResendTimer()
   facilities.value = []
   selectedFacilities.value = []
+  submissions.value = []
+  portalStatus.value = ''
   catalog.value = { network: null, packages: [] }
-  packageCode.value = ''
+  catalogRequestId += 1
+  catalogBusy.value = false
+  catalogError.value = ''
+  loadedCatalogPartnerId = null
+  packageSelections.value = {}
   termsSnapshot.value = null
   termsAccepted.value = false
   accountEmail.value = ''
