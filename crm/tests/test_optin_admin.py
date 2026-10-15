@@ -135,6 +135,40 @@ class TestCustomerExperienceNetworkContactInvitation(UnitTestCase):
 			self.assertEqual(call.kwargs["email"], "admin@example.com")
 			self.assertEqual(call.kwargs["display_name"], "Facility Admin")
 
+	def test_invitation_for_self_onboarded_facility_without_ois_sends_cx_login_alert(self):
+		facility = frappe._dict(
+			{
+				"name": "FAC-0002",
+				"mfl_code": "1002",
+				"is_self_onboarded": 1,
+				"memberships": [
+					frappe._dict(
+						{
+							"name": "MEM-0002",
+							"network": "network-a",
+							"status": "Active",
+							"contact_name": "Dr. Sam",
+							"contact_email": "sam@example.com",
+							"customer": "CUST-002",
+						}
+					)
+				],
+			}
+		)
+		with (
+			patch("crm.api.optin_admin.frappe.get_doc", return_value=facility),
+			patch("crm.api.optin_admin._assert_network_access"),
+			patch("crm.api.optin_admin._processed_ois_for_facility", return_value=[]),
+			patch("crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility._send_membership_invitation") as send_invite,
+			patch.object(frappe.db, "get_value", return_value="sam@example.com"),
+		):
+			result = invite_facility_to_customer_experience("FAC-0002", "MEM-0002")
+
+		self.assertEqual(result["status"], "linked")
+		self.assertEqual(result["user"], "sam@example.com")
+		self.assertEqual(result["ois"], [])
+		send_invite.assert_called_once()
+
 
 class TestOptInFacilityCsvImport(UnitTestCase):
 	def test_preview_returns_authoritative_rows_and_defaults_organization(self):

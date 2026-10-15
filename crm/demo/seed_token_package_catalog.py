@@ -17,31 +17,44 @@ PRICE_LIST = "CRM Token Packages - DEV"
 
 PACKAGES = [
 	{
+		"item_code": "CV-TOKEN-FREE",
+		"item_name": "Free Community Care",
+		"rate": 0,
+		"display_name": "Free",
+		"description": "A complimentary starter package for health posts, dispensaries, and solo clinics to verify facility records and start digital care workflows.",
+		"coverage_summary": "Designed for up to 25 routine patient visits or monthly claims verification at zero cost.",
+		"token_quantity": 25,
+		"coverage_metrics": '{"audience": "For individuals & community clinics", "badge": "Free Forever", "features": ["25 Care Tokens included", "Digital Registry & HFR Verification", "Routine Patient Encounters", "Community Support"]}',
+	},
+	{
 		"item_code": "CV-TOKEN-CORE",
 		"item_name": "Core Care Operations",
 		"rate": 30000,
-		"display_name": "Core care operations",
-		"description": "A practical starting package for core facility workflows and everyday service administration.",
+		"display_name": "Pro",
+		"description": "A practical package for growing health centers managing daily outpatient visits, pharmacy dispensing, and standard lab orders.",
 		"coverage_summary": "Designed for approximately 100 routine transactions per month.",
 		"token_quantity": 100,
+		"coverage_metrics": '{"audience": "For active clinics & dispensaries", "badge": "Popular", "features": ["100 Care Tokens included", "Outpatient Consultations & Vitals", "Pharmacy Dispensing & Inventory", "Direct Email Support"]}',
 	},
 	{
 		"item_code": "CV-TOKEN-STANDARD",
 		"item_name": "Standard Care Operations",
 		"rate": 75000,
-		"display_name": "Standard care operations",
-		"description": "A balanced package for facilities with regular clinical, laboratory, and billing activity.",
+		"display_name": "Standard Care",
+		"description": "A balanced package for multi-department facilities with regular clinical consultations, laboratory, and insurance billing activity.",
 		"coverage_summary": "Designed for approximately 300 routine transactions per month.",
 		"token_quantity": 300,
+		"coverage_metrics": '{"audience": "For growing medical centers", "badge": "Recommended", "features": ["300 Care Tokens included", "Multi-Department Coordination", "Laboratory & Diagnostics Workflow", "Insurance Billing & Claims Export"]}',
 	},
 	{
 		"item_code": "CV-TOKEN-PLUS",
 		"item_name": "Expanded Care Operations",
 		"rate": 150000,
-		"display_name": "Expanded care operations",
-		"description": "A higher-capacity package for facilities managing larger daily workloads and multiple service lines.",
+		"display_name": "Enterprise",
+		"description": "High-capacity tier for sub-county hospitals and healthcare networks managing inpatient wards, surgery, and multi-facility operations.",
 		"coverage_summary": "Designed for approximately 750 routine transactions per month.",
 		"token_quantity": 750,
+		"coverage_metrics": '{"audience": "For hospitals & health networks", "badge": "Enterprise", "features": ["750+ Care Tokens included", "Full Inpatient & Outpatient Management", "Multi-Facility Unified Analytics", "Dedicated Account Manager & SLA"]}',
 	},
 ]
 
@@ -63,7 +76,7 @@ def run():
 				"token_quantity": package["token_quantity"],
 				"billing_period": "Monthly",
 				"coverage_summary": package["coverage_summary"],
-				"coverage_metrics": '{"metric": "routine_transactions", "period": "monthly"}',
+				"coverage_metrics": package.get("coverage_metrics") or '{"metric": "routine_transactions", "period": "monthly"}',
 				"enabled": 1,
 			}
 		)

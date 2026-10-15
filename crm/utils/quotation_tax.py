@@ -14,6 +14,8 @@ import frappe
 from frappe import _
 from frappe.utils import cstr, flt
 
+ConfigurationError = getattr(frappe, "ConfigurationError", frappe.ValidationError)
+
 _TAX_TEMPLATE = "Sales Taxes and Charges Template"
 _OPTIN_SETTINGS = "CRM Opt-In Settings"
 
@@ -29,7 +31,7 @@ def _ensure_erpnext_taxing() -> None:
 	if not _erpnext_taxing_is_available():
 		frappe.throw(
 			_("ERPNext quotation taxes are not available on this site."),
-			frappe.ConfigurationError,
+			ConfigurationError,
 		)
 
 
@@ -72,14 +74,14 @@ def _candidate_tax_template(company: str) -> str:
 	if not rows:
 		frappe.throw(
 			_("Configure an enabled Sales Taxes and Charges Template for company {0}.").format(company),
-			frappe.ConfigurationError,
+			ConfigurationError,
 		)
 	frappe.throw(
 		_(
 			"Select the VAT Sales Taxes and Charges Template in CRM Opt-In Settings; "
 			"multiple enabled templates exist for company {0}."
 		).format(company),
-		frappe.ConfigurationError,
+		ConfigurationError,
 	)
 
 
@@ -94,7 +96,7 @@ def get_vat_tax_configuration(company: str | None = None, tax_template: str | No
 	_ensure_erpnext_taxing()
 	company = cstr(company or frappe.db.get_single_value("Global Defaults", "default_company") or "").strip()
 	if not company:
-		frappe.throw(_("A default company is required to calculate VAT."), frappe.ConfigurationError)
+		frappe.throw(_("A default company is required to calculate VAT."), ConfigurationError)
 
 	tax_template = cstr(tax_template or _settings_tax_template() or "").strip()
 	if not tax_template:
@@ -102,7 +104,7 @@ def get_vat_tax_configuration(company: str | None = None, tax_template: str | No
 	if not frappe.db.exists(_TAX_TEMPLATE, tax_template):
 		frappe.throw(
 			_("The configured Sales Taxes and Charges Template does not exist."),
-			frappe.ConfigurationError,
+			ConfigurationError,
 		)
 
 	template = frappe.get_doc(_TAX_TEMPLATE, tax_template)
@@ -111,7 +113,7 @@ def get_vat_tax_configuration(company: str | None = None, tax_template: str | No
 			_("The configured Sales Taxes and Charges Template is not enabled for company {0}.").format(
 				company
 			),
-			frappe.ConfigurationError,
+			ConfigurationError,
 		)
 
 	taxes = list(template.get("taxes") or [])
@@ -122,18 +124,18 @@ def get_vat_tax_configuration(company: str | None = None, tax_template: str | No
 				"The Opt-In VAT template must contain exactly one VAT charge so portal, quote, "
 				"email, and contract totals remain identical."
 			),
-			frappe.ConfigurationError,
+			ConfigurationError,
 		)
 
 	vat = vat_rows[0]
 	if vat.charge_type != "On Net Total" or frappe.utils.cint(vat.included_in_print_rate):
 		frappe.throw(
 			_("The Opt-In VAT charge must be an exclusive 'On Net Total' charge."),
-			frappe.ConfigurationError,
+			ConfigurationError,
 		)
 	rate = flt(vat.rate)
 	if rate <= 0:
-		frappe.throw(_("The configured VAT charge must have a positive rate."), frappe.ConfigurationError)
+		frappe.throw(_("The configured VAT charge must have a positive rate."), ConfigurationError)
 
 	return frappe._dict(
 		{

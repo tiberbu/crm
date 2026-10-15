@@ -453,8 +453,6 @@ def get_user_ois_numbers(user: str | None = None) -> list[str]:
 			filters={
 				"user": user,
 				"allow": OIS_PERMISSION_ALLOW,
-				"apply_to_all_doctypes": 0,
-				"applicable_for": OIS_DOCTYPE,
 			},
 			fields=["for_value", "creation"],
 			order_by="creation asc",
@@ -529,7 +527,7 @@ def _ensure_ois_user_permission(user: str, ois_number: str) -> bool:
 	permission.apply_to_all_doctypes = 0
 	permission.applicable_for = OIS_DOCTYPE
 	permission.insert(ignore_permissions=True)
-	return bool(frappe.get_all("User Permission", filters=filters, fields=["name"], limit_page_length=1))
+	return True
 
 
 def _ensure_customer_user_permission(user: str, customer: str) -> bool:
@@ -538,15 +536,53 @@ def _ensure_customer_user_permission(user: str, customer: str) -> bool:
 		"user": user,
 		"allow": "Customer",
 		"for_value": customer,
-		"apply_to_all_doctypes": 0,
-		"applicable_for": "CRM Deal",
+	}
+	existing = frappe.get_all("User Permission", filters=filters, fields=["name", "apply_to_all_doctypes"], limit_page_length=1)
+	if existing:
+		if not existing[0].get("apply_to_all_doctypes"):
+			frappe.db.set_value("User Permission", existing[0]["name"], "apply_to_all_doctypes", 1, update_modified=False)
+		return True
+	permission = frappe.new_doc("User Permission")
+	permission.update({
+		**filters,
+		"apply_to_all_doctypes": 1,
+	})
+	permission.insert(ignore_permissions=True)
+	return True
+
+
+def _ensure_facility_user_permission(user: str, facility_name: str) -> bool:
+	"""Ensure User Permission for a verified facility."""
+	facility_name = cstr(facility_name or "").strip()
+	if not facility_name or not frappe.db.exists("CRM Pre-Qualified Facility", facility_name):
+		return False
+	filters = {
+		"user": user,
+		"allow": "CRM Pre-Qualified Facility",
+		"for_value": facility_name,
 	}
 	if frappe.get_all("User Permission", filters=filters, fields=["name"], limit_page_length=1):
 		return True
 	permission = frappe.new_doc("User Permission")
-	permission.update(filters)
+	permission.update({
+		**filters,
+		"apply_to_all_doctypes": 1,
+	})
 	permission.insert(ignore_permissions=True)
-	return bool(frappe.get_all("User Permission", filters=filters, fields=["name"], limit_page_length=1))
+	return True
+
+
+def get_user_facility_names(user: str | None = None) -> list[str]:
+	user = user or frappe.session.user
+	if not user or user == "Guest":
+		return []
+	rows = frappe.get_all(
+		"User Permission",
+		filters={"user": user, "allow": "CRM Pre-Qualified Facility"},
+		fields=["for_value"],
+		limit_page_length=0,
+	)
+	return [cstr(row.get("for_value")) for row in rows if row.get("for_value")]
 
 
 def ensure_website_user_for_customer(customer, email=None, display_name=None):
@@ -610,8 +646,6 @@ def get_user_customer_names(user: str | None = None) -> list[str]:
 			filters={
 				"user": user,
 				"allow": "Customer",
-				"apply_to_all_doctypes": 0,
-				"applicable_for": "CRM Deal",
 			},
 			fields=["for_value"],
 			limit_page_length=0,
@@ -734,6 +768,65 @@ def _portal_orders(submission) -> list[dict]:
 		return []
 
 
+def _customer_invoices(customer: str) -> list[dict]:
+	if not customer or not frappe.db.exists("Customer", customer):
+		return []
+	filters = [
+		["docstatus", "=", 1],
+		["outstanding_amount", ">", 0],
+		["customer", "=", customer],
+	]
+	rows = frappe.get_list(
+		"Sales Invoice",
+		filters=filters,
+		fields=["name", "posting_date", "due_date", "outstanding_amount", "grand_total", "currency"],
+		order_by="due_date asc, posting_date asc",
+		limit_page_length=200,
+		ignore_permissions=True,
+	)
+	return [
+		{
+			"name": row.name,
+			"invoice_number": row.name,
+			"posting_date": str(row.posting_date or ""),
+			"due_date": str(row.due_date or ""),
+			"amount": float(row.outstanding_amount or 0),
+			"grand_total": float(row.grand_total or 0),
+			"currency": row.currency or "KES",
+			"status": "Outstanding",
+		}
+		for row in rows
+		if frappe.utils.flt(row.outstanding_amount) > 0
+	]
+
+
+def _customer_orders(customer: str) -> list[dict]:
+	if not customer or not frappe.db.exists("Customer", customer):
+		return []
+	fields = [
+		"name",
+		"transaction_date",
+		"delivery_date",
+		"grand_total",
+		"currency",
+		"status",
+	]
+	for col in ("crm_token_facility_mfl", "crm_token_package_item"):
+		if frappe.db.has_column("Sales Order", col):
+			fields.append(col)
+	orders = frappe.get_list(
+		"Sales Order",
+		filters={"customer": customer, "docstatus": 1, "per_billed": ["<", 100]},
+		fields=fields,
+		order_by="creation desc",
+		limit_page_length=200,
+		ignore_permissions=True,
+	)
+	for order in orders:
+		order["can_create_invoice"] = cstr(order.get("status") or "").strip().casefold() not in {"closed", "on hold", "cancelled"}
+	return orders
+
+
 def _customer_portal_accounts(user: str) -> list[dict]:
 	"""Project only Customer-linked deals and memberships granted to this user."""
 	customer_names = get_user_customer_names(user)
@@ -754,7 +847,11 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 	)
 	if not deals:
 		return []
-	deal_by_customer = {row.get("cx_customer"): row for row in deals}
+	deals_by_customer = {}
+	for row in deals:
+		cust = row.get("cx_customer")
+		if cust:
+			deals_by_customer.setdefault(cust, []).append(row)
 	memberships = frappe.get_all(
 		"CRM Facility Membership",
 		filters={"customer": ["in", customer_names]},
@@ -792,10 +889,13 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 		ignore_permissions=True,  # SYSTEM-INTERNAL: deal names were selected from Customer-scoped deals above.
 		limit_page_length=0,
 	) if deal_names else []
-	deal_facility_by_key = {
-		(cstr(row.get("parent")), cstr(row.get("mfl_code")).casefold()): row
-		for row in deal_facility_rows
-	}
+	package_by_mfl = {}
+	deal_by_mfl = {}
+	for row in deal_facility_rows:
+		mfl = cstr(row.get("mfl_code")).strip().casefold()
+		if mfl:
+			package_by_mfl[mfl] = row
+			deal_by_mfl[mfl] = row.get("parent")
 	item_codes = list({cstr(row.get("cx_token_package_item")) for row in deal_facility_rows if row.get("cx_token_package_item")})
 	item_rows = frappe.get_all(
 		"Item",
@@ -810,9 +910,10 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 	}
 	accounts = []
 	for customer in customer_names:
-		deal = deal_by_customer.get(customer)
-		if not deal:
+		cust_deals = deals_by_customer.get(customer, [])
+		if not cust_deals:
 			continue
+		primary_deal = cust_deals[0]
 		rows = []
 		for membership in memberships:
 			if membership.get("customer") != customer:
@@ -820,9 +921,9 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			facility = facility_by_name.get(membership.get("parent"))
 			if not facility:
 				continue
-			package = deal_facility_by_key.get(
-				(cstr(deal.get("name")), cstr(facility.get("mfl_code")).casefold()), {}
-			)
+			mfl_key = cstr(facility.get("mfl_code")).strip().casefold()
+			package = package_by_mfl.get(mfl_key, {})
+			fac_deal = deal_by_mfl.get(mfl_key, primary_deal.get("name"))
 			rows.append({
 				"facility_name": cstr(facility.get("facility_name") or "Facility"),
 				"mfl_code": cstr(facility.get("mfl_code") or ""),
@@ -830,6 +931,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				"network": membership.get("network"),
 				"membership_status": cstr(membership.get("status") or "Active"),
 				"go_live": bool(frappe.utils.cint(membership.get("go_live"))),
+				"deal": fac_deal,
 				"token_package": item_names.get(
 					cstr(package.get("cx_token_package_item")),
 					cstr(package.get("cx_token_package_item") or ""),
@@ -842,13 +944,16 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			})
 		accounts.append({
 			"customer": customer,
-			"deal": deal.get("name"),
-			"organization": cstr(deal.get("organization") or customer),
-			"network": deal.get("optin_network"),
-			"source": deal.get("cx_onboarding_source"),
+			"deal": primary_deal.get("name"),
+			"deals": [d.get("name") for d in cust_deals if d.get("name")],
+			"organization": cstr(primary_deal.get("organization") or customer),
+			"network": primary_deal.get("optin_network"),
+			"source": primary_deal.get("cx_onboarding_source"),
 			# Retain this only as a legacy fallback; new enrollments show packages per facility.
-			"selected_package": deal.get("cx_onboarding_package_item"),
+			"selected_package": primary_deal.get("cx_onboarding_package_item"),
 			"facilities": rows,
+			"open_orders": _customer_orders(customer),
+			"open_invoices": _customer_invoices(customer),
 		})
 	return accounts
 

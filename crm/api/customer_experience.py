@@ -17,7 +17,7 @@ from frappe import _
 from frappe.utils.synchronization import filelock
 
 from crm.api.facility_onboarding import _token_packages
-from crm.api.website_redirect import get_user_ois_numbers, require_portal_user
+from crm.api.website_redirect import get_user_customer_names, get_user_ois_numbers, require_portal_user
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref, record_event
 
 
@@ -168,22 +168,143 @@ def get_purchase_context():
 
 
 @frappe.whitelist(methods=["POST"])
-def create_token_order(ois_number: Any, facility_mfl: Any, package_item_code: Any, purchase_key: Any = None):
+def create_token_order(
+	ois_number: Any = None,
+	facility_mfl: Any = None,
+	package_item_code: Any = None,
+	purchase_key: Any = None,
+	customer: Any = None,
+):
 	"""Create or resume the one Quotation and submitted Sales Order for a facility, package and period.
 
 	``purchase_key`` is accepted for older clients only; idempotency uses a key the server derives.
 	"""
-	submission = _submission(ois_number)
 	facility_mfl = _text(facility_mfl)
-	if not any(_text(row.get("mfl_code")) == facility_mfl for row in _snapshot_facilities(submission)):
-		frappe.throw(_("That facility is not part of this Opt-In Request."), frappe.PermissionError)
 	package = _package(package_item_code)
 	if not package:
 		frappe.throw(_("That token package is not available."), frappe.ValidationError)
-	key = _purchase_key(submission, facility_mfl, package)
+
+	customer = _text(customer)
+	ois_number = _text(ois_number)
+	if not ois_number and not customer:
+		frappe.throw(_("Missing account reference."), frappe.ValidationError)
+
+	if ois_number and ois_number in get_user_ois_numbers():
+		submission = _submission(ois_number)
+		if not any(_text(row.get("mfl_code")) == facility_mfl for row in _snapshot_facilities(submission)):
+			frappe.throw(_("That facility is not part of this Opt-In Request."), frappe.PermissionError)
+		key = _purchase_key(submission, facility_mfl, package)
+		with filelock("crm_cx_order_%s" % key, timeout=60), _system_user():
+			source_quote = _initial_onboarding_quote(submission, facility_mfl, package)
+			return _create_or_resume_order(submission, facility_mfl, package, key, source_quote=source_quote)
+
+	cust_name = customer or ois_number
+	if cust_name not in get_user_customer_names():
+		frappe.throw(_("That facility record is not linked to your account."), frappe.PermissionError)
+
+	facility_parents = frappe.get_all(
+		"CRM Pre-Qualified Facility",
+		filters={"mfl_code": facility_mfl},
+		fields=["name"],
+		ignore_permissions=True,
+		limit_page_length=1,
+	)
+	if not facility_parents:
+		frappe.throw(_("Facility not found."), frappe.ValidationError)
+	has_membership = frappe.db.exists(
+		"CRM Facility Membership",
+		{"parent": facility_parents[0]["name"], "customer": cust_name},
+	)
+	if not has_membership:
+		frappe.throw(_("That facility is not part of your account."), frappe.PermissionError)
+
+	raw_key = "|".join((cust_name, facility_mfl, package["item_code"], _period_key(package)))
+	key = hashlib.sha256(raw_key.encode()).hexdigest()[:40]
 	with filelock("crm_cx_order_%s" % key, timeout=60), _system_user():
-		source_quote = _initial_onboarding_quote(submission, facility_mfl, package)
-		return _create_or_resume_order(submission, facility_mfl, package, key, source_quote=source_quote)
+		return _create_or_resume_customer_order(cust_name, facility_mfl, package, key)
+
+
+def _create_or_resume_customer_order(customer, facility_mfl, package, key):
+	order_name = _existing_document("Sales Order", key)
+	quotation_name = _existing_document("Quotation", key)
+	if order_name:
+		return {
+			"success": True,
+			"data": {"quotation": quotation_name, "sales_order": order_name, "idempotent": True},
+		}
+
+	from crm.automation.optin_billing import _apply_order_tax_template
+	from crm.utils.quotation_tax import apply_quotation_taxes
+
+	settings = frappe.get_single("CRM Opt-In Settings")
+	validity = int(settings.get("token_sales_order_validity_days") or 30)
+	price = float(package["price"])
+	today = frappe.utils.today()
+	company = _company()
+	provenance = {
+		"customer": customer,
+		"crm_token_purchase_key": key,
+		"crm_token_facility_mfl": facility_mfl,
+		"crm_token_package_item": package["item_code"],
+	}
+	item = {
+		"item_code": package["item_code"],
+		"qty": 1,
+		"price_list_rate": price,
+		"rate": price,
+		"description": package["description"],
+	}
+	if quotation_name:
+		quotation = frappe.get_doc("Quotation", quotation_name)
+	else:
+		price_list = package.get("price_list")
+		if not price_list or not frappe.db.exists("Price List", price_list):
+			price_list = (
+				frappe.db.get_single_value("Selling Settings", "selling_price_list") or "Standard Selling"
+			)
+		quotation = frappe.get_doc(
+			{
+				"doctype": "Quotation",
+				"quotation_to": "Customer",
+				"party_name": customer,
+				"company": company,
+				"transaction_date": today,
+				"valid_till": frappe.utils.add_days(today, validity),
+				"selling_price_list": price_list,
+				"currency": package.get("currency") or "KES",
+				"order_type": "Sales",
+				**provenance,
+			}
+		)
+		quotation.append("items", dict(item))
+		quotation.flags.ignore_mandatory = True
+		quotation.flags.ignore_permissions = True
+		quotation.set_missing_values()
+		_restore_rate(quotation, price)
+		apply_quotation_taxes(quotation)
+		quotation.insert(ignore_mandatory=True, ignore_permissions=True)
+		quotation_name = quotation.name
+		_record_link("Quotation", quotation_name)
+
+	from erpnext.selling.doctype.quotation.quotation import _make_sales_order
+
+	sales_order = _make_sales_order(quotation_name, ignore_permissions=True)
+	sales_order.flags.ignore_mandatory = True
+	sales_order.flags.ignore_permissions = True
+	sales_order.delivery_date = frappe.utils.add_days(today, validity)
+	for fieldname, value in provenance.items():
+		if frappe.db.has_column("Sales Order", fieldname):
+			setattr(sales_order, fieldname, value)
+	sales_order.set_missing_values()
+	_restore_rate(sales_order, price)
+	_apply_order_tax_template(sales_order)
+	sales_order.insert(ignore_mandatory=True, ignore_permissions=True)
+	sales_order.submit()
+	_record_link("Sales Order", sales_order.name)
+	return {
+		"success": True,
+		"data": {"quotation": quotation.name, "sales_order": sales_order.name, "idempotent": False},
+	}
 
 
 def create_initial_token_order(submission_name, facility_mfl, package_item_code):
@@ -379,22 +500,30 @@ def _restore_rate(document, price):
 @frappe.whitelist(methods=["POST"])
 def start_token_payment(sales_order: Any):
 	"""Create and submit the one invoice for a submitted Sales Order, only when the user starts payment."""
-	if not frappe.db.has_column("Sales Order", "crm_optin_submission"):
-		frappe.throw(_("Token order fields are not installed."), frappe.ValidationError)
 	require_portal_user()
 	name = _text(sales_order)
+	fields = ["name", "crm_token_purchase_key", "docstatus", "status", "customer"]
+	if frappe.db.has_column("Sales Order", "crm_optin_submission"):
+		fields.append("crm_optin_submission")
 	order = (
 		frappe.db.get_value(
 			"Sales Order",
 			name,
-			["name", "crm_optin_submission", "crm_token_purchase_key", "docstatus", "status"],
+			fields,
 			as_dict=True,
 		)
 		if name
 		else None
 	)
-	# One error for missing and foreign orders so names cannot be probed.
-	if not order or _text(order.crm_optin_submission) not in get_user_ois_numbers():
+	permitted_ois = get_user_ois_numbers()
+	permitted_customers = get_user_customer_names()
+	is_permitted = False
+	if order:
+		if _text(order.get("crm_optin_submission")) and _text(order.crm_optin_submission) in permitted_ois:
+			is_permitted = True
+		elif _text(order.get("customer")) and _text(order.customer) in permitted_customers:
+			is_permitted = True
+	if not order or not is_permitted:
 		frappe.throw(_("That order is not linked to your account."), frappe.PermissionError)
 	with (
 		filelock("crm_cx_invoice_%s" % hashlib.sha256(order.name.encode()).hexdigest()[:32], timeout=60),
@@ -405,7 +534,12 @@ def start_token_payment(sales_order: Any):
 
 def _start_or_resume_payment(order):
 	key = _text(order.crm_token_purchase_key)
-	invoice_name = _existing_document("Sales Invoice", key, crm_optin_submission=order.crm_optin_submission)
+	existing_filters = {}
+	if _text(order.get("crm_optin_submission")):
+		existing_filters["crm_optin_submission"] = order.crm_optin_submission
+	elif _text(order.get("customer")):
+		existing_filters["customer"] = order.customer
+	invoice_name = _existing_document("Sales Invoice", key, **existing_filters)
 	idempotent = bool(invoice_name)
 	if invoice_name:
 		invoice = frappe.get_doc("Sales Invoice", invoice_name)
@@ -417,13 +551,19 @@ def _start_or_resume_payment(order):
 			frappe.throw(_("Only an open Sales Order can start payment."), frappe.ValidationError)
 		invoice = _make_invoice(order, key)
 		_record_link("Sales Invoice", invoice.name)
+	checkout_url = (
+		"/payment-checkout?ois=%s" % order.crm_optin_submission
+		if _text(order.get("crm_optin_submission"))
+		else "/cx-portal?invoice=%s" % invoice.name
+	)
 	return {
 		"success": True,
 		"data": {
 			"invoice": invoice.name,
-			"ois": order.crm_optin_submission,
+			"ois": order.get("crm_optin_submission") or "",
+			"customer": order.get("customer") or "",
 			"idempotent": idempotent,
-			"checkout_url": "/payment-checkout?ois=%s" % order.crm_optin_submission,
+			"checkout_url": checkout_url,
 		},
 	}
 
@@ -433,12 +573,12 @@ def _make_invoice(order, key):
 
 	invoice = make_sales_invoice(order.name, ignore_permissions=True)
 	for fieldname, value in (
-		("crm_optin_submission", order.crm_optin_submission),
+		("crm_optin_submission", order.get("crm_optin_submission")),
 		("crm_token_purchase_key", key),
-		("crm_token_facility_mfl", frappe.db.get_value("Sales Order", order.name, "crm_token_facility_mfl")),
-		("crm_token_package_item", frappe.db.get_value("Sales Order", order.name, "crm_token_package_item")),
+		("crm_token_facility_mfl", frappe.db.get_value("Sales Order", order.name, "crm_token_facility_mfl") if frappe.db.has_column("Sales Order", "crm_token_facility_mfl") else None),
+		("crm_token_package_item", frappe.db.get_value("Sales Order", order.name, "crm_token_package_item") if frappe.db.has_column("Sales Order", "crm_token_package_item") else None),
 	):
-		if frappe.db.has_column("Sales Invoice", fieldname):
+		if value is not None and frappe.db.has_column("Sales Invoice", fieldname):
 			invoice.set(fieldname, value)
 	settings = frappe.get_single("CRM Opt-In Settings")
 	invoice.due_date = frappe.utils.add_days(

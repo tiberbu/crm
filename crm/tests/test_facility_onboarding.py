@@ -318,6 +318,8 @@ class _Store:
 
 class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 	def setUp(self):
+		frappe.db.savepoint("facility_onboarding_test")
+		self.addCleanup(frappe.db.rollback, save_point="facility_onboarding_test")
 		self.store = _Store()
 		self.sent = []
 		self.sms = []
@@ -1416,6 +1418,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			patch.object(fo, "_validate_account_email", return_value="owner@example.com"),
 			patch.object(fo, "_public_network", return_value={"name": "net-a"}),
 			patch.object(fo, "_token_packages", return_value=[self.PACKAGE]),
+			patch.object(fo, "_catalog_packages", return_value=[self.PACKAGE]),
 			patch.object(fo, "_check_onboarding_conflicts", side_effect=check),
 			patch.object(fo, "_submit_selected_facilities", side_effect=create),
 		):

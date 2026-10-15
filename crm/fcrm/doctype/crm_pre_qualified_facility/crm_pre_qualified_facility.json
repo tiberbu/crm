@@ -9,6 +9,7 @@
   "facility_name",
   "organization",
   "keph_level",
+  "is_self_onboarded",
   "memberships"
  ],
  "fields": [
@@ -42,6 +43,13 @@
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_self_onboarded",
+   "fieldtype": "Check",
+   "label": "Is Self Onboarded",
+   "read_only": 1
   },
   {
    "fieldname": "memberships",
