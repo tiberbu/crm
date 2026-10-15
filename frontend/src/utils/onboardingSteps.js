@@ -8,7 +8,11 @@ export const STEPS = [
   { key: 'review', label: 'Submit', stages: ['review'] },
 ]
 
-const PREVIOUS = { otp: 'identity', pricing: 'facilities', review: 'pricing' }
+const PREVIOUS = {
+  otp: 'identity',
+  pricing: 'facilities',
+  review: 'pricing',
+}
 
 export function stepStatus(stepKey, stage) {
   if (stage === 'success') return 'complete'
@@ -26,11 +30,14 @@ export function previousStage(stage) {
 
 export function canAdvance(stage, state) {
   if (stage === 'facilities') return state.selectedFacilityCount > 0
-  if (stage === 'pricing') return Boolean(state.hasNetwork && state.packageCode)
+  if (stage === 'pricing') return Boolean(state.packageCode)
   if (stage === 'review') {
     const email = String(state.accountEmail || '').trim()
     return Boolean(
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+      state.hasNetwork &&
+      state.packageCode &&
+      state.hasTerms &&
       state.termsAccepted,
     )
   }
@@ -69,8 +76,7 @@ export function deliveryState(delivery) {
 
 export function canResendOtp(delivery, resendIn, busy = false) {
   return (
-    !busy &&
-    (delivery?.status === 'unavailable' || Number(resendIn || 0) <= 0)
+    !busy && (delivery?.status === 'unavailable' || Number(resendIn || 0) <= 0)
   )
 }
 

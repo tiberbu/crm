@@ -297,8 +297,13 @@
               <p class="text-sm leading-6 text-ink-gray-6">
                 {{
                   delivery.masked_destination
-                    ? __('A 6-digit code was sent by {0} to {1}.', [deliveryChannelLabel, delivery.masked_destination])
-                    : __('If your details match our records, a 6-digit code was sent to the registered contact.')
+                    ? __('A 6-digit code was sent by {0} to {1}.', [
+                        deliveryChannelLabel,
+                        delivery.masked_destination,
+                      ])
+                    : __(
+                        'If your details match our records, a 6-digit code was sent to the registered contact.',
+                      )
                 }}
               </p>
               <p class="mt-2 text-xs text-ink-gray-5">
@@ -351,18 +356,33 @@
             class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
           >
             <section
-              v-if="identityPreview.full_name || identityPreview.email || identityPreview.phone"
+              v-if="
+                identityPreview.full_name ||
+                identityPreview.email ||
+                identityPreview.phone
+              "
               class="mb-6 rounded-xl bg-surface-gray-1 p-4"
               :aria-label="__('Verified identity')"
             >
-              <h2 class="text-sm font-semibold">{{ __('Verified identity') }}</h2>
-              <p v-if="identityPreview.full_name" class="mt-1 text-sm text-ink-gray-6">
+              <h2 class="text-sm font-semibold">
+                {{ __('Verified identity') }}
+              </h2>
+              <p
+                v-if="identityPreview.full_name"
+                class="mt-1 text-sm text-ink-gray-6"
+              >
                 {{ identityPreview.full_name }}
               </p>
-              <p v-if="identityPreview.email" class="mt-1 text-xs text-ink-gray-5">
+              <p
+                v-if="identityPreview.email"
+                class="mt-1 text-xs text-ink-gray-5"
+              >
                 {{ __('Email: {0}', [identityPreview.email]) }}
               </p>
-              <p v-if="identityPreview.phone" class="mt-1 text-xs text-ink-gray-5">
+              <p
+                v-if="identityPreview.phone"
+                class="mt-1 text-xs text-ink-gray-5"
+              >
                 {{ __('Phone: {0}', [identityPreview.phone]) }}
               </p>
             </section>
@@ -417,8 +437,12 @@
                     class="mt-2 block text-xs font-medium text-ink-gray-6"
                     >{{
                       facility.facility_eligibility_reason === 'missing_level'
-                        ? __('Unavailable for token self-onboarding because HFR did not return a Facility Level.')
-                        : __('Unavailable for token self-onboarding because this Facility Level is not approved.')
+                        ? __(
+                            'Unavailable for token self-onboarding because HFR did not return a Facility Level.',
+                          )
+                        : __(
+                            'Unavailable for token self-onboarding because this Facility Level is not approved.',
+                          )
                     }}</span
                   ></span
                 ></label
@@ -449,7 +473,10 @@
             <h2 class="mt-2 text-xl font-semibold">
               {{ __('Choose your token package') }}
             </h2>
-            <p v-if="catalog.network?.display_name" class="mt-2 text-sm text-ink-gray-6">
+            <p
+              v-if="catalog.network?.display_name"
+              class="mt-2 text-sm text-ink-gray-6"
+            >
               {{
                 __(
                   'Choose the token package you want for your selected facilities.',
@@ -457,8 +484,67 @@
               }}
             </p>
             <p v-else class="mt-2 text-sm text-ink-gray-6">
-              {{ __('The token catalogue is available before you select the referring partner Network.') }}
+              {{
+                __(
+                  'The token catalogue is available before you select the referring partner Network.',
+                )
+              }}
             </p>
+            <section
+              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4"
+            >
+              <h3 class="text-sm font-semibold">
+                {{ __('Were you referred by a partner?') }}
+              </h3>
+              <p class="mt-1 text-sm leading-6 text-ink-gray-6">
+                {{
+                  __(
+                    'Enter the 6-digit Network ID your referring partner shared with you. Leave it blank to use Tiberbu’s configured default Network when one is available.',
+                  )
+                }}
+              </p>
+              <label class="mt-4 block text-sm font-medium">
+                {{ __('Partner Network ID') }}
+                <span class="ml-1 text-xs font-normal text-ink-gray-5">{{
+                  __('optional')
+                }}</span>
+                <input
+                  :value="partnerId"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  maxlength="6"
+                  pattern="[0-9]{6}"
+                  :aria-invalid="Boolean(partnerId && partnerId.length !== 6)"
+                  :title="__('Enter all six digits or leave this field blank.')"
+                  aria-describedby="partner-network-help"
+                  class="mt-2 block w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-3 font-mono text-sm"
+                  placeholder="123456"
+                  @input="onPartnerIdInput"
+                  @change="loadCatalog"
+                />
+              </label>
+              <span
+                id="partner-network-help"
+                class="mt-2 block text-xs text-ink-gray-5"
+              >
+                {{
+                  __(
+                    'This existing Network will be linked to every facility you select. Your verified registry contact will be added as its Network Contact.',
+                  )
+                }}
+              </span>
+              <span
+                v-if="partnerId && partnerId.length !== 6"
+                class="mt-2 block text-xs font-medium text-ink-amber-3"
+                role="status"
+              >
+                {{
+                  __(
+                    'Enter all six digits, or clear the field to use the configured default Network if available.',
+                  )
+                }}
+              </span>
+            </section>
             <div class="mt-6 grid gap-3 sm:grid-cols-2">
               <label
                 v-for="item in catalog.packages"
@@ -499,7 +585,9 @@
             class="min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
           >
             {{
-              termsBusy ? __('Loading Terms…') : __('Confirm your data')
+              termsBusy
+                ? __('Loading Terms…')
+                : __('Continue to submission review')
             }}</button
           ><button
             type="button"
@@ -520,14 +608,25 @@
             <p class="text-sm leading-6 text-ink-gray-6">
               {{
                 __(
-                  'Confirm your facilities and token package, provide the email for your Customer Experience account, then accept the Terms to submit.',
+                  'Confirm the facilities, account contact, Network and package before submitting.',
                 )
               }}
             </p>
             <dl class="mt-6 space-y-3 text-sm">
               <div class="flex justify-between gap-4">
-                <dt class="text-ink-gray-5">{{ __('Network') }}</dt>
-                <dd class="font-medium">{{ catalog.network?.display_name || __('Resolve from Network ID below') }}</dd>
+                <dt class="text-ink-gray-5">
+                  {{ __('Network') }}
+                  <button
+                    type="button"
+                    class="ml-2 min-h-8 text-xs font-medium text-[#bc1823] underline underline-offset-4"
+                    @click="stage = 'pricing'"
+                  >
+                    {{ __('Edit') }}
+                  </button>
+                </dt>
+                <dd class="text-right font-medium" data-testid="review-network">
+                  {{ catalog.network?.display_name || __('No Network resolved') }}
+                </dd>
               </div>
               <div class="flex justify-between gap-4">
                 <dt class="text-ink-gray-5">
@@ -566,11 +665,73 @@
                 <dt class="text-ink-gray-5">
                   {{ __('Customer Experience email') }}
                 </dt>
-                <dd class="font-medium">
-                  {{ accountEmail || __('Add below') }}
+                <dd class="font-medium" data-testid="verified-account-email">
+                  {{ accountEmail }}
+                </dd>
+              </div>
+              <div class="flex justify-between gap-4">
+                <dt class="text-ink-gray-5">{{ __('Terms') }}</dt>
+                <dd class="text-right font-medium">
+                  {{ termsSnapshot?.document }}
                 </dd>
               </div>
             </dl>
+            <div
+              v-if="!catalog.network?.name"
+              class="mt-4 rounded-xl border border-outline-amber-2 bg-surface-amber-1 px-4 py-3 text-sm leading-6 text-ink-amber-3"
+              role="status"
+              data-testid="network-blocker"
+            >
+              <p>
+                {{
+                  __('We could not resolve a Network from the configured default. Enter the referring partner’s Network ID to continue.')
+                }}
+              </p>
+              <button
+                type="button"
+                class="mt-2 font-semibold underline underline-offset-4"
+                @click="stage = 'pricing'"
+              >
+                {{ __('Edit Partner Network ID') }}
+              </button>
+            </div>
+            <section
+              class="mt-5 space-y-4 border-t border-outline-gray-2 pt-4"
+              aria-labelledby="review-terms-title"
+              data-testid="self-onboarding-terms"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <h2 id="review-terms-title" class="text-sm font-semibold">
+                  {{ __('Terms and Conditions') }}
+                </h2>
+                <button
+                  type="button"
+                  class="font-medium text-[#bc1823] underline underline-offset-4"
+                  aria-haspopup="dialog"
+                  @click="termsDialogOpen = true"
+                >
+                  {{ __('Read the complete Terms') }}
+                </button>
+              </div>
+              <label class="flex gap-3 text-sm leading-6 text-ink-gray-6">
+                <input
+                  v-model="termsAccepted"
+                  required
+                  :disabled="!termsSnapshot?.content_hash"
+                  type="checkbox"
+                  class="mt-1 accent-[#bc1823]"
+                  data-testid="terms-acceptance"
+                />
+                {{ __('I have read and accept these Terms and Conditions.') }}
+              </label>
+              <p
+                v-if="!accountEmail"
+                class="rounded-xl bg-surface-amber-1 px-4 py-3 text-sm leading-6 text-ink-amber-3"
+                role="alert"
+              >
+                {{ __('No email is available on your verified registry profile for Customer Experience access. Contact support to continue.') }}
+              </p>
+            </section>
             <dl
               v-if="totals"
               class="mt-5 space-y-2 border-t border-outline-gray-2 pt-4 text-sm"
@@ -598,83 +759,6 @@
               </div>
             </dl>
           </div>
-          <section
-            v-if="termsSnapshot"
-            class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
-            aria-labelledby="self-onboarding-terms-title"
-            data-testid="self-onboarding-terms"
-          >
-            <h2 id="self-onboarding-terms-title" class="text-lg font-semibold">
-              {{ __('Terms and Conditions') }}
-            </h2>
-            <p class="mt-1 text-sm text-ink-gray-5">
-              {{ termsSnapshot.document }}
-            </p>
-            <div
-              class="prose prose-sm mt-4 max-h-96 overflow-y-auto rounded-lg border border-outline-gray-2 p-4"
-              v-html="termsSnapshot.rendered_html"
-            />
-          </section>
-          <section
-            class="rounded-2xl border border-outline-gray-2 bg-surface-white p-6 shadow-sm sm:p-8"
-            aria-labelledby="cx-account-title"
-          >
-            <h2 id="cx-account-title" class="text-lg font-semibold">
-              {{ __('Set up your Customer Experience account') }}
-            </h2>
-            <p class="mt-2 text-sm text-ink-gray-6">
-              {{
-                __(
-                  'We will send secure password setup or recovery instructions to this email.',
-                )
-              }}
-            </p>
-            <label class="mt-5 block text-sm font-medium">
-              {{ __('Account email') }}
-              <input
-                v-model.trim="accountEmail"
-                required
-                type="email"
-                autocomplete="email"
-                class="mt-2 block w-full rounded-lg border border-outline-gray-2 px-3 py-3 text-sm"
-                :placeholder="__('you@example.com')"
-              />
-            </label>
-            <label class="mt-5 block text-sm font-medium">
-              {{ __('Referring partner’s Network ID') }}
-              <span class="ml-2 text-xs font-normal text-ink-gray-5">{{
-                __('optional')
-              }}</span>
-              <input
-                v-model.trim="partnerId"
-                inputmode="numeric"
-                maxlength="6"
-                class="mt-2 block w-full rounded-lg border border-outline-gray-2 px-3 py-3 font-mono text-sm"
-                placeholder="000000"
-                @change="loadCatalog"
-              />
-              <span class="mt-2 block text-xs text-ink-gray-5">
-                {{
-                  __(
-                    'Enter the six-digit Network ID from the partner who referred you. The same existing Network will be linked to every selected facility, with your verified registry contact recorded as the Network Contact. Leave blank to use the configured default Network ID. If no default Network is configured, enter the partner’s Network ID to continue.',
-                  )
-                }}
-              </span>
-            </label>
-            <label class="mt-5 flex gap-3 text-sm text-ink-gray-6"
-              ><input
-                v-model="termsAccepted"
-                required
-                :disabled="!termsSnapshot?.content_hash"
-                type="checkbox"
-                class="mt-1 accent-[#bc1823]"
-              />{{
-                __(
-                  'I have reviewed and accept the displayed Terms and Conditions.',
-                )
-              }}</label
-            >
-          </section>
           <button
             :disabled="busy || !reviewReady"
             class="min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
@@ -727,13 +811,24 @@
           >
         </section>
       </section>
+      <Dialog
+        v-model:open="termsDialogOpen"
+        :title="termsSnapshot?.document || __('Terms and Conditions')"
+        :size="'4xl'"
+      >
+        <div
+          v-if="termsSnapshot?.rendered_html"
+          class="prose prose-sm max-w-none max-h-[70vh] overflow-y-auto"
+          v-html="termsSnapshot.rendered_html"
+        />
+      </Dialog>
     </div>
   </main>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { call } from 'frappe-ui'
+import { call, Dialog } from 'frappe-ui'
 import OtpCodeInput from '@/components/FacilityOnboarding/OtpCodeInput.vue'
 import {
   STEPS,
@@ -770,6 +865,7 @@ const accountEmail = ref('')
 const termsAccepted = ref(false)
 const termsSnapshot = ref(null)
 const termsBusy = ref(false)
+const termsDialogOpen = ref(false)
 const submissions = ref([])
 const delivery = ref({})
 const resendIn = ref(0)
@@ -800,6 +896,9 @@ const reviewReady = computed(
     Boolean(catalog.value.network?.name) &&
     canAdvance('review', {
       accountEmail: accountEmail.value,
+      hasNetwork: Boolean(catalog.value.network?.name),
+      packageCode: packageCode.value,
+      hasTerms: Boolean(termsSnapshot.value?.content_hash),
       termsAccepted: termsAccepted.value,
     }),
 )
@@ -838,9 +937,7 @@ const journey = [
   },
   {
     title: __('Track progress'),
-    description: __(
-      'Track your progress in the portal through launch.',
-    ),
+    description: __('Track your progress in the portal through launch.'),
   },
 ]
 const progressSteps = computed(() =>
@@ -903,6 +1000,8 @@ async function startIdentity() {
   sessionExpired.value = false
   termsSnapshot.value = null
   termsAccepted.value = false
+  accountEmail.value = ''
+  identityPreview.value = {}
   busy.value = true
   try {
     const data = await request('start_identity', {
@@ -984,6 +1083,7 @@ async function verifyOtp() {
 }
 function acceptFacilities(data) {
   identityPreview.value = data.identity || identityPreview.value
+  accountEmail.value = data.account_email || ''
   facilities.value = data.facilities || []
   hfrRetryPending.value = false
   hfrRetryExhausted.value = false
@@ -1023,6 +1123,8 @@ function editIdentity() {
   hfrRetryExhausted.value = false
   termsSnapshot.value = null
   termsAccepted.value = false
+  accountEmail.value = ''
+  identityPreview.value = {}
   errorMessage.value = ''
   stage.value = 'identity'
 }
@@ -1057,6 +1159,11 @@ async function loadCatalog() {
     catalogBusy.value = false
   }
 }
+function onPartnerIdInput(event) {
+  partnerId.value = String(event?.target?.value || '')
+    .replace(/\D/g, '')
+    .slice(0, 6)
+}
 async function loadSelfOnboardingTerms() {
   errorMessage.value = ''
   termsAccepted.value = false
@@ -1077,7 +1184,7 @@ async function loadSelfOnboardingTerms() {
   }
 }
 async function continuePricing() {
-  if (!packageCode.value || termsBusy.value) return
+  if (!packageCode.value || termsBusy.value || catalogBusy.value) return
   if (await loadSelfOnboardingTerms()) stage.value = 'review'
 }
 function conflictMessage(result) {
@@ -1142,9 +1249,10 @@ async function submit() {
     const preflightMessage = conflictMessage(conflict)
     if (preflightMessage) {
       errorMessage.value = preflightMessage
-      registrationConflictDetected.value = ['existing_identity', 'facility_review'].includes(
-        conflict?.outcome,
-      )
+      registrationConflictDetected.value = [
+        'existing_identity',
+        'facility_review',
+      ].includes(conflict?.outcome)
       return
     }
     if (conflict?.outcome !== 'new') {
@@ -1165,9 +1273,10 @@ async function submit() {
     const submitConflict = conflictMessage(data)
     if (submitConflict) {
       errorMessage.value = submitConflict
-      registrationConflictDetected.value = ['existing_identity', 'facility_review'].includes(
-        data?.outcome,
-      )
+      registrationConflictDetected.value = [
+        'existing_identity',
+        'facility_review',
+      ].includes(data?.outcome)
       return
     }
     if (data?.outcome && data.outcome !== 'new') {
@@ -1185,6 +1294,7 @@ async function submit() {
       __('We could not complete onboarding. Please try again.')
     if (/terms/i.test(message)) {
       const refreshed = await loadSelfOnboardingTerms()
+      if (refreshed) stage.value = 'review'
       errorMessage.value = refreshed
         ? __(
             'The Terms have changed. Review and accept the updated Terms before submitting.',
@@ -1215,5 +1325,6 @@ function reset() {
   packageCode.value = ''
   termsSnapshot.value = null
   termsAccepted.value = false
+  accountEmail.value = ''
 }
 </script>

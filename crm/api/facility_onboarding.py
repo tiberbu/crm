@@ -17,6 +17,7 @@ import json
 import re
 import secrets
 import time
+import unicodedata
 from typing import Any
 
 import frappe
@@ -270,17 +271,29 @@ def _allowed_facility_level_keys() -> set[str]:
 	configured = _setting("self_onboarding_allowed_facility_levels")
 	if not isinstance(configured, str):
 		return set()
-	return {level.strip().casefold() for level in configured.splitlines() if level.strip()}
+	allowed_levels = set()
+	for level in re.split(r"\r\n|\r|\n", configured):
+		key = _facility_level_key(level)
+		if key:
+			allowed_levels.add(key)
+	return allowed_levels
+
+
+def _facility_level_key(value: Any) -> str:
+	"""Canonicalize display-equivalent HFR levels without fuzzy matching."""
+	normalized = unicodedata.normalize("NFKC", _text(value))
+	normalized = re.sub(r"[\u200b\u2060\ufeff]", " ", normalized)
+	return " ".join(normalized.split()).casefold()
 
 
 def _facility_level_eligibility(facility: dict[str, Any], allowed_levels: set[str]) -> dict[str, Any]:
-	level = _text(facility.get("facility_level"))
+	level = _facility_level_key(facility.get("facility_level"))
 	if not level:
 		return {
 			"onboarding_eligible": False,
 			"facility_eligibility_reason": "missing_level",
 		}
-	if level.casefold() not in allowed_levels:
+	if level not in allowed_levels:
 		return {
 			"onboarding_eligible": False,
 			"facility_eligibility_reason": "level_not_allowed",
@@ -844,6 +857,7 @@ def _resolve_verified_hfr(token: str, session: dict[str, Any]) -> dict[str, Any]
 				"success": True,
 				"data": {
 					"identity": _person_preview(session["person"]),
+					"account_email": _text(session["person"].get("email")).lower(),
 					"facilities": _facilities_for_response(session.get("facilities") or []),
 					"state": "ready",
 				},
@@ -876,6 +890,7 @@ def _resolve_verified_hfr(token: str, session: dict[str, Any]) -> dict[str, Any]
 			"success": True,
 			"data": {
 				"identity": _person_preview(session["person"]),
+				"account_email": _text(session["person"].get("email")).lower(),
 				"facilities": _facilities_for_response(session["facilities"]),
 				"state": "ready",
 			},
@@ -1183,7 +1198,7 @@ def submit_onboarding(
 	token = _text(session_token)
 	session = _session_or_error(token, verified=True)
 	terms_snapshot = _validate_self_onboarding_terms(session, accepted_terms_hash)
-	account_email = _validate_account_email(account_email)
+	account_email = _validate_account_email(account_email, session)
 	partner_id = _text(partner_id)
 	partner = _public_network(partner_id)
 	if not partner:
@@ -1232,11 +1247,20 @@ def submit_onboarding(
 
 
 def _validate_account_email(value: Any, session: dict[str, Any] | None = None) -> str:
-	"""Validate the requested portal address before any onboarding side effect."""
-	account_email = _text(value).lower()
+	"""Use the registry email bound to the OTP-verified identity, never a browser-selected address."""
+	account_email = _text(((session or {}).get("person") or {}).get("email")).lower()
 	validated = frappe.utils.validate_email_address(account_email).strip().lower()
 	if not account_email or validated != account_email:
-		frappe.throw(_("Enter one valid email address for your Customer Experience account."), frappe.ValidationError)
+		frappe.throw(
+			_("A valid email address is not available for this verified registry contact. Please contact support."),
+			frappe.ValidationError,
+		)
+	requested_email = _text(value).lower()
+	if requested_email and requested_email != account_email:
+		frappe.throw(
+			_("Customer Experience access must use the email on your verified registry profile."),
+			frappe.ValidationError,
+		)
 	prior_account_email = _text((session or {}).get("customer_account_email")).lower()
 	if prior_account_email and prior_account_email != account_email:
 		frappe.throw(

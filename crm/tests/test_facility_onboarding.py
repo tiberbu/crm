@@ -376,10 +376,13 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		return re.search(r"\b(\d{6})\b", self.sms[-1][1]).group(1)
 
 	def test_cr_lookup_and_otp_precede_hfr_ownership_lookup(self):
-		token = self._start()["session_token"]
+		started = self._start()
+		token = started["session_token"]
+		self.assertNotIn(PERSON["email"], str(started))
 		self.assertEqual([c[0] for c in self.calls.mock_calls], ["registry"])
 		self.assertEqual(self.sent[0]["recipients"], [PERSON["email"]])
 		data = fo.verify_otp(token, self._captured_otp())["data"]
+		self.assertEqual(data["account_email"], PERSON["email"])
 		self.assertEqual(data["facilities"][0]["facility_id"], "FID-1")
 		self.assertEqual([c[0] for c in self.calls.mock_calls], ["registry", "hfr"])
 		self.hfr.assert_called_once_with(ID_NUMBER)
@@ -979,7 +982,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			"123456",
 			json.dumps(list(facility_ids)),
 			package,
-			"sam@example.com",
+			"owner@example.com",
 			1,
 			terms["content_hash"],
 		)["data"]["submissions"]
@@ -1029,7 +1032,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				"123456",
 				'["FID-1"]',
 				"TOK-1",
-				"sam@example.com",
+				"owner@example.com",
 				1,
 				terms["content_hash"],
 			)
@@ -1042,7 +1045,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		token = self._verified_token()
 		terms = self._accepted_terms(token)
 
-		with self.assertRaisesRegex(frappe.ValidationError, "one valid email"):
+		with self.assertRaisesRegex(frappe.ValidationError, "verified registry profile"):
 			fo.submit_onboarding(
 				token,
 				"123456",
@@ -1056,9 +1059,31 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(self.ois, {})
 		fo._upsert_facility_membership.assert_not_called()
 
+	def test_submit_uses_verified_registry_email_and_rejects_browser_override(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+
+		with self.assertRaisesRegex(frappe.ValidationError, "verified registry profile"):
+			fo.submit_onboarding(
+				token,
+				"123456",
+				'["FID-1"]',
+				"TOK-1",
+				"attacker@example.com",
+				1,
+				terms["content_hash"],
+			)
+
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
+
 	def test_submit_rejects_internal_account_email_before_creating_records(self):
 		self._submit_env()
 		token = self._verified_token()
+		session = self.store.get(token)
+		session["person"]["email"] = "staff@example.com"
+		self.store.save(token, session)
 		terms = self._accepted_terms(token)
 
 		def user_lookup(doctype, name=None, *args, **kwargs):
@@ -1086,6 +1111,9 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 	def test_submit_rejects_disabled_website_account_before_creating_records(self):
 		self._submit_env()
 		token = self._verified_token()
+		session = self.store.get(token)
+		session["person"]["email"] = "disabled@example.com"
+		self.store.save(token, session)
 		terms = self._accepted_terms(token)
 
 		def user_lookup(doctype, name=None, *args, **kwargs):
@@ -1122,7 +1150,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 					"123456",
 					'["FID-1"]',
 					"TOK-1",
-					"sam@example.com",
+					"owner@example.com",
 					1,
 					bad_hash,
 				)
@@ -1162,7 +1190,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 					"123456",
 					'["FID-1"]',
 					"TOK-1",
-					"sam@example.com",
+					"owner@example.com",
 					1,
 					terms["content_hash"],
 				)
@@ -1183,7 +1211,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				"123456",
 				'["FID-1"]',
 				"TOK-1",
-				"sam@example.com",
+				"owner@example.com",
 				1,
 				terms["content_hash"],
 			)
@@ -1205,7 +1233,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				"123456",
 				'["FID-1"]',
 				"TOK-1",
-				"sam@example.com",
+				"owner@example.com",
 				1,
 				"a" * 64,
 			)
@@ -1293,7 +1321,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.terms_settings["self_onboarding_allowed_facility_levels"] = "Level 30"
 
 		result = fo.submit_onboarding(
-			token, "123456", '["FID-1"]', "TOK-1", "sam@example.com", 1, terms["content_hash"]
+			token, "123456", '["FID-1"]', "TOK-1", "owner@example.com", 1, terms["content_hash"]
 		)
 
 		self.assertEqual(result["data"]["outcome"], "facility_level_ineligible")
@@ -1327,7 +1355,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			"123456",
 			'["FID-1"]',
 			"TOK-1",
-			"sam@example.com",
+			"owner@example.com",
 			1,
 			self._accepted_terms(token)["content_hash"],
 		)
@@ -1348,7 +1376,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 					"123456",
 					'["FID-1"]',
 					"TOK-1",
-					"sam@example.com",
+					"owner@example.com",
 					1,
 					terms["content_hash"],
 				)
@@ -1385,7 +1413,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			patch.object(fo, "evidence_ref", side_effect=lambda value: "keyed:" + value),
 			patch.object(fo, "_session_or_error", side_effect=lambda token, verified=False: self.store.get(token)),
 			patch.object(fo, "_validate_self_onboarding_terms", return_value={"hash": "a" * 64}),
-			patch.object(fo, "_validate_account_email", return_value="sam@example.com"),
+			patch.object(fo, "_validate_account_email", return_value="owner@example.com"),
 			patch.object(fo, "_public_network", return_value={"name": "net-a"}),
 			patch.object(fo, "_token_packages", return_value=[self.PACKAGE]),
 			patch.object(fo, "_check_onboarding_conflicts", side_effect=check),
@@ -1473,7 +1501,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			fo._create_submission(
 				{"name": "net-a"},
 				self.PACKAGE,
-				"sam@example.com",
+				"owner@example.com",
 				PERSON,
 				facility,
 				{"document": "Terms", "hash": "a" * 64, "accepted_at": "2026-10-13 12:00:00"},
@@ -1489,7 +1517,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(captured["self_onboarding_tc_accepted_at"], "2026-10-13 12:00:00")
 		self.assertEqual(captured["onboarding_source"], "token_self_onboarding")
 		self.assertEqual(captured["onboarding_identity_ref"], "keyed-identity-reference")
-		self.assertEqual(captured["cx_account_email"], "sam@example.com")
+		self.assertEqual(captured["cx_account_email"], "owner@example.com")
 		self.assertNotIn("witness", payload)
 		self.assertEqual(payload["tc_doc_name"], "Terms")
 		self.assertEqual(payload["tc_doc_hash"], "a" * 64)
