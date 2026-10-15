@@ -24,7 +24,9 @@ def _ensure_permission(doc, role, values):
 def execute():
 	if frappe.db.exists("DocType", "Page") and frappe.db.exists("Page", "finance-cockpit"):
 		page = frappe.get_doc("Page", "finance-cockpit")
-		page.roles = [{"role": role} for role in sorted(ACCOUNTING_ROLES)]
+		page.set("roles", [])
+		for role in sorted(ACCOUNTING_ROLES):
+			page.append("roles", {"role": role})
 		page.save(ignore_permissions=True)  # SYSTEM-INTERNAL: permission migration
 
 	for doctype in ("CRM Partner Rebate Voucher", "CRM Sales Commission"):

@@ -2,7 +2,29 @@ import { createApp, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const call = vi.hoisted(() => vi.fn())
-vi.mock('frappe-ui', () => ({ call }))
+vi.mock('frappe-ui', async () => {
+  const { h } = await import('vue')
+  return {
+    call,
+    Dialog: {
+      props: ['open', 'title'],
+      setup(props, { slots }) {
+        return () =>
+          props.open
+            ? h(
+                'div',
+                {
+                  role: 'dialog',
+                  'aria-modal': 'true',
+                  'aria-label': props.title,
+                },
+                slots.default?.(),
+              )
+            : null
+      },
+    },
+  }
+})
 
 import FacilityOnboardingLanding from '@/pages/FacilityOnboarding/FacilityOnboardingLanding.vue'
 
@@ -72,11 +94,10 @@ async function goToReview(host) {
   await settle()
   await submitForm(host.querySelector('form'))
   const reviewForm = host.querySelector('form')
-  await enterInput(
-    reviewForm.querySelector('input[placeholder="you@example.com"]'),
-    'sam@example.com',
-  )
-  await checkInput(reviewForm.querySelector('input[type="checkbox"]'))
+  expect(
+    reviewForm.querySelector('[data-testid="verified-account-email"]')
+      ?.textContent,
+  ).toContain('sam@example.com')
   return reviewForm
 }
 
@@ -108,6 +129,7 @@ describe('FacilityOnboardingLanding', () => {
               email: 'a***@example.test',
               phone: '254******78',
             },
+            account_email: 'sam@example.com',
             facilities: [
               {
                 facility_id: 'FID-1',
@@ -167,9 +189,15 @@ describe('FacilityOnboardingLanding', () => {
     expect(host.textContent).toContain('this Facility Level is not approved')
     expect(host.textContent).toContain('Facility without a level')
     expect(host.textContent).toContain('HFR did not return a Facility Level')
-    expect(host.querySelectorAll('input[type="checkbox"]')[0].disabled).toBe(false)
-    expect(host.querySelectorAll('input[type="checkbox"]')[1].disabled).toBe(true)
-    expect(host.querySelectorAll('input[type="checkbox"]')[2].disabled).toBe(true)
+    expect(host.querySelectorAll('input[type="checkbox"]')[0].disabled).toBe(
+      false,
+    )
+    expect(host.querySelectorAll('input[type="checkbox"]')[1].disabled).toBe(
+      true,
+    )
+    expect(host.querySelectorAll('input[type="checkbox"]')[2].disabled).toBe(
+      true,
+    )
     expect(host.textContent).toContain('Verified identity')
     expect(host.textContent).toContain('Amina Otieno')
     expect(host.textContent).toContain('a***@example.test')
@@ -195,6 +223,7 @@ describe('FacilityOnboardingLanding', () => {
           data: {
             state: 'ready',
             identity: { full_name: 'Amina Otieno' },
+            account_email: 'sam@example.com',
             facilities: [
               {
                 facility_id: 'FID-1',
@@ -282,6 +311,7 @@ describe('FacilityOnboardingLanding', () => {
           data: {
             state: 'ready',
             identity: { full_name: 'Amina Otieno' },
+            account_email: 'sam@example.com',
             facilities: [
               {
                 facility_id: 'FID-1',
@@ -295,7 +325,7 @@ describe('FacilityOnboardingLanding', () => {
       .mockResolvedValueOnce({
         message: {
           data: {
-            network: { display_name: 'Network A' },
+            network: { name: 'NET-A', display_name: 'Network A' },
             packages: [
               { item_code: 'TOK-1', display_name: 'Starter', price: 1000 },
             ],
@@ -346,17 +376,29 @@ describe('FacilityOnboardingLanding', () => {
       '[data-testid="self-onboarding-terms"]',
     )
     expect(termsPanel.textContent).toContain('Self-Onboarding Terms')
-    expect(termsPanel.textContent).toContain('Review these applicable Terms.')
-
     const reviewForm = host.querySelector('form')
-    const submitButton = reviewForm.querySelector('button:not([type="button"])')
-    expect(submitButton.disabled).toBe(true)
-    await enterInput(
-      reviewForm.querySelector('input[placeholder="you@example.com"]'),
-      'sam@example.com',
+    const termsLink = [...reviewForm.querySelectorAll('button')].find((button) =>
+      button.textContent.includes('Read the complete Terms'),
     )
-    expect(submitButton.disabled).toBe(true)
-    await checkInput(reviewForm.querySelector('input[type="checkbox"]'))
+    expect(termsLink.getAttribute('aria-haspopup')).toBe('dialog')
+    termsLink.click()
+    await nextTick()
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Review these applicable Terms.',
+    )
+    expect(host.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBe(
+      'true',
+    )
+    host.querySelector('[role="dialog"]')?.remove()
+
+    expect(host.querySelector('input[type="email"]')).toBeNull()
+    expect(host.textContent).not.toContain('sam@example.com')
+    await checkInput(reviewForm.querySelector('[data-testid="terms-acceptance"]'))
+    expect(
+      reviewForm.querySelector('[data-testid="verified-account-email"]')
+        ?.textContent,
+    ).toContain('sam@example.com')
+    expect(reviewForm.querySelector('input[type="email"]')).toBeNull()
     await submitForm(reviewForm)
 
     expect(call.mock.calls.map(([method]) => method.split('.').at(-1))).toEqual(
@@ -385,7 +427,7 @@ describe('FacilityOnboardingLanding', () => {
       'existing_identity',
       { outcome: 'existing_identity', allowed_facility_ids: [] },
       null,
-      'An onboarding request already exists for this identity',
+      'An enrollment already exists for this verified identity',
     ],
     [
       'facility_review returned by locked submit recheck',
@@ -432,6 +474,7 @@ describe('FacilityOnboardingLanding', () => {
             data: {
               state: 'ready',
               identity: { full_name: 'Amina Otieno' },
+              account_email: 'sam@example.com',
               facilities: [
                 {
                   facility_id: 'FID-1',
@@ -451,6 +494,7 @@ describe('FacilityOnboardingLanding', () => {
           message: {
             data: {
               network: {
+                name: 'NET-A',
                 display_name: 'Network A',
                 contact_email: 'support@example.test',
               },
@@ -502,20 +546,28 @@ describe('FacilityOnboardingLanding', () => {
       expect(host.textContent).toContain(expectedCopy)
       expect(host.textContent).not.toContain('Your onboarding has started')
       if (_outcome === 'existing_identity' || submitConflict) {
-        expect(host.querySelector('[data-testid="duplicate-signin"]')?.textContent)
-          .toContain('Sign in to Customer Experience')
-        expect(host.querySelector('[data-testid="duplicate-support"]')?.textContent)
-          .toContain('Contact support')
+        expect(
+          host.querySelector('[data-testid="duplicate-signin"]')?.textContent,
+        ).toContain('Sign in to Customer Experience')
+        expect(
+          host.querySelector('[data-testid="duplicate-support"]')?.textContent,
+        ).toContain('Contact support')
       }
       if (_outcome === 'facility level eligibility changed') {
-        expect(host.querySelector('[data-testid="duplicate-signin"]')).toBeNull()
-        expect(host.querySelector('[data-testid="duplicate-support"]')).toBeNull()
+        expect(
+          host.querySelector('[data-testid="duplicate-signin"]'),
+        ).toBeNull()
+        expect(
+          host.querySelector('[data-testid="duplicate-support"]'),
+        ).toBeNull()
         expect(
           [...host.querySelectorAll('input[type="checkbox"]')].every(
             (input) => input.disabled,
           ),
         ).toBe(true)
-        expect(host.textContent).toContain('HFR did not return a Facility Level')
+        expect(host.textContent).toContain(
+          'HFR did not return a Facility Level',
+        )
       }
     },
   )

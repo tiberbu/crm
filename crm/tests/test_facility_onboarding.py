@@ -15,9 +15,127 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 from crm.api import facility_onboarding as fo
 from crm.api.facility_onboarding import _onboarding_config, _session_key
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref
+from crm.patches.v1_0 import seed_self_onboarding_facility_level_whitelist as whitelist_patch
+
+
+class TestFacilityOnboardingLevelWhitelistPatch(UnitTestCase):
+	def test_patch_adds_required_levels_once_and_preserves_existing_configuration(self):
+		class Settings:
+			def __init__(self):
+				self.allowed_levels = "Level 3\nCustom Level\nlevel 3b\nLevel 3"
+
+			def get(self, fieldname):
+				return self.allowed_levels if fieldname == whitelist_patch.SETTING_FIELD else None
+
+			def set(self, fieldname, value):
+				if fieldname == whitelist_patch.SETTING_FIELD:
+					self.allowed_levels = value
+
+			def save(self, **kwargs):
+				return None
+
+		settings = Settings()
+		with (
+			patch.object(whitelist_patch.frappe.db, "exists", return_value=True),
+			patch.object(whitelist_patch.frappe, "get_meta", return_value=Mock(has_field=Mock(return_value=True))),
+			patch.object(whitelist_patch.frappe, "get_single", return_value=settings),
+			patch.object(whitelist_patch.frappe, "clear_cache"),
+		):
+			whitelist_patch.execute()
+			first_result = settings.allowed_levels
+			whitelist_patch.execute()
+
+		self.assertEqual(
+			first_result.splitlines(),
+			["Level 3", "Custom Level", "Level 3B", "Level 2", "Level 3C"],
+		)
+		self.assertEqual(settings.allowed_levels, first_result)
+
+	def test_patch_seeds_levels_when_setting_is_blank(self):
+		class Settings:
+			allowed_levels = ""
+
+			def get(self, fieldname):
+				return self.allowed_levels if fieldname == whitelist_patch.SETTING_FIELD else None
+
+			def set(self, fieldname, value):
+				if fieldname == whitelist_patch.SETTING_FIELD:
+					self.allowed_levels = value
+
+			save = Mock()
+
+		settings = Settings()
+		with (
+			patch.object(whitelist_patch.frappe.db, "exists", return_value=True),
+			patch.object(whitelist_patch.frappe, "get_meta", return_value=Mock(has_field=Mock(return_value=True))),
+			patch.object(whitelist_patch.frappe, "get_single", return_value=settings),
+			patch.object(whitelist_patch.frappe, "clear_cache"),
+		):
+			whitelist_patch.execute()
+
+		self.assertEqual(settings.allowed_levels.splitlines(), ["Level 2", "Level 3B", "Level 3C"])
+		settings.save.assert_called_once_with(ignore_permissions=True)
+
+	def test_patch_fails_if_settings_field_is_missing(self):
+		with (
+			patch.object(whitelist_patch.frappe.db, "exists", return_value=True),
+			patch.object(whitelist_patch.frappe, "get_meta", return_value=Mock(has_field=Mock(return_value=False))),
+			patch.object(whitelist_patch.frappe, "throw", side_effect=RuntimeError("missing field")) as throw,
+		):
+			with self.assertRaisesRegex(RuntimeError, "missing field"):
+				whitelist_patch.execute()
+
+		throw.assert_called_once()
+
+	def test_patch_is_registered_after_model_sync(self):
+		with open(frappe.get_app_path("crm", "patches.txt")) as handle:
+			lines = [line.strip() for line in handle]
+		patch_name = "crm.patches.v1_0.seed_self_onboarding_facility_level_whitelist"
+		self.assertIn(patch_name, lines)
+		self.assertGreater(lines.index(patch_name), lines.index("[post_model_sync]"))
 
 
 class TestFacilityOnboardingRegistryConfig(UnitTestCase):
+	def test_blank_referring_network_id_resolves_the_configured_default(self):
+		network = {"name": "network-a", "partner_id": "654321"}
+		with (
+			patch.object(fo, "_setting", return_value="654321"),
+			patch.object(fo.frappe, "get_list", return_value=[network]) as get_networks,
+		):
+			self.assertEqual(fo._public_network(""), network)
+
+		self.assertEqual(get_networks.call_args.kwargs["filters"], {"partner_id": "654321", "enabled": 1})
+
+	def test_facility_membership_links_existing_network_and_verified_contact(self):
+		facility_doc = Mock()
+		facility_doc.memberships = []
+		facility = {
+			"mfl_code": "10001",
+			"facility_name": "Alpha Clinic",
+			"classification": "Level 2",
+		}
+		with (
+			patch.object(fo.frappe.db, "get_value", return_value=None),
+			patch.object(fo.frappe, "get_doc", return_value=facility_doc),
+			patch.object(fo.frappe, "get_meta", return_value=Mock(has_field=Mock(return_value=True))),
+		):
+			fo._upsert_facility_membership(facility, "network-a", PERSON, customer="customer-a")
+
+		self.assertEqual(
+			facility_doc.append.call_args.args,
+			(
+				"memberships",
+				{
+					"network": "network-a",
+					"customer": "customer-a",
+					"status": "Active",
+					"contact_name": "Amina Otieno",
+					"contact_email": "owner@example.com",
+					"contact_phone": "254712345678",
+				},
+			),
+		)
+
 	def test_identity_reference_uses_normalized_identity_with_the_keyed_helper(self):
 		with patch.object(fo, "evidence_ref", side_effect=lambda value: "keyed:" + value) as keyed:
 			first = fo._identity_reference("National ID", "AbC 123")
@@ -258,10 +376,13 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		return re.search(r"\b(\d{6})\b", self.sms[-1][1]).group(1)
 
 	def test_cr_lookup_and_otp_precede_hfr_ownership_lookup(self):
-		token = self._start()["session_token"]
+		started = self._start()
+		token = started["session_token"]
+		self.assertNotIn(PERSON["email"], str(started))
 		self.assertEqual([c[0] for c in self.calls.mock_calls], ["registry"])
 		self.assertEqual(self.sent[0]["recipients"], [PERSON["email"]])
 		data = fo.verify_otp(token, self._captured_otp())["data"]
+		self.assertEqual(data["account_email"], PERSON["email"])
 		self.assertEqual(data["facilities"][0]["facility_id"], "FID-1")
 		self.assertEqual([c[0] for c in self.calls.mock_calls], ["registry", "hfr"])
 		self.hfr.assert_called_once_with(ID_NUMBER)
@@ -425,6 +546,27 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(delivery["status"], "sent")
 		self.assertEqual(len(self.sent), 1)
 		self.assertEqual(self.sms, [])
+
+	def test_email_uses_careverse_transactional_layout_and_unique_safe_subject(self):
+		self._start()
+		message = self.sent[0]["message"]
+		subject = self.sent[0]["subject"]
+
+		self.assertIn("CareverseHIMS", message)
+		self.assertIn('role="presentation"', message)
+		self.assertIn("Your CareverseHIMS verification code", message)
+		self.assertIn("One-time passcode", message)
+		self.assertIn("This code expires in 10 minutes", message)
+		self.assertIn("Never share it", message)
+		self.assertIn("One-time passcode", message)
+		self.assertIn("max-width:560px", message)
+		self.assertIn("align=\"left\"", message)
+		self.assertIn("font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif", message)
+		self.assertIn("background:#f5f7fa", message)
+		self.assertIn("background:#bc1823", message)
+		self.assertNotIn("max-width:480px", message)
+		self.assertRegex(subject, r"CareverseHIMS.*\b\d{6}\b.*OTP ID [A-F0-9]{12}")
+		self.assertIn(self._captured_otp(), subject)
 
 	def test_sms_is_used_when_preferred(self):
 		self.channel_setting = "SMS"
@@ -840,7 +982,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			"123456",
 			json.dumps(list(facility_ids)),
 			package,
-			"sam@example.com",
+			"owner@example.com",
 			1,
 			terms["content_hash"],
 		)["data"]["submissions"]
@@ -890,7 +1032,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				"123456",
 				'["FID-1"]',
 				"TOK-1",
-				"sam@example.com",
+				"owner@example.com",
 				1,
 				terms["content_hash"],
 			)
@@ -903,7 +1045,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		token = self._verified_token()
 		terms = self._accepted_terms(token)
 
-		with self.assertRaisesRegex(frappe.ValidationError, "one valid email"):
+		with self.assertRaisesRegex(frappe.ValidationError, "verified registry profile"):
 			fo.submit_onboarding(
 				token,
 				"123456",
@@ -917,9 +1059,31 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(self.ois, {})
 		fo._upsert_facility_membership.assert_not_called()
 
+	def test_submit_uses_verified_registry_email_and_rejects_browser_override(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+
+		with self.assertRaisesRegex(frappe.ValidationError, "verified registry profile"):
+			fo.submit_onboarding(
+				token,
+				"123456",
+				'["FID-1"]',
+				"TOK-1",
+				"attacker@example.com",
+				1,
+				terms["content_hash"],
+			)
+
+		self.assertEqual(self.ois, {})
+		fo._upsert_facility_membership.assert_not_called()
+
 	def test_submit_rejects_internal_account_email_before_creating_records(self):
 		self._submit_env()
 		token = self._verified_token()
+		session = self.store.get(token)
+		session["person"]["email"] = "staff@example.com"
+		self.store.save(token, session)
 		terms = self._accepted_terms(token)
 
 		def user_lookup(doctype, name=None, *args, **kwargs):
@@ -947,6 +1111,9 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 	def test_submit_rejects_disabled_website_account_before_creating_records(self):
 		self._submit_env()
 		token = self._verified_token()
+		session = self.store.get(token)
+		session["person"]["email"] = "disabled@example.com"
+		self.store.save(token, session)
 		terms = self._accepted_terms(token)
 
 		def user_lookup(doctype, name=None, *args, **kwargs):
@@ -983,7 +1150,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 					"123456",
 					'["FID-1"]',
 					"TOK-1",
-					"sam@example.com",
+					"owner@example.com",
 					1,
 					bad_hash,
 				)
@@ -1023,7 +1190,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 					"123456",
 					'["FID-1"]',
 					"TOK-1",
-					"sam@example.com",
+					"owner@example.com",
 					1,
 					terms["content_hash"],
 				)
@@ -1044,7 +1211,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				"123456",
 				'["FID-1"]',
 				"TOK-1",
-				"sam@example.com",
+				"owner@example.com",
 				1,
 				terms["content_hash"],
 			)
@@ -1066,7 +1233,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				"123456",
 				'["FID-1"]',
 				"TOK-1",
-				"sam@example.com",
+				"owner@example.com",
 				1,
 				"a" * 64,
 			)
@@ -1116,6 +1283,12 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 				{"outcome": "new", "allowed_facility_ids": ["FID-1"]},
 			)
 
+	def test_conflict_preflight_reports_invalid_referring_network_id(self):
+		token = self._verified_token()
+		with patch.object(fo, "_public_network", return_value=None):
+			with self.assertRaisesRegex(frappe.ValidationError, "That Network ID"):
+				fo.check_onboarding_conflicts(token, '["FID-1"]', "123456")
+
 	def test_conflict_preflight_rechecks_current_facility_level_whitelist(self):
 		token = self._verified_token()
 		self.allowed_facility_levels = " Level 3 "
@@ -1148,7 +1321,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.terms_settings["self_onboarding_allowed_facility_levels"] = "Level 30"
 
 		result = fo.submit_onboarding(
-			token, "123456", '["FID-1"]', "TOK-1", "sam@example.com", 1, terms["content_hash"]
+			token, "123456", '["FID-1"]', "TOK-1", "owner@example.com", 1, terms["content_hash"]
 		)
 
 		self.assertEqual(result["data"]["outcome"], "facility_level_ineligible")
@@ -1182,7 +1355,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			"123456",
 			'["FID-1"]',
 			"TOK-1",
-			"sam@example.com",
+			"owner@example.com",
 			1,
 			self._accepted_terms(token)["content_hash"],
 		)
@@ -1203,7 +1376,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 					"123456",
 					'["FID-1"]',
 					"TOK-1",
-					"sam@example.com",
+					"owner@example.com",
 					1,
 					terms["content_hash"],
 				)
@@ -1240,7 +1413,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			patch.object(fo, "evidence_ref", side_effect=lambda value: "keyed:" + value),
 			patch.object(fo, "_session_or_error", side_effect=lambda token, verified=False: self.store.get(token)),
 			patch.object(fo, "_validate_self_onboarding_terms", return_value={"hash": "a" * 64}),
-			patch.object(fo, "_validate_account_email", return_value="sam@example.com"),
+			patch.object(fo, "_validate_account_email", return_value="owner@example.com"),
 			patch.object(fo, "_public_network", return_value={"name": "net-a"}),
 			patch.object(fo, "_token_packages", return_value=[self.PACKAGE]),
 			patch.object(fo, "_check_onboarding_conflicts", side_effect=check),
@@ -1328,7 +1501,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			fo._create_submission(
 				{"name": "net-a"},
 				self.PACKAGE,
-				"sam@example.com",
+				"owner@example.com",
 				PERSON,
 				facility,
 				{"document": "Terms", "hash": "a" * 64, "accepted_at": "2026-10-13 12:00:00"},
@@ -1344,7 +1517,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(captured["self_onboarding_tc_accepted_at"], "2026-10-13 12:00:00")
 		self.assertEqual(captured["onboarding_source"], "token_self_onboarding")
 		self.assertEqual(captured["onboarding_identity_ref"], "keyed-identity-reference")
-		self.assertEqual(captured["cx_account_email"], "sam@example.com")
+		self.assertEqual(captured["cx_account_email"], "owner@example.com")
 		self.assertNotIn("witness", payload)
 		self.assertEqual(payload["tc_doc_name"], "Terms")
 		self.assertEqual(payload["tc_doc_hash"], "a" * 64)
@@ -1463,7 +1636,7 @@ class TestFacilityOnboardingCatalog(UnitTestCase):
 
 	def test_invalid_nonblank_partner_id_never_falls_back_to_default_network(self):
 		with patch.object(fo, "_public_network", return_value=None):
-			with self.assertRaisesRegex(frappe.ValidationError, "Partner ID"):
+			with self.assertRaisesRegex(frappe.ValidationError, "Network ID"):
 				fo.get_catalog("12345x")
 
 	def test_invalid_vat_configuration_is_reported_generically(self):

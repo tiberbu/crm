@@ -17,7 +17,6 @@ describe('onboardingSteps', () => {
       'complete',
       'complete',
       'current',
-      'upcoming',
     ])
     expect(stepStatus('identity', 'otp')).toBe('current')
     expect(
@@ -43,13 +42,16 @@ describe('onboardingSteps', () => {
     ).toBe(true)
     const ready = {
       accountEmail: 'sam@example.com',
+      hasNetwork: true,
+      packageCode: 'TOK',
+      hasTerms: true,
       termsAccepted: true,
     }
     expect(canAdvance('review', ready)).toBe(true)
     expect(canAdvance('review', { ...ready, termsAccepted: false })).toBe(false)
-    expect(
-      canAdvance('review', { ...ready, accountEmail: 'nope' }),
-    ).toBe(false)
+    expect(canAdvance('review', { ...ready, hasNetwork: false })).toBe(false)
+    expect(canAdvance('review', { ...ready, hasTerms: false })).toBe(false)
+    expect(canAdvance('review', { ...ready, accountEmail: 'nope' })).toBe(false)
   })
 
   it('multiplies server price, VAT and gross by facility count without drift', () => {
@@ -103,7 +105,9 @@ describe('onboardingSteps', () => {
   })
 
   it('keeps the entered code only when the ownership service can be retried', () => {
-    expect(shouldClearOtpAfterVerificationError('FacilityOwnershipUnavailable')).toBe(false)
+    expect(
+      shouldClearOtpAfterVerificationError('FacilityOwnershipUnavailable'),
+    ).toBe(false)
     expect(shouldClearOtpAfterVerificationError('ValidationError')).toBe(true)
     expect(shouldClearOtpAfterVerificationError()).toBe(true)
   })

@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import UnitTestCase
@@ -8,10 +8,12 @@ from frappe.tests import UnitTestCase
 from crm.api.optin_admin import (
 	_customer_experience_link,
 	_get_negotiated_price_list,
+	_normalize_facility_level_allowlist,
 	_validate_opted_in_price_list_override,
 	create_sellable_item,
 	duplicate_negotiated_price_list,
 	get_facility_sample_quote,
+	get_optin_settings,
 	import_facilities_csv,
 	invite_facility_to_customer_experience,
 	list_facilities,
@@ -24,7 +26,54 @@ from crm.api.optin_admin import (
 	save_item_prices,
 	set_facility_go_live,
 	update_item_price,
+	update_optin_settings,
 )
+
+
+class TestSelfOnboardingFacilityLevelSettings(UnitTestCase):
+	def test_get_settings_returns_seeded_facility_levels(self):
+		settings = frappe._dict(
+			{
+				"self_onboarding_allowed_facility_levels": "Level 2\nLevel 3B\nLevel 3C",
+				"token_packages": [],
+			}
+		)
+		meta = frappe._dict(has_field=lambda field: field == "token_packages")
+		with (
+			patch("crm.api.optin_admin._require_optin_settings_manager"),
+			patch("crm.api.optin_admin.frappe.get_single", return_value=settings),
+			patch("crm.api.optin_admin.frappe.get_meta", return_value=meta),
+		):
+			result = get_optin_settings()
+
+		self.assertEqual(
+			result["self_onboarding_allowed_facility_levels"],
+			"Level 2\nLevel 3B\nLevel 3C",
+		)
+
+	def test_facility_levels_are_trimmed_and_deduplicated_case_insensitively(self):
+		self.assertEqual(
+			_normalize_facility_level_allowlist(" Level 2 \nlevel 2\nLevel 3B\n\nLevel 3C "),
+			"Level 2\nLevel 3B\nLevel 3C",
+		)
+
+	def test_update_saves_allowlist_and_preserves_it_when_omitted(self):
+		doc = Mock()
+		doc.self_onboarding_allowed_facility_levels = "Existing Level"
+		meta = frappe._dict(has_field=lambda _field: True)
+		with (
+			patch("crm.api.optin_admin._require_optin_settings_manager"),
+			patch("crm.api.optin_admin.frappe.get_single", return_value=doc),
+			patch("crm.api.optin_admin.frappe.get_meta", return_value=meta),
+			patch("crm.api.optin_admin.frappe.db.commit"),
+		):
+			update_optin_settings(
+				{"self_onboarding_allowed_facility_levels": "Level 2\nLevel 3B\nLevel 3C"}
+			)
+			self.assertEqual(doc.self_onboarding_allowed_facility_levels, "Level 2\nLevel 3B\nLevel 3C")
+			update_optin_settings({})
+
+		self.assertEqual(doc.self_onboarding_allowed_facility_levels, "Level 2\nLevel 3B\nLevel 3C")
 
 
 class TestCustomerExperienceNetworkContactInvitation(UnitTestCase):
