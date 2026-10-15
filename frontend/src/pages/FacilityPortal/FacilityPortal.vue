@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { call } from 'frappe-ui'
+import TokenCalculator from '@/components/TokenCalculator.vue'
 import {
   facilityLabel,
   findOpenOrder,
@@ -47,6 +48,22 @@ const purchaseMessage = ref('')
 const busyId = ref('')
 const notice = ref(null)
 const bankTransferOis = ref('')
+const selectedPortalPackageCode = ref('')
+
+const currentFacilityName = computed(() => {
+  const list = purchaseFacilities()
+  const found = list.find((f) => f.mfl_code === purchaseFacility.value)
+  return found?.facility_name || purchaseFacility.value || ''
+})
+
+function onCalculatorSelectPackage(code) {
+  selectedPortalPackageCode.value = code
+}
+
+function onCalculatorApplyPlan(pkg) {
+  selectedPortalPackageCode.value = pkg.item_code
+  buyPackage(pkg)
+}
 
 function stepClass(step) {
   if (step.status === 'complete') return 'bg-emerald-600 text-white font-bold shadow-sm'
@@ -873,57 +890,79 @@ onMounted(async () => {
           {{ purchaseMessage }}
         </p>
 
-        <div class="mt-7 grid gap-5 md:grid-cols-3">
-          <article
-            v-for="item in context.token_packages"
-            :key="item.item_code"
-            class="rounded-2xl border border-outline-gray-2 bg-white p-5 shadow-sm transition hover:border-[#f0d6d8] hover:shadow-md flex flex-col justify-between"
-          >
-            <div>
-              <div class="flex items-center justify-between">
-                <h3 class="text-base font-semibold text-ink-gray-9">
-                  {{ item.display_name || item.item_code }}
-                </h3>
-                <span
-                  v-if="Number(item.price_ex_vat ?? item.price ?? 0) === 0"
-                  class="rounded-full bg-surface-gray-2 border border-outline-gray-2 px-2 py-0.5 text-[10px] font-semibold text-ink-gray-7"
-                >
-                  Free Tier
-                </span>
-              </div>
-              <p class="mt-3 text-2xl font-semibold text-ink-gray-9">
-                {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? '$0' : money(item.price_ex_vat ?? item.price, item.currency) }}
-                <span class="text-xs font-normal text-ink-gray-5">excl. VAT</span>
-              </p>
-              <p v-if="item.gross_total" class="mt-1 text-xs text-ink-gray-5">
-                {{ item.vat_label || 'VAT' }}
-                {{ money(item.vat_amount, item.currency) }} · Total
-                <strong class="text-ink-gray-8">{{ money(item.gross_total, item.currency) }}</strong>
-              </p>
-              <div class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#fdf2f3] border border-[#f0d6d8]/60 px-2.5 py-1 text-xs font-semibold text-[#bc1823]">
-                <span>🪙</span>
-                <span>{{ item.token_quantity || 100 }} Tokens</span>
-              </div>
-              <p class="mt-3 text-xs leading-relaxed text-ink-gray-6">
-                {{ item.coverage_summary || item.description }}
-              </p>
-            </div>
+        <!-- Interactive Token Sizing Calculator -->
+        <div class="mt-8">
+          <TokenCalculator
+            :packages="context.token_packages"
+            :config="context.calculator_config"
+            :selected-package-code="selectedPortalPackageCode"
+            :facility-name="currentFacilityName"
+            context="portal"
+            @select-package="onCalculatorSelectPackage"
+            @apply-plan="onCalculatorApplyPlan"
+          />
+        </div>
 
-            <button
-              class="mt-5 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#bc1823] px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#a3141d] disabled:opacity-50"
-              type="button"
-              :disabled="purchaseBusy"
-              @click="buyPackage(item)"
+        <div class="mt-8">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-ink-gray-7 mb-4">
+            Available Token Packages
+          </h3>
+          <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <article
+              v-for="item in context.token_packages"
+              :key="item.item_code"
+              class="rounded-2xl border bg-white p-5 shadow-sm transition hover:border-[#f0d6d8] hover:shadow-md flex flex-col justify-between cursor-pointer"
+              :class="selectedPortalPackageCode === item.item_code
+                ? 'border-2 border-[#bc1823] bg-[#fdf2f3]/20 ring-4 ring-[#bc1823]/10 shadow-md'
+                : 'border-outline-gray-2'"
+              @click="selectedPortalPackageCode = item.item_code"
             >
-              {{
-                purchaseBusy
-                  ? 'Working…'
-                  : existingOrder(item)
-                    ? `Resume order ${existingOrder(item).name}`
-                    : 'Create order'
-              }}
-            </button>
-          </article>
+              <div>
+                <div class="flex items-center justify-between">
+                  <h4 class="text-base font-semibold text-ink-gray-9">
+                    {{ item.display_name || item.item_code }}
+                  </h4>
+                  <span
+                    v-if="Number(item.price_ex_vat ?? item.price ?? 0) === 0"
+                    class="rounded-full bg-surface-gray-2 border border-outline-gray-2 px-2 py-0.5 text-[10px] font-semibold text-ink-gray-7"
+                  >
+                    Free Tier
+                  </span>
+                </div>
+                <p class="mt-3 text-2xl font-semibold text-ink-gray-9">
+                  {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? '$0' : money(item.price_ex_vat ?? item.price, item.currency) }}
+                  <span class="text-xs font-normal text-ink-gray-5">excl. VAT</span>
+                </p>
+                <p v-if="item.gross_total" class="mt-1 text-xs text-ink-gray-5">
+                  {{ item.vat_label || 'VAT' }}
+                  {{ money(item.vat_amount, item.currency) }} · Total
+                  <strong class="text-ink-gray-8">{{ money(item.gross_total, item.currency) }}</strong>
+                </p>
+                <div class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#fdf2f3] border border-[#f0d6d8]/60 px-2.5 py-1 text-xs font-semibold text-[#bc1823]">
+                  <span>🪙</span>
+                  <span>{{ item.token_quantity || 100 }} Tokens</span>
+                </div>
+                <p class="mt-3 text-xs leading-relaxed text-ink-gray-6">
+                  {{ item.coverage_summary || item.description }}
+                </p>
+              </div>
+
+              <button
+                class="mt-5 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#bc1823] px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#a3141d] disabled:opacity-50"
+                type="button"
+                :disabled="purchaseBusy"
+                @click.stop="buyPackage(item)"
+              >
+                {{
+                  purchaseBusy
+                    ? 'Working…'
+                    : existingOrder(item)
+                      ? `Resume order ${existingOrder(item).name}`
+                      : 'Create order'
+                }}
+              </button>
+            </article>
+          </div>
         </div>
       </section>
     </div>

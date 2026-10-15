@@ -1634,7 +1634,9 @@ class TestFacilityOnboardingCatalog(UnitTestCase):
 		):
 			data = fo.get_catalog()["data"]
 
-		self.assertEqual(data, {"network": {}, "packages": []})
+		self.assertEqual(data["network"], {})
+		self.assertEqual(data["packages"], [])
+		self.assertIn("calculator_config", data)
 		public_network.assert_called_once_with("")
 
 	def test_invalid_nonblank_partner_id_never_falls_back_to_default_network(self):

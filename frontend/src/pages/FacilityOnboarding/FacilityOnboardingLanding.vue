@@ -845,6 +845,19 @@
                   </p>
                 </div>
 
+                <!-- Interactive Token Sizing Calculator -->
+                <div class="mb-8">
+                  <TokenCalculator
+                    :packages="catalog.packages"
+                    :config="catalog.calculator_config"
+                    :selected-package-code="packageSelections[facility.facility_id]"
+                    :facility-name="facility.facility_name || facility.mfl_code"
+                    context="onboarding"
+                    @select-package="(code) => (packageSelections[facility.facility_id] = code)"
+                    @apply-plan="(pkg) => (packageSelections[facility.facility_id] = pkg.item_code)"
+                  />
+                </div>
+
                 <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 items-stretch">
                   <article
                     v-for="item in catalog.packages"
@@ -1257,6 +1270,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { call, Dialog } from 'frappe-ui'
 import OtpCodeInput from '@/components/FacilityOnboarding/OtpCodeInput.vue'
+import TokenCalculator from '@/components/TokenCalculator.vue'
 import {
   STEPS,
   canAdvance,

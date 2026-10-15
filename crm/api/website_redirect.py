@@ -993,6 +993,14 @@ def get_portal_context():
 			row["open_invoices"] = _portal_invoices(submission)
 			rows.append(row)
 
+	calculator_config = {}
+	try:
+		from crm.api.facility_onboarding import _calculator_config
+
+		calculator_config = _calculator_config()
+	except Exception:
+		pass
+
 	return {
 		"success": True,
 		"data": {
@@ -1001,5 +1009,6 @@ def get_portal_context():
 			"ois": rows,
 			"customer_accounts": customer_accounts,
 			"token_packages": _portal_token_catalog(),
+			"calculator_config": calculator_config,
 		},
 	}

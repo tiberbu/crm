@@ -565,6 +565,165 @@ def _token_packages() -> list[dict[str, Any]]:
 	return packages
 
 
+def _default_calculator_config() -> dict[str, Any]:
+	return {
+		"monthly_platform_fee": 500,
+		"bill_value_per_token": 750.0,
+		"default_avg_bill": 1500.0,
+		"default_operating_days": 24,
+		"service_points": [
+			{
+				"id": "consultation",
+				"name": "Consultation visit",
+				"tokens": 3,
+				"default_frequency": 1.0,
+				"description": "Per completed consultation encounter",
+				"applies_to": ["opd", "ipd"],
+			},
+			{
+				"id": "laboratory",
+				"name": "Laboratory order",
+				"tokens": 6,
+				"default_frequency": 0.5,
+				"description": "Per completed laboratory investigation order",
+				"applies_to": ["opd", "ipd"],
+			},
+			{
+				"id": "prescription",
+				"name": "Prescription processing",
+				"tokens": 6,
+				"default_frequency": 0.5,
+				"description": "Per completed prescription order",
+				"applies_to": ["opd", "ipd"],
+			},
+			{
+				"id": "imaging",
+				"name": "Imaging order (X-ray, Ultrasound)",
+				"tokens": 12,
+				"default_frequency": 0.1,
+				"description": "Per completed diagnostic imaging order",
+				"applies_to": ["opd", "ipd"],
+			},
+			{
+				"id": "procedure",
+				"name": "Medical / Minor surgical procedure",
+				"tokens": 12,
+				"default_frequency": 0.05,
+				"description": "Exempt for OPD-only; charged for OPD & IPD facilities",
+				"applies_to": ["ipd"],
+			},
+			{
+				"id": "inpatient_admission",
+				"name": "Inpatient admission",
+				"tokens": 3,
+				"default_frequency": 0.05,
+				"description": "Exempt for OPD-only; charged for OPD & IPD facilities",
+				"applies_to": ["ipd"],
+			},
+			{
+				"id": "program_visit",
+				"name": "Chronic care / Program visit",
+				"tokens": 6,
+				"default_frequency": 0.05,
+				"description": "Per completed specialized clinic or program visit",
+				"applies_to": ["opd", "ipd"],
+			},
+		],
+		"presets": [
+			{
+				"id": "solo",
+				"label": "Small Practice / Solo Clinic",
+				"description": "Pilots, dispensaries & community clinics",
+				"facility_type": "opd",
+				"daily_patients": 5,
+				"avg_bill": 1500,
+				"operating_days": 24,
+			},
+			{
+				"id": "active_opd",
+				"label": "Active Outpatient Clinic",
+				"description": "Steady daily patient volume & diagnostics",
+				"facility_type": "opd",
+				"daily_patients": 15,
+				"avg_bill": 1500,
+				"operating_days": 24,
+			},
+			{
+				"id": "medical_center",
+				"label": "Medical Center / Hospital",
+				"description": "High volume with inpatient wards & procedures",
+				"facility_type": "ipd",
+				"daily_patients": 30,
+				"avg_bill": 2500,
+				"operating_days": 24,
+			},
+		],
+	}
+
+
+def _calculator_config() -> dict[str, Any]:
+	defaults = _default_calculator_config()
+	try:
+		settings = frappe.get_single("CRM Opt-In Settings")
+	except Exception:
+		return defaults
+
+	monthly_platform_fee = settings.get("token_calc_monthly_platform_fee")
+	bill_value_per_token = settings.get("token_calc_bill_value_per_token")
+	default_avg_bill = settings.get("token_calc_default_avg_bill")
+	default_operating_days = settings.get("token_calc_default_operating_days")
+	raw_json = settings.get("token_calc_parameters_json")
+
+	config = dict(defaults)
+	if monthly_platform_fee is not None and str(monthly_platform_fee).strip() != "":
+		try:
+			config["monthly_platform_fee"] = int(monthly_platform_fee)
+		except (ValueError, TypeError):
+			pass
+	if bill_value_per_token is not None and str(bill_value_per_token).strip() != "":
+		try:
+			config["bill_value_per_token"] = float(bill_value_per_token)
+		except (ValueError, TypeError):
+			pass
+	if default_avg_bill is not None and str(default_avg_bill).strip() != "":
+		try:
+			config["default_avg_bill"] = float(default_avg_bill)
+		except (ValueError, TypeError):
+			pass
+	if default_operating_days is not None and str(default_operating_days).strip() != "":
+		try:
+			config["default_operating_days"] = int(default_operating_days)
+		except (ValueError, TypeError):
+			pass
+
+	if raw_json:
+		try:
+			parsed = json.loads(raw_json)
+			if isinstance(parsed, dict):
+				if "service_points" in parsed and isinstance(parsed["service_points"], list):
+					config["service_points"] = parsed["service_points"]
+				if "presets" in parsed and isinstance(parsed["presets"], list):
+					config["presets"] = parsed["presets"]
+				if "monthly_platform_fee" in parsed and monthly_platform_fee is None:
+					config["monthly_platform_fee"] = int(parsed["monthly_platform_fee"])
+				if "bill_value_per_token" in parsed and bill_value_per_token is None:
+					config["bill_value_per_token"] = float(parsed["bill_value_per_token"])
+				if "default_avg_bill" in parsed and default_avg_bill is None:
+					config["default_avg_bill"] = float(parsed["default_avg_bill"])
+				if "default_operating_days" in parsed and default_operating_days is None:
+					config["default_operating_days"] = int(parsed["default_operating_days"])
+		except Exception:
+			pass
+
+	return config
+
+
+# nosemgrep: guest-whitelisted-method -- public calculator configuration for token sizing and planning.
+@frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
+def get_token_calculator_config():
+	return {"success": True, "data": _calculator_config()}
+
+
 def _resolve_self_onboarding_terms() -> tuple[str, str]:
 	"""Return the configured, rendered self-onboarding Terms document."""
 	document_name = _text(_setting("self_onboarding_tc_document"))
@@ -929,7 +1088,14 @@ def get_catalog(partner_id: Any = None):
 		frappe.throw(
 			_("That Network ID is not available. Check the six digits and try again."), frappe.ValidationError
 		)
-	return {"success": True, "data": {"network": partner or {}, "packages": _catalog_packages()}}
+	return {
+		"success": True,
+		"data": {
+			"network": partner or {},
+			"packages": _catalog_packages(),
+			"calculator_config": _calculator_config(),
+		},
+	}
 
 
 def _catalog_packages() -> list[dict[str, Any]]:

@@ -20,41 +20,41 @@ PACKAGES = [
 		"item_code": "CV-TOKEN-FREE",
 		"item_name": "Free Community Care",
 		"rate": 0,
-		"display_name": "Free",
+		"display_name": "Free Trial",
 		"description": "A complimentary starter package for health posts, dispensaries, and solo clinics to verify facility records and start digital care workflows.",
-		"coverage_summary": "Designed for up to 25 routine patient visits or monthly claims verification at zero cost.",
+		"coverage_summary": "25 complimentary tokens for sandbox testing and facility verification at zero cost.",
 		"token_quantity": 25,
 		"coverage_metrics": '{"audience": "For individuals & community clinics", "badge": "Free Forever", "features": ["25 Care Tokens included", "Digital Registry & HFR Verification", "Routine Patient Encounters", "Community Support"]}',
 	},
 	{
-		"item_code": "CV-TOKEN-CORE",
-		"item_name": "Core Care Operations",
-		"rate": 30000,
-		"display_name": "Pro",
-		"description": "A practical package for growing health centers managing daily outpatient visits, pharmacy dispensing, and standard lab orders.",
-		"coverage_summary": "Designed for approximately 100 routine transactions per month.",
-		"token_quantity": 100,
-		"coverage_metrics": '{"audience": "For active clinics & dispensaries", "badge": "Popular", "features": ["100 Care Tokens included", "Outpatient Consultations & Vitals", "Pharmacy Dispensing & Inventory", "Direct Email Support"]}',
+		"item_code": "CV-TOKEN-STARTER",
+		"item_name": "Starter Care Operations",
+		"rate": 6096,
+		"display_name": "Starter",
+		"description": "Flexible entry tier for small outpatient clinics, pilots, and baseline top-ups.",
+		"coverage_summary": "1,000 tokens at KES 6.10/token. Designed for small facilities with ~100 patient visits/month.",
+		"token_quantity": 1000,
+		"coverage_metrics": '{"audience": "For small OPD clinics & pilots", "badge": "Entry Tier", "features": ["1,000 Care Tokens included", "KES 6.10 per token base rate", "Outpatient Consultations & Vitals", "Prescriptions & Laboratory Orders", "Flexible Top-Ups Allowed"]}',
 	},
 	{
-		"item_code": "CV-TOKEN-STANDARD",
-		"item_name": "Standard Care Operations",
-		"rate": 75000,
-		"display_name": "Standard Care",
-		"description": "A balanced package for multi-department facilities with regular clinical consultations, laboratory, and insurance billing activity.",
-		"coverage_summary": "Designed for approximately 300 routine transactions per month.",
-		"token_quantity": 300,
-		"coverage_metrics": '{"audience": "For growing medical centers", "badge": "Recommended", "features": ["300 Care Tokens included", "Multi-Department Coordination", "Laboratory & Diagnostics Workflow", "Insurance Billing & Claims Export"]}',
+		"item_code": "CV-TOKEN-GROWTH",
+		"item_name": "Growth Care Operations",
+		"rate": 13970,
+		"display_name": "Growth",
+		"description": "Recommended tier for growing outpatient facilities with steady daily patient volume.",
+		"coverage_summary": "2,500 tokens at KES 5.59/token (8.3% saving vs Starter). Designed for ~200–250 patient visits/month.",
+		"token_quantity": 2500,
+		"coverage_metrics": '{"audience": "For active & growing clinics", "badge": "Popular • Save 8.3%", "features": ["2,500 Care Tokens included", "KES 5.59 per token (Save 8.3%)", "Multi-Department Workflows", "Diagnostic Imaging & Labs", "Standard SLA Support"]}',
 	},
 	{
-		"item_code": "CV-TOKEN-PLUS",
-		"item_name": "Expanded Care Operations",
-		"rate": 150000,
-		"display_name": "Enterprise",
-		"description": "High-capacity tier for sub-county hospitals and healthcare networks managing inpatient wards, surgery, and multi-facility operations.",
-		"coverage_summary": "Designed for approximately 750 routine transactions per month.",
-		"token_quantity": 750,
-		"coverage_metrics": '{"audience": "For hospitals & health networks", "badge": "Enterprise", "features": ["750+ Care Tokens included", "Full Inpatient & Outpatient Management", "Multi-Facility Unified Analytics", "Dedicated Account Manager & SLA"]}',
+		"item_code": "CV-TOKEN-SCALE",
+		"item_name": "Scale Care Operations",
+		"rate": 25400,
+		"display_name": "Scale",
+		"description": "Best-value tier for high-volume outpatient clinics and multi-service hospitals with inpatient beds.",
+		"coverage_summary": "5,000 tokens at KES 5.08/token (16.7% saving vs Starter). Designed for ~400–500 patient visits/month.",
+		"token_quantity": 5000,
+		"coverage_metrics": '{"audience": "For high-volume clinics & hospitals", "badge": "Best Value • Save 16.7%", "features": ["5,000 Care Tokens included", "KES 5.08 per token (Save 16.7%)", "Full Inpatient Admission Support", "Surgical & Medical Procedures", "Priority Commercial Support"]}',
 	},
 ]
 
@@ -86,6 +86,15 @@ def run():
 	settings.token_sales_order_validity_days = 30
 	settings.token_invoice_due_days = 30
 	settings.set("token_packages", rows)
+	if hasattr(settings, "token_calc_monthly_platform_fee") or frappe.get_meta("CRM Opt-In Settings").has_field("token_calc_monthly_platform_fee"):
+		import json
+		from crm.api.facility_onboarding import _default_calculator_config
+
+		settings.token_calc_monthly_platform_fee = 500
+		settings.token_calc_bill_value_per_token = 750
+		settings.token_calc_default_avg_bill = 1500
+		settings.token_calc_default_operating_days = 24
+		settings.token_calc_parameters_json = json.dumps(_default_calculator_config(), indent=2)
 	settings.save(ignore_permissions=True)
 	frappe.db.commit()
 	return {"price_list": price_list.name, "packages": [row["item_code"] for row in rows]}
@@ -132,7 +141,16 @@ def _ensure_item(package):
 
 
 def _ensure_item_price(package, price_list):
-	if frappe.db.exists("Item Price", {"item_code": package["item_code"], "price_list": price_list.name}):
+	existing_price = frappe.db.get_value(
+		"Item Price",
+		{"item_code": package["item_code"], "price_list": price_list.name},
+		"name",
+	)
+	if existing_price:
+		doc = frappe.get_doc("Item Price", existing_price)
+		if doc.price_list_rate != package["rate"]:
+			doc.price_list_rate = package["rate"]
+			doc.save(ignore_permissions=True)
 		return
 	frappe.get_doc(
 		{

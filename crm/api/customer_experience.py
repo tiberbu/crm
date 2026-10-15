@@ -16,7 +16,7 @@ import frappe
 from frappe import _
 from frappe.utils.synchronization import filelock
 
-from crm.api.facility_onboarding import _token_packages
+from crm.api.facility_onboarding import _calculator_config, _token_packages
 from crm.api.website_redirect import get_user_customer_names, get_user_ois_numbers, require_portal_user
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref, record_event
 
@@ -164,7 +164,14 @@ def get_purchase_context():
 				"invoices": _invoice_rows(submission),
 			}
 		)
-	return {"success": True, "data": {"token_packages": _token_packages(), "ois": rows}}
+	return {
+		"success": True,
+		"data": {
+			"token_packages": _token_packages(),
+			"calculator_config": _calculator_config(),
+			"ois": rows,
+		},
+	}
 
 
 @frappe.whitelist(methods=["POST"])
