@@ -154,7 +154,9 @@ const totalMonthlyDemand = computed(() => {
 
 // Compare packages & generate metrics
 const evaluatedPackages = computed(() => {
-  const list = props.packages.filter((p) => Number(p.token_quantity) > 25) // Exclude sandbox/trial
+  const list = props.packages.filter(
+    (p) => p.item_code !== 'CV-TOKEN-FREE' && Number(p.price_ex_vat ?? p.price ?? 0) > 0,
+  ) // Exclude sandbox/trial
   const pool = list.length ? list : props.packages
 
   return pool.map((pkg) => {

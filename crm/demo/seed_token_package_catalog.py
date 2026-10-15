@@ -22,9 +22,9 @@ PACKAGES = [
 		"rate": 0,
 		"display_name": "Free Trial",
 		"description": "A complimentary starter package for health posts, dispensaries, and solo clinics to verify facility records and start digital care workflows.",
-		"coverage_summary": "25 complimentary tokens for sandbox testing and facility verification at zero cost.",
-		"token_quantity": 25,
-		"coverage_metrics": '{"audience": "For individuals & community clinics", "badge": "Free Forever", "features": ["25 Care Tokens included", "Digital Registry & HFR Verification", "Routine Patient Encounters", "Community Support"]}',
+		"coverage_summary": "350 complimentary tokens to test 10 full clinical encounters with lab, prescriptions, imaging, and claims.",
+		"token_quantity": 350,
+		"coverage_metrics": '{"audience": "For trialing clinics & new facilities", "badge": "Free Trial", "features": ["350 Care Tokens included", "Covers 10 Full Patient Journeys", "Consultations, Labs & Prescriptions", "Diagnostic Imaging & KES 5k Claims"]}',
 	},
 	{
 		"item_code": "CV-TOKEN-STARTER",
