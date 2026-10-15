@@ -1,24 +1,24 @@
 <template>
-  <main class="min-h-screen bg-slate-50/70 text-slate-900 relative isolate selection:bg-red-100 selection:text-red-900">
+  <main class="min-h-screen bg-[#f6f7f8] text-ink-gray-9 relative isolate">
     <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
-      <div class="absolute -top-40 right-1/4 h-96 w-96 rounded-full bg-red-400/10 blur-3xl"></div>
-      <div class="absolute top-1/2 -left-24 h-96 w-96 rounded-full bg-emerald-400/10 blur-3xl"></div>
+      <div class="absolute -top-40 right-1/4 h-96 w-96 rounded-full bg-[radial-gradient(circle,rgba(188,24,35,0.06)_0%,transparent_65%)] blur-2xl"></div>
+      <div class="absolute top-1/2 -left-24 h-96 w-96 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.05)_0%,transparent_65%)] blur-2xl"></div>
     </div>
-    <header class="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur-md">
+    <header class="sticky top-0 z-30 border-b border-outline-gray-2 bg-white/80 backdrop-blur-md">
       <div
         class="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-8"
       >
         <div class="flex items-center gap-3">
           <div
-            class="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-red-600 to-rose-700 text-white font-bold text-base shadow-sm shadow-red-600/30"
+            class="flex size-9 items-center justify-center rounded-xl bg-[#bc1823] text-white font-semibold text-base shadow-sm"
           >
             T
           </div>
           <div>
-            <p class="text-sm font-bold tracking-tight text-slate-900">
-              Tiberbu <span class="font-normal text-slate-500">Customer Experience</span>
+            <p class="text-sm font-semibold tracking-tight text-ink-gray-9">
+              Tiberbu <span class="font-normal text-ink-gray-5">Customer Experience</span>
             </p>
-            <p class="text-[11px] font-medium text-slate-500 flex items-center gap-1.5">
+            <p class="text-[11px] font-medium text-ink-gray-5 flex items-center gap-1.5">
               <span class="inline-block size-1.5 rounded-full bg-emerald-500"></span>
               {{ __('Secure facility onboarding') }}
             </p>
@@ -28,16 +28,16 @@
           <a
             v-if="supportEmail"
             :href="`mailto:${supportEmail}`"
-            class="inline-flex items-center gap-1.5 font-medium text-slate-600 hover:text-slate-900 transition"
+            class="inline-flex items-center gap-1.5 font-medium text-ink-gray-6 hover:text-ink-gray-9 transition"
           >
-            <svg class="size-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="size-4 text-ink-gray-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
             <span class="hidden sm:inline">{{ __('Need help?') }}</span>
           </a>
           <a
             href="/login?redirect-to=/cx-portal"
-            class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 px-3.5 py-1.5 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+            class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-2 bg-white/90 px-3.5 py-1.5 font-medium text-ink-gray-7 shadow-sm transition hover:bg-surface-gray-1 hover:text-ink-gray-9"
           >
             {{ __('Already have access? Sign in') }}
           </a>
@@ -51,13 +51,13 @@
       >
         <div>
           <span
-            class="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold uppercase tracking-wider text-red-700"
+            class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#bc1823]"
           >
-            <span class="size-1.5 rounded-full bg-red-600"></span>
+            <span class="size-1.5 rounded-full bg-[#bc1823]"></span>
             {{ __('Start your facility journey') }}
           </span>
           <h1
-            class="mt-4 max-w-2xl text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl"
+            class="mt-4 max-w-2xl text-4xl font-semibold leading-tight tracking-tight text-ink-gray-9 sm:text-5xl lg:text-6xl"
           >
             {{
               networkName
@@ -66,7 +66,7 @@
             }}
           </h1>
           <p
-            class="mt-5 max-w-xl text-base leading-7 text-slate-600 sm:text-lg"
+            class="mt-5 max-w-xl text-base leading-7 text-ink-gray-6 sm:text-lg"
           >
             {{
               __(
@@ -76,22 +76,22 @@
           </p>
           <div class="mt-8 flex flex-wrap items-center gap-4">
             <button
-              class="inline-flex min-h-12 items-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 px-7 text-sm font-semibold text-white shadow-lg shadow-red-600/25 transition-all hover:from-red-700 hover:to-rose-800 hover:shadow-xl hover:shadow-red-600/35"
+              class="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#bc1823] px-7 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d]"
               @click="stage = 'identity'"
             >
               <span>{{ __('Start secure onboarding') }}</span>
               <span class="text-lg">→</span>
             </button>
           </div>
-          <p class="mt-4 text-xs font-medium text-slate-500">
+          <p class="mt-4 text-xs font-medium text-ink-gray-5">
             {{ __('Usually 5–10 minutes · all displayed prices exclude VAT') }}
           </p>
         </div>
         <aside
-          class="rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-[0_12px_36px_rgba(15,23,42,0.06)] backdrop-blur-md sm:p-8"
+          class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-8"
         >
           <p
-            class="text-xs font-bold uppercase tracking-[.15em] text-slate-500"
+            class="text-xs font-semibold uppercase tracking-[.15em] text-ink-gray-5"
           >
             {{ __('What happens next') }}
           </p>
@@ -102,18 +102,18 @@
               class="flex gap-4"
             >
               <span
-                class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-red-50 text-xs font-bold text-red-700 border border-red-100"
+                class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-[#fdf2f3] text-xs font-semibold text-[#bc1823] border border-[#f0d6d8]"
                 >{{ index + 1 }}</span
               ><span
-                ><strong class="block text-sm font-bold text-slate-900">{{ item.title }}</strong
-                ><span class="mt-1 block text-sm leading-6 text-slate-600">{{
+                ><strong class="block text-sm font-semibold text-ink-gray-9">{{ item.title }}</strong
+                ><span class="mt-1 block text-sm leading-6 text-ink-gray-6">{{
                   item.description
                 }}</span></span
               >
             </li>
           </ol>
           <div
-            class="mt-7 flex items-start gap-3 rounded-2xl bg-slate-50 border border-slate-200/80 p-4 text-xs leading-5 text-slate-600"
+            class="mt-7 flex items-start gap-3 rounded-xl bg-surface-gray-1 border border-outline-gray-2 p-4 text-xs leading-5 text-ink-gray-6"
           >
             <svg class="size-5 shrink-0 text-emerald-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -130,20 +130,20 @@
       </section>
       <section
         v-if="stage === 'welcome'"
-        class="mt-10 rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-sm sm:p-8"
+        class="mt-10 rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm sm:p-8 backdrop-blur-md"
         aria-labelledby="hmis-about-title"
       >
         <span
-          class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-slate-700"
+          class="inline-flex items-center gap-1.5 rounded-full border border-outline-gray-2 bg-surface-gray-2 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-ink-gray-7"
         >
           {{ __('About Tiberbu HMIS') }}
         </span>
-        <h2 id="hmis-about-title" class="mt-3 text-xl font-bold text-slate-900">
+        <h2 id="hmis-about-title" class="mt-3 text-xl font-semibold text-ink-gray-9">
           {{
             __('One connected path from verification to Customer Experience')
           }}
         </h2>
-        <p class="mt-2.5 max-w-3xl text-sm leading-6 text-slate-600">
+        <p class="mt-2.5 max-w-3xl text-sm leading-6 text-ink-gray-6">
           {{
             __(
               'Tiberbu HMIS connects identity checks, facility selection, token package orders and Customer Experience access. This wizard is for facility owners and administrators.',
@@ -152,7 +152,7 @@
         </p>
         <a
           href="/login?redirect-to=/crm"
-          class="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-red-700 hover:text-red-800 underline underline-offset-4"
+          class="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-[#bc1823] hover:text-[#a3141d] underline underline-offset-4"
         >
           <span>{{ __('Staff access') }}</span>
           <span>→</span>
@@ -162,22 +162,22 @@
         <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <span
-              class="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-red-700"
+              class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[#bc1823]"
             >
-              <span class="size-1.5 rounded-full bg-red-600"></span>
+              <span class="size-1.5 rounded-full bg-[#bc1823]"></span>
               {{ __('Facility onboarding') }}
             </span>
-            <h1 class="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+            <h1 class="mt-2 text-2xl font-semibold tracking-tight text-ink-gray-9 sm:text-3xl">
               {{ stageTitle }}
             </h1>
           </div>
           <button
             v-if="stage !== 'success'"
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+            class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-2 bg-white px-3.5 py-1.5 text-xs font-semibold text-ink-gray-6 shadow-sm transition hover:bg-surface-gray-1 hover:text-ink-gray-9"
             @click="reset"
           >
-            <svg class="size-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="size-3.5 text-ink-gray-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             {{ __('Start over') }}
@@ -185,7 +185,7 @@
         </div>
         <ol
           v-if="stage !== 'success'"
-          class="mb-8 grid grid-cols-4 gap-2 sm:gap-4 rounded-2xl border border-slate-200/80 bg-white/75 p-3 sm:p-4 shadow-sm backdrop-blur-md"
+          class="mb-8 grid grid-cols-4 gap-2 sm:gap-4 rounded-2xl border border-outline-gray-2 bg-white/85 p-3 sm:p-4 shadow-sm backdrop-blur-md"
           :aria-label="__('Onboarding steps')"
         >
           <li
@@ -196,13 +196,13 @@
           >
             <div class="flex items-center w-full mb-2">
               <span
-                class="flex size-7 sm:size-8 items-center justify-center rounded-xl text-xs font-bold transition-all duration-200 shrink-0"
+                class="flex size-7 sm:size-8 items-center justify-center rounded-xl text-xs font-semibold transition-all duration-200 shrink-0"
                 :class="
                   item.status === 'complete'
-                    ? 'bg-emerald-600 text-white shadow-sm ring-4 ring-emerald-100'
+                    ? 'bg-emerald-600 text-white shadow-sm ring-4 ring-emerald-50'
                     : item.status === 'current'
-                      ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white shadow-md shadow-red-600/30 ring-4 ring-red-100'
-                      : 'bg-slate-100 text-slate-400 border border-slate-200/80'
+                      ? 'bg-[#bc1823] text-white shadow-sm ring-4 ring-[#bc1823]/15'
+                      : 'bg-surface-gray-2 text-ink-gray-5 border border-outline-gray-2'
                 "
               >
                 <template v-if="item.status === 'complete'">✓</template>
@@ -211,7 +211,7 @@
               <div
                 v-if="index < progressSteps.length - 1"
                 class="hidden sm:block flex-1 h-0.5 mx-2 rounded-full transition-colors duration-200"
-                :class="item.status === 'complete' ? 'bg-emerald-500' : 'bg-slate-200'"
+                :class="item.status === 'complete' ? 'bg-emerald-500' : 'bg-outline-gray-2'"
               />
             </div>
             <div class="text-center sm:text-left min-w-0 w-full">
@@ -219,16 +219,16 @@
                 class="block truncate text-xs sm:text-sm font-semibold tracking-tight transition-colors"
                 :class="
                   item.status === 'upcoming'
-                    ? 'text-slate-400'
+                    ? 'text-ink-gray-5 font-normal'
                     : item.status === 'current'
-                      ? 'text-red-700 font-bold'
-                      : 'text-slate-900'
+                      ? 'text-[#bc1823] font-semibold'
+                      : 'text-ink-gray-9 font-medium'
                 "
               >
                 {{ item.label }}
                 <span class="sr-only"> — {{ item.statusLabel }}</span>
               </span>
-              <span class="hidden sm:block truncate text-[11px] text-slate-500 font-normal">
+              <span class="hidden sm:block truncate text-[11px] text-ink-gray-5 font-normal">
                 {{ stepSubtitles[item.key] }}
               </span>
             </div>
@@ -272,20 +272,20 @@
         </div>
         <form
           v-if="stage === 'identity'"
-          class="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-9"
+          class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
           @submit.prevent="startIdentity"
         >
           <div class="flex items-start gap-4">
-            <div class="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-red-50 to-rose-100 border border-red-200/60 text-red-600 shadow-sm">
+            <div class="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[#fdf2f3] border border-[#f0d6d8] text-[#bc1823] shadow-sm">
               <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
             </div>
             <div>
-              <h2 class="text-lg font-bold text-slate-900">
+              <h2 class="text-lg font-semibold text-ink-gray-9">
                 {{ __('Verify Facility Ownership') }}
               </h2>
-              <p class="mt-1 text-sm leading-6 text-slate-600">
+              <p class="mt-1 text-sm leading-6 text-ink-gray-6">
                 {{
                   __(
                     'Enter the ID used to register as the facility owner. We will check the registered contact first and look up facility details after you verify the code.',
@@ -297,13 +297,13 @@
 
           <div class="mt-8 space-y-6">
             <div>
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
                 {{ __('Identification type') }}
               </label>
               <div class="relative mt-2">
                 <select
                   v-model="identityType"
-                  class="block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 shadow-sm transition focus:border-red-600 focus:outline-none focus:ring-4 focus:ring-red-600/10"
+                  class="block w-full rounded-xl border border-outline-gray-2 bg-white px-4 py-3 text-sm font-medium text-ink-gray-9 shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
                 >
                   <option value="national_id">{{ __('National ID') }}</option>
                   <option value="passport">{{ __('Passport') }}</option>
@@ -314,11 +314,11 @@
             </div>
 
             <div>
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
                 {{ __('Identification number') }}
               </label>
               <div class="relative mt-2">
-                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-gray-4">
                   <svg class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
                   </svg>
@@ -327,7 +327,7 @@
                   v-model.trim="identityNumber"
                   required
                   autocomplete="off"
-                  class="block w-full rounded-xl border border-slate-300 bg-white pl-11 pr-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 shadow-sm transition focus:border-red-600 focus:outline-none focus:ring-4 focus:ring-red-600/10"
+                  class="block w-full rounded-xl border border-outline-gray-2 bg-white pl-11 pr-4 py-3 text-sm font-medium text-ink-gray-9 placeholder:text-ink-gray-5 shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
                   :placeholder="__('Enter your ID number')"
                 />
               </div>
@@ -336,12 +336,12 @@
 
           <button
             :disabled="busy"
-            class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 px-6 text-sm font-semibold text-white shadow-md shadow-red-600/20 transition-all hover:from-red-700 hover:to-rose-800 hover:shadow-lg hover:shadow-red-600/30 disabled:opacity-50 disabled:shadow-none"
+            class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
           >
             <span>{{ busy ? __('Checking…') : __('Find my facilities') }}</span>
             <span v-if="!busy" class="text-base">→</span>
           </button>
-          <div class="mt-5 flex items-center justify-center gap-2 text-center text-xs text-slate-500">
+          <div class="mt-5 flex items-center justify-center gap-2 text-center text-xs text-ink-gray-5">
             <svg class="size-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
@@ -356,12 +356,12 @@
         </form>
         <form
           v-else-if="stage === 'otp'"
-          class="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-9"
+          class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
           @submit.prevent="verifyOtp"
         >
           <div
             v-if="hfrRetryPending"
-            class="rounded-2xl border border-amber-200 bg-amber-50/90 p-5 text-sm leading-6 text-amber-900 shadow-sm"
+            class="rounded-xl border border-amber-200 bg-amber-50/90 p-5 text-sm leading-6 text-amber-900 shadow-sm"
             role="status"
           >
             <div class="flex items-start gap-3">
@@ -384,7 +384,7 @@
                   v-if="!hfrRetryExhausted"
                   type="button"
                   :disabled="busy"
-                  class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-200 disabled:opacity-50"
+                  class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-200 disabled:opacity-50"
                   @click="retryHfr"
                 >
                   <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -400,7 +400,7 @@
           <template v-else>
             <div
               v-if="deliveryStatus === 'unavailable'"
-              class="rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-sm leading-6 text-amber-900"
+              class="rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm leading-6 text-amber-900"
               role="status"
             >
               {{
@@ -410,15 +410,15 @@
               }}
             </div>
             <div v-else class="text-center" role="status">
-              <div class="mx-auto flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-red-50 to-rose-100 border border-red-200/60 text-red-600 shadow-sm mb-4">
+              <div class="mx-auto flex size-12 items-center justify-center rounded-2xl bg-[#fdf2f3] border border-[#f0d6d8] text-[#bc1823] shadow-sm mb-4">
                 <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
               </div>
-              <h2 class="text-lg font-bold text-slate-900">
+              <h2 class="text-lg font-semibold text-ink-gray-9">
                 {{ __('Enter Verification Code') }}
               </h2>
-              <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+              <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-gray-6">
                 {{
                   delivery.masked_destination
                     ? __('A 6-digit code was sent by {0} to {1}.', [
@@ -430,8 +430,8 @@
                       )
                 }}
               </p>
-              <div class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                <svg class="size-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-gray-2 border border-outline-gray-2 px-3 py-1 text-xs font-medium text-ink-gray-6">
+                <svg class="size-3.5 text-ink-gray-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span>{{ __('The code expires in {0} minutes.', [expiryMinutes]) }}</span>
@@ -447,7 +447,7 @@
             </div>
             <button
               :disabled="busy || otp.length !== 6"
-              class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 px-6 text-sm font-semibold text-white shadow-md shadow-red-600/20 transition-all hover:from-red-700 hover:to-rose-800 hover:shadow-lg disabled:opacity-50 disabled:shadow-none"
+              class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
             >
               <span>{{ busy ? __('Verifying…') : __('Verify and continue') }}</span>
               <span v-if="!busy" class="text-base">→</span>
@@ -456,7 +456,7 @@
               <button
                 type="button"
                 :disabled="!canResendOtp(delivery, resendIn, busy)"
-                class="min-h-11 rounded-xl px-4 text-xs font-semibold text-red-700 hover:text-red-800 hover:bg-red-50/50 disabled:text-slate-400 disabled:hover:bg-transparent transition"
+                class="min-h-11 rounded-xl px-4 text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] hover:bg-[#fdf2f3] disabled:text-ink-gray-5 disabled:hover:bg-transparent transition"
                 @click="resendOtp"
               >
                 {{
@@ -470,7 +470,7 @@
               <button
                 type="button"
                 :disabled="busy"
-                class="min-h-11 rounded-xl px-4 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100/60 disabled:text-slate-400 disabled:hover:bg-transparent transition"
+                class="min-h-11 rounded-xl px-4 text-xs font-semibold text-ink-gray-6 hover:text-ink-gray-9 hover:bg-surface-gray-1 disabled:text-ink-gray-5 disabled:hover:bg-transparent transition"
                 @click="editIdentity"
               >
                 {{ __('Edit ID details') }}
@@ -484,7 +484,7 @@
           @submit.prevent="continueFacilities"
         >
           <div
-            class="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-9"
+            class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
           >
             <section
               v-if="
@@ -492,53 +492,53 @@
                 identityPreview.email ||
                 identityPreview.phone
               "
-              class="mb-7 rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/60 via-white to-slate-50 p-5 shadow-sm"
+              class="mb-7 rounded-2xl border border-[#f0d6d8] bg-[#fdf2f3]/40 p-5 shadow-sm"
               :aria-label="__('Verified identity')"
             >
               <div class="flex items-center gap-3.5">
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white font-bold text-sm shadow-sm shadow-emerald-600/20">
+                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white font-semibold text-sm shadow-sm">
                   ✓
                 </div>
                 <div>
                   <div class="flex items-center gap-2">
-                    <h2 class="text-sm font-bold text-slate-900">
+                    <h2 class="text-sm font-semibold text-ink-gray-9">
                       {{ __('Verified identity') }}
                     </h2>
-                    <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 uppercase tracking-wide">
+                    <span class="rounded-full bg-white/90 border border-[#edc5c8] px-2 py-0.5 text-[10px] font-semibold text-[#9e1720] uppercase tracking-wide">
                       {{ __('Registry Verified') }}
                     </span>
                   </div>
                   <p
                     v-if="identityPreview.full_name"
-                    class="mt-0.5 text-base font-bold text-slate-900"
+                    class="mt-0.5 text-base font-semibold text-ink-gray-9"
                   >
                     {{ identityPreview.full_name }}
                   </p>
                 </div>
               </div>
-              <div class="mt-4 grid gap-2 border-t border-emerald-100/70 pt-3 text-xs text-slate-600 sm:grid-cols-2">
+              <div class="mt-4 grid gap-2 border-t border-[#f0d6d8]/60 pt-3 text-xs text-ink-gray-6 sm:grid-cols-2">
                 <p
                   v-if="identityPreview.email"
                   class="flex items-center gap-2 font-medium"
                 >
-                  <span class="text-slate-400">✉</span>
+                  <span class="text-ink-gray-4">✉</span>
                   <span>{{ __('Email: {0}', [identityPreview.email]) }}</span>
                 </p>
                 <p
                   v-if="identityPreview.phone"
                   class="flex items-center gap-2 font-medium"
                 >
-                  <span class="text-slate-400">✆</span>
+                  <span class="text-ink-gray-4">✆</span>
                   <span>{{ __('Phone: {0}', [identityPreview.phone]) }}</span>
                 </p>
               </div>
             </section>
 
             <div>
-              <h3 class="text-base font-bold text-slate-900">
+              <h3 class="text-base font-semibold text-ink-gray-9">
                 {{ __('Select facilities to onboard') }}
               </h3>
-              <p class="mt-1 text-sm leading-6 text-slate-600">
+              <p class="mt-1 text-sm leading-6 text-ink-gray-6">
                 {{
                   __(
                     'Select all eligible facilities you want to add under the same Opt-In Network.',
@@ -549,7 +549,7 @@
 
             <p
               v-if="!facilities.length"
-              class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-600"
+              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 text-sm leading-6 text-ink-gray-6"
               role="status"
             >
               {{
@@ -565,10 +565,10 @@
                 class="flex gap-4 rounded-2xl border p-5 transition-all"
                 :class="
                   facility.onboarding_eligible !== true || facility.onboarding_blocked
-                    ? 'cursor-not-allowed border-slate-200 bg-slate-50/70 opacity-75'
+                    ? 'cursor-not-allowed border-outline-gray-2 bg-surface-gray-1/70 opacity-75'
                     : selectedFacilities.includes(facility.facility_id)
-                      ? 'cursor-pointer border-red-500 bg-red-50/40 ring-2 ring-red-500/20 shadow-sm'
-                      : 'cursor-pointer border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-sm'
+                      ? 'cursor-pointer border-[#bc1823] bg-[#fdf2f3]/40 ring-2 ring-[#bc1823]/20 shadow-sm'
+                      : 'cursor-pointer border-outline-gray-2 bg-white/90 hover:border-[#f0d6d8] hover:shadow-sm'
                 "
               >
                 <input
@@ -576,26 +576,26 @@
                   type="checkbox"
                   :value="facility.facility_id"
                   :disabled="facility.onboarding_eligible !== true || facility.onboarding_blocked"
-                  class="mt-1 size-5 rounded border-slate-300 text-red-600 accent-red-600 focus:ring-red-500/20"
+                  class="mt-1 size-5 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20"
                 />
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center justify-between gap-2">
-                    <strong class="text-base font-bold text-slate-900">
+                    <strong class="text-base font-semibold text-ink-gray-9">
                       {{ facility.facility_name || facility.mfl_code }}
                     </strong>
                     <span
                       v-if="facility.facility_level || facility.classification"
-                      class="inline-flex items-center rounded-full bg-purple-50 border border-purple-200/70 px-2.5 py-0.5 text-xs font-semibold text-purple-700"
+                      class="inline-flex items-center rounded-full bg-surface-gray-2 border border-outline-gray-2 px-2.5 py-0.5 text-xs font-medium text-ink-gray-7"
                     >
                       {{ facility.facility_level || facility.classification }}
                     </span>
                   </div>
-                  <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    <span class="font-medium text-slate-700">{{ facility.facility_type || __('Facility') }}</span>
+                  <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-ink-gray-5">
+                    <span class="font-medium text-ink-gray-7">{{ facility.facility_type || __('Facility') }}</span>
                     <span>·</span>
                     <span>{{ facility.classification || __('Classification pending') }}</span>
                     <span>·</span>
-                    <span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700 border border-slate-200">
+                    <span class="rounded bg-surface-gray-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-gray-7 border border-outline-gray-2">
                       {{ facility.mfl_code }}
                     </span>
                   </div>
@@ -632,7 +632,7 @@
           </div>
           <button
             :disabled="!selectedFacilities.length"
-            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 px-6 text-sm font-semibold text-white shadow-md shadow-red-600/20 transition-all hover:from-red-700 hover:to-rose-800 hover:shadow-lg disabled:opacity-50 disabled:shadow-none"
+            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
           >
             <span>{{ __('Continue to pricing') }}</span>
             <span class="text-base">→</span>
@@ -644,28 +644,28 @@
           @submit.prevent="continuePricing"
         >
           <div
-            class="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-9"
+            class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
           >
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <span
                   v-if="catalog.network?.display_name"
-                  class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                  class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-3 py-1 text-xs font-semibold text-[#bc1823]"
                 >
                   <span class="size-1.5 rounded-full bg-emerald-500"></span>
                   {{ catalog.network.display_name }}
                 </span>
-                <h2 class="mt-2 text-2xl font-extrabold tracking-tight text-slate-900">
+                <h2 class="mt-2 text-2xl font-semibold tracking-tight text-ink-gray-9">
                   {{ __('Choose a package for each facility') }}
                 </h2>
               </div>
-              <span class="text-xs font-medium text-slate-500">
+              <span class="text-xs font-medium text-ink-gray-5">
                 {{ __('All displayed prices exclude VAT') }}
               </span>
             </div>
             <p
               v-if="catalog.network?.display_name"
-              class="mt-2 text-sm leading-6 text-slate-600"
+              class="mt-2 text-sm leading-6 text-ink-gray-6"
             >
               {{
                 __(
@@ -673,7 +673,7 @@
                 )
               }}
             </p>
-            <p v-else class="mt-2 text-sm leading-6 text-slate-600">
+            <p v-else class="mt-2 text-sm leading-6 text-ink-gray-6">
               {{
                 __(
                   'The token catalogue is available before you select the referring partner Network.',
@@ -682,12 +682,12 @@
             </p>
             <p
               v-if="catalogBusy"
-              class="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3.5 py-2 text-xs font-medium text-slate-600"
+              class="mt-4 inline-flex items-center gap-2 rounded-xl bg-surface-gray-2 px-3.5 py-2 text-xs font-medium text-ink-gray-6"
               role="status"
               aria-live="polite"
               data-testid="catalog-loading"
             >
-              <svg class="size-4 animate-spin text-red-600" fill="none" viewBox="0 0 24 24">
+              <svg class="size-4 animate-spin text-[#bc1823]" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
@@ -695,26 +695,26 @@
             </p>
 
             <section
-              class="mt-6 rounded-2xl border border-slate-200/90 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm"
+              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1/70 p-5 shadow-sm"
             >
               <div class="flex items-center gap-2.5">
-                <div class="flex size-7 items-center justify-center rounded-lg bg-red-100 text-red-700 font-bold text-xs">
+                <div class="flex size-7 items-center justify-center rounded-lg bg-[#fdf2f3] text-[#bc1823] font-semibold text-xs border border-[#f0d6d8]">
                   #
                 </div>
-                <h3 class="text-sm font-bold text-slate-900">
+                <h3 class="text-sm font-semibold text-ink-gray-9">
                   {{ __('Were you referred by a partner?') }}
                 </h3>
               </div>
-              <p class="mt-1 text-xs leading-5 text-slate-600">
+              <p class="mt-1 text-xs leading-5 text-ink-gray-6">
                 {{
                   __(
                     'Enter the 6-digit Network ID your referring partner shared with you. Leave it blank to use Tiberbu’s configured default Network when one is available.',
                   )
                 }}
               </p>
-              <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-slate-700">
+              <label class="mt-4 block text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
                 {{ __('Partner Network ID') }}
-                <span class="ml-1 text-[11px] font-normal lowercase text-slate-400">({{ __('optional') }})</span>
+                <span class="ml-1 text-[11px] font-normal lowercase text-ink-gray-5">({{ __('optional') }})</span>
                 <input
                   :value="partnerId"
                   inputmode="numeric"
@@ -724,14 +724,14 @@
                   :aria-invalid="Boolean(partnerId && partnerId.length !== 6)"
                   :title="__('Enter all six digits or leave this field blank.')"
                   aria-describedby="partner-network-help"
-                  class="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 font-mono text-sm shadow-sm transition focus:border-red-600 focus:outline-none focus:ring-4 focus:ring-red-600/10"
+                  class="mt-2 block w-full rounded-xl border border-outline-gray-2 bg-white px-4 py-2.5 font-mono text-sm shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
                   placeholder="123456"
                   @input="onPartnerIdInput"
                 />
               </label>
               <span
                 id="partner-network-help"
-                class="mt-2 block text-xs text-slate-500"
+                class="mt-2 block text-xs text-ink-gray-5"
               >
                 {{
                   __(
@@ -763,11 +763,11 @@
               <div
                 v-for="placeholder in 2"
                 :key="placeholder"
-                class="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 p-6"
+                class="animate-pulse rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-6"
               >
-                <div class="h-5 w-2/3 rounded-lg bg-slate-200"></div>
-                <div class="mt-4 h-6 w-1/3 rounded-lg bg-slate-200"></div>
-                <div class="mt-4 h-4 w-full rounded bg-slate-200"></div>
+                <div class="h-5 w-2/3 rounded-lg bg-surface-gray-2"></div>
+                <div class="mt-4 h-6 w-1/3 rounded-lg bg-surface-gray-2"></div>
+                <div class="mt-4 h-4 w-full rounded bg-surface-gray-2"></div>
               </div>
             </div>
             <div
@@ -787,7 +787,7 @@
             </div>
             <div
               v-else-if="partnerId && partnerId.length !== 6"
-              class="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600"
+              class="mt-8 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 text-sm text-ink-gray-6"
               role="status"
               data-testid="catalog-partner-incomplete"
             >
@@ -795,14 +795,14 @@
             </div>
             <div
               v-else-if="!catalog.packages?.length"
-              class="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600"
+              class="mt-8 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-6 text-center text-sm text-ink-gray-6"
               role="status"
               data-testid="catalog-empty"
             >
               <p class="font-medium">{{ __('No token packages are available right now.') }}</p>
               <button
                 type="button"
-                class="mt-3 inline-flex items-center gap-1.5 font-bold text-red-700 underline underline-offset-4 hover:text-red-900"
+                class="mt-3 inline-flex items-center gap-1.5 font-bold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
                 @click="loadCatalog(true)"
               >
                 {{ __('Try loading packages again') }} →
@@ -812,18 +812,18 @@
               <section
                 v-for="facility in chosenFacilities"
                 :key="facility.facility_id"
-                class="rounded-3xl border border-zinc-800 bg-[#0d0d10] p-6 sm:p-8 shadow-2xl text-white"
+                class="rounded-2xl border border-outline-gray-2 bg-white/90 backdrop-blur-md p-6 sm:p-8 shadow-sm text-ink-gray-9"
                 :data-testid="`facility-package-${facility.facility_id}`"
               >
                 <div class="text-center max-w-2xl mx-auto mb-8 sm:mb-10">
-                  <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-800/80 border border-zinc-700/60 text-xs text-zinc-300 font-medium mb-3">
+                  <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#fdf2f3] border border-[#f0d6d8] text-xs text-[#bc1823] font-semibold mb-3">
                     <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
                     <span>{{ facility.facility_name || facility.mfl_code }} · {{ facility.classification || __('Facility') }}</span>
                   </div>
-                  <h3 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+                  <h3 class="text-2xl sm:text-3xl font-semibold tracking-tight text-ink-gray-9">
                     {{ __('Pricing & Plans') }}
                   </h3>
-                  <p class="mt-2 text-sm text-zinc-400">
+                  <p class="mt-2 text-sm text-ink-gray-6">
                     {{ __('Simple, transparent pricing for individuals and teams.') }}
                   </p>
                 </div>
@@ -832,25 +832,23 @@
                   <article
                     v-for="item in catalog.packages"
                     :key="`${facility.facility_id}-${item.item_code}`"
-                    class="relative rounded-2xl border bg-[#161619] p-6 flex flex-col justify-between transition-all duration-200 cursor-pointer hover:bg-[#1a1a1e]"
+                    class="relative rounded-2xl border p-6 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-sm"
                     :class="packageSelections[facility.facility_id] === item.item_code
-                      ? 'border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-500/10'
-                      : 'border-zinc-800/90 hover:border-zinc-700'"
+                      ? 'border-2 border-[#bc1823] bg-[#fdf2f3]/30 ring-4 ring-[#bc1823]/10 shadow-md'
+                      : 'border-outline-gray-2 bg-white/90 hover:border-[#f0d6d8] hover:shadow-md'"
                     @click="packageSelections[facility.facility_id] = item.item_code"
                   >
                     <div>
                       <div class="flex items-center justify-between gap-2">
-                        <h4 class="text-xl font-bold text-white tracking-tight">
+                        <h4 class="text-lg font-semibold text-ink-gray-9 tracking-tight">
                           {{ item.display_name || item.item_code }}
                         </h4>
                         <span
                           v-if="packageMetadata(item).badge"
                           class="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase"
                           :class="Number(item.price_ex_vat ?? item.price ?? 0) === 0
-                            ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                            : (item.item_code?.includes('CORE') || item.display_name === 'Pro'
-                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
-                              : 'bg-zinc-800 text-zinc-300 border border-zinc-700')"
+                            ? 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'
+                            : 'bg-[#fdf2f3] text-[#bc1823] border border-[#f0d6d8]'"
                         >
                           {{ packageMetadata(item).badge }}
                         </span>
@@ -858,38 +856,33 @@
 
                       <div class="mt-3 flex items-baseline gap-1.5 flex-wrap">
                         <span
-                          class="text-3xl sm:text-4xl font-extrabold tracking-tight"
-                          :class="(item.item_code?.includes('CORE') || item.display_name === 'Pro') && Number(item.price_ex_vat ?? item.price) > 0
-                            ? 'text-[#10b981]'
-                            : 'text-white'"
+                          class="text-3xl font-semibold tracking-tight text-ink-gray-9"
                         >
                           {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? '$0' : money(item.price_ex_vat ?? item.price, item.currency) }}
                         </span>
-                        <span class="text-xs text-zinc-400 font-normal">
+                        <span class="text-xs text-ink-gray-5 font-normal">
                           {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Free') : __('/ month (excl. VAT)') }}
                         </span>
                       </div>
-                      <p v-if="item.gross_total" class="mt-1 text-[11px] text-zinc-400">
+                      <p v-if="item.gross_total" class="mt-1 text-[11px] text-ink-gray-5">
                         {{ item.vat_label || __('VAT') }} {{ money(item.vat_amount, item.currency) }} · {{ __('Total') }} {{ money(item.gross_total, item.currency) }}
                       </p>
 
-                      <p class="mt-2 text-xs text-zinc-400 leading-snug min-h-[1.75rem]">
+                      <p class="mt-2 text-xs text-ink-gray-6 leading-snug min-h-[1.75rem]">
                         {{ packageMetadata(item).audience }}
                       </p>
 
-                      <div class="mt-4 flex items-center gap-2 rounded-lg bg-zinc-800/80 px-3 py-2 text-xs font-semibold text-zinc-200 border border-zinc-700/70">
-                        <svg class="w-4 h-4 text-amber-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z"/>
-                        </svg>
-                        <span><strong class="text-white">{{ item.token_quantity }}</strong> {{ __('Tokens included') }}</span>
+                      <div class="mt-4 flex items-center gap-2 rounded-lg bg-[#fdf2f3] px-3 py-2 text-xs font-semibold text-[#bc1823] border border-[#f0d6d8]/60">
+                        <span class="text-amber-500">🪙</span>
+                        <span><strong class="text-ink-gray-9">{{ item.token_quantity }}</strong> {{ __('Tokens included') }}</span>
                       </div>
 
-                      <p class="mt-3 text-xs leading-relaxed text-zinc-400">
+                      <p class="mt-3 text-xs leading-relaxed text-ink-gray-6">
                         {{ item.coverage_summary || item.description }}
                       </p>
 
-                      <div class="mt-6 pt-5 border-t border-zinc-800">
-                        <p class="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-3">
+                      <div class="mt-6 pt-5 border-t border-outline-gray-2">
+                        <p class="text-[10px] font-semibold uppercase tracking-wider text-ink-gray-5 mb-3">
                           {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0
                             ? __('FEATURES')
                             : (item.item_code?.includes('CORE') || item.display_name === 'Pro'
@@ -897,13 +890,13 @@
                               : __('PRO FEATURES +'))
                           }}
                         </p>
-                        <ul class="space-y-2.5 text-xs text-zinc-300">
+                        <ul class="space-y-2.5 text-xs text-ink-gray-7">
                           <li
                             v-for="feature in packageMetadata(item).features"
                             :key="feature"
                             class="flex items-start gap-2.5"
                           >
-                            <svg class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
                             </svg>
                             <span>{{ feature }}</span>
@@ -915,12 +908,10 @@
                     <div class="mt-8">
                       <button
                         type="button"
-                        class="w-full py-2.5 px-4 rounded-lg text-sm font-semibold transition-all duration-150"
+                        class="w-full py-2.5 px-4 rounded-xl text-xs font-semibold transition-all duration-150"
                         :class="packageSelections[facility.facility_id] === item.item_code
-                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20 hover:bg-emerald-600'
-                          : ((item.item_code?.includes('CORE') || item.display_name === 'Pro') && Number(item.price_ex_vat ?? item.price ?? 0) > 0
-                            ? 'bg-[#10b981] text-white hover:bg-[#059669]'
-                            : 'bg-white text-zinc-900 hover:bg-zinc-100')"
+                          ? 'bg-[#bc1823] text-white shadow-sm hover:bg-[#a3141d]'
+                          : 'border border-outline-gray-2 text-ink-gray-8 bg-white hover:bg-[#fdf2f3] hover:text-[#bc1823] hover:border-[#f0d6d8]'"
                         @click.stop="packageSelections[facility.facility_id] = item.item_code"
                       >
                         {{ packageSelections[facility.facility_id] === item.item_code ? __('✓ Selected') : __('Choose plan') }}
@@ -940,7 +931,7 @@
           </div>
           <button
             :disabled="catalogBusy || catalogError || !catalogCurrent || !allPackagesSelected || termsBusy"
-            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 px-6 text-sm font-semibold text-white shadow-md shadow-red-600/20 transition-all hover:from-red-700 hover:to-rose-800 hover:shadow-lg disabled:opacity-50 disabled:shadow-none"
+            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
           >
             <span>{{
               catalogBusy
@@ -953,7 +944,7 @@
           </button>
           <button
             type="button"
-            class="min-h-11 w-full text-sm font-semibold text-slate-600 hover:text-slate-900 transition"
+            class="min-h-11 w-full text-sm font-semibold text-ink-gray-6 hover:text-ink-gray-9 transition"
             @click="goBack"
           >
             {{ __('Back to facilities') }}
@@ -965,17 +956,17 @@
           @submit.prevent="submit"
         >
           <div
-            class="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-9"
+            class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
           >
             <div class="flex items-center gap-3">
-              <div class="flex size-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700 font-bold text-sm">
+              <div class="flex size-10 items-center justify-center rounded-xl bg-surface-gray-2 text-ink-gray-7 font-semibold text-sm">
                 📋
               </div>
               <div>
-                <h2 class="text-xl font-bold text-slate-900">
+                <h2 class="text-xl font-semibold text-ink-gray-9">
                   {{ __('Review and confirm') }}
                 </h2>
-                <p class="mt-0.5 text-xs text-slate-500">
+                <p class="mt-0.5 text-xs text-ink-gray-5">
                   {{
                     __(
                       'Confirm the facilities, account contact, Network and package before submitting.',
@@ -985,34 +976,34 @@
               </div>
             </div>
 
-            <dl class="mt-7 divide-y divide-slate-100 rounded-2xl border border-slate-200/90 bg-slate-50/50 text-sm">
+            <dl class="mt-7 divide-y divide-outline-gray-2 rounded-xl border border-outline-gray-2 bg-surface-gray-1/50 text-sm">
               <div class="flex items-center justify-between gap-4 p-4">
-                <dt class="text-slate-500 font-medium">
+                <dt class="text-ink-gray-6 font-medium">
                   {{ __('Network') }}
                   <button
                     type="button"
-                    class="ml-2 text-xs font-semibold text-red-700 underline underline-offset-4 hover:text-red-900"
+                    class="ml-2 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
                     @click="stage = 'pricing'"
                   >
                     {{ __('Edit') }}
                   </button>
                 </dt>
-                <dd class="text-right font-semibold text-slate-900" data-testid="review-network">
+                <dd class="text-right font-semibold text-ink-gray-9" data-testid="review-network">
                   {{ catalog.network?.display_name || __('No Network resolved') }}
                 </dd>
               </div>
               <div class="flex items-start justify-between gap-4 p-4">
-                <dt class="text-slate-500 font-medium">
+                <dt class="text-ink-gray-6 font-medium">
                   {{ __('Facilities') }}
                   <button
                     type="button"
-                    class="ml-2 text-xs font-semibold text-red-700 underline underline-offset-4 hover:text-red-900"
+                    class="ml-2 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
                     @click="stage = 'facilities'"
                   >
                     {{ __('Edit') }}
                   </button>
                 </dt>
-                <dd class="text-right font-semibold text-slate-900">
+                <dd class="text-right font-semibold text-ink-gray-9">
                   <span
                     v-for="facility in chosenFacilities"
                     :key="facility.facility_id"
@@ -1022,17 +1013,17 @@
                 </dd>
               </div>
               <div class="flex items-start justify-between gap-4 p-4">
-                <dt class="text-slate-500 font-medium">
+                <dt class="text-ink-gray-6 font-medium">
                   {{ __('Package') }}
                   <button
                     type="button"
-                    class="ml-2 text-xs font-semibold text-red-700 underline underline-offset-4 hover:text-red-900"
+                    class="ml-2 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
                     @click="stage = 'pricing'"
                   >
                     {{ __('Edit') }}
                   </button>
                 </dt>
-                <dd class="text-right font-semibold text-slate-900">
+                <dd class="text-right font-semibold text-ink-gray-9">
                   <span
                     v-for="facility in chosenFacilities"
                     :key="facility.facility_id"
@@ -1040,7 +1031,7 @@
                   >
                     {{ facility.facility_name || facility.mfl_code }} —
                     {{ selectedPackageFor(facility.facility_id)?.display_name || selectedPackageFor(facility.facility_id)?.item_code }}
-                    <span class="block text-xs font-normal text-slate-500 mt-0.5">
+                    <span class="block text-xs font-normal text-ink-gray-5 mt-0.5">
                       {{ money(selectedPackageFor(facility.facility_id)?.gross_total, selectedPackageFor(facility.facility_id)?.currency) }}
                       · {{ selectedPackageFor(facility.facility_id)?.token_quantity }} {{ __('tokens') }}
                     </span>
@@ -1048,16 +1039,16 @@
                 </dd>
               </div>
               <div v-if="termsAccepted" class="flex items-center justify-between gap-4 p-4">
-                <dt class="text-slate-500 font-medium">
+                <dt class="text-ink-gray-6 font-medium">
                   {{ __('Customer Experience email') }}
                 </dt>
-                <dd class="font-semibold text-slate-900" data-testid="verified-account-email">
+                <dd class="font-semibold text-ink-gray-9" data-testid="verified-account-email">
                   {{ accountEmail }}
                 </dd>
               </div>
               <div class="flex items-center justify-between gap-4 p-4">
-                <dt class="text-slate-500 font-medium">{{ __('Terms') }}</dt>
-                <dd class="text-right font-semibold text-slate-900">
+                <dt class="text-ink-gray-6 font-medium">{{ __('Terms') }}</dt>
+                <dd class="text-right font-semibold text-ink-gray-9">
                   {{ termsSnapshot?.document }}
                 </dd>
               </div>
@@ -1065,7 +1056,7 @@
 
             <div
               v-if="!catalog.network?.name"
-              class="mt-5 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-sm leading-6 text-amber-900"
+              class="mt-5 rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm leading-6 text-amber-900"
               role="status"
               data-testid="network-blocker"
             >
@@ -1084,17 +1075,17 @@
             </div>
 
             <section
-              class="mt-6 rounded-2xl border border-slate-200/90 bg-slate-50/60 p-5"
+              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1/60 p-5"
               aria-labelledby="review-terms-title"
               data-testid="self-onboarding-terms"
             >
               <div class="flex flex-wrap items-center justify-between gap-3">
-                <h2 id="review-terms-title" class="text-sm font-bold text-slate-900">
+                <h2 id="review-terms-title" class="text-sm font-semibold text-ink-gray-9">
                   {{ termsSnapshot?.document || __('Terms and Conditions') }}
                 </h2>
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1 text-xs font-semibold text-red-700 underline underline-offset-4 hover:text-red-900"
+                  class="inline-flex items-center gap-1 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
                   aria-haspopup="dialog"
                   @click="termsDialogOpen = true"
                 >
@@ -1102,13 +1093,13 @@
                   <span>↗</span>
                 </button>
               </div>
-              <label class="mt-4 flex items-start gap-3 text-sm leading-6 text-slate-700 cursor-pointer">
+              <label class="mt-4 flex items-start gap-3 text-sm leading-6 text-ink-gray-8 cursor-pointer">
                 <input
                   v-model="termsAccepted"
                   required
                   :disabled="!termsSnapshot?.content_hash"
                   type="checkbox"
-                  class="mt-1 size-5 rounded border-slate-300 text-red-600 accent-red-600 focus:ring-red-500/20"
+                  class="mt-1 size-5 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20"
                   data-testid="terms-acceptance"
                 />
                 <span class="font-medium">
@@ -1126,25 +1117,25 @@
 
             <dl
               v-if="totals"
-              class="mt-6 space-y-2.5 rounded-2xl border border-slate-200/80 bg-white p-5 text-sm"
+              class="mt-6 space-y-2.5 rounded-xl border border-outline-gray-2 bg-white p-5 text-sm"
             >
-              <div class="flex justify-between gap-4 text-slate-600">
+              <div class="flex justify-between gap-4 text-ink-gray-6">
                 <dt>
                   {{ __('Price excl. VAT') }}
                 </dt>
-                <dd class="font-medium text-slate-900">
+                <dd class="font-medium text-ink-gray-9">
                   {{ money(totals.exVat, totals.currency) }}
                 </dd>
               </div>
-              <div class="flex justify-between gap-4 text-slate-600">
+              <div class="flex justify-between gap-4 text-ink-gray-6">
                 <dt>{{ totals.vatLabel }}</dt>
-                <dd class="font-medium text-slate-900">
+                <dd class="font-medium text-ink-gray-9">
                   {{ money(totals.vat, totals.currency) }}
                 </dd>
               </div>
-              <div class="flex justify-between gap-4 border-t border-slate-100 pt-3 text-base">
-                <dt class="font-bold text-slate-900">{{ __('Total incl. VAT') }}</dt>
-                <dd class="font-extrabold text-slate-900 text-lg">
+              <div class="flex justify-between gap-4 border-t border-outline-gray-2/70 pt-3 text-base">
+                <dt class="font-semibold text-ink-gray-9">{{ __('Total incl. VAT') }}</dt>
+                <dd class="font-semibold text-ink-gray-9 text-lg">
                   {{ money(totals.gross, totals.currency) }}
                 </dd>
               </div>
@@ -1152,7 +1143,7 @@
           </div>
           <button
             :disabled="busy || !reviewReady"
-            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 px-6 text-sm font-semibold text-white shadow-md shadow-red-600/20 transition-all hover:from-red-700 hover:to-rose-800 hover:shadow-lg disabled:opacity-50 disabled:shadow-none"
+            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
           >
             <span>{{
               busy ? __('Submitting…') : __('Submit facility onboarding')
@@ -1162,7 +1153,7 @@
           <button
             type="button"
             :disabled="busy"
-            class="min-h-11 w-full text-sm font-semibold text-slate-600 hover:text-slate-900 transition"
+            class="min-h-11 w-full text-sm font-semibold text-ink-gray-6 hover:text-ink-gray-9 transition"
             @click="goBack"
           >
             {{ __('Back to package') }}
@@ -1170,17 +1161,17 @@
         </form>
         <section
           v-else
-          class="rounded-3xl border border-slate-200/80 bg-white p-8 text-center shadow-[0_12px_36px_rgba(15,23,42,0.06)] sm:p-12"
+          class="rounded-2xl border border-outline-gray-2 bg-white/95 p-8 text-center shadow-sm backdrop-blur sm:p-12"
         >
           <div
-            class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-3xl font-bold text-white shadow-lg shadow-emerald-500/25 ring-8 ring-emerald-50 mb-6"
+            class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-emerald-100 text-3xl font-bold text-emerald-700 ring-8 ring-emerald-50 mb-6"
           >
             ✓
           </div>
-          <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h2 class="text-2xl sm:text-3xl font-semibold text-ink-gray-9 tracking-tight">
             {{ __('Your onboarding has started') }}
           </h2>
-          <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
+          <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-ink-gray-6">
             {{
               portalStatus === 'linked'
                 ? __(
@@ -1193,27 +1184,27 @@
           </p>
           <p
             v-if="accountEmail"
-            class="mx-auto mt-4 inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-1.5 text-xs font-semibold text-slate-800"
+            class="mx-auto mt-4 inline-flex items-center gap-2 rounded-full bg-surface-gray-2 border border-outline-gray-2 px-4 py-1.5 text-xs font-semibold text-ink-gray-8"
             data-testid="success-account-email"
           >
-            <span class="text-slate-400">✉</span>
+            <span class="text-ink-gray-4">✉</span>
             <span>{{ __('Customer Experience login: {0}', [accountEmail]) }}</span>
           </p>
           <div class="mx-auto mt-8 max-w-lg space-y-2.5 text-left">
             <div
               v-for="item in submissions"
               :key="item.mfl_code"
-              class="flex items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm shadow-sm"
+              class="flex items-center justify-between gap-4 rounded-xl border border-outline-gray-2 bg-surface-gray-1/70 px-4 py-3 text-sm shadow-sm"
             >
-              <span class="font-semibold text-slate-800">{{ item.facility }}</span>
-              <span class="rounded bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 border border-slate-200">
+              <span class="font-semibold text-ink-gray-9">{{ item.facility }}</span>
+              <span class="rounded bg-white px-2 py-0.5 font-mono text-xs font-semibold text-ink-gray-7 border border-outline-gray-2">
                 {{ item.mfl_code }}
               </span>
             </div>
           </div>
           <a
             href="/login?redirect-to=/cx-portal"
-            class="mt-9 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 px-8 text-sm font-semibold text-white shadow-lg shadow-red-600/25 transition-all hover:from-red-700 hover:to-rose-800 hover:shadow-xl hover:shadow-red-600/35"
+            class="mt-9 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-8 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d]"
           >
             <span>{{ __('Go to sign in') }}</span>
             <span class="text-base">→</span>
