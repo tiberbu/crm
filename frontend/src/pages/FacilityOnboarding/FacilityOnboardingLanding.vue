@@ -490,6 +490,15 @@
                 )
               }}
             </p>
+            <p
+              v-if="catalogBusy"
+              class="mt-3 text-sm text-ink-gray-5"
+              role="status"
+              aria-live="polite"
+              data-testid="catalog-loading"
+            >
+              {{ __('Loading token packages and current pricing…') }}
+            </p>
             <section
               class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4"
             >
@@ -520,7 +529,6 @@
                   class="mt-2 block w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-3 font-mono text-sm"
                   placeholder="123456"
                   @input="onPartnerIdInput"
-                  @change="loadCatalog"
                 />
               </label>
               <span
@@ -545,7 +553,60 @@
                 }}
               </span>
             </section>
-            <div class="mt-6 grid gap-3 sm:grid-cols-2">
+            <div
+              v-if="catalogBusy"
+              class="mt-6 grid gap-3 sm:grid-cols-2"
+              aria-hidden="true"
+            >
+              <div
+                v-for="placeholder in 2"
+                :key="placeholder"
+                class="animate-pulse rounded-xl border border-outline-gray-2 p-4"
+              >
+                <div class="h-4 w-2/3 rounded bg-surface-gray-2"></div>
+                <div class="mt-4 h-4 w-1/3 rounded bg-surface-gray-2"></div>
+                <div class="mt-4 h-3 w-full rounded bg-surface-gray-2"></div>
+              </div>
+            </div>
+            <div
+              v-else-if="catalogError"
+              class="mt-6 rounded-xl border border-outline-red-2 bg-surface-red-1 p-4 text-sm"
+              role="alert"
+              data-testid="catalog-error"
+            >
+              <p>{{ catalogError }}</p>
+              <button
+                type="button"
+                class="mt-3 font-semibold text-[#bc1823] underline underline-offset-4"
+                @click="loadCatalog(true)"
+              >
+                {{ __('Try loading packages again') }}
+              </button>
+            </div>
+            <div
+              v-else-if="partnerId && partnerId.length !== 6"
+              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 text-sm text-ink-gray-6"
+              role="status"
+              data-testid="catalog-partner-incomplete"
+            >
+              {{ __('Enter all six digits to load this Network’s packages, or clear the field to use the configured default.') }}
+            </div>
+            <div
+              v-else-if="!catalog.packages?.length"
+              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 text-sm text-ink-gray-6"
+              role="status"
+              data-testid="catalog-empty"
+            >
+              <p>{{ __('No token packages are available right now.') }}</p>
+              <button
+                type="button"
+                class="mt-3 font-semibold text-[#bc1823] underline underline-offset-4"
+                @click="loadCatalog(true)"
+              >
+                {{ __('Try loading packages again') }}
+              </button>
+            </div>
+            <div v-else class="mt-6 grid gap-3 sm:grid-cols-2">
               <label
                 v-for="item in catalog.packages"
                 :key="item.item_code"
@@ -581,13 +642,15 @@
             </div>
           </div>
           <button
-            :disabled="!packageCode || termsBusy"
+            :disabled="catalogBusy || catalogError || !catalogCurrent || !packageCode || termsBusy"
             class="min-h-12 w-full rounded-xl bg-[#bc1823] px-5 text-sm font-semibold text-white disabled:opacity-50"
           >
             {{
-              termsBusy
-                ? __('Loading Terms…')
-                : __('Continue to submission review')
+              catalogBusy
+                ? __('Loading token packages…')
+                : termsBusy
+                  ? __('Loading Terms…')
+                  : __('Continue to submission review')
             }}</button
           ><button
             type="button"
@@ -827,7 +890,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { call, Dialog } from 'frappe-ui'
 import OtpCodeInput from '@/components/FacilityOnboarding/OtpCodeInput.vue'
 import {
@@ -850,6 +913,7 @@ const props = defineProps({
 const stage = ref('welcome')
 const busy = ref(false)
 const catalogBusy = ref(false)
+const catalogError = ref('')
 const errorMessage = ref('')
 const sessionToken = ref('')
 const identityType = ref('national_id')
@@ -875,6 +939,8 @@ const registrationConflictDetected = ref(false)
 const hfrRetryPending = ref(false)
 const hfrRetryExhausted = ref(false)
 let resendTimer = null
+let catalogRequestId = 0
+let loadedCatalogPartnerId = null
 const deliveryStatus = computed(() => deliveryState(delivery.value))
 const deliveryChannelLabel = computed(() =>
   delivery.value.channel === 'sms' ? __('text message') : __('email'),
@@ -904,6 +970,9 @@ const reviewReady = computed(
 )
 const networkName = computed(() => catalog.value.network?.display_name || '')
 const supportEmail = computed(() => catalog.value.network?.contact_email || '')
+const catalogCurrent = computed(
+  () => loadedCatalogPartnerId === partnerId.value && Boolean(catalog.value.network),
+)
 const selectedPackage = computed(() =>
   catalog.value.packages.find((item) => item.item_code === packageCode.value),
 )
@@ -994,7 +1063,11 @@ function applyDelivery(next) {
     else stopResendTimer()
   }, 1000)
 }
-onBeforeUnmount(stopResendTimer)
+onMounted(() => loadCatalog())
+onBeforeUnmount(() => {
+  stopResendTimer()
+  catalogRequestId += 1
+})
 async function startIdentity() {
   errorMessage.value = ''
   sessionExpired.value = false
@@ -1138,31 +1211,51 @@ function continueFacilities() {
     loadCatalog()
   }
 }
-async function loadCatalog() {
-  errorMessage.value = ''
+async function loadCatalog(force = false) {
+  const requestedPartnerId = partnerId.value
+  if (!force && loadedCatalogPartnerId === requestedPartnerId) return true
+  const requestId = ++catalogRequestId
+  catalogError.value = ''
   catalogBusy.value = true
+  catalog.value = { network: null, packages: [] }
   try {
     const previousPackage = packageCode.value
-    catalog.value = await request('get_catalog', {
-      partner_id: partnerId.value,
+    const nextCatalog = await request('get_catalog', {
+      partner_id: requestedPartnerId,
     })
+    if (requestId !== catalogRequestId) return false
+    catalog.value = nextCatalog
+    loadedCatalogPartnerId = requestedPartnerId
     packageCode.value = catalog.value.packages?.some(
       (item) => item.item_code === previousPackage,
     )
       ? previousPackage
       : catalog.value.packages?.[0]?.item_code || ''
+    return true
   } catch (error) {
+    if (requestId !== catalogRequestId) return false
     catalog.value = { network: null, packages: [] }
-    errorMessage.value =
+    loadedCatalogPartnerId = null
+    catalogError.value =
       error?.messages?.[0] || __('That Network ID is not available.')
+    return false
   } finally {
-    catalogBusy.value = false
+    if (requestId === catalogRequestId) catalogBusy.value = false
   }
 }
 function onPartnerIdInput(event) {
-  partnerId.value = String(event?.target?.value || '')
+  const nextPartnerId = String(event?.target?.value || '')
     .replace(/\D/g, '')
     .slice(0, 6)
+  if (nextPartnerId === partnerId.value) return
+  partnerId.value = nextPartnerId
+  catalogRequestId += 1
+  catalogBusy.value = false
+  catalogError.value = ''
+  loadedCatalogPartnerId = null
+  catalog.value = { network: null, packages: [] }
+  packageCode.value = ''
+  if (!nextPartnerId || nextPartnerId.length === 6) loadCatalog(true)
 }
 async function loadSelfOnboardingTerms() {
   errorMessage.value = ''
@@ -1184,7 +1277,14 @@ async function loadSelfOnboardingTerms() {
   }
 }
 async function continuePricing() {
-  if (!packageCode.value || termsBusy.value || catalogBusy.value) return
+  if (
+    !selectedPackage.value ||
+    termsBusy.value ||
+    catalogBusy.value ||
+    catalogError.value ||
+    !catalogCurrent.value
+  )
+    return
   if (await loadSelfOnboardingTerms()) stage.value = 'review'
 }
 function conflictMessage(result) {
@@ -1322,6 +1422,10 @@ function reset() {
   facilities.value = []
   selectedFacilities.value = []
   catalog.value = { network: null, packages: [] }
+  catalogRequestId += 1
+  catalogBusy.value = false
+  catalogError.value = ''
+  loadedCatalogPartnerId = null
   packageCode.value = ''
   termsSnapshot.value = null
   termsAccepted.value = false
