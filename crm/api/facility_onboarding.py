@@ -259,6 +259,7 @@ def _facility_row(row: dict[str, Any]) -> dict[str, Any]:
 		"facility_level": facility_level,
 		"facility_type": _text(row.get("facility_type")),
 		"facility_category": _text(row.get("category") or row.get("facility_category")),
+		"number_of_beds": frappe.utils.cint(row.get("number_of_beds") or row.get("bed_count")),
 		"county": _text(row.get("county")),
 		"sub_county": _text(row.get("sub_county")),
 		"owner_type": _text(row.get("facility_owner_type") or row.get("owner_type")),
@@ -301,9 +302,22 @@ def _facility_level_eligibility(facility: dict[str, Any], allowed_levels: set[st
 	return {"onboarding_eligible": True, "facility_eligibility_reason": ""}
 
 
-def _facilities_for_response(facilities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _facilities_for_response(
+	facilities: list[dict[str, Any]], session: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
 	allowed_levels = _allowed_facility_level_keys()
-	return [{**facility, **_facility_level_eligibility(facility, allowed_levels)} for facility in facilities]
+	onboarded = _existing_lead_deal_facility_conflicts(facilities, session or {})
+	return [
+		{
+			**facility,
+			**_facility_level_eligibility(facility, allowed_levels),
+			"onboarding_blocked": _text(facility.get("facility_id")) in onboarded,
+			"onboarding_block_reason": "already_onboarded"
+			if _text(facility.get("facility_id")) in onboarded
+			else "",
+		}
+		for facility in facilities
+	]
 
 
 def _session_key(token: str) -> str:
@@ -858,7 +872,7 @@ def _resolve_verified_hfr(token: str, session: dict[str, Any]) -> dict[str, Any]
 				"data": {
 					"identity": _person_preview(session["person"]),
 					"account_email": _text(session["person"].get("email")).lower(),
-					"facilities": _facilities_for_response(session.get("facilities") or []),
+					"facilities": _facilities_for_response(session.get("facilities") or [], session),
 					"state": "ready",
 				},
 			}
@@ -891,7 +905,7 @@ def _resolve_verified_hfr(token: str, session: dict[str, Any]) -> dict[str, Any]
 			"data": {
 				"identity": _person_preview(session["person"]),
 				"account_email": _text(session["person"].get("email")).lower(),
-				"facilities": _facilities_for_response(session["facilities"]),
+				"facilities": _facilities_for_response(session["facilities"], session),
 				"state": "ready",
 			},
 		}
@@ -1008,6 +1022,42 @@ def _parse_selected_ids(selected_facility_ids: Any) -> set[str]:
 	return {_text(value) for value in selected if _text(value)}
 
 
+def _packages_for_facilities(
+	selected_ids: set[str], facility_package_items: Any, legacy_package_item_code: Any = None
+) -> dict[str, dict[str, Any]]:
+	"""Resolve one server-catalog package per selected facility."""
+	try:
+		mapping = (
+			json.loads(facility_package_items)
+			if isinstance(facility_package_items, str)
+			else facility_package_items
+		)
+	except (TypeError, ValueError):
+		mapping = None
+	if not mapping and len(selected_ids) == 1 and _text(legacy_package_item_code):
+		# A tab opened before the per-facility UI deploys sends only the old scalar.
+		# Preserve the single-facility journey; never spread a scalar across several facilities.
+		mapping = {next(iter(selected_ids)): _text(legacy_package_item_code)}
+	if isinstance(mapping, dict):
+		mapping = {_text(key): value for key, value in mapping.items() if _text(key)}
+	if not isinstance(mapping, dict) or set(mapping) != selected_ids:
+		frappe.throw(
+			_("Refresh this page and choose a token package for each facility before submitting."),
+			frappe.ValidationError,
+		)
+	packages = {row["item_code"]: row for row in _catalog_packages()}
+	resolved = {}
+	for facility_id in selected_ids:
+		item_code = _text(mapping.get(facility_id))
+		if item_code not in packages:
+			frappe.throw(
+				_("One or more selected token packages are no longer available. Review your choices and try again."),
+				frappe.ValidationError,
+			)
+		resolved[facility_id] = packages[item_code]
+	return resolved
+
+
 def _ois_contains_facility(raw_json: Any, mfl_code: str) -> bool:
 	try:
 		payload = json.loads(raw_json or "{}") if isinstance(raw_json, str) else raw_json or {}
@@ -1046,11 +1096,76 @@ def _ois_facility_codes(raw_json: Any) -> set[str]:
 	return codes
 
 
+def _existing_lead_deal_facility_conflicts(
+	facilities: list[dict[str, Any]], session: dict[str, Any]
+) -> set[str]:
+	"""Match verified HFR identifiers against existing Lead/Deal facility rows."""
+	if not facilities:
+		return set()
+	facility_by_key: dict[str, set[str]] = {}
+	facility_ids: set[str] = set()
+	mfl_codes: set[str] = set()
+	for facility in facilities:
+		facility_id = _text(facility.get("facility_id"))
+		mfl_code = _text(facility.get("mfl_code") or facility_id)
+		if facility_id:
+			facility_ids.add(facility_id)
+			facility_by_key.setdefault(facility_id.casefold(), set()).add(facility_id)
+		if mfl_code:
+			mfl_codes.add(mfl_code)
+			facility_by_key.setdefault(mfl_code.casefold(), set()).add(facility_id)
+
+	deal_names = {
+		_text(name)
+		for name in [session.get("submission_deal"), *((session.get("submitted") or {}).values())]
+		if _text(name) and frappe.db.exists("CRM Deal", _text(name))
+	}
+	lead_names = set()
+	if deal_names:
+		lead_names = {
+			_text(row.get("lead"))
+			for row in frappe.get_all(
+				"CRM Deal",
+				filters={"name": ["in", list(deal_names)]},
+				fields=["lead"],
+				ignore_permissions=True,
+				limit_page_length=0,
+			)
+			if _text(row.get("lead"))
+		}
+
+	blocked = set()
+	for doctype in ("CRM Lead Facility", "CRM Deal Facility"):
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		meta = frappe.get_meta(doctype)
+		for fieldname, requested in (("hfr_facility_id", facility_ids), ("mfl_code", mfl_codes)):
+			if not requested or not meta.has_field(fieldname):
+				continue
+			rows = frappe.get_all(
+				doctype,
+				filters={fieldname: ["in", list(requested)]},
+				fields=["parent", fieldname],
+				ignore_permissions=True,
+				limit_page_length=0,
+			)
+			own_parents = lead_names if doctype == "CRM Lead Facility" else deal_names
+			for row in rows:
+				if _text(row.get("parent")) in own_parents:
+					continue
+				key = _text(row.get(fieldname)).casefold()
+				blocked.update(facility_by_key.get(key, set()))
+	return blocked
+
+
 def _facility_conflicts(facilities: list[dict[str, Any]], network: str | None, session: dict[str, Any]):
 	"""Return canonical facility IDs already enrolled or requested in this Network."""
 	if not facilities:
 		return set()
+	conflicts = _existing_lead_deal_facility_conflicts(facilities, session)
 	submitted_values = set((session.get("submitted") or {}).values())
+	if _text(session.get("submission_deal")):
+		submitted_values.add(_text(session.get("submission_deal")))
 	submitted = {name for name in submitted_values if frappe.db.exists("CRM Opt-In Submission", name)}
 	filters = {"network_slug": network} if network else {}
 	ois_rows = frappe.get_all(
@@ -1076,7 +1191,6 @@ def _facility_conflicts(facilities: list[dict[str, Any]], network: str | None, s
 			)
 			if _text(row.get("mfl_code"))
 		)
-	conflicts = set()
 	for facility in facilities:
 		facility_id = _text(facility.get("facility_id"))
 		mfl_code = _text(facility.get("mfl_code") or facility_id)
@@ -1131,35 +1245,16 @@ def _check_onboarding_conflicts(session: dict[str, Any], selected: set[str], net
 				for facility_id, eligibility in sorted(eligibility_by_id.items())
 			],
 		}
-	identity_ref = _text(session.get("identity_ref"))
-	if identity_ref and frappe.db.has_column("CRM Opt-In Submission", "onboarding_identity_ref"):
-		filters = {"onboarding_identity_ref": identity_ref}
-		if frappe.db.has_column("CRM Opt-In Submission", "onboarding_source"):
-			filters["onboarding_source"] = "token_self_onboarding"
-		prior = frappe.get_all(
-			"CRM Opt-In Submission", filters=filters, fields=["name"], limit_page_length=0
-		)
-		own_submissions = set((session.get("submitted") or {}).values())
-		if any(_text(row.get("name")) not in own_submissions for row in prior):
-			return {"outcome": "existing_identity", "allowed_facility_ids": []}
-		if frappe.get_meta("CRM Lead").has_field("cx_onboarding_identity_ref"):
-			prior_leads = frappe.get_all(
-				"CRM Lead",
-				filters={"cx_onboarding_identity_ref": identity_ref},
-				fields=["name"],
-				limit_page_length=0,
-				ignore_permissions=True,
-			)
-			own_deals = set((session.get("submitted") or {}).values())
-			for lead_row in prior_leads:
-				deal_name = frappe.db.get_value("CRM Deal", {"lead": lead_row.name}, "name")
-				if deal_name and deal_name not in own_deals:
-					return {"outcome": "existing_identity", "allowed_facility_ids": []}
 	facilities = [by_id[facility_id] for facility_id in sorted(selected)]
+	already_onboarded = _existing_lead_deal_facility_conflicts(facilities, session)
 	conflicts = _facility_conflicts(facilities, network, session)
 	allowed = [facility_id for facility_id in sorted(selected) if facility_id not in conflicts]
 	if conflicts:
-		return {"outcome": "facility_review", "allowed_facility_ids": allowed}
+		return {
+			"outcome": "facility_review",
+			"allowed_facility_ids": allowed,
+			"already_onboarded_facility_ids": sorted(already_onboarded),
+		}
 	return {"outcome": "new", "allowed_facility_ids": allowed}
 
 
@@ -1194,6 +1289,7 @@ def submit_onboarding(
 	account_email: Any,
 	terms_accepted: Any = 0,
 	accepted_terms_hash: Any = "",
+	facility_package_items: Any = None,
 ):
 	token = _text(session_token)
 	session = _session_or_error(token, verified=True)
@@ -1206,9 +1302,6 @@ def submit_onboarding(
 	selected = _parse_selected_ids(selected_facility_ids)
 	if not selected:
 		frappe.throw(_("Select at least one facility to continue."), frappe.ValidationError)
-	package = next((row for row in _token_packages() if row["item_code"] == _text(package_item_code)), None)
-	if not package:
-		frappe.throw(_("Select an available token package."), frappe.ValidationError)
 	if not frappe.utils.cint(terms_accepted):
 		frappe.throw(
 			_("Accept the current Terms and Conditions before continuing."), frappe.ValidationError
@@ -1223,6 +1316,9 @@ def submit_onboarding(
 		frappe.throw(
 			_("One or more facilities are no longer available in this session."), frappe.ValidationError
 		)
+	packages_by_facility = _packages_for_facilities(
+		selected, facility_package_items, package_item_code
+	)
 
 	identity_ref = _text(session.get("identity_ref"))
 	lock_ref = evidence_ref(identity_ref) if identity_ref else evidence_ref(token)
@@ -1242,7 +1338,7 @@ def submit_onboarding(
 			)
 			return {"success": True, "data": conflicts}
 		return _submit_selected_facilities(
-			token, partner, package, account_email, facilities, terms_snapshot
+			token, partner, packages_by_facility, account_email, facilities, terms_snapshot
 		)
 
 
@@ -1271,9 +1367,9 @@ def _validate_account_email(value: Any, session: dict[str, Any] | None = None) -
 	user_name = frappe.db.get_value("User", {"email": account_email}, "name")
 	if user_name:
 		user = frappe.db.get_value("User", user_name, ["user_type", "enabled"], as_dict=True) or {}
-		if user.get("user_type") != "Website User" or not frappe.utils.cint(user.get("enabled")):
+		if not frappe.utils.cint(user.get("enabled")):
 			frappe.throw(
-				_("This email cannot be used for Customer Experience access. Use an active facility account email or contact support."),
+				_("This login is disabled. Contact support to restore access before continuing."),
 				frappe.ValidationError,
 			)
 
@@ -1290,7 +1386,7 @@ def _validate_account_email(value: Any, session: dict[str, Any] | None = None) -
 	return account_email
 
 
-def _submit_selected_facilities(token, partner, package, account_email, facilities, terms_snapshot):
+def _submit_selected_facilities(token, partner, packages_by_facility, account_email, facilities, terms_snapshot):
 	"""Create a Customer/Deal enrollment; this new route deliberately creates no OIS."""
 	session = _session_or_error(token, verified=True)
 	terms_snapshot = _validate_self_onboarding_terms(session, terms_snapshot["hash"])
@@ -1298,14 +1394,37 @@ def _submit_selected_facilities(token, partner, package, account_email, faciliti
 	person = session["person"]
 	_validate_network_contact(person)
 	submitted = session.setdefault("submitted", {})
+	child_meta = frappe.get_meta("CRM Deal Facility")
+	required_package_fields = (
+		"cx_token_package_item",
+		"cx_token_package_quantity",
+		"cx_token_package_price",
+		"cx_token_package_vat",
+		"cx_token_package_gross_total",
+		"cx_token_package_currency",
+	)
+	if not all(child_meta.has_field(fieldname) for fieldname in required_package_fields):
+		frappe.throw(
+			_("Per-facility token package fields are not installed. Run bench migrate and retry."),
+			frappe.ValidationError,
+		)
+	selected_packages = [packages_by_facility[_text(row.get("facility_id"))] for row in facilities]
+	common_package = (
+		selected_packages[0]
+		if selected_packages and len({row["item_code"] for row in selected_packages}) == 1
+		else None
+	)
+	package_total = sum(float(package.get("price") or 0) for package in selected_packages)
 	deal = _resume_or_create_customer_deal(
 		session=session,
 		partner=partner,
-		package=package,
+		package=common_package,
+		package_total=package_total,
 		account_email=account_email,
 		person=person,
 		facility=facilities[0],
 		terms_snapshot=terms_snapshot,
+		token=token,
 	)
 	deal_network = _text(deal.get("optin_network"))
 	if not deal_network and deal.get("lead") and frappe.db.has_column("CRM Lead", "cx_onboarding_network"):
@@ -1322,7 +1441,7 @@ def _submit_selected_facilities(token, partner, package, account_email, faciliti
 	for facility in facilities:
 		facility_id = _text(facility.get("facility_id"))
 		facility_doc = _upsert_facility_membership(facility, partner["name"], person, customer=customer)
-		_deal_add_facility(deal, facility)
+		_deal_add_facility(deal, facility, packages_by_facility[facility_id])
 		submitted[facility_id] = deal.name
 		_evidence(
 			"facility_selected",
@@ -1332,6 +1451,11 @@ def _submit_selected_facilities(token, partner, package, account_email, faciliti
 			reference_name=facility_doc.name,
 		)
 		enrollments.append({"facility": _text(facility.get("facility_name")), "mfl_code": _text(facility.get("mfl_code"))})
+	if deal.meta.has_field("expected_deal_value"):
+		deal.expected_deal_value = sum(
+			float(row.get("cx_token_package_price") or 0) for row in deal.get("facilities") or []
+		)
+		deal.save(ignore_permissions=True)
 	_evidence(
 		"terms_accepted",
 		token,
@@ -1377,19 +1501,32 @@ def _validate_network_contact(person: dict[str, Any]):
 		frappe.throw(_("The verified Network Contact email is invalid. Please contact support."), frappe.ValidationError)
 
 
-def _resume_or_create_customer_deal(*, session, partner, package, account_email, person, facility, terms_snapshot):
-	"""Return the identity's existing enrollment Deal or create one Lead/Deal/Customer set."""
+def _resume_or_create_customer_deal(
+	*, session, partner, package, package_total, account_email, person, facility, terms_snapshot, token
+):
+	"""Resume this session's submission Deal or create one Lead/Deal/Customer set."""
 	identity_ref = _text(session.get("identity_ref"))
-	deal_names = {name for name in (session.get("submitted") or {}).values() if frappe.db.exists("CRM Deal", name)}
-	if deal_names:
-		return frappe.get_doc("CRM Deal", sorted(deal_names)[0])
-	if identity_ref and frappe.get_meta("CRM Lead").has_field("cx_onboarding_identity_ref"):
-		lead_name = frappe.db.get_value("CRM Lead", {"cx_onboarding_identity_ref": identity_ref}, "name")
-		if lead_name:
-			deal_name = frappe.db.get_value("CRM Deal", {"lead": lead_name}, "name")
-			if deal_name:
-				return frappe.get_doc("CRM Deal", deal_name)
-		frappe.throw(_("An onboarding account already exists for this verified identity. Please sign in or contact support."), frappe.ValidationError)
+	deal_name = _text(session.get("submission_deal"))
+	if not deal_name:
+		deal_names = {
+			name
+			for name in (session.get("submitted") or {}).values()
+			if frappe.db.exists("CRM Deal", name)
+		}
+		deal_name = sorted(deal_names)[0] if deal_names else ""
+	if deal_name and frappe.db.exists("CRM Deal", deal_name):
+		deal = frappe.get_doc("CRM Deal", deal_name)
+		if not _text(deal.get("cx_customer") or deal.get("erpnext_customer")):
+			from crm.api.quotes import _ensure_customer
+
+			lead = frappe.get_doc("CRM Lead", deal.lead)
+			customer = _ensure_customer(_text(lead.organization), commit=False)
+			if deal.meta.has_field("cx_customer"):
+				deal.cx_customer = customer
+			if deal.meta.has_field("erpnext_customer"):
+				deal.erpnext_customer = customer
+			deal.save(ignore_permissions=True)
+		return deal
 
 	previous_user = frappe.session.user
 	frappe.set_user("Administrator")  # SYSTEM-INTERNAL: public verified enrollment creates CRM account records
@@ -1412,7 +1549,7 @@ def _resume_or_create_customer_deal(*, session, partner, package, account_email,
 			("cx_onboarding_source", "facility_self_onboarding"),
 			("cx_onboarding_identity_ref", identity_ref),
 			("cx_onboarding_network", partner["name"]),
-			("cx_onboarding_package_item", package["item_code"]),
+			("cx_onboarding_package_item", package["item_code"] if package else ""),
 			("tc_accepted", 1),
 			("tc_document", terms_snapshot["document"]),
 			("tc_document_hash", terms_snapshot["hash"]),
@@ -1429,9 +1566,11 @@ def _resume_or_create_customer_deal(*, session, partner, package, account_email,
 		lead.insert(ignore_permissions=True)
 		lead.flags.ignore_permissions = True
 		deal_name = lead.convert_to_deal(
-			deal={"expected_deal_value": float(package.get("price") or 0), "expected_closure_date": frappe.utils.add_days(frappe.utils.today(), 30)},
+			deal={"expected_deal_value": package_total, "expected_closure_date": frappe.utils.add_days(frappe.utils.today(), 30)},
 		)
 		deal = frappe.get_doc("CRM Deal", deal_name)
+		session["submission_deal"] = deal.name
+		_save_session(token, session)
 		if deal.meta.has_field("optin_network"):
 			set_network_link(deal, partner["name"])
 		if deal.meta.has_field("cx_onboarding_source"):
@@ -1439,7 +1578,7 @@ def _resume_or_create_customer_deal(*, session, partner, package, account_email,
 		if deal.meta.has_field("cx_onboarding_identity_ref"):
 			deal.cx_onboarding_identity_ref = identity_ref
 		if deal.meta.has_field("cx_onboarding_package_item"):
-			deal.cx_onboarding_package_item = package["item_code"]
+			deal.cx_onboarding_package_item = package["item_code"] if package else ""
 		customer = _ensure_customer(_text(lead.organization), commit=False)
 		if deal.meta.has_field("cx_customer"):
 			deal.cx_customer = customer
@@ -1457,16 +1596,45 @@ def _resume_or_create_customer_deal(*, session, partner, package, account_email,
 		frappe.set_user(previous_user)
 
 
-def _deal_add_facility(deal, facility):
+def _deal_add_facility(deal, facility, package):
 	mfl = _text(facility.get("mfl_code"))
-	if any(_text(row.get("mfl_code")) == mfl for row in deal.get("facilities") or []):
-		return
-	deal.append("facilities", {
+	values = {
+		"hfr_facility_id": _text(facility.get("facility_id")),
 		"mfl_code": mfl,
 		"facility_name": _text(facility.get("facility_name")),
 		"facility_level": _text(facility.get("classification")),
+		"number_of_beds": frappe.utils.cint(facility.get("number_of_beds")),
 		"hfr_sync_status": "HFR Verified",
-	})
+	}
+	package_values = {
+		"cx_token_package_item": package["item_code"],
+		"cx_token_package_quantity": int(package.get("token_quantity") or 0),
+		"cx_token_package_price": float(package.get("price_ex_vat") or package.get("price") or 0),
+		"cx_token_package_vat": float(package.get("vat_amount") or 0),
+		"cx_token_package_gross_total": float(package.get("gross_total") or 0),
+		"cx_token_package_currency": _text(package.get("currency")) or "KES",
+	}
+	child_meta = frappe.get_meta("CRM Deal Facility")
+	values.update({key: value for key, value in package_values.items() if child_meta.has_field(key)})
+	facility_row = next(
+		(
+			row
+			for row in deal.get("facilities") or []
+			if (mfl and _text(row.get("mfl_code")).casefold() == mfl.casefold())
+			or (
+				_text(facility.get("facility_id"))
+				and _text(row.get("hfr_facility_id")).casefold()
+				== _text(facility.get("facility_id")).casefold()
+			)
+		),
+		None,
+	)
+	if facility_row:
+		for key, value in values.items():
+			if child_meta.has_field(key):
+				facility_row.set(key, value)
+	else:
+		deal.append("facilities", values)
 	deal.save(ignore_permissions=True)
 
 

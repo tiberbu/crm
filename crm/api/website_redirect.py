@@ -1,8 +1,8 @@
-"""Website-user routing and facility portal identity resolution.
+"""Authenticated-user routing and facility portal identity resolution.
 
 Legacy facility portal access is bound to an explicit Frappe ``User Permission``:
 
-    user     = the Website User
+    user     = the authenticated Frappe User
     allow    = CRM Opt-In Submission
     for_value = the OIS number
 
@@ -477,8 +477,7 @@ def get_user_ois_numbers(user: str | None = None) -> list[str]:
 		resolved.append(ois_number)
 
 	# Recover a missing/stale permission only from the server-owned OIS.portal_user
-	# link, which is written after the account is validated as a Website User.
-	# Never infer ownership from a browser selector, contact email, or facility ID.
+	# link. Never infer ownership from a browser selector or identity/contact data.
 	linked_submissions = []
 	try:
 		if frappe.get_meta(OIS_DOCTYPE).has_field("portal_user"):
@@ -551,7 +550,7 @@ def _ensure_customer_user_permission(user: str, customer: str) -> bool:
 
 
 def ensure_website_user_for_customer(customer, email=None, display_name=None):
-	"""Create/reconcile a Website User with exactly one Customer-scoped grant."""
+	"""Link any active login, or create a Website User, with one Customer-scoped grant."""
 	customer = cstr(customer or "").strip()
 	requested_email = cstr(email or "").strip().lower()
 	if not customer or not frappe.db.exists("Customer", customer):
@@ -563,8 +562,8 @@ def ensure_website_user_for_customer(customer, email=None, display_name=None):
 	created = False
 	if user_name:
 		user = frappe.get_doc("User", user_name)
-		if user.user_type != "Website User" or not user.enabled:
-			return {"status": "blocked", "reason": "Email is not an active Website User"}
+		if not user.enabled:
+			return {"status": "blocked", "reason": "User account is disabled"}
 	else:
 		user = frappe.new_doc("User")
 		user.update({
@@ -581,7 +580,9 @@ def ensure_website_user_for_customer(customer, email=None, display_name=None):
 		created = True
 
 	try:
-		user.db_set("redirect_url", PORTAL_ROUTE, update_modified=False)
+		# Keep an existing System User's normal Desk/CRM redirect unchanged.
+		if user.user_type == "Website User":
+			user.db_set("redirect_url", PORTAL_ROUTE, update_modified=False)
 		if not _ensure_customer_user_permission(user_name, customer):
 			return {"status": "failed", "user": user_name}
 		if created:
@@ -596,13 +597,13 @@ def ensure_website_user_for_customer(customer, email=None, display_name=None):
 
 
 def get_user_customer_names(user: str | None = None) -> list[str]:
-	"""Resolve only exact Customer grants belonging to the authenticated Website User."""
+	"""Resolve exact Customer grants belonging to any active authenticated user."""
 	user = user or frappe.session.user
 	if not user or user == "Guest":
 		return []
 	try:
-		user_type = frappe.db.get_value("User", user, "user_type")
-		if user_type != "Website User":
+		account = frappe.db.get_value("User", user, ["enabled"], as_dict=True) or {}
+		if not frappe.utils.cint(account.get("enabled")):
 			return []
 		rows = frappe.get_all(
 			"User Permission",
@@ -633,17 +634,17 @@ def _ois_exists(ois_number: str) -> bool:
 
 
 def get_portal_route(user: str | None = None) -> str | None:
-	"""Return the default Customer Experience route for any Website User."""
+	"""Return the CX route for any active user; APIs still authorize each record by permission."""
 	user = user or frappe.session.user
 	if not user or user == "Guest":
 		return None
 
 	try:
-		user_type = frappe.db.get_value("User", user, "user_type")
+		account = frappe.db.get_value("User", user, ["enabled"], as_dict=True) or {}
 	except Exception:
 		return None
 
-	if user_type != "Website User":
+	if not frappe.utils.cint(account.get("enabled")):
 		return None
 
 	return PORTAL_ROUTE
@@ -651,7 +652,7 @@ def get_portal_route(user: str | None = None) -> str | None:
 
 @frappe.whitelist(methods=["GET"])
 def get_current_user_portal_route() -> str | None:
-	"""Expose only the current session's Website User portal destination."""
+	"""Expose the CX destination for an active authenticated user."""
 	return get_portal_route()
 
 
@@ -676,20 +677,19 @@ def on_login(login_manager=None):
 			user,
 			get_login_team_route(frappe.form_dict.get("login_team")),
 		)
-	elif get_portal_route(user):
+	elif frappe.db.get_value("User", user, "user_type") == "Website User" and get_portal_route(user):
 		# Preserve the existing native behavior for non-branded Website User logins.
 		frappe.cache.hset("redirect_after_login", user, PORTAL_ROUTE)
 
 
 def require_portal_user() -> list[str]:
-	"""Require a logged-in Website User and return its permitted OIS records."""
+	"""Require an active login and return only its explicitly permitted OIS records."""
 	user = frappe.session.user
 	if user == "Guest":
 		frappe.throw(_("Please sign in to access the facility portal."), frappe.PermissionError)
 
-	user_type = frappe.db.get_value("User", user, "user_type")
-	if user_type != "Website User":
-		frappe.throw(_("This portal is available to facility Website Users."), frappe.PermissionError)
+	if not frappe.utils.cint(frappe.db.get_value("User", user, "enabled")):
+		frappe.throw(_("This login is disabled."), frappe.PermissionError)
 
 	return get_user_ois_numbers(user)
 
@@ -735,7 +735,7 @@ def _portal_orders(submission) -> list[dict]:
 
 
 def _customer_portal_accounts(user: str) -> list[dict]:
-	"""Project Customer-linked deals and facility memberships for a Website User."""
+	"""Project only Customer-linked deals and memberships granted to this user."""
 	customer_names = get_user_customer_names(user)
 	if not customer_names or not frappe.db.has_column("CRM Facility Membership", "customer"):
 		return []
@@ -771,6 +771,43 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 		limit_page_length=0,
 	) if parent_names else []
 	facility_by_name = {row.name: row for row in facilities}
+	deal_names = [cstr(row.get("name")) for row in deals if row.get("name")]
+	deal_facility_fields = ["parent", "mfl_code"]
+	package_fieldnames = (
+		"cx_token_package_item",
+		"cx_token_package_quantity",
+		"cx_token_package_price",
+		"cx_token_package_vat",
+		"cx_token_package_gross_total",
+		"cx_token_package_currency",
+	)
+	deal_facility_meta = frappe.get_meta("CRM Deal Facility")
+	deal_facility_fields.extend(
+		fieldname for fieldname in package_fieldnames if deal_facility_meta.has_field(fieldname)
+	)
+	deal_facility_rows = frappe.get_all(
+		"CRM Deal Facility",
+		filters={"parent": ["in", deal_names]},
+		fields=deal_facility_fields,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: deal names were selected from Customer-scoped deals above.
+		limit_page_length=0,
+	) if deal_names else []
+	deal_facility_by_key = {
+		(cstr(row.get("parent")), cstr(row.get("mfl_code")).casefold()): row
+		for row in deal_facility_rows
+	}
+	item_codes = list({cstr(row.get("cx_token_package_item")) for row in deal_facility_rows if row.get("cx_token_package_item")})
+	item_rows = frappe.get_all(
+		"Item",
+		filters={"name": ["in", item_codes]},
+		fields=["name", "item_name"],
+		ignore_permissions=True,
+		limit_page_length=0,
+	) if item_codes else []
+	item_names = {
+		cstr(row.get("name")): cstr(row.get("item_name") or row.get("name"))
+		for row in item_rows
+	}
 	accounts = []
 	for customer in customer_names:
 		deal = deal_by_customer.get(customer)
@@ -783,6 +820,9 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			facility = facility_by_name.get(membership.get("parent"))
 			if not facility:
 				continue
+			package = deal_facility_by_key.get(
+				(cstr(deal.get("name")), cstr(facility.get("mfl_code")).casefold()), {}
+			)
 			rows.append({
 				"facility_name": cstr(facility.get("facility_name") or "Facility"),
 				"mfl_code": cstr(facility.get("mfl_code") or ""),
@@ -790,6 +830,15 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				"network": membership.get("network"),
 				"membership_status": cstr(membership.get("status") or "Active"),
 				"go_live": bool(frappe.utils.cint(membership.get("go_live"))),
+				"token_package": item_names.get(
+					cstr(package.get("cx_token_package_item")),
+					cstr(package.get("cx_token_package_item") or ""),
+				),
+				"token_quantity": frappe.utils.cint(package.get("cx_token_package_quantity")),
+				"package_price": package.get("cx_token_package_price"),
+				"package_vat": package.get("cx_token_package_vat"),
+				"package_gross_total": package.get("cx_token_package_gross_total"),
+				"package_currency": cstr(package.get("cx_token_package_currency") or ""),
 			})
 		accounts.append({
 			"customer": customer,
@@ -797,6 +846,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			"organization": cstr(deal.get("organization") or customer),
 			"network": deal.get("optin_network"),
 			"source": deal.get("cx_onboarding_source"),
+			# Retain this only as a legacy fallback; new enrollments show packages per facility.
 			"selected_package": deal.get("cx_onboarding_package_item"),
 			"facilities": rows,
 		})
@@ -805,7 +855,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 
 @frappe.whitelist(methods=["GET"])
 def get_portal_context():
-	"""Return legacy OIS records and no-OIS Customer enrollment for this Website User."""
+	"""Return legacy OIS and Customer enrollment scoped to the authenticated user."""
 	ois_numbers = require_portal_user()
 	customer_accounts = _customer_portal_accounts(frappe.session.user)
 	rows = []

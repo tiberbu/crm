@@ -432,13 +432,19 @@ onMounted(async () => {
               <span>
                 <span class="block font-medium text-ink-gray-8">{{ facility.facility_name }}</span>
                 <span class="text-ink-gray-5">{{ facility.membership_status }} · {{ facility.mfl_code }}</span>
+                <span v-if="facility.token_package" class="mt-1 block text-ink-gray-6">
+                  {{ facility.token_package }}<template v-if="facility.token_quantity"> · {{ facility.token_quantity.toLocaleString() }} tokens</template>
+                </span>
+                <span v-if="facility.package_gross_total != null" class="mt-1 block font-medium text-ink-gray-7">
+                  {{ money(facility.package_gross_total, facility.package_currency) }} incl. VAT
+                </span>
               </span>
               <span class="shrink-0 rounded-full bg-surface-gray-2 px-2 py-1 text-ink-gray-6">
                 {{ facility.go_live ? 'Live' : 'In progress' }}
               </span>
             </div>
           </div>
-          <p v-if="account.selected_package" class="mt-4 text-xs text-ink-gray-5">
+          <p v-if="account.selected_package && !(account.facilities || []).some((facility) => facility.token_package)" class="mt-4 text-xs text-ink-gray-5">
             Selected package: {{ account.selected_package }}. Your enrollment is saved.
           </p>
         </article>
