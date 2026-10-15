@@ -196,13 +196,13 @@
           >
             <div class="flex items-center w-full mb-2">
               <span
-                class="flex size-7 sm:size-8 items-center justify-center rounded-xl text-xs font-semibold transition-all duration-200 shrink-0"
+                class="flex size-7 sm:size-8 items-center justify-center rounded-xl text-xs font-bold transition-all duration-200 shrink-0"
                 :class="
                   item.status === 'complete'
-                    ? 'bg-emerald-600 text-white shadow-sm ring-4 ring-emerald-50'
+                    ? 'bg-emerald-600 text-white shadow-sm ring-4 ring-emerald-100'
                     : item.status === 'current'
-                      ? 'bg-[#bc1823] text-white shadow-sm ring-4 ring-[#bc1823]/15'
-                      : 'bg-surface-gray-2 text-ink-gray-5 border border-outline-gray-2'
+                      ? 'bg-[#bc1823] text-white shadow-sm ring-4 ring-[#bc1823]/20'
+                      : 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-3'
                 "
               >
                 <template v-if="item.status === 'complete'">✓</template>
@@ -211,7 +211,7 @@
               <div
                 v-if="index < progressSteps.length - 1"
                 class="hidden sm:block flex-1 h-0.5 mx-2 rounded-full transition-colors duration-200"
-                :class="item.status === 'complete' ? 'bg-emerald-500' : 'bg-outline-gray-2'"
+                :class="item.status === 'complete' ? 'bg-emerald-600' : 'bg-outline-gray-3'"
               />
             </div>
             <div class="text-center sm:text-left min-w-0 w-full">
@@ -219,16 +219,18 @@
                 class="block truncate text-xs sm:text-sm font-semibold tracking-tight transition-colors"
                 :class="
                   item.status === 'upcoming'
-                    ? 'text-ink-gray-5 font-normal'
+                    ? 'text-ink-gray-6 font-normal'
                     : item.status === 'current'
-                      ? 'text-[#bc1823] font-semibold'
-                      : 'text-ink-gray-9 font-medium'
+                      ? 'text-[#bc1823] font-bold'
+                      : 'text-ink-gray-9 font-semibold'
                 "
               >
                 {{ item.label }}
                 <span class="sr-only"> — {{ item.statusLabel }}</span>
               </span>
-              <span class="hidden sm:block truncate text-[11px] text-ink-gray-5 font-normal">
+              <span class="hidden sm:block truncate text-[11px] font-normal transition-colors"
+                :class="item.status === 'current' ? 'text-[#bc1823]/80 font-medium' : 'text-ink-gray-6'"
+              >
                 {{ stepSubtitles[item.key] }}
               </span>
             </div>
@@ -314,11 +316,11 @@
             </div>
 
             <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-ink-gray-8">
                 {{ __('Identification number') }}
               </label>
               <div class="relative mt-2">
-                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-gray-4">
+                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-gray-5">
                   <svg class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
                   </svg>
@@ -336,13 +338,18 @@
 
           <button
             :disabled="busy"
-            class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
+            class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm"
+            :class="
+              busy
+                ? 'bg-surface-gray-3 text-ink-gray-5 border border-outline-gray-3 cursor-not-allowed shadow-none'
+                : 'bg-[#bc1823] text-white hover:bg-[#a3141d]'
+            "
           >
             <span>{{ busy ? __('Checking…') : __('Find my facilities') }}</span>
             <span v-if="!busy" class="text-base">→</span>
           </button>
-          <div class="mt-5 flex items-center justify-center gap-2 text-center text-xs text-ink-gray-5">
-            <svg class="size-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="mt-5 flex items-center justify-center gap-2 text-center text-xs text-ink-gray-7 font-medium">
+            <svg class="size-4 text-emerald-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
             <span>
@@ -430,8 +437,8 @@
                       )
                 }}
               </p>
-              <div class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-gray-2 border border-outline-gray-2 px-3 py-1 text-xs font-medium text-ink-gray-6">
-                <svg class="size-3.5 text-ink-gray-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-gray-2 border border-outline-gray-3 px-3 py-1 text-xs font-semibold text-ink-gray-7">
+                <svg class="size-3.5 text-ink-gray-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span>{{ __('The code expires in {0} minutes.', [expiryMinutes]) }}</span>
@@ -447,7 +454,12 @@
             </div>
             <button
               :disabled="busy || otp.length !== 6"
-              class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
+              class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm"
+              :class="
+                busy || otp.length !== 6
+                  ? 'bg-surface-gray-3 text-ink-gray-5 border border-outline-gray-3 cursor-not-allowed shadow-none'
+                  : 'bg-[#bc1823] text-white hover:bg-[#a3141d]'
+              "
             >
               <span>{{ busy ? __('Verifying…') : __('Verify and continue') }}</span>
               <span v-if="!busy" class="text-base">→</span>
@@ -492,43 +504,43 @@
                 identityPreview.email ||
                 identityPreview.phone
               "
-              class="mb-7 rounded-2xl border border-[#f0d6d8] bg-[#fdf2f3]/40 p-5 shadow-sm"
+              class="mb-7 rounded-2xl border-2 border-[#f0d6d8] bg-[#fdf2f3] p-5 shadow-sm"
               :aria-label="__('Verified identity')"
             >
               <div class="flex items-center gap-3.5">
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white font-semibold text-sm shadow-sm">
+                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white font-bold text-base shadow-sm ring-4 ring-emerald-100">
                   ✓
                 </div>
                 <div>
                   <div class="flex items-center gap-2">
-                    <h2 class="text-sm font-semibold text-ink-gray-9">
+                    <h2 class="text-sm font-bold text-ink-gray-9">
                       {{ __('Verified identity') }}
                     </h2>
-                    <span class="rounded-full bg-white/90 border border-[#edc5c8] px-2 py-0.5 text-[10px] font-semibold text-[#9e1720] uppercase tracking-wide">
+                    <span class="rounded-full bg-white border border-[#bc1823]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#bc1823] uppercase tracking-wide">
                       {{ __('Registry Verified') }}
                     </span>
                   </div>
                   <p
                     v-if="identityPreview.full_name"
-                    class="mt-0.5 text-base font-semibold text-ink-gray-9"
+                    class="mt-0.5 text-base sm:text-lg font-bold text-ink-gray-9"
                   >
                     {{ identityPreview.full_name }}
                   </p>
                 </div>
               </div>
-              <div class="mt-4 grid gap-2 border-t border-[#f0d6d8]/60 pt-3 text-xs text-ink-gray-6 sm:grid-cols-2">
+              <div class="mt-4 grid gap-2 border-t border-[#f0d6d8] pt-3 text-xs sm:grid-cols-2">
                 <p
                   v-if="identityPreview.email"
-                  class="flex items-center gap-2 font-medium"
+                  class="flex items-center gap-2 font-semibold text-ink-gray-8"
                 >
-                  <span class="text-ink-gray-4">✉</span>
+                  <span class="text-ink-gray-6 font-bold">✉</span>
                   <span>{{ __('Email: {0}', [identityPreview.email]) }}</span>
                 </p>
                 <p
                   v-if="identityPreview.phone"
-                  class="flex items-center gap-2 font-medium"
+                  class="flex items-center gap-2 font-semibold text-ink-gray-8"
                 >
-                  <span class="text-ink-gray-4">✆</span>
+                  <span class="text-ink-gray-6 font-bold">✆</span>
                   <span>{{ __('Phone: {0}', [identityPreview.phone]) }}</span>
                 </p>
               </div>
@@ -538,7 +550,7 @@
               <h3 class="text-base font-semibold text-ink-gray-9">
                 {{ __('Select facilities to onboard') }}
               </h3>
-              <p class="mt-1 text-sm leading-6 text-ink-gray-6">
+              <p class="mt-1 text-sm leading-6 text-ink-gray-7">
                 {{
                   __(
                     'Select all eligible facilities you want to add under the same Opt-In Network.',
@@ -549,7 +561,7 @@
 
             <p
               v-if="!facilities.length"
-              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 text-sm leading-6 text-ink-gray-6"
+              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 text-sm leading-6 text-ink-gray-7"
               role="status"
             >
               {{
@@ -565,10 +577,10 @@
                 class="flex gap-4 rounded-2xl border p-5 transition-all"
                 :class="
                   facility.onboarding_eligible !== true || facility.onboarding_blocked
-                    ? 'cursor-not-allowed border-outline-gray-2 bg-surface-gray-1/70 opacity-75'
+                    ? 'cursor-not-allowed border-outline-gray-2 bg-surface-gray-1'
                     : selectedFacilities.includes(facility.facility_id)
-                      ? 'cursor-pointer border-[#bc1823] bg-[#fdf2f3]/40 ring-2 ring-[#bc1823]/20 shadow-sm'
-                      : 'cursor-pointer border-outline-gray-2 bg-white/90 hover:border-[#f0d6d8] hover:shadow-sm'
+                      ? 'cursor-pointer border-2 border-[#bc1823] bg-[#fdf2f3] ring-2 ring-[#bc1823]/20 shadow-sm'
+                      : 'cursor-pointer border border-outline-gray-2 bg-white hover:border-[#f0d6d8] hover:shadow-sm'
                 "
               >
                 <input
@@ -576,44 +588,44 @@
                   type="checkbox"
                   :value="facility.facility_id"
                   :disabled="facility.onboarding_eligible !== true || facility.onboarding_blocked"
-                  class="mt-1 size-5 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20"
+                  class="mt-1 size-5 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20 disabled:cursor-not-allowed disabled:opacity-40"
                 />
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center justify-between gap-2">
-                    <strong class="text-base font-semibold text-ink-gray-9">
+                    <strong class="text-base font-bold text-ink-gray-9">
                       {{ facility.facility_name || facility.mfl_code }}
                     </strong>
                     <span
                       v-if="facility.facility_level || facility.classification"
-                      class="inline-flex items-center rounded-full bg-surface-gray-2 border border-outline-gray-2 px-2.5 py-0.5 text-xs font-medium text-ink-gray-7"
+                      class="inline-flex items-center rounded-full bg-surface-gray-2 border border-outline-gray-3 px-2.5 py-0.5 text-xs font-semibold text-ink-gray-8"
                     >
                       {{ facility.facility_level || facility.classification }}
                     </span>
                   </div>
-                  <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-ink-gray-5">
-                    <span class="font-medium text-ink-gray-7">{{ facility.facility_type || __('Facility') }}</span>
-                    <span>·</span>
-                    <span>{{ facility.classification || __('Classification pending') }}</span>
-                    <span>·</span>
-                    <span class="rounded bg-surface-gray-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-gray-7 border border-outline-gray-2">
+                  <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                    <span class="font-semibold text-ink-gray-8">{{ facility.facility_type || __('Facility') }}</span>
+                    <span class="text-ink-gray-4">·</span>
+                    <span class="text-ink-gray-7">{{ facility.classification || __('Classification pending') }}</span>
+                    <span class="text-ink-gray-4">·</span>
+                    <span class="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] font-bold text-ink-gray-9 border border-outline-gray-3">
                       {{ facility.mfl_code }}
                     </span>
                   </div>
                   <span
                     v-if="facility.onboarding_blocked"
-                    class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700"
+                    class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-800"
                     data-testid="facility-already-onboarded"
                   >
-                    <svg class="size-4 shrink-0 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="size-4 shrink-0 text-rose-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                     {{ __('Already onboarded. This facility cannot be selected to proceed.') }}
                   </span>
                   <span
                     v-else-if="facility.onboarding_eligible !== true"
-                    class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-800"
+                    class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-bold text-amber-900"
                   >
-                    <svg class="size-4 shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="size-4 shrink-0 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     {{
@@ -632,7 +644,12 @@
           </div>
           <button
             :disabled="!selectedFacilities.length"
-            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
+            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm"
+            :class="
+              !selectedFacilities.length
+                ? 'bg-surface-gray-3 text-ink-gray-5 border border-outline-gray-3 cursor-not-allowed shadow-none'
+                : 'bg-[#bc1823] text-white hover:bg-[#a3141d]'
+            "
           >
             <span>{{ __('Continue to pricing') }}</span>
             <span class="text-base">→</span>
@@ -860,29 +877,29 @@
                         >
                           {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? '$0' : money(item.price_ex_vat ?? item.price, item.currency) }}
                         </span>
-                        <span class="text-xs text-ink-gray-5 font-normal">
+                        <span class="text-xs text-ink-gray-6 font-medium">
                           {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Free') : __('/ month (excl. VAT)') }}
                         </span>
                       </div>
-                      <p v-if="item.gross_total" class="mt-1 text-[11px] text-ink-gray-5">
+                      <p v-if="item.gross_total" class="mt-1 text-[11px] text-ink-gray-7 font-medium">
                         {{ item.vat_label || __('VAT') }} {{ money(item.vat_amount, item.currency) }} · {{ __('Total') }} {{ money(item.gross_total, item.currency) }}
                       </p>
 
-                      <p class="mt-2 text-xs text-ink-gray-6 leading-snug min-h-[1.75rem]">
+                      <p class="mt-2 text-xs text-ink-gray-7 leading-snug min-h-[1.75rem]">
                         {{ packageMetadata(item).audience }}
                       </p>
 
-                      <div class="mt-4 flex items-center gap-2 rounded-lg bg-[#fdf2f3] px-3 py-2 text-xs font-semibold text-[#bc1823] border border-[#f0d6d8]/60">
-                        <span class="text-amber-500">🪙</span>
+                      <div class="mt-4 flex items-center gap-2 rounded-lg bg-[#fdf2f3] px-3 py-2 text-xs font-semibold text-[#bc1823] border border-[#f0d6d8]">
+                        <span class="text-amber-600">🪙</span>
                         <span><strong class="text-ink-gray-9">{{ item.token_quantity }}</strong> {{ __('Tokens included') }}</span>
                       </div>
 
-                      <p class="mt-3 text-xs leading-relaxed text-ink-gray-6">
+                      <p class="mt-3 text-xs leading-relaxed text-ink-gray-7">
                         {{ item.coverage_summary || item.description }}
                       </p>
 
                       <div class="mt-6 pt-5 border-t border-outline-gray-2">
-                        <p class="text-[10px] font-semibold uppercase tracking-wider text-ink-gray-5 mb-3">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-ink-gray-7 mb-3">
                           {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0
                             ? __('FEATURES')
                             : (item.item_code?.includes('CORE') || item.display_name === 'Pro'
@@ -890,16 +907,16 @@
                               : __('PRO FEATURES +'))
                           }}
                         </p>
-                        <ul class="space-y-2.5 text-xs text-ink-gray-7">
+                        <ul class="space-y-2.5 text-xs text-ink-gray-8">
                           <li
                             v-for="feature in packageMetadata(item).features"
                             :key="feature"
                             class="flex items-start gap-2.5"
                           >
-                            <svg class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
                             </svg>
-                            <span>{{ feature }}</span>
+                            <span class="font-medium">{{ feature }}</span>
                           </li>
                         </ul>
                       </div>
@@ -911,7 +928,7 @@
                         class="w-full py-2.5 px-4 rounded-xl text-xs font-semibold transition-all duration-150"
                         :class="packageSelections[facility.facility_id] === item.item_code
                           ? 'bg-[#bc1823] text-white shadow-sm hover:bg-[#a3141d]'
-                          : 'border border-outline-gray-2 text-ink-gray-8 bg-white hover:bg-[#fdf2f3] hover:text-[#bc1823] hover:border-[#f0d6d8]'"
+                          : 'border border-outline-gray-3 text-ink-gray-9 bg-white hover:bg-[#fdf2f3] hover:text-[#bc1823] hover:border-[#f0d6d8]'"
                         @click.stop="packageSelections[facility.facility_id] = item.item_code"
                       >
                         {{ packageSelections[facility.facility_id] === item.item_code ? __('✓ Selected') : __('Choose plan') }}
@@ -931,7 +948,12 @@
           </div>
           <button
             :disabled="catalogBusy || catalogError || !catalogCurrent || !allPackagesSelected || termsBusy"
-            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
+            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm"
+            :class="
+              catalogBusy || catalogError || !catalogCurrent || !allPackagesSelected || termsBusy
+                ? 'bg-surface-gray-3 text-ink-gray-5 border border-outline-gray-3 cursor-not-allowed shadow-none'
+                : 'bg-[#bc1823] text-white hover:bg-[#a3141d]'
+            "
           >
             <span>{{
               catalogBusy
@@ -1143,7 +1165,12 @@
           </div>
           <button
             :disabled="busy || !reviewReady"
-            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d] disabled:opacity-50 disabled:shadow-none"
+            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm"
+            :class="
+              busy || !reviewReady
+                ? 'bg-surface-gray-3 text-ink-gray-5 border border-outline-gray-3 cursor-not-allowed shadow-none'
+                : 'bg-[#bc1823] text-white hover:bg-[#a3141d]'
+            "
           >
             <span>{{
               busy ? __('Submitting…') : __('Submit facility onboarding')

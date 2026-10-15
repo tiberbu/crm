@@ -49,9 +49,9 @@ const notice = ref(null)
 const bankTransferOis = ref('')
 
 function stepClass(step) {
-  if (step.status === 'complete') return 'bg-emerald-600 text-white'
-  if (step.status === 'current') return 'bg-[#bc1823] text-white'
-  return 'bg-surface-gray-2 text-ink-gray-5'
+  if (step.status === 'complete') return 'bg-emerald-600 text-white font-bold shadow-sm'
+  if (step.status === 'current') return 'bg-[#bc1823] text-white font-bold shadow-sm ring-2 ring-[#bc1823]/20'
+  return 'bg-surface-gray-2 text-ink-gray-7 font-bold border border-outline-gray-3'
 }
 
 function stepLabel(step) {
@@ -322,16 +322,16 @@ onMounted(async () => {
           <div
             class="rounded-xl border border-white/80 bg-white/75 p-4 shadow-sm backdrop-blur-md transition hover:border-[#f0d6d8] hover:shadow-md"
           >
-            <div class="flex items-center justify-between text-ink-gray-5 mb-2">
-              <span class="text-[10px] font-semibold uppercase tracking-wider text-ink-gray-5">
+            <div class="flex items-center justify-between text-ink-gray-6 mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-ink-gray-7">
                 Facilities
               </span>
               <span class="text-base">🏥</span>
             </div>
-            <p class="text-2xl sm:text-3xl font-semibold text-[#bc1823] leading-none">
+            <p class="text-2xl sm:text-3xl font-bold text-[#bc1823] leading-none">
               {{ facilityCount }}
             </p>
-            <p class="mt-2 text-xs text-ink-gray-5">
+            <p class="mt-2 text-xs font-medium text-ink-gray-6">
               Linked to your account
             </p>
           </div>
@@ -339,16 +339,16 @@ onMounted(async () => {
           <div
             class="rounded-xl border border-white/80 bg-white/75 p-4 shadow-sm backdrop-blur-md transition hover:border-[#f0d6d8] hover:shadow-md"
           >
-            <div class="flex items-center justify-between text-ink-gray-5 mb-2">
-              <span class="text-[10px] font-semibold uppercase tracking-wider text-ink-gray-5">
+            <div class="flex items-center justify-between text-ink-gray-6 mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-ink-gray-7">
                 Token Orders
               </span>
               <span class="text-base">📦</span>
             </div>
-            <p class="text-2xl sm:text-3xl font-semibold text-[#bc1823] leading-none">
+            <p class="text-2xl sm:text-3xl font-bold text-[#bc1823] leading-none">
               {{ invoiceReadyOrderCount }}
             </p>
-            <p class="mt-2 text-xs text-ink-gray-5">
+            <p class="mt-2 text-xs font-medium text-ink-gray-6">
               Ready to invoice
             </p>
           </div>
@@ -356,16 +356,16 @@ onMounted(async () => {
           <div
             class="rounded-xl border border-white/80 bg-white/75 p-4 shadow-sm backdrop-blur-md transition hover:border-emerald-200 hover:shadow-md"
           >
-            <div class="flex items-center justify-between text-ink-gray-5 mb-2">
-              <span class="text-[10px] font-semibold uppercase tracking-wider text-ink-gray-5">
+            <div class="flex items-center justify-between text-ink-gray-6 mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-ink-gray-7">
                 Open Invoices
               </span>
               <span class="text-base">💳</span>
             </div>
-            <p class="text-2xl sm:text-3xl font-semibold text-emerald-700 leading-none">
+            <p class="text-2xl sm:text-3xl font-bold text-emerald-700 leading-none">
               {{ openInvoiceCount }}
             </p>
-            <p class="mt-2 text-xs text-ink-gray-5">
+            <p class="mt-2 text-xs font-medium text-ink-gray-6">
               Due or awaiting payment
             </p>
           </div>
@@ -373,16 +373,16 @@ onMounted(async () => {
           <div
             class="rounded-xl border border-white/80 bg-white/75 p-4 shadow-sm backdrop-blur-md transition hover:border-emerald-200 hover:shadow-md"
           >
-            <div class="flex items-center justify-between text-ink-gray-5 mb-2">
-              <span class="text-[10px] font-semibold uppercase tracking-wider text-ink-gray-5">
+            <div class="flex items-center justify-between text-ink-gray-6 mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-ink-gray-7">
                 Network Status
               </span>
               <span class="text-base">🛡️</span>
             </div>
-            <p class="text-base sm:text-lg font-semibold text-emerald-700 leading-none mt-1">
+            <p class="text-base sm:text-lg font-bold text-emerald-700 leading-none mt-1">
               Active Access
             </p>
-            <p class="mt-3 text-xs text-ink-gray-5">
+            <p class="mt-3 text-xs font-medium text-ink-gray-6">
               Registry synchronized
             </p>
           </div>
