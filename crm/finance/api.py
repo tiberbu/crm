@@ -1,7 +1,7 @@
 import calendar
 import json
-from functools import wraps
 from datetime import date
+from functools import wraps
 
 import frappe
 from frappe import _
@@ -1865,7 +1865,7 @@ def get_document_workflow_transitions(doctype, name):
 	name = _request_text(name, "Document Name", required=True)
 	_require_document_permission(doctype, name, "read")
 
-	from frappe.model.workflow import get_workflow, get_transitions
+	from frappe.model.workflow import get_transitions, get_workflow
 
 	workflow = get_workflow(doctype)
 	if not workflow:
@@ -3514,11 +3514,81 @@ def global_search(query, company=None, limit=20):
 	return results
 
 
+@frappe.whitelist()
+def get_token_liability_summary(company=None):
+	"""Return aggregate and facility-level visibility of promotional token service liabilities."""
+	company = _resolve_company(company)
+	base_rate = 6.00
+	trial_item = "CV-TOKEN-FREE"
+
+	deal_facilities = frappe.db.sql(
+		"""
+		SELECT
+			df.name,
+			df.parent AS deal,
+			df.facility_name,
+			df.mfl_code,
+			df.facility_level,
+			df.cx_token_package_item,
+			df.cx_token_package_quantity,
+			df.cx_token_package_price,
+			df.creation,
+			d.organization_name,
+			d.status AS deal_status
+		FROM `tabCRM Deal Facility` df
+		JOIN `tabCRM Deal` d ON d.name = df.parent
+		WHERE df.cx_token_package_item = %s OR df.cx_token_package_item LIKE '%%FREE%%'
+		ORDER BY df.creation DESC
+		""",
+		(trial_item,),
+		as_dict=True,
+	)
+
+	total_facilities = len(deal_facilities)
+	total_tokens = sum(int(r.get("cx_token_package_quantity") or 400) for r in deal_facilities)
+	total_liability_kes = total_tokens * base_rate
+
+	quote_rows = frappe.db.sql(
+		"""
+		SELECT
+			name,
+			party_name,
+			crm_deal,
+			crm_token_package_item,
+			crm_token_facility_mfl,
+			transaction_date,
+			status,
+			docstatus
+		FROM `tabQuotation`
+		WHERE crm_token_package_item = %s OR crm_token_package_item LIKE '%%FREE%%'
+		ORDER BY transaction_date DESC
+		""",
+		(trial_item,),
+		as_dict=True,
+	)
+
+	return {
+		"company": company,
+		"base_token_rate": base_rate,
+		"trial_item_code": trial_item,
+		"tokens_per_trial": 400,
+		"liability_per_trial_kes": 400 * base_rate,
+		"summary": {
+			"total_trial_facilities": total_facilities,
+			"total_promotional_tokens_issued": total_tokens,
+			"total_promotional_liability_kes": total_liability_kes,
+		},
+		"trial_facilities": deal_facilities,
+		"trial_quotations": quote_rows,
+	}
+
+
 # Keep the public boundary fail-closed even when a new endpoint does not need a
 # document-specific role check. The individual handlers retain their native
 # Document/company permission checks; this guard only controls entry to the
 # accounting workspace itself.
 _PUBLIC_FINANCE_API_NAMES = (
+	"get_token_liability_summary",
 	"get_accessible_companies",
 	"get_finance_kpis",
 	"get_pending_actions",

@@ -888,10 +888,10 @@
                         <span
                           class="text-3xl font-semibold tracking-tight text-ink-gray-9"
                         >
-                          {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? '$0' : money(item.price_ex_vat ?? item.price, item.currency) }}
+                          {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? 'KES 0' : money(item.price_ex_vat ?? item.price, item.currency) }}
                         </span>
                         <span class="text-xs text-ink-gray-6 font-medium">
-                          {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Free') : __('/ month (excl. VAT)') }}
+                          {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Free (Zero Commitment)') : __('/ month (excl. VAT)') }}
                         </span>
                       </div>
                       <p v-if="item.gross_total" class="mt-1 text-[11px] text-ink-gray-7 font-medium">

@@ -573,6 +573,14 @@ def _default_calculator_config() -> dict[str, Any]:
 		"default_operating_days": 24,
 		"service_points": [
 			{
+				"id": "registration",
+				"name": "Patient registration / check-in",
+				"tokens": 6,
+				"default_frequency": 0.2,
+				"description": "Per completed patient registration / visit event (typically ~20% new intakes)",
+				"applies_to": ["opd", "ipd"],
+			},
+			{
 				"id": "consultation",
 				"name": "Consultation visit",
 				"tokens": 3,
@@ -1629,6 +1637,15 @@ def _create_initial_deal_quote(deal, customer, facility, package):
 			"order_type": "Sales",
 			"crm_deal": deal.name,
 		})
+		tokens = int(package.get("token_quantity") or 400)
+		description = package.get("description") or package.get("display_name") or package["item_code"]
+		if package.get("item_code") == "CV-TOKEN-FREE" or price == 0:
+			liability_val = float(tokens * 6.0)
+			description = (
+				f"{package.get('display_name', 'Free Trial')}: {tokens} Care Tokens granted with zero customer financial commitment. "
+				f"Promotional Service Delivery Liability: KES {liability_val:,.2f} (evaluated at KES 6.00/token baseline). "
+				"Customer Net Payable: KES 0.00."
+			)
 		quote.append(
 			"items",
 			{
@@ -1636,7 +1653,7 @@ def _create_initial_deal_quote(deal, customer, facility, package):
 				"qty": 1,
 				"price_list_rate": price,
 				"rate": price,
-				"description": package.get("description") or package.get("display_name") or package["item_code"],
+				"description": description,
 			},
 		)
 		if frappe.db.has_column("Quotation", "crm_token_facility_mfl"):

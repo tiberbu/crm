@@ -21,40 +21,40 @@ PACKAGES = [
 		"item_name": "Free Community Care",
 		"rate": 0,
 		"display_name": "Free Trial",
-		"description": "A complimentary starter package for health posts, dispensaries, and solo clinics to verify facility records and start digital care workflows.",
-		"coverage_summary": "350 complimentary tokens to test 10 full clinical encounters with lab, prescriptions, imaging, and claims.",
-		"token_quantity": 350,
-		"coverage_metrics": '{"audience": "For trialing clinics & new facilities", "badge": "Free Trial", "features": ["350 Care Tokens included", "Covers 10 Full Patient Journeys", "Consultations, Labs & Prescriptions", "Diagnostic Imaging & KES 5k Claims"]}',
+		"description": "A complimentary starter package for health posts, dispensaries, and solo clinics to verify facility records and start digital care workflows with zero financial commitment.",
+		"coverage_summary": "400 complimentary tokens to test 10 full clinical encounters with zero commitment. Promotional service liability: KES 2,400 (at KES 6.00/token base).",
+		"token_quantity": 400,
+		"coverage_metrics": '{"audience": "For trialing clinics & new facilities", "badge": "Free Trial • No Commitment", "features": ["400 Care Tokens included", "Covers 10 Full Patient Journeys", "Registration, Consultations & Vitals", "Labs, Prescriptions & Diagnostics", "Diagnostic Imaging & KES 5k Claims", "KES 0 Customer Commitment"]}',
 	},
 	{
 		"item_code": "CV-TOKEN-STARTER",
 		"item_name": "Starter Care Operations",
-		"rate": 6096,
+		"rate": 6000,
 		"display_name": "Starter",
-		"description": "Flexible entry tier for small outpatient clinics, pilots, and baseline top-ups.",
-		"coverage_summary": "1,000 tokens at KES 6.10/token. Designed for small facilities with ~100 patient visits/month.",
+		"description": "Flexible entry tier for small outpatient clinics, solo doctors, and baseline top-ups.",
+		"coverage_summary": "1,000 tokens at KES 6.00/token base rate. Designed for small facilities with ~25 full clinical encounters or ~70 outpatient visits.",
 		"token_quantity": 1000,
-		"coverage_metrics": '{"audience": "For small OPD clinics & pilots", "badge": "Entry Tier", "features": ["1,000 Care Tokens included", "KES 6.10 per token base rate", "Outpatient Consultations & Vitals", "Prescriptions & Laboratory Orders", "Flexible Top-Ups Allowed"]}',
+		"coverage_metrics": '{"audience": "For small OPD clinics & pilots", "badge": "Entry Tier", "features": ["1,000 Care Tokens included", "KES 6.00 per token base rate", "Outpatient Consultations & Vitals", "Prescriptions & Laboratory Orders", "Flexible Top-Ups Allowed"]}',
 	},
 	{
 		"item_code": "CV-TOKEN-GROWTH",
 		"item_name": "Growth Care Operations",
-		"rate": 13970,
+		"rate": 15000,
 		"display_name": "Growth",
-		"description": "Recommended tier for growing outpatient facilities with steady daily patient volume.",
-		"coverage_summary": "2,500 tokens at KES 5.59/token (8.3% saving vs Starter). Designed for ~200–250 patient visits/month.",
-		"token_quantity": 2500,
-		"coverage_metrics": '{"audience": "For active & growing clinics", "badge": "Popular • Save 8.3%", "features": ["2,500 Care Tokens included", "KES 5.59 per token (Save 8.3%)", "Multi-Department Workflows", "Diagnostic Imaging & Labs", "Standard SLA Support"]}',
+		"description": "Recommended tier for growing outpatient facilities with steady daily patient volume and diagnostics.",
+		"coverage_summary": "2,800 tokens (includes 300 bonus tokens • +12% yield). Effective rate KES 5.36/token. Designed for ~70 full clinical encounters or ~200 outpatient visits.",
+		"token_quantity": 2800,
+		"coverage_metrics": '{"audience": "For active & growing clinics", "badge": "Popular • +12% Bonus", "features": ["2,800 Care Tokens (300 Bonus)", "KES 5.36 per token effective rate", "Multi-Department Workflows", "Diagnostic Imaging & Labs", "Standard SLA Support"]}',
 	},
 	{
 		"item_code": "CV-TOKEN-SCALE",
 		"item_name": "Scale Care Operations",
-		"rate": 25400,
+		"rate": 30000,
 		"display_name": "Scale",
 		"description": "Best-value tier for high-volume outpatient clinics and multi-service hospitals with inpatient beds.",
-		"coverage_summary": "5,000 tokens at KES 5.08/token (16.7% saving vs Starter). Designed for ~400–500 patient visits/month.",
-		"token_quantity": 5000,
-		"coverage_metrics": '{"audience": "For high-volume clinics & hospitals", "badge": "Best Value • Save 16.7%", "features": ["5,000 Care Tokens included", "KES 5.08 per token (Save 16.7%)", "Full Inpatient Admission Support", "Surgical & Medical Procedures", "Priority Commercial Support"]}',
+		"coverage_summary": "6,250 tokens (includes 1,250 bonus tokens • +25% yield). Effective rate KES 4.80/token. Designed for ~156 full clinical encounters or ~440 outpatient visits.",
+		"token_quantity": 6250,
+		"coverage_metrics": '{"audience": "For high-volume clinics & hospitals", "badge": "Best Value • +25% Bonus", "features": ["6,250 Care Tokens (1,250 Bonus)", "KES 4.80 per token effective rate", "Full Inpatient Admission Support", "Surgical & Medical Procedures", "Priority Commercial Support"]}',
 	},
 ]
 
@@ -88,6 +88,7 @@ def run():
 	settings.set("token_packages", rows)
 	if hasattr(settings, "token_calc_monthly_platform_fee") or frappe.get_meta("CRM Opt-In Settings").has_field("token_calc_monthly_platform_fee"):
 		import json
+
 		from crm.api.facility_onboarding import _default_calculator_config
 
 		settings.token_calc_monthly_platform_fee = 500

@@ -41,6 +41,7 @@ const fallbackConfig = {
   default_avg_bill: 1500,
   default_operating_days: 24,
   service_points: [
+    { id: 'registration', name: 'Patient registration / check-in', tokens: 6, default_frequency: 0.2, applies_to: ['opd', 'ipd'] },
     { id: 'consultation', name: 'Consultation visit', tokens: 3, default_frequency: 1.0, applies_to: ['opd', 'ipd'] },
     { id: 'laboratory', name: 'Laboratory order', tokens: 6, default_frequency: 0.5, applies_to: ['opd', 'ipd'] },
     { id: 'prescription', name: 'Prescription processing', tokens: 6, default_frequency: 0.5, applies_to: ['opd', 'ipd'] },

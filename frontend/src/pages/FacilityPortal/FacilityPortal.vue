@@ -926,12 +926,12 @@ onMounted(async () => {
                     v-if="Number(item.price_ex_vat ?? item.price ?? 0) === 0"
                     class="rounded-full bg-surface-gray-2 border border-outline-gray-2 px-2 py-0.5 text-[10px] font-semibold text-ink-gray-7"
                   >
-                    Free Tier
+                    Free Trial • No Commitment
                   </span>
                 </div>
                 <p class="mt-3 text-2xl font-semibold text-ink-gray-9">
-                  {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? '$0' : money(item.price_ex_vat ?? item.price, item.currency) }}
-                  <span class="text-xs font-normal text-ink-gray-5">excl. VAT</span>
+                  {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? 'KES 0' : money(item.price_ex_vat ?? item.price, item.currency) }}
+                  <span class="text-xs font-normal text-ink-gray-5">{{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? 'Zero commitment' : 'excl. VAT' }}</span>
                 </p>
                 <p v-if="item.gross_total" class="mt-1 text-xs text-ink-gray-5">
                   {{ item.vat_label || 'VAT' }}
@@ -957,8 +957,10 @@ onMounted(async () => {
                   purchaseBusy
                     ? 'Working…'
                     : existingOrder(item)
-                      ? `Resume order ${existingOrder(item).name}`
-                      : 'Create order'
+                      ? `Order active (${existingOrder(item).name})`
+                      : Number(item.price_ex_vat ?? item.price ?? 0) === 0
+                        ? 'Activate Free Trial (No commitment)'
+                        : 'Create order'
                 }}
               </button>
             </article>

@@ -409,12 +409,21 @@ def _create_or_resume_order(submission, facility_mfl, package, key, source_quote
 		"crm_token_facility_mfl": facility_mfl,
 		"crm_token_package_item": package["item_code"],
 	}
+	tokens = int(package.get("token_quantity") or 400)
+	description = package.get("description") or package.get("display_name") or package["item_code"]
+	if package.get("item_code") == "CV-TOKEN-FREE" or price == 0:
+		liability_val = float(tokens * 6.0)
+		description = (
+			f"{package.get('display_name', 'Free Trial')}: {tokens} Care Tokens granted with zero customer financial commitment. "
+			f"Promotional Service Delivery Liability: KES {liability_val:,.2f} (evaluated at KES 6.00/token baseline). "
+			"Customer Net Payable: KES 0.00."
+		)
 	item = {
 		"item_code": package["item_code"],
 		"qty": 1,
 		"price_list_rate": price,
 		"rate": price,
-		"description": package["description"],
+		"description": description,
 	}
 	if quotation_name:
 		quotation = frappe.get_doc("Quotation", quotation_name)
