@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { call } from 'frappe-ui'
+import { call, Dialog } from 'frappe-ui'
 import TokenCalculator from '@/components/TokenCalculator.vue'
 import {
   facilityLabel,
@@ -49,6 +49,7 @@ const busyId = ref('')
 const notice = ref(null)
 const bankTransferOis = ref('')
 const selectedPortalPackageCode = ref('')
+const portalCalculatorDialogOpen = ref(false)
 
 const currentFacilityName = computed(() => {
   const list = purchaseFacilities()
@@ -62,6 +63,7 @@ function onCalculatorSelectPackage(code) {
 
 function onCalculatorApplyPlan(pkg) {
   selectedPortalPackageCode.value = pkg.item_code
+  portalCalculatorDialogOpen.value = false
   buyPackage(pkg)
 }
 
@@ -890,18 +892,49 @@ onMounted(async () => {
           {{ purchaseMessage }}
         </p>
 
-        <!-- Interactive Token Sizing Calculator -->
-        <div class="mt-8">
-          <TokenCalculator
-            :packages="context.token_packages"
-            :config="context.calculator_config"
-            :selected-package-code="selectedPortalPackageCode"
-            :facility-name="currentFacilityName"
-            context="portal"
-            @select-package="onCalculatorSelectPackage"
-            @apply-plan="onCalculatorApplyPlan"
-          />
+        <!-- Token Sizing Calculator Trigger Banner -->
+        <div class="mt-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-xl border border-outline-gray-2 bg-gradient-to-r from-surface-gray-1 to-white p-4 shadow-sm">
+          <div class="flex items-center gap-3">
+            <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#fdf2f3] text-lg text-[#bc1823] border border-[#f0d6d8]">
+              🧮
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-ink-gray-9">
+                {{ __('Need help sizing tokens for :facility?', { facility: currentFacilityName || 'your facility' }) }}
+              </p>
+              <p class="text-xs text-ink-gray-6 mt-0.5">
+                {{ __('Simulate monthly token requirements based on daily visits, lab tests, and claim values.') }}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-outline-gray-3 bg-white px-3.5 py-2 text-xs font-semibold text-ink-gray-8 shadow-sm transition hover:border-[#bc1823] hover:text-[#bc1823] hover:bg-[#fdf2f3]/50"
+            @click="portalCalculatorDialogOpen = true"
+          >
+            <span>{{ __('Open Sizing Calculator') }}</span>
+            <span class="text-sm">→</span>
+          </button>
         </div>
+
+        <!-- Token Calculator Dialog -->
+        <Dialog
+          v-model:open="portalCalculatorDialogOpen"
+          :title="__('CareVerse Token Sizing Calculator')"
+          size="4xl"
+        >
+          <div class="p-1 max-h-[80vh] overflow-y-auto">
+            <TokenCalculator
+              :packages="context.token_packages"
+              :config="context.calculator_config"
+              :selected-package-code="selectedPortalPackageCode"
+              :facility-name="currentFacilityName"
+              context="portal"
+              @select-package="onCalculatorSelectPackage"
+              @apply-plan="onCalculatorApplyPlan"
+            />
+          </div>
+        </Dialog>
 
         <div class="mt-8">
           <h3 class="text-sm font-bold uppercase tracking-wider text-ink-gray-7 mb-4">
