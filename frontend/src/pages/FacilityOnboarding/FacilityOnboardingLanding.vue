@@ -6,7 +6,8 @@
     </div>
     <header class="sticky top-0 z-30 border-b border-outline-gray-2 bg-white/80 backdrop-blur-md">
       <div
-        class="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-8"
+        class="mx-auto flex items-center justify-between px-5 py-3.5 sm:px-8 transition-all duration-300"
+        :class="stage === 'pricing' ? 'max-w-[1520px]' : 'max-w-6xl'"
       >
         <div class="flex items-center gap-3">
           <div
@@ -44,7 +45,10 @@
         </div>
       </div>
     </header>
-    <div class="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-12">
+    <div
+      class="mx-auto px-5 py-8 sm:px-8 sm:py-10 transition-all duration-300"
+      :class="stage === 'pricing' ? 'max-w-[1520px]' : 'max-w-6xl'"
+    >
       <section
         v-if="stage === 'welcome'"
         class="grid gap-10 lg:grid-cols-[1.08fr_.92fr] lg:items-center"
@@ -660,43 +664,173 @@
           class="space-y-6"
           @submit.prevent="continuePricing"
         >
-          <div
-            class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
+          <!-- Sizing Calculator Dialog -->
+          <Dialog
+            v-model:open="calculatorDialogOpen"
+            :title="__('CareVerse Token Sizing Calculator')"
+            size="4xl"
           >
-            <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="p-1 max-h-[80vh] overflow-y-auto">
+              <TokenCalculator
+                v-if="activePricingFacility"
+                :packages="catalog.packages"
+                :config="catalog.calculator_config"
+                :selected-package-code="packageSelections[activePricingFacility.facility_id]"
+                :facility-name="activePricingFacility.facility_name || activePricingFacility.mfl_code"
+                context="onboarding"
+                @select-package="onCalculatorSelectPackage"
+                @apply-plan="onCalculatorApplyPlan"
+              />
+            </div>
+          </Dialog>
+
+          <div
+            class="rounded-2xl border border-outline-gray-2 bg-white/95 p-5 sm:p-7 shadow-sm backdrop-blur-md"
+          >
+            <!-- Integrated Pricing Header Strip -->
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-outline-gray-2">
               <div>
-                <span
-                  v-if="catalog.network?.display_name"
-                  class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-3 py-1 text-xs font-semibold text-[#bc1823]"
-                >
-                  <span class="size-1.5 rounded-full bg-emerald-500"></span>
-                  {{ catalog.network.display_name }}
-                </span>
-                <h2 class="mt-2 text-2xl font-semibold tracking-tight text-ink-gray-9">
+                <div class="flex items-center gap-2 flex-wrap mb-1">
+                  <span
+                    v-if="catalog.network?.display_name"
+                    class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-2.5 py-0.5 text-xs font-semibold text-[#bc1823]"
+                  >
+                    <span class="size-1.5 rounded-full bg-emerald-500"></span>
+                    {{ catalog.network.display_name }}
+                  </span>
+                  <span
+                    v-if="chosenFacilities.length === 1 && activePricingFacility"
+                    class="inline-flex items-center gap-1.5 rounded-full border border-outline-gray-2 bg-surface-gray-2 px-2.5 py-0.5 text-xs font-semibold text-ink-gray-8"
+                  >
+                    <span>🏥</span>
+                    <span>{{ activePricingFacility.facility_name || activePricingFacility.mfl_code }}</span>
+                    <span class="text-ink-gray-5 font-normal">({{ activePricingFacility.classification || activePricingFacility.facility_level || __('Facility') }}<span v-if="activePricingFacility.mfl_code"> · MFL {{ activePricingFacility.mfl_code }}</span>)</span>
+                  </span>
+                </div>
+                <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-ink-gray-9">
                   {{ __('Choose a package for each facility') }}
                 </h2>
+                <p class="text-xs text-ink-gray-6 mt-0.5">
+                  {{ __('Select the token tier that aligns with this facility’s monthly volume. All displayed prices exclude VAT.') }}
+                </p>
               </div>
-              <span class="text-xs font-medium text-ink-gray-5">
-                {{ __('All displayed prices exclude VAT') }}
-              </span>
+
+              <!-- Top-right Actions: Calculator + Info -->
+              <div class="flex items-center gap-2.5 shrink-0 self-start md:self-center">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-2 rounded-xl border border-outline-gray-3 bg-white px-3.5 py-2 text-xs font-bold text-ink-gray-8 shadow-xs transition hover:border-[#bc1823] hover:text-[#bc1823] hover:bg-[#fdf2f3]"
+                  @click="calculatorDialogOpen = true"
+                >
+                  <span class="text-sm">🧮</span>
+                  <span>{{ __('Open Sizing Calculator') }}</span>
+                  <span class="text-xs">→</span>
+                </button>
+              </div>
             </div>
-            <p
-              v-if="catalog.network?.display_name"
-              class="mt-2 text-sm leading-6 text-ink-gray-6"
+
+            <!-- Multi-Facility Switcher & Batch Action Strip (when > 1 facility) -->
+            <div
+              v-if="chosenFacilities.length > 1"
+              class="pt-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-outline-gray-2 pb-3.5"
             >
-              {{
-                __(
-                  'Choose each facility’s package separately. Consider its size and expected token use.',
-                )
-              }}
-            </p>
-            <p v-else class="mt-2 text-sm leading-6 text-ink-gray-6">
-              {{
-                __(
-                  'The token catalogue is available before you select the referring partner Network.',
-                )
-              }}
-            </p>
+              <div class="flex items-center gap-2 overflow-x-auto pb-1" role="tablist" :aria-label="__('Facilities')">
+                <button
+                  v-for="facility in chosenFacilities"
+                  :key="facility.facility_id"
+                  type="button"
+                  role="tab"
+                  :aria-selected="activePricingFacility?.facility_id === facility.facility_id"
+                  class="group relative flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all border shadow-xs"
+                  :class="activePricingFacility?.facility_id === facility.facility_id
+                    ? 'border-2 border-[#bc1823] bg-[#fdf2f3] text-[#bc1823] ring-2 ring-[#bc1823]/10'
+                    : 'border-outline-gray-2 bg-white text-ink-gray-7 hover:border-outline-gray-3 hover:text-ink-gray-9'"
+                  @click="activePricingFacilityId = facility.facility_id"
+                >
+                  <span
+                    class="flex size-2 rounded-full"
+                    :class="packageSelections[facility.facility_id] ? 'bg-emerald-500' : 'bg-amber-400'"
+                  ></span>
+                  <span class="max-w-[170px] truncate font-medium text-ink-gray-9 group-hover:text-[#bc1823]">
+                    {{ facility.facility_name || facility.mfl_code }}
+                  </span>
+                  <span
+                    v-if="packageSelections[facility.facility_id]"
+                    class="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                    :class="activePricingFacility?.facility_id === facility.facility_id
+                      ? 'bg-[#bc1823] text-white'
+                      : 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'"
+                  >
+                    {{ selectedPackageFor(facility.facility_id)?.display_name || __('Selected') }}
+                  </span>
+                  <span
+                    v-else
+                    class="text-[10px] text-amber-600 font-normal italic"
+                  >
+                    {{ __('Needs plan') }}
+                  </span>
+                </button>
+              </div>
+
+              <button
+                v-if="activePricingFacility && packageSelections[activePricingFacility.facility_id]"
+                type="button"
+                class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] bg-[#fdf2f3] hover:bg-[#fbdfe1] border border-[#f0d6d8] px-3 py-1.5 rounded-lg transition"
+                @click="applyCurrentPackageToAll"
+              >
+                <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                <span>{{ __('Apply plan to all :n facilities', { n: chosenFacilities.length }) }}</span>
+              </button>
+            </div>
+
+            <!-- Sleek Compact Partner Referral Strip -->
+            <details class="group mt-3 rounded-xl border border-outline-gray-2/80 bg-surface-gray-1/40 px-3.5 py-2 text-xs transition">
+              <summary class="flex cursor-pointer items-center justify-between font-medium text-ink-gray-7 select-none">
+                <span class="inline-flex items-center gap-2">
+                  <span>🤝</span>
+                  <span class="font-semibold text-ink-gray-8">{{ __('Referred by a partner?') }}</span>
+                  <span v-if="partnerId" class="rounded bg-[#fdf2f3] px-2 py-0.5 font-mono font-bold text-[#bc1823] border border-[#f0d6d8]">
+                    Network ID: {{ partnerId }}
+                  </span>
+                  <span v-else class="text-ink-gray-5 text-[11px]">({{ __('optional 6-digit code') }})</span>
+                </span>
+                <span class="text-ink-gray-5 text-[11px] group-open:rotate-180 transition-transform">▼</span>
+              </summary>
+              <div class="mt-3 pt-3 border-t border-outline-gray-2/80 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div class="flex items-center gap-2">
+                  <label class="text-[11px] font-semibold uppercase tracking-wider text-ink-gray-6 shrink-0">
+                    {{ __('Partner Network ID') }}:
+                  </label>
+                  <input
+                    :value="partnerId"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    maxlength="6"
+                    pattern="[0-9]{6}"
+                    :aria-invalid="Boolean(partnerId && partnerId.length !== 6)"
+                    :title="__('Enter all six digits or leave this field blank.')"
+                    aria-describedby="partner-network-help"
+                    class="block w-36 rounded-lg border border-outline-gray-2 bg-white px-3 py-1.5 font-mono text-xs shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
+                    placeholder="123456"
+                    @input="onPartnerIdInput"
+                  />
+                </div>
+                <p id="partner-network-help" class="text-[11px] text-ink-gray-5">
+                  {{ __('Links this facility to your partner network. Leave blank to use Tiberbu’s default.') }}
+                </p>
+                <span
+                  v-if="partnerId && partnerId.length !== 6"
+                  class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700"
+                  role="status"
+                >
+                  ⚠️ {{ __('Enter all 6 digits, or clear the field.') }}
+                </span>
+              </div>
+            </details>
+
+            <!-- Loading Spinner -->
             <p
               v-if="catalogBusy"
               class="mt-4 inline-flex items-center gap-2 rounded-xl bg-surface-gray-2 px-3.5 py-2 text-xs font-medium text-ink-gray-6"
@@ -711,85 +845,28 @@
               <span>{{ __('Loading token packages and current pricing…') }}</span>
             </p>
 
-            <section
-              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1/70 p-5 shadow-sm"
-            >
-              <div class="flex items-center gap-2.5">
-                <div class="flex size-7 items-center justify-center rounded-lg bg-[#fdf2f3] text-[#bc1823] font-semibold text-xs border border-[#f0d6d8]">
-                  #
-                </div>
-                <h3 class="text-sm font-semibold text-ink-gray-9">
-                  {{ __('Were you referred by a partner?') }}
-                </h3>
-              </div>
-              <p class="mt-1 text-xs leading-5 text-ink-gray-6">
-                {{
-                  __(
-                    'Enter the 6-digit Network ID your referring partner shared with you. Leave it blank to use Tiberbu’s configured default Network when one is available.',
-                  )
-                }}
-              </p>
-              <label class="mt-4 block text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
-                {{ __('Partner Network ID') }}
-                <span class="ml-1 text-[11px] font-normal lowercase text-ink-gray-5">({{ __('optional') }})</span>
-                <input
-                  :value="partnerId"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="6"
-                  pattern="[0-9]{6}"
-                  :aria-invalid="Boolean(partnerId && partnerId.length !== 6)"
-                  :title="__('Enter all six digits or leave this field blank.')"
-                  aria-describedby="partner-network-help"
-                  class="mt-2 block w-full rounded-xl border border-outline-gray-2 bg-white px-4 py-2.5 font-mono text-sm shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
-                  placeholder="123456"
-                  @input="onPartnerIdInput"
-                />
-              </label>
-              <span
-                id="partner-network-help"
-                class="mt-2 block text-xs text-ink-gray-5"
-              >
-                {{
-                  __(
-                    'This existing Network will be linked to every facility you select. Your verified registry contact will be added as its Network Contact.',
-                  )
-                }}
-              </span>
-              <span
-                v-if="partnerId && partnerId.length !== 6"
-                class="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700"
-                role="status"
-              >
-                <svg class="size-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <span>{{
-                  __(
-                    'Enter all six digits, or clear the field to use the configured default Network if available.',
-                  )
-                }}</span>
-              </span>
-            </section>
-
+            <!-- Skeleton Loaders -->
             <div
               v-if="catalogBusy"
-              class="mt-8 grid gap-4 sm:grid-cols-2"
+              class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
               aria-hidden="true"
             >
               <div
-                v-for="placeholder in 2"
+                v-for="placeholder in 4"
                 :key="placeholder"
-                class="animate-pulse rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-6"
+                class="animate-pulse rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 min-h-[360px]"
               >
                 <div class="h-5 w-2/3 rounded-lg bg-surface-gray-2"></div>
-                <div class="mt-4 h-6 w-1/3 rounded-lg bg-surface-gray-2"></div>
+                <div class="mt-4 h-7 w-1/2 rounded-lg bg-surface-gray-2"></div>
                 <div class="mt-4 h-4 w-full rounded bg-surface-gray-2"></div>
+                <div class="mt-6 h-12 w-full rounded-xl bg-surface-gray-2"></div>
               </div>
             </div>
+
+            <!-- Error State -->
             <div
               v-else-if="catalogError"
-              class="mt-8 rounded-2xl border border-rose-200 bg-rose-50/90 p-5 text-sm shadow-sm"
+              class="mt-6 rounded-2xl border border-rose-200 bg-rose-50/90 p-5 text-sm shadow-sm"
               role="alert"
               data-testid="catalog-error"
             >
@@ -802,17 +879,21 @@
                 {{ __('Try loading packages again') }} →
               </button>
             </div>
+
+            <!-- Partner Incomplete State -->
             <div
               v-else-if="partnerId && partnerId.length !== 6"
-              class="mt-8 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 text-sm text-ink-gray-6"
+              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 text-sm text-ink-gray-6"
               role="status"
               data-testid="catalog-partner-incomplete"
             >
               {{ __('Enter all six digits to load this Network’s packages, or clear the field to use the configured default.') }}
             </div>
+
+            <!-- Empty Catalog State -->
             <div
               v-else-if="!catalog.packages?.length"
-              class="mt-8 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-6 text-center text-sm text-ink-gray-6"
+              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-6 text-center text-sm text-ink-gray-6"
               role="status"
               data-testid="catalog-empty"
             >
@@ -825,271 +906,117 @@
                 {{ __('Try loading packages again') }} →
               </button>
             </div>
-            <div v-else class="mt-8 space-y-6">
-              <!-- Sizing Calculator Dialog -->
-              <Dialog
-                v-model:open="calculatorDialogOpen"
-                :title="__('CareVerse Token Sizing Calculator')"
-                size="4xl"
-              >
-                <div class="p-1 max-h-[80vh] overflow-y-auto">
-                  <TokenCalculator
-                    v-if="activePricingFacility"
-                    :packages="catalog.packages"
-                    :config="catalog.calculator_config"
-                    :selected-package-code="packageSelections[activePricingFacility.facility_id]"
-                    :facility-name="activePricingFacility.facility_name || activePricingFacility.mfl_code"
-                    context="onboarding"
-                    @select-package="onCalculatorSelectPackage"
-                    @apply-plan="onCalculatorApplyPlan"
-                  />
-                </div>
-              </Dialog>
 
-              <!-- Facility Context & Segmented Tab Switcher (Visible in one glance) -->
-              <div
-                v-if="chosenFacilities.length > 1"
-                class="rounded-2xl border border-outline-gray-2 bg-white/90 p-5 shadow-sm backdrop-blur-md"
-              >
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-outline-gray-2 pb-4">
-                  <div>
-                    <span class="text-xs font-semibold uppercase tracking-wider text-ink-gray-5">
-                      {{ __('Configure Facilities') }} ({{ chosenFacilities.length }})
-                    </span>
-                    <p class="text-xs text-ink-gray-6 mt-0.5">
-                      {{ __('Select a facility below to choose its token package, or apply one package across all.') }}
-                    </p>
-                  </div>
-                  <button
-                    v-if="activePricingFacility && packageSelections[activePricingFacility.facility_id]"
-                    type="button"
-                    class="inline-flex items-center gap-1.5 text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] bg-[#fdf2f3] hover:bg-[#fbdfe1] border border-[#f0d6d8] px-3 py-1.5 rounded-lg transition self-start sm:self-auto"
-                    @click="applyCurrentPackageToAll"
-                  >
-                    <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    <span>{{ __('Apply plan to all :n facilities', { n: chosenFacilities.length }) }}</span>
-                  </button>
-                </div>
-
-                <!-- Tab bar -->
-                <div class="mt-4 flex gap-2 overflow-x-auto pb-1" role="tablist" :aria-label="__('Facilities')">
-                  <button
-                    v-for="facility in chosenFacilities"
-                    :key="facility.facility_id"
-                    type="button"
-                    role="tab"
-                    :aria-selected="activePricingFacility?.facility_id === facility.facility_id"
-                    class="group relative flex shrink-0 items-center gap-2.5 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all border shadow-sm"
-                    :class="activePricingFacility?.facility_id === facility.facility_id
-                      ? 'border-2 border-[#bc1823] bg-[#fdf2f3] text-[#bc1823] ring-2 ring-[#bc1823]/10'
-                      : 'border-outline-gray-2 bg-white text-ink-gray-7 hover:border-outline-gray-3 hover:text-ink-gray-9'"
-                    @click="activePricingFacilityId = facility.facility_id"
-                  >
-                    <span
-                      class="flex size-2 rounded-full"
-                      :class="packageSelections[facility.facility_id] ? 'bg-emerald-500' : 'bg-amber-400'"
-                    ></span>
-                    <span class="max-w-[180px] truncate font-medium text-ink-gray-9 group-hover:text-[#bc1823]">
-                      {{ facility.facility_name || facility.mfl_code }}
-                    </span>
-                    <span
-                      v-if="packageSelections[facility.facility_id]"
-                      class="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                      :class="activePricingFacility?.facility_id === facility.facility_id
-                        ? 'bg-[#bc1823] text-white'
-                        : 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'"
-                    >
-                      {{ selectedPackageFor(facility.facility_id)?.display_name || __('Selected') }}
-                    </span>
-                    <span
-                      v-else
-                      class="text-[10px] text-amber-600 font-normal italic"
-                    >
-                      {{ __('Needs plan') }}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Single Facility Header (if only 1 facility chosen) -->
-              <div
-                v-else-if="chosenFacilities.length === 1"
-                class="rounded-2xl border border-outline-gray-2 bg-white/90 p-4 sm:p-5 shadow-sm backdrop-blur-md flex items-center justify-between gap-4"
-              >
-                <div class="flex items-center gap-3">
-                  <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#fdf2f3] text-base border border-[#f0d6d8]">
-                    🏥
-                  </div>
-                  <div>
-                    <h3 class="text-sm font-semibold text-ink-gray-9">
-                      {{ chosenFacilities[0].facility_name || chosenFacilities[0].mfl_code }}
-                    </h3>
-                    <p class="text-xs text-ink-gray-5">
-                      {{ chosenFacilities[0].classification || chosenFacilities[0].facility_level || __('Facility') }}
-                      <span v-if="chosenFacilities[0].mfl_code">· MFL {{ chosenFacilities[0].mfl_code }}</span>
-                    </p>
-                  </div>
-                </div>
-                <span
-                  v-if="packageSelections[chosenFacilities[0].facility_id]"
-                  class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 border border-emerald-200"
+            <!-- Active Facility Pricing Section with Wide, Viewport-Optimized 4-Card Grid -->
+            <div
+              v-else
+              :data-testid="activePricingFacility ? `facility-package-${activePricingFacility.facility_id}` : undefined"
+              class="mt-5"
+            >
+              <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
+                <article
+                  v-for="item in catalog.packages"
+                  :key="`${activePricingFacility?.facility_id}-${item.item_code}`"
+                  class="relative rounded-2xl border p-5 sm:p-6 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-sm group min-h-[390px]"
+                  :class="isPackageSelected(item.item_code)
+                    ? 'border-2 border-[#bc1823] bg-[#fdf2f3]/25 ring-4 ring-[#bc1823]/10 shadow-md'
+                    : 'border-outline-gray-2 bg-white hover:border-[#f0d6d8] hover:shadow-md'"
+                  @click="selectPackageForActiveFacility(item.item_code)"
                 >
-                  <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span>{{ selectedPackageFor(chosenFacilities[0].facility_id)?.display_name }} {{ __('Selected') }}</span>
-                </span>
-              </div>
-
-              <!-- Calculator Trigger Banner -->
-              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-xl border border-outline-gray-2 bg-gradient-to-r from-surface-gray-1 to-white p-4 shadow-sm">
-                <div class="flex items-center gap-3">
-                  <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#fdf2f3] text-lg text-[#bc1823] border border-[#f0d6d8]">
-                    🧮
-                  </div>
                   <div>
-                    <p class="text-xs font-semibold text-ink-gray-9">
-                      {{ __('Not sure how many tokens you need?') }}
-                    </p>
-                    <p class="text-xs text-ink-gray-6 mt-0.5">
-                      {{ __('Simulate monthly requirements based on patient visits, lab orders, and claim values.') }}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  class="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-outline-gray-3 bg-white px-3.5 py-2 text-xs font-semibold text-ink-gray-8 shadow-sm transition hover:border-[#bc1823] hover:text-[#bc1823] hover:bg-[#fdf2f3]/50"
-                  @click="calculatorDialogOpen = true"
-                >
-                  <span>{{ __('Open Sizing Calculator') }}</span>
-                  <span class="text-sm">→</span>
-                </button>
-              </div>
-
-              <!-- Active Facility Pricing Section -->
-              <section
-                v-if="activePricingFacility"
-                :data-testid="`facility-package-${activePricingFacility.facility_id}`"
-                class="rounded-2xl border border-outline-gray-2 bg-white/90 backdrop-blur-md p-6 sm:p-8 shadow-sm text-ink-gray-9"
-              >
-                <div class="text-center max-w-2xl mx-auto mb-8 sm:mb-10">
-                  <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#fdf2f3] border border-[#f0d6d8] text-xs text-[#bc1823] font-semibold mb-3">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span>{{ activePricingFacility.facility_name || activePricingFacility.mfl_code }} · {{ activePricingFacility.classification || activePricingFacility.facility_level || __('Facility') }}</span>
-                  </div>
-                  <h3 class="text-2xl sm:text-3xl font-semibold tracking-tight text-ink-gray-9">
-                    {{ __('Choose a Package') }}
-                  </h3>
-                  <p class="mt-2 text-sm text-ink-gray-6">
-                    {{ __('Select the token tier that aligns with this facility’s monthly volume.') }}
-                  </p>
-                </div>
-
-                <!-- 4 Minimalist Pricing Package Cards -->
-                <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 items-stretch">
-                  <article
-                    v-for="item in catalog.packages"
-                    :key="`${activePricingFacility.facility_id}-${item.item_code}`"
-                    class="relative rounded-2xl border p-5 sm:p-6 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-sm group"
-                    :class="isPackageSelected(item.item_code)
-                      ? 'border-2 border-[#bc1823] bg-[#fdf2f3]/30 ring-4 ring-[#bc1823]/10 shadow-md'
-                      : 'border-outline-gray-2 bg-white hover:border-[#f0d6d8] hover:shadow-md'"
-                    @click="selectPackageForActiveFacility(item.item_code)"
-                  >
-                    <div>
-                      <!-- Card Header: Title & Badge -->
-                      <div class="flex items-center justify-between gap-2">
-                        <h4 class="text-base font-semibold text-ink-gray-9 tracking-tight">
-                          {{ item.display_name || item.item_code }}
-                        </h4>
-                        <span
-                          v-if="packageMetadata(item).badge"
-                          class="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase"
-                          :class="Number(item.price_ex_vat ?? item.price ?? 0) === 0
-                            ? 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'
-                            : (packageMetadata(item).badge.includes('Popular')
-                              ? 'bg-[#bc1823] text-white shadow-xs'
-                              : 'bg-[#fdf2f3] text-[#bc1823] border border-[#f0d6d8]')"
-                        >
-                          {{ packageMetadata(item).badge }}
-                        </span>
-                      </div>
-
-                      <!-- Price Block -->
-                      <div class="mt-3 flex items-baseline gap-1.5 flex-wrap">
-                        <span class="text-3xl font-semibold tracking-tight text-ink-gray-9">
-                          {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? 'KES 0' : money(item.price_ex_vat ?? item.price, item.currency) }}
-                        </span>
-                        <span class="text-xs text-ink-gray-6 font-medium">
-                          {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Free') : __('/ month (excl. VAT)') }}
-                        </span>
-                      </div>
-                      <p v-if="item.gross_total" class="mt-1 text-[11px] text-ink-gray-5 font-medium">
-                        {{ item.vat_label || __('VAT') }} {{ money(item.vat_amount, item.currency) }} · {{ __('Total') }} {{ money(item.gross_total, item.currency) }}
-                      </p>
-                      <p v-else class="mt-1 text-[11px] text-ink-gray-5 font-medium">
-                        {{ __('Zero VAT · Zero Commitment') }}
-                      </p>
-
-                      <!-- Audience summary -->
-                      <p class="mt-2 text-xs text-ink-gray-6 leading-snug min-h-[1.75rem]">
-                        {{ packageMetadata(item).audience }}
-                      </p>
-
-                      <!-- Token & Bonus Pill -->
-                      <div class="mt-4 rounded-xl bg-surface-gray-1 p-3 border border-outline-gray-2">
-                        <div class="flex items-center justify-between text-xs font-semibold">
-                          <span class="flex items-center gap-1.5 text-ink-gray-9">
-                            <span class="text-amber-600">🪙</span>
-                            <span>{{ item.token_quantity?.toLocaleString() }} {{ __('Tokens') }}</span>
-                          </span>
-                          <span
-                            v-if="packageMetadata(item).bonusLabel"
-                            class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60"
-                          >
-                            {{ packageMetadata(item).bonusLabel }}
-                          </span>
-                        </div>
-                        <p class="mt-1 text-[11px] text-ink-gray-5">
-                          {{ packageMetadata(item).capacityLabel }}
-                        </p>
-                      </div>
-
-                      <!-- Minimal Features List (crisp bullets) -->
-                      <div class="mt-5 pt-4 border-t border-outline-gray-1">
-                        <ul class="space-y-2 text-xs text-ink-gray-7">
-                          <li
-                            v-for="feature in packageMetadata(item).features"
-                            :key="feature"
-                            class="flex items-start gap-2"
-                          >
-                            <svg class="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                            </svg>
-                            <span class="leading-tight">{{ feature }}</span>
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-
-                    <!-- Select Button -->
-                    <div class="mt-6">
-                      <button
-                        type="button"
-                        class="w-full py-2 px-3 rounded-xl text-xs font-semibold transition-all duration-150"
-                        :class="isPackageSelected(item.item_code)
-                          ? 'bg-[#bc1823] text-white shadow-sm hover:bg-[#a3141d]'
-                          : 'border border-outline-gray-3 text-ink-gray-8 bg-white hover:bg-[#fdf2f3] hover:text-[#bc1823] hover:border-[#f0d6d8]'"
-                        @click.stop="selectPackageForActiveFacility(item.item_code)"
+                    <!-- Row 1: Title & Badge -->
+                    <div class="flex items-center justify-between gap-2">
+                      <h4 class="text-base sm:text-lg font-bold text-ink-gray-9 tracking-tight">
+                        {{ item.display_name || item.item_code }}
+                      </h4>
+                      <span
+                        v-if="packageMetadata(item).badge"
+                        class="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase shrink-0"
+                        :class="Number(item.price_ex_vat ?? item.price ?? 0) === 0
+                          ? 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'
+                          : (packageMetadata(item).badge.includes('Popular')
+                            ? 'bg-[#bc1823] text-white shadow-xs'
+                            : (packageMetadata(item).badge.includes('Best Value')
+                              ? 'bg-[#fdf2f3] text-[#bc1823] border border-[#f0d6d8]'
+                              : 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'))"
                       >
-                        {{ isPackageSelected(item.item_code) ? __('✓ Selected') : __('Choose plan') }}
-                      </button>
+                        {{ packageMetadata(item).badge }}
+                      </span>
                     </div>
-                  </article>
-                </div>
-              </section>
+
+                    <!-- Row 2: Price -->
+                    <div class="mt-2.5 flex items-baseline gap-1.5 flex-wrap">
+                      <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-ink-gray-9">
+                        {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? 'KES 0' : money(item.price_ex_vat ?? item.price, item.currency) }}
+                      </span>
+                      <span class="text-xs text-ink-gray-5 font-semibold">
+                        {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Zero commitment') : __('/ mo (excl. VAT)') }}
+                      </span>
+                    </div>
+                    <p class="mt-0.5 text-[11px] text-ink-gray-5 font-medium">
+                      {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0
+                        ? __('100% Free · No credit card required')
+                        : `${item.vat_label || 'VAT'} ${money(item.vat_amount, item.currency)} · Total ${money(item.gross_total, item.currency)}`
+                      }}
+                    </p>
+
+                    <!-- Row 3: Audience Tagline -->
+                    <p class="mt-2 text-xs text-ink-gray-6 font-medium leading-snug">
+                      {{ packageMetadata(item).audience }}
+                    </p>
+
+                    <!-- Row 4: Token & Capacity Chip -->
+                    <div class="mt-3.5 rounded-xl bg-surface-gray-1 p-2.5 border border-outline-gray-2">
+                      <div class="flex items-center justify-between text-xs font-bold">
+                        <span class="flex items-center gap-1.5 text-ink-gray-9">
+                          <span class="text-amber-600 text-sm">🪙</span>
+                          <span>{{ item.token_quantity?.toLocaleString() }} {{ __('Care Tokens') }}</span>
+                        </span>
+                        <span
+                          v-if="packageMetadata(item).bonusLabel"
+                          class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60"
+                        >
+                          {{ packageMetadata(item).bonusLabel }}
+                        </span>
+                      </div>
+                      <p class="mt-0.5 text-[11px] text-ink-gray-6 font-medium">
+                        {{ packageMetadata(item).capacityLabel }}
+                      </p>
+                    </div>
+
+                    <!-- Row 5: 3 Clean Features -->
+                    <div class="mt-3.5 pt-3 border-t border-outline-gray-1">
+                      <ul class="space-y-1.5 text-xs text-ink-gray-7">
+                        <li
+                          v-for="feature in packageMetadata(item).features"
+                          :key="feature"
+                          class="flex items-start gap-2"
+                        >
+                          <svg class="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                          </svg>
+                          <span class="leading-tight font-medium">{{ feature }}</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <!-- Row 6: Selection Button (Anchored at Bottom of Card) -->
+                  <div class="mt-5 pt-3">
+                    <button
+                      type="button"
+                      class="w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-150 flex items-center justify-center gap-2"
+                      :class="isPackageSelected(item.item_code)
+                        ? 'bg-[#bc1823] text-white shadow-sm hover:bg-[#a3141d]'
+                        : 'border border-outline-gray-3 text-ink-gray-9 bg-white hover:bg-[#fdf2f3] hover:text-[#bc1823] hover:border-[#f0d6d8]'"
+                      @click.stop="selectPackageForActiveFacility(item.item_code)"
+                    >
+                      <span v-if="isPackageSelected(item.item_code)">✓</span>
+                      <span>{{ isPackageSelected(item.item_code) ? __('Plan Selected') : __('Choose plan') }}</span>
+                    </button>
+                  </div>
+                </article>
+              </div>
 
               <!-- Hidden Radios for Form Submission / Accessibility / Testing -->
               <div class="sr-only" aria-hidden="true">
@@ -1108,9 +1035,9 @@
               <!-- At-A-Glance Multi-Facility Summary Table (if > 1 facility) -->
               <div
                 v-if="chosenFacilities.length > 1"
-                class="rounded-2xl border border-outline-gray-2 bg-white/90 p-5 sm:p-6 shadow-sm backdrop-blur-md"
+                class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1/40 p-4 sm:p-5"
               >
-                <div class="flex items-center justify-between gap-3 mb-4">
+                <div class="flex items-center justify-between gap-3 mb-3">
                   <div class="flex items-center gap-2">
                     <span class="text-sm font-semibold text-ink-gray-9">{{ __('Facility Package Allocation') }}</span>
                     <span class="rounded-full bg-surface-gray-2 px-2 py-0.5 text-[11px] font-medium text-ink-gray-7">
@@ -1140,7 +1067,7 @@
                         :class="activePricingFacility?.facility_id === facility.facility_id ? 'bg-[#fdf2f3]/40 font-medium' : ''"
                         @click="activePricingFacilityId = facility.facility_id"
                       >
-                        <td class="py-3 pr-4">
+                        <td class="py-2.5 pr-4">
                           <div class="flex items-center gap-2">
                             <span
                               class="size-1.5 rounded-full"
@@ -1158,7 +1085,7 @@
                             {{ facility.classification || facility.facility_level || __('Facility') }}
                           </p>
                         </td>
-                        <td class="py-3 px-4">
+                        <td class="py-2.5 px-4">
                           <span
                             v-if="selectedPackageFor(facility.facility_id)"
                             class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold"
@@ -1170,13 +1097,13 @@
                           </span>
                           <span v-else class="text-amber-600 italic">{{ __('Needs package') }}</span>
                         </td>
-                        <td class="py-3 px-4 text-center">
+                        <td class="py-2.5 px-4 text-center">
                           <span v-if="selectedPackageFor(facility.facility_id)" class="font-semibold text-ink-gray-9">
                             🪙 {{ selectedPackageFor(facility.facility_id)?.token_quantity?.toLocaleString() }}
                           </span>
                           <span v-else class="text-ink-gray-4">—</span>
                         </td>
-                        <td class="py-3 pl-4 text-right font-medium text-ink-gray-9">
+                        <td class="py-2.5 pl-4 text-right font-medium text-ink-gray-9">
                           <span v-if="selectedPackageFor(facility.facility_id)">
                             {{ Number(selectedPackageFor(facility.facility_id)?.price_ex_vat ?? selectedPackageFor(facility.facility_id)?.price ?? 0) === 0
                               ? __('KES 0 (Free)')
@@ -1189,13 +1116,13 @@
                     </tbody>
                     <tfoot v-if="totals" class="border-t-2 border-outline-gray-2 font-semibold text-ink-gray-9">
                       <tr>
-                        <td colspan="2" class="py-3 pr-4 text-xs font-bold uppercase tracking-wider text-ink-gray-6">
+                        <td colspan="2" class="py-2.5 pr-4 text-xs font-bold uppercase tracking-wider text-ink-gray-6">
                           {{ __('Combined Monthly Commitment') }}
                         </td>
-                        <td class="py-3 px-4 text-center">
+                        <td class="py-2.5 px-4 text-center">
                           🪙 {{ chosenFacilities.reduce((sum, f) => sum + (selectedPackageFor(f.facility_id)?.token_quantity || 0), 0).toLocaleString() }}
                         </td>
-                        <td class="py-3 pl-4 text-right">
+                        <td class="py-2.5 pl-4 text-right">
                           <div>{{ money(totals.exVat, totals.currency) }} <span class="text-[10px] font-normal text-ink-gray-5">excl. VAT</span></div>
                           <div v-if="totals.vat > 0" class="text-[11px] font-normal text-ink-gray-5">
                             + {{ totals.vatLabel }} {{ money(totals.vat, totals.currency) }} = <strong class="text-ink-gray-9 font-semibold">{{ money(totals.gross, totals.currency) }}</strong>
