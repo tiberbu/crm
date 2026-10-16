@@ -101,7 +101,7 @@ class TestPortalCheckout(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		frappe.db.savepoint("cx_checkout_test")
 		self.addCleanup(frappe.db.rollback, save_point="cx_checkout_test")
-		packages = _token_packages()
+		packages = [p for p in _token_packages() if (p.get("price") or 0) > 0]
 		if not packages:
 			self.skipTest("No enabled token package with a price on this site")
 		self.package = packages[0]

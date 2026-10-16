@@ -1,15 +1,17 @@
 # Sprint Status
 # Project: tiberbu Express — CRM implementation
 # Tracking: Claude Code Studio
-# Updated: 2026-10-12
+# Updated: 2026-10-13
 
 summary:
-  total: 66
-  ready-for-dev: 33
-  in-progress: 3
-  review: 22
-  done: 3
-  cancelled: 0
+  total: 174
+  ready-for-dev: 32
+  in-progress: 9
+  review: 103
+  done: 12
+  cancelled: 7
+  qa: 2
+  superseded: 9
 
 development_status:
 
@@ -294,7 +296,18 @@ development_status:
   facility-cx-s2-6-onboarding-e2e-qa: review # [qa] S2-6a backend E2E: mocked HFR/Client Registry/mail/Paystack; guest identity->OTP->catalog->idempotent submit->Network membership->Website User+permission->Quotation/Sales Order->Sales Invoice->authorised checkout->replay-safe Payment Entry, cross-user denial, evidence without PII. PROOF: crm.tests.test_cx_onboarding_e2e passes; full `bench run-tests --app crm` on cr-dev: all suites pass except 12 test_dashboard failures that fail identically on the untouched apps/crm code (shared-site data). OIS pipeline processing is stubbed in the E2E (it commits) and covered by test_optin (88 pass). No live Paystack.
 
   # Follow-on stories from customer-experience-onboarding-e2e-spec.md (approved 2026-10-11). Execute strictly in this order; one story at a time.
-  facility-cx-s3-13-cr-lookup-first-otp-recovery: in-progress # [dev-story] CR contact lookup and OTP precede HFR ownership resolution; immediate retry after delivery failure; HFR retry after temporary outage. PROOF: cr-dev backend 39/39; frontend 173/173; production build and diff-check pass. Screenshot/UAT proof pending.
+  facility-cx-s3-13-cr-lookup-first-otp-recovery: review # [dev-story] CR contact + OTP now precede HFR; generic pre-verification responses; serialized bounded HFR retries and consumed-OTP recovery. PROOF: backend 54/54; focused frontend 21/21; Corepack Yarn build; Ruff; diff-check; independent review clear. UAT identity/screenshots and authenticated portal permission proof pending.
+  facility-cx-s4-1-self-onboarding-fields: ready-for-dev # S4-1 repeatable self-onboarding source, keyed identity reference, account email, and terms snapshot fields.
+  facility-cx-s4-2-self-onboarding-terms: ready-for-dev # S4-2 settings-driven Self-Onboarded terms with legacy fallback and immutable acceptance snapshot.
+  facility-cx-s4-3-duplicate-guard: ready-for-dev # S4-3 keyed-ID dedupe for new self records; canonical facility ID/MFL conflict checks for legacy records (no historical ID assertion).
+  facility-cx-s4-4-account-email: ready-for-dev # S4-4 verified Sam-supplied email for safe Website User provisioning/password setup and recovery.
+  facility-cx-s4-5-self-source-no-signature: ready-for-dev # S4-5 omit signature/contract milestones for self source only; preserve legacy Opt-In.
+  facility-cx-s4-6-network-and-catalog: ready-for-dev # S4-6 global token catalog; one optional Partner ID at final review, blank falls back to configured Network.
+  facility-cx-s4-7-initial-order-reuse: ready-for-dev # S4-7 reuse the onboarding quote for one submitted Sales Order per selected facility.
+  facility-cx-s4-8-submit-orchestration: ready-for-dev # S4-8 idempotent verified submit: membership + OIS + quote/order + account permission; no invoice/payment.
+  facility-cx-s4-9-wizard-review: ready-for-dev # S4-9 confirm data, capture email/terms, apply the one optional final Partner ID; careverse_hq interaction reference reskinned to CRM.
+  facility-cx-s4-10-portal-progress: ready-for-dev # S4-10 portal Opt-In/order/payment/GoLive progress; no self signature milestone; retain existing authenticated checkout.
+  facility-cx-s4-11-authenticated-user-access: in-progress # S4-11 allow Website and System Users to open CX portal; record access remains exact Customer/OIS User Permission scoped.
   facility-cx-s3-1-onboarding-evidence-schema: review # [dev-story] CX-1 append-only CRM Onboarding Evidence DocType + record_event/evidence_ref. PROOF: 5/5 crm.tests.test_onboarding_evidence pass on cr-dev (insert, edit/delete blocked, PII-shaped detail rejected, unknown event rejected, keyed ref); DocType synced with frappe.reload_doc (full migrate not run: 3 unrelated develop patches pending on shared cr-dev); ruff clean; tests run with PYTHONPATH=<worktree>. Context7 unavailable: delete_doc/on_trash behaviour verified by test only.
   facility-cx-s3-2-otp-channel-setting: review # [dev-story] CX-2 CRM Opt-In Settings preferred OTP channel (default Email), added as a Custom Field patch because all onboarding settings fields are patch-defined, not in the DocType JSON. PROOF: 2/2 crm.tests.test_otp_channel_setting pass on cr-dev (Select Email/SMS, default Email, patch repeatable, registered under [post_model_sync]); ruff clean.
   facility-cx-s3-3-hfr-first-otp-channel-policy: review # [dev-story] CX-3 HFR-first lookup, preferred+fallback email/SMS OTP, masked delivery with stable decoy for unknown IDs, resend cooldown+limit, OTP email queue redaction, registry error logs no longer embed the owner ID. PROOF: 19/19 crm.tests.test_facility_onboarding pass on cr-dev (order, skip-registry, email/SMS preferred, both fallbacks, phone-only, unavailable, decoy shape, no pre-verification disclosure, replay, attempt limit, expiry, resend limits, log redaction); ruff clean. Residual: status 'unavailable' is only returned for valid IDs whose every channel failed.

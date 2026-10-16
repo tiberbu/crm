@@ -1805,12 +1805,29 @@ def list_facilities(
 	result = []
 	portal_links = {}
 
-	def portal_link(membership, mfl_code):
+	def portal_link(membership, mfl_code, facility_name=None):
 		key = (membership.network, mfl_code)
 		if key not in portal_links:
-			portal_links[key] = _customer_experience_link(
+			link = _customer_experience_link(
 				_processed_ois_for_facility(membership.network, mfl_code)
 			)
+			if not link.get("linked"):
+				fac_doc = fac_rows_by_name.get(facility_name) if facility_name else None
+				is_self = bool(getattr(membership, "customer", None) or (isinstance(membership, dict) and membership.get("customer")))
+				if not is_self and fac_doc:
+					is_self = bool(fac_doc.get("is_self_onboarded") if isinstance(fac_doc, dict) else getattr(fac_doc, "is_self_onboarded", 0))
+				if is_self:
+					email = frappe.utils.cstr(getattr(membership, "contact_email", "") or (isinstance(membership, dict) and membership.get("contact_email", "")) or "").strip().lower()
+					user_name = frappe.db.get_value("User", {"email": email}, "name") if email and hasattr(frappe.db, "get_value") else None
+					link = {
+						"linked": bool(user_name),
+						"user": user_name,
+						"ois_numbers": [],
+						"invitation_status": "Already active" if user_name else "Not linked",
+						"invitation_sent_at": getattr(membership, "invite_sent_at", None) or (isinstance(membership, dict) and membership.get("invite_sent_at")),
+						"is_self_onboarded": True,
+					}
+			portal_links[key] = link
 		return portal_links[key]
 
 	for facility_name in page_names:
@@ -1824,7 +1841,7 @@ def list_facilities(
 				"keph_level": fac.keph_level,
 				"memberships": [
 					{
-						"customer_experience": portal_link(m, fac.mfl_code),
+						"customer_experience": portal_link(m, fac.mfl_code, fac.name),
 						"network": m.network,
 						"name": m.name,
 						"price_list_override": m.get("price_list_override") or "",
@@ -2432,6 +2449,20 @@ def invite_facility_to_customer_experience(facility_name: Any, membership_name: 
 
 	submissions = _processed_ois_for_facility(membership.network, facility.mfl_code)
 	if not submissions:
+		from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility import (
+			is_self_onboarded_facility,
+			_send_membership_invitation,
+		)
+		if is_self_onboarded_facility(facility):
+			_send_membership_invitation(facility, membership)
+			user_name = frappe.db.get_value("User", {"email": recipient}, "name") if hasattr(frappe.db, "get_value") else None
+			return {
+				"status": "linked" if user_name else "sent",
+				"user": user_name or recipient,
+				"ois": [],
+				"idempotent": bool(user_name),
+				"results": [{"status": "linked" if user_name else "sent", "user": user_name}],
+			}
 		frappe.throw(
 			_("No processed Opt-In Request was found for this facility in the selected network."),
 			frappe.ValidationError,

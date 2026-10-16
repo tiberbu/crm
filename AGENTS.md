@@ -116,3 +116,15 @@ archives/        — old docs preserved verbatim
 
 When a phase completes: move its spec from PLAN.md to ARCHIVE.md, update SPEC.md if
 the API surface changed.
+
+---
+
+# CRM agent working notes
+
+- Treat the user's request as the implementation scope and keep the change
+  focused. Preserve unrelated worktree changes.
+- Product and technical knowledge lives in `docs/`; retain existing planning
+  artifacts when changing the development workflow.
+- Use Context7 MCP for current framework or library documentation when relevant.
+- Verify changes with the smallest useful build or command checks. Do not claim
+  end-to-end behavior is verified without exercising the actual flow.

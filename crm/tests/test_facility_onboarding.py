@@ -318,6 +318,8 @@ class _Store:
 
 class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 	def setUp(self):
+		frappe.db.savepoint("facility_onboarding_test")
+		self.addCleanup(frappe.db.rollback, save_point="facility_onboarding_test")
 		self.store = _Store()
 		self.sent = []
 		self.sms = []
@@ -1416,6 +1418,7 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			patch.object(fo, "_validate_account_email", return_value="owner@example.com"),
 			patch.object(fo, "_public_network", return_value={"name": "net-a"}),
 			patch.object(fo, "_token_packages", return_value=[self.PACKAGE]),
+			patch.object(fo, "_catalog_packages", return_value=[self.PACKAGE]),
 			patch.object(fo, "_check_onboarding_conflicts", side_effect=check),
 			patch.object(fo, "_submit_selected_facilities", side_effect=create),
 		):
@@ -1631,7 +1634,9 @@ class TestFacilityOnboardingCatalog(UnitTestCase):
 		):
 			data = fo.get_catalog()["data"]
 
-		self.assertEqual(data, {"network": {}, "packages": []})
+		self.assertEqual(data["network"], {})
+		self.assertEqual(data["packages"], [])
+		self.assertIn("calculator_config", data)
 		public_network.assert_called_once_with("")
 
 	def test_invalid_nonblank_partner_id_never_falls_back_to_default_network(self):

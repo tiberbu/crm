@@ -17,6 +17,7 @@ describe('onboardingSteps', () => {
       'complete',
       'complete',
       'current',
+      'upcoming',
     ])
     expect(stepStatus('identity', 'otp')).toBe('current')
     expect(

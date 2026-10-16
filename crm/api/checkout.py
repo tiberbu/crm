@@ -456,10 +456,85 @@ def initialize_paystack_payment(session_token: Any, invoice: Any):
 	)
 
 
+def _customer_invoice_row(customer: str, invoice_name: str) -> dict | None:
+	invoice_name = _normalise(invoice_name)
+	customer = _normalise(customer)
+	if not invoice_name:
+		return None
+	fields = ["name", "customer", "docstatus", "outstanding_amount", "grand_total", "currency"]
+	row = frappe.db.get_value("Sales Invoice", invoice_name, fields, as_dict=True)
+	if not row or row.docstatus != 1 or flt(row.outstanding_amount) <= 0:
+		return None
+	if customer and row.customer != customer:
+		return None
+	return {
+		"name": row.name,
+		"invoice_number": row.name,
+		"customer": row.customer,
+		"amount": float(row.outstanding_amount or 0),
+		"grand_total": float(row.grand_total or 0),
+		"currency": row.currency or "KES",
+		"status": "Outstanding",
+	}
+
+
+def _start_paystack_customer(customer: str, invoice_name: str, callback_path: str):
+	"""Start Checkout for a customer invoice the caller is already authorised for."""
+	invoice_row = _customer_invoice_row(customer, invoice_name)
+	if not invoice_row:
+		frappe.throw(_("That invoice is no longer available for payment."), frappe.ValidationError)
+	secret = _paystack_settings()[0]
+	reference = "CUST-%s-%s-%s" % (
+		_normalise(customer).replace("/", "-"),
+		invoice_row["name"].replace("/", "-"),
+		secrets.token_hex(5),
+	)
+	user_email = _normalise(frappe.db.get_value("User", frappe.session.user, "email") or frappe.session.user)
+	response = _paystack_request(
+		"POST",
+		"https://api.paystack.co/transaction/initialize",
+		secret,
+		json={
+			"email": user_email,
+			"amount": round(flt(invoice_row["amount"]) * 100),
+			"currency": invoice_row["currency"] or "KES",
+			"reference": reference,
+			"callback_url": frappe.utils.get_url() + callback_path.format(reference=reference),
+			"metadata": {"customer": customer, "invoice": invoice_row["name"]},
+		},
+	)
+	if not response or not response.get("status") or not response.get("data", {}).get("authorization_url"):
+		frappe.throw(
+			_("Paystack could not start this payment. Try again or use bank transfer."),
+			frappe.ValidationError,
+		)
+	return {
+		"authorization_url": response["data"]["authorization_url"],
+		"reference": response["data"].get("reference") or reference,
+	}
+
+
 @frappe.whitelist(methods=["POST"])
-def initialize_portal_paystack_payment(ois_number: Any, invoice: Any):
-	"""Start Paystack Checkout for an open invoice of the signed-in user's own OIS."""
-	return _start_paystack(_portal_submission(ois_number), invoice, "/cx-portal?reference={reference}")
+def initialize_portal_paystack_payment(ois_number: Any = None, invoice: Any = None, customer: Any = None):
+	"""Start Paystack Checkout for an open invoice of the signed-in user's own OIS or Customer."""
+	ois_number = _normalise(ois_number)
+	if ois_number:
+		return _start_paystack(_portal_submission(ois_number), invoice, "/cx-portal?reference={reference}")
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(_("Please sign in to access payment."), frappe.PermissionError)
+	from crm.api.website_redirect import get_user_customer_names
+
+	user_customers = get_user_customer_names(user)
+	customer = _normalise(customer)
+	invoice_name = _normalise(invoice)
+	if not customer and invoice_name:
+		inv_customer = frappe.db.get_value("Sales Invoice", invoice_name, "customer")
+		if inv_customer and inv_customer in user_customers:
+			customer = inv_customer
+	if not customer or customer not in user_customers:
+		frappe.throw(_("That invoice is not linked to your account."), frappe.PermissionError)
+	return _start_paystack_customer(customer, invoice_name, "/cx-portal?reference={reference}")
 
 
 def _payment_entry_for_invoice(
@@ -479,14 +554,16 @@ def _payment_entry_for_invoice(
 	return pe
 
 
-def _set_checkout_fields(pe, provider, reference, submission):
-	for field, value in {
+def _set_checkout_fields(pe, provider, reference, submission=None):
+	fields = {
 		"crm_checkout_provider": provider,
 		"crm_checkout_reference": reference,
-		"crm_optin_submission": submission.name,
-	}.items():
+	}
+	if submission and getattr(submission, "name", None):
+		fields["crm_optin_submission"] = submission.name
+	for field, value in fields.items():
 		try:
-			if frappe.db.has_column("Payment Entry", field):
+			if frappe.db.has_column("Payment Entry", field) and value:
 				pe.set(field, value)
 		except Exception:
 			continue
@@ -564,10 +641,51 @@ def verify_paystack_payment(session_token: Any, reference: Any):
 	return _verify_paystack(submission, reference)
 
 
+def _verify_paystack_for_portal_user(reference: str, customer: str | None = None):
+	existing = _existing_payment_entry(reference)
+	if existing:
+		return {"paid": existing.docstatus == 1, "payment_entry": existing.name}
+	secret = _paystack_settings()[0]
+	response = _paystack_request("GET", "https://api.paystack.co/transaction/verify/%s" % reference, secret)
+	data = response.get("data") if response else None
+	if not response or not response.get("status") or not data or data.get("status") != "success":
+		return {"paid": False, "status": data.get("status") if data else "pending"}
+	metadata = data.get("metadata") or {}
+	ois_name = metadata.get("ois_number")
+	cust_name = metadata.get("customer") or customer
+	inv_name = metadata.get("invoice")
+	if ois_name:
+		submission = _portal_submission(ois_name)
+		invoice_row = _invoice_for_session(submission, inv_name)
+		if not invoice_row:
+			frappe.throw(_("The invoice is no longer outstanding."), frappe.ValidationError)
+		return _record_verified_paystack_payment(
+			submission, invoice_row, reference, data.get("amount"), data.get("currency")
+		)
+	if cust_name:
+		from crm.api.website_redirect import get_user_customer_names
+
+		user_customers = get_user_customer_names(frappe.session.user)
+		if cust_name not in user_customers:
+			frappe.throw(_("This payment does not belong to your account."), frappe.PermissionError)
+		invoice_row = _customer_invoice_row(cust_name, inv_name)
+		if not invoice_row:
+			frappe.throw(_("The invoice is no longer outstanding."), frappe.ValidationError)
+		return _record_verified_paystack_payment(
+			None, invoice_row, reference, data.get("amount"), data.get("currency")
+		)
+	frappe.throw(_("Invalid payment metadata."), frappe.ValidationError)
+
+
 @frappe.whitelist(methods=["POST"])
-def verify_portal_paystack_payment(ois_number: Any, reference: Any):
-	"""Reconcile a Paystack reference for the signed-in user's own OIS; replays return the same Payment Entry."""
-	return _verify_paystack(_portal_submission(ois_number), reference)
+def verify_portal_paystack_payment(ois_number: Any = None, reference: Any = None, customer: Any = None):
+	"""Reconcile a Paystack reference for the signed-in user's own OIS or Customer; replays return the same Payment Entry."""
+	reference = _normalise(reference)
+	ois_number = _normalise(ois_number)
+	customer = _normalise(customer)
+	if ois_number:
+		return _verify_paystack(_portal_submission(ois_number), reference)
+	return _verify_paystack_for_portal_user(reference, customer=customer)
 
 
 # nosemgrep: guest-whitelisted-method -- the webhook is accepted only after Paystack HMAC signature verification and server-side invoice reconciliation.
@@ -590,14 +708,23 @@ def paystack_webhook():
 	data = event.get("data") or {}
 	metadata = data.get("metadata") or {}
 	submission = _get_submission(metadata.get("ois_number"))
-	if not submission:
+	if submission:
+		invoice_row = _invoice_for_session(submission, metadata.get("invoice"))
+		if not invoice_row:
+			return {"ok": True}
+		_record_verified_paystack_payment(
+			submission, invoice_row, _normalise(data.get("reference")), data.get("amount"), data.get("currency")
+		)
 		return {"ok": True}
-	invoice_row = _invoice_for_session(submission, metadata.get("invoice"))
-	if not invoice_row:
+	cust_name = metadata.get("customer")
+	if cust_name:
+		invoice_row = _customer_invoice_row(cust_name, metadata.get("invoice"))
+		if not invoice_row:
+			return {"ok": True}
+		_record_verified_paystack_payment(
+			None, invoice_row, _normalise(data.get("reference")), data.get("amount"), data.get("currency")
+		)
 		return {"ok": True}
-	_record_verified_paystack_payment(
-		submission, invoice_row, _normalise(data.get("reference")), data.get("amount"), data.get("currency")
-	)
 	return {"ok": True}
 
 

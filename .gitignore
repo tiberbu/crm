@@ -29,6 +29,13 @@ CLAUDE.md
 AGENTS.md
 .claude
 .pi
+
+# BMAD prompt-routing instructions and generated Claude skills are team-shared.
+!AGENTS.md
+!CLAUDE.md
+!.claude/
+!.claude/skills/
+!.claude/skills/**
 .patch
 *.pdf
 *.docx

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { call } from 'frappe-ui'
+import TokenCalculator from '@/components/TokenCalculator.vue'
 import {
   facilityLabel,
   findOpenOrder,
@@ -47,11 +48,27 @@ const purchaseMessage = ref('')
 const busyId = ref('')
 const notice = ref(null)
 const bankTransferOis = ref('')
+const selectedPortalPackageCode = ref('')
+
+const currentFacilityName = computed(() => {
+  const list = purchaseFacilities()
+  const found = list.find((f) => f.mfl_code === purchaseFacility.value)
+  return found?.facility_name || purchaseFacility.value || ''
+})
+
+function onCalculatorSelectPackage(code) {
+  selectedPortalPackageCode.value = code
+}
+
+function onCalculatorApplyPlan(pkg) {
+  selectedPortalPackageCode.value = pkg.item_code
+  buyPackage(pkg)
+}
 
 function stepClass(step) {
-  if (step.status === 'complete') return 'bg-emerald-600 text-white'
-  if (step.status === 'current') return 'bg-[#bc1823] text-white'
-  return 'bg-surface-gray-2 text-ink-gray-5'
+  if (step.status === 'complete') return 'bg-emerald-600 text-white font-bold shadow-sm'
+  if (step.status === 'current') return 'bg-[#bc1823] text-white font-bold shadow-sm ring-2 ring-[#bc1823]/20'
+  return 'bg-surface-gray-2 text-ink-gray-7 font-bold border border-outline-gray-3'
 }
 
 function stepLabel(step) {
@@ -238,540 +255,719 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="min-h-screen bg-[#f6f7f8] text-ink-gray-9">
-    <header class="border-b border-outline-gray-2 bg-surface-white">
+  <main class="min-h-screen bg-[#f6f7f8] text-ink-gray-9 relative isolate">
+    <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
+      <div class="absolute -top-40 right-1/4 h-96 w-96 rounded-full bg-[radial-gradient(circle,rgba(188,24,35,0.06)_0%,transparent_65%)] blur-2xl"></div>
+      <div class="absolute top-1/2 -left-24 h-96 w-96 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.05)_0%,transparent_65%)] blur-2xl"></div>
+    </div>
+
+    <header class="sticky top-0 z-30 border-b border-outline-gray-2 bg-white/80 backdrop-blur-md">
       <div
-        class="mx-auto flex max-w-5xl items-center justify-between px-5 py-4 sm:px-8"
+        class="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-8"
       >
-        <div>
-          <p class="text-sm font-semibold tracking-tight">
-            Tiberbu Customer Experience
-          </p>
-          <p class="text-xs text-ink-gray-5">Secure facility portal</p>
+        <div class="flex items-center gap-3">
+          <div
+            class="flex size-9 items-center justify-center rounded-xl bg-[#bc1823] text-white font-semibold text-base shadow-sm"
+          >
+            T
+          </div>
+          <div>
+            <p class="text-sm font-semibold tracking-tight text-ink-gray-9">
+              Tiberbu <span class="font-normal text-ink-gray-5">Customer Experience</span>
+            </p>
+            <p class="text-[11px] font-medium text-ink-gray-5 flex items-center gap-1.5">
+              <span class="inline-block size-1.5 rounded-full bg-emerald-500"></span>
+              Secure facility portal
+            </p>
+          </div>
         </div>
-        <a
-          class="text-sm text-ink-gray-6 underline underline-offset-4 hover:text-ink-gray-9"
-          href="/api/method/logout"
-          >Sign out</a
-        >
+        <div class="flex items-center gap-3 text-xs sm:text-sm">
+          <div
+            v-if="context.user"
+            class="hidden sm:inline-flex items-center gap-2 rounded-xl bg-surface-gray-2/80 px-3 py-1.5 text-xs font-medium text-ink-gray-7 border border-outline-gray-2"
+          >
+            <span class="flex size-5 items-center justify-center rounded-full bg-surface-gray-3 text-[10px] font-semibold text-ink-gray-6">
+              👤
+            </span>
+            <span>{{ context.user }}</span>
+          </div>
+          <a
+            class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-2 bg-white/90 px-3.5 py-1.5 font-medium text-ink-gray-7 shadow-sm transition hover:bg-surface-gray-1 hover:text-ink-gray-9"
+            href="/api/method/logout"
+          >
+            Sign out
+          </a>
+        </div>
       </div>
     </header>
 
-    <div class="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
+    <div class="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-12">
+      <!-- Hero Banner (Wine Red Implementation) -->
       <section
-        class="relative isolate mt-8 overflow-hidden rounded-2xl border border-[#f0d6d8] bg-gradient-to-br from-[#fff5f5] via-white to-[#f1faf6] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] sm:p-7"
+        class="relative isolate overflow-hidden rounded-2xl border border-[#f0d6d8] bg-gradient-to-br from-[#fff5f5] via-white to-[#f1faf6] p-6 sm:p-8 shadow-[0_10px_24px_rgba(15,23,42,0.05)] backdrop-blur-md"
       >
         <div
           class="pointer-events-none absolute -right-14 -top-20 size-56 rounded-full bg-[radial-gradient(circle,rgba(188,24,35,0.12)_0%,rgba(188,24,35,0.02)_58%,transparent_72%)]"
           aria-hidden="true"
         />
         <div
-          class="pointer-events-none absolute -bottom-28 left-1/4 size-64 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.11)_0%,rgba(16,185,129,0.02)_58%,transparent_72%)]"
+          class="pointer-events-none absolute -bottom-28 left-1/4 size-64 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.08)_0%,rgba(16,185,129,0.01)_58%,transparent_72%)]"
           aria-hidden="true"
         />
+        <div class="relative z-10 max-w-2xl">
+          <span
+            class="inline-flex items-center rounded-full border border-[#edc5c8] bg-white/80 px-3 py-1 text-[11px] font-semibold tracking-wide text-[#9e1720] shadow-sm backdrop-blur"
+          >
+            SECURE CUSTOMER EXPERIENCE
+          </span>
+          <h1 class="mt-4 text-3xl font-semibold tracking-tight text-ink-gray-9 sm:text-4xl">
+            Your facility journey
+          </h1>
+          <p
+            class="mt-2.5 text-sm leading-6 text-ink-gray-6 sm:text-base"
+          >
+            Track your linked facilities, token capacity, and account activity from one secure place.
+          </p>
+        </div>
+
+        <!-- 4 KPI Metric Cards -->
         <div
-          class="relative z-10 grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,.9fr)] lg:items-center"
+          v-if="!loading && !errorMessage && (context.ois?.length || context.customer_accounts?.length)"
+          class="relative z-10 mt-8 grid grid-cols-2 gap-3.5 sm:grid-cols-4"
+          aria-label="Account overview"
         >
-          <div>
-            <span
-              class="inline-flex items-center rounded-full border border-[#edc5c8] bg-white/80 px-3 py-1 text-[11px] font-semibold tracking-wide text-[#9e1720] shadow-sm backdrop-blur"
-            >
-              SECURE CUSTOMER EXPERIENCE
-            </span>
-            <h1 class="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Your facility journey
-            </h1>
-            <p
-              class="mt-3 max-w-2xl text-sm leading-6 text-ink-gray-6 sm:text-base sm:leading-7"
-            >
-              Track your linked facilities and account activity from one secure
-              place.
+          <div
+            class="rounded-xl border border-white/80 bg-white/75 p-4 shadow-sm backdrop-blur-md transition hover:border-[#f0d6d8] hover:shadow-md"
+          >
+            <div class="flex items-center justify-between text-ink-gray-6 mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-ink-gray-7">
+                Facilities
+              </span>
+              <span class="text-base">🏥</span>
+            </div>
+            <p class="text-2xl sm:text-3xl font-bold text-[#bc1823] leading-none">
+              {{ facilityCount }}
+            </p>
+            <p class="mt-2 text-xs font-medium text-ink-gray-6">
+              Linked to your account
             </p>
           </div>
+
           <div
-          v-if="!loading && !errorMessage && (context.ois?.length || context.customer_accounts?.length)"
-            class="grid grid-cols-2 gap-3 sm:grid-cols-3"
-            aria-label="Account overview"
+            class="rounded-xl border border-white/80 bg-white/75 p-4 shadow-sm backdrop-blur-md transition hover:border-[#f0d6d8] hover:shadow-md"
           >
-            <div
-              class="rounded-xl border border-white/80 bg-white/75 p-3 shadow-sm backdrop-blur-md sm:p-4"
-            >
-              <p
-                class="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-gray-5"
-              >
-                Facilities
-              </p>
-              <p
-                class="mt-1 text-2xl font-bold leading-none tracking-tight text-[#bc1823]"
-              >
-                {{ facilityCount }}
-              </p>
-              <p class="mt-2 text-[11px] text-ink-gray-5">
-                Linked to your account
-              </p>
+            <div class="flex items-center justify-between text-ink-gray-6 mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-ink-gray-7">
+                Token Orders
+              </span>
+              <span class="text-base">📦</span>
             </div>
-            <div
-              class="rounded-xl border border-white/80 bg-white/75 p-3 shadow-sm backdrop-blur-md sm:p-4"
-            >
-              <p
-                class="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-gray-5"
-              >
-                Orders ready for invoicing
-              </p>
-              <p
-                class="mt-1 text-2xl font-bold leading-none tracking-tight text-[#bc1823]"
-              >
-                {{ invoiceReadyOrderCount }}
-              </p>
-              <p class="mt-2 text-[11px] text-ink-gray-5">
-                Ready to invoice
-              </p>
+            <p class="text-2xl sm:text-3xl font-bold text-[#bc1823] leading-none">
+              {{ invoiceReadyOrderCount }}
+            </p>
+            <p class="mt-2 text-xs font-medium text-ink-gray-6">
+              Ready to invoice
+            </p>
+          </div>
+
+          <div
+            class="rounded-xl border border-white/80 bg-white/75 p-4 shadow-sm backdrop-blur-md transition hover:border-emerald-200 hover:shadow-md"
+          >
+            <div class="flex items-center justify-between text-ink-gray-6 mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-ink-gray-7">
+                Open Invoices
+              </span>
+              <span class="text-base">💳</span>
             </div>
-            <div
-              class="col-span-2 rounded-xl border border-white/80 bg-white/75 p-3 shadow-sm backdrop-blur-md sm:col-span-1 sm:p-4"
-            >
-              <p
-                class="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-gray-5"
-              >
-                Open invoices
-              </p>
-              <p
-                class="mt-1 text-2xl font-bold leading-none tracking-tight text-emerald-700"
-              >
-                {{ openInvoiceCount }}
-              </p>
-              <p class="mt-2 text-[11px] text-ink-gray-5">
-                Due or awaiting payment
-              </p>
+            <p class="text-2xl sm:text-3xl font-bold text-emerald-700 leading-none">
+              {{ openInvoiceCount }}
+            </p>
+            <p class="mt-2 text-xs font-medium text-ink-gray-6">
+              Due or awaiting payment
+            </p>
+          </div>
+
+          <div
+            class="rounded-xl border border-white/80 bg-white/75 p-4 shadow-sm backdrop-blur-md transition hover:border-emerald-200 hover:shadow-md"
+          >
+            <div class="flex items-center justify-between text-ink-gray-6 mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-ink-gray-7">
+                Network Status
+              </span>
+              <span class="text-base">🛡️</span>
             </div>
+            <p class="text-base sm:text-lg font-bold text-emerald-700 leading-none mt-1">
+              Active Access
+            </p>
+            <p class="mt-3 text-xs font-medium text-ink-gray-6">
+              Registry synchronized
+            </p>
           </div>
         </div>
       </section>
 
+      <!-- Feedback Banner / Notice -->
       <div
         v-if="notice"
         :role="notice.tone === 'error' ? 'alert' : 'status'"
-        class="mt-6 rounded-xl border px-4 py-3 text-sm shadow-sm backdrop-blur"
+        class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-sm shadow-sm backdrop-blur"
         :class="{
-          'border-emerald-200 bg-emerald-50/90 text-emerald-800':
+          'border-emerald-200 bg-emerald-50/90 text-emerald-900':
             notice.tone === 'success',
-          'border-amber-200 bg-amber-50/90 text-amber-800':
+          'border-amber-200 bg-amber-50/90 text-amber-900':
             notice.tone === 'pending',
-          'border border-outline-red-2 bg-surface-red-1 text-ink-red-7':
+          'border-rose-200 bg-rose-50/90 text-rose-900':
             notice.tone === 'error',
         }"
       >
-        {{ notice.text }}
+        <div class="flex items-center gap-2.5">
+          <span class="flex size-6 shrink-0 items-center justify-center rounded-lg text-sm">
+            <template v-if="notice.tone === 'success'">✓</template>
+            <template v-else-if="notice.tone === 'pending'">⏱</template>
+            <template v-else>⚠️</template>
+          </span>
+          <span class="font-medium">{{ notice.text }}</span>
+        </div>
         <a
           v-if="bankTransferOis"
           :href="`/payment-checkout?ois=${encodeURIComponent(bankTransferOis)}`"
-          class="ml-1 font-semibold underline underline-offset-4"
-          >Other payment options</a
+          class="font-semibold text-ink-gray-9 underline underline-offset-4 hover:text-[#bc1823]"
         >
+          Other payment options →
+        </a>
       </div>
-      <p v-if="loading" class="mt-8 text-sm text-ink-gray-5" aria-live="polite">
-        Loading your secure portal…
-      </p>
-      <p
+
+      <!-- Loading State -->
+      <div v-if="loading" class="mt-10 flex items-center justify-center gap-3 py-12 text-sm text-slate-500" aria-live="polite">
+        <svg class="size-5 animate-spin text-red-600" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span>Loading your secure portal…</span>
+      </div>
+
+      <!-- Error State -->
+      <div
         v-else-if="errorMessage"
-        class="mt-8 rounded-xl border border-outline-red-2 bg-surface-red-1 px-4 py-3 text-sm text-ink-red-7 shadow-sm"
+        class="mt-8 rounded-2xl border border-rose-200 bg-rose-50/90 p-5 text-sm text-rose-900 shadow-sm"
         role="alert"
       >
-        {{ errorMessage }}
-      </p>
+        <p class="font-medium">{{ errorMessage }}</p>
+      </div>
+
+      <!-- Empty State -->
       <section
         v-if="!loading && !errorMessage && !context.ois?.length && !context.customer_accounts?.length"
-        class="mt-8 max-w-2xl rounded-2xl border border-white/80 bg-white/90 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-sm"
+        class="mt-8 max-w-2xl rounded-2xl border border-outline-gray-2 bg-white/90 p-8 shadow-sm backdrop-blur"
       >
-        <p
-          class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-gray-5"
+        <span
+          class="inline-flex items-center gap-1.5 rounded-full border border-outline-gray-2 bg-surface-gray-2 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-ink-gray-7"
         >
           Account setup
-        </p>
-        <h2 class="mt-2 text-xl font-semibold">
+        </span>
+        <h2 class="mt-3 text-xl font-semibold text-ink-gray-9">
           Your account is not linked yet
         </h2>
-        <p class="mt-3 text-sm leading-6 text-ink-gray-6">
+        <p class="mt-2 text-sm leading-6 text-ink-gray-6">
           You are signed in securely. Once your facility onboarding record is
           linked, your progress and next actions will appear here.
         </p>
       </section>
+
+      <!-- Customer Facility Accounts Section -->
       <section
         v-if="!loading && !errorMessage && context.customer_accounts?.length"
-        class="mt-8 grid gap-4 sm:grid-cols-2"
+        class="mt-10 space-y-6"
       >
-        <article
-          v-for="account in context.customer_accounts"
-          :key="account.customer"
-          class="min-w-0 rounded-2xl border border-white/80 bg-white/90 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6"
-        >
-          <p class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-gray-5">
-            Facility account
-          </p>
-          <h2 class="mt-2 text-lg font-semibold">{{ account.organization }}</h2>
-          <dl class="mt-4 space-y-2 text-sm">
-            <div class="flex justify-between gap-4">
-              <dt class="text-ink-gray-5">Customer</dt>
-              <dd class="font-mono text-xs">{{ account.customer }}</dd>
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-semibold tracking-tight text-ink-gray-9">
+            Facility Accounts
+          </h2>
+          <span class="text-xs font-medium text-ink-gray-5">
+            {{ context.customer_accounts.length }} Organization{{ context.customer_accounts.length > 1 ? 's' : '' }}
+          </span>
+        </div>
+
+        <div class="grid gap-6 sm:grid-cols-2">
+          <article
+            v-for="account in context.customer_accounts"
+            :key="account.customer"
+            class="min-w-0 rounded-2xl border border-outline-gray-2 bg-white/90 p-6 sm:p-7 shadow-sm backdrop-blur transition hover:border-[#f0d6d8] hover:shadow-md"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <span class="inline-flex items-center gap-1 rounded-full bg-[#fdf2f3] border border-[#f0d6d8] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#bc1823]">
+                  Facility Account
+                </span>
+                <h3 class="mt-2 text-lg font-semibold text-ink-gray-9">
+                  {{ account.organization }}
+                </h3>
+              </div>
+              <span class="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                Onboarded
+              </span>
             </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-ink-gray-5">Network</dt>
-              <dd class="font-medium">{{ account.network || 'Being confirmed' }}</dd>
+
+            <dl class="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-outline-gray-2/60 bg-surface-gray-1/70 p-3.5 text-xs">
+              <div>
+                <dt class="text-ink-gray-5 font-medium">Customer ID</dt>
+                <dd class="mt-0.5 font-mono font-semibold text-ink-gray-8">{{ account.customer }}</dd>
+              </div>
+              <div>
+                <dt class="text-ink-gray-5 font-medium">Network</dt>
+                <dd class="mt-0.5 font-semibold text-ink-gray-8 truncate">{{ account.network || 'Being confirmed' }}</dd>
+              </div>
+            </dl>
+
+            <div class="mt-5 space-y-3">
+              <p class="text-xs font-semibold uppercase tracking-wider text-ink-gray-6">
+                Clinics & Facilities ({{ (account.facilities || []).length }})
+              </p>
+              <div
+                v-for="facility in account.facilities || []"
+                :key="facility.mfl_code"
+                class="rounded-xl border border-outline-gray-2 bg-white p-4 shadow-sm transition hover:border-outline-gray-3"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 class="text-sm font-semibold text-ink-gray-9">
+                      {{ facility.facility_name }}
+                    </h4>
+                    <div class="mt-1 flex items-center gap-2 text-xs text-ink-gray-5">
+                      <span>{{ facility.membership_status }}</span>
+                      <span>·</span>
+                      <span class="rounded bg-surface-gray-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-gray-7 border border-outline-gray-2">
+                        {{ facility.mfl_code }}
+                      </span>
+                    </div>
+                  </div>
+                  <span
+                    class="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                    :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-surface-gray-2 text-ink-gray-6 border border-outline-gray-2'"
+                  >
+                    {{ facility.go_live ? 'Live' : 'In progress' }}
+                  </span>
+                </div>
+
+                <div
+                  v-if="facility.token_package || facility.package_gross_total != null"
+                  class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-outline-gray-2/70 pt-3 text-xs"
+                >
+                  <span v-if="facility.token_package" class="inline-flex items-center gap-1.5 font-medium text-ink-gray-7">
+                    <span class="text-amber-500">🪙</span>
+                    <span>{{ facility.token_package }}</span>
+                    <template v-if="facility.token_quantity">
+                      <span class="font-semibold text-ink-gray-9">({{ facility.token_quantity.toLocaleString() }} tokens)</span>
+                    </template>
+                  </span>
+                  <span v-if="facility.package_gross_total != null" class="font-semibold text-ink-gray-9">
+                    {{ money(facility.package_gross_total, facility.package_currency) }} <span class="font-normal text-ink-gray-5 text-[11px]">incl. VAT</span>
+                  </span>
+                </div>
+              </div>
             </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-ink-gray-5">Account</dt>
-              <dd class="font-medium text-emerald-700">Onboarded</dd>
-            </div>
-          </dl>
-          <div class="mt-5 space-y-2">
-            <div
-              v-for="facility in account.facilities || []"
-              :key="facility.mfl_code"
-              class="flex items-center justify-between gap-3 rounded-lg border border-outline-gray-1 bg-white/85 px-3 py-3 text-xs"
+
+            <p
+              v-if="account.selected_package && !(account.facilities || []).some((facility) => facility.token_package)"
+              class="mt-4 rounded-xl bg-surface-gray-1 p-3 text-xs text-ink-gray-6 border border-outline-gray-2"
             >
-              <span>
-                <span class="block font-medium text-ink-gray-8">{{ facility.facility_name }}</span>
-                <span class="text-ink-gray-5">{{ facility.membership_status }} · {{ facility.mfl_code }}</span>
-                <span v-if="facility.token_package" class="mt-1 block text-ink-gray-6">
-                  {{ facility.token_package }}<template v-if="facility.token_quantity"> · {{ facility.token_quantity.toLocaleString() }} tokens</template>
-                </span>
-                <span v-if="facility.package_gross_total != null" class="mt-1 block font-medium text-ink-gray-7">
-                  {{ money(facility.package_gross_total, facility.package_currency) }} incl. VAT
-                </span>
-              </span>
-              <span class="shrink-0 rounded-full bg-surface-gray-2 px-2 py-1 text-ink-gray-6">
-                {{ facility.go_live ? 'Live' : 'In progress' }}
-              </span>
-            </div>
-          </div>
-          <p v-if="account.selected_package && !(account.facilities || []).some((facility) => facility.token_package)" class="mt-4 text-xs text-ink-gray-5">
-            Selected package: {{ account.selected_package }}. Your enrollment is saved.
-          </p>
-        </article>
+              Selected package: <strong>{{ account.selected_package }}</strong>. Your enrollment is saved.
+            </p>
+          </article>
+        </div>
       </section>
 
-      <section v-if="!loading && !errorMessage && context.ois?.length" class="mt-8 grid gap-4 sm:grid-cols-2">
-        <article
-          v-for="submission in context.ois"
-          :key="submission.name"
-          class="min-w-0 rounded-2xl border border-white/80 bg-white/90 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-sm sm:p-6"
-          :class="context.ois.length === 1 ? 'sm:col-span-2' : ''"
-        >
-          <p
-            class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-gray-5"
-          >
-            Opt-In Request
-          </p>
-          <h2 class="mt-2 font-mono text-lg font-semibold">
-            {{ submission.name }}
+      <!-- Opt-In Submissions (OIS) Section -->
+      <section
+        v-if="!loading && !errorMessage && context.ois?.length"
+        class="mt-10 space-y-6"
+      >
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-semibold tracking-tight text-ink-gray-9">
+            Opt-In Requests
           </h2>
-          <dl class="mt-5 space-y-3 text-sm">
-            <div class="flex justify-between gap-4">
-              <dt class="text-ink-gray-5">Status</dt>
-              <dd class="font-medium">{{ submission.status || 'Pending' }}</dd>
-            </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-ink-gray-5">Network</dt>
-              <dd class="font-medium">
-                {{ submission.network_slug || 'Being confirmed' }}
-              </dd>
-            </div>
-          </dl>
-          <div
-            class="mt-6 rounded-xl border border-outline-gray-1 bg-white/65 p-4 shadow-sm sm:p-5"
-          >
-            <div class="flex items-center justify-between gap-4">
-              <p
-                class="text-xs font-semibold uppercase tracking-[0.12em] text-ink-gray-5"
-              >
-                Progress
-              </p>
-              <p class="text-xs font-medium text-ink-gray-6">
-                {{ submission.progress?.next_action?.label }}
-              </p>
-            </div>
-            <ol class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <li
-                v-for="step in submission.progress?.steps || []"
-                :key="step.key"
-                class="flex items-center gap-3 rounded-lg border border-outline-gray-1 bg-white/80 p-3 text-xs shadow-sm"
-              >
-                <span
-                  class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-                  :class="stepClass(step)"
-                >
-                  {{ step.status === 'complete' ? '✓' : '•' }}
-                </span>
-                <span>
-                  <span class="block font-medium text-ink-gray-8">{{
-                    customerStepLabel(step)
-                  }}</span>
-                  <span class="block text-ink-gray-5">{{
-                    stepLabel(step)
-                  }}</span>
-                </span>
-              </li>
-            </ol>
-          </div>
+          <span class="text-xs font-medium text-ink-gray-5">
+            {{ context.ois.length }} Active
+          </span>
+        </div>
 
-          <div
-            class="mt-4 rounded-xl border border-outline-gray-1 bg-gradient-to-br from-white/90 to-surface-gray-1 p-4 shadow-sm"
+        <div class="grid gap-6 sm:grid-cols-2">
+          <article
+            v-for="submission in context.ois"
+            :key="submission.name"
+            class="min-w-0 rounded-2xl border border-outline-gray-2 bg-white/90 p-6 sm:p-7 shadow-sm backdrop-blur"
+            :class="context.ois.length === 1 ? 'sm:col-span-2' : ''"
           >
-            <div class="flex items-center justify-between gap-3">
-              <p class="text-sm font-medium">Implementation status</p>
-              <span
-                class="rounded-full px-2 py-1 text-xs font-medium"
-                :class="
-                  submission.progress?.steps?.at(-1)?.status === 'complete'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-amber-100 text-amber-800'
-                "
-              >
-                {{
-                  submission.progress?.steps?.at(-1)?.status === 'complete'
-                    ? 'Ready for service activation'
-                    : 'In progress'
-                }}
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <span class="inline-flex items-center gap-1 rounded-full bg-surface-gray-2 border border-outline-gray-2 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-gray-7">
+                  Opt-In Request
+                </span>
+                <h3 class="mt-2 font-mono text-base font-semibold text-ink-gray-9">
+                  {{ submission.name }}
+                </h3>
+              </div>
+              <span class="rounded-full bg-[#fdf2f3] border border-[#f0d6d8] px-2.5 py-0.5 text-xs font-semibold text-[#bc1823]">
+                {{ submission.status || 'Pending' }}
               </span>
             </div>
-            <p class="mt-2 text-sm leading-6 text-ink-gray-6">
-              <template v-if="isSelfOnboarded(submission)">
-                <span v-if="submission.progress?.package?.display_name">
-                  Selected package:
-                  {{ submission.progress.package.display_name }}.
-                </span>
-                Payment status:
-                {{ submission.progress?.payment_status || 'Not started' }}.
-              </template>
-              <template v-else>
-                {{ contractSummary(submission.progress) }}.
-              </template>
-              Your network’s service status is shown below.
-            </p>
-            <div class="mt-3 space-y-2">
-              <div
-                v-for="facility in submission.progress?.facilities || []"
-                :key="facility.mfl_code"
-                class="flex items-center justify-between gap-3 rounded-lg border border-outline-gray-1 bg-white/85 px-3 py-3 text-xs shadow-sm"
-              >
-                <span>
-                  <span class="block font-medium text-ink-gray-8">{{
-                    facility.facility_name
-                  }}</span>
-                  <span class="text-ink-gray-5"
-                    >{{ facility.membership_status }} ·
-                    {{ facility.mfl_code }}</span
+
+            <dl class="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-outline-gray-2/60 bg-surface-gray-1/70 p-3.5 text-xs">
+              <div>
+                <dt class="text-ink-gray-5 font-medium">Status</dt>
+                <dd class="mt-0.5 font-semibold text-ink-gray-8">{{ submission.status || 'Pending' }}</dd>
+              </div>
+              <div>
+                <dt class="text-ink-gray-5 font-medium">Network</dt>
+                <dd class="mt-0.5 font-semibold text-ink-gray-8 truncate">{{ submission.network_slug || 'Being confirmed' }}</dd>
+              </div>
+            </dl>
+
+            <!-- Stepper Progress -->
+            <div class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1/60 p-5">
+              <div class="flex items-center justify-between gap-4">
+                <p class="text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
+                  Onboarding Progress
+                </p>
+                <p class="text-xs font-semibold text-[#bc1823]">
+                  {{ submission.progress?.next_action?.label }}
+                </p>
+              </div>
+              <ol class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <li
+                  v-for="step in submission.progress?.steps || []"
+                  :key="step.key"
+                  class="flex items-center gap-3 rounded-xl border border-outline-gray-2 bg-white p-3 text-xs shadow-sm"
+                >
+                  <span
+                    class="flex size-7 shrink-0 items-center justify-center rounded-xl text-xs font-semibold transition-all"
+                    :class="stepClass(step)"
                   >
-                </span>
+                    {{ step.status === 'complete' ? '✓' : '•' }}
+                  </span>
+                  <div class="min-w-0">
+                    <span class="block truncate font-semibold text-ink-gray-9">{{
+                      customerStepLabel(step)
+                    }}</span>
+                    <span class="block text-[11px] text-ink-gray-5 font-medium">{{
+                      stepLabel(step)
+                    }}</span>
+                  </div>
+                </li>
+              </ol>
+            </div>
+
+            <!-- Implementation & Facilities Status -->
+            <div class="mt-5 rounded-xl border border-outline-gray-2 bg-white p-5 shadow-sm">
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-sm font-semibold text-ink-gray-9">Implementation status</p>
                 <span
-                  class="shrink-0 rounded-full px-2 py-1 font-medium"
+                  class="rounded-full px-2.5 py-0.5 text-xs font-semibold"
                   :class="
-                    facility.network_contact?.go_live
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-surface-gray-2 text-ink-gray-6'
+                    submission.progress?.steps?.at(-1)?.status === 'complete'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-amber-50 text-amber-800 border border-amber-200'
                   "
                 >
                   {{
-                    facility.network_contact?.go_live
-                      ? 'Live'
-                      : 'Not yet live'
+                    submission.progress?.steps?.at(-1)?.status === 'complete'
+                      ? 'Ready for service activation'
+                      : 'In progress'
                   }}
                 </span>
               </div>
-            </div>
-            <div
-              v-if="submission.open_invoices?.length"
-              class="mt-4 border-t border-outline-gray-2 pt-4"
-            >
-              <p
-                class="text-xs font-semibold uppercase tracking-[0.12em] text-ink-gray-5"
-              >
-                Open invoices
+              <p class="mt-2 text-xs leading-5 text-ink-gray-6">
+                <template v-if="isSelfOnboarded(submission)">
+                  <span v-if="submission.progress?.package?.display_name">
+                    Selected package: <strong>{{ submission.progress.package.display_name }}</strong>.
+                  </span>
+                  Payment status: <strong>{{ submission.progress?.payment_status || 'Not started' }}</strong>.
+                </template>
+                <template v-else>
+                  {{ contractSummary(submission.progress) }}.
+                </template>
+                Your network’s service status is shown below.
               </p>
-              <div
-                v-for="invoice in submission.open_invoices"
-                :key="invoice.name"
-                class="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-outline-gray-1 bg-white/85 px-3 py-3 text-xs shadow-sm"
-              >
-                <span
-                  ><span class="block font-medium">{{
-                    invoice.invoice_number
-                  }}</span
-                  ><span class="text-ink-gray-5"
-                    >Due {{ invoice.due_date || 'on request' }} ·
-                    <span
-                      :class="
-                        invoiceStatus(invoice).key === 'overdue'
-                          ? 'font-semibold text-ink-red-7'
-                          : ''
-                      "
-                      >{{ invoiceStatus(invoice).label }}</span
-                    ></span
-                  ></span
+
+              <div class="mt-4 space-y-2.5">
+                <div
+                  v-for="facility in submission.progress?.facilities || []"
+                  :key="facility.mfl_code"
+                  class="flex items-center justify-between gap-3 rounded-xl border border-outline-gray-2 bg-surface-gray-1/70 px-3.5 py-2.5 text-xs shadow-sm"
                 >
-                <button
-                  type="button"
-                  class="min-h-10 rounded-md bg-[#bc1823] px-4 py-2 font-semibold text-white disabled:opacity-50"
-                  :disabled="busyId === invoice.name"
-                  @click="payInvoice(submission.name, invoice)"
-                >
-                  {{
-                    busyId === invoice.name
-                      ? 'Opening checkout…'
-                      : `Make payment · ${money(invoice.amount, invoice.currency)}`
-                  }}
-                </button>
-              </div>
-            </div>
-            <div
-              v-if="submission.open_orders?.length"
-              class="mt-4 border-t border-outline-gray-2 pt-4"
-            >
-              <p
-                class="text-xs font-semibold uppercase tracking-[0.12em] text-ink-gray-5"
-              >
-                Token orders
-              </p>
-              <div
-                v-for="order in submission.open_orders"
-                :key="order.name"
-                class="mt-2 rounded-lg border border-outline-gray-1 bg-white/85 px-3 py-3 text-xs shadow-sm"
-              >
-                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span class="block font-semibold text-ink-gray-9">{{
+                      facility.facility_name
+                    }}</span>
+                    <span class="text-ink-gray-5"
+                      >{{ facility.membership_status }} ·
+                      {{ facility.mfl_code }}</span
+                    >
+                  </div>
                   <span
-                    ><span class="block font-medium">{{
-                      packageLabel(
-                        order.crm_token_package_item,
-                        context.token_packages,
-                      )
-                    }}</span
-                    ><span class="text-ink-gray-5"
-                      >{{
-                        facilityLabel(
-                          order.crm_token_facility_mfl,
-                          submission.progress?.facilities,
-                        )
-                      }}
-                      · {{ order.name }} ·
-                      {{ money(order.grand_total, order.currency) }} incl.
-                      VAT</span
-                    ></span
-                  >
-                  <button
-                    v-if="order.can_create_invoice"
-                    type="button"
-                    class="min-h-10 rounded-md bg-[#bc1823] px-4 py-2 font-semibold text-white disabled:opacity-50"
-                    :disabled="busyId === order.name"
-                    @click="createInvoice(order.name)"
+                    class="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                    :class="
+                      facility.network_contact?.go_live
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                        : 'bg-surface-gray-2 text-ink-gray-6 border border-outline-gray-2'
+                    "
                   >
                     {{
-                      busyId === order.name
-                        ? 'Creating invoice…'
-                        : 'Create invoice'
+                      facility.network_contact?.go_live
+                        ? 'Live'
+                        : 'Not yet live'
+                    }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Open Invoices -->
+              <div
+                v-if="submission.open_invoices?.length"
+                class="mt-5 border-t border-outline-gray-2/70 pt-5"
+              >
+                <p class="text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
+                  Open invoices ({{ submission.open_invoices.length }})
+                </p>
+                <div
+                  v-for="invoice in submission.open_invoices"
+                  :key="invoice.name"
+                  class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-outline-gray-2 bg-white p-4 text-xs shadow-sm"
+                >
+                  <div>
+                    <span class="block font-semibold text-ink-gray-9 text-sm">{{
+                      invoice.invoice_number
+                    }}</span>
+                    <span class="text-ink-gray-5"
+                      >Due {{ invoice.due_date || 'on request' }} ·
+                      <span
+                        :class="
+                          invoiceStatus(invoice).key === 'overdue'
+                            ? 'font-semibold text-rose-600'
+                            : 'font-medium'
+                        "
+                        >{{ invoiceStatus(invoice).label }}</span
+                      ></span
+                    >
+                  </div>
+                  <button
+                    type="button"
+                    class="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-[#bc1823] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#a3141d] disabled:opacity-50"
+                    :disabled="busyId === invoice.name"
+                    @click="payInvoice(submission.name, invoice)"
+                  >
+                    {{
+                      busyId === invoice.name
+                        ? 'Opening checkout…'
+                        : `Make payment · ${money(invoice.amount, invoice.currency)}`
                     }}
                   </button>
-                  <p v-else class="text-ink-gray-5">
-                    {{ invoiceUnavailableMessage(order) }}
+                </div>
+              </div>
+
+              <!-- Token Orders -->
+              <div
+                v-if="submission.open_orders?.length"
+                class="mt-5 border-t border-outline-gray-2/70 pt-5"
+              >
+                <p class="text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
+                  Token orders ({{ submission.open_orders.length }})
+                </p>
+                <div
+                  v-for="order in submission.open_orders"
+                  :key="order.name"
+                  class="mt-3 rounded-xl border border-outline-gray-2 bg-white p-4 text-xs shadow-sm"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <span class="block font-semibold text-ink-gray-9 text-sm">{{
+                        packageLabel(
+                          order.crm_token_package_item,
+                          context.token_packages,
+                        )
+                      }}</span>
+                      <span class="text-ink-gray-5"
+                        >{{
+                          facilityLabel(
+                            order.crm_token_facility_mfl,
+                            submission.progress?.facilities,
+                          )
+                        }}
+                        · {{ order.name }} ·
+                        <strong class="text-ink-gray-9">{{ money(order.grand_total, order.currency) }}</strong> incl. VAT</span
+                      >
+                    </div>
+                    <button
+                      v-if="order.can_create_invoice"
+                      type="button"
+                      class="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-[#bc1823] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#a3141d] disabled:opacity-50"
+                      :disabled="busyId === order.name"
+                      @click="createInvoice(order.name)"
+                    >
+                      {{
+                        busyId === order.name
+                          ? 'Creating invoice…'
+                          : 'Create invoice'
+                      }}
+                    </button>
+                    <p v-else class="text-ink-gray-5 font-medium">
+                      {{ invoiceUnavailableMessage(order) }}
+                    </p>
+                  </div>
+                  <p v-if="order.can_create_invoice" class="mt-2 text-ink-gray-5 text-[11px]">
+                    Create an invoice for this order. When it is due, return here and make payment.
                   </p>
                 </div>
-                <p v-if="order.can_create_invoice" class="mt-2 text-ink-gray-5">
-                  Create an invoice for this order. When it is due, return here
-                  and make payment.
-                </p>
               </div>
             </div>
-          </div>
-        </article>
+          </article>
+        </div>
       </section>
+
+      <!-- Token Catalogue Section -->
       <section
         v-if="!loading && !errorMessage && context.ois?.length && context.token_packages?.length"
-        class="mt-8 rounded-2xl border border-white/80 bg-white/90 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-sm sm:p-6"
+        class="mt-10 rounded-2xl border border-outline-gray-2 bg-white/90 p-6 sm:p-8 shadow-sm backdrop-blur"
       >
-        <div class="flex items-end justify-between gap-4">
+        <div class="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p
-              class="text-xs font-semibold uppercase tracking-[0.14em] text-ink-gray-5"
+            <span
+              class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#bc1823]"
             >
               Token catalogue
-            </p>
-            <h2 class="mt-2 text-xl font-semibold">
+            </span>
+            <h2 class="mt-2 text-2xl font-semibold tracking-tight text-ink-gray-9">
               Choose capacity when you need it
             </h2>
           </div>
-          <p class="text-xs text-ink-gray-5">All prices exclude VAT</p>
+          <p class="text-xs font-medium text-ink-gray-5">All prices exclude VAT</p>
         </div>
-        <div class="mt-5 grid gap-3 sm:grid-cols-2">
-          <select
-            v-model="purchaseOis"
-            class="w-full min-w-0 rounded-lg border border-outline-gray-2 px-3 py-2 text-sm"
-            @change="
-              purchaseFacility = purchaseFacilities()?.[0]?.mfl_code || ''
-            "
-          >
-            <option
-              v-for="item in context.ois"
-              :key="item.name"
-              :value="item.name"
+
+        <div class="mt-6 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-ink-gray-7 mb-1.5">
+              Opt-In Request
+            </label>
+            <select
+              v-model="purchaseOis"
+              class="w-full rounded-xl border border-outline-gray-2 bg-white px-4 py-2.5 text-sm font-medium text-ink-gray-9 shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
+              @change="
+                purchaseFacility = purchaseFacilities()?.[0]?.mfl_code || ''
+              "
             >
-              {{ item.name }}
-            </option></select
-          ><select
-            v-model="purchaseFacility"
-            class="w-full min-w-0 rounded-lg border border-outline-gray-2 px-3 py-2 text-sm"
-          >
-            <option
-              v-for="facility in purchaseFacilities()"
-              :key="facility.mfl_code"
-              :value="facility.mfl_code"
+              <option
+                v-for="item in context.ois"
+                :key="item.name"
+                :value="item.name"
+              >
+                {{ item.name }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-ink-gray-7 mb-1.5">
+              Target Facility
+            </label>
+            <select
+              v-model="purchaseFacility"
+              class="w-full rounded-xl border border-outline-gray-2 bg-white px-4 py-2.5 text-sm font-medium text-ink-gray-9 shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
             >
-              {{ facility.facility_name }} · {{ facility.mfl_code }}
-            </option>
-          </select>
+              <option
+                v-for="facility in purchaseFacilities()"
+                :key="facility.mfl_code"
+                :value="facility.mfl_code"
+              >
+                {{ facility.facility_name }} · {{ facility.mfl_code }}
+              </option>
+            </select>
+          </div>
         </div>
+
         <p
           v-if="purchaseMessage"
-          class="mt-3 rounded-lg bg-surface-gray-1 px-3 py-2 text-xs text-ink-gray-6"
+          class="mt-4 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-3.5 text-xs font-medium text-ink-gray-7"
         >
           {{ purchaseMessage }}
         </p>
-        <div class="mt-5 grid gap-3 md:grid-cols-3">
-          <article
-            v-for="item in context.token_packages"
-            :key="item.item_code"
-            class="rounded-xl border border-outline-gray-1 bg-white/75 p-4 shadow-sm transition-shadow hover:shadow-md"
-          >
-            <p class="text-sm font-semibold">
-              {{ item.display_name || item.item_code }}
-            </p>
-            <p class="mt-2 text-base font-semibold">
-              {{ money(item.price_ex_vat ?? item.price, item.currency) }}
-              <span class="text-xs font-normal text-ink-gray-5">excl. VAT</span>
-            </p>
-            <p v-if="item.gross_total" class="mt-1 text-xs text-ink-gray-5">
-              {{ item.vat_label || 'VAT' }}
-              {{ money(item.vat_amount, item.currency) }} · Total
-              {{ money(item.gross_total, item.currency) }}
-            </p>
-            <p class="mt-2 text-xs leading-5 text-ink-gray-5">
-              {{ item.coverage_summary || item.description }}
-            </p>
-            <button
-              class="mt-4 min-h-10 rounded-md bg-[#bc1823] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
-              type="button"
-              :disabled="purchaseBusy"
-              @click="buyPackage(item)"
+
+        <!-- Interactive Token Sizing Calculator -->
+        <div class="mt-8">
+          <TokenCalculator
+            :packages="context.token_packages"
+            :config="context.calculator_config"
+            :selected-package-code="selectedPortalPackageCode"
+            :facility-name="currentFacilityName"
+            context="portal"
+            @select-package="onCalculatorSelectPackage"
+            @apply-plan="onCalculatorApplyPlan"
+          />
+        </div>
+
+        <div class="mt-8">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-ink-gray-7 mb-4">
+            Available Token Packages
+          </h3>
+          <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <article
+              v-for="item in context.token_packages"
+              :key="item.item_code"
+              class="rounded-2xl border bg-white p-5 shadow-sm transition hover:border-[#f0d6d8] hover:shadow-md flex flex-col justify-between cursor-pointer"
+              :class="selectedPortalPackageCode === item.item_code
+                ? 'border-2 border-[#bc1823] bg-[#fdf2f3]/20 ring-4 ring-[#bc1823]/10 shadow-md'
+                : 'border-outline-gray-2'"
+              @click="selectedPortalPackageCode = item.item_code"
             >
-              {{
-                purchaseBusy
-                  ? 'Working…'
-                  : existingOrder(item)
-                    ? `Resume order ${existingOrder(item).name}`
-                    : 'Create order'
-              }}
-            </button>
-          </article>
+              <div>
+                <div class="flex items-center justify-between">
+                  <h4 class="text-base font-semibold text-ink-gray-9">
+                    {{ item.display_name || item.item_code }}
+                  </h4>
+                  <span
+                    v-if="Number(item.price_ex_vat ?? item.price ?? 0) === 0"
+                    class="rounded-full bg-surface-gray-2 border border-outline-gray-2 px-2 py-0.5 text-[10px] font-semibold text-ink-gray-7"
+                  >
+                    Free Trial • No Commitment
+                  </span>
+                </div>
+                <p class="mt-3 text-2xl font-semibold text-ink-gray-9">
+                  {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? 'KES 0' : money(item.price_ex_vat ?? item.price, item.currency) }}
+                  <span class="text-xs font-normal text-ink-gray-5">{{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? 'Zero commitment' : 'excl. VAT' }}</span>
+                </p>
+                <p v-if="item.gross_total" class="mt-1 text-xs text-ink-gray-5">
+                  {{ item.vat_label || 'VAT' }}
+                  {{ money(item.vat_amount, item.currency) }} · Total
+                  <strong class="text-ink-gray-8">{{ money(item.gross_total, item.currency) }}</strong>
+                </p>
+                <div class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#fdf2f3] border border-[#f0d6d8]/60 px-2.5 py-1 text-xs font-semibold text-[#bc1823]">
+                  <span>🪙</span>
+                  <span>{{ item.token_quantity || 100 }} Tokens</span>
+                </div>
+                <p class="mt-3 text-xs leading-relaxed text-ink-gray-6">
+                  {{ item.coverage_summary || item.description }}
+                </p>
+              </div>
+
+              <button
+                class="mt-5 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#bc1823] px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#a3141d] disabled:opacity-50"
+                type="button"
+                :disabled="purchaseBusy"
+                @click.stop="buyPackage(item)"
+              >
+                {{
+                  purchaseBusy
+                    ? 'Working…'
+                    : existingOrder(item)
+                      ? `Order active (${existingOrder(item).name})`
+                      : Number(item.price_ex_vat ?? item.price ?? 0) === 0
+                        ? 'Activate Free Trial (No commitment)'
+                        : 'Create order'
+                }}
+              </button>
+            </article>
+          </div>
         </div>
       </section>
     </div>
   </main>
 </template>
+

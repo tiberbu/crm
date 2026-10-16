@@ -94,6 +94,7 @@ async function goToReview(host) {
   await settle()
   await submitForm(host.querySelector('form'))
   const reviewForm = host.querySelector('form')
+  await checkInput(reviewForm.querySelector('[data-testid="terms-acceptance"]'))
   expect(
     reviewForm.querySelector('[data-testid="verified-account-email"]')
       ?.textContent,
