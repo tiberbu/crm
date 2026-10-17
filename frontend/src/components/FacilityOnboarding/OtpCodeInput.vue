@@ -4,7 +4,7 @@
       role="group"
       :aria-label="label"
       :aria-describedby="error ? errorId : undefined"
-      class="flex justify-center gap-2 sm:gap-3"
+      class="flex justify-center gap-1.5 sm:gap-3"
     >
       <input
         v-for="(_, index) in length"
@@ -18,7 +18,7 @@
         inputmode="numeric"
         pattern="[0-9]*"
         :maxlength="index === 0 && !digits.length ? length : 1"
-        class="size-12 rounded-lg border bg-surface-white text-center text-xl font-semibold text-ink-gray-9 outline-none transition focus:border-[#bc1823] focus:ring-2 focus:ring-[#bc1823]/30 disabled:opacity-50 sm:size-14"
+        class="size-10 sm:size-14 rounded-lg border bg-surface-white text-center text-lg sm:text-xl font-semibold text-ink-gray-9 outline-none transition focus:border-[#bc1823] focus:ring-2 focus:ring-[#bc1823]/30 disabled:opacity-50"
         :class="error ? 'border-outline-red-2' : 'border-outline-gray-3'"
         @input="onInput(index, $event)"
         @keydown="onKeydown(index, $event)"
