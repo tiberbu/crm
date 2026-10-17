@@ -1424,6 +1424,7 @@ def _check_onboarding_conflicts(session: dict[str, Any], selected: set[str], net
 			],
 		}
 	identity_ref = _text(session.get("identity_ref"))
+	is_existing_identity = False
 	if identity_ref:
 		if frappe.db.has_column("CRM Opt-In Submission", "onboarding_identity_ref"):
 			filters = {"onboarding_identity_ref": identity_ref}
@@ -1434,8 +1435,8 @@ def _check_onboarding_conflicts(session: dict[str, Any], selected: set[str], net
 				(session.get("submitted_ois") or {}).values()
 			)
 			if any(_text(row.get("name")) not in own_submissions for row in prior):
-				return {"outcome": "existing_identity", "allowed_facility_ids": []}
-		if frappe.get_meta("CRM Lead").has_field("cx_onboarding_identity_ref"):
+				is_existing_identity = True
+		if not is_existing_identity and frappe.get_meta("CRM Lead").has_field("cx_onboarding_identity_ref"):
 			prior_leads = frappe.get_all(
 				"CRM Lead",
 				filters={"cx_onboarding_identity_ref": identity_ref},
@@ -1449,7 +1450,13 @@ def _check_onboarding_conflicts(session: dict[str, Any], selected: set[str], net
 			for lead_row in prior_leads:
 				deal_name = frappe.db.get_value("CRM Deal", {"lead": lead_row.name}, "name")
 				if deal_name and deal_name not in own_deals:
-					return {"outcome": "existing_identity", "allowed_facility_ids": []}
+					is_existing_identity = True
+					break
+	if not is_existing_identity:
+		account_email = _text(((session.get("person") or {}).get("email"))).lower()
+		if account_email and frappe.db.exists("User", {"email": account_email}):
+			is_existing_identity = True
+
 	facilities = [by_id[facility_id] for facility_id in sorted(selected)]
 	already_onboarded = _existing_lead_deal_facility_conflicts(facilities, session)
 	conflicts = _facility_conflicts(facilities, network, session)
@@ -1461,8 +1468,13 @@ def _check_onboarding_conflicts(session: dict[str, Any], selected: set[str], net
 		}
 		if already_onboarded:
 			data["already_onboarded_facility_ids"] = sorted(already_onboarded)
+		if is_existing_identity:
+			data["is_existing_identity"] = True
 		return data
-	return {"outcome": "new", "allowed_facility_ids": allowed}
+	data = {"outcome": "new", "allowed_facility_ids": allowed}
+	if is_existing_identity:
+		data["is_existing_identity"] = True
+	return data
 
 
 # nosemgrep: guest-whitelisted-method -- only OTP-verified session facilities and allow-listed outcomes are returned.
@@ -1675,6 +1687,39 @@ def _create_initial_deal_quote(deal, customer, facility, package):
 		return None
 
 
+def _resolve_existing_customer(session: dict[str, Any] | None, account_email: str | None) -> str | None:
+	"""Find an existing Customer for this verified identity or account email to skip duplicate identity creation."""
+	identity_ref = _text((session or {}).get("identity_ref"))
+	if identity_ref:
+		if frappe.db.has_column("CRM Deal", "cx_onboarding_identity_ref"):
+			deal_cust = frappe.db.get_value(
+				"CRM Deal",
+				{"cx_onboarding_identity_ref": identity_ref},
+				"cx_customer",
+			)
+			if deal_cust and frappe.db.exists("Customer", deal_cust):
+				return deal_cust
+		if frappe.get_meta("CRM Lead").has_field("cx_onboarding_identity_ref"):
+			prior_leads = frappe.get_all(
+				"CRM Lead",
+				filters={"cx_onboarding_identity_ref": identity_ref},
+				fields=["name"],
+				limit_page_length=5,
+				ignore_permissions=True,
+			)
+			for lead_row in prior_leads:
+				deal_cust = frappe.db.get_value("CRM Deal", {"lead": lead_row.name}, "cx_customer")
+				if deal_cust and frappe.db.exists("Customer", deal_cust):
+					return deal_cust
+	if account_email:
+		from crm.api.website_redirect import get_user_customer_names
+		user_customers = get_user_customer_names(account_email)
+		for cust in user_customers:
+			if cust and frappe.db.exists("Customer", cust):
+				return cust
+	return None
+
+
 def _submit_selected_facilities(token, partner, packages_by_facility, account_email, facilities, terms_snapshot):
 	"""Create a Customer/Deal enrollment per facility; this new route deliberately creates no OIS."""
 	session = _session_or_error(token, verified=True)
@@ -1700,7 +1745,8 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 
 	from crm.api.quotes import _ensure_customer
 	customer_target = _text(facilities[0].get("facility_name")) if facilities else account_email
-	customer = _ensure_customer(customer_target, commit=False)
+	existing_customer = _resolve_existing_customer(session, account_email)
+	customer = existing_customer or _ensure_customer(customer_target, commit=False)
 	if not customer:
 		frappe.throw(_("The Customer account was not created. Please contact support."), frappe.ValidationError)
 
@@ -1820,6 +1866,10 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 			frappe.ValidationError,
 		)
 
+	final_portal_status = portal_result.get("status")
+	if existing_customer and final_portal_status not in {"failed", "blocked"}:
+		final_portal_status = "linked"
+
 	return {
 		"success": True,
 		"data": {
@@ -1830,7 +1880,8 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 			"deals": created_deals,
 			"enrollments": enrollments,
 			"submissions": submissions,
-			"portal_status": portal_result.get("status"),
+			"portal_status": final_portal_status,
+			"is_existing_identity": bool(existing_customer or final_portal_status == "linked"),
 		},
 	}
 

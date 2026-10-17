@@ -423,6 +423,90 @@ describe('FacilityOnboardingLanding', () => {
     expect(host.textContent).toContain('Your onboarding has started')
   })
 
+  it('displays existing identity message and skips new identity creation on success when account is linked', async () => {
+    call
+      .mockResolvedValueOnce({
+        message: {
+          data: {
+            session_token: 'opaque-session',
+            delivery: { status: 'sent', resend_after: 60 },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        message: {
+          data: {
+            state: 'ready',
+            identity: { full_name: 'Amina Otieno' },
+            account_email: 'sam@example.com',
+            facilities: [
+              {
+                facility_id: 'FID-1',
+                facility_name: 'Alpha Clinic',
+                onboarding_eligible: true,
+              },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        message: {
+          data: {
+            network: { name: 'NET-A', display_name: 'Network A' },
+            packages: [
+              { item_code: 'TOK-1', display_name: 'Starter', price: 1000 },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        message: {
+          data: {
+            document: 'Self-Onboarding Terms',
+            rendered_html: '<p>Review these applicable Terms.</p>',
+            content_hash: 'a'.repeat(64),
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        message: {
+          data: {
+            outcome: 'new',
+            allowed_facility_ids: ['FID-1'],
+            is_existing_identity: true,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        message: {
+          data: {
+            outcome: 'new',
+            portal_status: 'linked',
+            is_existing_identity: true,
+            submissions: [{ submission: 'OIS-1', facility: 'Alpha Clinic', mfl_code: '10001' }],
+            enrollments: [{ facility: 'Alpha Clinic', mfl_code: '10001' }],
+          },
+        },
+      })
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(FacilityOnboardingLanding)
+    app.config.globalProperties.__ = globalThis.__
+    app.mount(host)
+    mountedApps.push(app)
+
+    const reviewForm = await goToReview(host)
+    await submitForm(reviewForm)
+
+    expect(host.textContent).toContain('Your onboarding has started')
+    expect(host.textContent).toContain(
+      'An enrollment already exists for this verified identity. Your selected facilities have been added to your existing Customer Experience account.',
+    )
+    expect(host.querySelector('[data-testid="linked-identity-note"]')).not.toBeNull()
+    expect(host.textContent).toContain('Sign in to Customer Experience')
+  })
+
   it.each([
     [
       'existing_identity',

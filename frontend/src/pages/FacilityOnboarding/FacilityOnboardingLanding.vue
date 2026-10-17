@@ -1424,15 +1424,26 @@
           </h2>
           <p class="mx-auto mt-2.5 sm:mt-3 max-w-xl text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-6">
             {{
-              portalStatus === 'linked'
+              portalStatus === 'linked' || existingIdentityDetected
                 ? __(
-                    'Your selected facilities have been added to your existing Customer Experience account. Sign in with your existing credentials to view them.',
+                    'An enrollment already exists for this verified identity. Your selected facilities have been added to your existing Customer Experience account. Sign in with your existing credentials to view them.',
                   )
                 : __(
                     'We created your customer account and linked the selected facilities to the Network. Check this email for password setup instructions, then sign in to your portal to view your facilities.',
                   )
             }}
           </p>
+          <div
+            v-if="portalStatus === 'linked' || existingIdentityDetected"
+            class="mx-auto mt-4 max-w-lg rounded-xl border border-blue-200 bg-blue-50/90 p-3 sm:p-3.5 text-xs text-blue-900 text-left flex items-start gap-2.5 shadow-xs"
+            data-testid="linked-identity-note"
+          >
+            <span class="text-blue-600 font-bold shrink-0 text-sm sm:text-base leading-none">ℹ</span>
+            <div class="leading-normal">
+              <span class="font-semibold">{{ __('Existing Identity Linked') }}:</span>
+              {{ __('Your facilities were linked to your existing Customer Experience account. Duplicate identity creation was skipped.') }}
+            </div>
+          </div>
           <p
             v-if="accountEmail"
             class="mx-auto mt-3.5 sm:mt-4 inline-flex items-center gap-2 rounded-full bg-surface-gray-2 border border-outline-gray-2 px-3.5 sm:px-4 py-1 sm:py-1.5 text-xs font-semibold text-ink-gray-8 max-w-full truncate"
@@ -1457,7 +1468,7 @@
             href="/login?redirect-to=/cx-portal"
             class="mt-8 sm:mt-9 inline-flex min-h-12 w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-8 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d]"
           >
-            <span>{{ __('Go to sign in') }}</span>
+            <span>{{ portalStatus === 'linked' || existingIdentityDetected ? __('Sign in to Customer Experience') : __('Go to sign in') }}</span>
             <span class="text-base">→</span>
           </a>
         </section>
@@ -1523,6 +1534,7 @@ const termsBusy = ref(false)
 const termsDialogOpen = ref(false)
 const submissions = ref([])
 const portalStatus = ref('')
+const existingIdentityDetected = ref(false)
 const delivery = ref({})
 const resendIn = ref(0)
 const otpError = ref('')
@@ -2252,6 +2264,9 @@ async function submit() {
     }
     submissions.value = data.enrollments || []
     portalStatus.value = data.portal_status || ''
+    if (data.is_existing_identity || data.portal_status === 'linked') {
+      existingIdentityDetected.value = true
+    }
     stage.value = 'success'
   } catch (error) {
     sessionExpired.value = isSessionError(error)
@@ -2289,6 +2304,7 @@ function reset() {
   selectedFacilities.value = []
   submissions.value = []
   portalStatus.value = ''
+  existingIdentityDetected.value = false
   catalog.value = { network: null, packages: [] }
   catalogRequestId += 1
   catalogBusy.value = false

@@ -1338,10 +1338,43 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 
 		result = fo.check_onboarding_conflicts(second_token, '["FID-1"]', "123456")
 
-		self.assertEqual(result, {"outcome": "existing_identity", "allowed_facility_ids": []})
+		self.assertEqual(result["outcome"], "facility_review")
+		self.assertEqual(result["allowed_facility_ids"], [])
+		self.assertEqual(result["already_onboarded_facility_ids"], ["FID-1"])
+		self.assertTrue(result.get("is_existing_identity"))
 		self.assertNotIn("owner@example.com", json.dumps(result))
 		self.assertNotIn("OIS-T1", json.dumps(result))
 		self.assertNotIn(ID_NUMBER, json.dumps(result))
+
+	def test_existing_identity_can_onboard_new_facility_and_links_account(self):
+		self._submit_env()
+		self.hfr.return_value = [
+			FACILITIES[0],
+			{**FACILITIES[0], "facility_id": "FID-2", "facility_name": "Beta Clinic", "facility_code": "10002"},
+		]
+		first_token = self._verified_token()
+		self._submit(first_token, facility_ids=("FID-1",))
+		second_token = self._verified_token()
+
+		preflight = fo.check_onboarding_conflicts(second_token, '["FID-2"]', "123456")
+		self.assertEqual(preflight["outcome"], "new")
+		self.assertEqual(preflight["allowed_facility_ids"], ["FID-2"])
+		self.assertTrue(preflight.get("is_existing_identity"))
+
+		terms = self._accepted_terms(second_token)
+		submit_result = fo.submit_onboarding(
+			second_token,
+			"123456",
+			'["FID-2"]',
+			"TOK-1",
+			"owner@example.com",
+			1,
+			terms["content_hash"],
+		)
+		self.assertTrue(submit_result["success"])
+		self.assertEqual(submit_result["data"]["outcome"], "new")
+		self.assertEqual(submit_result["data"]["portal_status"], "linked")
+		self.assertTrue(submit_result["data"].get("is_existing_identity"))
 
 	def test_legacy_identity_without_reference_is_not_claimed_but_facility_conflict_blocks(self):
 		self._submit_env()
