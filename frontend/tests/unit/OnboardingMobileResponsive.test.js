@@ -251,3 +251,4 @@ describe('Onboarding Mobile Responsiveness Across Flow', () => {
     expect(billInput.className).toContain('sm:text-sm')
   })
 })
+

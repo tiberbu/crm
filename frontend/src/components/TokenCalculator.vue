@@ -20,7 +20,7 @@ const props = defineProps({
   },
   context: {
     type: String,
-    default: 'onboarding', // 'onboarding' | 'portal'
+    default: 'onboarding', // 'onboarding' | 'portal' | 'landing'
   },
   facilityName: {
     type: String,
@@ -32,7 +32,44 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['select-package', 'apply-plan'])
+const emit = defineEmits(['select-package', 'apply-plan', 'start-onboarding'])
+
+// Standard fallback packages matching the CareVerse catalog
+const defaultFallbackPackages = [
+  {
+    item_code: 'CV-TOKEN-STARTER',
+    display_name: 'Starter',
+    tokens: 1000,
+    token_quantity: 1000,
+    price: 6096,
+    price_ex_vat: 6096,
+    gross_total: 7071.36,
+    currency: 'KES',
+    coverage_summary: 'Ideal for solo clinics & outpatient practices',
+  },
+  {
+    item_code: 'CV-TOKEN-GROWTH',
+    display_name: 'Growth',
+    tokens: 2500,
+    token_quantity: 2500,
+    price: 13970,
+    price_ex_vat: 13970,
+    gross_total: 16205.2,
+    currency: 'KES',
+    coverage_summary: 'Best for active outpatient centers with diagnostics',
+  },
+  {
+    item_code: 'CV-TOKEN-SCALE',
+    display_name: 'Scale',
+    tokens: 5000,
+    token_quantity: 5000,
+    price: 25400,
+    price_ex_vat: 25400,
+    gross_total: 29464,
+    currency: 'KES',
+    coverage_summary: 'Comprehensive plan for hospitals & surgical centers',
+  },
+]
 
 // Defaults from Excel model
 const fallbackConfig = {
@@ -73,6 +110,7 @@ const facilityType = ref('opd') // 'opd' | 'ipd'
 const dailyPatients = ref(15)
 const avgBill = ref(1500)
 const operatingDays = ref(24)
+const showAdvancedSettings = ref(false)
 const showCustomMix = ref(false)
 const activePreset = ref('active_opd')
 
@@ -103,6 +141,8 @@ function resetDefaults() {
   operatingDays.value = activeConfig.value.default_operating_days
   facilityType.value = 'opd'
   activePreset.value = 'active_opd'
+  showAdvancedSettings.value = false
+  showCustomMix.value = false
   initFrequencies()
 }
 
@@ -155,13 +195,14 @@ const totalMonthlyDemand = computed(() => {
 
 // Compare packages & generate metrics
 const evaluatedPackages = computed(() => {
-  const list = props.packages.filter(
+  const source = props.packages?.length ? props.packages : defaultFallbackPackages
+  const list = source.filter(
     (p) => p.item_code !== 'CV-TOKEN-FREE' && Number(p.price_ex_vat ?? p.price ?? 0) > 0,
   ) // Exclude sandbox/trial
-  const pool = list.length ? list : props.packages
+  const pool = list.length ? list : source
 
   return pool.map((pkg) => {
-    const tokens = Number(pkg.token_quantity) || 0
+    const tokens = Number(pkg.tokens || pkg.token_quantity) || 0
     const demand = totalMonthlyDemand.value || 1
     const days = operatingDays.value || 24
     const dailyDemand = demand / days
@@ -203,6 +244,9 @@ function selectPackage(pkg) {
   if (!pkg) return
   emit('select-package', pkg.item_code)
   emit('apply-plan', pkg)
+  if (props.context === 'landing') {
+    emit('start-onboarding', pkg)
+  }
 }
 
 function money(val, currency = 'KES') {
@@ -217,23 +261,23 @@ function money(val, currency = 'KES') {
     data-testid="token-calculator"
   >
     <!-- Header -->
-    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#f0d6d8]/80 pb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#f0d6d8]/80 pb-4 sm:pb-5">
       <div>
-        <div class="inline-flex items-center gap-2 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-3 py-1 text-xs font-semibold text-[#bc1823]">
-          <span class="text-sm">🧮</span>
+        <div class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-2.5 py-0.5 text-xs font-semibold text-[#bc1823]">
+          <span class="text-xs">🧮</span>
           <span>{{ __('Interactive Token Sizing Calculator') }}</span>
         </div>
-        <h3 class="mt-2 text-xl sm:text-2xl font-bold tracking-tight text-ink-gray-9">
+        <h3 class="mt-1.5 text-xl sm:text-2xl font-bold tracking-tight text-ink-gray-9">
           {{ facilityName ? `${facilityName}: ${__('Token Demand & Runway')}` : __('Estimate Your Facility Token Needs') }}
         </h3>
-        <p class="mt-1 text-xs sm:text-sm text-ink-gray-7">
+        <p class="mt-0.5 text-xs sm:text-sm text-ink-gray-6">
           {{ __('Tailored to your clinical encounter volume, diagnostic services, and billing patterns.') }}
         </p>
       </div>
 
       <button
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-3 bg-white px-3 py-1.5 text-xs font-semibold text-ink-gray-7 shadow-sm hover:bg-surface-gray-1 hover:text-[#bc1823] transition-colors"
+        class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-3 bg-white px-3 py-1.5 text-xs font-semibold text-ink-gray-7 shadow-xs hover:bg-surface-gray-1 hover:text-[#bc1823] transition-colors"
         @click="resetDefaults"
       >
         <span>↺</span>
@@ -241,11 +285,16 @@ function money(val, currency = 'KES') {
       </button>
     </div>
 
-    <!-- Presets Bar -->
+    <!-- Presets Bar: Intuitive Clinic Type Selector -->
     <div class="mt-5">
-      <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7 mb-2">
-        {{ __('Quick Facility Presets') }}
-      </label>
+      <div class="flex items-center justify-between mb-2">
+        <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7">
+          {{ __('1. Choose Your Clinic Profile') }}
+        </label>
+        <span class="text-[11px] text-ink-gray-5">
+          {{ __('Or adjust patient slider below') }}
+        </span>
+      </div>
       <div class="grid gap-2.5 sm:grid-cols-3">
         <button
           v-for="preset in activeConfig.presets"
@@ -272,68 +321,48 @@ function money(val, currency = 'KES') {
       </div>
     </div>
 
-    <!-- Main Form Grid -->
-    <div class="mt-6 grid gap-6 lg:grid-cols-12 items-start">
+    <!-- Main Grid: Controls (Left) and Recommendation Cockpit (Right) -->
+    <div class="mt-5 grid gap-6 lg:grid-cols-12 items-start">
       <!-- Input Controls (Left Column) -->
-      <div class="lg:col-span-7 space-y-5">
-        <!-- Facility Scope Toggle -->
-        <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7 mb-2">
-            {{ __('Clinical Scope & Departments') }}
-          </label>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl bg-surface-gray-2 p-1 border border-outline-gray-2">
-            <button
-              type="button"
-              class="flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-all"
-              :class="facilityType === 'opd'
-                ? 'bg-white text-[#bc1823] shadow-sm'
-                : 'text-ink-gray-7 hover:text-ink-gray-9'"
-              @click="facilityType = 'opd'; activePreset = ''"
-            >
-              <span>🩺</span>
-              <span>{{ __('Outpatient Only (OPD)') }}</span>
-            </button>
-            <button
-              type="button"
-              class="flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-all"
-              :class="facilityType === 'ipd'
-                ? 'bg-white text-[#bc1823] shadow-sm'
-                : 'text-ink-gray-7 hover:text-ink-gray-9'"
-              @click="facilityType = 'ipd'; activePreset = ''"
-            >
-              <span>🏥</span>
-              <span>{{ __('Outpatient & Inpatient (OPD + IPD)') }}</span>
-            </button>
-          </div>
-          <p class="mt-1.5 text-[11px] text-ink-gray-6 leading-tight">
-            {{ facilityType === 'opd'
-              ? __('OPD-only facilities are exempt from inpatient admission and surgical procedure token deductions.')
-              : __('Comprehensive coverage including inpatient admissions, surgical procedures, and specialty care.')
-            }}
-          </p>
-        </div>
-
-        <!-- Daily Patients Slider & Direct Input -->
-        <div class="rounded-xl border border-outline-gray-2 bg-white p-4 shadow-sm">
+      <div class="lg:col-span-7 space-y-4">
+        <!-- Daily Patients Slider & Direct Input Card -->
+        <div class="rounded-xl border border-outline-gray-2 bg-white p-4 sm:p-5 shadow-xs">
           <div class="flex items-center justify-between gap-3">
             <div>
               <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-8 block">
-                {{ __('Average Daily Patients') }}
+                {{ __('2. Average Daily Patients') }}
               </label>
               <p class="text-[11px] text-ink-gray-6">
-                {{ __('Unique patient encounters recorded per working day.') }}
+                {{ __('Patient encounters recorded per operational day.') }}
               </p>
             </div>
             <div class="flex items-center gap-1.5">
+              <button
+                type="button"
+                class="flex size-8 items-center justify-center rounded-lg border border-outline-gray-3 bg-surface-gray-1 text-sm font-bold text-ink-gray-7 hover:bg-surface-gray-2 active:bg-surface-gray-3 transition-colors"
+                :disabled="dailyPatients <= 1"
+                @click="dailyPatients = Math.max(1, dailyPatients - 1); activePreset = ''"
+                aria-label="Decrease daily patients"
+              >
+                −
+              </button>
               <input
                 v-model.number="dailyPatients"
                 type="number"
                 min="1"
                 max="250"
-                class="w-20 rounded-lg border border-outline-gray-3 bg-surface-gray-1 px-3 py-1.5 text-right font-mono text-base font-bold text-ink-gray-9 focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
+                class="w-16 rounded-lg border border-outline-gray-3 bg-surface-gray-1 px-2 py-1 text-center font-mono text-base sm:text-sm font-bold text-ink-gray-9 focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
                 @input="activePreset = ''"
               />
-              <span class="text-xs text-ink-gray-6 font-medium">{{ __('pts/day') }}</span>
+              <button
+                type="button"
+                class="flex size-8 items-center justify-center rounded-lg border border-outline-gray-3 bg-surface-gray-1 text-sm font-bold text-ink-gray-7 hover:bg-surface-gray-2 active:bg-surface-gray-3 transition-colors"
+                @click="dailyPatients = Number(dailyPatients || 0) + 1; activePreset = ''"
+                aria-label="Increase daily patients"
+              >
+                +
+              </button>
+              <span class="text-xs text-ink-gray-6 font-medium ml-1">{{ __('pts/day') }}</span>
             </div>
           </div>
 
@@ -357,8 +386,8 @@ function money(val, currency = 'KES') {
             </div>
           </div>
 
-          <div class="mt-3 flex items-center justify-between border-t border-outline-gray-2/70 pt-2.5 text-xs text-ink-gray-7">
-            <span>{{ __('Estimated Monthly Encounters') }}:</span>
+          <div class="mt-3.5 flex items-center justify-between border-t border-outline-gray-2/70 pt-2.5 text-xs text-ink-gray-7">
+            <span class="font-medium">{{ __('Projected Monthly Encounters') }}:</span>
             <span class="font-bold text-ink-gray-9 font-mono">
               ~{{ monthlyEncounters.toLocaleString() }} {{ __('encounters') }}
               <span class="text-ink-gray-5 font-normal">({{ operatingDays }} {{ __('operating days') }})</span>
@@ -366,117 +395,177 @@ function money(val, currency = 'KES') {
           </div>
         </div>
 
-        <!-- Average Patient Bill & Operating Days -->
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div class="rounded-xl border border-outline-gray-2 bg-white p-4 shadow-sm">
-            <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-8 block">
-              {{ __('Average Patient Bill') }}
-            </label>
-            <p class="text-[11px] text-ink-gray-6 mb-2">
-              {{ __('1 token per KES 750 bill value') }}
-            </p>
-            <div class="relative">
-              <span class="absolute left-3 top-2 text-xs font-bold text-ink-gray-5">KES</span>
-              <input
-                v-model.number="avgBill"
-                type="number"
-                min="0"
-                step="250"
-                class="w-full rounded-lg border border-outline-gray-3 bg-surface-gray-1 pl-12 pr-3 py-1.5 font-mono text-base sm:text-sm font-bold text-ink-gray-9 focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
-                @input="activePreset = ''"
-              />
-            </div>
-            <p class="mt-2 text-[11px] text-ink-gray-6 font-medium">
-              = <strong class="text-ink-gray-9 font-mono">{{ billTokensPerPatient }} tokens</strong> {{ __('per patient bill') }}
-            </p>
-          </div>
-
-          <div class="rounded-xl border border-outline-gray-2 bg-white p-4 shadow-sm">
-            <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-8 block">
-              {{ __('Operating Days / Month') }}
-            </label>
-            <p class="text-[11px] text-ink-gray-6 mb-2">
-              {{ __('Days facility is open per month') }}
-            </p>
-            <div class="flex items-center gap-1.5">
-              <button
-                v-for="days in [20, 24, 26, 30]"
-                :key="days"
-                type="button"
-                class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all font-mono"
-                :class="operatingDays === days
-                  ? 'bg-[#bc1823] text-white shadow-sm'
-                  : 'bg-surface-gray-2 text-ink-gray-7 hover:bg-surface-gray-3'"
-                @click="operatingDays = days"
-              >
-                {{ days }}d
-              </button>
-            </div>
-            <p class="mt-2 text-[11px] text-ink-gray-6 font-medium">
-              {{ operatingDays === 24 ? __('Standard 6-day work weeks') : operatingDays === 30 ? __('24/7 continuous operations') : `${operatingDays} days open` }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Advanced Accordion: Service Point Mix -->
-        <div class="rounded-xl border border-outline-gray-2 bg-white overflow-hidden shadow-sm">
+        <!-- Collapsible Fine-Tune Section for Clinical Levers -->
+        <div class="rounded-xl border border-outline-gray-2 bg-white overflow-hidden shadow-xs">
           <button
             type="button"
-            class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-ink-gray-8 hover:bg-surface-gray-1 transition-colors"
-            @click="showCustomMix = !showCustomMix"
+            class="w-full flex items-center justify-between p-3.5 sm:p-4 text-left text-xs font-semibold text-ink-gray-8 hover:bg-surface-gray-1 transition-colors"
+            @click="showAdvancedSettings = !showAdvancedSettings"
           >
             <div class="flex items-center gap-2">
               <span class="text-sm">⚙️</span>
-              <span class="font-bold">{{ __('Customize Service Points & Encounter Mix') }}</span>
-              <span class="rounded bg-surface-gray-2 px-1.5 py-0.5 text-[10px] text-ink-gray-6 font-mono">
-                {{ serviceTokensPerPatient.toFixed(1) }} {{ __('tokens/pt') }}
+              <span class="font-bold">{{ __('Fine-tune Clinical Assumptions & Mix') }}</span>
+              <span class="rounded bg-surface-gray-2 px-1.5 py-0.5 text-[10px] text-ink-gray-6 font-mono hidden sm:inline">
+                {{ facilityType.toUpperCase() }} · {{ operatingDays }}d · KES {{ avgBill }}
               </span>
             </div>
-            <span class="text-ink-gray-5 font-mono text-xs">
-              {{ showCustomMix ? '▲' : '▼' }}
-            </span>
+            <div class="flex items-center gap-1.5 text-xs text-ink-gray-5 font-mono">
+              <span>{{ showAdvancedSettings ? __('Hide') : __('Customize') }}</span>
+              <span>{{ showAdvancedSettings ? '▲' : '▼' }}</span>
+            </div>
           </button>
 
-          <div v-show="showCustomMix" class="border-t border-outline-gray-2 p-4 bg-surface-gray-1/40 space-y-3">
-            <p class="text-[11px] text-ink-gray-6 leading-relaxed">
-              {{ __('The pricing model applies service-point token billing only to the 7 clinical events below. Patient registrations, triage vitals, and dispensing consume 0 service tokens.') }}
-            </p>
+          <!-- Expandable Clinical Settings Drawer -->
+          <div v-show="showAdvancedSettings" class="border-t border-outline-gray-2 p-4 bg-surface-gray-1/40 space-y-4">
+            <!-- Facility Scope Toggle -->
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7 mb-1.5">
+                {{ __('Clinical Scope & Departments') }}
+              </label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl bg-surface-gray-2 p-1 border border-outline-gray-2">
+                <button
+                  type="button"
+                  class="flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-all"
+                  :class="facilityType === 'opd'
+                    ? 'bg-white text-[#bc1823] shadow-xs'
+                    : 'text-ink-gray-7 hover:text-ink-gray-9'"
+                  @click="facilityType = 'opd'; activePreset = ''"
+                >
+                  <span>🩺</span>
+                  <span>{{ __('Outpatient Only (OPD)') }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-all"
+                  :class="facilityType === 'ipd'
+                    ? 'bg-white text-[#bc1823] shadow-xs'
+                    : 'text-ink-gray-7 hover:text-ink-gray-9'"
+                  @click="facilityType = 'ipd'; activePreset = ''"
+                >
+                  <span>🏥</span>
+                  <span>{{ __('Outpatient & Inpatient (OPD + IPD)') }}</span>
+                </button>
+              </div>
+              <p class="mt-1.5 text-[11px] text-ink-gray-6 leading-tight">
+                {{ facilityType === 'opd'
+                  ? __('OPD-only facilities are exempt from inpatient admission and surgical procedure token deductions.')
+                  : __('Comprehensive coverage including inpatient admissions, surgical procedures, and specialty care.')
+                }}
+              </p>
+            </div>
 
-            <div class="space-y-2.5">
-              <div
-                v-for="sp in eligibleServicePoints"
-                :key="sp.id"
-                class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 p-2.5 rounded-lg border bg-white text-xs"
-                :class="sp.isApplicable ? 'border-outline-gray-2' : 'border-outline-gray-2/60 bg-surface-gray-2/60 opacity-60'"
-              >
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                    <span class="font-semibold text-ink-gray-9">{{ sp.name }}</span>
-                    <span class="font-mono text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-bold shrink-0">
-                      {{ sp.tokens }} 🪙
-                    </span>
-                    <span
-                      v-if="!sp.isApplicable"
-                      class="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 shrink-0"
-                    >
-                      {{ __('Exempt for OPD') }}
-                    </span>
-                  </div>
-                  <p class="text-[10px] text-ink-gray-5 mt-0.5">{{ sp.description }}</p>
-                </div>
-
-                <div v-if="sp.isApplicable" class="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1 sm:pt-0 border-t border-outline-gray-1 sm:border-0 w-full sm:w-auto">
+            <!-- Average Patient Bill & Operating Days -->
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="rounded-xl border border-outline-gray-2 bg-white p-3.5 shadow-2xs">
+                <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-8 block">
+                  {{ __('Average Patient Bill') }}
+                </label>
+                <p class="text-[11px] text-ink-gray-6 mb-2">
+                  {{ __('1 token per KES 750 bill value') }}
+                </p>
+                <div class="relative">
+                  <span class="absolute left-3 top-2 text-xs font-bold text-ink-gray-5">KES</span>
                   <input
-                    v-model.number="serviceFrequencies[sp.id]"
-                    type="range"
+                    v-model.number="avgBill"
+                    type="number"
                     min="0"
-                    max="100"
-                    step="5"
-                    class="w-full sm:w-28 accent-[#bc1823] cursor-pointer"
+                    step="250"
+                    class="w-full rounded-lg border border-outline-gray-3 bg-surface-gray-1 pl-12 pr-3 py-1.5 font-mono text-base sm:text-sm font-bold text-ink-gray-9 focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
+                    @input="activePreset = ''"
                   />
-                  <span class="w-10 text-right font-mono font-bold text-ink-gray-9 shrink-0">
-                    {{ serviceFrequencies[sp.id] ?? 0 }}%
+                </div>
+                <p class="mt-1.5 text-[11px] text-ink-gray-6 font-medium">
+                  = <strong class="text-ink-gray-9 font-mono">{{ billTokensPerPatient }} tokens</strong> {{ __('per patient bill') }}
+                </p>
+              </div>
+
+              <div class="rounded-xl border border-outline-gray-2 bg-white p-3.5 shadow-2xs">
+                <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-8 block">
+                  {{ __('Operating Days / Month') }}
+                </label>
+                <p class="text-[11px] text-ink-gray-6 mb-2">
+                  {{ __('Facility working days per month') }}
+                </p>
+                <div class="flex items-center gap-1.5">
+                  <button
+                    v-for="days in [20, 24, 26, 30]"
+                    :key="days"
+                    type="button"
+                    class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all font-mono"
+                    :class="operatingDays === days
+                      ? 'bg-[#bc1823] text-white shadow-xs'
+                      : 'bg-surface-gray-2 text-ink-gray-7 hover:bg-surface-gray-3'"
+                    @click="operatingDays = days"
+                  >
+                    {{ days }}d
+                  </button>
+                </div>
+                <p class="mt-1.5 text-[11px] text-ink-gray-6 font-medium">
+                  {{ operatingDays === 24 ? __('Standard 6-day work weeks') : operatingDays === 30 ? __('24/7 continuous operations') : `${operatingDays} days open` }}
+                </p>
+              </div>
+            </div>
+
+            <!-- Service Point Encounter Mix Accordion -->
+            <div class="rounded-xl border border-outline-gray-2 bg-white overflow-hidden shadow-2xs">
+              <button
+                type="button"
+                class="w-full flex items-center justify-between p-3 text-left text-xs font-semibold text-ink-gray-8 hover:bg-surface-gray-1 transition-colors"
+                @click="showCustomMix = !showCustomMix"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="text-xs">🔬</span>
+                  <span>{{ __('Customize Diagnostic & Clinical Services') }}</span>
+                  <span class="rounded bg-surface-gray-2 px-1.5 py-0.5 text-[10px] text-ink-gray-6 font-mono">
+                    {{ serviceTokensPerPatient.toFixed(1) }} {{ __('tokens/pt') }}
                   </span>
+                </div>
+                <span class="text-ink-gray-5 font-mono text-xs">
+                  {{ showCustomMix ? '▲' : '▼' }}
+                </span>
+              </button>
+
+              <div v-show="showCustomMix" class="border-t border-outline-gray-2 p-3 bg-surface-gray-1/40 space-y-2">
+                <p class="text-[11px] text-ink-gray-6 leading-relaxed">
+                  {{ __('Token billing applies only to the clinical events below. Patient registrations, triage vitals, and dispensing consume 0 service tokens.') }}
+                </p>
+
+                <div class="space-y-2">
+                  <div
+                    v-for="sp in eligibleServicePoints"
+                    :key="sp.id"
+                    class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3 p-2 rounded-lg border bg-white text-xs"
+                    :class="sp.isApplicable ? 'border-outline-gray-2' : 'border-outline-gray-2/60 bg-surface-gray-2/60 opacity-60'"
+                  >
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="font-semibold text-ink-gray-9">{{ sp.name }}</span>
+                        <span class="font-mono text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-bold shrink-0">
+                          {{ sp.tokens }} 🪙
+                        </span>
+                        <span
+                          v-if="!sp.isApplicable"
+                          class="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 shrink-0"
+                        >
+                          {{ __('Exempt for OPD') }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div v-if="sp.isApplicable" class="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1 sm:pt-0 border-t border-outline-gray-1 sm:border-0 w-full sm:w-auto">
+                      <input
+                        v-model.number="serviceFrequencies[sp.id]"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        class="w-full sm:w-28 accent-[#bc1823] cursor-pointer"
+                      />
+                      <span class="w-10 text-right font-mono font-bold text-ink-gray-9 shrink-0">
+                        {{ serviceFrequencies[sp.id] ?? 0 }}%
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -487,12 +576,17 @@ function money(val, currency = 'KES') {
       <!-- Live Calculation Results & Recommendation (Right Column Cockpit) -->
       <div class="lg:col-span-5 space-y-4">
         <!-- Monthly Demand Card -->
-        <div class="rounded-2xl border-2 border-[#f0d6d8] bg-white p-5 shadow-sm">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-[#bc1823] bg-[#fdf2f3] px-2.5 py-0.5 rounded-full border border-[#f0d6d8]">
-            {{ __('Projected Monthly Demand') }}
-          </span>
+        <div class="rounded-2xl border-2 border-[#f0d6d8] bg-white p-4 sm:p-5 shadow-xs">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[#bc1823] bg-[#fdf2f3] px-2.5 py-0.5 rounded-full border border-[#f0d6d8]">
+              {{ __('Projected Monthly Demand') }}
+            </span>
+            <span class="text-[11px] font-mono text-ink-gray-6 font-semibold">
+              ~{{ (totalMonthlyDemand / operatingDays).toFixed(0) }} {{ __('tokens/day') }}
+            </span>
+          </div>
 
-          <div class="mt-4 flex items-baseline justify-between gap-2">
+          <div class="mt-3 flex items-baseline justify-between gap-2">
             <div>
               <p class="text-3xl sm:text-4xl font-extrabold tracking-tight text-ink-gray-9 font-mono">
                 {{ totalMonthlyDemand.toLocaleString() }}
@@ -503,13 +597,14 @@ function money(val, currency = 'KES') {
               </p>
             </div>
             <div class="text-right text-xs text-ink-gray-6 font-mono">
-              <div>~{{ (totalMonthlyDemand / operatingDays).toFixed(0) }} {{ __('tokens/day') }}</div>
-              <div>{{ totalTokensPerPatient.toFixed(1) }} {{ __('tokens/pt') }}</div>
+              <span class="rounded bg-surface-gray-2 px-2 py-1 text-ink-gray-8 font-bold">
+                {{ totalTokensPerPatient.toFixed(1) }} {{ __('tokens/pt') }}
+              </span>
             </div>
           </div>
 
           <!-- Formula Breakdown -->
-          <div class="mt-4 rounded-xl bg-surface-gray-1 p-3 text-xs space-y-1.5 border border-outline-gray-2/70 text-ink-gray-7">
+          <div class="mt-3.5 rounded-xl bg-surface-gray-1 p-3 text-xs space-y-1.5 border border-outline-gray-2/70 text-ink-gray-7">
             <div class="flex justify-between">
               <span>{{ __('Patient usage') }} ({{ monthlyEncounters }} × {{ totalTokensPerPatient.toFixed(1) }}):</span>
               <strong class="font-mono text-ink-gray-9">{{ monthlyPatientTokens.toLocaleString() }} 🪙</strong>
@@ -528,11 +623,11 @@ function money(val, currency = 'KES') {
         <!-- Recommended Package Value Card -->
         <div
           v-if="recommendedPackage"
-          class="rounded-2xl border-2 border-[#bc1823] bg-gradient-to-br from-[#fff7f8] via-white to-[#fff0f2] p-4 sm:p-5 shadow-md relative overflow-hidden"
+          class="rounded-2xl border-2 border-[#bc1823] bg-gradient-to-br from-[#fff7f8] via-white to-[#fff0f2] p-4 sm:p-5 shadow-sm relative overflow-hidden"
           data-testid="recommended-package-card"
         >
           <div class="flex items-center justify-between gap-2">
-            <span class="rounded-full bg-[#bc1823] px-2.5 sm:px-3 py-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white shadow-sm flex items-center gap-1.5">
+            <span class="rounded-full bg-[#bc1823] px-2.5 sm:px-3 py-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white shadow-xs flex items-center gap-1.5">
               <span>⭐</span>
               <span>{{ __('Recommended For You') }}</span>
             </span>
@@ -550,16 +645,16 @@ function money(val, currency = 'KES') {
             </span>
           </div>
 
-          <div class="mt-3.5 sm:mt-4">
+          <div class="mt-3 sm:mt-3.5">
             <h4 class="text-lg sm:text-xl font-bold tracking-tight text-ink-gray-9">
               {{ recommendedPackage.display_name }} ({{ recommendedPackage.tokens?.toLocaleString() }} {{ __('Tokens') }})
             </h4>
-            <p class="text-xs text-ink-gray-7 mt-1">
+            <p class="text-xs text-ink-gray-7 mt-0.5">
               {{ recommendedPackage.coverage_summary || recommendedPackage.description }}
             </p>
           </div>
 
-          <div class="mt-3.5 sm:mt-4 flex items-baseline gap-2">
+          <div class="mt-3 flex items-baseline gap-2">
             <span class="text-2xl sm:text-3xl font-extrabold text-ink-gray-9 font-mono">
               {{ money(recommendedPackage.price_ex_vat ?? recommendedPackage.price, recommendedPackage.currency) }}
             </span>
@@ -573,15 +668,15 @@ function money(val, currency = 'KES') {
           </p>
 
           <!-- Key Metrics Badges -->
-          <div class="mt-3.5 sm:mt-4 grid grid-cols-2 gap-2 text-xs">
-            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2 sm:p-2.5 shadow-xs">
+          <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2 sm:p-2.5 shadow-2xs">
               <span class="text-[10px] font-semibold text-ink-gray-6 uppercase block">{{ __('Estimated Runway') }}</span>
               <p class="mt-0.5 text-xs sm:text-sm font-bold text-[#bc1823] font-mono">
                 ~{{ recommendedPackage.runwayDays }} {{ __('days') }}
                 <span class="text-[10px] sm:text-[11px] text-ink-gray-6 font-normal">({{ recommendedPackage.runwayMonths }} {{ __('mo') }})</span>
               </p>
             </div>
-            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2 sm:p-2.5 shadow-xs">
+            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2 sm:p-2.5 shadow-2xs">
               <span class="text-[10px] font-semibold text-ink-gray-6 uppercase block">{{ __('Cost / Patient') }}</span>
               <p class="mt-0.5 text-xs sm:text-sm font-bold text-emerald-800 font-mono">
                 {{ money(recommendedPackage.costPerEncounter, recommendedPackage.currency) }}
@@ -590,35 +685,49 @@ function money(val, currency = 'KES') {
           </div>
 
           <!-- Select Action Button -->
-          <div class="mt-4 sm:mt-5">
+          <div class="mt-4">
             <button
               type="button"
-              class="w-full min-h-11 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold text-white transition-all shadow-md"
+              class="w-full min-h-12 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold text-white transition-all shadow-sm"
               :class="selectedPackageCode === recommendedPackage.item_code
                 ? 'bg-emerald-700 hover:bg-emerald-800'
                 : 'bg-[#bc1823] hover:bg-[#a3141d] active:scale-[0.99]'"
               @click="selectPackage(recommendedPackage)"
             >
-              <span>{{ selectedPackageCode === recommendedPackage.item_code ? '✓' : '👉' }}</span>
+              <span>{{ context === 'landing' ? '🚀' : selectedPackageCode === recommendedPackage.item_code ? '✓' : '👉' }}</span>
               <span>
                 {{
-                  selectedPackageCode === recommendedPackage.item_code
-                    ? __('Plan Selected for Facility')
-                    : context === 'portal'
-                      ? `${__('Order')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens)`
-                      : `${__('Select')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens)`
+                  context === 'landing'
+                    ? `${__('Start onboarding with')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens) →`
+                    : selectedPackageCode === recommendedPackage.item_code
+                      ? __('Plan Selected for Facility')
+                      : context === 'portal'
+                        ? `${__('Order')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens)`
+                        : `${__('Select')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens)`
                 }}
               </span>
+            </button>
+          </div>
+
+          <!-- Landing Context Direct Link -->
+          <div v-if="context === 'landing'" class="text-center pt-2.5">
+            <button
+              type="button"
+              class="text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] hover:underline inline-flex items-center gap-1"
+              @click="selectPackage(recommendedPackage)"
+            >
+              <span>{{ __('Or start onboarding directly') }}</span>
+              <span>→</span>
             </button>
           </div>
         </div>
 
         <!-- Runway Comparison across available packages -->
-        <div v-if="evaluatedPackages.length > 1" class="rounded-xl border border-outline-gray-2 bg-white p-4 shadow-sm">
-          <p class="text-[11px] font-bold uppercase tracking-wider text-ink-gray-7 mb-2.5">
+        <div v-if="evaluatedPackages.length > 1" class="rounded-xl border border-outline-gray-2 bg-white p-3.5 sm:p-4 shadow-2xs">
+          <p class="text-[11px] font-bold uppercase tracking-wider text-ink-gray-7 mb-2">
             {{ __('Package Runway Comparison at Your Volume') }}
           </p>
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <div
               v-for="pkg in evaluatedPackages"
               :key="pkg.item_code"

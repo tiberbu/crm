@@ -144,4 +144,64 @@ describe('TokenCalculator.vue', () => {
     // At bill 2000 and ratio 500 => ceil(2000/500) = 4 bill tokens
     expect(el.textContent).toContain('1000 🪙')
   })
+
+  it('supports context="landing" with start-onboarding CTA button and link', async () => {
+    let startedPlan = null
+    const el = mountCalculator({
+      context: 'landing',
+      onStartOnboarding: (pkg) => {
+        startedPlan = pkg
+      },
+    })
+
+    const ctaBtn = el.querySelector('[data-testid="recommended-package-card"] button')
+    expect(ctaBtn).toBeTruthy()
+    expect(ctaBtn.textContent).toContain('Start onboarding with')
+
+    ctaBtn.click()
+    await nextTick()
+
+    expect(startedPlan).toBeTruthy()
+    expect(startedPlan.item_code).toBe('CV-TOKEN-SCALE')
+  })
+
+  it('toggles collapsible fine-tune drawer for clinical mix', async () => {
+    const el = mountCalculator()
+    const toggleBtn = Array.from(el.querySelectorAll('button')).find((b) =>
+      b.textContent.includes('Fine-tune Clinical Assumptions & Mix'),
+    )
+    expect(toggleBtn).toBeTruthy()
+
+    // Initially collapsed
+    expect(toggleBtn.textContent).toContain('Customize')
+
+    // Click to expand
+    toggleBtn.click()
+    await nextTick()
+    expect(toggleBtn.textContent).toContain('Hide')
+
+    // Click again to collapse
+    toggleBtn.click()
+    await nextTick()
+    expect(toggleBtn.textContent).toContain('Customize')
+  })
+
+  it('uses standard fallback packages when packages prop is empty', async () => {
+    const el = mountCalculator({ packages: [] })
+    const recCard = el.querySelector('[data-testid="recommended-package-card"]')
+    expect(recCard).toBeTruthy()
+    expect(recCard.textContent).toContain('Scale')
+    expect(recCard.textContent).toContain('5,000 Tokens')
+
+    // Clicking solo preset switches recommendation to Starter
+    const soloBtn = Array.from(el.querySelectorAll('button')).find((b) =>
+      b.textContent.includes('Solo Practice / Clinic'),
+    )
+    soloBtn.click()
+    await nextTick()
+
+    expect(recCard.textContent).toContain('Starter')
+    expect(recCard.textContent).toContain('1,000 Tokens')
+  })
 })
+

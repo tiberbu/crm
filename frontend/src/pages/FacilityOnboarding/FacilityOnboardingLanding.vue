@@ -133,9 +133,46 @@
           </div>
         </aside>
       </section>
+      <!-- Interactive Sizing Calculator on Landing Page -->
       <section
         v-if="stage === 'welcome'"
-        class="mt-10 rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm sm:p-8 backdrop-blur-md"
+        class="mt-10 sm:mt-12"
+        aria-labelledby="calculator-landing-title"
+      >
+        <div class="max-w-2xl mx-auto text-center mb-6 sm:mb-8">
+          <span
+            class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#bc1823]"
+          >
+            <span class="size-1.5 rounded-full bg-[#bc1823]"></span>
+            {{ __('Plan Sizing & Estimation') }}
+          </span>
+          <h2
+            id="calculator-landing-title"
+            class="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-ink-gray-9"
+          >
+            {{ __('Find the right token package for your facility') }}
+          </h2>
+          <p class="mt-2 text-xs sm:text-sm text-ink-gray-6 leading-relaxed">
+            {{
+              __(
+                'Estimate monthly token requirements based on your patient encounters and clinical services. Select your ideal plan and jump straight into onboarding.',
+              )
+            }}
+          </p>
+        </div>
+
+        <TokenCalculator
+          :packages="catalog.packages"
+          :config="catalog.calculator_config"
+          :selected-package-code="landingPreselectedPackageCode"
+          context="landing"
+          @start-onboarding="startWithSelectedPlan"
+          @select-package="(code) => (landingPreselectedPackageCode = code)"
+        />
+      </section>
+      <section
+        v-if="stage === 'welcome'"
+        class="mt-8 rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm sm:p-8 backdrop-blur-md"
         aria-labelledby="hmis-about-title"
       >
         <span
@@ -1478,6 +1515,7 @@ const catalog = ref({ network: null, packages: [] })
 const packageSelections = ref({})
 const activePricingFacilityId = ref('')
 const calculatorDialogOpen = ref(false)
+const landingPreselectedPackageCode = ref('')
 const accountEmail = ref('')
 const termsAccepted = ref(false)
 const termsSnapshot = ref(null)
@@ -1966,16 +2004,27 @@ function editIdentity() {
   errorMessage.value = ''
   stage.value = 'identity'
 }
+function startWithSelectedPlan(pkg) {
+  if (pkg?.item_code) {
+    landingPreselectedPackageCode.value = pkg.item_code
+  }
+  stage.value = 'identity'
+  if (typeof window !== 'undefined') {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+}
 function goBack() {
   const previous = previousStage(stage.value)
   if (previous) stage.value = previous
 }
 function continueFacilities() {
   if (selectedFacilities.value.length) {
+    const existing = packageSelections.value
     packageSelections.value = Object.fromEntries(
-      Object.entries(packageSelections.value).filter(([facilityId]) =>
-        selectedFacilities.value.includes(facilityId),
-      ),
+      selectedFacilities.value.map((facilityId) => {
+        const previousCode = existing[facilityId] || landingPreselectedPackageCode.value
+        return [facilityId, previousCode || '']
+      }),
     )
     stage.value = 'pricing'
     loadCatalog()
@@ -2010,7 +2059,7 @@ async function loadCatalog(force = false) {
     loadedCatalogPartnerId = requestedPartnerId
     packageSelections.value = Object.fromEntries(
       selectedFacilities.value.map((facilityId) => {
-        const previousCode = previousSelections[facilityId]
+        const previousCode = previousSelections[facilityId] || landingPreselectedPackageCode.value
         const packageCode = catalog.value.packages?.some(
           (item) => item.item_code === previousCode,
         )

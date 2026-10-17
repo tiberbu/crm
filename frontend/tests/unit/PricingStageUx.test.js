@@ -368,5 +368,33 @@ describe('Pricing Stage UX Audit & Minimalist Experience', () => {
     const section = host.querySelector('form[data-testid="facility-package-FID-1"]')?.closest('section') || host.querySelector('section')
     expect(section?.classList.contains('w-full')).toBe(true)
   })
+
+  it('renders interactive TokenCalculator on the welcome landing page with direct start-onboarding action', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(FacilityOnboardingLanding)
+    app.config.globalProperties.__ = (text, args) =>
+      args ? text.replace(/:(\w+)/g, (_, k) => args[k]) : text
+    app.mount(host)
+    mountedApps.push(app)
+
+    // Token calculator should be rendered on welcome landing page
+    const calc = host.querySelector('[data-testid="token-calculator"]')
+    expect(calc).toBeTruthy()
+    expect(host.textContent).toContain('Find the right token package for your facility')
+
+    // Find the recommendation card's Start onboarding button
+    const recCard = calc.querySelector('[data-testid="recommended-package-card"]')
+    expect(recCard).toBeTruthy()
+    const startPlanBtn = recCard.querySelector('button')
+    expect(startPlanBtn.textContent).toContain('Start onboarding with')
+
+    // Clicking it advances directly to identity stage
+    startPlanBtn.click()
+    await nextTick()
+
+    expect(host.querySelector('input[placeholder="Enter your ID number"]')).toBeTruthy()
+  })
 })
+
 
