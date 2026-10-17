@@ -111,7 +111,6 @@ const dailyPatients = ref(15)
 const avgBill = ref(1500)
 const operatingDays = ref(24)
 const showAdvancedSettings = ref(false)
-const showCustomMix = ref(false)
 const activePreset = ref('active_opd')
 
 // Frequency overrides per service point: id -> percentage (0 to 100)
@@ -142,7 +141,6 @@ function resetDefaults() {
   facilityType.value = 'opd'
   activePreset.value = 'active_opd'
   showAdvancedSettings.value = false
-  showCustomMix.value = false
   initFrequencies()
 }
 
@@ -257,27 +255,27 @@ function money(val, currency = 'KES') {
 
 <template>
   <section
-    class="rounded-2xl border border-[#f0d6d8] bg-gradient-to-br from-[#fffdfd] via-white to-[#fbf7f7] p-5 sm:p-7 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-md text-ink-gray-9 transition-all"
+    class="rounded-3xl border border-[#f0d6d8]/80 bg-white p-5 sm:p-7 shadow-[0_10px_30px_rgb(188,24,35,0.03)] text-ink-gray-9 transition-all"
     data-testid="token-calculator"
   >
     <!-- Header -->
-    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#f0d6d8]/80 pb-4 sm:pb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-outline-gray-2/80 pb-4 sm:pb-5">
       <div>
         <div class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-2.5 py-0.5 text-xs font-semibold text-[#bc1823]">
-          <span class="text-xs">🧮</span>
+          <span class="size-1.5 rounded-full bg-[#bc1823]"></span>
           <span>{{ __('Interactive Token Sizing Calculator') }}</span>
         </div>
-        <h3 class="mt-1.5 text-xl sm:text-2xl font-bold tracking-tight text-ink-gray-9">
-          {{ facilityName ? `${facilityName}: ${__('Token Demand & Runway')}` : __('Estimate Your Facility Token Needs') }}
+        <h3 class="mt-2 text-xl sm:text-2xl font-bold tracking-tight text-ink-gray-9">
+          {{ facilityName ? `${facilityName}: ${__('Token Demand & Plan Sizing')}` : __('Estimate Your Facility Token Needs') }}
         </h3>
-        <p class="mt-0.5 text-xs sm:text-sm text-ink-gray-6">
-          {{ __('Tailored to your clinical encounter volume, diagnostic services, and billing patterns.') }}
+        <p class="mt-1 text-xs sm:text-sm text-ink-gray-6">
+          {{ __('Calculate monthly token consumption based on your patient volume, diagnostics, and clinical services.') }}
         </p>
       </div>
 
       <button
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-3 bg-white px-3 py-1.5 text-xs font-semibold text-ink-gray-7 shadow-xs hover:bg-surface-gray-1 hover:text-[#bc1823] transition-colors"
+        class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-3 bg-white px-3 py-1.5 text-xs font-semibold text-ink-gray-6 hover:bg-surface-gray-1 hover:text-[#bc1823] transition-colors"
         @click="resetDefaults"
       >
         <span>↺</span>
@@ -285,432 +283,246 @@ function money(val, currency = 'KES') {
       </button>
     </div>
 
-    <!-- Presets Bar: Intuitive Clinic Type Selector -->
-    <div class="mt-5">
-      <div class="flex items-center justify-between mb-2">
-        <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7">
-          {{ __('1. Choose Your Clinic Profile') }}
-        </label>
-        <span class="text-[11px] text-ink-gray-5">
-          {{ __('Or adjust patient slider below') }}
-        </span>
-      </div>
-      <div class="grid gap-2.5 sm:grid-cols-3">
-        <button
-          v-for="preset in activeConfig.presets"
-          :key="preset.id"
-          type="button"
-          class="flex flex-col text-left rounded-xl p-3 border transition-all text-xs"
-          :class="activePreset === preset.id
-            ? 'border-[#bc1823] bg-[#fdf2f3] ring-2 ring-[#bc1823]/20 shadow-sm'
-            : 'border-outline-gray-2 bg-white hover:border-[#f0d6d8] hover:bg-[#fffafa]'"
-          @click="applyPreset(preset)"
-        >
-          <div class="flex items-center justify-between w-full">
-            <span class="font-bold text-ink-gray-9">{{ preset.label }}</span>
-            <span
-              v-if="activePreset === preset.id"
-              class="size-2 rounded-full bg-[#bc1823]"
-            ></span>
-          </div>
-          <span class="mt-1 text-ink-gray-6 text-[11px] leading-tight">{{ preset.description }}</span>
-          <span class="mt-2 font-mono text-[10px] text-[#bc1823] font-semibold">
-            ~{{ preset.daily_patients }} {{ __('pts/day') }} · {{ preset.facility_type.toUpperCase() }}
+    <!-- Step 1: Practice Profile & Volume Controls -->
+    <div class="mt-6 space-y-4">
+      <!-- Clinic Presets -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-7">
+            {{ __('1. Choose Clinic Profile') }}
+          </label>
+          <span class="text-xs text-ink-gray-5">
+            {{ __('Select a preset or customize below') }}
           </span>
-        </button>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-3">
+          <button
+            v-for="preset in activeConfig.presets"
+            :key="preset.id"
+            type="button"
+            class="flex flex-col text-left rounded-2xl p-3.5 sm:p-4 border transition-all text-xs"
+            :class="activePreset === preset.id
+              ? 'border-[#bc1823] bg-[#fdf2f3]/70 ring-2 ring-[#bc1823]/20 shadow-xs'
+              : 'border-outline-gray-2 bg-white hover:border-[#f0d6d8] hover:bg-[#fffafa]'"
+            @click="applyPreset(preset)"
+          >
+            <div class="flex items-center justify-between w-full">
+              <span class="font-bold text-ink-gray-9 text-sm">{{ preset.label }}</span>
+              <span
+                v-if="activePreset === preset.id"
+                class="size-2 rounded-full bg-[#bc1823]"
+              ></span>
+            </div>
+            <span class="mt-1 text-ink-gray-6 text-xs leading-relaxed">{{ preset.description }}</span>
+            <span class="mt-2.5 font-mono text-[11px] text-[#bc1823] font-semibold">
+              ~{{ preset.daily_patients }} {{ __('pts/day') }} · {{ preset.facility_type.toUpperCase() }}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Daily Patients Slider Card -->
+      <div class="rounded-2xl border border-outline-gray-2 bg-surface-gray-1/30 p-4 sm:p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-8 block">
+              {{ __('2. Average Daily Patient Encounters') }}
+            </label>
+            <p class="text-xs text-ink-gray-6 mt-0.5">
+              {{ __('Unique patients seen per operating day') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="flex size-8 items-center justify-center rounded-xl border border-outline-gray-3 bg-white text-base font-bold text-ink-gray-7 hover:bg-surface-gray-2 active:bg-surface-gray-3 transition-colors shadow-2xs"
+              :disabled="dailyPatients <= 1"
+              @click="dailyPatients = Math.max(1, dailyPatients - 1); activePreset = ''"
+              aria-label="Decrease daily patients"
+            >
+              −
+            </button>
+            <input
+              v-model.number="dailyPatients"
+              type="number"
+              min="1"
+              max="250"
+              class="w-18 rounded-xl border border-outline-gray-3 bg-white px-2 py-1.5 text-center font-mono text-base font-bold text-ink-gray-9 shadow-2xs focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
+              @input="activePreset = ''"
+            />
+            <button
+              type="button"
+              class="flex size-8 items-center justify-center rounded-xl border border-outline-gray-3 bg-white text-base font-bold text-ink-gray-7 hover:bg-surface-gray-2 active:bg-surface-gray-3 transition-colors shadow-2xs"
+              @click="dailyPatients = Number(dailyPatients || 0) + 1; activePreset = ''"
+              aria-label="Increase daily patients"
+            >
+              +
+            </button>
+            <span class="text-xs font-semibold text-ink-gray-6 ml-1">{{ __('pts / day') }}</span>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <input
+            v-model.number="dailyPatients"
+            type="range"
+            min="1"
+            max="100"
+            step="1"
+            class="w-full accent-[#bc1823] cursor-pointer"
+            @input="activePreset = ''"
+          />
+          <div class="flex justify-between text-[11px] font-mono text-ink-gray-5 mt-1.5">
+            <span>1</span>
+            <span>10</span>
+            <span>25</span>
+            <span>50</span>
+            <span>75</span>
+            <span>100+</span>
+          </div>
+        </div>
+
+        <div class="mt-3.5 flex items-center justify-between border-t border-outline-gray-2/70 pt-2.5 text-xs text-ink-gray-7">
+          <span class="font-medium">{{ __('Projected Monthly Encounters') }}:</span>
+          <span class="font-bold text-ink-gray-9 font-mono">
+            ~{{ monthlyEncounters.toLocaleString() }} {{ __('encounters') }}
+            <span class="text-ink-gray-5 font-normal">({{ operatingDays }} {{ __('operating days') }})</span>
+          </span>
+        </div>
       </div>
     </div>
 
-    <!-- Main Grid: Controls (Left) and Recommendation Cockpit (Right) -->
-    <div class="mt-5 grid gap-6 lg:grid-cols-12 items-start">
-      <!-- Input Controls (Left Column) -->
-      <div class="lg:col-span-7 space-y-4">
-        <!-- Daily Patients Slider & Direct Input Card -->
-        <div class="rounded-xl border border-outline-gray-2 bg-white p-4 sm:p-5 shadow-xs">
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-8 block">
-                {{ __('2. Average Daily Patients') }}
-              </label>
-              <p class="text-[11px] text-ink-gray-6">
-                {{ __('Patient encounters recorded per operational day.') }}
-              </p>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <button
-                type="button"
-                class="flex size-8 items-center justify-center rounded-lg border border-outline-gray-3 bg-surface-gray-1 text-sm font-bold text-ink-gray-7 hover:bg-surface-gray-2 active:bg-surface-gray-3 transition-colors"
-                :disabled="dailyPatients <= 1"
-                @click="dailyPatients = Math.max(1, dailyPatients - 1); activePreset = ''"
-                aria-label="Decrease daily patients"
-              >
-                −
-              </button>
-              <input
-                v-model.number="dailyPatients"
-                type="number"
-                min="1"
-                max="250"
-                class="w-16 rounded-lg border border-outline-gray-3 bg-surface-gray-1 px-2 py-1 text-center font-mono text-base sm:text-sm font-bold text-ink-gray-9 focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
-                @input="activePreset = ''"
-              />
-              <button
-                type="button"
-                class="flex size-8 items-center justify-center rounded-lg border border-outline-gray-3 bg-surface-gray-1 text-sm font-bold text-ink-gray-7 hover:bg-surface-gray-2 active:bg-surface-gray-3 transition-colors"
-                @click="dailyPatients = Number(dailyPatients || 0) + 1; activePreset = ''"
-                aria-label="Increase daily patients"
-              >
-                +
-              </button>
-              <span class="text-xs text-ink-gray-6 font-medium ml-1">{{ __('pts/day') }}</span>
-            </div>
-          </div>
-
-          <div class="mt-4">
-            <input
-              v-model.number="dailyPatients"
-              type="range"
-              min="1"
-              max="100"
-              step="1"
-              class="w-full accent-[#bc1823] cursor-pointer"
-              @input="activePreset = ''"
-            />
-            <div class="flex justify-between text-[10px] font-mono text-ink-gray-5 mt-1">
-              <span>1</span>
-              <span>10</span>
-              <span>25</span>
-              <span>50</span>
-              <span>75</span>
-              <span>100+</span>
-            </div>
-          </div>
-
-          <div class="mt-3.5 flex items-center justify-between border-t border-outline-gray-2/70 pt-2.5 text-xs text-ink-gray-7">
-            <span class="font-medium">{{ __('Projected Monthly Encounters') }}:</span>
-            <span class="font-bold text-ink-gray-9 font-mono">
-              ~{{ monthlyEncounters.toLocaleString() }} {{ __('encounters') }}
-              <span class="text-ink-gray-5 font-normal">({{ operatingDays }} {{ __('operating days') }})</span>
-            </span>
-          </div>
-        </div>
-
-        <!-- Collapsible Fine-Tune Section for Clinical Levers -->
-        <div class="rounded-xl border border-outline-gray-2 bg-white overflow-hidden shadow-xs">
-          <button
-            type="button"
-            class="w-full flex items-center justify-between p-3.5 sm:p-4 text-left text-xs font-semibold text-ink-gray-8 hover:bg-surface-gray-1 transition-colors"
-            @click="showAdvancedSettings = !showAdvancedSettings"
-          >
-            <div class="flex items-center gap-2">
-              <span class="text-sm">⚙️</span>
-              <span class="font-bold">{{ __('Fine-tune Clinical Assumptions & Mix') }}</span>
-              <span class="rounded bg-surface-gray-2 px-1.5 py-0.5 text-[10px] text-ink-gray-6 font-mono hidden sm:inline">
-                {{ facilityType.toUpperCase() }} · {{ operatingDays }}d · KES {{ avgBill }}
-              </span>
-            </div>
-            <div class="flex items-center gap-1.5 text-xs text-ink-gray-5 font-mono">
-              <span>{{ showAdvancedSettings ? __('Hide') : __('Customize') }}</span>
-              <span>{{ showAdvancedSettings ? '▲' : '▼' }}</span>
-            </div>
-          </button>
-
-          <!-- Expandable Clinical Settings Drawer -->
-          <div v-show="showAdvancedSettings" class="border-t border-outline-gray-2 p-4 bg-surface-gray-1/40 space-y-4">
-            <!-- Facility Scope Toggle -->
-            <div>
-              <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7 mb-1.5">
-                {{ __('Clinical Scope & Departments') }}
-              </label>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl bg-surface-gray-2 p-1 border border-outline-gray-2">
-                <button
-                  type="button"
-                  class="flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-all"
-                  :class="facilityType === 'opd'
-                    ? 'bg-white text-[#bc1823] shadow-xs'
-                    : 'text-ink-gray-7 hover:text-ink-gray-9'"
-                  @click="facilityType = 'opd'; activePreset = ''"
-                >
-                  <span>🩺</span>
-                  <span>{{ __('Outpatient Only (OPD)') }}</span>
-                </button>
-                <button
-                  type="button"
-                  class="flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-all"
-                  :class="facilityType === 'ipd'
-                    ? 'bg-white text-[#bc1823] shadow-xs'
-                    : 'text-ink-gray-7 hover:text-ink-gray-9'"
-                  @click="facilityType = 'ipd'; activePreset = ''"
-                >
-                  <span>🏥</span>
-                  <span>{{ __('Outpatient & Inpatient (OPD + IPD)') }}</span>
-                </button>
-              </div>
-              <p class="mt-1.5 text-[11px] text-ink-gray-6 leading-tight">
-                {{ facilityType === 'opd'
-                  ? __('OPD-only facilities are exempt from inpatient admission and surgical procedure token deductions.')
-                  : __('Comprehensive coverage including inpatient admissions, surgical procedures, and specialty care.')
-                }}
-              </p>
-            </div>
-
-            <!-- Average Patient Bill & Operating Days -->
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="rounded-xl border border-outline-gray-2 bg-white p-3.5 shadow-2xs">
-                <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-8 block">
-                  {{ __('Average Patient Bill') }}
-                </label>
-                <p class="text-[11px] text-ink-gray-6 mb-2">
-                  {{ __('1 token per KES 750 bill value') }}
-                </p>
-                <div class="relative">
-                  <span class="absolute left-3 top-2 text-xs font-bold text-ink-gray-5">KES</span>
-                  <input
-                    v-model.number="avgBill"
-                    type="number"
-                    min="0"
-                    step="250"
-                    class="w-full rounded-lg border border-outline-gray-3 bg-surface-gray-1 pl-12 pr-3 py-1.5 font-mono text-base sm:text-sm font-bold text-ink-gray-9 focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
-                    @input="activePreset = ''"
-                  />
-                </div>
-                <p class="mt-1.5 text-[11px] text-ink-gray-6 font-medium">
-                  = <strong class="text-ink-gray-9 font-mono">{{ billTokensPerPatient }} tokens</strong> {{ __('per patient bill') }}
-                </p>
-              </div>
-
-              <div class="rounded-xl border border-outline-gray-2 bg-white p-3.5 shadow-2xs">
-                <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-8 block">
-                  {{ __('Operating Days / Month') }}
-                </label>
-                <p class="text-[11px] text-ink-gray-6 mb-2">
-                  {{ __('Facility working days per month') }}
-                </p>
-                <div class="flex items-center gap-1.5">
-                  <button
-                    v-for="days in [20, 24, 26, 30]"
-                    :key="days"
-                    type="button"
-                    class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all font-mono"
-                    :class="operatingDays === days
-                      ? 'bg-[#bc1823] text-white shadow-xs'
-                      : 'bg-surface-gray-2 text-ink-gray-7 hover:bg-surface-gray-3'"
-                    @click="operatingDays = days"
-                  >
-                    {{ days }}d
-                  </button>
-                </div>
-                <p class="mt-1.5 text-[11px] text-ink-gray-6 font-medium">
-                  {{ operatingDays === 24 ? __('Standard 6-day work weeks') : operatingDays === 30 ? __('24/7 continuous operations') : `${operatingDays} days open` }}
-                </p>
-              </div>
-            </div>
-
-            <!-- Service Point Encounter Mix Accordion -->
-            <div class="rounded-xl border border-outline-gray-2 bg-white overflow-hidden shadow-2xs">
-              <button
-                type="button"
-                class="w-full flex items-center justify-between p-3 text-left text-xs font-semibold text-ink-gray-8 hover:bg-surface-gray-1 transition-colors"
-                @click="showCustomMix = !showCustomMix"
-              >
-                <div class="flex items-center gap-2">
-                  <span class="text-xs">🔬</span>
-                  <span>{{ __('Customize Diagnostic & Clinical Services') }}</span>
-                  <span class="rounded bg-surface-gray-2 px-1.5 py-0.5 text-[10px] text-ink-gray-6 font-mono">
-                    {{ serviceTokensPerPatient.toFixed(1) }} {{ __('tokens/pt') }}
-                  </span>
-                </div>
-                <span class="text-ink-gray-5 font-mono text-xs">
-                  {{ showCustomMix ? '▲' : '▼' }}
-                </span>
-              </button>
-
-              <div v-show="showCustomMix" class="border-t border-outline-gray-2 p-3 bg-surface-gray-1/40 space-y-2">
-                <p class="text-[11px] text-ink-gray-6 leading-relaxed">
-                  {{ __('Token billing applies only to the clinical events below. Patient registrations, triage vitals, and dispensing consume 0 service tokens.') }}
-                </p>
-
-                <div class="space-y-2">
-                  <div
-                    v-for="sp in eligibleServicePoints"
-                    :key="sp.id"
-                    class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3 p-2 rounded-lg border bg-white text-xs"
-                    :class="sp.isApplicable ? 'border-outline-gray-2' : 'border-outline-gray-2/60 bg-surface-gray-2/60 opacity-60'"
-                  >
-                    <div class="min-w-0">
-                      <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="font-semibold text-ink-gray-9">{{ sp.name }}</span>
-                        <span class="font-mono text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-bold shrink-0">
-                          {{ sp.tokens }} 🪙
-                        </span>
-                        <span
-                          v-if="!sp.isApplicable"
-                          class="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 shrink-0"
-                        >
-                          {{ __('Exempt for OPD') }}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div v-if="sp.isApplicable" class="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1 sm:pt-0 border-t border-outline-gray-1 sm:border-0 w-full sm:w-auto">
-                      <input
-                        v-model.number="serviceFrequencies[sp.id]"
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="5"
-                        class="w-full sm:w-28 accent-[#bc1823] cursor-pointer"
-                      />
-                      <span class="w-10 text-right font-mono font-bold text-ink-gray-9 shrink-0">
-                        {{ serviceFrequencies[sp.id] ?? 0 }}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Live Calculation Results & Recommendation (Right Column Cockpit) -->
-      <div class="lg:col-span-5 space-y-4">
-        <!-- Monthly Demand Card -->
-        <div class="rounded-2xl border-2 border-[#f0d6d8] bg-white p-4 sm:p-5 shadow-xs">
+    <!-- Step 2: Clear Outcome Cockpit (Demand & Recommendation Hero) -->
+    <div class="mt-6 grid gap-5 lg:grid-cols-12 items-stretch">
+      <!-- Projected Demand Card (Left) -->
+      <div class="lg:col-span-5 rounded-2xl border border-outline-gray-2 bg-white p-5 flex flex-col justify-between shadow-2xs">
+        <div>
           <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[#bc1823] bg-[#fdf2f3] px-2.5 py-0.5 rounded-full border border-[#f0d6d8]">
+            <span class="text-xs font-bold uppercase tracking-wider text-[#bc1823] bg-[#fdf2f3] px-2.5 py-0.5 rounded-full border border-[#f0d6d8]">
               {{ __('Projected Monthly Demand') }}
             </span>
-            <span class="text-[11px] font-mono text-ink-gray-6 font-semibold">
+            <span class="text-xs font-mono text-ink-gray-6 font-semibold">
               ~{{ (totalMonthlyDemand / operatingDays).toFixed(0) }} {{ __('tokens/day') }}
             </span>
           </div>
 
-          <div class="mt-3 flex items-baseline justify-between gap-2">
-            <div>
-              <p class="text-3xl sm:text-4xl font-extrabold tracking-tight text-ink-gray-9 font-mono">
-                {{ totalMonthlyDemand.toLocaleString() }}
-              </p>
-              <p class="text-xs font-semibold text-[#bc1823] flex items-center gap-1 mt-0.5">
-                <span>🪙</span>
-                <span>{{ __('Care Tokens / month') }}</span>
-              </p>
-            </div>
-            <div class="text-right text-xs text-ink-gray-6 font-mono">
-              <span class="rounded bg-surface-gray-2 px-2 py-1 text-ink-gray-8 font-bold">
-                {{ totalTokensPerPatient.toFixed(1) }} {{ __('tokens/pt') }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Formula Breakdown -->
-          <div class="mt-3.5 rounded-xl bg-surface-gray-1 p-3 text-xs space-y-1.5 border border-outline-gray-2/70 text-ink-gray-7">
-            <div class="flex justify-between">
-              <span>{{ __('Patient usage') }} ({{ monthlyEncounters }} × {{ totalTokensPerPatient.toFixed(1) }}):</span>
-              <strong class="font-mono text-ink-gray-9">{{ monthlyPatientTokens.toLocaleString() }} 🪙</strong>
-            </div>
-            <div class="flex justify-between">
-              <span>{{ __('Monthly platform access fee') }}:</span>
-              <strong class="font-mono text-ink-gray-9">{{ platformFee }} 🪙</strong>
-            </div>
-            <div class="border-t border-outline-gray-2 pt-1.5 flex justify-between font-bold text-ink-gray-9">
-              <span>{{ __('Total monthly requirement') }}:</span>
-              <span class="font-mono text-[#bc1823]">{{ totalMonthlyDemand.toLocaleString() }} 🪙</span>
-            </div>
+          <div class="mt-4">
+            <p class="text-4xl sm:text-5xl font-black tracking-tight text-ink-gray-9 font-mono">
+              {{ totalMonthlyDemand.toLocaleString() }}
+            </p>
+            <p class="text-xs font-semibold text-[#bc1823] flex items-center gap-1 mt-1">
+              <span>🪙</span>
+              <span>{{ __('Care Tokens / month needed') }}</span>
+            </p>
           </div>
         </div>
 
-        <!-- Recommended Package Value Card -->
-        <div
-          v-if="recommendedPackage"
-          class="rounded-2xl border-2 border-[#bc1823] bg-gradient-to-br from-[#fff7f8] via-white to-[#fff0f2] p-4 sm:p-5 shadow-sm relative overflow-hidden"
-          data-testid="recommended-package-card"
-        >
-          <div class="flex items-center justify-between gap-2">
-            <span class="rounded-full bg-[#bc1823] px-2.5 sm:px-3 py-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white shadow-xs flex items-center gap-1.5">
+        <!-- Formula Breakdown -->
+        <div class="mt-5 rounded-xl bg-surface-gray-1 p-3.5 text-xs space-y-2 border border-outline-gray-2/70 text-ink-gray-7">
+          <div class="flex justify-between">
+            <span>{{ __('Patient usage') }} ({{ monthlyEncounters }} × {{ totalTokensPerPatient.toFixed(1) }}):</span>
+            <strong class="font-mono text-ink-gray-9">{{ monthlyPatientTokens.toLocaleString() }} 🪙</strong>
+          </div>
+          <div class="flex justify-between">
+            <span>{{ __('Monthly platform access fee') }}:</span>
+            <strong class="font-mono text-ink-gray-9">{{ platformFee }} 🪙</strong>
+          </div>
+          <div class="border-t border-outline-gray-2 pt-2 flex justify-between font-bold text-ink-gray-9">
+            <span>{{ __('Total monthly requirement') }}:</span>
+            <span class="font-mono text-[#bc1823]">{{ totalMonthlyDemand.toLocaleString() }} 🪙</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recommended Plan Hero Card (Right) -->
+      <div
+        v-if="recommendedPackage"
+        class="lg:col-span-7 rounded-2xl border-2 border-[#bc1823] bg-gradient-to-br from-[#fff7f8] via-white to-[#fff0f2] p-5 sm:p-6 shadow-sm flex flex-col justify-between relative overflow-hidden"
+        data-testid="recommended-package-card"
+      >
+        <div>
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <span class="rounded-full bg-[#bc1823] px-3 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-xs flex items-center gap-1.5">
               <span>⭐</span>
               <span>{{ __('Recommended For You') }}</span>
             </span>
             <span
               v-if="recommendedPackage.item_code === 'CV-TOKEN-SCALE'"
-              class="text-[10px] sm:text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 sm:px-2.5 py-0.5 rounded-full"
+              class="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full"
             >
               {{ __('Best Value · Save 16.7%') }}
             </span>
             <span
               v-else-if="recommendedPackage.item_code === 'CV-TOKEN-GROWTH'"
-              class="text-[10px] sm:text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 sm:px-2.5 py-0.5 rounded-full"
+              class="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full"
             >
               {{ __('Save 8.3% vs Starter') }}
             </span>
           </div>
 
-          <div class="mt-3 sm:mt-3.5">
-            <h4 class="text-lg sm:text-xl font-bold tracking-tight text-ink-gray-9">
-              {{ recommendedPackage.display_name }} ({{ recommendedPackage.tokens?.toLocaleString() }} {{ __('Tokens') }})
-            </h4>
-            <p class="text-xs text-ink-gray-7 mt-0.5">
-              {{ recommendedPackage.coverage_summary || recommendedPackage.description }}
-            </p>
-          </div>
-
-          <div class="mt-3 flex items-baseline gap-2">
-            <span class="text-2xl sm:text-3xl font-extrabold text-ink-gray-9 font-mono">
-              {{ money(recommendedPackage.price_ex_vat ?? recommendedPackage.price, recommendedPackage.currency) }}
-            </span>
-            <span class="text-xs text-ink-gray-6 font-medium">
-              {{ __('excl. VAT / month') }}
-            </span>
-          </div>
-          <p v-if="recommendedPackage.gross_total" class="text-[11px] text-ink-gray-7 font-medium mt-0.5">
-            {{ recommendedPackage.vat_label || 'VAT' }} {{ money(recommendedPackage.vat_amount, recommendedPackage.currency) }} ·
-            <strong class="text-ink-gray-9">{{ __('Total') }} {{ money(recommendedPackage.gross_total, recommendedPackage.currency) }}</strong>
-          </p>
-
-          <!-- Key Metrics Badges -->
-          <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
-            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2 sm:p-2.5 shadow-2xs">
-              <span class="text-[10px] font-semibold text-ink-gray-6 uppercase block">{{ __('Estimated Runway') }}</span>
-              <p class="mt-0.5 text-xs sm:text-sm font-bold text-[#bc1823] font-mono">
-                ~{{ recommendedPackage.runwayDays }} {{ __('days') }}
-                <span class="text-[10px] sm:text-[11px] text-ink-gray-6 font-normal">({{ recommendedPackage.runwayMonths }} {{ __('mo') }})</span>
+          <div class="mt-4 flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
+            <div>
+              <h4 class="text-xl sm:text-2xl font-bold tracking-tight text-ink-gray-9">
+                {{ recommendedPackage.display_name }} ({{ recommendedPackage.tokens?.toLocaleString() }} {{ __('Tokens') }})
+              </h4>
+              <p class="text-xs text-ink-gray-6 mt-1">
+                {{ recommendedPackage.coverage_summary || recommendedPackage.description }}
               </p>
             </div>
-            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2 sm:p-2.5 shadow-2xs">
-              <span class="text-[10px] font-semibold text-ink-gray-6 uppercase block">{{ __('Cost / Patient') }}</span>
-              <p class="mt-0.5 text-xs sm:text-sm font-bold text-emerald-800 font-mono">
+            <div class="text-left sm:text-right shrink-0">
+              <span class="text-2xl sm:text-3xl font-black text-ink-gray-9 font-mono">
+                {{ money(recommendedPackage.price_ex_vat ?? recommendedPackage.price, recommendedPackage.currency) }}
+              </span>
+              <span class="text-xs text-ink-gray-5 font-medium block">
+                {{ __('excl. VAT / month') }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Key Metrics Badges -->
+          <div class="mt-4 grid grid-cols-2 gap-3 text-xs">
+            <div class="rounded-xl border border-[#f0d6d8] bg-white p-3 shadow-2xs">
+              <span class="text-[11px] font-semibold text-ink-gray-6 uppercase block">{{ __('Estimated Runway') }}</span>
+              <p class="mt-1 text-base font-bold text-[#bc1823] font-mono">
+                ~{{ recommendedPackage.runwayDays }} {{ __('days') }}
+                <span class="text-xs text-ink-gray-5 font-normal">({{ recommendedPackage.runwayMonths }} {{ __('mo') }})</span>
+              </p>
+            </div>
+            <div class="rounded-xl border border-[#f0d6d8] bg-white p-3 shadow-2xs">
+              <span class="text-[11px] font-semibold text-ink-gray-6 uppercase block">{{ __('Cost / Patient') }}</span>
+              <p class="mt-1 text-base font-bold text-emerald-800 font-mono">
                 {{ money(recommendedPackage.costPerEncounter, recommendedPackage.currency) }}
               </p>
             </div>
           </div>
+        </div>
 
-          <!-- Select Action Button -->
-          <div class="mt-4">
-            <button
-              type="button"
-              class="w-full min-h-12 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold text-white transition-all shadow-sm"
-              :class="selectedPackageCode === recommendedPackage.item_code
-                ? 'bg-emerald-700 hover:bg-emerald-800'
-                : 'bg-[#bc1823] hover:bg-[#a3141d] active:scale-[0.99]'"
-              @click="selectPackage(recommendedPackage)"
-            >
-              <span>{{ context === 'landing' ? '🚀' : selectedPackageCode === recommendedPackage.item_code ? '✓' : '👉' }}</span>
-              <span>
-                {{
-                  context === 'landing'
-                    ? `${__('Start onboarding with')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens) →`
-                    : selectedPackageCode === recommendedPackage.item_code
-                      ? __('Plan Selected for Facility')
-                      : context === 'portal'
-                        ? `${__('Order')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens)`
-                        : `${__('Select')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens)`
-                }}
-              </span>
-            </button>
-          </div>
+        <!-- Primary Action CTA -->
+        <div class="mt-5 pt-3 border-t border-[#f0d6d8]/80">
+          <button
+            type="button"
+            class="w-full min-h-12 flex items-center justify-center gap-2 py-3.5 px-5 rounded-xl text-sm font-bold text-white transition-all shadow-sm"
+            :class="selectedPackageCode === recommendedPackage.item_code
+              ? 'bg-emerald-700 hover:bg-emerald-800'
+              : 'bg-[#bc1823] hover:bg-[#a3141d] active:scale-[0.99]'"
+            @click="selectPackage(recommendedPackage)"
+          >
+            <span>{{ context === 'landing' ? '🚀' : selectedPackageCode === recommendedPackage.item_code ? '✓' : '👉' }}</span>
+            <span>
+              {{
+                context === 'landing'
+                  ? `${__('Start onboarding with')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens) →`
+                  : selectedPackageCode === recommendedPackage.item_code
+                    ? __('Plan Selected for Facility')
+                    : context === 'portal'
+                      ? `${__('Order')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens)`
+                      : `${__('Select')} ${recommendedPackage.display_name} (${recommendedPackage.tokens?.toLocaleString()} Tokens)`
+              }}
+            </span>
+          </button>
 
-          <!-- Landing Context Direct Link -->
-          <div v-if="context === 'landing'" class="text-center pt-2.5">
+          <!-- Landing Context Secondary Link -->
+          <div v-if="context === 'landing'" class="text-center pt-2">
             <button
               type="button"
               class="text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] hover:underline inline-flex items-center gap-1"
@@ -721,37 +533,208 @@ function money(val, currency = 'KES') {
             </button>
           </div>
         </div>
+      </div>
+    </div>
 
-        <!-- Runway Comparison across available packages -->
-        <div v-if="evaluatedPackages.length > 1" class="rounded-xl border border-outline-gray-2 bg-white p-3.5 sm:p-4 shadow-2xs">
-          <p class="text-[11px] font-bold uppercase tracking-wider text-ink-gray-7 mb-2">
-            {{ __('Package Runway Comparison at Your Volume') }}
-          </p>
-          <div class="space-y-1.5">
-            <div
-              v-for="pkg in evaluatedPackages"
-              :key="pkg.item_code"
-              class="flex items-center justify-between p-2 rounded-lg border text-xs transition-colors cursor-pointer"
+    <!-- Step 3: Package Comparison Matrix (All tiers at a glance) -->
+    <div v-if="evaluatedPackages.length > 1" class="mt-6">
+      <div class="flex items-center justify-between mb-2.5">
+        <label class="text-xs font-bold uppercase tracking-wider text-ink-gray-7">
+          {{ __('3. Package Runway Comparison at Your Volume') }}
+        </label>
+        <span class="text-xs text-ink-gray-5">
+          {{ __('Click any plan to select it') }}
+        </span>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-3">
+        <div
+          v-for="pkg in evaluatedPackages"
+          :key="pkg.item_code"
+          class="flex flex-col justify-between p-3.5 sm:p-4 rounded-2xl border text-xs transition-all cursor-pointer"
+          :class="selectedPackageCode === pkg.item_code
+            ? 'border-[#bc1823] bg-[#fdf2f3] ring-2 ring-[#bc1823]/20 shadow-xs'
+            : 'border-outline-gray-2 bg-white hover:border-[#f0d6d8] hover:bg-surface-gray-1'"
+          @click="selectPackage(pkg)"
+        >
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-ink-gray-9">{{ pkg.display_name }}</span>
+              <span class="font-mono text-xs text-[#bc1823] font-bold">{{ pkg.tokens?.toLocaleString() }} 🪙</span>
+            </div>
+            <p class="text-xs text-ink-gray-6 mt-1 font-mono">
+              {{ money(pkg.price_ex_vat ?? pkg.price, pkg.currency) }} <span class="text-[10px] text-ink-gray-5">excl. VAT</span>
+            </p>
+          </div>
+          <div class="mt-3.5 pt-2.5 border-t border-outline-gray-1 flex items-center justify-between text-xs">
+            <span class="text-ink-gray-7">
+              {{ __('Runway') }}: <strong class="font-mono text-ink-gray-9">~{{ pkg.runwayDays }}d</strong> ({{ pkg.runwayMonths }} mo)
+            </span>
+            <span
+              class="size-4 rounded-full border flex items-center justify-center text-[10px]"
               :class="selectedPackageCode === pkg.item_code
-                ? 'border-[#bc1823] bg-[#fdf2f3]'
-                : 'border-outline-gray-2 hover:border-[#f0d6d8] hover:bg-surface-gray-1'"
-              @click="selectPackage(pkg)"
+                ? 'border-[#bc1823] bg-[#bc1823] text-white font-bold'
+                : 'border-outline-gray-3 text-transparent'"
             >
-              <div>
-                <span class="font-bold text-ink-gray-9">{{ pkg.display_name }}</span>
-                <span class="text-ink-gray-5 ml-1 font-mono">({{ pkg.tokens?.toLocaleString() }} 🪙)</span>
+              ✓
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4: Collapsible Clinical Fine-Tuning Drawer (Spacious Progressive Disclosure) -->
+    <div class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1/30 overflow-hidden">
+      <button
+        type="button"
+        class="w-full flex items-center justify-between p-4 text-left text-xs font-semibold text-ink-gray-8 hover:bg-surface-gray-1 transition-colors"
+        @click="showAdvancedSettings = !showAdvancedSettings"
+      >
+        <div class="flex items-center gap-2.5">
+          <span class="text-base">⚙️</span>
+          <span class="font-bold text-sm">{{ __('Fine-tune Clinical Assumptions & Mix') }}</span>
+          <span class="rounded-full bg-surface-gray-2 border border-outline-gray-2 px-2.5 py-0.5 text-xs text-ink-gray-6 font-mono hidden md:inline">
+            {{ facilityType.toUpperCase() }} · {{ operatingDays }} days · KES {{ avgBill }} avg bill
+          </span>
+        </div>
+        <div class="flex items-center gap-1.5 text-xs text-ink-gray-6 font-semibold">
+          <span>{{ showAdvancedSettings ? __('Hide details') : __('Customize assumptions') }}</span>
+          <span class="font-mono text-xs">{{ showAdvancedSettings ? '▲' : '▼' }}</span>
+        </div>
+      </button>
+
+      <!-- Expandable Clinical Settings Drawer -->
+      <div v-show="showAdvancedSettings" class="border-t border-outline-gray-2 p-5 bg-white space-y-5">
+        <!-- 3-Column Control Grid for Scope, Avg Bill, and Operating Days -->
+        <div class="grid gap-4 md:grid-cols-3">
+          <!-- Scope Toggle -->
+          <div class="space-y-1.5">
+            <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7">
+              {{ __('Clinical Scope & Departments') }}
+            </label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 rounded-xl bg-surface-gray-2 p-1 border border-outline-gray-2">
+              <button
+                type="button"
+                class="flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-semibold transition-all"
+                :class="facilityType === 'opd'
+                  ? 'bg-white text-[#bc1823] shadow-xs'
+                  : 'text-ink-gray-7 hover:text-ink-gray-9'"
+                @click="facilityType = 'opd'; activePreset = ''"
+              >
+                <span>🩺</span>
+                <span>{{ __('Outpatient Only (OPD)') }}</span>
+              </button>
+              <button
+                type="button"
+                class="flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-semibold transition-all"
+                :class="facilityType === 'ipd'
+                  ? 'bg-white text-[#bc1823] shadow-xs'
+                  : 'text-ink-gray-7 hover:text-ink-gray-9'"
+                @click="facilityType = 'ipd'; activePreset = ''"
+              >
+                <span>🏥</span>
+                <span>{{ __('OPD + IPD') }}</span>
+              </button>
+            </div>
+            <p class="text-[11px] text-ink-gray-5 leading-tight">
+              {{ facilityType === 'opd' ? __('Exempt from inpatient admission and surgical procedure deductions.') : __('Full coverage for inpatient admissions and surgical procedures.') }}
+            </p>
+          </div>
+
+          <!-- Average Patient Bill -->
+          <div class="space-y-1.5">
+            <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7">
+              {{ __('Average Patient Bill') }}
+            </label>
+            <div class="relative">
+              <span class="absolute left-3 top-2 text-xs font-bold text-ink-gray-5">KES</span>
+              <input
+                v-model.number="avgBill"
+                type="number"
+                min="0"
+                step="250"
+                class="w-full rounded-xl border border-outline-gray-3 bg-surface-gray-1 pl-12 pr-3 py-2 font-mono text-base sm:text-sm font-bold text-ink-gray-9 focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
+                @input="activePreset = ''"
+              />
+            </div>
+            <p class="text-[11px] text-ink-gray-5 font-mono">
+              = {{ billTokensPerPatient }} tokens / patient bill (1 per KES 750)
+            </p>
+          </div>
+
+          <!-- Operating Days / Month -->
+          <div class="space-y-1.5">
+            <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7">
+              {{ __('Operating Days / Month') }}
+            </label>
+            <div class="flex items-center gap-1.5">
+              <button
+                v-for="days in [20, 24, 26, 30]"
+                :key="days"
+                type="button"
+                class="flex-1 rounded-xl py-2 text-xs font-semibold transition-all font-mono"
+                :class="operatingDays === days
+                  ? 'bg-[#bc1823] text-white shadow-xs'
+                  : 'bg-surface-gray-2 text-ink-gray-7 hover:bg-surface-gray-3'"
+                @click="operatingDays = days"
+              >
+                {{ days }}d
+              </button>
+            </div>
+            <p class="text-[11px] text-ink-gray-5">
+              {{ operatingDays === 24 ? __('Standard 6-day work weeks') : operatingDays === 30 ? __('24/7 continuous operations') : `${operatingDays} days open` }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Diagnostic & Clinical Services Frequency Sliders -->
+        <div class="border-t border-outline-gray-2 pt-4">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h5 class="text-xs font-bold uppercase tracking-wider text-ink-gray-8">
+                {{ __('Diagnostic & Clinical Service Frequencies') }}
+              </h5>
+              <p class="text-xs text-ink-gray-5 mt-0.5">
+                {{ __('Percentage of patient encounters utilizing each clinical service point') }}
+              </p>
+            </div>
+            <span class="rounded-full bg-surface-gray-2 border border-outline-gray-2 px-3 py-1 text-xs font-mono font-bold text-ink-gray-8">
+              {{ serviceTokensPerPatient.toFixed(1) }} {{ __('tokens/pt') }}
+            </span>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div
+              v-for="sp in eligibleServicePoints"
+              :key="sp.id"
+              class="flex items-center justify-between gap-3 p-3 rounded-xl border bg-surface-gray-1/30 text-xs"
+              :class="sp.isApplicable ? 'border-outline-gray-2' : 'border-outline-gray-2/60 bg-surface-gray-2/60 opacity-60'"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="font-semibold text-ink-gray-9">{{ sp.name }}</span>
+                  <span class="font-mono text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-bold shrink-0">
+                    {{ sp.tokens }} 🪙
+                  </span>
+                  <span
+                    v-if="!sp.isApplicable"
+                    class="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 shrink-0"
+                  >
+                    {{ __('Exempt for OPD') }}
+                  </span>
+                </div>
               </div>
-              <div class="flex items-center gap-3">
-                <span class="font-mono text-ink-gray-7">
-                  ~<strong>{{ pkg.runwayDays }}</strong> {{ __('days') }}
-                </span>
-                <span
-                  class="size-4 rounded-full border flex items-center justify-center text-[10px]"
-                  :class="selectedPackageCode === pkg.item_code
-                    ? 'border-[#bc1823] bg-[#bc1823] text-white font-bold'
-                    : 'border-outline-gray-3 text-transparent'"
-                >
-                  ✓
+
+              <div v-if="sp.isApplicable" class="flex items-center gap-2 shrink-0">
+                <input
+                  v-model.number="serviceFrequencies[sp.id]"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  class="w-24 sm:w-28 accent-[#bc1823] cursor-pointer"
+                />
+                <span class="w-10 text-right font-mono font-bold text-ink-gray-9">
+                  {{ serviceFrequencies[sp.id] ?? 0 }}%
                 </span>
               </div>
             </div>

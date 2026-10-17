@@ -710,7 +710,7 @@
           <Dialog
             v-model:open="calculatorDialogOpen"
             :title="__('CareVerse Token Sizing Calculator')"
-            size="4xl"
+            size="5xl"
           >
             <div class="p-1 sm:p-2 max-h-[85vh] sm:max-h-[80vh] overflow-y-auto">
               <TokenCalculator
