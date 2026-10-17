@@ -6,26 +6,26 @@
     </div>
     <header class="sticky top-0 z-30 border-b border-outline-gray-2 bg-white/80 backdrop-blur-md">
       <div
-        class="mx-auto flex items-center justify-between px-5 py-3.5 sm:px-8 transition-all duration-300"
+        class="mx-auto flex items-center justify-between px-3.5 sm:px-8 py-3 transition-all duration-300"
         :class="stage === 'pricing' ? 'max-w-[1520px]' : 'max-w-6xl'"
       >
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2.5 sm:gap-3">
           <div
-            class="flex size-9 items-center justify-center rounded-xl bg-[#bc1823] text-white font-semibold text-base shadow-sm"
+            class="flex size-8 sm:size-9 items-center justify-center rounded-xl bg-[#bc1823] text-white font-semibold text-sm sm:text-base shadow-sm shrink-0"
           >
             T
           </div>
           <div>
-            <p class="text-sm font-semibold tracking-tight text-ink-gray-9">
-              Tiberbu <span class="font-normal text-ink-gray-5">Customer Experience</span>
+            <p class="text-xs sm:text-sm font-semibold tracking-tight text-ink-gray-9 leading-tight">
+              Tiberbu <span class="font-normal text-ink-gray-5 hidden xs:inline">Customer Experience</span>
             </p>
-            <p class="text-[11px] font-medium text-ink-gray-5 flex items-center gap-1.5">
+            <p class="text-[10px] sm:text-[11px] font-medium text-ink-gray-5 flex items-center gap-1.5 mt-0.5">
               <span class="inline-block size-1.5 rounded-full bg-emerald-500"></span>
               {{ __('Secure facility onboarding') }}
             </p>
           </div>
         </div>
-        <div class="flex items-center gap-3 text-xs sm:text-sm">
+        <div class="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm">
           <a
             v-if="supportEmail"
             :href="`mailto:${supportEmail}`"
@@ -34,24 +34,25 @@
             <svg class="size-4 text-ink-gray-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
-            <span class="hidden sm:inline">{{ __('Need help?') }}</span>
+            <span class="hidden md:inline">{{ __('Need help?') }}</span>
           </a>
           <a
             href="/login?redirect-to=/cx-portal"
-            class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-2 bg-white/90 px-3.5 py-1.5 font-medium text-ink-gray-7 shadow-sm transition hover:bg-surface-gray-1 hover:text-ink-gray-9"
+            class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-2 bg-white/90 px-3 py-1.5 font-medium text-ink-gray-7 shadow-sm transition hover:bg-surface-gray-1 hover:text-ink-gray-9 text-xs"
           >
-            {{ __('Already have access? Sign in') }}
+            <span class="sm:hidden">{{ __('Sign in') }}</span>
+            <span class="hidden sm:inline">{{ __('Already have access? Sign in') }}</span>
           </a>
         </div>
       </div>
     </header>
     <div
-      class="mx-auto px-5 py-8 sm:px-8 sm:py-10 transition-all duration-300"
+      class="mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 lg:py-10 transition-all duration-300"
       :class="stage === 'pricing' ? 'max-w-[1520px]' : 'max-w-6xl'"
     >
       <section
         v-if="stage === 'welcome'"
-        class="grid gap-10 lg:grid-cols-[1.08fr_.92fr] lg:items-center"
+        class="grid gap-8 lg:gap-10 lg:grid-cols-[1.08fr_.92fr] lg:items-center"
       >
         <div>
           <span
@@ -61,7 +62,7 @@
             {{ __('Start your facility journey') }}
           </span>
           <h1
-            class="mt-4 max-w-2xl text-4xl font-semibold leading-tight tracking-tight text-ink-gray-9 sm:text-5xl lg:text-6xl"
+            class="mt-4 max-w-2xl text-3xl font-semibold leading-tight tracking-tight text-ink-gray-9 sm:text-5xl lg:text-6xl"
           >
             {{
               networkName
@@ -70,7 +71,7 @@
             }}
           </h1>
           <p
-            class="mt-5 max-w-xl text-base leading-7 text-ink-gray-6 sm:text-lg"
+            class="mt-4 sm:mt-5 max-w-xl text-sm sm:text-base leading-6 sm:leading-7 text-ink-gray-6"
           >
             {{
               __(
@@ -78,21 +79,21 @@
               )
             }}
           </p>
-          <div class="mt-8 flex flex-wrap items-center gap-4">
+          <div class="mt-6 sm:mt-8 flex flex-wrap items-center gap-4">
             <button
-              class="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#bc1823] px-7 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d]"
+              class="inline-flex min-h-12 w-full sm:w-auto justify-center items-center gap-2 rounded-xl bg-[#bc1823] px-7 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d]"
               @click="stage = 'identity'"
             >
               <span>{{ __('Start secure onboarding') }}</span>
               <span class="text-lg">→</span>
             </button>
           </div>
-          <p class="mt-4 text-xs font-medium text-ink-gray-5">
+          <p class="mt-3 text-xs font-medium text-ink-gray-5">
             {{ __('Usually 5–10 minutes · all displayed prices exclude VAT') }}
           </p>
         </div>
         <aside
-          class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-8"
+          class="rounded-2xl border border-outline-gray-2 bg-white/90 p-4 sm:p-8 shadow-sm backdrop-blur-md"
         >
           <p
             class="text-xs font-semibold uppercase tracking-[.15em] text-ink-gray-5"
@@ -164,24 +165,24 @@
       </section>
       <section v-else :class="stage === 'pricing' ? 'w-full' : 'mx-auto max-w-3xl'">
         <div
-          class="mb-4 flex flex-wrap items-center justify-between gap-3"
+          class="mb-4 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3"
           :class="stage === 'pricing' ? 'max-w-4xl mx-auto' : ''"
         >
           <div>
             <span
-              class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[#bc1823]"
+              class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-2.5 py-0.5 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-[#bc1823]"
             >
               <span class="size-1.5 rounded-full bg-[#bc1823]"></span>
               {{ __('Facility onboarding') }}
             </span>
-            <h1 class="mt-1.5 text-2xl font-bold tracking-tight text-ink-gray-9 sm:text-3xl">
+            <h1 class="mt-1 text-xl sm:text-2xl font-bold tracking-tight text-ink-gray-9 lg:text-3xl">
               {{ stageTitle }}
             </h1>
           </div>
           <button
             v-if="stage !== 'success'"
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-2 bg-white px-3.5 py-1.5 text-xs font-semibold text-ink-gray-6 shadow-sm transition hover:bg-surface-gray-1 hover:text-ink-gray-9"
+            class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-2 bg-white px-3 py-1.5 text-xs font-semibold text-ink-gray-6 shadow-sm transition hover:bg-surface-gray-1 hover:text-ink-gray-9"
             @click="reset"
           >
             <svg class="size-3.5 text-ink-gray-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -192,7 +193,7 @@
         </div>
         <ol
           v-if="stage !== 'success'"
-          class="mb-6 grid grid-cols-4 gap-2 sm:gap-4 rounded-xl border border-outline-gray-2 bg-white/85 p-2.5 sm:p-3 shadow-xs backdrop-blur-md"
+          class="mb-5 sm:mb-6 grid grid-cols-4 gap-1.5 sm:gap-4 rounded-xl border border-outline-gray-2 bg-white/85 p-2 sm:p-3 shadow-xs backdrop-blur-md"
           :class="stage === 'pricing' ? 'max-w-4xl mx-auto' : ''"
           :aria-label="__('Onboarding steps')"
         >
@@ -202,14 +203,14 @@
             class="relative flex flex-col items-center sm:items-start transition-all"
             :aria-current="item.status === 'current' ? 'step' : undefined"
           >
-            <div class="flex items-center w-full mb-2">
+            <div class="flex items-center w-full mb-1.5 sm:mb-2 justify-center sm:justify-start">
               <span
-                class="flex size-7 sm:size-8 items-center justify-center rounded-xl text-xs font-bold transition-all duration-200 shrink-0"
+                class="flex size-6 sm:size-8 items-center justify-center rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-200 shrink-0"
                 :class="
                   item.status === 'complete'
-                    ? 'bg-emerald-600 text-white shadow-sm ring-4 ring-emerald-100'
+                    ? 'bg-emerald-600 text-white shadow-sm ring-2 sm:ring-4 ring-emerald-100'
                     : item.status === 'current'
-                      ? 'bg-[#bc1823] text-white shadow-sm ring-4 ring-[#bc1823]/20'
+                      ? 'bg-[#bc1823] text-white shadow-sm ring-2 sm:ring-4 ring-[#bc1823]/20'
                       : 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-3'
                 "
               >
@@ -224,7 +225,7 @@
             </div>
             <div class="text-center sm:text-left min-w-0 w-full">
               <span
-                class="block truncate text-xs sm:text-sm font-semibold tracking-tight transition-colors"
+                class="block truncate text-[11px] sm:text-sm font-semibold tracking-tight transition-colors"
                 :class="
                   item.status === 'upcoming'
                     ? 'text-ink-gray-6 font-normal'
@@ -236,7 +237,7 @@
                 {{ item.label }}
                 <span class="sr-only"> — {{ item.statusLabel }}</span>
               </span>
-              <span class="hidden sm:block truncate text-[11px] font-normal transition-colors"
+              <span class="hidden md:block truncate text-[11px] font-normal transition-colors"
                 :class="item.status === 'current' ? 'text-[#bc1823]/80 font-medium' : 'text-ink-gray-6'"
               >
                 {{ stepSubtitles[item.key] }}
@@ -246,7 +247,7 @@
         </ol>
         <div
           v-if="errorMessage"
-          class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/90 p-4 text-sm text-rose-900 shadow-sm backdrop-blur"
+          class="mb-5 sm:mb-6 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 rounded-2xl border border-rose-200 bg-rose-50/90 p-3.5 sm:p-4 text-xs sm:text-sm text-rose-900 shadow-sm backdrop-blur"
           role="alert"
         >
           <div class="flex items-center gap-2.5">
@@ -282,20 +283,20 @@
         </div>
         <form
           v-if="stage === 'identity'"
-          class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
+          class="rounded-2xl border border-outline-gray-2 bg-white/90 p-4 sm:p-9 shadow-sm backdrop-blur-md"
           @submit.prevent="startIdentity"
         >
-          <div class="flex items-start gap-4">
-            <div class="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[#fdf2f3] border border-[#f0d6d8] text-[#bc1823] shadow-sm">
-              <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="flex items-start gap-3 sm:gap-4">
+            <div class="flex size-10 sm:size-12 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl bg-[#fdf2f3] border border-[#f0d6d8] text-[#bc1823] shadow-sm">
+              <svg class="size-5 sm:size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
             </div>
             <div>
-              <h2 class="text-lg font-semibold text-ink-gray-9">
+              <h2 class="text-base sm:text-lg font-semibold text-ink-gray-9">
                 {{ __('Verify Facility Ownership') }}
               </h2>
-              <p class="mt-1 text-sm leading-6 text-ink-gray-6">
+              <p class="mt-1 text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-6">
                 {{
                   __(
                     'Enter the ID used to register as the facility owner. We will check the registered contact first and look up facility details after you verify the code.',
@@ -305,7 +306,7 @@
             </div>
           </div>
 
-          <div class="mt-8 space-y-6">
+          <div class="mt-6 sm:mt-8 space-y-5 sm:space-y-6">
             <div>
               <label class="block text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
                 {{ __('Identification type') }}
@@ -313,7 +314,7 @@
               <div class="relative mt-2">
                 <select
                   v-model="identityType"
-                  class="block w-full rounded-xl border border-outline-gray-2 bg-white px-4 py-3 text-sm font-medium text-ink-gray-9 shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
+                  class="block w-full rounded-xl border border-outline-gray-2 bg-white px-3.5 sm:px-4 py-2.5 sm:py-3 text-base sm:text-sm font-medium text-ink-gray-9 shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
                 >
                   <option value="national_id">{{ __('National ID') }}</option>
                   <option value="passport">{{ __('Passport') }}</option>
@@ -337,7 +338,7 @@
                   v-model.trim="identityNumber"
                   required
                   autocomplete="off"
-                  class="block w-full rounded-xl border border-outline-gray-2 bg-white pl-11 pr-4 py-3 text-sm font-medium text-ink-gray-9 placeholder:text-ink-gray-5 shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
+                  class="block w-full rounded-xl border border-outline-gray-2 bg-white pl-10 sm:pl-11 pr-3.5 sm:pr-4 py-2.5 sm:py-3 text-base sm:text-sm font-medium text-ink-gray-9 placeholder:text-ink-gray-5 shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
                   :placeholder="__('Enter your ID number')"
                 />
               </div>
@@ -346,7 +347,7 @@
 
           <button
             :disabled="busy"
-            class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm"
+            class="mt-6 sm:mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm"
             :class="
               busy
                 ? 'bg-surface-gray-3 text-ink-gray-5 border border-outline-gray-3 cursor-not-allowed shadow-none'
@@ -356,7 +357,7 @@
             <span>{{ busy ? __('Checking…') : __('Find my facilities') }}</span>
             <span v-if="!busy" class="text-base">→</span>
           </button>
-          <div class="mt-5 flex items-center justify-center gap-2 text-center text-xs text-ink-gray-7 font-medium">
+          <div class="mt-4 sm:mt-5 flex items-center justify-center gap-2 text-center text-[11px] sm:text-xs text-ink-gray-7 font-medium leading-normal">
             <svg class="size-4 text-emerald-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
@@ -371,12 +372,12 @@
         </form>
         <form
           v-else-if="stage === 'otp'"
-          class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
+          class="rounded-2xl border border-outline-gray-2 bg-white/90 p-4 sm:p-9 shadow-sm backdrop-blur-md"
           @submit.prevent="verifyOtp"
         >
           <div
             v-if="hfrRetryPending"
-            class="rounded-xl border border-amber-200 bg-amber-50/90 p-5 text-sm leading-6 text-amber-900 shadow-sm"
+            class="rounded-xl border border-amber-200 bg-amber-50/90 p-4 sm:p-5 text-xs sm:text-sm leading-5 sm:leading-6 text-amber-900 shadow-sm"
             role="status"
           >
             <div class="flex items-start gap-3">
@@ -415,7 +416,7 @@
           <template v-else>
             <div
               v-if="deliveryStatus === 'unavailable'"
-              class="rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm leading-6 text-amber-900"
+              class="rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-xs sm:text-sm leading-5 sm:leading-6 text-amber-900"
               role="status"
             >
               {{
@@ -425,15 +426,15 @@
               }}
             </div>
             <div v-else class="text-center" role="status">
-              <div class="mx-auto flex size-12 items-center justify-center rounded-2xl bg-[#fdf2f3] border border-[#f0d6d8] text-[#bc1823] shadow-sm mb-4">
-                <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div class="mx-auto flex size-10 sm:size-12 items-center justify-center rounded-xl sm:rounded-2xl bg-[#fdf2f3] border border-[#f0d6d8] text-[#bc1823] shadow-sm mb-3 sm:mb-4">
+                <svg class="size-5 sm:size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
               </div>
-              <h2 class="text-lg font-semibold text-ink-gray-9">
+              <h2 class="text-base sm:text-lg font-semibold text-ink-gray-9">
                 {{ __('Enter Verification Code') }}
               </h2>
-              <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-gray-6">
+              <p class="mx-auto mt-1.5 sm:mt-2 max-w-md text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-6">
                 {{
                   delivery.masked_destination
                     ? __('A 6-digit code was sent by {0} to {1}.', [
@@ -445,14 +446,14 @@
                       )
                 }}
               </p>
-              <div class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-gray-2 border border-outline-gray-3 px-3 py-1 text-xs font-semibold text-ink-gray-7">
+              <div class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-gray-2 border border-outline-gray-3 px-2.5 sm:px-3 py-0.5 sm:py-1 text-[11px] sm:text-xs font-semibold text-ink-gray-7">
                 <svg class="size-3.5 text-ink-gray-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span>{{ __('The code expires in {0} minutes.', [expiryMinutes]) }}</span>
               </div>
             </div>
-            <div class="mt-8">
+            <div class="mt-6 sm:mt-8">
               <OtpCodeInput
                 v-model="otp"
                 :disabled="busy"
@@ -462,7 +463,7 @@
             </div>
             <button
               :disabled="busy || otp.length !== 6"
-              class="mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm"
+              class="mt-6 sm:mt-8 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm"
               :class="
                 busy || otp.length !== 6
                   ? 'bg-surface-gray-3 text-ink-gray-5 border border-outline-gray-3 cursor-not-allowed shadow-none'
@@ -472,11 +473,11 @@
               <span>{{ busy ? __('Verifying…') : __('Verify and continue') }}</span>
               <span v-if="!busy" class="text-base">→</span>
             </button>
-            <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-between">
+            <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-between items-stretch sm:items-center">
               <button
                 type="button"
                 :disabled="!canResendOtp(delivery, resendIn, busy)"
-                class="min-h-11 rounded-xl px-4 text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] hover:bg-[#fdf2f3] disabled:text-ink-gray-5 disabled:hover:bg-transparent transition"
+                class="min-h-11 w-full sm:w-auto text-center rounded-xl px-4 text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] hover:bg-[#fdf2f3] disabled:text-ink-gray-5 disabled:hover:bg-transparent transition"
                 @click="resendOtp"
               >
                 {{
@@ -490,7 +491,7 @@
               <button
                 type="button"
                 :disabled="busy"
-                class="min-h-11 rounded-xl px-4 text-xs font-semibold text-ink-gray-6 hover:text-ink-gray-9 hover:bg-surface-gray-1 disabled:text-ink-gray-5 disabled:hover:bg-transparent transition"
+                class="min-h-11 w-full sm:w-auto text-center rounded-xl px-4 text-xs font-semibold text-ink-gray-6 hover:text-ink-gray-9 hover:bg-surface-gray-1 disabled:text-ink-gray-5 disabled:hover:bg-transparent transition"
                 @click="editIdentity"
               >
                 {{ __('Edit ID details') }}
@@ -504,7 +505,7 @@
           @submit.prevent="continueFacilities"
         >
           <div
-            class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
+            class="rounded-2xl border border-outline-gray-2 bg-white/90 p-4 sm:p-9 shadow-sm backdrop-blur-md"
           >
             <section
               v-if="
@@ -512,31 +513,31 @@
                 identityPreview.email ||
                 identityPreview.phone
               "
-              class="mb-7 rounded-2xl border-2 border-[#f0d6d8] bg-[#fdf2f3] p-5 shadow-sm"
+              class="mb-6 sm:mb-7 rounded-xl sm:rounded-2xl border-2 border-[#f0d6d8] bg-[#fdf2f3] p-4 sm:p-5 shadow-sm"
               :aria-label="__('Verified identity')"
             >
-              <div class="flex items-center gap-3.5">
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white font-bold text-base shadow-sm ring-4 ring-emerald-100">
+              <div class="flex items-center gap-3 sm:gap-3.5">
+                <div class="flex size-9 sm:size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white font-bold text-sm sm:text-base shadow-sm ring-2 sm:ring-4 ring-emerald-100">
                   ✓
                 </div>
                 <div>
                   <div class="flex items-center gap-2">
-                    <h2 class="text-sm font-bold text-ink-gray-9">
+                    <h2 class="text-xs sm:text-sm font-bold text-ink-gray-9">
                       {{ __('Verified identity') }}
                     </h2>
-                    <span class="rounded-full bg-white border border-[#bc1823]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#bc1823] uppercase tracking-wide">
+                    <span class="rounded-full bg-white border border-[#bc1823]/30 px-2 py-0.5 text-[10px] font-bold text-[#bc1823] uppercase tracking-wide">
                       {{ __('Registry Verified') }}
                     </span>
                   </div>
                   <p
                     v-if="identityPreview.full_name"
-                    class="mt-0.5 text-base sm:text-lg font-bold text-ink-gray-9"
+                    class="mt-0.5 text-sm sm:text-lg font-bold text-ink-gray-9"
                   >
                     {{ identityPreview.full_name }}
                   </p>
                 </div>
               </div>
-              <div class="mt-4 grid gap-2 border-t border-[#f0d6d8] pt-3 text-xs sm:grid-cols-2">
+              <div class="mt-3.5 sm:mt-4 grid gap-1.5 sm:gap-2 border-t border-[#f0d6d8] pt-3 text-[11px] sm:text-xs grid-cols-1 sm:grid-cols-2">
                 <p
                   v-if="identityPreview.email"
                   class="flex items-center gap-2 font-semibold text-ink-gray-8"
@@ -555,10 +556,10 @@
             </section>
 
             <div>
-              <h3 class="text-base font-semibold text-ink-gray-9">
+              <h3 class="text-sm sm:text-base font-semibold text-ink-gray-9">
                 {{ __('Select facilities to onboard') }}
               </h3>
-              <p class="mt-1 text-sm leading-6 text-ink-gray-7">
+              <p class="mt-1 text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-7">
                 {{
                   __(
                     'Select all eligible facilities you want to add under the same Opt-In Network.',
@@ -569,7 +570,7 @@
 
             <p
               v-if="!facilities.length"
-              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 text-sm leading-6 text-ink-gray-7"
+              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-4 sm:p-5 text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-7"
               role="status"
             >
               {{
@@ -578,11 +579,11 @@
                 )
               }}
             </p>
-            <div class="mt-6 space-y-3.5">
+            <div class="mt-5 sm:mt-6 space-y-3 sm:space-y-3.5">
               <label
                 v-for="facility in facilities"
                 :key="facility.facility_id"
-                class="flex gap-4 rounded-2xl border p-5 transition-all"
+                class="flex gap-3 sm:gap-4 rounded-xl sm:rounded-2xl border p-3.5 sm:p-5 transition-all"
                 :class="
                   facility.onboarding_eligible !== true || facility.onboarding_blocked
                     ? 'cursor-not-allowed border-outline-gray-2 bg-surface-gray-1'
@@ -596,32 +597,32 @@
                   type="checkbox"
                   :value="facility.facility_id"
                   :disabled="facility.onboarding_eligible !== true || facility.onboarding_blocked"
-                  class="mt-1 size-5 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  class="mt-0.5 sm:mt-1 size-5 shrink-0 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20 disabled:cursor-not-allowed disabled:opacity-40"
                 />
                 <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <strong class="text-base font-bold text-ink-gray-9">
+                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2">
+                    <strong class="text-sm sm:text-base font-bold text-ink-gray-9">
                       {{ facility.facility_name || facility.mfl_code }}
                     </strong>
                     <span
                       v-if="facility.facility_level || facility.classification"
-                      class="inline-flex items-center rounded-full bg-surface-gray-2 border border-outline-gray-3 px-2.5 py-0.5 text-xs font-semibold text-ink-gray-8"
+                      class="self-start sm:self-auto inline-flex items-center rounded-full bg-surface-gray-2 border border-outline-gray-3 px-2 py-0.5 text-[10px] sm:text-xs font-semibold text-ink-gray-8"
                     >
                       {{ facility.facility_level || facility.classification }}
                     </span>
                   </div>
-                  <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                  <div class="mt-1.5 flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
                     <span class="font-semibold text-ink-gray-8">{{ facility.facility_type || __('Facility') }}</span>
                     <span class="text-ink-gray-4">·</span>
                     <span class="text-ink-gray-7">{{ facility.classification || __('Classification pending') }}</span>
                     <span class="text-ink-gray-4">·</span>
-                    <span class="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] font-bold text-ink-gray-9 border border-outline-gray-3">
+                    <span class="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] sm:text-[11px] font-bold text-ink-gray-9 border border-outline-gray-3">
                       {{ facility.mfl_code }}
                     </span>
                   </div>
                   <span
                     v-if="facility.onboarding_blocked"
-                    class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-800"
+                    class="mt-2.5 sm:mt-3 inline-flex items-center gap-1.5 rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1 sm:px-3 sm:py-1.5 text-xs font-bold text-rose-800"
                     data-testid="facility-already-onboarded"
                   >
                     <svg class="size-4 shrink-0 text-rose-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -631,7 +632,7 @@
                   </span>
                   <span
                     v-else-if="facility.onboarding_eligible !== true"
-                    class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-bold text-amber-900"
+                    class="mt-2.5 sm:mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1 sm:px-3 sm:py-1.5 text-xs font-bold text-amber-900"
                   >
                     <svg class="size-4 shrink-0 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -674,7 +675,7 @@
             :title="__('CareVerse Token Sizing Calculator')"
             size="4xl"
           >
-            <div class="p-1 max-h-[80vh] overflow-y-auto">
+            <div class="p-1 sm:p-2 max-h-[85vh] sm:max-h-[80vh] overflow-y-auto">
               <TokenCalculator
                 v-if="activePricingFacility"
                 :packages="catalog.packages"
@@ -689,7 +690,7 @@
           </Dialog>
 
           <div
-            class="rounded-2xl border border-outline-gray-2 bg-white/95 p-4 sm:p-6 shadow-sm backdrop-blur-md"
+            class="rounded-2xl border border-outline-gray-2 bg-white/95 p-3.5 sm:p-6 shadow-sm backdrop-blur-md"
           >
             <!-- Pricing Stage Control Bar: Facility context, Tabs, Calculator and Referral -->
             <div class="space-y-3 pb-3 border-b border-outline-gray-2">
@@ -709,7 +710,7 @@
                   <!-- Multi-Facility Tabs Strip -->
                   <div
                     v-else-if="chosenFacilities.length > 1"
-                    class="flex items-center gap-2 overflow-x-auto pb-0.5"
+                    class="flex items-center gap-2 overflow-x-auto pb-1 max-w-full"
                     role="tablist"
                     :aria-label="__('Facilities')"
                   >
@@ -719,22 +720,22 @@
                       type="button"
                       role="tab"
                       :aria-selected="activePricingFacility?.facility_id === facility.facility_id"
-                      class="group relative flex shrink-0 items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all border shadow-xs"
+                      class="group relative flex shrink-0 items-center gap-1.5 sm:gap-2 rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-semibold transition-all border shadow-xs"
                       :class="activePricingFacility?.facility_id === facility.facility_id
                         ? 'border-2 border-[#bc1823] bg-[#fdf2f3] text-[#bc1823] ring-2 ring-[#bc1823]/10'
                         : 'border-outline-gray-2 bg-white text-ink-gray-7 hover:border-outline-gray-3 hover:text-ink-gray-9'"
                       @click="activePricingFacilityId = facility.facility_id"
                     >
                       <span
-                        class="flex size-2 rounded-full"
+                        class="flex size-2 rounded-full shrink-0"
                         :class="packageSelections[facility.facility_id] ? 'bg-emerald-500' : 'bg-amber-400'"
                       ></span>
-                      <span class="max-w-[170px] truncate font-medium text-ink-gray-9 group-hover:text-[#bc1823]">
+                      <span class="max-w-[130px] sm:max-w-[170px] truncate font-medium text-ink-gray-9 group-hover:text-[#bc1823]">
                         {{ facility.facility_name || facility.mfl_code }}
                       </span>
                       <span
                         v-if="packageSelections[facility.facility_id]"
-                        class="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                        class="rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0"
                         :class="activePricingFacility?.facility_id === facility.facility_id
                           ? 'bg-[#bc1823] text-white'
                           : 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'"
@@ -743,7 +744,7 @@
                       </span>
                       <span
                         v-else
-                        class="text-[10px] text-amber-600 font-normal italic"
+                        class="text-[10px] text-amber-600 font-normal italic shrink-0"
                       >
                         {{ __('Needs plan') }}
                       </span>
@@ -761,11 +762,11 @@
                 </div>
 
                 <!-- Action Triggers: Batch Apply & Calculator -->
-                <div class="flex items-center gap-2 shrink-0">
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 w-full md:w-auto">
                   <button
                     v-if="chosenFacilities.length > 1 && activePricingFacility && packageSelections[activePricingFacility.facility_id]"
                     type="button"
-                    class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] bg-[#fdf2f3] hover:bg-[#fbdfe1] border border-[#f0d6d8] px-3 py-1.5 rounded-xl transition shadow-2xs"
+                    class="inline-flex shrink-0 items-center justify-center gap-1.5 text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] bg-[#fdf2f3] hover:bg-[#fbdfe1] border border-[#f0d6d8] px-3 py-2 sm:py-1.5 rounded-xl transition shadow-2xs w-full sm:w-auto"
                     @click="applyCurrentPackageToAll"
                   >
                     <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -776,7 +777,7 @@
 
                   <button
                     type="button"
-                    class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-3 bg-white px-3 py-1.5 text-xs font-bold text-ink-gray-8 shadow-xs transition hover:border-[#bc1823] hover:text-[#bc1823] hover:bg-[#fdf2f3]"
+                    class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-outline-gray-3 bg-white px-3 py-2 sm:py-1.5 text-xs font-bold text-ink-gray-8 shadow-xs transition hover:border-[#bc1823] hover:text-[#bc1823] hover:bg-[#fdf2f3] w-full sm:w-auto"
                     @click="calculatorDialogOpen = true"
                   >
                     <span>🧮</span>
@@ -787,16 +788,16 @@
               </div>
 
               <!-- Micro Info & Referral Line -->
-              <div class="flex items-center justify-between text-[11px] text-ink-gray-5 pt-0.5">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 text-[11px] text-ink-gray-5 pt-0.5">
                 <p>
                   {{ __('Choose the monthly token package for this facility. Displayed prices exclude 16% VAT.') }}
                 </p>
-                <details class="group relative">
+                <details class="group relative self-start sm:self-auto">
                   <summary class="cursor-pointer font-medium text-ink-gray-6 hover:text-ink-gray-9 transition select-none flex items-center gap-1">
                     <span v-if="partnerId" class="text-[#bc1823] font-mono font-bold">Network ID: {{ partnerId }}</span>
                     <span v-else class="underline underline-offset-2">{{ __('Referred by a partner?') }}</span>
                   </summary>
-                  <div class="absolute right-0 top-5 z-20 w-72 rounded-xl border border-outline-gray-2 bg-white p-3 shadow-xl text-left">
+                  <div class="absolute right-0 top-5 z-20 w-[calc(100vw-3rem)] max-w-xs sm:w-72 rounded-xl border border-outline-gray-2 bg-white p-3 shadow-xl text-left">
                     <label class="block text-[11px] font-bold uppercase tracking-wider text-ink-gray-7 mb-1">
                       {{ __('Partner Network ID (6 digits)') }}
                     </label>
@@ -809,7 +810,7 @@
                       :aria-invalid="Boolean(partnerId && partnerId.length !== 6)"
                       :title="__('Enter all six digits or leave this field blank.')"
                       placeholder="123456"
-                      class="block w-full rounded-lg border border-outline-gray-3 bg-white px-2.5 py-1.5 font-mono text-xs shadow-xs focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
+                      class="block w-full rounded-lg border border-outline-gray-3 bg-white px-2.5 py-1.5 font-mono text-base sm:text-xs shadow-xs focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
                       @input="onPartnerIdInput"
                     />
                     <p class="mt-1 text-[10px] text-ink-gray-5">
@@ -862,7 +863,7 @@
             <!-- Error State -->
             <div
               v-else-if="catalogError"
-              class="mt-6 rounded-2xl border border-rose-200 bg-rose-50/90 p-5 text-sm shadow-sm"
+              class="mt-6 rounded-2xl border border-rose-200 bg-rose-50/90 p-4 sm:p-5 text-xs sm:text-sm shadow-sm"
               role="alert"
               data-testid="catalog-error"
             >
@@ -879,7 +880,7 @@
             <!-- Partner Incomplete State -->
             <div
               v-else-if="partnerId && partnerId.length !== 6"
-              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 text-sm text-ink-gray-6"
+              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-4 sm:p-5 text-xs sm:text-sm text-ink-gray-6"
               role="status"
               data-testid="catalog-partner-incomplete"
             >
@@ -889,7 +890,7 @@
             <!-- Empty Catalog State -->
             <div
               v-else-if="!catalog.packages?.length"
-              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-6 text-center text-sm text-ink-gray-6"
+              class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 sm:p-6 text-center text-xs sm:text-sm text-ink-gray-6"
               role="status"
               data-testid="catalog-empty"
             >
@@ -913,7 +914,7 @@
                 <article
                   v-for="item in catalog.packages"
                   :key="`${activePricingFacility?.facility_id}-${item.item_code}`"
-                  class="relative rounded-2xl border p-4 sm:p-5 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-xs group min-h-[380px]"
+                  class="relative rounded-2xl border p-4 sm:p-5 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-xs group min-h-[auto] sm:min-h-[380px]"
                   :class="isPackageSelected(item.item_code)
                     ? 'border-2 border-[#bc1823] bg-[#fdf2f3]/25 ring-4 ring-[#bc1823]/10 shadow-md'
                     : (packageMetadata(item).isPopular
@@ -982,7 +983,7 @@
                     </div>
 
                     <!-- Row 5: 3 Clean Features (Symmetrical min-h-[80px]) -->
-                    <div class="mt-2.5 pt-2.5 border-t border-outline-gray-1 min-h-[80px]">
+                    <div class="mt-2.5 pt-2.5 border-t border-outline-gray-1 min-h-[72px] sm:min-h-[80px]">
                       <ul class="space-y-1.5 text-xs text-ink-gray-7">
                         <li
                           v-for="feature in packageMetadata(item).features"
@@ -1002,7 +1003,7 @@
                   <div class="mt-3 pt-2">
                     <button
                       type="button"
-                      class="w-full py-2 px-4 rounded-xl text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5"
+                      class="w-full min-h-11 sm:min-h-9 py-2 px-4 rounded-xl text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5"
                       :class="isPackageSelected(item.item_code)
                         ? 'bg-[#bc1823] text-white shadow-sm hover:bg-[#a3141d]'
                         : 'border border-outline-gray-3 text-ink-gray-9 bg-white hover:bg-[#fdf2f3] hover:text-[#bc1823] hover:border-[#f0d6d8]'"
@@ -1032,22 +1033,22 @@
               <!-- At-A-Glance Multi-Facility Summary Table (if > 1 facility) -->
               <div
                 v-if="chosenFacilities.length > 1"
-                class="mt-6 rounded-2xl border border-outline-gray-2 bg-surface-gray-1/40 p-4 sm:p-5"
+                class="mt-6 rounded-xl sm:rounded-2xl border border-outline-gray-2 bg-surface-gray-1/40 p-3.5 sm:p-5"
               >
-                <div class="flex items-center justify-between gap-3 mb-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3 mb-3">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold text-ink-gray-9">{{ __('Facility Package Allocation') }}</span>
-                    <span class="rounded-full bg-surface-gray-2 px-2 py-0.5 text-[11px] font-medium text-ink-gray-7">
+                    <span class="text-xs sm:text-sm font-semibold text-ink-gray-9">{{ __('Facility Package Allocation') }}</span>
+                    <span class="rounded-full bg-surface-gray-2 px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-ink-gray-7">
                       {{ chosenFacilities.length }} {{ __('facilities') }}
                     </span>
                   </div>
-                  <span class="text-xs text-ink-gray-5">
+                  <span class="text-[11px] sm:text-xs text-ink-gray-5">
                     {{ __('Click any row to switch active facility') }}
                   </span>
                 </div>
 
-                <div class="overflow-x-auto">
-                  <table class="w-full text-left text-xs">
+                <div class="overflow-x-auto -mx-1 sm:mx-0">
+                  <table class="w-full min-w-[500px] text-left text-xs">
                     <thead>
                       <tr class="border-b border-outline-gray-2 text-[11px] font-semibold uppercase tracking-wider text-ink-gray-5">
                         <th class="py-2.5 pr-4">{{ __('Facility') }}</th>
@@ -1164,14 +1165,14 @@
           @submit.prevent="submit"
         >
           <div
-            class="rounded-2xl border border-outline-gray-2 bg-white/90 p-6 shadow-sm backdrop-blur-md sm:p-9"
+            class="rounded-2xl border border-outline-gray-2 bg-white/90 p-4 sm:p-9 shadow-sm backdrop-blur-md"
           >
             <div class="flex items-center gap-3">
-              <div class="flex size-10 items-center justify-center rounded-xl bg-surface-gray-2 text-ink-gray-7 font-semibold text-sm">
+              <div class="flex size-9 sm:size-10 items-center justify-center rounded-xl bg-surface-gray-2 text-ink-gray-7 font-semibold text-sm">
                 📋
               </div>
               <div>
-                <h2 class="text-xl font-semibold text-ink-gray-9">
+                <h2 class="text-lg sm:text-xl font-semibold text-ink-gray-9">
                   {{ __('Review and confirm') }}
                 </h2>
                 <p class="mt-0.5 text-xs text-ink-gray-5">
@@ -1184,10 +1185,10 @@
               </div>
             </div>
 
-            <dl class="mt-7 divide-y divide-outline-gray-2 rounded-xl border border-outline-gray-2 bg-surface-gray-1/50 text-sm">
-              <div class="flex items-center justify-between gap-4 p-4">
-                <dt class="text-ink-gray-6 font-medium">
-                  {{ __('Network') }}
+            <dl class="mt-5 sm:mt-7 divide-y divide-outline-gray-2 rounded-xl border border-outline-gray-2 bg-surface-gray-1/50 text-xs sm:text-sm">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 p-3.5 sm:p-4">
+                <dt class="text-ink-gray-6 font-medium flex items-center justify-between sm:justify-start">
+                  <span>{{ __('Network') }}</span>
                   <button
                     type="button"
                     class="ml-2 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
@@ -1196,13 +1197,13 @@
                     {{ __('Edit') }}
                   </button>
                 </dt>
-                <dd class="text-right font-semibold text-ink-gray-9" data-testid="review-network">
+                <dd class="text-left sm:text-right font-semibold text-ink-gray-9" data-testid="review-network">
                   {{ catalog.network?.display_name || __('No Network resolved') }}
                 </dd>
               </div>
-              <div class="flex items-start justify-between gap-4 p-4">
-                <dt class="text-ink-gray-6 font-medium">
-                  {{ __('Facilities') }}
+              <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-1.5 sm:gap-4 p-3.5 sm:p-4">
+                <dt class="text-ink-gray-6 font-medium flex items-center justify-between sm:justify-start">
+                  <span>{{ __('Facilities') }}</span>
                   <button
                     type="button"
                     class="ml-2 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
@@ -1211,7 +1212,7 @@
                     {{ __('Edit') }}
                   </button>
                 </dt>
-                <dd class="text-right font-semibold text-ink-gray-9">
+                <dd class="text-left sm:text-right font-semibold text-ink-gray-9">
                   <span
                     v-for="facility in chosenFacilities"
                     :key="facility.facility_id"
@@ -1220,9 +1221,9 @@
                   >
                 </dd>
               </div>
-              <div class="flex items-start justify-between gap-4 p-4">
-                <dt class="text-ink-gray-6 font-medium">
-                  {{ __('Package') }}
+              <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-1.5 sm:gap-4 p-3.5 sm:p-4">
+                <dt class="text-ink-gray-6 font-medium flex items-center justify-between sm:justify-start">
+                  <span>{{ __('Package') }}</span>
                   <button
                     type="button"
                     class="ml-2 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
@@ -1231,7 +1232,7 @@
                     {{ __('Edit') }}
                   </button>
                 </dt>
-                <dd class="text-right font-semibold text-ink-gray-9">
+                <dd class="text-left sm:text-right font-semibold text-ink-gray-9">
                   <span
                     v-for="facility in chosenFacilities"
                     :key="facility.facility_id"
@@ -1246,17 +1247,17 @@
                   </span>
                 </dd>
               </div>
-              <div v-if="termsAccepted" class="flex items-center justify-between gap-4 p-4">
+              <div v-if="termsAccepted" class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 p-3.5 sm:p-4">
                 <dt class="text-ink-gray-6 font-medium">
                   {{ __('Customer Experience email') }}
                 </dt>
-                <dd class="font-semibold text-ink-gray-9" data-testid="verified-account-email">
+                <dd class="text-left sm:text-right font-semibold text-ink-gray-9 break-all" data-testid="verified-account-email">
                   {{ accountEmail }}
                 </dd>
               </div>
-              <div class="flex items-center justify-between gap-4 p-4">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 p-3.5 sm:p-4">
                 <dt class="text-ink-gray-6 font-medium">{{ __('Terms') }}</dt>
-                <dd class="text-right font-semibold text-ink-gray-9">
+                <dd class="text-left sm:text-right font-semibold text-ink-gray-9">
                   {{ termsSnapshot?.document }}
                 </dd>
               </div>
@@ -1264,7 +1265,7 @@
 
             <div
               v-if="!catalog.network?.name"
-              class="mt-5 rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm leading-6 text-amber-900"
+              class="mt-5 rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-xs sm:text-sm leading-5 sm:leading-6 text-amber-900"
               role="status"
               data-testid="network-blocker"
             >
@@ -1283,12 +1284,12 @@
             </div>
 
             <section
-              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1/60 p-5"
+              class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-gray-1/60 p-4 sm:p-5"
               aria-labelledby="review-terms-title"
               data-testid="self-onboarding-terms"
             >
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <h2 id="review-terms-title" class="text-sm font-semibold text-ink-gray-9">
+              <div class="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+                <h2 id="review-terms-title" class="text-xs sm:text-sm font-semibold text-ink-gray-9">
                   {{ termsSnapshot?.document || __('Terms and Conditions') }}
                 </h2>
                 <button
@@ -1301,13 +1302,13 @@
                   <span>↗</span>
                 </button>
               </div>
-              <label class="mt-4 flex items-start gap-3 text-sm leading-6 text-ink-gray-8 cursor-pointer">
+              <label class="mt-4 flex items-start gap-3 text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-8 cursor-pointer">
                 <input
                   v-model="termsAccepted"
                   required
                   :disabled="!termsSnapshot?.content_hash"
                   type="checkbox"
-                  class="mt-1 size-5 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20"
+                  class="mt-0.5 sm:mt-1 size-5 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20"
                   data-testid="terms-acceptance"
                 />
                 <span class="font-medium">
@@ -1325,7 +1326,7 @@
 
             <dl
               v-if="totals"
-              class="mt-6 space-y-2.5 rounded-xl border border-outline-gray-2 bg-white p-5 text-sm"
+              class="mt-5 sm:mt-6 space-y-2.5 rounded-xl border border-outline-gray-2 bg-white p-4 sm:p-5 text-xs sm:text-sm"
             >
               <div class="flex justify-between gap-4 text-ink-gray-6">
                 <dt>
@@ -1341,9 +1342,9 @@
                   {{ money(totals.vat, totals.currency) }}
                 </dd>
               </div>
-              <div class="flex justify-between gap-4 border-t border-outline-gray-2/70 pt-3 text-base">
+              <div class="flex justify-between gap-4 border-t border-outline-gray-2/70 pt-3 text-sm sm:text-base">
                 <dt class="font-semibold text-ink-gray-9">{{ __('Total incl. VAT') }}</dt>
-                <dd class="font-semibold text-ink-gray-9 text-lg">
+                <dd class="font-semibold text-ink-gray-9 text-base sm:text-lg">
                   {{ money(totals.gross, totals.currency) }}
                 </dd>
               </div>
@@ -1374,17 +1375,17 @@
         </form>
         <section
           v-else
-          class="rounded-2xl border border-outline-gray-2 bg-white/95 p-8 text-center shadow-sm backdrop-blur sm:p-12"
+          class="rounded-2xl border border-outline-gray-2 bg-white/95 p-6 sm:p-12 text-center shadow-sm backdrop-blur"
         >
           <div
-            class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-emerald-100 text-3xl font-bold text-emerald-700 ring-8 ring-emerald-50 mb-6"
+            class="mx-auto flex size-14 sm:size-16 items-center justify-center rounded-xl sm:rounded-2xl bg-emerald-100 text-2xl sm:text-3xl font-bold text-emerald-700 ring-4 sm:ring-8 ring-emerald-50 mb-4 sm:mb-6"
           >
             ✓
           </div>
-          <h2 class="text-2xl sm:text-3xl font-semibold text-ink-gray-9 tracking-tight">
+          <h2 class="text-xl sm:text-3xl font-semibold text-ink-gray-9 tracking-tight">
             {{ __('Your onboarding has started') }}
           </h2>
-          <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-ink-gray-6">
+          <p class="mx-auto mt-2.5 sm:mt-3 max-w-xl text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-6">
             {{
               portalStatus === 'linked'
                 ? __(
@@ -1397,27 +1398,27 @@
           </p>
           <p
             v-if="accountEmail"
-            class="mx-auto mt-4 inline-flex items-center gap-2 rounded-full bg-surface-gray-2 border border-outline-gray-2 px-4 py-1.5 text-xs font-semibold text-ink-gray-8"
+            class="mx-auto mt-3.5 sm:mt-4 inline-flex items-center gap-2 rounded-full bg-surface-gray-2 border border-outline-gray-2 px-3.5 sm:px-4 py-1 sm:py-1.5 text-xs font-semibold text-ink-gray-8 max-w-full truncate"
             data-testid="success-account-email"
           >
             <span class="text-ink-gray-4">✉</span>
-            <span>{{ __('Customer Experience login: {0}', [accountEmail]) }}</span>
+            <span class="truncate">{{ __('Customer Experience login: {0}', [accountEmail]) }}</span>
           </p>
-          <div class="mx-auto mt-8 max-w-lg space-y-2.5 text-left">
+          <div class="mx-auto mt-6 sm:mt-8 max-w-lg space-y-2.5 text-left">
             <div
               v-for="item in submissions"
               :key="item.mfl_code"
-              class="flex items-center justify-between gap-4 rounded-xl border border-outline-gray-2 bg-surface-gray-1/70 px-4 py-3 text-sm shadow-sm"
+              class="flex items-center justify-between gap-3 rounded-xl border border-outline-gray-2 bg-surface-gray-1/70 px-3.5 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm shadow-sm"
             >
-              <span class="font-semibold text-ink-gray-9">{{ item.facility }}</span>
-              <span class="rounded bg-white px-2 py-0.5 font-mono text-xs font-semibold text-ink-gray-7 border border-outline-gray-2">
+              <span class="font-semibold text-ink-gray-9 truncate">{{ item.facility }}</span>
+              <span class="rounded bg-white px-2 py-0.5 font-mono text-[11px] sm:text-xs font-semibold text-ink-gray-7 border border-outline-gray-2 shrink-0">
                 {{ item.mfl_code }}
               </span>
             </div>
           </div>
           <a
             href="/login?redirect-to=/cx-portal"
-            class="mt-9 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-8 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d]"
+            class="mt-8 sm:mt-9 inline-flex min-h-12 w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-8 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d]"
           >
             <span>{{ __('Go to sign in') }}</span>
             <span class="text-base">→</span>

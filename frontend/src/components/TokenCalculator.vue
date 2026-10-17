@@ -281,7 +281,7 @@ function money(val, currency = 'KES') {
           <label class="block text-xs font-bold uppercase tracking-wider text-ink-gray-7 mb-2">
             {{ __('Clinical Scope & Departments') }}
           </label>
-          <div class="grid grid-cols-2 gap-2 rounded-xl bg-surface-gray-2 p-1 border border-outline-gray-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl bg-surface-gray-2 p-1 border border-outline-gray-2">
             <button
               type="button"
               class="flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-all"
@@ -382,7 +382,7 @@ function money(val, currency = 'KES') {
                 type="number"
                 min="0"
                 step="250"
-                class="w-full rounded-lg border border-outline-gray-3 bg-surface-gray-1 pl-12 pr-3 py-1.5 font-mono text-sm font-bold text-ink-gray-9 focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
+                class="w-full rounded-lg border border-outline-gray-3 bg-surface-gray-1 pl-12 pr-3 py-1.5 font-mono text-base sm:text-sm font-bold text-ink-gray-9 focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
                 @input="activePreset = ''"
               />
             </div>
@@ -446,12 +446,12 @@ function money(val, currency = 'KES') {
               <div
                 v-for="sp in eligibleServicePoints"
                 :key="sp.id"
-                class="flex items-center justify-between gap-3 p-2.5 rounded-lg border bg-white text-xs"
+                class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 p-2.5 rounded-lg border bg-white text-xs"
                 :class="sp.isApplicable ? 'border-outline-gray-2' : 'border-outline-gray-2/60 bg-surface-gray-2/60 opacity-60'"
               >
                 <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="font-semibold text-ink-gray-9 truncate">{{ sp.name }}</span>
+                  <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <span class="font-semibold text-ink-gray-9">{{ sp.name }}</span>
                     <span class="font-mono text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-bold shrink-0">
                       {{ sp.tokens }} 🪙
                     </span>
@@ -462,19 +462,19 @@ function money(val, currency = 'KES') {
                       {{ __('Exempt for OPD') }}
                     </span>
                   </div>
-                  <p class="text-[10px] text-ink-gray-5 truncate mt-0.5">{{ sp.description }}</p>
+                  <p class="text-[10px] text-ink-gray-5 mt-0.5">{{ sp.description }}</p>
                 </div>
 
-                <div v-if="sp.isApplicable" class="flex items-center gap-2 shrink-0">
+                <div v-if="sp.isApplicable" class="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1 sm:pt-0 border-t border-outline-gray-1 sm:border-0 w-full sm:w-auto">
                   <input
                     v-model.number="serviceFrequencies[sp.id]"
                     type="range"
                     min="0"
                     max="100"
                     step="5"
-                    class="w-20 sm:w-28 accent-[#bc1823] cursor-pointer"
+                    class="w-full sm:w-28 accent-[#bc1823] cursor-pointer"
                   />
-                  <span class="w-10 text-right font-mono font-bold text-ink-gray-9">
+                  <span class="w-10 text-right font-mono font-bold text-ink-gray-9 shrink-0">
                     {{ serviceFrequencies[sp.id] ?? 0 }}%
                   </span>
                 </div>
@@ -528,30 +528,30 @@ function money(val, currency = 'KES') {
         <!-- Recommended Package Value Card -->
         <div
           v-if="recommendedPackage"
-          class="rounded-2xl border-2 border-[#bc1823] bg-gradient-to-br from-[#fff7f8] via-white to-[#fff0f2] p-5 shadow-md relative overflow-hidden"
+          class="rounded-2xl border-2 border-[#bc1823] bg-gradient-to-br from-[#fff7f8] via-white to-[#fff0f2] p-4 sm:p-5 shadow-md relative overflow-hidden"
           data-testid="recommended-package-card"
         >
           <div class="flex items-center justify-between gap-2">
-            <span class="rounded-full bg-[#bc1823] px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow-sm flex items-center gap-1.5">
+            <span class="rounded-full bg-[#bc1823] px-2.5 sm:px-3 py-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white shadow-sm flex items-center gap-1.5">
               <span>⭐</span>
               <span>{{ __('Recommended For You') }}</span>
             </span>
             <span
               v-if="recommendedPackage.item_code === 'CV-TOKEN-SCALE'"
-              class="text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full"
+              class="text-[10px] sm:text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 sm:px-2.5 py-0.5 rounded-full"
             >
               {{ __('Best Value · Save 16.7%') }}
             </span>
             <span
               v-else-if="recommendedPackage.item_code === 'CV-TOKEN-GROWTH'"
-              class="text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full"
+              class="text-[10px] sm:text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 sm:px-2.5 py-0.5 rounded-full"
             >
               {{ __('Save 8.3% vs Starter') }}
             </span>
           </div>
 
-          <div class="mt-4">
-            <h4 class="text-xl font-bold tracking-tight text-ink-gray-9">
+          <div class="mt-3.5 sm:mt-4">
+            <h4 class="text-lg sm:text-xl font-bold tracking-tight text-ink-gray-9">
               {{ recommendedPackage.display_name }} ({{ recommendedPackage.tokens?.toLocaleString() }} {{ __('Tokens') }})
             </h4>
             <p class="text-xs text-ink-gray-7 mt-1">
@@ -559,8 +559,8 @@ function money(val, currency = 'KES') {
             </p>
           </div>
 
-          <div class="mt-4 flex items-baseline gap-2">
-            <span class="text-3xl font-extrabold text-ink-gray-9 font-mono">
+          <div class="mt-3.5 sm:mt-4 flex items-baseline gap-2">
+            <span class="text-2xl sm:text-3xl font-extrabold text-ink-gray-9 font-mono">
               {{ money(recommendedPackage.price_ex_vat ?? recommendedPackage.price, recommendedPackage.currency) }}
             </span>
             <span class="text-xs text-ink-gray-6 font-medium">
@@ -573,27 +573,27 @@ function money(val, currency = 'KES') {
           </p>
 
           <!-- Key Metrics Badges -->
-          <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
-            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2.5 shadow-xs">
+          <div class="mt-3.5 sm:mt-4 grid grid-cols-2 gap-2 text-xs">
+            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2 sm:p-2.5 shadow-xs">
               <span class="text-[10px] font-semibold text-ink-gray-6 uppercase block">{{ __('Estimated Runway') }}</span>
-              <p class="mt-0.5 text-sm font-bold text-[#bc1823] font-mono">
+              <p class="mt-0.5 text-xs sm:text-sm font-bold text-[#bc1823] font-mono">
                 ~{{ recommendedPackage.runwayDays }} {{ __('days') }}
-                <span class="text-[11px] text-ink-gray-6 font-normal">({{ recommendedPackage.runwayMonths }} {{ __('mo') }})</span>
+                <span class="text-[10px] sm:text-[11px] text-ink-gray-6 font-normal">({{ recommendedPackage.runwayMonths }} {{ __('mo') }})</span>
               </p>
             </div>
-            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2.5 shadow-xs">
+            <div class="rounded-xl border border-[#f0d6d8] bg-white/90 p-2 sm:p-2.5 shadow-xs">
               <span class="text-[10px] font-semibold text-ink-gray-6 uppercase block">{{ __('Cost / Patient') }}</span>
-              <p class="mt-0.5 text-sm font-bold text-emerald-800 font-mono">
+              <p class="mt-0.5 text-xs sm:text-sm font-bold text-emerald-800 font-mono">
                 {{ money(recommendedPackage.costPerEncounter, recommendedPackage.currency) }}
               </p>
             </div>
           </div>
 
           <!-- Select Action Button -->
-          <div class="mt-5">
+          <div class="mt-4 sm:mt-5">
             <button
               type="button"
-              class="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold text-white transition-all shadow-md"
+              class="w-full min-h-11 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold text-white transition-all shadow-md"
               :class="selectedPackageCode === recommendedPackage.item_code
                 ? 'bg-emerald-700 hover:bg-emerald-800'
                 : 'bg-[#bc1823] hover:bg-[#a3141d] active:scale-[0.99]'"
