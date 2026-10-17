@@ -162,8 +162,11 @@
           <span>→</span>
         </a>
       </section>
-      <section v-else class="mx-auto max-w-3xl">
-        <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <section v-else :class="stage === 'pricing' ? 'w-full' : 'mx-auto max-w-3xl'">
+        <div
+          class="mb-4 flex flex-wrap items-center justify-between gap-3"
+          :class="stage === 'pricing' ? 'max-w-4xl mx-auto' : ''"
+        >
           <div>
             <span
               class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[#bc1823]"
@@ -171,7 +174,7 @@
               <span class="size-1.5 rounded-full bg-[#bc1823]"></span>
               {{ __('Facility onboarding') }}
             </span>
-            <h1 class="mt-2 text-2xl font-semibold tracking-tight text-ink-gray-9 sm:text-3xl">
+            <h1 class="mt-1.5 text-2xl font-bold tracking-tight text-ink-gray-9 sm:text-3xl">
               {{ stageTitle }}
             </h1>
           </div>
@@ -189,7 +192,8 @@
         </div>
         <ol
           v-if="stage !== 'success'"
-          class="mb-8 grid grid-cols-4 gap-2 sm:gap-4 rounded-2xl border border-outline-gray-2 bg-white/85 p-3 sm:p-4 shadow-sm backdrop-blur-md"
+          class="mb-6 grid grid-cols-4 gap-2 sm:gap-4 rounded-xl border border-outline-gray-2 bg-white/85 p-2.5 sm:p-3 shadow-xs backdrop-blur-md"
+          :class="stage === 'pricing' ? 'max-w-4xl mx-auto' : ''"
           :aria-label="__('Onboarding steps')"
         >
           <li
@@ -685,12 +689,68 @@
           </Dialog>
 
           <div
-            class="rounded-2xl border border-outline-gray-2 bg-white/95 p-5 sm:p-7 shadow-sm backdrop-blur-md"
+            class="rounded-2xl border border-outline-gray-2 bg-white/95 p-4 sm:p-6 shadow-sm backdrop-blur-md"
           >
-            <!-- Integrated Pricing Header Strip -->
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-outline-gray-2">
-              <div>
-                <div class="flex items-center gap-2 flex-wrap mb-1">
+            <!-- Pricing Stage Control Bar: Facility context, Tabs, Calculator and Referral -->
+            <div class="space-y-3 pb-3 border-b border-outline-gray-2">
+              <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <!-- Facility Context / Switcher -->
+                <div class="flex items-center gap-2 flex-wrap">
+                  <!-- Single Facility Mode -->
+                  <div
+                    v-if="chosenFacilities.length === 1 && activePricingFacility"
+                    class="inline-flex items-center gap-2 rounded-xl border border-outline-gray-2 bg-surface-gray-2 px-3 py-1 text-xs font-semibold text-ink-gray-8"
+                  >
+                    <span>🏥</span>
+                    <span class="font-bold text-ink-gray-9">{{ activePricingFacility.facility_name || activePricingFacility.mfl_code }}</span>
+                    <span class="text-ink-gray-5 font-normal">({{ activePricingFacility.classification || activePricingFacility.facility_level || __('Facility') }}<span v-if="activePricingFacility.mfl_code"> · MFL {{ activePricingFacility.mfl_code }}</span>)</span>
+                  </div>
+
+                  <!-- Multi-Facility Tabs Strip -->
+                  <div
+                    v-else-if="chosenFacilities.length > 1"
+                    class="flex items-center gap-2 overflow-x-auto pb-0.5"
+                    role="tablist"
+                    :aria-label="__('Facilities')"
+                  >
+                    <button
+                      v-for="facility in chosenFacilities"
+                      :key="facility.facility_id"
+                      type="button"
+                      role="tab"
+                      :aria-selected="activePricingFacility?.facility_id === facility.facility_id"
+                      class="group relative flex shrink-0 items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all border shadow-xs"
+                      :class="activePricingFacility?.facility_id === facility.facility_id
+                        ? 'border-2 border-[#bc1823] bg-[#fdf2f3] text-[#bc1823] ring-2 ring-[#bc1823]/10'
+                        : 'border-outline-gray-2 bg-white text-ink-gray-7 hover:border-outline-gray-3 hover:text-ink-gray-9'"
+                      @click="activePricingFacilityId = facility.facility_id"
+                    >
+                      <span
+                        class="flex size-2 rounded-full"
+                        :class="packageSelections[facility.facility_id] ? 'bg-emerald-500' : 'bg-amber-400'"
+                      ></span>
+                      <span class="max-w-[170px] truncate font-medium text-ink-gray-9 group-hover:text-[#bc1823]">
+                        {{ facility.facility_name || facility.mfl_code }}
+                      </span>
+                      <span
+                        v-if="packageSelections[facility.facility_id]"
+                        class="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                        :class="activePricingFacility?.facility_id === facility.facility_id
+                          ? 'bg-[#bc1823] text-white'
+                          : 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'"
+                      >
+                        {{ selectedPackageFor(facility.facility_id)?.display_name || __('Selected') }}
+                      </span>
+                      <span
+                        v-else
+                        class="text-[10px] text-amber-600 font-normal italic"
+                      >
+                        {{ __('Needs plan') }}
+                      </span>
+                    </button>
+                  </div>
+
+                  <!-- Network Badge (if available) -->
                   <span
                     v-if="catalog.network?.display_name"
                     class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-2.5 py-0.5 text-xs font-semibold text-[#bc1823]"
@@ -698,137 +758,73 @@
                     <span class="size-1.5 rounded-full bg-emerald-500"></span>
                     {{ catalog.network.display_name }}
                   </span>
-                  <span
-                    v-if="chosenFacilities.length === 1 && activePricingFacility"
-                    class="inline-flex items-center gap-1.5 rounded-full border border-outline-gray-2 bg-surface-gray-2 px-2.5 py-0.5 text-xs font-semibold text-ink-gray-8"
-                  >
-                    <span>🏥</span>
-                    <span>{{ activePricingFacility.facility_name || activePricingFacility.mfl_code }}</span>
-                    <span class="text-ink-gray-5 font-normal">({{ activePricingFacility.classification || activePricingFacility.facility_level || __('Facility') }}<span v-if="activePricingFacility.mfl_code"> · MFL {{ activePricingFacility.mfl_code }}</span>)</span>
-                  </span>
                 </div>
-                <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-ink-gray-9">
-                  {{ __('Choose a package for each facility') }}
-                </h2>
-                <p class="text-xs text-ink-gray-6 mt-0.5">
-                  {{ __('Select the token tier that aligns with this facility’s monthly volume. All displayed prices exclude VAT.') }}
-                </p>
+
+                <!-- Action Triggers: Batch Apply & Calculator -->
+                <div class="flex items-center gap-2 shrink-0">
+                  <button
+                    v-if="chosenFacilities.length > 1 && activePricingFacility && packageSelections[activePricingFacility.facility_id]"
+                    type="button"
+                    class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] bg-[#fdf2f3] hover:bg-[#fbdfe1] border border-[#f0d6d8] px-3 py-1.5 rounded-xl transition shadow-2xs"
+                    @click="applyCurrentPackageToAll"
+                  >
+                    <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <span>{{ __('Apply plan to all :n facilities', { n: chosenFacilities.length }).replace(':n', chosenFacilities.length) }}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-xl border border-outline-gray-3 bg-white px-3 py-1.5 text-xs font-bold text-ink-gray-8 shadow-xs transition hover:border-[#bc1823] hover:text-[#bc1823] hover:bg-[#fdf2f3]"
+                    @click="calculatorDialogOpen = true"
+                  >
+                    <span>🧮</span>
+                    <span>{{ __('Open Sizing Calculator') }}</span>
+                    <span>→</span>
+                  </button>
+                </div>
               </div>
 
-              <!-- Top-right Actions: Calculator + Info -->
-              <div class="flex items-center gap-2.5 shrink-0 self-start md:self-center">
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-2 rounded-xl border border-outline-gray-3 bg-white px-3.5 py-2 text-xs font-bold text-ink-gray-8 shadow-xs transition hover:border-[#bc1823] hover:text-[#bc1823] hover:bg-[#fdf2f3]"
-                  @click="calculatorDialogOpen = true"
-                >
-                  <span class="text-sm">🧮</span>
-                  <span>{{ __('Open Sizing Calculator') }}</span>
-                  <span class="text-xs">→</span>
-                </button>
+              <!-- Micro Info & Referral Line -->
+              <div class="flex items-center justify-between text-[11px] text-ink-gray-5 pt-0.5">
+                <p>
+                  {{ __('Choose the monthly token package for this facility. Displayed prices exclude 16% VAT.') }}
+                </p>
+                <details class="group relative">
+                  <summary class="cursor-pointer font-medium text-ink-gray-6 hover:text-ink-gray-9 transition select-none flex items-center gap-1">
+                    <span v-if="partnerId" class="text-[#bc1823] font-mono font-bold">Network ID: {{ partnerId }}</span>
+                    <span v-else class="underline underline-offset-2">{{ __('Referred by a partner?') }}</span>
+                  </summary>
+                  <div class="absolute right-0 top-5 z-20 w-72 rounded-xl border border-outline-gray-2 bg-white p-3 shadow-xl text-left">
+                    <label class="block text-[11px] font-bold uppercase tracking-wider text-ink-gray-7 mb-1">
+                      {{ __('Partner Network ID (6 digits)') }}
+                    </label>
+                    <input
+                      :value="partnerId"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      maxlength="6"
+                      pattern="[0-9]{6}"
+                      :aria-invalid="Boolean(partnerId && partnerId.length !== 6)"
+                      :title="__('Enter all six digits or leave this field blank.')"
+                      placeholder="123456"
+                      class="block w-full rounded-lg border border-outline-gray-3 bg-white px-2.5 py-1.5 font-mono text-xs shadow-xs focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
+                      @input="onPartnerIdInput"
+                    />
+                    <p class="mt-1 text-[10px] text-ink-gray-5">
+                      {{ __('Links to partner network. Leave blank to use Tiberbu’s default.') }}
+                    </p>
+                    <span
+                      v-if="partnerId && partnerId.length !== 6"
+                      class="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700"
+                    >
+                      ⚠️ {{ __('Must be exactly 6 digits.') }}
+                    </span>
+                  </div>
+                </details>
               </div>
             </div>
-
-            <!-- Multi-Facility Switcher & Batch Action Strip (when > 1 facility) -->
-            <div
-              v-if="chosenFacilities.length > 1"
-              class="pt-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-outline-gray-2 pb-3.5"
-            >
-              <div class="flex items-center gap-2 overflow-x-auto pb-1" role="tablist" :aria-label="__('Facilities')">
-                <button
-                  v-for="facility in chosenFacilities"
-                  :key="facility.facility_id"
-                  type="button"
-                  role="tab"
-                  :aria-selected="activePricingFacility?.facility_id === facility.facility_id"
-                  class="group relative flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all border shadow-xs"
-                  :class="activePricingFacility?.facility_id === facility.facility_id
-                    ? 'border-2 border-[#bc1823] bg-[#fdf2f3] text-[#bc1823] ring-2 ring-[#bc1823]/10'
-                    : 'border-outline-gray-2 bg-white text-ink-gray-7 hover:border-outline-gray-3 hover:text-ink-gray-9'"
-                  @click="activePricingFacilityId = facility.facility_id"
-                >
-                  <span
-                    class="flex size-2 rounded-full"
-                    :class="packageSelections[facility.facility_id] ? 'bg-emerald-500' : 'bg-amber-400'"
-                  ></span>
-                  <span class="max-w-[170px] truncate font-medium text-ink-gray-9 group-hover:text-[#bc1823]">
-                    {{ facility.facility_name || facility.mfl_code }}
-                  </span>
-                  <span
-                    v-if="packageSelections[facility.facility_id]"
-                    class="rounded-full px-2 py-0.5 text-[10px] font-bold"
-                    :class="activePricingFacility?.facility_id === facility.facility_id
-                      ? 'bg-[#bc1823] text-white'
-                      : 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'"
-                  >
-                    {{ selectedPackageFor(facility.facility_id)?.display_name || __('Selected') }}
-                  </span>
-                  <span
-                    v-else
-                    class="text-[10px] text-amber-600 font-normal italic"
-                  >
-                    {{ __('Needs plan') }}
-                  </span>
-                </button>
-              </div>
-
-              <button
-                v-if="activePricingFacility && packageSelections[activePricingFacility.facility_id]"
-                type="button"
-                class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[#bc1823] hover:text-[#a3141d] bg-[#fdf2f3] hover:bg-[#fbdfe1] border border-[#f0d6d8] px-3 py-1.5 rounded-lg transition"
-                @click="applyCurrentPackageToAll"
-              >
-                <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                <span>{{ __('Apply plan to all :n facilities', { n: chosenFacilities.length }) }}</span>
-              </button>
-            </div>
-
-            <!-- Sleek Compact Partner Referral Strip -->
-            <details class="group mt-3 rounded-xl border border-outline-gray-2/80 bg-surface-gray-1/40 px-3.5 py-2 text-xs transition">
-              <summary class="flex cursor-pointer items-center justify-between font-medium text-ink-gray-7 select-none">
-                <span class="inline-flex items-center gap-2">
-                  <span>🤝</span>
-                  <span class="font-semibold text-ink-gray-8">{{ __('Referred by a partner?') }}</span>
-                  <span v-if="partnerId" class="rounded bg-[#fdf2f3] px-2 py-0.5 font-mono font-bold text-[#bc1823] border border-[#f0d6d8]">
-                    Network ID: {{ partnerId }}
-                  </span>
-                  <span v-else class="text-ink-gray-5 text-[11px]">({{ __('optional 6-digit code') }})</span>
-                </span>
-                <span class="text-ink-gray-5 text-[11px] group-open:rotate-180 transition-transform">▼</span>
-              </summary>
-              <div class="mt-3 pt-3 border-t border-outline-gray-2/80 flex flex-col sm:flex-row sm:items-center gap-3">
-                <div class="flex items-center gap-2">
-                  <label class="text-[11px] font-semibold uppercase tracking-wider text-ink-gray-6 shrink-0">
-                    {{ __('Partner Network ID') }}:
-                  </label>
-                  <input
-                    :value="partnerId"
-                    inputmode="numeric"
-                    autocomplete="off"
-                    maxlength="6"
-                    pattern="[0-9]{6}"
-                    :aria-invalid="Boolean(partnerId && partnerId.length !== 6)"
-                    :title="__('Enter all six digits or leave this field blank.')"
-                    aria-describedby="partner-network-help"
-                    class="block w-36 rounded-lg border border-outline-gray-2 bg-white px-3 py-1.5 font-mono text-xs shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
-                    placeholder="123456"
-                    @input="onPartnerIdInput"
-                  />
-                </div>
-                <p id="partner-network-help" class="text-[11px] text-ink-gray-5">
-                  {{ __('Links this facility to your partner network. Leave blank to use Tiberbu’s default.') }}
-                </p>
-                <span
-                  v-if="partnerId && partnerId.length !== 6"
-                  class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700"
-                  role="status"
-                >
-                  ⚠️ {{ __('Enter all 6 digits, or clear the field.') }}
-                </span>
-              </div>
-            </details>
 
             <!-- Loading Spinner -->
             <p
@@ -911,101 +907,102 @@
             <div
               v-else
               :data-testid="activePricingFacility ? `facility-package-${activePricingFacility.facility_id}` : undefined"
-              class="mt-5"
+              class="mt-4"
             >
               <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
                 <article
                   v-for="item in catalog.packages"
                   :key="`${activePricingFacility?.facility_id}-${item.item_code}`"
-                  class="relative rounded-2xl border p-5 sm:p-6 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-sm group min-h-[390px]"
+                  class="relative rounded-2xl border p-4 sm:p-5 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-xs group min-h-[380px]"
                   :class="isPackageSelected(item.item_code)
                     ? 'border-2 border-[#bc1823] bg-[#fdf2f3]/25 ring-4 ring-[#bc1823]/10 shadow-md'
-                    : 'border-outline-gray-2 bg-white hover:border-[#f0d6d8] hover:shadow-md'"
+                    : (packageMetadata(item).isPopular
+                      ? 'border-[#f0d6d8] bg-white hover:border-[#bc1823] hover:shadow-md'
+                      : 'border-outline-gray-2 bg-white hover:border-outline-gray-3 hover:shadow-md')"
                   @click="selectPackageForActiveFacility(item.item_code)"
                 >
                   <div>
-                    <!-- Row 1: Title & Badge -->
-                    <div class="flex items-center justify-between gap-2">
-                      <h4 class="text-base sm:text-lg font-bold text-ink-gray-9 tracking-tight">
+                    <!-- Row 1: Title & Badge (Symmetrical h-7) -->
+                    <div class="flex items-center justify-between gap-2 h-7">
+                      <h4 class="text-base sm:text-lg font-bold text-ink-gray-9 tracking-tight truncate">
                         {{ item.display_name || item.item_code }}
                       </h4>
                       <span
                         v-if="packageMetadata(item).badge"
                         class="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase shrink-0"
-                        :class="Number(item.price_ex_vat ?? item.price ?? 0) === 0
-                          ? 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'
-                          : (packageMetadata(item).badge.includes('Popular')
-                            ? 'bg-[#bc1823] text-white shadow-xs'
-                            : (packageMetadata(item).badge.includes('Best Value')
-                              ? 'bg-[#fdf2f3] text-[#bc1823] border border-[#f0d6d8]'
-                              : 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'))"
+                        :class="packageMetadata(item).badgeClass"
                       >
                         {{ packageMetadata(item).badge }}
                       </span>
                     </div>
 
-                    <!-- Row 2: Price -->
-                    <div class="mt-2.5 flex items-baseline gap-1.5 flex-wrap">
-                      <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-ink-gray-9">
-                        {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? 'KES 0' : money(item.price_ex_vat ?? item.price, item.currency) }}
-                      </span>
-                      <span class="text-xs text-ink-gray-5 font-semibold">
-                        {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Zero commitment') : __('/ mo (excl. VAT)') }}
-                      </span>
+                    <!-- Row 2: Price & VAT Line (Symmetrical h-14) -->
+                    <div class="mt-2 h-14 flex flex-col justify-center">
+                      <div class="flex items-baseline gap-1.5 flex-wrap">
+                        <span class="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink-gray-9">
+                          {{ money(item.price_ex_vat ?? item.price ?? 0, item.currency) }}
+                        </span>
+                        <span class="text-xs text-ink-gray-5 font-semibold">
+                          {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Zero commitment') : __('/ mo (excl. VAT)') }}
+                        </span>
+                      </div>
+                      <p class="mt-0.5 text-[11px] text-ink-gray-5 font-medium truncate">
+                        {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0
+                          ? __('100% Free · No credit card required')
+                          : `${item.vat_label || 'VAT'} ${money(item.vat_amount, item.currency)} · Total ${money(item.gross_total, item.currency)}`
+                        }}
+                      </p>
                     </div>
-                    <p class="mt-0.5 text-[11px] text-ink-gray-5 font-medium">
-                      {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0
-                        ? __('100% Free · No credit card required')
-                        : `${item.vat_label || 'VAT'} ${money(item.vat_amount, item.currency)} · Total ${money(item.gross_total, item.currency)}`
-                      }}
-                    </p>
 
-                    <!-- Row 3: Audience Tagline -->
-                    <p class="mt-2 text-xs text-ink-gray-6 font-medium leading-snug">
-                      {{ packageMetadata(item).audience }}
-                    </p>
+                    <!-- Row 3: Audience Tagline (Symmetrical h-8) -->
+                    <div class="mt-1 h-8 flex items-center">
+                      <p class="text-xs text-ink-gray-6 font-medium leading-tight line-clamp-2">
+                        {{ packageMetadata(item).audience }}
+                      </p>
+                    </div>
 
-                    <!-- Row 4: Token & Capacity Chip -->
-                    <div class="mt-3.5 rounded-xl bg-surface-gray-1 p-2.5 border border-outline-gray-2">
+                    <!-- Row 4: Token & Capacity Chip (Symmetrical h-[64px]) -->
+                    <div class="mt-2.5 rounded-xl bg-surface-gray-1 p-2.5 border border-outline-gray-2 h-[64px] flex flex-col justify-center">
                       <div class="flex items-center justify-between text-xs font-bold">
-                        <span class="flex items-center gap-1.5 text-ink-gray-9">
-                          <span class="text-amber-600 text-sm">🪙</span>
-                          <span>{{ item.token_quantity?.toLocaleString() }} {{ __('Care Tokens') }}</span>
+                        <span class="flex items-center gap-1.5 text-ink-gray-9 truncate">
+                          <span class="text-amber-500 text-sm">🪙</span>
+                          <span>{{ item.token_quantity?.toLocaleString() }} {{ __('Tokens') }}</span>
                         </span>
                         <span
                           v-if="packageMetadata(item).bonusLabel"
-                          class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60"
+                          class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0"
+                          :class="packageMetadata(item).bonusClass"
                         >
                           {{ packageMetadata(item).bonusLabel }}
                         </span>
                       </div>
-                      <p class="mt-0.5 text-[11px] text-ink-gray-6 font-medium">
+                      <p class="mt-0.5 text-[11px] text-ink-gray-6 font-medium truncate">
                         {{ packageMetadata(item).capacityLabel }}
                       </p>
                     </div>
 
-                    <!-- Row 5: 3 Clean Features -->
-                    <div class="mt-3.5 pt-3 border-t border-outline-gray-1">
+                    <!-- Row 5: 3 Clean Features (Symmetrical min-h-[80px]) -->
+                    <div class="mt-2.5 pt-2.5 border-t border-outline-gray-1 min-h-[80px]">
                       <ul class="space-y-1.5 text-xs text-ink-gray-7">
                         <li
                           v-for="feature in packageMetadata(item).features"
                           :key="feature"
                           class="flex items-start gap-2"
                         >
-                          <svg class="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg class="size-3.5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
                           </svg>
-                          <span class="leading-tight font-medium">{{ feature }}</span>
+                          <span class="leading-tight font-medium text-ink-gray-8 truncate">{{ feature }}</span>
                         </li>
                       </ul>
                     </div>
                   </div>
 
                   <!-- Row 6: Selection Button (Anchored at Bottom of Card) -->
-                  <div class="mt-5 pt-3">
+                  <div class="mt-3 pt-2">
                     <button
                       type="button"
-                      class="w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-150 flex items-center justify-center gap-2"
+                      class="w-full py-2 px-4 rounded-xl text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5"
                       :class="isPackageSelected(item.item_code)
                         ? 'bg-[#bc1823] text-white shadow-sm hover:bg-[#a3141d]'
                         : 'border border-outline-gray-3 text-ink-gray-9 bg-white hover:bg-[#fdf2f3] hover:text-[#bc1823] hover:border-[#f0d6d8]'"
@@ -1608,7 +1605,18 @@ function onCalculatorApplyPlan(pkg) {
   calculatorDialogOpen.value = false
 }
 function packageMetadata(pkg) {
-  if (!pkg) return { features: [], audience: '', badge: '', bonusLabel: '', capacityLabel: '' }
+  if (!pkg) {
+    return {
+      features: [],
+      audience: '',
+      badge: '',
+      badgeClass: '',
+      bonusLabel: '',
+      bonusClass: '',
+      capacityLabel: '',
+      isPopular: false,
+    }
+  }
   let metrics = {}
   if (typeof pkg.coverage_metrics === 'string') {
     try {
@@ -1622,87 +1630,107 @@ function packageMetadata(pkg) {
   const isFree = Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0
   const code = (pkg.item_code || '').toUpperCase()
   const name = (pkg.display_name || '').toUpperCase()
+  const tokens = Number(pkg.token_quantity || 0)
 
-  let badge = metrics.badge || ''
-  if (!badge) {
-    if (isFree) badge = __('Free Trial • No Commitment')
-    else if (code.includes('GROWTH') || name.includes('GROWTH') || code.includes('CORE') || name === 'PRO') badge = __('Popular • +12% Bonus')
-    else if (code.includes('SCALE') || name.includes('SCALE')) badge = __('Best Value • +25% Bonus')
-    else if (code.includes('PLUS') || name.includes('ENTERPRISE')) badge = __('Enterprise')
-    else if (code.includes('STARTER') || name.includes('STARTER')) badge = __('Entry Tier')
+  const isGrowth = code.includes('GROWTH') || name.includes('GROWTH') || tokens === 2800
+  const isScale = code.includes('SCALE') || name.includes('SCALE') || tokens === 6250
+  const isStarter = code.includes('STARTER') || name.includes('STARTER') || tokens === 1000
+
+  let badge = ''
+  let badgeClass = 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'
+  let isPopular = false
+
+  if (isFree) {
+    badge = __('Free Trial')
+    badgeClass = 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'
+  } else if (isGrowth) {
+    badge = __('Popular • +12%')
+    badgeClass = 'bg-[#bc1823] text-white shadow-xs'
+    isPopular = true
+  } else if (isScale) {
+    badge = __('Best Value • +25%')
+    badgeClass = 'bg-[#fdf2f3] text-[#bc1823] border border-[#f0d6d8]'
+  } else if (isStarter) {
+    badge = __('Entry Tier')
+    badgeClass = 'bg-surface-gray-2 text-ink-gray-7 border border-outline-gray-2'
+  } else if (metrics.badge) {
+    badge = metrics.badge
   }
 
   let bonusLabel = ''
-  if (isFree) bonusLabel = __('Zero commitment')
-  else if (code.includes('GROWTH') || name.includes('GROWTH') || (pkg.token_quantity && pkg.token_quantity === 2800)) bonusLabel = __('+12% Bonus Tokens')
-  else if (code.includes('SCALE') || name.includes('SCALE') || (pkg.token_quantity && pkg.token_quantity === 6250)) bonusLabel = __('+25% Bonus Tokens')
+  let bonusClass = 'bg-surface-gray-2 text-ink-gray-6 border-outline-gray-2'
+  if (isFree) {
+    bonusLabel = __('100% Free')
+    bonusClass = 'bg-surface-gray-2 text-ink-gray-7 border-outline-gray-2'
+  } else if (isGrowth) {
+    bonusLabel = __('+12% Bonus')
+    bonusClass = 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
+  } else if (isScale) {
+    bonusLabel = __('+25% Bonus')
+    bonusClass = 'bg-[#fdf2f3] text-[#bc1823] border-[#f0d6d8]'
+  } else if (isStarter) {
+    bonusLabel = __('Base Rate')
+    bonusClass = 'bg-surface-gray-2 text-ink-gray-6 border-outline-gray-2'
+  }
 
   let capacityLabel = ''
-  if (isFree) capacityLabel = __('~10 patient journeys')
-  else if (code.includes('STARTER') || name.includes('STARTER') || pkg.token_quantity === 1000) capacityLabel = __('~25 patient journeys')
-  else if (code.includes('GROWTH') || name.includes('GROWTH') || pkg.token_quantity === 2800) capacityLabel = __('~70 patient journeys')
-  else if (code.includes('SCALE') || name.includes('SCALE') || pkg.token_quantity === 6250) capacityLabel = __('~155 patient journeys')
-  else if (pkg.token_quantity) capacityLabel = `~${Math.round(pkg.token_quantity / 40)} ${__('patient journeys')}`
+  if (isFree) capacityLabel = __('~10 complete patient journeys')
+  else if (isStarter) capacityLabel = __('~25 complete patient journeys')
+  else if (isGrowth) capacityLabel = __('~70 complete patient journeys')
+  else if (isScale) capacityLabel = __('~155 complete patient journeys')
+  else if (tokens) capacityLabel = `~${Math.round(tokens / 40)} ${__('patient journeys')}`
 
-  let audience = metrics.audience || ''
-  if (!audience) {
-    if (isFree) audience = __('For trialing clinics & new facilities')
-    else if (code.includes('STARTER') || name.includes('STARTER')) audience = __('For small OPD clinics & pilots')
-    else if (code.includes('GROWTH') || name.includes('GROWTH')) audience = __('For active & growing clinics')
-    else if (code.includes('SCALE') || name.includes('SCALE')) audience = __('For high-volume clinics & hospitals')
-    else audience = __('For healthcare facilities & active clinics')
-  }
+  let audience = ''
+  if (isFree) audience = __('For trialing clinics & new facilities')
+  else if (isStarter) audience = __('For solo practices & small outpatient clinics')
+  else if (isGrowth) audience = __('For active clinics with labs & diagnostics')
+  else if (isScale) audience = __('For high-volume centers & full hospitals')
+  else audience = metrics.audience || __('For healthcare facilities & active clinics')
 
-  let defaultFeatures = []
+  let features = []
   if (isFree) {
-    defaultFeatures = [
-      __('400 Care Tokens (10 Patient Journeys)'),
-      __('Digital Registry & HFR Verification'),
-      __('Routine Patient Encounters & Claims'),
-      __('KES 0 Customer Commitment'),
+    features = [
+      __('10 full clinical patient journeys'),
+      __('Digital Registry & HFR lookup included'),
+      __('Zero customer financial liability'),
     ]
-  } else if (code.includes('STARTER') || name.includes('STARTER')) {
-    defaultFeatures = [
-      __('1,000 Care Tokens included'),
-      __('Outpatient Consultations & Vitals'),
-      __('Prescriptions & Laboratory Orders'),
-      __('Flexible Top-Ups Allowed'),
+  } else if (isStarter) {
+    features = [
+      __('Outpatient consultations & vitals'),
+      __('Prescriptions & laboratory orders'),
+      __('KES 6.00 per token base rate'),
     ]
-  } else if (code.includes('GROWTH') || name.includes('GROWTH')) {
-    defaultFeatures = [
-      __('2,800 Care Tokens (300 Bonus)'),
-      __('Multi-Department Workflows'),
-      __('Diagnostic Imaging & Labs'),
-      __('Standard SLA Support'),
+  } else if (isGrowth) {
+    features = [
+      __('Multi-department workflows & pharmacy'),
+      __('Diagnostic imaging & laboratory tests'),
+      __('KES 5.36 per token effective rate (+12%)'),
     ]
-  } else if (code.includes('SCALE') || name.includes('SCALE')) {
-    defaultFeatures = [
-      __('6,250 Care Tokens (1,250 Bonus)'),
-      __('Full Inpatient Admission Support'),
-      __('Surgical & Medical Procedures'),
-      __('Priority Commercial Support'),
+  } else if (isScale) {
+    features = [
+      __('Inpatient admissions & surgical wards'),
+      __('Comprehensive claims & priority support'),
+      __('KES 4.80 per token effective rate (+25%)'),
     ]
+  } else if (Array.isArray(metrics.features) && metrics.features.length) {
+    features = metrics.features.slice(0, 3)
   } else {
-    defaultFeatures = [
-      `${pkg.token_quantity || 100} ${__('Care Tokens included')}`,
+    features = [
       pkg.coverage_summary || __('Standard clinical operations'),
-      __('Priority Technical Support'),
+      __('Flexible token balance top-ups'),
+      __('Customer Experience Portal access'),
     ]
   }
-
-  const rawFeatures = Array.isArray(metrics.features) && metrics.features.length
-    ? metrics.features
-    : defaultFeatures
-
-  // Keep it minimalist: at most 4 crisp features
-  const features = rawFeatures.slice(0, 4)
 
   return {
     audience,
     badge,
+    badgeClass,
     bonusLabel,
+    bonusClass,
     capacityLabel,
     features,
+    isPopular,
   }
 }
 const stageTitle = computed(
@@ -1761,12 +1789,10 @@ const stepSubtitles = computed(() => ({
   review: __('Terms & submit'),
 }))
 
-function money(value, currency) {
-  return new Intl.NumberFormat('en-KE', {
-    style: 'currency',
-    currency: currency || 'KES',
-    maximumFractionDigits: 0,
-  }).format(value || 0)
+function money(value, currency = 'KES') {
+  const num = Number(value || 0)
+  const curr = currency || 'KES'
+  return `${curr} ${num.toLocaleString('en-KE', { maximumFractionDigits: 0 })}`
 }
 function unwrap(response) {
   return (

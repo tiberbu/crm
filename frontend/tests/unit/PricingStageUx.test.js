@@ -335,4 +335,38 @@ describe('Pricing Stage UX Audit & Minimalist Experience', () => {
     expect(dialog.getAttribute('aria-label')).toContain('CareVerse Token Sizing Calculator')
     expect(dialog.querySelector('[data-testid="token-calculator"]')).toBeTruthy()
   })
+
+  it('renders all 4 packages symmetrically with consistent KES pricing and no un-interpolated tokens', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    await advanceToPricing(
+      host,
+      [
+        {
+          facility_id: 'FID-1',
+          facility_name: 'Nairobi Clinic',
+          onboarding_eligible: true,
+        },
+      ],
+      standardPackages,
+    )
+
+    const articles = host.querySelectorAll('article')
+    expect(articles).toHaveLength(4)
+
+    // Check consistent KES currency formatting across cards
+    expect(articles[0].textContent).toContain('KES 0')
+    expect(articles[1].textContent).toContain('KES 6,000')
+    expect(articles[2].textContent).toContain('KES 15,000')
+    expect(articles[3].textContent).toContain('KES 30,000')
+
+    // Ensure no un-interpolated :n or raw placeholders exist in DOM
+    expect(host.textContent).not.toContain(':n')
+
+    // Ensure section expands with w-full when on pricing stage
+    const section = host.querySelector('form[data-testid="facility-package-FID-1"]')?.closest('section') || host.querySelector('section')
+    expect(section?.classList.contains('w-full')).toBe(true)
+  })
 })
+
