@@ -1293,7 +1293,7 @@ def _existing_lead_deal_facility_conflicts(
 
 	deal_names = {
 		_text(name)
-		for name in [session.get("submission_deal"), *((session.get("submitted") or {}).values())]
+		for name in [(session or {}).get("submission_deal"), *((session or {}).get("submitted") or {}).values()]
 		if _text(name) and frappe.db.exists("CRM Deal", _text(name))
 	}
 	lead_names = set()
@@ -1339,11 +1339,11 @@ def _facility_conflicts(facilities: list[dict[str, Any]], network: str | None, s
 	if not facilities:
 		return set()
 	conflicts = _existing_lead_deal_facility_conflicts(facilities, session)
-	submitted_values = set((session.get("submitted") or {}).values()) | set(
-		(session.get("submitted_ois") or {}).values()
+	submitted_values = set(((session or {}).get("submitted") or {}).values()) | set(
+		((session or {}).get("submitted_ois") or {}).values()
 	)
-	if _text(session.get("submission_deal")):
-		submitted_values.add(_text(session.get("submission_deal")))
+	if _text((session or {}).get("submission_deal")):
+		submitted_values.add(_text((session or {}).get("submission_deal")))
 	submitted = {name for name in submitted_values if frappe.db.exists("CRM Opt-In Submission", name)}
 	filters = {"network_slug": network} if network else {}
 	ois_rows = frappe.get_all(
@@ -1356,6 +1356,10 @@ def _facility_conflicts(facilities: list[dict[str, Any]], network: str | None, s
 	own_mfls = set().union(
 		*(_ois_facility_codes(row.get("raw_json")) for row in ois_rows if _text(row.get("name")) in submitted)
 	) if submitted else set()
+
+	person_email = _text((((session or {}).get("person") or {}).get("email"))).lower()
+	existing_customer = _resolve_existing_customer(session, person_email)
+
 	deal_names = [name for name in submitted_values if frappe.db.exists("CRM Deal", name)]
 	if deal_names:
 		own_mfls.update(
@@ -1377,14 +1381,20 @@ def _facility_conflicts(facilities: list[dict[str, Any]], network: str | None, s
 		)
 		if facility_name and mfl_code.casefold() not in own_mfls:
 			facility_doc = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
-			if any(
-				(network is None or _text(membership.get("network")) == network)
-				and _text(membership.get("status") or "Active").casefold()
-				in {"pending", "active", "opted in", "completed", "processed"}
-				for membership in facility_doc.memberships or []
-			):
+			for membership in facility_doc.memberships or []:
+				if network and _text(membership.get("network")) != network:
+					continue
+				mem_status = _text(membership.get("status") or "Active").casefold()
+				if mem_status not in {"pending", "active", "opted in", "completed", "processed"}:
+					continue
+				mem_email = _text(membership.get("contact_email")).lower()
+				mem_cust = _text(membership.get("customer"))
+				if person_email and mem_email == person_email:
+					continue
+				if existing_customer and mem_cust and mem_cust == existing_customer:
+					continue
 				conflicts.add(facility_id)
-				continue
+				break
 		for row in ois_rows:
 			if (
 				_text(row.get("name")) not in submitted
@@ -1448,7 +1458,7 @@ def _check_onboarding_conflicts(session: dict[str, Any], selected: set[str], net
 			if session.get("submission_deal"):
 				own_deals.add(session.get("submission_deal"))
 			for lead_row in prior_leads:
-				deal_name = frappe.db.get_value("CRM Deal", {"lead": lead_row.name}, "name")
+				deal_name = frappe.db.get_value("CRM Deal", {"lead": lead_row.get("name")}, "name")
 				if deal_name and deal_name not in own_deals:
 					is_existing_identity = True
 					break
@@ -1708,7 +1718,7 @@ def _resolve_existing_customer(session: dict[str, Any] | None, account_email: st
 				ignore_permissions=True,
 			)
 			for lead_row in prior_leads:
-				deal_cust = frappe.db.get_value("CRM Deal", {"lead": lead_row.name}, "cx_customer")
+				deal_cust = frappe.db.get_value("CRM Deal", {"lead": lead_row.get("name")}, "cx_customer")
 				if deal_cust and frappe.db.exists("Customer", deal_cust):
 					return deal_cust
 	if account_email:
@@ -1908,6 +1918,29 @@ def _resume_or_create_customer_deal(
 	deal_name = _text((session.get("submitted") or {}).get(facility_id))
 	if not deal_name and len(session.get("facilities") or []) == 1:
 		deal_name = _text(session.get("submission_deal"))
+	if not deal_name and identity_ref:
+		mfl = _text(facility.get("mfl_code"))
+		candidates = [facility_id]
+		if mfl and mfl != facility_id:
+			candidates.append(mfl)
+		deal_facilities = frappe.get_all(
+			"CRM Deal Facility",
+			filters={
+				"hfr_facility_id": ["in", candidates],
+				"parenttype": "CRM Deal",
+				"parentfield": "facilities",
+			},
+			fields=["parent"],
+			limit_page_length=5,
+			ignore_permissions=True,
+		)
+		for row in deal_facilities:
+			d_name = _text(row.get("parent"))
+			if d_name and frappe.db.exists("CRM Deal", d_name):
+				d_identity = frappe.db.get_value("CRM Deal", d_name, "cx_onboarding_identity_ref")
+				if d_identity == identity_ref:
+					deal_name = d_name
+					break
 	if deal_name and frappe.db.exists("CRM Deal", deal_name):
 		deal = frappe.get_doc("CRM Deal", deal_name)
 		if not _text(deal.get("cx_customer") or deal.get("erpnext_customer")):

@@ -2165,11 +2165,6 @@ function conflictMessage(result) {
       'Facility level eligibility changed while you were onboarding. Review the facilities and continue with approved levels.',
     )
   }
-  if (result?.outcome === 'existing_identity') {
-    return __(
-      'An enrollment already exists for this verified identity. Sign in to your Customer Experience account or contact support for help.',
-    )
-  }
   if (result?.already_onboarded_facility_ids?.length) {
     const blocked = new Set(result.already_onboarded_facility_ids)
     const names = facilities.value
@@ -2215,16 +2210,16 @@ async function submit() {
       partner_id: partnerId.value,
       selected_facility_ids: JSON.stringify(selectedFacilities.value),
     })
+    if (conflict?.outcome === 'existing_identity' || conflict?.is_existing_identity) {
+      existingIdentityDetected.value = true
+    }
     const preflightMessage = conflictMessage(conflict)
     if (preflightMessage) {
       errorMessage.value = preflightMessage
-      registrationConflictDetected.value = [
-        'existing_identity',
-        'facility_review',
-      ].includes(conflict?.outcome)
+      registrationConflictDetected.value = conflict?.outcome === 'facility_review'
       return
     }
-    if (conflict?.outcome !== 'new') {
+    if (conflict?.outcome !== 'new' && conflict?.outcome !== 'existing_identity') {
       errorMessage.value = __(
         'We could not verify this onboarding selection. Please try again.',
       )
@@ -2247,25 +2242,29 @@ async function submit() {
       terms_accepted: termsAccepted.value ? 1 : 0,
       accepted_terms_hash: termsSnapshot.value.content_hash,
     })
+    if (
+      data?.outcome === 'existing_identity' ||
+      data?.is_existing_identity ||
+      data?.portal_status === 'linked'
+    ) {
+      existingIdentityDetected.value = true
+      portalStatus.value = data?.portal_status || 'linked'
+    }
     const submitConflict = conflictMessage(data)
     if (submitConflict) {
       errorMessage.value = submitConflict
-      registrationConflictDetected.value = [
-        'existing_identity',
-        'facility_review',
-      ].includes(data?.outcome)
+      registrationConflictDetected.value = data?.outcome === 'facility_review'
       return
     }
-    if (data?.outcome && data.outcome !== 'new') {
+    if (data?.outcome && data.outcome !== 'new' && data.outcome !== 'existing_identity') {
       errorMessage.value = __(
         'We could not verify this onboarding selection. Please try again.',
       )
       return
     }
-    submissions.value = data.enrollments || []
-    portalStatus.value = data.portal_status || ''
-    if (data.is_existing_identity || data.portal_status === 'linked') {
-      existingIdentityDetected.value = true
+    submissions.value = data.enrollments || data.submissions || []
+    if (data.portal_status) {
+      portalStatus.value = data.portal_status
     }
     stage.value = 'success'
   } catch (error) {
