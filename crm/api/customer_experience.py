@@ -610,3 +610,148 @@ def _make_invoice(order, key):
 	invoice.insert(ignore_permissions=True, ignore_mandatory=True)  # SYSTEM-INTERNAL
 	invoice.submit()
 	return invoice
+
+
+@frappe.whitelist(methods=["POST"])
+def lookup_hfr_facility(query: Any, search_by: str = "mfl_code"):
+	"""Search official KMHFR registry for facility candidates."""
+	from crm.api.hfr import search_facility
+
+	query = _text(query)
+	if not query:
+		return {"success": True, "data": []}
+	try:
+		results = search_facility(query, search_by=search_by)
+		return {"success": True, "data": results}
+	except Exception as exc:
+		frappe.log_error(f"HFR lookup failed for {query}: {exc}")
+		return {"success": False, "error": str(exc), "data": []}
+
+
+@frappe.whitelist(methods=["POST"])
+def add_facility_from_hfr(mfl_code: Any, fid: Any = None, package_item_code: Any = None):
+	"""Link a verified KMHFR facility to the authenticated user's customer account."""
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(_("Please sign in to link facilities."), frappe.PermissionError)
+
+	from crm.api.website_redirect import get_user_customer_names
+
+	customer_names = get_user_customer_names(user)
+	if not customer_names:
+		frappe.throw(_("No customer account found for your profile."), frappe.ValidationError)
+	customer = customer_names[0]
+
+	mfl_code = _text(mfl_code)
+	fid = _text(fid)
+	if not mfl_code and not fid:
+		frappe.throw(_("MFL code or HFR Facility ID is required."), frappe.ValidationError)
+
+	from crm.api.hfr import get_facility_detail, search_facility
+
+	facility_data = {}
+	if fid:
+		try:
+			facility_data = get_facility_detail(fid) or {}
+		except Exception:
+			pass
+
+	if not facility_data and mfl_code:
+		try:
+			candidates = search_facility(mfl_code, search_by="mfl_code")
+			if candidates:
+				candidate_fid = candidates[0].get("fid")
+				if candidate_fid:
+					facility_data = get_facility_detail(candidate_fid) or {}
+				else:
+					facility_data = {
+						"organization_name": candidates[0].get("name"),
+						"mfl_code": candidates[0].get("mfl_code"),
+						"facility_level": candidates[0].get("level"),
+						"hfr_county": candidates[0].get("county"),
+					}
+		except Exception:
+			pass
+
+	facility_name = facility_data.get("organization_name") or mfl_code
+	keph_level = facility_data.get("facility_level") or "Level 2"
+	resolved_mfl = facility_data.get("mfl_code") or mfl_code
+
+	with _system_user():
+		row = frappe.db.get_value("CRM Pre-Qualified Facility", {"mfl_code": resolved_mfl}, "name")
+		if row:
+			fac_doc = frappe.get_doc("CRM Pre-Qualified Facility", row)
+			if facility_name:
+				fac_doc.facility_name = facility_name
+			if keph_level:
+				fac_doc.keph_level = keph_level
+		else:
+			fac_doc = frappe.get_doc(
+				{
+					"doctype": "CRM Pre-Qualified Facility",
+					"mfl_code": resolved_mfl,
+					"facility_name": facility_name,
+					"organization": facility_name,
+					"keph_level": keph_level,
+				}
+			)
+
+		fac_doc.flags.skip_invitation = True
+		if hasattr(fac_doc, "is_self_onboarded"):
+			fac_doc.is_self_onboarded = 1
+
+		membership_exists = False
+		for m in fac_doc.memberships or []:
+			if m.customer == customer:
+				membership_exists = True
+				break
+
+		if not membership_exists:
+			fac_doc.append(
+				"memberships",
+				{
+					"network": "CareVerse Partner Network",
+					"customer": customer,
+					"status": "Active",
+					"go_live": 1,
+					"contact_email": user,
+				},
+			)
+
+		fac_doc.save(ignore_permissions=True)
+
+		deals = frappe.get_all("CRM Deal", filters={"cx_customer": customer}, fields=["name"], limit=1)
+		if deals:
+			deal_doc = frappe.get_doc("CRM Deal", deals[0].name)
+			already_in_deal = any(frappe.utils.cstr(df.mfl_code).strip() == resolved_mfl for df in deal_doc.facilities or [])
+			if not already_in_deal:
+				deal_fac = {
+					"facility_name": facility_name,
+					"mfl_code": resolved_mfl,
+					"facility_level": keph_level,
+					"hfr_sync_status": "HFR Verified",
+				}
+				if package_item_code:
+					pkg = _package(package_item_code)
+					if pkg:
+						deal_fac["cx_token_package_item"] = pkg["item_code"]
+						deal_fac["cx_token_package_quantity"] = pkg.get("token_quantity") or 0
+						deal_fac["cx_token_package_price"] = pkg.get("price") or 0
+						deal_fac["cx_token_package_vat"] = pkg.get("vat_amount") or 0
+						deal_fac["cx_token_package_gross_total"] = pkg.get("gross_total") or 0
+						deal_fac["cx_token_package_currency"] = pkg.get("currency") or "KES"
+				deal_doc.append("facilities", deal_fac)
+				deal_doc.save(ignore_permissions=True)
+
+		frappe.db.commit()
+
+		return {
+			"success": True,
+			"data": {
+				"mfl_code": resolved_mfl,
+				"facility_name": facility_name,
+				"keph_level": keph_level,
+				"customer": customer,
+			},
+		}
+
