@@ -39,11 +39,37 @@ const context = ref({
   calculator_config: {},
 })
 
-// Current Active Navigation View: 'dashboard' | 'facilities' | 'pricing' | 'billing' | 'hfr_sync' | 'support'
+// Current Active Navigation View: 'dashboard' | 'facilities' | 'pricing' | 'billing' | 'hfr_sync' | 'profile' | 'support'
 const activeView = ref('facilities')
 
 // Sidebar collapsed state for responsive layout
 const sidebarCollapsed = ref(false)
+
+// User Profile & National ID state
+const userProfile = ref({
+  user_id: '',
+  full_name: '',
+  email: '',
+  mobile_no: '',
+  national_id: '',
+  masked_national_id: '',
+  national_id_verified: false,
+  organization: '',
+  primary_network: '',
+  facility_count: 0,
+})
+const showUnmaskedId = ref(false)
+const profileModalOpen = ref(false)
+const profileForm = ref({
+  national_id: '',
+  mobile_no: '',
+  full_name: '',
+})
+const profileSaving = ref(false)
+
+// HFR Auto-Discovery by Owner ID
+const hfrOwnerSearchBusy = ref(false)
+const hfrOwnerSearchResults = ref([])
 
 // Search & Filter state for Facilities Data Table
 const searchQuery = ref('')
@@ -61,6 +87,13 @@ const topUpModalOpen = ref(false)
 const addFacilityModalOpen = ref(false)
 const calculatorModalOpen = ref(false)
 
+// M-Pesa Paybill Settlement Modal
+const mpesaModalOpen = ref(false)
+const mpesaInvoice = ref(null)
+const mpesaCodeInput = ref('')
+const mpesaPhoneInput = ref('')
+const mpesaReportBusy = ref(false)
+
 // HFR Lookup state inside Add Facility Modal
 const hfrSearchQuery = ref('')
 const hfrSearchBy = ref('mfl_code') // 'mfl_code' | 'registration_number'
@@ -75,6 +108,7 @@ const busyId = ref('')
 const notice = ref(null)
 const bankTransferOis = ref('')
 const copiedMfl = ref('')
+const copiedKey = ref('')
 
 // Collapsible feature categories state for GitHub-style pricing table
 const expandedPricingCategories = ref({
@@ -122,6 +156,8 @@ const allFacilities = computed(() => {
           package_vat: fac.package_vat,
           package_gross_total: fac.package_gross_total,
           package_currency: fac.package_currency || 'KES',
+          recent_purchase: fac.recent_purchase || null,
+          invoice_summary: fac.invoice_summary || null,
           source_type: 'customer',
         })
       }
@@ -150,6 +186,8 @@ const allFacilities = computed(() => {
           package_vat: submission.progress?.package?.vat_amount,
           package_gross_total: submission.progress?.package?.gross_total,
           package_currency: submission.progress?.package?.currency || 'KES',
+          recent_purchase: null,
+          invoice_summary: null,
           source_type: 'ois',
         })
       }
@@ -306,7 +344,7 @@ const featureComparisonCategories = [
       {
         id: 'opd_consult',
         name: 'Consultation Encounters & ICD-10',
-        description: 'Doctor examination notes, standardized diagnosis coding (ICD-10/KMHFR), vitals capture, and referral tracking.',
+        description: 'Doctor examination notes, standardized diagnosis coding (ICD-10 / Health Facility Registry), vitals capture, and referral tracking.',
         values: ['10 full encounters', '~70 OPD visits', '~200 OPD visits', '~440 OPD visits'],
       },
       {
@@ -406,13 +444,13 @@ const featureComparisonCategories = [
   },
   {
     key: 'compliance',
-    title: 'KMHFR Compliance, Network & Support',
+    title: 'Health Facility Registry Compliance, Network & Support',
     description: 'National health registry synchronization and dedicated clinical SLA.',
     features: [
       {
-        id: 'kmhfr_sync',
-        name: 'KMHFR Official Registry Sync',
-        description: 'Automated synchronization with Kenya Master Health Facility Registry (KMHFR) validating facility license and KEPH level.',
+        id: 'hfr_sync',
+        name: 'Health Facility Registry Sync',
+        description: 'Automated synchronization with official Health Facility Registry (HFR) validating facility license and KEPH level.',
         values: ['Quarterly', 'Monthly', 'Real-Time Sync', 'Continuous DHA Link'],
       },
       {
@@ -441,6 +479,106 @@ function copyMfl(code) {
     setTimeout(() => {
       if (copiedMfl.value === code) copiedMfl.value = ''
     }, 2000)
+  }
+}
+
+function copyText(text, key) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(String(text))
+    copiedKey.value = key
+    setTimeout(() => {
+      if (copiedKey.value === key) copiedKey.value = ''
+    }, 2000)
+  }
+}
+
+const paybillInfo = computed(() => {
+  return context.value.paybill_info || {
+    business_number: '4130669',
+    business_name: 'Tiberbu Healthnet',
+  }
+})
+
+async function loadUserProfile() {
+  try {
+    const res = await call('crm.api.customer_experience.get_user_profile')
+    const data = unwrap(res)
+    if (data && data.email) {
+      userProfile.value = data
+      profileForm.value = {
+        national_id: data.national_id || '',
+        mobile_no: data.mobile_no || '',
+        full_name: data.full_name || '',
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load user profile', error)
+  }
+}
+
+function openEditProfileModal() {
+  profileForm.value = {
+    national_id: userProfile.value.national_id || '',
+    mobile_no: userProfile.value.mobile_no || '',
+    full_name: userProfile.value.full_name || '',
+  }
+  profileModalOpen.value = true
+}
+
+async function saveUserProfile() {
+  profileSaving.value = true
+  notice.value = null
+  try {
+    const res = await call('crm.api.customer_experience.update_user_profile', {
+      national_id: profileForm.value.national_id,
+      mobile_no: profileForm.value.mobile_no,
+      full_name: profileForm.value.full_name,
+    })
+    const data = unwrap(res)
+    if (data) {
+      userProfile.value = data
+      profileModalOpen.value = false
+      notice.value = {
+        tone: 'success',
+        text: 'Profile and National ID updated successfully!',
+      }
+    }
+  } catch (error) {
+    notice.value = {
+      tone: 'error',
+      text: error?.messages?.[0] || 'Could not update profile.',
+    }
+  } finally {
+    profileSaving.value = false
+  }
+}
+
+async function discoverFacilitiesByOwnerId() {
+  hfrOwnerSearchBusy.value = true
+  notice.value = null
+  try {
+    const res = await call('crm.api.customer_experience.lookup_facilities_by_owner_id', {
+      national_id: userProfile.value.national_id || undefined,
+    })
+    const data = unwrap(res)
+    hfrOwnerSearchResults.value = Array.isArray(data) ? data : []
+    if (res?.masked_national_id && !userProfile.value.masked_national_id) {
+      userProfile.value.masked_national_id = res.masked_national_id
+      userProfile.value.national_id = res.national_id
+    }
+    if (!hfrOwnerSearchResults.value.length) {
+      notice.value = {
+        tone: 'pending',
+        text: 'No additional facilities registered under this National ID in the Health Facility Registry.',
+      }
+    }
+  } catch (error) {
+    notice.value = {
+      tone: 'error',
+      text: error?.messages?.[0] || 'Unable to discover facilities by National ID.',
+    }
+  } finally {
+    hfrOwnerSearchBusy.value = false
   }
 }
 
@@ -481,6 +619,70 @@ function onCalculatorApplyPlan(pkg) {
 function selectPlanFromPricingTab(pkg) {
   selectedTopUpPackageCode.value = pkg.item_code
   openTopUpModal(selectedFacility.value)
+}
+
+function openMpesaModal(invoice) {
+  mpesaInvoice.value = invoice
+  mpesaCodeInput.value = ''
+  mpesaPhoneInput.value = userProfile.value.mobile_no || ''
+  mpesaModalOpen.value = true
+}
+
+function openMpesaModalForFacility(facility) {
+  const invName = facility.invoice_summary?.invoice_name
+  let inv = allInvoices.value.find((i) => i.name === invName)
+  if (!inv) {
+    inv = allInvoices.value.find(
+      (i) => String(i.crm_token_facility_mfl).toLowerCase() === String(facility.mfl_code).toLowerCase(),
+    )
+  }
+  if (!inv) {
+    inv = {
+      name: invName || `INV-${facility.mfl_code}`,
+      amount: facility.invoice_summary?.outstanding_amount || 0,
+      outstanding_amount: facility.invoice_summary?.outstanding_amount || 0,
+      currency: facility.invoice_summary?.currency || 'KES',
+      customer: facility.customer,
+    }
+  }
+  openMpesaModal(inv)
+}
+
+async function submitMpesaPayment() {
+  if (!mpesaInvoice.value) return
+  const code = mpesaCodeInput.value.trim().toUpperCase()
+  if (!code || code.length < 6) {
+    notice.value = {
+      tone: 'error',
+      text: 'Please enter a valid M-Pesa transaction confirmation code (e.g. SB65A1TU7X).',
+    }
+    return
+  }
+
+  mpesaReportBusy.value = true
+  notice.value = null
+  try {
+    const res = await call('crm.api.customer_experience.report_mpesa_payment', {
+      invoice_name: mpesaInvoice.value.name,
+      mpesa_code: code,
+      amount: mpesaInvoice.value.amount || mpesaInvoice.value.outstanding_amount,
+      phone: mpesaPhoneInput.value.trim(),
+    })
+    const data = unwrap(res)
+    mpesaModalOpen.value = false
+    notice.value = {
+      tone: 'success',
+      text: data?.message || `M-Pesa payment ${code} recorded successfully! Your invoice will update upon reconciliation.`,
+    }
+    await refreshContext()
+  } catch (error) {
+    notice.value = {
+      tone: 'error',
+      text: error?.messages?.[0] || 'Could not record M-Pesa payment. Please verify the confirmation code.',
+    }
+  } finally {
+    mpesaReportBusy.value = false
+  }
 }
 
 function money(value, currency) {
@@ -528,13 +730,13 @@ async function executeHfrSearch() {
     if (!hfrSearchResults.value.length) {
       notice.value = {
         tone: 'pending',
-        text: `No KMHFR records matched query "${query}". Try searching by the facility's 5-digit MFL code.`,
+        text: `No Health Facility Registry records matched query "${query}". Try searching by the facility's 5-digit MFL code.`,
       }
     }
   } catch (error) {
     notice.value = {
       tone: 'error',
-      text: error?.messages?.[0] || 'Unable to connect to KMHFR registry.',
+      text: error?.messages?.[0] || 'Unable to connect to Health Facility Registry.',
     }
   } finally {
     hfrSearchBusy.value = false
@@ -697,6 +899,7 @@ async function verifyReturnedPayment() {
 onMounted(async () => {
   try {
     await refreshContext()
+    await loadUserProfile()
     await verifyReturnedPayment()
   } catch (error) {
     errorMessage.value = error?.messages?.[0] || 'Failed to load portal.'
@@ -844,7 +1047,7 @@ onMounted(async () => {
             </span>
           </button>
 
-          <!-- 5. HFR Registry Sync -->
+          <!-- 5. Health Facility Registry Sync -->
           <button
             type="button"
             class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
@@ -856,10 +1059,33 @@ onMounted(async () => {
             @click="activeView = 'hfr_sync'"
           >
             <span class="text-base shrink-0">🔄</span>
-            <span v-if="!sidebarCollapsed" class="truncate">KMHFR Registry Sync</span>
+            <span v-if="!sidebarCollapsed" class="truncate">Facility Registry Sync</span>
           </button>
 
-          <!-- 6. Network Support -->
+          <!-- 6. My Profile (National ID & Identity) -->
+          <button
+            type="button"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
+            :class="
+              activeView === 'profile'
+                ? 'bg-blue-50 text-blue-700 shadow-xs'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            "
+            @click="activeView = 'profile'"
+          >
+            <div class="flex items-center gap-3 truncate">
+              <span class="text-base shrink-0">👤</span>
+              <span v-if="!sidebarCollapsed" class="truncate">My Profile</span>
+            </div>
+            <span
+              v-if="!sidebarCollapsed && userProfile.masked_national_id"
+              class="rounded-full bg-slate-100 text-slate-700 font-mono px-2 py-0.5 text-[10px]"
+            >
+              {{ userProfile.masked_national_id }}
+            </span>
+          </button>
+
+          <!-- 7. Network Support -->
           <button
             type="button"
             class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
@@ -877,19 +1103,24 @@ onMounted(async () => {
 
         <!-- Sidebar Footer: Organization Identity -->
         <div class="p-3 border-t border-slate-200" v-if="!sidebarCollapsed">
-          <div class="rounded-xl bg-slate-50 border border-slate-100 p-2.5 flex items-center justify-between">
+          <div
+            class="rounded-xl bg-slate-50 border border-slate-100 p-2.5 flex items-center justify-between cursor-pointer hover:bg-slate-100/80 transition"
+            @click="activeView = 'profile'"
+            title="View Profile & Identification"
+          >
             <div class="truncate mr-2">
               <span class="text-xs font-bold text-slate-900 block truncate">
                 {{ primaryOrganizationName }}
               </span>
               <span class="text-[10px] text-slate-600 block truncate font-mono">
-                {{ context.user }}
+                {{ userProfile.masked_national_id ? `ID: ${userProfile.masked_national_id}` : context.user }}
               </span>
             </div>
             <a
               href="/api/method/logout"
               title="Sign Out"
               class="text-slate-600 hover:text-rose-600 p-1.5 rounded hover:bg-white transition"
+              @click.stop
             >
               <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -924,7 +1155,7 @@ onMounted(async () => {
           <div class="flex items-center gap-3">
             <span class="hidden md:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-bold text-emerald-800">
               <span class="size-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-              <span>KMHFR Live</span>
+              <span>Registry Verified</span>
             </span>
 
             <button
@@ -960,7 +1191,7 @@ onMounted(async () => {
                   Facilities
                 </h1>
                 <p class="text-xs text-slate-600 mt-0.5">
-                  Manage registered clinic branches, track KMHFR verification, and monitor token capacity.
+                  Manage registered clinic branches, track Health Facility Registry verification, and monitor token capacity.
                 </p>
               </div>
 
@@ -971,7 +1202,7 @@ onMounted(async () => {
                   class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs"
                   @click="openAddFacilityModal()"
                 >
-                  <span>🔄 Sync KMHFR API</span>
+                  <span>🔄 Sync Facility Registry</span>
                 </button>
                 <button
                   type="button"
@@ -1006,7 +1237,7 @@ onMounted(async () => {
                   class="rounded-xl bg-white border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:border-blue-500"
                 >
                   <option value="all">All Statuses</option>
-                  <option value="live">Live on KMHFR</option>
+                  <option value="live">Live on Registry</option>
                   <option value="verifying">Verification Pending</option>
                 </select>
 
@@ -1066,13 +1297,13 @@ onMounted(async () => {
                       <th class="py-3 px-4 w-10">
                         <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-0" />
                       </th>
-                      <th class="py-3 px-4">Facility & Location</th>
+                      <th class="py-3 px-4">Facility & Network</th>
                       <th class="py-3 px-4">KEPH Level</th>
                       <th class="py-3 px-4">MFL Code</th>
-                      <th class="py-3 px-4">KMHFR Status</th>
-                      <th class="py-3 px-4">Active Plan</th>
+                      <th class="py-3 px-4">Registry Status</th>
+                      <th class="py-3 px-4">Plan & Recent Purchase</th>
                       <th class="py-3 px-4 text-right">Care Tokens</th>
-                      <th class="py-3 px-4 text-right">Actions</th>
+                      <th class="py-3 px-4 text-right">Settlement & Actions</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100">
@@ -1091,7 +1322,7 @@ onMounted(async () => {
                         />
                       </td>
 
-                      <!-- Name & Location -->
+                      <!-- Name & Location & Network -->
                       <td class="py-3.5 px-4 font-semibold text-slate-900">
                         <div class="flex items-center gap-3">
                           <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-100">
@@ -1099,7 +1330,10 @@ onMounted(async () => {
                           </div>
                           <div>
                             <span class="font-bold text-slate-900 block">{{ facility.facility_name }}</span>
-                            <span class="text-[11px] text-slate-600 font-normal">{{ facility.network }}</span>
+                            <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-0.5 border border-slate-200/60">
+                              <span>🌐</span>
+                              <span>{{ facility.network }}</span>
+                            </span>
                           </div>
                         </div>
                       </td>
@@ -1138,9 +1372,12 @@ onMounted(async () => {
                         </span>
                       </td>
 
-                      <!-- Plan -->
+                      <!-- Plan & Recent Purchase -->
                       <td class="py-3.5 px-4 font-medium text-slate-700">
-                        {{ facility.token_package || 'No active plan' }}
+                        <span class="font-bold text-slate-900 block">{{ facility.token_package || 'No active plan' }}</span>
+                        <span v-if="facility.recent_purchase" class="text-[11px] text-slate-500 font-mono block mt-0.5">
+                          {{ facility.recent_purchase.package_name }}: {{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} · {{ facility.recent_purchase.date }}
+                        </span>
                       </td>
 
                       <!-- Tokens -->
@@ -1151,9 +1388,18 @@ onMounted(async () => {
                         </span>
                       </td>
 
-                      <!-- Actions -->
+                      <!-- Actions & Direct M-Pesa Settlement -->
                       <td class="py-3.5 px-4 text-right">
-                        <div class="flex items-center justify-end gap-1.5">
+                        <div class="flex items-center justify-end gap-1.5 flex-wrap">
+                          <button
+                            v-if="facility.invoice_summary?.has_outstanding"
+                            type="button"
+                            class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0"
+                            @click="openMpesaModalForFacility(facility)"
+                            title="Pay outstanding invoice via M-Pesa"
+                          >
+                            <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
+                          </button>
                           <button
                             type="button"
                             class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-bold text-white hover:bg-black transition shadow-xs"
@@ -1179,7 +1425,7 @@ onMounted(async () => {
               <!-- Footer summary -->
               <div class="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-medium">
                 <span>Showing {{ filteredFacilities.length }} of {{ allFacilities.length }} registered clinics</span>
-                <span>All records verified via DHA Kenya Master Health Facility Registry (KMHFR)</span>
+                <span>All records verified via Digital Health Agency (DHA) Health Facility Registry</span>
               </div>
             </div>
 
@@ -1195,42 +1441,65 @@ onMounted(async () => {
                     <div>
                       <h3 class="font-bold text-base text-slate-900">{{ facility.facility_name }}</h3>
                       <p class="text-xs text-slate-500 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
+                      <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-1 border border-slate-200/60">
+                        <span>🌐</span>
+                        <span>{{ facility.network }}</span>
+                      </span>
                     </div>
                     <span
-                      class="rounded-full px-2 py-0.5 text-[10px] font-bold border"
+                      class="rounded-full px-2 py-0.5 text-[10px] font-bold border shrink-0"
                       :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
                     >
                       {{ facility.go_live ? 'Live' : 'Verifying' }}
                     </span>
                   </div>
 
-                  <div class="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1 text-xs">
+                  <div class="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1.5 text-xs">
                     <div class="flex justify-between text-slate-600">
-                      <span>Plan:</span>
+                      <span>Active Plan:</span>
                       <strong class="text-slate-900">{{ facility.token_package || 'None' }}</strong>
                     </div>
+                    <div v-if="facility.recent_purchase" class="flex justify-between text-slate-600 text-[11px]">
+                      <span>Recent Order:</span>
+                      <span class="font-mono text-slate-800">{{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} ({{ facility.recent_purchase.date }})</span>
+                    </div>
                     <div class="flex justify-between text-slate-600">
-                      <span>Capacity:</span>
+                      <span>Token Runway:</span>
                       <strong class="text-[#bc1823]">🪙 {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
+                    </div>
+                    <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-slate-200/60">
+                      <span class="font-bold text-amber-800">Due Balance:</span>
+                      <strong class="font-bold text-amber-900">{{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }}</strong>
                     </div>
                   </div>
                 </div>
 
-                <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
+                <div class="mt-4 pt-3 border-t border-slate-100 space-y-2">
                   <button
+                    v-if="facility.invoice_summary?.has_outstanding"
                     type="button"
-                    class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-black transition"
-                    @click="openTopUpModal(facility)"
+                    class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs"
+                    @click="openMpesaModalForFacility(facility)"
                   >
-                    + Top Up Tokens
+                    <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                   </button>
-                  <button
-                    type="button"
-                    class="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50"
-                    @click="openCalculatorModal(facility)"
-                  >
-                    🧮
-                  </button>
+                  <div class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-black transition"
+                      @click="openTopUpModal(facility)"
+                    >
+                      + Top Up Tokens
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50"
+                      @click="openCalculatorModal(facility)"
+                      title="Sizing Calculator"
+                    >
+                      🧮
+                    </button>
+                  </div>
                 </div>
               </article>
             </div>
@@ -1264,13 +1533,13 @@ onMounted(async () => {
               </div>
 
               <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
-                <span class="text-xs font-bold uppercase tracking-wider text-slate-600 block">KMHFR Registry Compliance</span>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-600 block">Health Facility Registry Compliance</span>
                 <div class="flex items-baseline gap-2">
                   <span class="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">{{ liveFacilitiesCount }} / {{ facilityCount }}</span>
                   <span class="text-xs font-bold text-emerald-700">Clinics Live</span>
                 </div>
                 <p class="text-xs text-slate-600 leading-relaxed">
-                  Synchronized with the official Kenya Master Health Facility Registry (KMHFR) & Partner Network.
+                  Synchronized with the official Health Facility Registry (HFR) & Partner Network.
                 </p>
                 <div class="pt-2 border-t border-slate-100">
                   <button type="button" class="text-xs font-bold text-blue-600 hover:underline" @click="activeView = 'facilities'">
@@ -1518,18 +1787,25 @@ onMounted(async () => {
                     </p>
                   </div>
 
-                  <div class="flex items-center gap-4 shrink-0">
+                  <div class="flex items-center gap-3 shrink-0 flex-wrap justify-end">
                     <div class="text-right">
                       <span class="text-base font-extrabold text-slate-900 block leading-tight">{{ money(invoice.amount, invoice.currency) }}</span>
                       <span class="text-[10px] text-slate-400 uppercase font-medium">Balance</span>
                     </div>
                     <button
                       type="button"
-                      class="rounded-xl bg-[#bc1823] px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#a3141d] transition disabled:opacity-50"
+                      class="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition inline-flex items-center gap-1.5"
+                      @click="openMpesaModal(invoice)"
+                    >
+                      <span>📱 Pay M-Pesa (No Fee)</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
                       :disabled="busyId === invoice.name"
                       @click="payInvoice(invoice)"
                     >
-                      <span>{{ busyId === invoice.name ? 'Connecting…' : 'Pay via M-Pesa / Card →' }}</span>
+                      <span>{{ busyId === invoice.name ? 'Connecting…' : 'Card / Paystack →' }}</span>
                     </button>
                   </div>
                 </article>
@@ -1566,34 +1842,201 @@ onMounted(async () => {
           </div>
 
           <!-- ============================================================== -->
-          <!-- VIEW E: KMHFR REGISTRY SYNC                                    -->
+          <!-- VIEW E: HEALTH FACILITY REGISTRY SYNC                          -->
           <!-- ============================================================== -->
-          <div v-if="activeView === 'hfr_sync'" class="space-y-6 max-w-3xl">
+          <div v-if="activeView === 'hfr_sync'" class="space-y-6 max-w-4xl">
             <div>
-              <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">KMHFR Registry Sync</h1>
-              <p class="text-xs text-slate-600 mt-0.5">Synchronize facility records directly with the Kenya Master Health Facility Registry (KMHFR).</p>
+              <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Health Facility Registry Sync</h1>
+              <p class="text-xs text-slate-600 mt-0.5">Synchronize facility records directly with the official Digital Health Agency (DHA) Health Facility Registry.</p>
             </div>
 
+            <!-- 1-Click Discovery by National ID on File -->
             <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
-              <h3 class="font-bold text-sm text-slate-900">National Health Facility Registry (KMHFR) Integration</h3>
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h3 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <span>🆔</span>
+                    <span>1-Click Auto-Discovery by National ID</span>
+                  </h3>
+                  <p class="text-xs text-slate-600 mt-1">
+                    Discover all clinical branches registered under your verified National ID on file
+                    <span v-if="userProfile.masked_national_id" class="font-mono font-bold text-slate-800">({{ userProfile.masked_national_id }})</span>.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition shrink-0 disabled:opacity-50 inline-flex items-center gap-1.5"
+                  :disabled="hfrOwnerSearchBusy"
+                  @click="discoverFacilitiesByOwnerId()"
+                >
+                  <span>{{ hfrOwnerSearchBusy ? 'Searching Registry…' : '🔍 Discover Facilities by My ID' }}</span>
+                </button>
+              </div>
+
+              <!-- Discovered Facilities List -->
+              <div v-if="hfrOwnerSearchResults.length" class="mt-4 pt-4 border-t border-slate-100 space-y-2">
+                <span class="text-xs font-bold uppercase text-slate-600">Discovered Facilities ({{ hfrOwnerSearchResults.length }})</span>
+                <div class="space-y-2 max-h-72 overflow-y-auto">
+                  <div
+                    v-for="cand in hfrOwnerSearchResults"
+                    :key="cand.fid || cand.mfl_code"
+                    class="rounded-xl border border-slate-200 p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 transition"
+                  >
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="font-bold text-xs text-slate-900">{{ cand.name }}</span>
+                        <span v-if="cand.already_linked" class="rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5">
+                          ✓ In Portfolio
+                        </span>
+                      </div>
+                      <span class="text-[11px] text-slate-500 block mt-0.5">
+                        MFL: {{ cand.mfl_code }} · {{ cand.level }} · {{ cand.county }} {{ cand.subcounty ? `/ ${cand.subcounty}` : '' }} · {{ cand.owner_type }}
+                      </span>
+                    </div>
+
+                    <button
+                      v-if="!cand.already_linked"
+                      type="button"
+                      class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-black transition shrink-0 disabled:opacity-50"
+                      :disabled="hfrLinkBusy"
+                      @click="linkHfrCandidate(cand)"
+                    >
+                      {{ hfrLinkBusy ? 'Linking…' : '+ Add to Portfolio' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Manual Search by MFL Code -->
+            <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
+              <h3 class="font-bold text-sm text-slate-900">Manual Facility Search (by MFL or Registration #)</h3>
               <p class="text-xs text-slate-600 leading-relaxed">
-                Tiberbu connects directly to the Digital Health Agency (DHA) national health facility registry (`https://uat.dha.go.ke`). Link new clinic branches to your organization using their registered Master Facility List (MFL) code.
+                If you have a clinic branch registered under a partner, trustee, or corporate registration number, search and link it directly via its 5-digit Master Facility List (MFL) code.
               </p>
 
               <div class="pt-2 flex items-center gap-3">
                 <button
                   type="button"
-                  class="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
+                  class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-800 shadow-2xs hover:bg-slate-50 transition"
                   @click="openAddFacilityModal()"
                 >
-                  <span>+ Search & Link New Clinic Branch</span>
+                  <span>+ Search by MFL Code or Registration #</span>
                 </button>
               </div>
             </div>
           </div>
 
           <!-- ============================================================== -->
-          <!-- VIEW F: NETWORK SUPPORT & CONTACTS                             -->
+          <!-- VIEW F: MY PROFILE & IDENTIFICATION                            -->
+          <!-- ============================================================== -->
+          <div v-if="activeView === 'profile'" class="space-y-6 max-w-4xl">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">My Profile & Identification</h1>
+                <p class="text-xs text-slate-600 mt-0.5">Manage your verified National ID, legal organization entity, and Health Facility Registry linkage.</p>
+              </div>
+              <button
+                type="button"
+                class="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition inline-flex items-center gap-1.5 self-start sm:self-auto"
+                @click="openEditProfileModal()"
+              >
+                <span>✏️ Edit Profile Details</span>
+              </button>
+            </div>
+
+            <!-- Profile Cards Grid -->
+            <div class="grid gap-6 md:grid-cols-2">
+              <!-- Card 1: National Identification -->
+              <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-4">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold uppercase tracking-wider text-slate-500">National Identification</span>
+                  <span
+                    class="rounded-full px-2.5 py-0.5 text-[10px] font-bold border"
+                    :class="userProfile.national_id ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                  >
+                    {{ userProfile.national_id ? 'Verified Key' : 'Action Required' }}
+                  </span>
+                </div>
+
+                <div class="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2">
+                  <div class="text-xs text-slate-500 font-medium">Kenyan National ID Number:</div>
+                  <div class="flex items-center justify-between">
+                    <span class="font-mono text-xl font-extrabold tracking-wider text-slate-900">
+                      {{ showUnmaskedId ? (userProfile.national_id || 'Not on file') : (userProfile.masked_national_id || 'Not on file') }}
+                    </span>
+                    <button
+                      type="button"
+                      class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 transition inline-flex items-center gap-1"
+                      @click="showUnmaskedId = !showUnmaskedId"
+                      :title="showUnmaskedId ? 'Mask National ID' : 'Reveal National ID'"
+                    >
+                      <span>{{ showUnmaskedId ? '🔒 Mask' : '👁️ Reveal' }}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <p class="text-xs text-slate-500 leading-relaxed">
+                  Your National ID is used to securely query the Digital Health Agency (DHA) Health Facility Registry and verify ownership of your clinical branches without manual MFL entry.
+                </p>
+
+                <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <button
+                    type="button"
+                    class="text-xs font-bold text-blue-600 hover:underline"
+                    @click="discoverFacilitiesByOwnerId(); activeView = 'hfr_sync'"
+                  >
+                    1-Click Registry Discovery →
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs font-semibold text-slate-600 hover:text-slate-900"
+                    @click="openEditProfileModal()"
+                  >
+                    Change ID Number
+                  </button>
+                </div>
+              </div>
+
+              <!-- Card 2: Legal Organization & Identity -->
+              <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-4">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Enterprise Entity</span>
+                  <span class="rounded-full bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-0.5 text-[10px] font-bold">
+                    Primary Account
+                  </span>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                  <div class="rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1">
+                    <span class="text-slate-500 font-medium block">Parent Legal Organization</span>
+                    <strong class="font-extrabold text-sm text-slate-900 block">{{ primaryOrganizationName }}</strong>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="rounded-xl bg-slate-50 border border-slate-100 p-2.5">
+                      <span class="text-slate-500 block text-[11px]">Primary Network</span>
+                      <strong class="text-slate-800 block truncate">{{ userProfile.primary_network || 'CareVerse Partner Network' }}</strong>
+                    </div>
+                    <div class="rounded-xl bg-slate-50 border border-slate-100 p-2.5">
+                      <span class="text-slate-500 block text-[11px]">Managed Clinics</span>
+                      <strong class="text-slate-800 block">{{ allFacilities.length }} facilities</strong>
+                    </div>
+                  </div>
+
+                  <div class="rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1">
+                    <span class="text-slate-500 font-medium block">Signatory / User</span>
+                    <strong class="text-slate-900 block">{{ userProfile.full_name || context.user }}</strong>
+                    <span class="text-slate-500 font-mono text-[11px] block">{{ userProfile.email }}</span>
+                    <span class="text-slate-600 font-mono text-[11px] block">Phone: {{ userProfile.mobile_no || 'Not set' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================================================== -->
+          <!-- VIEW G: NETWORK SUPPORT & CONTACTS                             -->
           <!-- ============================================================== -->
           <div v-if="activeView === 'support'" class="space-y-6 max-w-3xl">
             <div>
@@ -1622,16 +2065,32 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- MODAL 1: ADD FACILITY VIA KMHFR API -->
+    <!-- MODAL 1: ADD FACILITY VIA HEALTH FACILITY REGISTRY -->
     <Dialog
       v-model:open="addFacilityModalOpen"
-      :title="__('Add Facility via KMHFR Registry')"
+      :title="__('Add Facility via Health Facility Registry')"
       size="3xl"
     >
       <div class="p-1 space-y-5">
+        <!-- 1-Click National ID Discovery Banner if ID exists -->
+        <div v-if="userProfile.masked_national_id" class="rounded-xl bg-blue-50/70 border border-blue-200 p-3.5 flex items-center justify-between gap-3">
+          <div>
+            <span class="font-bold text-xs text-blue-900 block">Registered Owner ID: {{ userProfile.masked_national_id }}</span>
+            <span class="text-[11px] text-blue-700">Auto-discover clinic branches licensed under this National ID with 1 click.</span>
+          </div>
+          <button
+            type="button"
+            class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition shrink-0 disabled:opacity-50"
+            :disabled="hfrOwnerSearchBusy"
+            @click="discoverFacilitiesByOwnerId(); addFacilityModalOpen = false; activeView = 'hfr_sync'"
+          >
+            {{ hfrOwnerSearchBusy ? 'Searching…' : 'Discover by My ID →' }}
+          </button>
+        </div>
+
         <div>
           <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-            Search KMHFR by MFL Code or Registration Number
+            Search Health Facility Registry by MFL Code or Registration Number
           </label>
           <div class="flex gap-2">
             <select
@@ -1661,7 +2120,7 @@ onMounted(async () => {
 
         <!-- Search Results -->
         <div v-if="hfrSearchResults.length" class="space-y-2">
-          <span class="text-xs font-bold uppercase text-slate-600">Matching KMHFR Records ({{ hfrSearchResults.length }})</span>
+          <span class="text-xs font-bold uppercase text-slate-600">Matching Registry Records ({{ hfrSearchResults.length }})</span>
           <div class="space-y-2 max-h-60 overflow-y-auto">
             <div
               v-for="cand in hfrSearchResults"
@@ -1778,6 +2237,215 @@ onMounted(async () => {
           @select-package="(code) => (selectedTopUpPackageCode = code)"
           @apply-plan="onCalculatorApplyPlan"
         />
+      </div>
+    </Dialog>
+
+    <!-- MODAL 4: PAY VIA M-PESA PAYBILL -->
+    <Dialog
+      v-model:open="mpesaModalOpen"
+      :title="__('Pay via M-Pesa Paybill')"
+      size="2xl"
+    >
+      <div class="p-1 space-y-5">
+        <!-- Top M-Pesa Branding Header -->
+        <div class="rounded-2xl bg-emerald-700 text-white p-4 shadow-sm flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="size-10 rounded-xl bg-white text-emerald-800 flex items-center justify-center font-extrabold text-base shadow-xs">
+              M
+            </div>
+            <div>
+              <span class="font-extrabold text-sm tracking-tight block">Lipa na M-Pesa · Paybill</span>
+              <span class="text-xs text-emerald-100 block">Direct Instant Settlement with Zero Transaction Processing Surcharge</span>
+            </div>
+          </div>
+          <span class="rounded-full bg-emerald-800/80 border border-emerald-500/50 px-2.5 py-1 text-[11px] font-bold">
+            Official Paybill
+          </span>
+        </div>
+
+        <!-- 3 Copyable Cards Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <!-- 1. Paybill Number -->
+          <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Business No</span>
+            <div class="mt-1">
+              <span class="font-mono text-lg font-extrabold text-slate-900 block leading-tight">{{ paybillInfo.business_number }}</span>
+              <span class="text-[10px] text-slate-500 block truncate">{{ paybillInfo.business_name }}</span>
+            </div>
+            <button
+              type="button"
+              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
+              @click="copyText(paybillInfo.business_number, 'paybill_biz')"
+            >
+              <span>{{ copiedKey === 'paybill_biz' ? '✓ Copied' : '📋 Copy' }}</span>
+            </button>
+          </div>
+
+          <!-- 2. Account Number -->
+          <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Account No</span>
+            <div class="mt-1">
+              <span class="font-mono text-sm font-extrabold text-slate-900 block truncate leading-tight">{{ mpesaInvoice?.name }}</span>
+              <span class="text-[10px] text-slate-500 block">Invoice Reference</span>
+            </div>
+            <button
+              type="button"
+              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
+              @click="copyText(mpesaInvoice?.name, 'paybill_acc')"
+            >
+              <span>{{ copiedKey === 'paybill_acc' ? '✓ Copied' : '📋 Copy' }}</span>
+            </button>
+          </div>
+
+          <!-- 3. Exact Amount -->
+          <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Amount Due</span>
+            <div class="mt-1">
+              <span class="font-mono text-lg font-extrabold text-emerald-700 block leading-tight">{{ money(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount, mpesaInvoice?.currency) }}</span>
+              <span class="text-[10px] text-slate-500 block">KES Net Total</span>
+            </div>
+            <button
+              type="button"
+              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
+              @click="copyText(Math.round(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount || 0), 'paybill_amt')"
+            >
+              <span>{{ copiedKey === 'paybill_amt' ? '✓ Copied' : '📋 Copy' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step-by-step instructions -->
+        <div class="rounded-xl bg-slate-50 border border-slate-100 p-4 space-y-1.5 text-xs text-slate-600">
+          <strong class="text-slate-900 font-bold block mb-1">How to pay on your phone:</strong>
+          <p>1. Open SIM Toolkit or M-Pesa App &gt; <strong>Lipa na M-Pesa</strong> &gt; <strong>Paybill</strong></p>
+          <p>2. Enter Business Number <strong>{{ paybillInfo.business_number }}</strong> ({{ paybillInfo.business_name }})</p>
+          <p>3. Enter Account Number <strong>{{ mpesaInvoice?.name }}</strong></p>
+          <p>4. Enter Amount <strong>{{ money(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount, mpesaInvoice?.currency) }}</strong></p>
+          <p>5. Enter your M-Pesa PIN and confirm payment</p>
+        </div>
+
+        <!-- M-Pesa Transaction Input Form -->
+        <div class="space-y-3 pt-2 border-t border-slate-100">
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-800">
+            Submit M-Pesa Confirmation Code (from SMS)
+          </label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <input
+                type="text"
+                v-model="mpesaCodeInput"
+                placeholder="e.g. SB65A1TU7X"
+                maxlength="15"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-mono font-extrabold uppercase tracking-wider text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10 placeholder:text-slate-400 placeholder:normal-case placeholder:font-sans"
+              />
+              <span class="text-[10px] text-slate-400 mt-1 block">10-character code from Safaricom SMS</span>
+            </div>
+            <div>
+              <input
+                type="tel"
+                v-model="mpesaPhoneInput"
+                placeholder="M-Pesa Phone (e.g. 0712 345 678)"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10"
+              />
+              <span class="text-[10px] text-slate-400 mt-1 block">Phone used for the M-Pesa transaction</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <button
+            type="button"
+            class="text-xs font-semibold text-slate-600 hover:text-blue-600 underline text-left"
+            @click="payInvoice(mpesaInvoice); mpesaModalOpen = false"
+          >
+            Or checkout using Credit/Debit Card via Paystack →
+          </button>
+          <div class="flex items-center gap-2 justify-end">
+            <button
+              type="button"
+              class="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              @click="mpesaModalOpen = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition"
+              :disabled="mpesaReportBusy || !mpesaCodeInput"
+              @click="submitMpesaPayment()"
+            >
+              {{ mpesaReportBusy ? 'Verifying Receipt…' : 'Confirm & Reconcile Payment →' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Dialog>
+
+    <!-- MODAL 5: EDIT PROFILE & NATIONAL ID -->
+    <Dialog
+      v-model:open="profileModalOpen"
+      :title="__('Edit Profile & National ID')"
+      size="xl"
+    >
+      <div class="p-1 space-y-4">
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+            Full Name
+          </label>
+          <input
+            type="text"
+            v-model="profileForm.full_name"
+            placeholder="e.g. Salim Mwaura"
+            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+            Kenyan National ID Number
+          </label>
+          <input
+            type="text"
+            v-model="profileForm.national_id"
+            placeholder="6 to 10 digit National ID"
+            maxlength="10"
+            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+          />
+          <p class="text-[11px] text-slate-500 mt-1">
+            Used to securely query and auto-discover facilities licensed under your ownership in the official Health Facility Registry.
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+            Mobile Number
+          </label>
+          <input
+            type="tel"
+            v-model="profileForm.mobile_no"
+            placeholder="e.g. 0712345678"
+            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            @click="profileModalOpen = false"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50 transition"
+            :disabled="profileSaving"
+            @click="saveUserProfile()"
+          >
+            {{ profileSaving ? 'Saving…' : 'Save Profile Details' }}
+          </button>
+        </div>
       </div>
     </Dialog>
   </div>

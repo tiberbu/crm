@@ -776,10 +776,13 @@ def _customer_invoices(customer: str) -> list[dict]:
 		["outstanding_amount", ">", 0],
 		["customer", "=", customer],
 	]
+	fields = ["name", "posting_date", "due_date", "outstanding_amount", "grand_total", "currency"]
+	if frappe.db.has_column("Sales Invoice", "crm_token_facility_mfl"):
+		fields.append("crm_token_facility_mfl")
 	rows = frappe.get_list(
 		"Sales Invoice",
 		filters=filters,
-		fields=["name", "posting_date", "due_date", "outstanding_amount", "grand_total", "currency"],
+		fields=fields,
 		order_by="due_date asc, posting_date asc",
 		limit_page_length=200,
 		ignore_permissions=True,
@@ -795,6 +798,7 @@ def _customer_invoices(customer: str) -> list[dict]:
 			"currency": row.currency or "KES",
 			"status": "Outstanding",
 			"customer": customer,
+			"crm_token_facility_mfl": cstr(row.get("crm_token_facility_mfl") or ""),
 		}
 		for row in rows
 		if frappe.utils.flt(row.outstanding_amount) > 0
@@ -916,6 +920,11 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 		if not cust_deals:
 			continue
 		primary_deal = cust_deals[0]
+		customer_doc = frappe.db.get_value("Customer", customer, ["customer_name", "customer_type"], as_dict=True) or {}
+		customer_legal_name = cstr(customer_doc.get("customer_name") or customer)
+		open_orders = _customer_orders(customer)
+		open_invoices = _customer_invoices(customer)
+
 		rows = []
 		for membership in memberships:
 			if membership.get("customer") != customer:
@@ -926,11 +935,36 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			mfl_key = cstr(facility.get("mfl_code")).strip().casefold()
 			package = package_by_mfl.get(mfl_key, {})
 			fac_deal = deal_by_mfl.get(mfl_key, primary_deal.get("name"))
+
+			# Match recent purchase for this facility
+			latest_order = None
+			for order in open_orders:
+				if cstr(order.get("crm_token_facility_mfl")).strip().casefold() == mfl_key:
+					latest_order = order
+					break
+			if not latest_order and mfl_key:
+				past_orders = frappe.get_all(
+					"Sales Order",
+					filters={"customer": customer, "crm_token_facility_mfl": facility.get("mfl_code"), "docstatus": 1},
+					fields=["name", "transaction_date", "grand_total", "currency", "crm_token_package_item"],
+					order_by="creation desc",
+					limit=1,
+					ignore_permissions=True,
+				)
+				if past_orders:
+					latest_order = past_orders[0]
+
+			# Match open invoices for this facility
+			fac_invoices = [
+				inv for inv in open_invoices
+				if cstr(inv.get("crm_token_facility_mfl")).strip().casefold() == mfl_key
+			]
+
 			rows.append({
 				"facility_name": cstr(facility.get("facility_name") or "Facility"),
 				"mfl_code": cstr(facility.get("mfl_code") or ""),
 				"keph_level": cstr(facility.get("keph_level") or ""),
-				"network": membership.get("network"),
+				"network": membership.get("network") or primary_deal.get("optin_network") or "CareVerse Partner Network",
 				"membership_status": cstr(membership.get("status") or "Active"),
 				"go_live": bool(frappe.utils.cint(membership.get("go_live"))),
 				"deal": fac_deal,
@@ -944,19 +978,42 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				"package_vat": package.get("cx_token_package_vat"),
 				"package_gross_total": package.get("cx_token_package_gross_total"),
 				"package_currency": cstr(package.get("cx_token_package_currency") or ""),
+				"recent_purchase": {
+					"order_id": latest_order.get("name"),
+					"date": str(latest_order.get("transaction_date") or ""),
+					"package_name": item_names.get(cstr(latest_order.get("crm_token_package_item")), cstr(latest_order.get("crm_token_package_item") or "")),
+					"amount": float(latest_order.get("grand_total") or 0),
+					"currency": latest_order.get("currency") or "KES",
+				} if latest_order else None,
+				"invoice_summary": {
+					"has_outstanding": bool(fac_invoices),
+					"outstanding_amount": sum(float(inv.get("amount") or 0) for inv in fac_invoices),
+					"currency": fac_invoices[0].get("currency") if fac_invoices else "KES",
+					"invoice_name": fac_invoices[0].get("name") if fac_invoices else None,
+					"count": len(fac_invoices),
+				},
 			})
+
+		# Ensure organization resolves to customer legal entity name
+		org_name = customer_legal_name
+		deal_org = cstr(primary_deal.get("organization") or "")
+		if deal_org and deal_org != org_name:
+			child_facility_names = {r["facility_name"].casefold() for r in rows}
+			if deal_org.casefold() not in child_facility_names:
+				org_name = deal_org
+
 		accounts.append({
 			"customer": customer,
 			"deal": primary_deal.get("name"),
 			"deals": [d.get("name") for d in cust_deals if d.get("name")],
-			"organization": cstr(primary_deal.get("organization") or customer),
-			"network": primary_deal.get("optin_network"),
+			"organization": org_name,
+			"network": primary_deal.get("optin_network") or "CareVerse Partner Network",
 			"source": primary_deal.get("cx_onboarding_source"),
 			# Retain this only as a legacy fallback; new enrollments show packages per facility.
 			"selected_package": primary_deal.get("cx_onboarding_package_item"),
 			"facilities": rows,
-			"open_orders": _customer_orders(customer),
-			"open_invoices": _customer_invoices(customer),
+			"open_orders": open_orders,
+			"open_invoices": open_invoices,
 		})
 	return accounts
 
@@ -1013,5 +1070,9 @@ def get_portal_context():
 			"customer_accounts": customer_accounts,
 			"token_packages": _portal_token_catalog(),
 			"calculator_config": calculator_config,
+			"paybill_info": {
+				"business_number": "4130669",
+				"business_name": "Tiberbu Healthnet",
+			},
 		},
 	}
