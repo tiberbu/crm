@@ -263,6 +263,8 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key):
 	}
 	if quotation_name:
 		quotation = frappe.get_doc("Quotation", quotation_name)
+		if quotation.docstatus == 0:
+			quotation.submit()
 	else:
 		price_list = package.get("price_list")
 		if not price_list or not frappe.db.exists("Price List", price_list):
@@ -290,6 +292,7 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key):
 		_restore_rate(quotation, price)
 		apply_quotation_taxes(quotation)
 		quotation.insert(ignore_mandatory=True, ignore_permissions=True)
+		quotation.submit()
 		quotation_name = quotation.name
 		_record_link("Quotation", quotation_name)
 
@@ -304,7 +307,7 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key):
 			setattr(sales_order, fieldname, value)
 	sales_order.set_missing_values()
 	_restore_rate(sales_order, price)
-	_apply_order_tax_template(sales_order)
+	_apply_order_tax_template(sales_order, quotation)
 	sales_order.insert(ignore_mandatory=True, ignore_permissions=True)
 	sales_order.submit()
 	_record_link("Sales Order", sales_order.name)

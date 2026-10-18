@@ -684,7 +684,7 @@ def get_portal_route(user: str | None = None) -> str | None:
 	return PORTAL_ROUTE
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist(methods=["GET", "POST"])
 def get_current_user_portal_route() -> str | None:
 	"""Expose the CX destination for an active authenticated user."""
 	return get_portal_route()
@@ -794,6 +794,7 @@ def _customer_invoices(customer: str) -> list[dict]:
 			"grand_total": float(row.grand_total or 0),
 			"currency": row.currency or "KES",
 			"status": "Outstanding",
+			"customer": customer,
 		}
 		for row in rows
 		if frappe.utils.flt(row.outstanding_amount) > 0
@@ -823,6 +824,7 @@ def _customer_orders(customer: str) -> list[dict]:
 		ignore_permissions=True,
 	)
 	for order in orders:
+		order["customer"] = customer
 		order["can_create_invoice"] = cstr(order.get("status") or "").strip().casefold() not in {"closed", "on hold", "cancelled"}
 	return orders
 
@@ -932,6 +934,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				"membership_status": cstr(membership.get("status") or "Active"),
 				"go_live": bool(frappe.utils.cint(membership.get("go_live"))),
 				"deal": fac_deal,
+				"customer": customer,
 				"token_package": item_names.get(
 					cstr(package.get("cx_token_package_item")),
 					cstr(package.get("cx_token_package_item") or ""),
@@ -958,7 +961,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 	return accounts
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist(methods=["GET", "POST"])
 def get_portal_context():
 	"""Return legacy OIS and Customer enrollment scoped to the authenticated user."""
 	ois_numbers = require_portal_user()
