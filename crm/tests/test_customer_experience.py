@@ -243,5 +243,63 @@ class TestTokenPurchaseChain(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			cx.report_mpesa_payment("NON-EXISTENT-INV", "123")
 
+	def test_user_permission_lead_and_deal_resolution(self):
+		from crm.api.website_redirect import (
+			_customer_portal_accounts,
+			get_user_customer_names,
+			get_user_deal_names,
+			get_user_lead_names,
+		)
+
+		test_user = "cx-test-desk@example.com"
+		_website_user(test_user)
+
+		frappe.set_user("Administrator")
+		# Grant User Permission for a Deal
+		deal = frappe.get_doc({
+			"doctype": "CRM Deal",
+			"organization": "Kiambu Level 4 Demonstration Hospital",
+			"optin_network": "chak-cbsl",
+			"facilities": [
+				{
+					"facility_name": "Desk Demo Clinic",
+					"mfl_code": "88776",
+					"facility_level": "Level 3",
+				}
+			],
+		}).insert(ignore_permissions=True, ignore_links=True)
+
+		perm = frappe.get_doc({
+			"doctype": "User Permission",
+			"user": test_user,
+			"allow": "CRM Deal",
+			"for_value": deal.name,
+			"apply_to_all_doctypes": 1,
+		}).insert(ignore_permissions=True)
+
+		# Verify deal names resolved
+		deals = get_user_deal_names(test_user)
+		self.assertIn(deal.name, deals)
+
+		# Verify customer portal accounts projects the deal and its facilities
+		accounts = _customer_portal_accounts(test_user)
+		self.assertTrue(len(accounts) >= 1)
+		acc = accounts[0]
+		self.assertEqual(acc["organization"], "Kiambu Level 4 Demonstration Hospital")
+		self.assertEqual(len(acc["facilities"]), 1)
+		self.assertEqual(acc["facilities"][0]["facility_name"], "Desk Demo Clinic")
+		self.assertEqual(acc["facilities"][0]["mfl_code"], "88776")
+
+	def test_customer_payments_projection(self):
+		from crm.api.website_redirect import _customer_payments
+
+		frappe.set_user("Administrator")
+		cust = "Test Payment Cust"
+		if not frappe.db.exists("Customer", cust):
+			frappe.get_doc({"doctype": "Customer", "customer_name": cust}).insert(ignore_permissions=True)
+
+		payments = _customer_payments("ZUHRI MEDICARE LIMITED")
+		self.assertIsInstance(payments, list)
+
 
 

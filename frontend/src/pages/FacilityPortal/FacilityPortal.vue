@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { call, Dialog } from 'frappe-ui'
 import TokenCalculator from '@/components/TokenCalculator.vue'
 import {
@@ -33,6 +33,7 @@ const loading = ref(true)
 const errorMessage = ref('')
 const context = ref({
   user: '',
+  user_info: {},
   ois: [],
   customer_accounts: [],
   token_packages: [],
@@ -44,6 +45,19 @@ const activeView = ref('facilities')
 
 // Sidebar collapsed state for responsive layout
 const sidebarCollapsed = ref(false)
+
+// Top Right User Avatar Dropdown
+const isUserMenuOpen = ref(false)
+const userMenuRef = ref(null)
+
+const toggleUserMenu = () => {
+  isUserMenuOpen.value = !isUserMenuOpen.value
+}
+
+const navigateTo = (view) => {
+  activeView.value = view
+  isUserMenuOpen.value = false
+}
 
 // User Profile & National ID state
 const userProfile = ref({
@@ -71,10 +85,12 @@ const profileSaving = ref(false)
 const hfrOwnerSearchBusy = ref(false)
 const hfrOwnerSearchResults = ref([])
 
-// Search & Filter state for Facilities Data Table
+// Search, Filter & Grouping state for Facilities Data Table
 const searchQuery = ref('')
 const selectedStatusFilter = ref('all') // 'all' | 'live' | 'verifying'
 const selectedLevelFilter = ref('all') // 'all' | 'Level 2' | 'Level 3' | 'Level 4'
+const selectedNetworkFilter = ref('all') // 'all' | network names
+const groupByNetwork = ref(false) // Toggle to group facilities by network/partner
 const selectedFacilityMfls = ref([]) // For table row checkbox selections
 const facilityViewMode = ref('table') // 'table' | 'cards'
 
@@ -197,7 +213,16 @@ const allFacilities = computed(() => {
   return list
 })
 
-// Filtered facilities for data table
+// Available Networks from all registered facilities
+const availableNetworks = computed(() => {
+  const set = new Set()
+  for (const fac of allFacilities.value) {
+    if (fac.network) set.add(fac.network)
+  }
+  return Array.from(set).sort()
+})
+
+// Filtered facilities for data table and card view
 const filteredFacilities = computed(() => {
   return allFacilities.value.filter((fac) => {
     // Search query matching
@@ -206,7 +231,8 @@ const filteredFacilities = computed(() => {
       const matchName = fac.facility_name.toLowerCase().includes(q)
       const matchMfl = fac.mfl_code.toLowerCase().includes(q)
       const matchLevel = fac.keph_level.toLowerCase().includes(q)
-      if (!matchName && !matchMfl && !matchLevel) return false
+      const matchNetwork = (fac.network || '').toLowerCase().includes(q)
+      if (!matchName && !matchMfl && !matchLevel && !matchNetwork) return false
     }
 
     // Status filter
@@ -220,9 +246,63 @@ const filteredFacilities = computed(() => {
       }
     }
 
+    // Network / Partner filter
+    if (selectedNetworkFilter.value !== 'all') {
+      if (fac.network !== selectedNetworkFilter.value) {
+        return false
+      }
+    }
+
     return true
   })
 })
+
+// Facilities grouped by partner network
+const facilitiesByNetwork = computed(() => {
+  const map = new Map()
+  for (const fac of filteredFacilities.value) {
+    const net = fac.network || 'CareVerse Partner Network'
+    if (!map.has(net)) {
+      map.set(net, [])
+    }
+    map.get(net).push(fac)
+  }
+  const result = []
+  for (const [network, facilities] of map.entries()) {
+    result.push({
+      network,
+      facilities,
+      count: facilities.length,
+    })
+  }
+  return result
+})
+
+// User Display Identity for top right avatar
+const userDisplayName = computed(() => {
+  return (
+    userProfile.value.full_name ||
+    context.value.user_info?.full_name ||
+    context.value.user ||
+    'Provider'
+  )
+})
+
+const userInitials = computed(() => {
+  const name = userDisplayName.value.trim()
+  if (!name) return 'U'
+  const parts = name.split(/\s+/)
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return (parts[0][0] + parts[1][0]).toUpperCase()
+  }
+  return name.slice(0, 2).toUpperCase()
+})
+
+const handleDocumentClick = (e) => {
+  if (userMenuRef.value && !userMenuRef.value.contains(e.target)) {
+    isUserMenuOpen.value = false
+  }
+}
 
 // Unified Orders
 const allOrders = computed(() => {
@@ -270,6 +350,22 @@ const allInvoices = computed(() => {
         source_type: 'ois',
         ois_name: submission.name,
         organization: submission.facility_signatory_name || submission.name,
+      })
+    }
+  }
+  return list
+})
+
+// Unified Payments
+const allPayments = computed(() => {
+  const list = []
+  for (const account of context.value.customer_accounts || []) {
+    for (const payment of account.payments || []) {
+      list.push({
+        ...payment,
+        source_type: 'customer',
+        customer: payment.customer || account.customer,
+        organization: account.organization || account.customer,
       })
     }
   }
@@ -897,6 +993,9 @@ async function verifyReturnedPayment() {
 }
 
 onMounted(async () => {
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', handleDocumentClick)
+  }
   try {
     await refreshContext()
     await loadUserProfile()
@@ -905,6 +1004,12 @@ onMounted(async () => {
     errorMessage.value = error?.messages?.[0] || 'Failed to load portal.'
   } finally {
     loading.value = false
+  }
+})
+
+onUnmounted(() => {
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('click', handleDocumentClick)
   }
 })
 </script>
@@ -1100,34 +1205,6 @@ onMounted(async () => {
             <span v-if="!sidebarCollapsed" class="truncate">Network Support</span>
           </button>
         </nav>
-
-        <!-- Sidebar Footer: Organization Identity -->
-        <div class="p-3 border-t border-slate-200" v-if="!sidebarCollapsed">
-          <div
-            class="rounded-xl bg-slate-50 border border-slate-100 p-2.5 flex items-center justify-between cursor-pointer hover:bg-slate-100/80 transition"
-            @click="activeView = 'profile'"
-            title="View Profile & Identification"
-          >
-            <div class="truncate mr-2">
-              <span class="text-xs font-bold text-slate-900 block truncate">
-                {{ primaryOrganizationName }}
-              </span>
-              <span class="text-[10px] text-slate-600 block truncate font-mono">
-                {{ userProfile.masked_national_id ? `ID: ${userProfile.masked_national_id}` : context.user }}
-              </span>
-            </div>
-            <a
-              href="/api/method/logout"
-              title="Sign Out"
-              class="text-slate-600 hover:text-rose-600 p-1.5 rounded hover:bg-white transition"
-              @click.stop
-            >
-              <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-            </a>
-          </div>
-        </div>
       </aside>
 
       <!-- 2. MAIN APPLICATION CONTENT -->
@@ -1160,7 +1237,7 @@ onMounted(async () => {
 
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
+              class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
               @click="openAddFacilityModal()"
             >
               <span class="text-sm leading-none">+</span>
@@ -1169,12 +1246,125 @@ onMounted(async () => {
 
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-xl bg-[#bc1823] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#a3141d] transition"
+              class="inline-flex items-center gap-1.5 rounded-xl bg-[#bc1823] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#a3141d] transition cursor-pointer"
               @click="openTopUpModal()"
             >
               <span>🪙</span>
               <span>Top Up</span>
             </button>
+
+            <!-- Vertical Divider -->
+            <div class="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+
+            <!-- Top-Right User Avatar & Dropdown Menu -->
+            <div class="relative" ref="userMenuRef">
+              <button
+                type="button"
+                class="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-100 transition focus:outline-none select-none cursor-pointer border border-transparent hover:border-slate-200"
+                @click.stop="toggleUserMenu"
+                aria-expanded="isUserMenuOpen"
+                title="Account & Navigation Menu"
+              >
+                <div class="size-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0 ring-2 ring-blue-100">
+                  {{ userInitials }}
+                </div>
+                <div class="hidden lg:block text-left mr-0.5">
+                  <span class="text-xs font-bold text-slate-800 block leading-tight truncate max-w-[130px]">
+                    {{ userDisplayName }}
+                  </span>
+                  <span class="text-[10px] text-slate-500 block leading-tight truncate max-w-[130px]">
+                    {{ primaryOrganizationName }}
+                  </span>
+                </div>
+                <svg
+                  class="size-4 text-slate-400 transition-transform duration-200"
+                  :class="isUserMenuOpen ? 'rotate-180' : ''"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              <!-- Floating User Menu -->
+              <div
+                v-if="isUserMenuOpen"
+                class="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white shadow-xl border border-slate-200 p-2 z-50 text-xs animate-in fade-in slide-in-from-top-1 duration-150"
+              >
+                <!-- User Header Info -->
+                <div class="px-3 py-2.5 bg-slate-50 rounded-xl mb-1.5 border border-slate-100">
+                  <span class="font-extrabold text-slate-900 block truncate">{{ userDisplayName }}</span>
+                  <span class="text-[11px] text-slate-500 block truncate font-mono">{{ context.user }}</span>
+                  <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <span class="rounded bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5">
+                      {{ primaryOrganizationName || 'Health System' }}
+                    </span>
+                    <span v-if="userProfile.masked_national_id" class="rounded bg-slate-200/80 text-slate-700 text-[10px] font-mono px-1.5 py-0.5">
+                      {{ userProfile.masked_national_id }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Navigation Links -->
+                <div class="space-y-0.5">
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
+                    @click="navigateTo('profile')"
+                  >
+                    <span>👤</span>
+                    <span>My Profile & National ID</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
+                    @click="navigateTo('facilities')"
+                  >
+                    <span>🏥</span>
+                    <span>My Facilities ({{ facilityCount }})</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
+                    @click="navigateTo('billing')"
+                  >
+                    <span>💳</span>
+                    <span>Invoices & Payments</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
+                    @click="navigateTo('hfr_sync')"
+                  >
+                    <span>🔄</span>
+                    <span>Facility Registry Sync</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
+                    @click="navigateTo('support')"
+                  >
+                    <span>💬</span>
+                    <span>Network Support</span>
+                  </button>
+                </div>
+
+                <div class="border-t border-slate-100 my-1.5"></div>
+
+                <!-- Logout Link -->
+                <a
+                  href="/api/method/logout"
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 font-semibold transition text-left cursor-pointer"
+                >
+                  <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  <span>Sign Out</span>
+                </a>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -1251,13 +1441,38 @@ onMounted(async () => {
                   <option value="Level 3">Level 3 Health Centre</option>
                   <option value="Level 4">Level 4 Hospital</option>
                 </select>
+
+                <!-- Partner / Network Filter -->
+                <select
+                  v-model="selectedNetworkFilter"
+                  class="rounded-xl bg-white border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:border-blue-500"
+                >
+                  <option value="all">All Networks / Partners</option>
+                  <option v-for="net in availableNetworks" :key="net" :value="net">
+                    {{ net }}
+                  </option>
+                </select>
               </div>
 
-              <!-- View Switcher -->
-              <div class="flex items-center gap-1.5">
+              <!-- View Switcher & Network Grouping -->
+              <div class="flex items-center gap-2">
+                <!-- Group By Network Button -->
                 <button
                   type="button"
-                  class="rounded-lg border p-1.5 text-xs"
+                  class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition shadow-2xs cursor-pointer select-none"
+                  :class="groupByNetwork ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'"
+                  @click="groupByNetwork = !groupByNetwork"
+                  title="Group facilities by partner network"
+                >
+                  <span>🌐</span>
+                  <span>{{ groupByNetwork ? 'Grouped by Network' : 'Group by Network' }}</span>
+                </button>
+
+                <div class="h-4 w-px bg-slate-200"></div>
+
+                <button
+                  type="button"
+                  class="rounded-lg border p-1.5 text-xs cursor-pointer"
                   :class="facilityViewMode === 'table' ? 'bg-slate-100 border-slate-300 text-slate-900 font-bold' : 'bg-white border-slate-200 text-slate-500'"
                   @click="facilityViewMode = 'table'"
                   title="Table view"
@@ -1273,7 +1488,7 @@ onMounted(async () => {
                 </button>
                 <button
                   type="button"
-                  class="rounded-lg border p-1.5 text-xs"
+                  class="rounded-lg border p-1.5 text-xs cursor-pointer"
                   :class="facilityViewMode === 'cards' ? 'bg-slate-100 border-slate-300 text-slate-900 font-bold' : 'bg-white border-slate-200 text-slate-500'"
                   @click="facilityViewMode = 'cards'"
                   title="Card view"
@@ -1289,219 +1504,455 @@ onMounted(async () => {
             </div>
 
             <!-- TABLE VIEW -->
-            <div v-if="facilityViewMode === 'table'" class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-              <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                      <th class="py-3 px-4 w-10">
-                        <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-0" />
-                      </th>
-                      <th class="py-3 px-4">Facility & Network</th>
-                      <th class="py-3 px-4">KEPH Level</th>
-                      <th class="py-3 px-4">MFL Code</th>
-                      <th class="py-3 px-4">Registry Status</th>
-                      <th class="py-3 px-4">Plan & Recent Purchase</th>
-                      <th class="py-3 px-4 text-right">Care Tokens</th>
-                      <th class="py-3 px-4 text-right">Settlement & Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-100">
-                    <tr
-                      v-for="facility in filteredFacilities"
-                      :key="facility.mfl_code"
-                      class="hover:bg-slate-50/80 transition"
-                    >
-                      <!-- Checkbox -->
-                      <td class="py-3.5 px-4">
-                        <input
-                          type="checkbox"
-                          :value="facility.mfl_code"
-                          v-model="selectedFacilityMfls"
-                          class="rounded border-slate-300 text-blue-600 focus:ring-0"
-                        />
-                      </td>
+            <div v-if="facilityViewMode === 'table'" class="space-y-4">
+              <!-- Render Grouped by Network when toggle active -->
+              <template v-if="groupByNetwork">
+                <div
+                  v-for="group in facilitiesByNetwork"
+                  :key="group.network"
+                  class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden space-y-0"
+                >
+                  <!-- Group Header Banner -->
+                  <div class="px-5 py-3 bg-gradient-to-r from-slate-50 to-slate-100/70 border-b border-slate-200 flex items-center justify-between">
+                    <div class="flex items-center gap-2.5">
+                      <div class="size-6 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                        🌐
+                      </div>
+                      <span class="font-extrabold text-xs text-slate-900 uppercase tracking-wide">
+                        {{ group.network }}
+                      </span>
+                      <span class="rounded-full bg-white border border-slate-200 text-slate-700 px-2 py-0.5 text-[10px] font-bold">
+                        {{ group.facilities.length }} {{ group.facilities.length === 1 ? 'branch' : 'branches' }}
+                      </span>
+                    </div>
+                  </div>
 
-                      <!-- Name & Location & Network -->
-                      <td class="py-3.5 px-4 font-semibold text-slate-900">
-                        <div class="flex items-center gap-3">
-                          <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-100">
-                            🏥
-                          </div>
-                          <div>
-                            <span class="font-bold text-slate-900 block">{{ facility.facility_name }}</span>
-                            <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-0.5 border border-slate-200/60">
-                              <span>🌐</span>
-                              <span>{{ facility.network }}</span>
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                          <th class="py-3 px-4 w-10">
+                            <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-0" />
+                          </th>
+                          <th class="py-3 px-4">Facility Name</th>
+                          <th class="py-3 px-4">KEPH Level</th>
+                          <th class="py-3 px-4">MFL Code</th>
+                          <th class="py-3 px-4">Registry Status</th>
+                          <th class="py-3 px-4">Plan & Recent Purchase</th>
+                          <th class="py-3 px-4 text-right">Care Tokens</th>
+                          <th class="py-3 px-4 text-right">Settlement & Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        <tr
+                          v-for="facility in group.facilities"
+                          :key="facility.mfl_code"
+                          class="hover:bg-slate-50/80 transition"
+                        >
+                          <td class="py-3.5 px-4">
+                            <input
+                              type="checkbox"
+                              :value="facility.mfl_code"
+                              v-model="selectedFacilityMfls"
+                              class="rounded border-slate-300 text-blue-600 focus:ring-0"
+                            />
+                          </td>
+                          <td class="py-3.5 px-4 font-semibold text-slate-900">
+                            <div class="flex items-center gap-3">
+                              <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-100">
+                                🏥
+                              </div>
+                              <div>
+                                <span class="font-bold text-slate-900 block">{{ facility.facility_name }}</span>
+                                <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-0.5 border border-slate-200/60">
+                                  <span>🌐</span>
+                                  <span>{{ facility.network }}</span>
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td class="py-3.5 px-4">
+                            <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 border border-slate-200">
+                              {{ facility.keph_level }}
                             </span>
+                          </td>
+                          <td class="py-3.5 px-4">
+                            <button
+                              type="button"
+                              class="font-mono text-xs font-semibold text-slate-700 hover:text-blue-600 inline-flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 cursor-pointer"
+                              @click="copyMfl(facility.mfl_code)"
+                            >
+                              <span>{{ facility.mfl_code }}</span>
+                              <span class="text-[10px] text-slate-600">{{ copiedMfl === facility.mfl_code ? '✓' : '📋' }}</span>
+                            </button>
+                          </td>
+                          <td class="py-3.5 px-4">
+                            <span
+                              class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold border"
+                              :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                            >
+                              <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-emerald-600' : 'bg-amber-600'"></span>
+                              <span>{{ facility.go_live ? 'Live' : 'Verifying' }}</span>
+                            </span>
+                          </td>
+                          <td class="py-3.5 px-4 font-medium text-slate-700">
+                            <span class="font-bold text-slate-900 block">{{ facility.token_package || 'No active plan' }}</span>
+                            <span v-if="facility.recent_purchase" class="text-[11px] text-slate-500 font-mono block mt-0.5">
+                              {{ facility.recent_purchase.package_name }}: {{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} · {{ facility.recent_purchase.date }}
+                            </span>
+                          </td>
+                          <td class="py-3.5 px-4 text-right">
+                            <span class="font-extrabold text-[#bc1823] font-mono text-sm inline-flex items-center gap-1">
+                              <span>🪙</span>
+                              <span>{{ (facility.token_quantity || 0).toLocaleString() }}</span>
+                            </span>
+                          </td>
+                          <td class="py-3.5 px-4 text-right">
+                            <div class="flex items-center justify-end gap-1.5 flex-wrap">
+                              <button
+                                v-if="facility.invoice_summary?.has_outstanding"
+                                type="button"
+                                class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                                @click="openMpesaModalForFacility(facility)"
+                                title="Pay outstanding invoice via M-Pesa"
+                              >
+                                <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
+                              </button>
+                              <button
+                                type="button"
+                                class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-bold text-white hover:bg-black transition shadow-xs cursor-pointer"
+                                @click="openTopUpModal(facility)"
+                              >
+                                Top Up
+                              </button>
+                              <button
+                                type="button"
+                                class="rounded-lg border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                                title="Sizing Calculator"
+                                @click="openCalculatorModal(facility)"
+                              >
+                                🧮
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Render Flat Table when not grouped -->
+              <div v-else class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        <th class="py-3 px-4 w-10">
+                          <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-0" />
+                        </th>
+                        <th class="py-3 px-4">Facility & Network</th>
+                        <th class="py-3 px-4">KEPH Level</th>
+                        <th class="py-3 px-4">MFL Code</th>
+                        <th class="py-3 px-4">Registry Status</th>
+                        <th class="py-3 px-4">Plan & Recent Purchase</th>
+                        <th class="py-3 px-4 text-right">Care Tokens</th>
+                        <th class="py-3 px-4 text-right">Settlement & Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      <tr
+                        v-for="facility in filteredFacilities"
+                        :key="facility.mfl_code"
+                        class="hover:bg-slate-50/80 transition"
+                      >
+                        <!-- Checkbox -->
+                        <td class="py-3.5 px-4">
+                          <input
+                            type="checkbox"
+                            :value="facility.mfl_code"
+                            v-model="selectedFacilityMfls"
+                            class="rounded border-slate-300 text-blue-600 focus:ring-0"
+                          />
+                        </td>
+
+                        <!-- Name & Location & Network -->
+                        <td class="py-3.5 px-4 font-semibold text-slate-900">
+                          <div class="flex items-center gap-3">
+                            <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-100">
+                              🏥
+                            </div>
+                            <div>
+                              <span class="font-bold text-slate-900 block">{{ facility.facility_name }}</span>
+                              <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-0.5 border border-slate-200/60">
+                                <span>🌐</span>
+                                <span>{{ facility.network }}</span>
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <!-- Level -->
-                      <td class="py-3.5 px-4">
-                        <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 border border-slate-200">
-                          {{ facility.keph_level }}
-                        </span>
-                      </td>
+                        <!-- Level -->
+                        <td class="py-3.5 px-4">
+                          <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 border border-slate-200">
+                            {{ facility.keph_level }}
+                          </span>
+                        </td>
 
-                      <!-- MFL Code -->
-                      <td class="py-3.5 px-4">
-                        <button
-                          type="button"
-                          class="font-mono text-xs font-semibold text-slate-700 hover:text-blue-600 inline-flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60"
-                          @click="copyMfl(facility.mfl_code)"
-                        >
-                          <span>{{ facility.mfl_code }}</span>
-                          <span class="text-[10px] text-slate-600">{{ copiedMfl === facility.mfl_code ? '✓' : '📋' }}</span>
-                        </button>
-                      </td>
-
-                      <!-- Status Badge -->
-                      <td class="py-3.5 px-4">
-                        <span
-                          class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold border"
-                          :class="
-                            facility.go_live
-                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                              : 'bg-amber-50 text-amber-800 border-amber-200'
-                          "
-                        >
-                          <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-emerald-600' : 'bg-amber-600'"></span>
-                          <span>{{ facility.go_live ? 'Live' : 'Verifying' }}</span>
-                        </span>
-                      </td>
-
-                      <!-- Plan & Recent Purchase -->
-                      <td class="py-3.5 px-4 font-medium text-slate-700">
-                        <span class="font-bold text-slate-900 block">{{ facility.token_package || 'No active plan' }}</span>
-                        <span v-if="facility.recent_purchase" class="text-[11px] text-slate-500 font-mono block mt-0.5">
-                          {{ facility.recent_purchase.package_name }}: {{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} · {{ facility.recent_purchase.date }}
-                        </span>
-                      </td>
-
-                      <!-- Tokens -->
-                      <td class="py-3.5 px-4 text-right">
-                        <span class="font-extrabold text-[#bc1823] font-mono text-sm inline-flex items-center gap-1">
-                          <span>🪙</span>
-                          <span>{{ (facility.token_quantity || 0).toLocaleString() }}</span>
-                        </span>
-                      </td>
-
-                      <!-- Actions & Direct M-Pesa Settlement -->
-                      <td class="py-3.5 px-4 text-right">
-                        <div class="flex items-center justify-end gap-1.5 flex-wrap">
-                          <button
-                            v-if="facility.invoice_summary?.has_outstanding"
-                            type="button"
-                            class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0"
-                            @click="openMpesaModalForFacility(facility)"
-                            title="Pay outstanding invoice via M-Pesa"
-                          >
-                            <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
-                          </button>
+                        <!-- MFL Code -->
+                        <td class="py-3.5 px-4">
                           <button
                             type="button"
-                            class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-bold text-white hover:bg-black transition shadow-xs"
-                            @click="openTopUpModal(facility)"
+                            class="font-mono text-xs font-semibold text-slate-700 hover:text-blue-600 inline-flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 cursor-pointer"
+                            @click="copyMfl(facility.mfl_code)"
                           >
-                            Top Up
+                            <span>{{ facility.mfl_code }}</span>
+                            <span class="text-[10px] text-slate-600">{{ copiedMfl === facility.mfl_code ? '✓' : '📋' }}</span>
                           </button>
-                          <button
-                            type="button"
-                            class="rounded-lg border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50"
-                            title="Sizing Calculator"
-                            @click="openCalculatorModal(facility)"
-                          >
-                            🧮
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                        </td>
 
-              <!-- Footer summary -->
-              <div class="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-medium">
-                <span>Showing {{ filteredFacilities.length }} of {{ allFacilities.length }} registered clinics</span>
-                <span>All records verified via Digital Health Agency (DHA) Health Facility Registry</span>
+                        <!-- Status Badge -->
+                        <td class="py-3.5 px-4">
+                          <span
+                            class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold border"
+                            :class="
+                              facility.go_live
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            "
+                          >
+                            <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-emerald-600' : 'bg-amber-600'"></span>
+                            <span>{{ facility.go_live ? 'Live' : 'Verifying' }}</span>
+                          </span>
+                        </td>
+
+                        <!-- Plan & Recent Purchase -->
+                        <td class="py-3.5 px-4 font-medium text-slate-700">
+                          <span class="font-bold text-slate-900 block">{{ facility.token_package || 'No active plan' }}</span>
+                          <span v-if="facility.recent_purchase" class="text-[11px] text-slate-500 font-mono block mt-0.5">
+                            {{ facility.recent_purchase.package_name }}: {{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} · {{ facility.recent_purchase.date }}
+                          </span>
+                        </td>
+
+                        <!-- Tokens -->
+                        <td class="py-3.5 px-4 text-right">
+                          <span class="font-extrabold text-[#bc1823] font-mono text-sm inline-flex items-center gap-1">
+                            <span>🪙</span>
+                            <span>{{ (facility.token_quantity || 0).toLocaleString() }}</span>
+                          </span>
+                        </td>
+
+                        <!-- Actions & Direct M-Pesa Settlement -->
+                        <td class="py-3.5 px-4 text-right">
+                          <div class="flex items-center justify-end gap-1.5 flex-wrap">
+                            <button
+                              v-if="facility.invoice_summary?.has_outstanding"
+                              type="button"
+                              class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                              @click="openMpesaModalForFacility(facility)"
+                              title="Pay outstanding invoice via M-Pesa"
+                            >
+                              <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
+                            </button>
+                            <button
+                              type="button"
+                              class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-bold text-white hover:bg-black transition shadow-xs cursor-pointer"
+                              @click="openTopUpModal(facility)"
+                            >
+                              Top Up
+                            </button>
+                            <button
+                              type="button"
+                              class="rounded-lg border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                              title="Sizing Calculator"
+                              @click="openCalculatorModal(facility)"
+                            >
+                              🧮
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Footer summary -->
+                <div class="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-medium">
+                  <span>Showing {{ filteredFacilities.length }} of {{ allFacilities.length }} registered clinics</span>
+                  <span>All records verified via Digital Health Agency (DHA) Health Facility Registry</span>
+                </div>
               </div>
             </div>
 
             <!-- CARDS VIEW (Optional toggle) -->
-            <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <article
-                v-for="facility in filteredFacilities"
-                :key="facility.mfl_code"
-                class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs flex flex-col justify-between hover:border-blue-400 transition"
-              >
-                <div>
-                  <div class="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 class="font-bold text-base text-slate-900">{{ facility.facility_name }}</h3>
-                      <p class="text-xs text-slate-500 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
-                      <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-1 border border-slate-200/60">
-                        <span>🌐</span>
-                        <span>{{ facility.network }}</span>
+            <div v-else class="space-y-6">
+              <!-- Render Grouped by Network when toggle active -->
+              <template v-if="groupByNetwork">
+                <div
+                  v-for="group in facilitiesByNetwork"
+                  :key="group.network"
+                  class="space-y-3"
+                >
+                  <div class="flex items-center justify-between bg-slate-100/90 rounded-xl px-4 py-2.5 border border-slate-200">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm">🌐</span>
+                      <span class="font-extrabold text-xs text-slate-900 uppercase tracking-wide">{{ group.network }}</span>
+                      <span class="rounded-full bg-white border border-slate-300 text-slate-700 px-2 py-0.5 text-[10px] font-bold">
+                        {{ group.facilities.length }} {{ group.facilities.length === 1 ? 'branch' : 'branches' }}
                       </span>
                     </div>
-                    <span
-                      class="rounded-full px-2 py-0.5 text-[10px] font-bold border shrink-0"
-                      :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
-                    >
-                      {{ facility.go_live ? 'Live' : 'Verifying' }}
-                    </span>
                   </div>
 
-                  <div class="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1.5 text-xs">
-                    <div class="flex justify-between text-slate-600">
-                      <span>Active Plan:</span>
-                      <strong class="text-slate-900">{{ facility.token_package || 'None' }}</strong>
-                    </div>
-                    <div v-if="facility.recent_purchase" class="flex justify-between text-slate-600 text-[11px]">
-                      <span>Recent Order:</span>
-                      <span class="font-mono text-slate-800">{{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} ({{ facility.recent_purchase.date }})</span>
-                    </div>
-                    <div class="flex justify-between text-slate-600">
-                      <span>Token Runway:</span>
-                      <strong class="text-[#bc1823]">🪙 {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
-                    </div>
-                    <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-slate-200/60">
-                      <span class="font-bold text-amber-800">Due Balance:</span>
-                      <strong class="font-bold text-amber-900">{{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }}</strong>
-                    </div>
-                  </div>
-                </div>
+                  <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <article
+                      v-for="facility in group.facilities"
+                      :key="facility.mfl_code"
+                      class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs flex flex-col justify-between hover:border-blue-400 transition"
+                    >
+                      <div>
+                        <div class="flex items-start justify-between gap-2">
+                          <div>
+                            <h3 class="font-bold text-base text-slate-900">{{ facility.facility_name }}</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
+                            <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-1 border border-slate-200/60">
+                              <span>🌐</span>
+                              <span>{{ facility.network }}</span>
+                            </span>
+                          </div>
+                          <span
+                            class="rounded-full px-2 py-0.5 text-[10px] font-bold border shrink-0"
+                            :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                          >
+                            {{ facility.go_live ? 'Live' : 'Verifying' }}
+                          </span>
+                        </div>
 
-                <div class="mt-4 pt-3 border-t border-slate-100 space-y-2">
-                  <button
-                    v-if="facility.invoice_summary?.has_outstanding"
-                    type="button"
-                    class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs"
-                    @click="openMpesaModalForFacility(facility)"
-                  >
-                    <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
-                  </button>
-                  <div class="flex items-center gap-2">
-                    <button
-                      type="button"
-                      class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-black transition"
-                      @click="openTopUpModal(facility)"
-                    >
-                      + Top Up Tokens
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50"
-                      @click="openCalculatorModal(facility)"
-                      title="Sizing Calculator"
-                    >
-                      🧮
-                    </button>
+                        <div class="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1.5 text-xs">
+                          <div class="flex justify-between text-slate-600">
+                            <span>Active Plan:</span>
+                            <strong class="text-slate-900">{{ facility.token_package || 'None' }}</strong>
+                          </div>
+                          <div v-if="facility.recent_purchase" class="flex justify-between text-slate-600 text-[11px]">
+                            <span>Recent Order:</span>
+                            <span class="font-mono text-slate-800">{{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} ({{ facility.recent_purchase.date }})</span>
+                          </div>
+                          <div class="flex justify-between text-slate-600">
+                            <span>Token Runway:</span>
+                            <strong class="text-[#bc1823]">🪙 {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
+                          </div>
+                          <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-slate-200/60">
+                            <span class="font-bold text-amber-800">Due Balance:</span>
+                            <strong class="font-bold text-amber-900">{{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="mt-4 pt-3 border-t border-slate-100 space-y-2">
+                        <button
+                          v-if="facility.invoice_summary?.has_outstanding"
+                          type="button"
+                          class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          @click="openMpesaModalForFacility(facility)"
+                        >
+                          <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
+                        </button>
+                        <div class="flex items-center gap-2">
+                          <button
+                            type="button"
+                            class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-black transition cursor-pointer"
+                            @click="openTopUpModal(facility)"
+                          >
+                            + Top Up Tokens
+                          </button>
+                          <button
+                            type="button"
+                            class="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                            @click="openCalculatorModal(facility)"
+                            title="Sizing Calculator"
+                          >
+                            🧮
+                          </button>
+                        </div>
+                      </div>
+                    </article>
                   </div>
                 </div>
-              </article>
+              </template>
+
+              <!-- Render Flat Cards when not grouped -->
+              <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <article
+                  v-for="facility in filteredFacilities"
+                  :key="facility.mfl_code"
+                  class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs flex flex-col justify-between hover:border-blue-400 transition"
+                >
+                  <div>
+                    <div class="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 class="font-bold text-base text-slate-900">{{ facility.facility_name }}</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
+                        <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-1 border border-slate-200/60">
+                          <span>🌐</span>
+                          <span>{{ facility.network }}</span>
+                        </span>
+                      </div>
+                      <span
+                        class="rounded-full px-2 py-0.5 text-[10px] font-bold border shrink-0"
+                        :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                      >
+                        {{ facility.go_live ? 'Live' : 'Verifying' }}
+                      </span>
+                    </div>
+
+                    <div class="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1.5 text-xs">
+                      <div class="flex justify-between text-slate-600">
+                        <span>Active Plan:</span>
+                        <strong class="text-slate-900">{{ facility.token_package || 'None' }}</strong>
+                      </div>
+                      <div v-if="facility.recent_purchase" class="flex justify-between text-slate-600 text-[11px]">
+                        <span>Recent Order:</span>
+                        <span class="font-mono text-slate-800">{{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} ({{ facility.recent_purchase.date }})</span>
+                      </div>
+                      <div class="flex justify-between text-slate-600">
+                        <span>Token Runway:</span>
+                        <strong class="text-[#bc1823]">🪙 {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
+                      </div>
+                      <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-slate-200/60">
+                        <span class="font-bold text-amber-800">Due Balance:</span>
+                        <strong class="font-bold text-amber-900">{{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 pt-3 border-t border-slate-100 space-y-2">
+                    <button
+                      v-if="facility.invoice_summary?.has_outstanding"
+                      type="button"
+                      class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      @click="openMpesaModalForFacility(facility)"
+                    >
+                      <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
+                    </button>
+                    <div class="flex items-center gap-2">
+                      <button
+                        type="button"
+                        class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-black transition cursor-pointer"
+                        @click="openTopUpModal(facility)"
+                      >
+                        + Top Up Tokens
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                        @click="openCalculatorModal(facility)"
+                        title="Sizing Calculator"
+                      >
+                        🧮
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              </div>
             </div>
           </div>
 
@@ -1830,13 +2281,63 @@ onMounted(async () => {
                     <button
                       v-if="order.can_create_invoice"
                       type="button"
-                      class="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-black transition"
+                      class="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-black transition cursor-pointer"
                       @click="createInvoice(order)"
                     >
                       Generate Invoice
                     </button>
                   </div>
                 </article>
+              </div>
+            </div>
+
+            <!-- Payment Receipts & History -->
+            <div v-if="allPayments.length" class="space-y-3 pt-6 border-t border-slate-200">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-sm font-bold uppercase tracking-wider text-slate-600">Payment Receipts & History</h2>
+                  <p class="text-xs text-slate-500 mt-0.5">Verified payment receipts, M-Pesa confirmations, and bank settlements.</p>
+                </div>
+                <span class="text-xs text-slate-600 font-semibold bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                  {{ allPayments.length }} {{ allPayments.length === 1 ? 'receipt' : 'receipts' }}
+                </span>
+              </div>
+
+              <div class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr class="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        <th class="py-3 px-4">Receipt #</th>
+                        <th class="py-3 px-4">Date</th>
+                        <th class="py-3 px-4">Mode & Reference</th>
+                        <th class="py-3 px-4 text-right">Amount</th>
+                        <th class="py-3 px-4 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      <tr v-for="pay in allPayments" :key="pay.name" class="hover:bg-slate-50/80 transition">
+                        <td class="py-3 px-4 font-mono font-bold text-slate-900">{{ pay.name }}</td>
+                        <td class="py-3 px-4 text-slate-600">{{ pay.posting_date }}</td>
+                        <td class="py-3 px-4">
+                          <span class="font-semibold text-slate-800">{{ pay.mode_of_payment }}</span>
+                          <span v-if="pay.reference_no" class="ml-2 font-mono text-[11px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                            {{ pay.reference_no }}
+                          </span>
+                        </td>
+                        <td class="py-3 px-4 text-right font-extrabold text-slate-900">{{ money(pay.amount, 'KES') }}</td>
+                        <td class="py-3 px-4 text-center">
+                          <span
+                            class="rounded-full px-2 py-0.5 text-[10px] font-bold border"
+                            :class="pay.status === 'Submitted' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                          >
+                            {{ pay.status }}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>

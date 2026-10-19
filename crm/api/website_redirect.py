@@ -632,8 +632,87 @@ def ensure_website_user_for_customer(customer, email=None, display_name=None):
 	return {"status": "sent" if created else "linked", "user": user_name}
 
 
+def get_user_lead_names(user: str | None = None) -> list[str]:
+	"""Resolve permitted CRM Leads for this user."""
+	user = user or frappe.session.user
+	if not user or user == "Guest":
+		return []
+	lead_names = set()
+	rows = frappe.get_all(
+		"User Permission",
+		filters={"user": user, "allow": ["in", ["CRM Lead", "Lead"]]},
+		fields=["for_value"],
+		limit_page_length=0,
+	)
+	for r in rows:
+		val = cstr(r.get("for_value") or "").strip()
+		if val and frappe.db.exists("CRM Lead", val):
+			lead_names.add(val)
+	return list(lead_names)
+
+
+def get_user_deal_names(user: str | None = None) -> list[str]:
+	"""Resolve permitted CRM Deals for this user."""
+	user = user or frappe.session.user
+	if not user or user == "Guest":
+		return []
+	deal_names = set()
+	# 1. Direct Deal permissions
+	deal_perms = frappe.get_all(
+		"User Permission",
+		filters={"user": user, "allow": ["in", ["CRM Deal", "Deal"]]},
+		fields=["for_value"],
+		limit_page_length=0,
+	)
+	for row in deal_perms:
+		d = cstr(row.get("for_value") or "").strip()
+		if d and frappe.db.exists("CRM Deal", d):
+			deal_names.add(d)
+
+	# 2. Deals linked to directly permitted Customers
+	cust_perms = frappe.get_all(
+		"User Permission",
+		filters={"user": user, "allow": "Customer"},
+		fields=["for_value"],
+		limit_page_length=0,
+	)
+	cust_names = [cstr(r.get("for_value") or "").strip() for r in cust_perms if r.get("for_value")]
+	if cust_names:
+		if frappe.db.has_column("CRM Deal", "cx_customer"):
+			deals = frappe.get_all(
+				"CRM Deal",
+				filters={"cx_customer": ["in", cust_names]},
+				fields=["name"],
+				limit_page_length=0,
+			)
+			deal_names.update(r["name"] for r in deals)
+		if frappe.db.has_column("CRM Deal", "erpnext_customer"):
+			deals = frappe.get_all(
+				"CRM Deal",
+				filters={"erpnext_customer": ["in", cust_names]},
+				fields=["name"],
+				limit_page_length=0,
+			)
+			deal_names.update(r["name"] for r in deals)
+
+	# 3. Deals linked to directly permitted Leads
+	lead_names = get_user_lead_names(user)
+	if lead_names and frappe.db.has_column("CRM Deal", "lead"):
+		deals = frappe.get_all(
+			"CRM Deal",
+			filters={"lead": ["in", lead_names]},
+			fields=["name"],
+			limit_page_length=0,
+		)
+		deal_names.update(r["name"] for r in deals)
+
+	return list(deal_names)
+
+
 def get_user_customer_names(user: str | None = None) -> list[str]:
-	"""Resolve exact Customer grants belonging to any active authenticated user."""
+	"""Resolve exact Customer grants belonging to any active authenticated user.
+	Includes directly permitted Customers, plus Customers linked to permitted Deals or Leads.
+	"""
 	user = user or frappe.session.user
 	if not user or user == "Guest":
 		return []
@@ -641,6 +720,9 @@ def get_user_customer_names(user: str | None = None) -> list[str]:
 		account = frappe.db.get_value("User", user, ["enabled"], as_dict=True) or {}
 		if not frappe.utils.cint(account.get("enabled")):
 			return []
+
+		customer_names = set()
+		# 1. Direct Customer User Permissions
 		rows = frappe.get_all(
 			"User Permission",
 			filters={
@@ -650,12 +732,62 @@ def get_user_customer_names(user: str | None = None) -> list[str]:
 			fields=["for_value"],
 			limit_page_length=0,
 		)
-		names = []
 		for row in rows:
 			name = cstr(row.get("for_value") or "").strip()
-			if name and frappe.db.exists("Customer", name) and name not in names:
-				names.append(name)
-		return names
+			if name and frappe.db.exists("Customer", name):
+				customer_names.add(name)
+
+		# 2. Customers linked to permitted Deals
+		deal_perms = frappe.get_all(
+			"User Permission",
+			filters={"user": user, "allow": ["in", ["CRM Deal", "Deal"]]},
+			fields=["for_value"],
+			limit_page_length=0,
+		)
+		for dp in deal_perms:
+			deal_id = cstr(dp.get("for_value") or "").strip()
+			if deal_id and frappe.db.exists("CRM Deal", deal_id):
+				deal_doc = frappe.db.get_value(
+					"CRM Deal",
+					deal_id,
+					["cx_customer", "erpnext_customer", "organization"],
+					as_dict=True,
+				) or {}
+				for field in ("cx_customer", "erpnext_customer"):
+					cust = cstr(deal_doc.get(field) or "").strip()
+					if cust and frappe.db.exists("Customer", cust):
+						customer_names.add(cust)
+				org = cstr(deal_doc.get("organization") or "").strip()
+				if org and frappe.db.exists("Customer", org):
+					customer_names.add(org)
+
+		# 3. Customers linked to permitted Leads
+		lead_perms = frappe.get_all(
+			"User Permission",
+			filters={"user": user, "allow": ["in", ["CRM Lead", "Lead"]]},
+			fields=["for_value"],
+			limit_page_length=0,
+		)
+		for lp in lead_perms:
+			lead_id = cstr(lp.get("for_value") or "").strip()
+			if lead_id and frappe.db.exists("CRM Lead", lead_id):
+				lead_org = cstr(frappe.db.get_value("CRM Lead", lead_id, "organization") or "").strip()
+				if lead_org and frappe.db.exists("Customer", lead_org):
+					customer_names.add(lead_org)
+				if frappe.db.has_column("CRM Deal", "lead"):
+					deals = frappe.get_all(
+						"CRM Deal",
+						filters={"lead": lead_id},
+						fields=["cx_customer", "organization"],
+						limit_page_length=1,
+					)
+					if deals:
+						for c in (deals[0].get("cx_customer"), deals[0].get("organization")):
+							c = cstr(c or "").strip()
+							if c and frappe.db.exists("Customer", c):
+								customer_names.add(c)
+
+		return list(customer_names)
 	except Exception:
 		return []
 
@@ -833,49 +965,119 @@ def _customer_orders(customer: str) -> list[dict]:
 	return orders
 
 
+def _customer_payments(customer: str) -> list[dict]:
+	"""Retrieve payment receipts and submissions for this customer."""
+	if not customer:
+		return []
+	if not frappe.db.exists("DocType", "Payment Entry"):
+		return []
+	fields = ["name", "posting_date", "paid_amount", "received_amount", "mode_of_payment", "reference_no", "status", "docstatus"]
+	try:
+		rows = frappe.get_list(
+			"Payment Entry",
+			filters={"party": customer, "party_type": "Customer", "docstatus": ["in", [0, 1]]},
+			fields=fields,
+			order_by="posting_date desc, creation desc",
+			limit_page_length=50,
+			ignore_permissions=True,
+		)
+		return [
+			{
+				"name": row.name,
+				"posting_date": str(row.posting_date or ""),
+				"amount": float(row.paid_amount or row.received_amount or 0),
+				"mode_of_payment": row.mode_of_payment or "M-Pesa / Bank",
+				"reference_no": row.reference_no or "",
+				"status": "Submitted" if row.docstatus == 1 else "Pending Verification",
+				"customer": customer,
+			}
+			for row in rows
+		]
+	except Exception:
+		return []
+
+
 def _customer_portal_accounts(user: str) -> list[dict]:
-	"""Project only Customer-linked deals and memberships granted to this user."""
+	"""Project Customer, Deal, and Lead-linked facilities, orders, invoices, and payments granted to this user."""
 	customer_names = get_user_customer_names(user)
-	if not customer_names or not frappe.db.has_column("CRM Facility Membership", "customer"):
+	deal_names = get_user_deal_names(user)
+	lead_names = get_user_lead_names(user)
+
+	if not customer_names and not deal_names and not lead_names:
 		return []
-	if not frappe.db.has_column("CRM Deal", "cx_customer"):
-		return []
+
 	deal_fields = ["name", "cx_customer", "organization"]
 	for fieldname in ("optin_network", "cx_onboarding_source", "cx_onboarding_package_item"):
 		if frappe.db.has_column("CRM Deal", fieldname):
 			deal_fields.append(fieldname)
-	deals = frappe.get_all(
-		"CRM Deal",
-		filters={"cx_customer": ["in", customer_names]},
-		fields=deal_fields,
-		ignore_permissions=True,  # SYSTEM-INTERNAL: exact Customer User Permission scoped this projection.
-		limit_page_length=0,
-	)
-	if not deals:
-		return []
+
+	deals = []
+	if frappe.db.has_column("CRM Deal", "cx_customer"):
+		if customer_names and deal_names:
+			deals = frappe.get_all(
+				"CRM Deal",
+				filters={"name": ["in", list(deal_names)]},
+				fields=deal_fields,
+				ignore_permissions=True,
+				limit_page_length=0,
+			)
+			cust_deals = frappe.get_all(
+				"CRM Deal",
+				filters={"cx_customer": ["in", list(customer_names)]},
+				fields=deal_fields,
+				ignore_permissions=True,
+				limit_page_length=0,
+			)
+			existing_names = {d["name"] for d in deals}
+			for cd in cust_deals:
+				if cd["name"] not in existing_names:
+					deals.append(cd)
+		elif customer_names:
+			deals = frappe.get_all(
+				"CRM Deal",
+				filters={"cx_customer": ["in", list(customer_names)]},
+				fields=deal_fields,
+				ignore_permissions=True,
+				limit_page_length=0,
+			)
+		elif deal_names:
+			deals = frappe.get_all(
+				"CRM Deal",
+				filters={"name": ["in", list(deal_names)]},
+				fields=deal_fields,
+				ignore_permissions=True,
+				limit_page_length=0,
+			)
+
 	deals_by_customer = {}
+	all_scoped_deal_names = set(deal_names)
 	for row in deals:
+		all_scoped_deal_names.add(row.name)
 		cust = row.get("cx_customer")
 		if cust:
 			deals_by_customer.setdefault(cust, []).append(row)
-	memberships = frappe.get_all(
-		"CRM Facility Membership",
-		filters={"customer": ["in", customer_names]},
-		fields=["name", "parent", "network", "status", "contact_name", "go_live", "customer"],
-		ignore_permissions=True,  # SYSTEM-INTERNAL: exact Customer User Permission scoped this projection.
-		limit_page_length=0,
-	)
+
+	memberships = []
+	if customer_names and frappe.db.has_column("CRM Facility Membership", "customer"):
+		memberships = frappe.get_all(
+			"CRM Facility Membership",
+			filters={"customer": ["in", list(customer_names)]},
+			fields=["name", "parent", "network", "status", "contact_name", "go_live", "customer"],
+			ignore_permissions=True,
+			limit_page_length=0,
+		)
+
 	parent_names = list({row.get("parent") for row in memberships if row.get("parent")})
 	facilities = frappe.get_all(
 		"CRM Pre-Qualified Facility",
 		filters={"name": ["in", parent_names]},
 		fields=["name", "mfl_code", "facility_name", "keph_level"],
-		ignore_permissions=True,  # SYSTEM-INTERNAL: parent was selected from Customer-linked memberships.
+		ignore_permissions=True,
 		limit_page_length=0,
 	) if parent_names else []
 	facility_by_name = {row.name: row for row in facilities}
-	deal_names = [cstr(row.get("name")) for row in deals if row.get("name")]
-	deal_facility_fields = ["parent", "mfl_code"]
+
+	deal_facility_fields = ["name", "parent", "mfl_code", "facility_name", "facility_level"]
 	package_fieldnames = (
 		"cx_token_package_item",
 		"cx_token_package_quantity",
@@ -890,18 +1092,22 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 	)
 	deal_facility_rows = frappe.get_all(
 		"CRM Deal Facility",
-		filters={"parent": ["in", deal_names]},
+		filters={"parent": ["in", list(all_scoped_deal_names)]},
 		fields=deal_facility_fields,
-		ignore_permissions=True,  # SYSTEM-INTERNAL: deal names were selected from Customer-scoped deals above.
+		ignore_permissions=True,
 		limit_page_length=0,
-	) if deal_names else []
+	) if all_scoped_deal_names else []
+
 	package_by_mfl = {}
 	deal_by_mfl = {}
+	deal_facilities_by_deal = {}
 	for row in deal_facility_rows:
+		deal_facilities_by_deal.setdefault(row.parent, []).append(row)
 		mfl = cstr(row.get("mfl_code")).strip().casefold()
 		if mfl:
 			package_by_mfl[mfl] = row
 			deal_by_mfl[mfl] = row.get("parent")
+
 	item_codes = list({cstr(row.get("cx_token_package_item")) for row in deal_facility_rows if row.get("cx_token_package_item")})
 	item_rows = frappe.get_all(
 		"Item",
@@ -914,29 +1120,40 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 		cstr(row.get("name")): cstr(row.get("item_name") or row.get("name"))
 		for row in item_rows
 	}
+
 	accounts = []
+	seen_deals = set()
+
+	# 1. Process Customer-centric accounts
 	for customer in customer_names:
 		cust_deals = deals_by_customer.get(customer, [])
-		if not cust_deals:
-			continue
-		primary_deal = cust_deals[0]
+		primary_deal = cust_deals[0] if cust_deals else {}
+		for d in cust_deals:
+			seen_deals.add(d.get("name"))
+
 		customer_doc = frappe.db.get_value("Customer", customer, ["customer_name", "customer_type"], as_dict=True) or {}
 		customer_legal_name = cstr(customer_doc.get("customer_name") or customer)
 		open_orders = _customer_orders(customer)
 		open_invoices = _customer_invoices(customer)
+		customer_payments = _customer_payments(customer)
 
 		rows = []
+		seen_mfls = set()
+
+		# Collect from memberships
 		for membership in memberships:
 			if membership.get("customer") != customer:
 				continue
 			facility = facility_by_name.get(membership.get("parent"))
 			if not facility:
 				continue
-			mfl_key = cstr(facility.get("mfl_code")).strip().casefold()
+			mfl_raw = cstr(facility.get("mfl_code") or "")
+			mfl_key = mfl_raw.strip().casefold()
+			if mfl_key:
+				seen_mfls.add(mfl_key)
 			package = package_by_mfl.get(mfl_key, {})
-			fac_deal = deal_by_mfl.get(mfl_key, primary_deal.get("name"))
+			fac_deal = deal_by_mfl.get(mfl_key, primary_deal.get("name") if primary_deal else "")
 
-			# Match recent purchase for this facility
 			latest_order = None
 			for order in open_orders:
 				if cstr(order.get("crm_token_facility_mfl")).strip().casefold() == mfl_key:
@@ -945,7 +1162,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			if not latest_order and mfl_key:
 				past_orders = frappe.get_all(
 					"Sales Order",
-					filters={"customer": customer, "crm_token_facility_mfl": facility.get("mfl_code"), "docstatus": 1},
+					filters={"customer": customer, "crm_token_facility_mfl": mfl_raw, "docstatus": 1},
 					fields=["name", "transaction_date", "grand_total", "currency", "crm_token_package_item"],
 					order_by="creation desc",
 					limit=1,
@@ -954,7 +1171,6 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				if past_orders:
 					latest_order = past_orders[0]
 
-			# Match open invoices for this facility
 			fac_invoices = [
 				inv for inv in open_invoices
 				if cstr(inv.get("crm_token_facility_mfl")).strip().casefold() == mfl_key
@@ -962,9 +1178,9 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 
 			rows.append({
 				"facility_name": cstr(facility.get("facility_name") or "Facility"),
-				"mfl_code": cstr(facility.get("mfl_code") or ""),
+				"mfl_code": mfl_raw,
 				"keph_level": cstr(facility.get("keph_level") or ""),
-				"network": membership.get("network") or primary_deal.get("optin_network") or "CareVerse Partner Network",
+				"network": membership.get("network") or (primary_deal.get("optin_network") if primary_deal else None) or "CareVerse Partner Network",
 				"membership_status": cstr(membership.get("status") or "Active"),
 				"go_live": bool(frappe.utils.cint(membership.get("go_live"))),
 				"deal": fac_deal,
@@ -994,27 +1210,145 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				},
 			})
 
-		# Ensure organization resolves to customer legal entity name
+		# Also collect from CRM Deal Facility for any deals under this customer
+		for d in cust_deals:
+			for df in deal_facilities_by_deal.get(d.get("name"), []):
+				mfl_raw = cstr(df.get("mfl_code") or "")
+				mfl_key = mfl_raw.strip().casefold()
+				if mfl_key and mfl_key in seen_mfls:
+					continue
+				if mfl_key:
+					seen_mfls.add(mfl_key)
+				rows.append({
+					"facility_name": cstr(df.get("facility_name") or "Facility"),
+					"mfl_code": mfl_raw,
+					"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
+					"network": d.get("optin_network") or "CareVerse Partner Network",
+					"membership_status": "Active",
+					"go_live": True,
+					"deal": d.get("name"),
+					"customer": customer,
+					"token_package": item_names.get(cstr(df.get("cx_token_package_item")), cstr(df.get("cx_token_package_item") or "")),
+					"token_quantity": frappe.utils.cint(df.get("cx_token_package_quantity")),
+					"package_price": df.get("cx_token_package_price"),
+					"package_vat": df.get("cx_token_package_vat"),
+					"package_gross_total": df.get("cx_token_package_gross_total"),
+					"package_currency": cstr(df.get("cx_token_package_currency") or ""),
+					"recent_purchase": None,
+					"invoice_summary": {"has_outstanding": False, "outstanding_amount": 0, "currency": "KES", "invoice_name": None, "count": 0},
+				})
+
 		org_name = customer_legal_name
-		deal_org = cstr(primary_deal.get("organization") or "")
-		if deal_org and deal_org != org_name:
-			child_facility_names = {r["facility_name"].casefold() for r in rows}
-			if deal_org.casefold() not in child_facility_names:
-				org_name = deal_org
+		if primary_deal:
+			deal_org = cstr(primary_deal.get("organization") or "")
+			if deal_org and deal_org != org_name:
+				child_facility_names = {r["facility_name"].casefold() for r in rows}
+				if deal_org.casefold() not in child_facility_names:
+					org_name = deal_org
 
 		accounts.append({
 			"customer": customer,
-			"deal": primary_deal.get("name"),
+			"deal": primary_deal.get("name") if primary_deal else "",
 			"deals": [d.get("name") for d in cust_deals if d.get("name")],
 			"organization": org_name,
-			"network": primary_deal.get("optin_network") or "CareVerse Partner Network",
-			"source": primary_deal.get("cx_onboarding_source"),
-			# Retain this only as a legacy fallback; new enrollments show packages per facility.
-			"selected_package": primary_deal.get("cx_onboarding_package_item"),
+			"network": (primary_deal.get("optin_network") if primary_deal else None) or "CareVerse Partner Network",
+			"source": primary_deal.get("cx_onboarding_source") if primary_deal else "Customer",
+			"selected_package": primary_deal.get("cx_onboarding_package_item") if primary_deal else None,
 			"facilities": rows,
 			"open_orders": open_orders,
 			"open_invoices": open_invoices,
+			"payments": customer_payments,
 		})
+
+	# 2. Process Standalone Deal permissions
+	for d_name in deal_names:
+		if d_name in seen_deals:
+			continue
+		deal_doc = frappe.db.get_value("CRM Deal", d_name, ["name", "organization", "optin_network", "lead", "cx_onboarding_source"], as_dict=True) or {}
+		if not deal_doc:
+			continue
+		seen_deals.add(d_name)
+		fac_rows = []
+		for df in deal_facilities_by_deal.get(d_name, []):
+			fac_rows.append({
+				"facility_name": cstr(df.get("facility_name") or "Facility"),
+				"mfl_code": cstr(df.get("mfl_code") or ""),
+				"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
+				"network": deal_doc.get("optin_network") or "CareVerse Partner Network",
+				"membership_status": "Active",
+				"go_live": True,
+				"deal": d_name,
+				"customer": d_name,
+				"token_package": item_names.get(cstr(df.get("cx_token_package_item")), cstr(df.get("cx_token_package_item") or "")),
+				"token_quantity": frappe.utils.cint(df.get("cx_token_package_quantity")),
+				"package_price": df.get("cx_token_package_price"),
+				"package_vat": df.get("cx_token_package_vat"),
+				"package_gross_total": df.get("cx_token_package_gross_total"),
+				"package_currency": cstr(df.get("cx_token_package_currency") or ""),
+				"recent_purchase": None,
+				"invoice_summary": {"has_outstanding": False, "outstanding_amount": 0, "currency": "KES", "invoice_name": None, "count": 0},
+			})
+
+		accounts.append({
+			"customer": d_name,
+			"deal": d_name,
+			"deals": [d_name],
+			"organization": deal_doc.get("organization") or f"Deal {d_name}",
+			"network": deal_doc.get("optin_network") or "CareVerse Partner Network",
+			"source": deal_doc.get("cx_onboarding_source") or "CRM Deal",
+			"selected_package": None,
+			"facilities": fac_rows,
+			"open_orders": [],
+			"open_invoices": [],
+			"payments": [],
+		})
+
+	# 3. Process Standalone Lead permissions
+	for l_name in lead_names:
+		lead_doc = frappe.db.get_value("CRM Lead", l_name, ["name", "organization", "optin_network"], as_dict=True) or {}
+		if not lead_doc:
+			continue
+		lead_fac_rows = frappe.get_all(
+			"CRM Lead Facility",
+			filters={"parent": l_name},
+			fields=["facility_name", "mfl_code", "facility_level"],
+			limit_page_length=0,
+		)
+		fac_rows = [
+			{
+				"facility_name": cstr(lf.get("facility_name") or "Facility"),
+				"mfl_code": cstr(lf.get("mfl_code") or ""),
+				"keph_level": cstr(lf.get("facility_level") or "Level 2 Dispensary"),
+				"network": lead_doc.get("optin_network") or "CareVerse Partner Network",
+				"membership_status": "Lead Inquiry",
+				"go_live": False,
+				"deal": "",
+				"customer": l_name,
+				"token_package": "",
+				"token_quantity": 0,
+				"package_price": 0,
+				"package_vat": 0,
+				"package_gross_total": 0,
+				"package_currency": "KES",
+				"recent_purchase": None,
+				"invoice_summary": {"has_outstanding": False, "outstanding_amount": 0, "currency": "KES", "invoice_name": None, "count": 0},
+			}
+			for lf in lead_fac_rows
+		]
+		accounts.append({
+			"customer": l_name,
+			"deal": "",
+			"deals": [],
+			"organization": lead_doc.get("organization") or f"Lead {l_name}",
+			"network": lead_doc.get("optin_network") or "CareVerse Partner Network",
+			"source": "CRM Lead",
+			"selected_package": None,
+			"facilities": fac_rows,
+			"open_orders": [],
+			"open_invoices": [],
+			"payments": [],
+		})
+
 	return accounts
 
 
@@ -1061,11 +1395,21 @@ def get_portal_context():
 	except Exception:
 		pass
 
+	user_doc = frappe.db.get_value("User", frappe.session.user, ["name", "email", "first_name", "last_name", "full_name", "user_image", "user_type"], as_dict=True) or {}
+	full_name = user_doc.get("full_name") or f"{user_doc.get('first_name') or ''} {user_doc.get('last_name') or ''}".strip()
+	user_info = {
+		"email": user_doc.get("email") or frappe.session.user,
+		"full_name": full_name or user_doc.get("email") or "User",
+		"user_image": user_doc.get("user_image") or "",
+		"user_type": user_doc.get("user_type") or "Website User",
+	}
+
 	return {
 		"success": True,
 		"data": {
 			"route": PORTAL_ROUTE,
 			"user": frappe.session.user,
+			"user_info": user_info,
 			"ois": rows,
 			"customer_accounts": customer_accounts,
 			"token_packages": _portal_token_catalog(),

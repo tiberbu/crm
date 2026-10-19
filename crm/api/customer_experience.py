@@ -812,6 +812,25 @@ def get_user_profile():
 
 		if frappe.db.has_column("CRM Facility Membership", "customer"):
 			facility_count = frappe.db.count("CRM Facility Membership", {"customer": customer})
+		if facility_count == 0 and deals:
+			facility_count = frappe.db.count("CRM Deal Facility", {"parent": ["in", [d["name"] for d in deals]]})
+	else:
+		from crm.api.website_redirect import get_user_deal_names, get_user_lead_names
+		deal_names = get_user_deal_names(user)
+		if deal_names:
+			deal_doc = frappe.db.get_value("CRM Deal", deal_names[0], ["organization", "optin_network"], as_dict=True) or {}
+			org_name = deal_doc.get("organization") or ""
+			if deal_doc.get("optin_network"):
+				network_name = deal_doc.get("optin_network")
+			facility_count = frappe.db.count("CRM Deal Facility", {"parent": ["in", deal_names]})
+		else:
+			lead_names = get_user_lead_names(user)
+			if lead_names:
+				lead_doc = frappe.db.get_value("CRM Lead", lead_names[0], ["organization", "optin_network"], as_dict=True) or {}
+				org_name = lead_doc.get("organization") or ""
+				if lead_doc.get("optin_network"):
+					network_name = lead_doc.get("optin_network")
+				facility_count = frappe.db.count("CRM Lead Facility", {"parent": ["in", lead_names]})
 
 	full_name = user_doc.full_name or f"{user_doc.first_name} {user_doc.last_name or ''}".strip()
 	mobile_no = user_doc.mobile_no or user_doc.phone or ""
