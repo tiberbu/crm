@@ -6,6 +6,7 @@ import frappe
 import frappe.sessions
 
 from crm.api.website_redirect import get_portal_route
+from crm.branding import apply_brand_context, get_configured_app_brand
 
 no_cache = 1
 base_template_path = ""
@@ -21,6 +22,8 @@ def get_context(context):
 		frappe.local.flags.redirect_location = "/access-restricted?resource=portal"
 		raise frappe.Redirect
 
+	brand = get_configured_app_brand()
+	apply_brand_context(context, brand, surface="cx_portal")
 	context.csrf_token = frappe.sessions.get_csrf_token()
 	context.portal_head = _asset_head()
 	return context

@@ -10,6 +10,8 @@ import os
 import frappe
 import frappe.sessions
 
+from crm.branding import apply_brand_context, get_configured_app_brand
+
 no_cache = 1
 base_template_path = ""
 
@@ -17,6 +19,8 @@ _BUILT_HTML = ("public", "frontend", "facility-onboarding.html")
 
 
 def get_context(context):
+	brand = get_configured_app_brand()
+	apply_brand_context(context, brand, surface="facility_onboarding")
 	context.invitation_network = frappe.form_dict.get("network") or ""
 	context.invitation_facility = frappe.form_dict.get("facility") or ""
 	context.csrf_token = frappe.sessions.get_csrf_token()
