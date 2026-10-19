@@ -29,6 +29,7 @@
           refetch()
         }
       "
+      @row-click="(row) => navigateTo({ doctype: 'Purchase Invoice', name: row.name, company: company })"
       @retry="refetch"
     >
       <template #actions="{ row }">
@@ -43,10 +44,17 @@
         </button>
         <a
           :href="
-            '/app/payment-entry/new-payment-entry-1?party_type=Supplier&party=' +
-            encodeURIComponent(row.supplier)
+            cockpitNewRecordHref('Payment Entry', {
+              section: 'payables',
+              tab: 'payments',
+              company: company,
+              params: {
+                payment_type: 'Pay',
+                party_type: 'Supplier',
+                party: row.supplier,
+              },
+            })
           "
-          target="_blank"
           class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors whitespace-nowrap"
           @click.stop
           >Pay</a
@@ -61,9 +69,14 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import FinanceTable from '../../components/FinanceTable.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
+import {
+  cockpitNewRecordHref,
+  useFinanceNavigation,
+} from '../../composables/useFinanceNavigation.js'
 import { useBoot } from '../../composables/useBoot.js'
 
 const { company } = useCompanyContext()
+const { navigateTo } = useFinanceNavigation()
 const page = ref(0)
 const statusFilter = ref('')
 const approvingRow = ref(null)

@@ -27,18 +27,15 @@
           refetch()
         }
       "
+      @row-click="(row) => navigateTo({ doctype: 'Bank Transaction', name: row.name, company: company })"
       @retry="refetch"
     >
       <template #actions="{ row }">
         <a
-          :href="
-            '/app/bank-reconciliation-tool?bank_account=' +
-            encodeURIComponent(row.bank_account)
-          "
-          target="_blank"
+          :href="cockpitRecordHref('Bank Transaction', row.name, company)"
           class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors whitespace-nowrap"
           @click.stop
-          >Reconcile</a
+          >View</a
         >
       </template>
     </FinanceTable>
@@ -50,10 +47,16 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import FinanceTable from '../../components/FinanceTable.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
+import {
+  cockpitRecordHref,
+  useFinanceNavigation,
+} from '../../composables/useFinanceNavigation.js'
 
 const { company } = useCompanyContext()
+const { navState, navigateTo } = useFinanceNavigation()
 const page = ref(0)
-const statusFilter = ref('')
+const statusFilter = ref(navState.value?.params?.status || '')
+const bankAccountFilter = computed(() => navState.value?.params?.bank_account || '')
 
 const columns = [
   { key: 'name', label: 'Transaction' },
@@ -70,6 +73,8 @@ const resource = createResource({
   makeParams() {
     const filters = []
     if (statusFilter.value) filters.push(['status', '=', statusFilter.value])
+    if (bankAccountFilter.value)
+      filters.push(['bank_account', '=', bankAccountFilter.value])
     return {
       company: company.value,
       filters: JSON.stringify(filters),
@@ -91,7 +96,7 @@ function refetchFirstPage() {
   page.value = 0
   refetch()
 }
-watch(company, () => {
+watch([company, bankAccountFilter], () => {
   page.value = 0
   resource.fetch()
 })

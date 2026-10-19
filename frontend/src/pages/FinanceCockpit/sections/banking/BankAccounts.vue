@@ -29,13 +29,15 @@
             </p>
           </div>
         </div>
-        <div class="pt-1">
+        <div class="pt-1 flex items-center gap-2">
           <a
             :href="
-              '/app/bank-reconciliation-tool?bank_account=' +
-              encodeURIComponent(acct.name)
+              cockpitSectionHref('banking', {
+                tab: 'transactions',
+                bank_account: acct.name,
+                status: 'Unreconciled',
+              })
             "
-            target="_blank"
             class="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
           >
             <LucideRefreshCw class="w-3 h-3" />
@@ -52,6 +54,7 @@ import { computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import LucideRefreshCw from '~icons/lucide/refresh-cw'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
+import { cockpitSectionHref } from '../../composables/useFinanceNavigation.js'
 import FinanceErrorState from '../../components/FinanceErrorState.vue'
 
 const { company } = useCompanyContext()

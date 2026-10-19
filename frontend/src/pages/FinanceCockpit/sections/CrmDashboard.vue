@@ -212,6 +212,7 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
 import { useCurrency } from '../composables/useCurrency.js'
+import { cockpitRecordHref } from '../composables/useFinanceNavigation.js'
 import FinanceErrorState from '../components/FinanceErrorState.vue'
 import HandoffTimeline from '../components/HandoffTimeline.vue'
 
@@ -296,9 +297,7 @@ function sectionName(section) {
 }
 
 function invoiceHref(invoice) {
-  const name = encodeURIComponent(invoice.name)
-  const selectedCompany = company.value ? `?company=${encodeURIComponent(company.value)}` : ''
-  return `/app/sales-invoice/${name}${selectedCompany}`
+  return cockpitRecordHref('Sales Invoice', invoice.name, company.value)
 }
 
 // Finance-semantic tones. Chip = pale surface-*-2 fill + ink-*-6 glyph.

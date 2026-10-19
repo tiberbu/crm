@@ -117,6 +117,10 @@ import LucideFileText from '~icons/lucide/file-text'
 import { REPORTS } from '../constants/reportsConfig.js'
 import { getFinanceSections } from '../constants/sidebarConfig.js'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
+import {
+  cockpitRecordHref,
+  cockpitReportHref,
+} from '../composables/useFinanceNavigation.js'
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -225,9 +229,7 @@ const recordItems = computed(() =>
     description: i.doctype || '',
     icon: LucideFileText,
     type: 'record',
-    url: company.value
-      ? `${i.url || '/app/' + slug(i.doctype) + '/' + encodeURIComponent(i.name)}${(i.url || '').includes('?') ? '&' : '?'}company=${encodeURIComponent(company.value)}`
-      : i.url || '/app/' + slug(i.doctype) + '/' + encodeURIComponent(i.name),
+    url: cockpitRecordHref(i.doctype, i.name, company.value),
   })),
 )
 
@@ -244,24 +246,18 @@ const groups = computed(() => {
 
 const allItems = computed(() => groups.value.flatMap((g) => g.items))
 
-function slug(dt) {
-  return (dt || '').toLowerCase().replace(/\s+/g, '-')
-}
-
 function buildReportUrl(r) {
-  const base = '/app/query-report/' + encodeURIComponent(r.report)
   const params = {}
   for (const [k, v] of Object.entries(r.defaultFilters || {})) {
     params[k] = v === '__COMPANY__' ? company.value || '' : v
   }
-  const qs = new URLSearchParams(params).toString()
-  return qs ? base + '?' + qs : base
+  return cockpitReportHref(r.report, params)
 }
 
 function onSelect(item) {
   if (!item) return
   if (item.type === 'navigate') emit('navigate', item.section)
-  else if (item.url) window.open(item.url, '_blank')
+  else if (item.url) emit('navigate', item.url)
   query.value = ''
   localShow.value = false
 }

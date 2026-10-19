@@ -24,6 +24,7 @@
             journalRes.fetch()
           }
         "
+        @row-click="(row) => navigateTo({ doctype: 'Journal Entry', name: row.name, company: company })"
         @retry="journalRes.fetch()"
       />
     </div>
@@ -82,6 +83,7 @@
             glRes.fetch()
           }
         "
+        @row-click="(row) => row.voucher_type && row.voucher_no && navigateTo({ doctype: row.voucher_type, name: row.voucher_no, company: company })"
         @retry="glRes.fetch()"
       />
     </div>
@@ -90,8 +92,13 @@
     <div v-else-if="activeTab === 'closing'">
       <div class="flex justify-end mb-3">
         <a
-          href="/app/period-closing-voucher/new-period-closing-voucher-1"
-          target="_blank"
+          :href="
+            cockpitNewRecordHref('Period Closing Voucher', {
+              section: 'general_ledger',
+              tab: 'closing',
+              company: company,
+            })
+          "
           class="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
           >Create Period Closing</a
         >
@@ -110,6 +117,7 @@
             closingRes.fetch()
           }
         "
+        @row-click="(row) => navigateTo({ doctype: 'Period Closing Voucher', name: row.name, company: company })"
         @retry="closingRes.fetch()"
       />
     </div>
@@ -122,9 +130,22 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import FinanceTable from '../components/FinanceTable.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
+import {
+  cockpitNewRecordHref,
+  useFinanceNavigation,
+} from '../composables/useFinanceNavigation.js'
 
 const { company } = useCompanyContext()
-const activeTab = ref('journal')
+const { navState, navigateTo } = useFinanceNavigation()
+const activeTab = ref(navState.value?.tab || 'journal')
+watch(
+  () => navState.value?.tab,
+  (tab) => {
+    if (tab && ['journal', 'gl', 'closing'].includes(tab)) {
+      activeTab.value = tab
+    }
+  },
+)
 
 const TABS = [
   { key: 'journal', label: 'Journal Entries' },

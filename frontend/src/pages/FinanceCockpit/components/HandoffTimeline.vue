@@ -80,8 +80,6 @@
                 <a
                   v-if="step.name"
                   :href="nativeHref(step)"
-                  target="_blank"
-                  rel="noopener"
                   class="mt-2 inline-block text-[11px] font-medium text-ink-gray-6 underline underline-offset-2 hover:text-ink-gray-9"
                   @click.stop
                 >
@@ -111,6 +109,7 @@
 import { computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
+import { cockpitRecordHref } from '../composables/useFinanceNavigation.js'
 import FinanceErrorState from './FinanceErrorState.vue'
 
 defineEmits(['navigate'])
@@ -156,14 +155,13 @@ function nativeState(doc) {
 }
 
 function nativeHref(step) {
-  const routes = {
-    quotation: 'quotation',
-    sales_order: 'sales-order',
-    sales_invoice: 'sales-invoice',
-    payment: 'payment-entry',
+  const doctypes = {
+    quotation: 'Quotation',
+    sales_order: 'Sales Order',
+    sales_invoice: 'Sales Invoice',
+    payment: 'Payment Entry',
   }
-  const companyQuery = company.value ? `?company=${encodeURIComponent(company.value)}` : ''
-  return `/app/${routes[step.key]}/${encodeURIComponent(step.name)}${companyQuery}`
+  return cockpitRecordHref(doctypes[step.key], step.name, company.value)
 }
 
 function steps(handoff) {

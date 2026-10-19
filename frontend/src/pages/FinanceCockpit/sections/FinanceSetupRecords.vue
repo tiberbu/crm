@@ -9,7 +9,7 @@
       :title="config.title"
       :subtitle="config.subtitle"
       :columns="config.columns"
-      :list-resource-url="config.resource"
+      :list-resource-url="config.resource || 'frappe.client.get_list'"
       :list-params="listParams"
       :empty-label="config.emptyLabel"
       :page-size="20"

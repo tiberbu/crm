@@ -15,14 +15,22 @@
 
 <script setup>
 import FinanceSectionTabs from '../components/FinanceSectionTabs.vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import RebateVouchers from './partner/RebateVouchers.vue'
 import SalesCommissions from './partner/SalesCommissions.vue'
+import { useFinanceNavigation } from '../composables/useFinanceNavigation.js'
 
 const TABS = [
   { key: 'rebates', label: 'Rebate Vouchers' },
   { key: 'commissions', label: 'Sales Commissions' },
 ]
 
-const activeTab = ref('rebates')
+const { navState } = useFinanceNavigation()
+const activeTab = ref(navState.value?.tab || 'rebates')
+watch(
+  () => navState.value?.tab,
+  (tab) => {
+    if (tab && TABS.some((t) => t.key === tab)) activeTab.value = tab
+  },
+)
 </script>

@@ -53,7 +53,6 @@
     >
       <a
         :href="item.record_url"
-        target="_blank"
         class="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors text-center font-medium"
         @click.stop
         >{{ item.primary_action_label }}</a

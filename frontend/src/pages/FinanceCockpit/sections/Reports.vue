@@ -73,8 +73,6 @@
             </div>
             <a
               :href="buildUrl(report)"
-              target="_blank"
-              rel="noopener"
               class="flex-shrink-0 p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               title="Open report"
             >
@@ -114,6 +112,7 @@
 import { ref } from 'vue'
 import { REPORTS, GROUPS, GROUP_LABELS } from '../constants/reportsConfig.js'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
+import { cockpitReportHref } from '../composables/useFinanceNavigation.js'
 import { useBoot } from '../composables/useBoot.js'
 
 const { company } = useCompanyContext()
@@ -152,8 +151,6 @@ function buildUrl(report) {
     else if (v === '__TODAY__') filters[k] = today
     else filters[k] = v
   }
-  const qs = new URLSearchParams(filters).toString()
-  const base = '/app/query-report/' + encodeURIComponent(report.report)
-  return qs ? base + '?' + qs : base
+  return cockpitReportHref(report.report, filters)
 }
 </script>
