@@ -1,7 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { call, Dialog } from 'frappe-ui'
+import { call, createResource, Dialog } from 'frappe-ui'
 import TokenCalculator from '@/components/TokenCalculator.vue'
+import FacilityDrawer from './FacilityDrawer.vue'
+import OptInRequests from './OptInRequests.vue'
 import {
   facilityLabel,
   findOpenOrder,
@@ -41,17 +43,50 @@ const context = ref({
 })
 
 // Current Active Navigation View: 'dashboard' | 'facilities' | 'pricing' | 'billing' | 'hfr_sync' | 'profile' | 'support'
-const activeView = ref('facilities')
+// The portal lands on the Dashboard — the at-a-glance portfolio story — and
+// drills down from there instead of opening on the densest data table.
+const activeView = ref('dashboard')
 
 // Sidebar collapsed state for responsive layout
 const sidebarCollapsed = ref(false)
+
+// Logout — the framework's /api/method/logout is POST-only, so the old GET
+// anchor 403'd and bounced to an unknown route. frappe-ui's resourceFetcher
+// issues the POST with the CSRF token (same pattern as session.js / FinanceCockpit).
+const logout = createResource({
+  url: 'logout',
+  onSuccess: () => {
+    window.location.href = '/login?redirect-to=/crm/facility-portal.html'
+  },
+  onError: () => {
+    window.location.href = '/login'
+  },
+})
 
 // Top Right User Avatar Dropdown
 const isUserMenuOpen = ref(false)
 const userMenuRef = ref(null)
 
+// Global search — filters the facility directory; typing from another view
+// switches to Facilities so the search never silently does nothing.
+const globalSearchRef = ref(null)
+
 const toggleUserMenu = () => {
   isUserMenuOpen.value = !isUserMenuOpen.value
+}
+
+function onGlobalSearchInput() {
+  if (activeView.value !== 'facilities' && searchQuery.value) {
+    activeView.value = 'facilities'
+  }
+}
+
+function onGlobalKeydown(e) {
+  if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
+    e.preventDefault()
+    globalSearchRef.value?.focus()
+    globalSearchRef.value?.select()
+  }
 }
 
 const navigateTo = (view) => {
@@ -372,7 +407,8 @@ const allPayments = computed(() => {
   return list
 })
 
-// Selected Facility
+// Selected Facility — never falls back to the first facility; an empty
+// selection means "not chosen yet" and the Top Up modal shows a picker.
 const selectedFacility = computed(() => {
   if (selectedFacilityMfl.value) {
     const found = allFacilities.value.find(
@@ -380,8 +416,29 @@ const selectedFacility = computed(() => {
     )
     if (found) return found
   }
-  return allFacilities.value[0] || null
+  return null
 })
+
+// Facility detail drawer — the single surface that ties all of one facility's
+// records together (identity, capacity, invoices, orders, opt-in origin)
+const facilityDrawerMfl = ref('')
+const drawerFacility = computed(
+  () => allFacilities.value.find((f) => String(f.mfl_code) === String(facilityDrawerMfl.value)) || null,
+)
+const drawerInvoices = computed(() => {
+  const mfl = String(drawerFacility.value?.mfl_code || '').toLowerCase()
+  return allInvoices.value.filter((inv) => String(inv.crm_token_facility_mfl || '').toLowerCase() === mfl)
+})
+const drawerOrders = computed(() => {
+  const mfl = String(drawerFacility.value?.mfl_code || '').toLowerCase()
+  return allOrders.value.filter((o) => String(o.crm_token_facility_mfl || '').toLowerCase() === mfl)
+})
+function openFacilityDrawer(facility) {
+  facilityDrawerMfl.value = facility.mfl_code
+}
+function closeFacilityDrawer() {
+  facilityDrawerMfl.value = ''
+}
 
 // Selected Package
 const selectedPackageObj = computed(() => {
@@ -408,10 +465,95 @@ const primaryOrganizationName = computed(() => {
   return (
     context.value.customer_accounts?.[0]?.organization ||
     context.value.customer_accounts?.[0]?.customer ||
-    allFacilities.value[0]?.organization ||
+    context.value.ois?.[0]?.facility_signatory_name ||
     context.value.user ||
     'Healthcare Enterprise'
   )
+})
+
+// Dashboard: items that need the user's attention (invoices due/overdue,
+// facilities still verifying on the registry)
+const dashboardAttention = computed(() => {
+  const items = []
+  for (const inv of allInvoices.value) {
+    const status = invoiceStatus(inv)
+    items.push({
+      key: `inv-${inv.name}`,
+      icon: '💳',
+      text: `Invoice ${inv.invoice_number || inv.name} — ${money(inv.amount, inv.currency)} ${status.key === 'overdue' ? 'overdue' : 'due'}`,
+      meta: `Facility: ${facilityLabel(inv.crm_token_facility_mfl, allFacilities.value)}`,
+      view: 'billing',
+    })
+  }
+  for (const fac of allFacilities.value) {
+    if (!fac.go_live) {
+      items.push({
+        key: `verify-${fac.mfl_code}`,
+        icon: '🔄',
+        text: `${fac.facility_name} is verifying on the Health Facility Registry`,
+        meta: `MFL: ${fac.mfl_code} · ${fac.keph_level}`,
+        view: 'facilities',
+      })
+    }
+  }
+  return items
+})
+
+// Dashboard: unified activity stream (orders + payments), newest first
+const recentActivity = computed(() => {
+  const items = []
+  for (const pay of allPayments.value) {
+    if (!pay.posting_date) continue
+    items.push({
+      kind: 'payment',
+      icon: '🧾',
+      title: `Receipt ${pay.name}`,
+      text: `${pay.mode_of_payment || 'Payment'} · ${money(pay.amount, 'KES')}`,
+      date: pay.posting_date,
+    })
+  }
+  for (const order of allOrders.value) {
+    if (!order.transaction_date) continue
+    items.push({
+      kind: 'order',
+      icon: '🪙',
+      title: packageLabel(order.crm_token_package_item, context.value.token_packages || []),
+      text: `Order ${order.name} · ${money(order.grand_total, order.currency)}`,
+      date: order.transaction_date,
+    })
+  }
+  return items
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, 8)
+})
+
+// Opt-in requests as first-class records: status, facilities, package,
+// open financials, and quotations attached to each submission
+const optinRequests = computed(() => {
+  return (context.value.ois || []).map((ois) => {
+    let quotes = []
+    try {
+      const parsed = JSON.parse(ois.quote_names_json || '[]')
+      if (Array.isArray(parsed)) quotes = parsed
+    } catch {
+      quotes = ois.quote_names_json ? [String(ois.quote_names_json)] : []
+    }
+    return {
+      name: ois.name,
+      status: ois.status || 'Submitted',
+      network: ois.network || ois.network_slug || 'CareVerse Partner Network',
+      signatory: ois.facility_signatory_name || '',
+      contract: ois.contract || '',
+      facilities: (ois.progress?.facilities || []).map((f) => ({
+        name: f.facility_name,
+        mfl_code: f.mfl_code,
+      })),
+      package: ois.progress?.package || null,
+      open_orders: (ois.open_orders || []).length,
+      open_invoices: (ois.open_invoices || []).length,
+      quotes,
+    }
+  })
 })
 
 const defaultCurrency = computed(() => {
@@ -681,8 +823,11 @@ async function discoverFacilitiesByOwnerId() {
 function openTopUpModal(facility = null) {
   if (facility) {
     selectedFacilityMfl.value = facility.mfl_code
-  } else if (!selectedFacilityMfl.value && allFacilities.value.length) {
+  } else if (allFacilities.value.length === 1) {
     selectedFacilityMfl.value = allFacilities.value[0].mfl_code
+  } else if (!selectedFacilityMfl.value) {
+    // Multiple facilities: user must explicitly pick one (PRD REQ-ARC-02)
+    selectedFacilityMfl.value = ''
   }
   if (!selectedTopUpPackageCode.value && context.value.token_packages?.length) {
     selectedTopUpPackageCode.value =
@@ -802,7 +947,7 @@ function unwrap(response) {
 async function refreshContext() {
   const refreshed = await call('crm.api.website_redirect.get_portal_context')
   context.value = unwrap(refreshed) || context.value
-  if (!selectedFacilityMfl.value && allFacilities.value.length) {
+  if (!selectedFacilityMfl.value && allFacilities.value.length === 1) {
     selectedFacilityMfl.value = allFacilities.value[0].mfl_code
   }
 }
@@ -992,10 +1137,9 @@ async function verifyReturnedPayment() {
   }
 }
 
-onMounted(async () => {
-  if (typeof document !== 'undefined') {
-    document.addEventListener('click', handleDocumentClick)
-  }
+async function retryLoad() {
+  loading.value = true
+  errorMessage.value = ''
   try {
     await refreshContext()
     await loadUserProfile()
@@ -1005,17 +1149,26 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+onMounted(async () => {
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', handleDocumentClick)
+    document.addEventListener('keydown', onGlobalKeydown)
+  }
+  await retryLoad()
 })
 
 onUnmounted(() => {
   if (typeof document !== 'undefined') {
     document.removeEventListener('click', handleDocumentClick)
+    document.removeEventListener('keydown', onGlobalKeydown)
   }
 })
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col font-sans antialiased">
+  <div class="cx-portal min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col antialiased">
     <!-- Notice Toast Bar -->
     <div
       v-if="notice"
@@ -1042,20 +1195,20 @@ onUnmounted(() => {
         <!-- Brand Header -->
         <div class="h-16 border-b border-slate-200 flex items-center justify-between px-4">
           <div class="flex items-center gap-2.5 overflow-hidden" v-if="!sidebarCollapsed">
-            <div class="size-8 rounded-lg bg-[#bc1823] text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+            <div class="size-8 rounded-lg bg-[#bc1823] text-white flex items-center justify-center font-semibold text-sm shadow-xs shrink-0">
               T
             </div>
             <div class="truncate">
-              <span class="font-extrabold text-sm tracking-tight text-slate-900 block leading-tight">
+              <span class="font-bold text-sm tracking-tight text-slate-900 block leading-tight">
                 Tiberbu <span class="text-[#bc1823]">CareVerse</span>
               </span>
-              <span class="text-[10px] font-semibold text-slate-600 uppercase tracking-wider block">
+              <span class="text-[11px] font-semibold text-slate-600 uppercase tracking-[0.08em] block">
                 HMIS Enterprise
               </span>
             </div>
           </div>
           <div v-else class="mx-auto">
-            <div class="size-8 rounded-lg bg-[#bc1823] text-white flex items-center justify-center font-bold text-sm shadow-xs">
+            <div class="size-8 rounded-lg bg-[#bc1823] text-white flex items-center justify-center font-semibold text-sm shadow-xs">
               T
             </div>
           </div>
@@ -1078,7 +1231,7 @@ onUnmounted(() => {
           <!-- 1. Dashboard -->
           <button
             type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
             :class="
               activeView === 'dashboard'
                 ? 'bg-blue-50 text-blue-700 shadow-xs'
@@ -1093,7 +1246,7 @@ onUnmounted(() => {
           <!-- 2. Facilities (Active in Screenshot) -->
           <button
             type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
             :class="
               activeView === 'facilities'
                 ? 'bg-blue-50 text-blue-700 shadow-xs'
@@ -1107,7 +1260,7 @@ onUnmounted(() => {
             </div>
             <span
               v-if="!sidebarCollapsed"
-              class="rounded-full px-2 py-0.5 text-[10px] font-bold"
+              class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
               :class="activeView === 'facilities' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'"
             >
               {{ facilityCount }}
@@ -1117,7 +1270,7 @@ onUnmounted(() => {
           <!-- 3. Plans & Pricing (GitHub Style) -->
           <button
             type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
             :class="
               activeView === 'pricing'
                 ? 'bg-blue-50 text-blue-700 shadow-xs'
@@ -1132,7 +1285,7 @@ onUnmounted(() => {
           <!-- 4. Billing & Invoices -->
           <button
             type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
             :class="
               activeView === 'billing'
                 ? 'bg-blue-50 text-blue-700 shadow-xs'
@@ -1146,16 +1299,41 @@ onUnmounted(() => {
             </div>
             <span
               v-if="!sidebarCollapsed && openInvoiceCount > 0"
-              class="rounded-full bg-amber-500 text-white px-2 py-0.5 text-[10px] font-bold"
+              class="rounded-full bg-amber-500 text-white px-2 py-0.5 text-[11px] font-semibold"
             >
               {{ openInvoiceCount }}
+            </span>
+          </button>
+
+          <!-- 4b. Opt-In Requests (only when the user has submissions) -->
+          <button
+            v-if="(context.ois || []).length"
+            type="button"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
+            :class="
+              activeView === 'optin_requests'
+                ? 'bg-blue-50 text-blue-700 shadow-xs'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            "
+            @click="activeView = 'optin_requests'"
+          >
+            <div class="flex items-center gap-3 truncate">
+              <span class="text-base shrink-0">📝</span>
+              <span v-if="!sidebarCollapsed" class="truncate">Opt-In Requests</span>
+            </div>
+            <span
+              v-if="!sidebarCollapsed"
+              class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+              :class="activeView === 'optin_requests' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'"
+            >
+              {{ (context.ois || []).length }}
             </span>
           </button>
 
           <!-- 5. Health Facility Registry Sync -->
           <button
             type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
             :class="
               activeView === 'hfr_sync'
                 ? 'bg-blue-50 text-blue-700 shadow-xs'
@@ -1170,7 +1348,7 @@ onUnmounted(() => {
           <!-- 6. My Profile (National ID & Identity) -->
           <button
             type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
             :class="
               activeView === 'profile'
                 ? 'bg-blue-50 text-blue-700 shadow-xs'
@@ -1184,7 +1362,7 @@ onUnmounted(() => {
             </div>
             <span
               v-if="!sidebarCollapsed && userProfile.masked_national_id"
-              class="rounded-full bg-slate-100 text-slate-700 font-mono px-2 py-0.5 text-[10px]"
+              class="rounded-full bg-slate-100 text-slate-700 font-mono px-2 py-0.5 text-[11px]"
             >
               {{ userProfile.masked_national_id }}
             </span>
@@ -1193,7 +1371,7 @@ onUnmounted(() => {
           <!-- 7. Network Support -->
           <button
             type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-left"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
             :class="
               activeView === 'support'
                 ? 'bg-blue-50 text-blue-700 shadow-xs'
@@ -1218,26 +1396,28 @@ onUnmounted(() => {
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
             <input
+              ref="globalSearchRef"
               type="text"
               v-model="searchQuery"
               placeholder="Search facilities, MFL codes, invoices..."
               class="w-full rounded-xl bg-slate-50 border border-slate-200 pl-9 pr-12 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition"
+              @input="onGlobalSearchInput"
             />
-            <span class="absolute right-2.5 top-1/2 -translate-y-1/2 rounded bg-slate-200/60 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
+            <span class="absolute right-2.5 top-1/2 -translate-y-1/2 rounded bg-slate-200/60 px-1.5 py-0.5 text-[11px] font-mono text-slate-500">
               ⌘K
             </span>
           </div>
 
           <!-- Top Actions -->
           <div class="flex items-center gap-3">
-            <span class="hidden md:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-bold text-emerald-800">
+            <span class="hidden md:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
               <span class="size-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
               <span>Registry Verified</span>
             </span>
 
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
+              class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
               @click="openAddFacilityModal()"
             >
               <span class="text-sm leading-none">+</span>
@@ -1246,7 +1426,7 @@ onUnmounted(() => {
 
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-xl bg-[#bc1823] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#a3141d] transition cursor-pointer"
+              class="inline-flex items-center gap-1.5 rounded-xl bg-[#bc1823] px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#a3141d] transition cursor-pointer"
               @click="openTopUpModal()"
             >
               <span>🪙</span>
@@ -1265,14 +1445,14 @@ onUnmounted(() => {
                 aria-expanded="isUserMenuOpen"
                 title="Account & Navigation Menu"
               >
-                <div class="size-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0 ring-2 ring-blue-100">
+                <div class="size-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-xs shadow-xs shrink-0 ring-2 ring-blue-100">
                   {{ userInitials }}
                 </div>
                 <div class="hidden lg:block text-left mr-0.5">
-                  <span class="text-xs font-bold text-slate-800 block leading-tight truncate max-w-[130px]">
+                  <span class="text-xs font-semibold text-slate-800 block leading-tight truncate max-w-[130px]">
                     {{ userDisplayName }}
                   </span>
-                  <span class="text-[10px] text-slate-500 block leading-tight truncate max-w-[130px]">
+                  <span class="text-[11px] text-slate-500 block leading-tight truncate max-w-[130px]">
                     {{ primaryOrganizationName }}
                   </span>
                 </div>
@@ -1295,13 +1475,13 @@ onUnmounted(() => {
               >
                 <!-- User Header Info -->
                 <div class="px-3 py-2.5 bg-slate-50 rounded-xl mb-1.5 border border-slate-100">
-                  <span class="font-extrabold text-slate-900 block truncate">{{ userDisplayName }}</span>
+                  <span class="font-bold text-slate-900 block truncate">{{ userDisplayName }}</span>
                   <span class="text-[11px] text-slate-500 block truncate font-mono">{{ context.user }}</span>
                   <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <span class="rounded bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5">
+                    <span class="rounded bg-blue-100 text-blue-700 text-[11px] font-semibold px-1.5 py-0.5">
                       {{ primaryOrganizationName || 'Health System' }}
                     </span>
-                    <span v-if="userProfile.masked_national_id" class="rounded bg-slate-200/80 text-slate-700 text-[10px] font-mono px-1.5 py-0.5">
+                    <span v-if="userProfile.masked_national_id" class="rounded bg-slate-200/80 text-slate-700 text-[11px] font-mono px-1.5 py-0.5">
                       {{ userProfile.masked_national_id }}
                     </span>
                   </div>
@@ -1334,6 +1514,15 @@ onUnmounted(() => {
                     <span>Invoices & Payments</span>
                   </button>
                   <button
+                    v-if="(context.ois || []).length"
+                    type="button"
+                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
+                    @click="navigateTo('optin_requests')"
+                  >
+                    <span>📝</span>
+                    <span>Opt-In Requests ({{ (context.ois || []).length }})</span>
+                  </button>
+                  <button
                     type="button"
                     class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
                     @click="navigateTo('hfr_sync')"
@@ -1353,16 +1542,18 @@ onUnmounted(() => {
 
                 <div class="border-t border-slate-100 my-1.5"></div>
 
-                <!-- Logout Link -->
-                <a
-                  href="/api/method/logout"
-                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 font-semibold transition text-left cursor-pointer"
+                <!-- Sign Out — POST /api/method/logout via frappe-ui resource (POST-only endpoint) -->
+                <button
+                  type="button"
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 font-semibold transition text-left cursor-pointer disabled:opacity-60"
+                  :disabled="logout.loading"
+                  @click="logout.submit()"
                 >
                   <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                   </svg>
-                  <span>Sign Out</span>
-                </a>
+                  <span>{{ logout.loading ? 'Signing out…' : 'Sign Out' }}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1370,6 +1561,34 @@ onUnmounted(() => {
 
         <!-- Dynamic Main Views -->
         <main class="p-6 max-w-7xl w-full mx-auto space-y-6">
+          <!-- Loading skeleton -->
+          <div v-if="loading" class="space-y-4" aria-busy="true">
+            <div class="h-8 w-56 rounded-lg bg-slate-200/70 animate-pulse" />
+            <div class="h-3 w-96 max-w-full rounded bg-slate-200/60 animate-pulse" />
+            <div class="grid gap-4 sm:grid-cols-3">
+              <div v-for="i in 3" :key="i" class="rounded-2xl border border-slate-200 bg-white p-5">
+                <div class="mb-3 h-3 w-24 rounded bg-slate-200/80 animate-pulse" />
+                <div class="h-7 w-32 rounded bg-slate-200/80 animate-pulse" />
+              </div>
+            </div>
+            <div class="h-96 rounded-2xl border border-slate-200 bg-white" />
+          </div>
+
+          <!-- Error state with retry -->
+          <div v-else-if="errorMessage" class="rounded-2xl border border-rose-200 bg-white p-10 text-center">
+            <span class="text-3xl">⚠️</span>
+            <h1 class="mt-3 text-lg font-bold text-slate-900">Unable to load your portal</h1>
+            <p class="mx-auto mt-1 max-w-md text-xs text-slate-600">{{ errorMessage }}</p>
+            <button
+              type="button"
+              class="mt-4 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition"
+              @click="retryLoad()"
+            >
+              Try again
+            </button>
+          </div>
+
+          <template v-else>
           <!-- ============================================================== -->
           <!-- VIEW A: FACILITIES TABLE (Exact match to screenshot structure) -->
           <!-- ============================================================== -->
@@ -1377,7 +1596,7 @@ onUnmounted(() => {
             <!-- Breadcrumbs / Page Header -->
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">
+                <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">
                   Facilities
                 </h1>
                 <p class="text-xs text-slate-600 mt-0.5">
@@ -1389,14 +1608,14 @@ onUnmounted(() => {
               <div class="flex items-center gap-2">
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs"
+                  class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs"
                   @click="openAddFacilityModal()"
                 >
                   <span>🔄 Sync Facility Registry</span>
                 </button>
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
+                  class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition"
                   @click="openAddFacilityModal()"
                 >
                   <span>+ Add Facility</span>
@@ -1459,7 +1678,7 @@ onUnmounted(() => {
                 <!-- Group By Network Button -->
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition shadow-2xs cursor-pointer select-none"
+                  class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition shadow-2xs cursor-pointer select-none"
                   :class="groupByNetwork ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'"
                   @click="groupByNetwork = !groupByNetwork"
                   title="Group facilities by partner network"
@@ -1473,7 +1692,7 @@ onUnmounted(() => {
                 <button
                   type="button"
                   class="rounded-lg border p-1.5 text-xs cursor-pointer"
-                  :class="facilityViewMode === 'table' ? 'bg-slate-100 border-slate-300 text-slate-900 font-bold' : 'bg-white border-slate-200 text-slate-500'"
+                  :class="facilityViewMode === 'table' ? 'bg-slate-100 border-slate-300 text-slate-900 font-semibold' : 'bg-white border-slate-200 text-slate-500'"
                   @click="facilityViewMode = 'table'"
                   title="Table view"
                 >
@@ -1489,7 +1708,7 @@ onUnmounted(() => {
                 <button
                   type="button"
                   class="rounded-lg border p-1.5 text-xs cursor-pointer"
-                  :class="facilityViewMode === 'cards' ? 'bg-slate-100 border-slate-300 text-slate-900 font-bold' : 'bg-white border-slate-200 text-slate-500'"
+                  :class="facilityViewMode === 'cards' ? 'bg-slate-100 border-slate-300 text-slate-900 font-semibold' : 'bg-white border-slate-200 text-slate-500'"
                   @click="facilityViewMode = 'cards'"
                   title="Card view"
                 >
@@ -1503,8 +1722,24 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <!-- Empty portfolio state -->
+            <div v-if="!allFacilities.length" class="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+              <span class="mb-2 block text-3xl">🏥</span>
+              <p class="text-sm font-semibold text-slate-800">No facilities in your portfolio yet</p>
+              <p class="mx-auto mt-1 max-w-md text-xs text-slate-500">
+                Link your clinics from the Health Facility Registry — we can auto-discover the ones registered under your National ID.
+              </p>
+              <button
+                type="button"
+                class="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-blue-700"
+                @click="openAddFacilityModal()"
+              >
+                + Add Facility
+              </button>
+            </div>
+
             <!-- TABLE VIEW -->
-            <div v-if="facilityViewMode === 'table'" class="space-y-4">
+            <div v-if="allFacilities.length && facilityViewMode === 'table'" class="space-y-4">
               <!-- Render Grouped by Network when toggle active -->
               <template v-if="groupByNetwork">
                 <div
@@ -1515,13 +1750,13 @@ onUnmounted(() => {
                   <!-- Group Header Banner -->
                   <div class="px-5 py-3 bg-gradient-to-r from-slate-50 to-slate-100/70 border-b border-slate-200 flex items-center justify-between">
                     <div class="flex items-center gap-2.5">
-                      <div class="size-6 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                      <div class="size-6 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center font-semibold text-xs">
                         🌐
                       </div>
-                      <span class="font-extrabold text-xs text-slate-900 uppercase tracking-wide">
+                      <span class="font-semibold text-xs text-slate-900 uppercase tracking-[0.08em]">
                         {{ group.network }}
                       </span>
-                      <span class="rounded-full bg-white border border-slate-200 text-slate-700 px-2 py-0.5 text-[10px] font-bold">
+                      <span class="rounded-full bg-white border border-slate-200 text-slate-700 px-2 py-0.5 text-[11px] font-semibold">
                         {{ group.facilities.length }} {{ group.facilities.length === 1 ? 'branch' : 'branches' }}
                       </span>
                     </div>
@@ -1530,7 +1765,7 @@ onUnmounted(() => {
                   <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        <tr class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                           <th class="py-3 px-4 w-10">
                             <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-0" />
                           </th>
@@ -1559,12 +1794,18 @@ onUnmounted(() => {
                           </td>
                           <td class="py-3.5 px-4 font-semibold text-slate-900">
                             <div class="flex items-center gap-3">
-                              <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-100">
+                              <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-semibold text-xs shrink-0 border border-blue-100">
                                 🏥
                               </div>
                               <div>
-                                <span class="font-bold text-slate-900 block">{{ facility.facility_name }}</span>
-                                <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-0.5 border border-slate-200/60">
+                                <button
+                                type="button"
+                                class="block text-left font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                                @click="openFacilityDrawer(facility)"
+                              >
+                                {{ facility.facility_name }}
+                              </button>
+                                <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-slate-200/60">
                                   <span>🌐</span>
                                   <span>{{ facility.network }}</span>
                                 </span>
@@ -1583,12 +1824,12 @@ onUnmounted(() => {
                               @click="copyMfl(facility.mfl_code)"
                             >
                               <span>{{ facility.mfl_code }}</span>
-                              <span class="text-[10px] text-slate-600">{{ copiedMfl === facility.mfl_code ? '✓' : '📋' }}</span>
+                              <span class="text-[11px] text-slate-600">{{ copiedMfl === facility.mfl_code ? '✓' : '📋' }}</span>
                             </button>
                           </td>
                           <td class="py-3.5 px-4">
                             <span
-                              class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold border"
+                              class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border"
                               :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
                             >
                               <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-emerald-600' : 'bg-amber-600'"></span>
@@ -1602,7 +1843,7 @@ onUnmounted(() => {
                             </span>
                           </td>
                           <td class="py-3.5 px-4 text-right">
-                            <span class="font-extrabold text-[#bc1823] font-mono text-sm inline-flex items-center gap-1">
+                            <span class="font-semibold text-[#bc1823] font-mono text-sm inline-flex items-center gap-1">
                               <span>🪙</span>
                               <span>{{ (facility.token_quantity || 0).toLocaleString() }}</span>
                             </span>
@@ -1612,7 +1853,7 @@ onUnmounted(() => {
                               <button
                                 v-if="facility.invoice_summary?.has_outstanding"
                                 type="button"
-                                class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                                class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0 cursor-pointer"
                                 @click="openMpesaModalForFacility(facility)"
                                 title="Pay outstanding invoice via M-Pesa"
                               >
@@ -1620,7 +1861,7 @@ onUnmounted(() => {
                               </button>
                               <button
                                 type="button"
-                                class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-bold text-white hover:bg-black transition shadow-xs cursor-pointer"
+                                class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-black transition shadow-xs cursor-pointer"
                                 @click="openTopUpModal(facility)"
                               >
                                 Top Up
@@ -1647,7 +1888,7 @@ onUnmounted(() => {
                 <div class="overflow-x-auto">
                   <table class="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      <tr class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                         <th class="py-3 px-4 w-10">
                           <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-0" />
                         </th>
@@ -1679,12 +1920,18 @@ onUnmounted(() => {
                         <!-- Name & Location & Network -->
                         <td class="py-3.5 px-4 font-semibold text-slate-900">
                           <div class="flex items-center gap-3">
-                            <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-100">
+                            <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-semibold text-xs shrink-0 border border-blue-100">
                               🏥
                             </div>
                             <div>
-                              <span class="font-bold text-slate-900 block">{{ facility.facility_name }}</span>
-                              <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-0.5 border border-slate-200/60">
+                              <button
+                                type="button"
+                                class="block text-left font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                                @click="openFacilityDrawer(facility)"
+                              >
+                                {{ facility.facility_name }}
+                              </button>
+                              <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-slate-200/60">
                                 <span>🌐</span>
                                 <span>{{ facility.network }}</span>
                               </span>
@@ -1707,14 +1954,14 @@ onUnmounted(() => {
                             @click="copyMfl(facility.mfl_code)"
                           >
                             <span>{{ facility.mfl_code }}</span>
-                            <span class="text-[10px] text-slate-600">{{ copiedMfl === facility.mfl_code ? '✓' : '📋' }}</span>
+                            <span class="text-[11px] text-slate-600">{{ copiedMfl === facility.mfl_code ? '✓' : '📋' }}</span>
                           </button>
                         </td>
 
                         <!-- Status Badge -->
                         <td class="py-3.5 px-4">
                           <span
-                            class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold border"
+                            class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border"
                             :class="
                               facility.go_live
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
@@ -1736,7 +1983,7 @@ onUnmounted(() => {
 
                         <!-- Tokens -->
                         <td class="py-3.5 px-4 text-right">
-                          <span class="font-extrabold text-[#bc1823] font-mono text-sm inline-flex items-center gap-1">
+                          <span class="font-semibold text-[#bc1823] font-mono text-sm inline-flex items-center gap-1">
                             <span>🪙</span>
                             <span>{{ (facility.token_quantity || 0).toLocaleString() }}</span>
                           </span>
@@ -1748,7 +1995,7 @@ onUnmounted(() => {
                             <button
                               v-if="facility.invoice_summary?.has_outstanding"
                               type="button"
-                              class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                              class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0 cursor-pointer"
                               @click="openMpesaModalForFacility(facility)"
                               title="Pay outstanding invoice via M-Pesa"
                             >
@@ -1756,7 +2003,7 @@ onUnmounted(() => {
                             </button>
                             <button
                               type="button"
-                              class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-bold text-white hover:bg-black transition shadow-xs cursor-pointer"
+                              class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-black transition shadow-xs cursor-pointer"
                               @click="openTopUpModal(facility)"
                             >
                               Top Up
@@ -1785,7 +2032,7 @@ onUnmounted(() => {
             </div>
 
             <!-- CARDS VIEW (Optional toggle) -->
-            <div v-else class="space-y-6">
+            <div v-else-if="allFacilities.length" class="space-y-6">
               <!-- Render Grouped by Network when toggle active -->
               <template v-if="groupByNetwork">
                 <div
@@ -1796,8 +2043,8 @@ onUnmounted(() => {
                   <div class="flex items-center justify-between bg-slate-100/90 rounded-xl px-4 py-2.5 border border-slate-200">
                     <div class="flex items-center gap-2">
                       <span class="text-sm">🌐</span>
-                      <span class="font-extrabold text-xs text-slate-900 uppercase tracking-wide">{{ group.network }}</span>
-                      <span class="rounded-full bg-white border border-slate-300 text-slate-700 px-2 py-0.5 text-[10px] font-bold">
+                      <span class="font-semibold text-xs text-slate-900 uppercase tracking-[0.08em]">{{ group.network }}</span>
+                      <span class="rounded-full bg-white border border-slate-300 text-slate-700 px-2 py-0.5 text-[11px] font-semibold">
                         {{ group.facilities.length }} {{ group.facilities.length === 1 ? 'branch' : 'branches' }}
                       </span>
                     </div>
@@ -1812,15 +2059,21 @@ onUnmounted(() => {
                       <div>
                         <div class="flex items-start justify-between gap-2">
                           <div>
-                            <h3 class="font-bold text-base text-slate-900">{{ facility.facility_name }}</h3>
+                            <button
+                      type="button"
+                      class="block text-left text-base font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                      @click="openFacilityDrawer(facility)"
+                    >
+                      {{ facility.facility_name }}
+                    </button>
                             <p class="text-xs text-slate-500 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
-                            <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-1 border border-slate-200/60">
+                            <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-slate-200/60">
                               <span>🌐</span>
                               <span>{{ facility.network }}</span>
                             </span>
                           </div>
                           <span
-                            class="rounded-full px-2 py-0.5 text-[10px] font-bold border shrink-0"
+                            class="rounded-full px-2 py-0.5 text-[11px] font-semibold border shrink-0"
                             :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
                           >
                             {{ facility.go_live ? 'Live' : 'Verifying' }}
@@ -1851,7 +2104,7 @@ onUnmounted(() => {
                         <button
                           v-if="facility.invoice_summary?.has_outstanding"
                           type="button"
-                          class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                           @click="openMpesaModalForFacility(facility)"
                         >
                           <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
@@ -1859,7 +2112,7 @@ onUnmounted(() => {
                         <div class="flex items-center gap-2">
                           <button
                             type="button"
-                            class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-black transition cursor-pointer"
+                            class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black transition cursor-pointer"
                             @click="openTopUpModal(facility)"
                           >
                             + Top Up Tokens
@@ -1889,15 +2142,21 @@ onUnmounted(() => {
                   <div>
                     <div class="flex items-start justify-between gap-2">
                       <div>
-                        <h3 class="font-bold text-base text-slate-900">{{ facility.facility_name }}</h3>
+                        <button
+                      type="button"
+                      class="block text-left text-base font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                      @click="openFacilityDrawer(facility)"
+                    >
+                      {{ facility.facility_name }}
+                    </button>
                         <p class="text-xs text-slate-500 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
-                        <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px] font-medium mt-1 border border-slate-200/60">
+                        <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-slate-200/60">
                           <span>🌐</span>
                           <span>{{ facility.network }}</span>
                         </span>
                       </div>
                       <span
-                        class="rounded-full px-2 py-0.5 text-[10px] font-bold border shrink-0"
+                        class="rounded-full px-2 py-0.5 text-[11px] font-semibold border shrink-0"
                         :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
                       >
                         {{ facility.go_live ? 'Live' : 'Verifying' }}
@@ -1928,7 +2187,7 @@ onUnmounted(() => {
                     <button
                       v-if="facility.invoice_summary?.has_outstanding"
                       type="button"
-                      class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                       @click="openMpesaModalForFacility(facility)"
                     >
                       <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
@@ -1936,7 +2195,7 @@ onUnmounted(() => {
                     <div class="flex items-center gap-2">
                       <button
                         type="button"
-                        class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-black transition cursor-pointer"
+                        class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black transition cursor-pointer"
                         @click="openTopUpModal(facility)"
                       >
                         + Top Up Tokens
@@ -1960,61 +2219,242 @@ onUnmounted(() => {
           <!-- VIEW B: DASHBOARD / EXECUTIVE RUNWAY OVERVIEW                   -->
           <!-- ============================================================== -->
           <div v-if="activeView === 'dashboard'" class="space-y-6">
-            <div>
-              <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Executive Dashboard</h1>
-              <p class="text-xs text-slate-600 mt-0.5">Overview of health system capacity, live registry compliance, and financial settlement.</p>
+            <!-- Organization identity band: the legal parent entity owns the account -->
+            <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
+              <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div class="min-w-0">
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Your Organization</span>
+                  <h1 class="mt-0.5 truncate text-4xl font-bold tracking-tight text-slate-900 leading-tight">{{ primaryOrganizationName }}</h1>
+                  <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                      <span>🌐</span>
+                      <span>{{ primaryNetworkName }}</span>
+                    </span>
+                    <span class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                      <span>🏥</span>
+                      <span>{{ facilityCount }} {{ facilityCount === 1 ? 'facility' : 'facilities' }}</span>
+                    </span>
+                    <span v-if="userProfile.masked_national_id" class="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700">
+                      {{ userProfile.masked_national_id }}
+                    </span>
+                  </div>
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    class="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-50"
+                    @click="openAddFacilityModal()"
+                  >
+                    <span>+ Add Facility</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-xl bg-[#bc1823] px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-[#a3141d]"
+                    @click="openTopUpModal()"
+                  >
+                    <span>🪙 Top Up</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Attention band: only what needs action, with a direct drill-in -->
+            <div v-if="dashboardAttention.length" class="rounded-2xl border border-amber-200 bg-amber-50/50 p-4">
+              <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-900">Needs your attention</span>
+              <div class="mt-2 space-y-2">
+                <div
+                  v-for="item in dashboardAttention"
+                  :key="item.key"
+                  class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5"
+                >
+                  <div class="flex min-w-0 items-center gap-2.5">
+                    <span class="shrink-0 text-base">{{ item.icon }}</span>
+                    <div class="min-w-0">
+                      <span class="block truncate text-xs font-semibold text-slate-900">{{ item.text }}</span>
+                      <span class="block truncate text-[11px] text-slate-500">{{ item.meta }}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    class="shrink-0 text-xs font-semibold text-blue-600 hover:underline"
+                    @click="activeView = item.view"
+                  >
+                    Review →
+                  </button>
+                </div>
+              </div>
             </div>
 
             <!-- Top 3 Executive Metrics -->
             <div class="grid gap-4 sm:grid-cols-3">
               <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
-                <span class="text-xs font-bold uppercase tracking-wider text-slate-600 block">Total Token Runway</span>
+                <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600 block">Total Token Runway</span>
                 <div class="flex items-baseline gap-2">
-                  <span class="text-3xl font-extrabold text-[#bc1823] tracking-tight leading-none">{{ totalTokenCount.toLocaleString() }}</span>
-                  <span class="text-xs font-bold text-slate-600">Care Tokens</span>
+                  <span class="text-6xl font-bold text-[#bc1823] tracking-tight leading-none">{{ totalTokenCount.toLocaleString() }}</span>
+                  <span class="text-xs font-semibold text-slate-600">Care Tokens</span>
                 </div>
                 <p class="text-xs text-slate-600 leading-relaxed">
                   Supports approx. <strong>~{{ Math.floor(totalTokenCount / 15) }} clinical patient encounters</strong> across all registered clinics.
                 </p>
                 <div class="pt-2 border-t border-slate-100">
-                  <button type="button" class="text-xs font-bold text-[#bc1823] hover:underline" @click="openTopUpModal()">
+                  <button type="button" class="text-xs font-semibold text-[#bc1823] hover:underline" @click="openTopUpModal()">
                     + Top Up Runway Capacity →
                   </button>
                 </div>
               </div>
 
               <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
-                <span class="text-xs font-bold uppercase tracking-wider text-slate-600 block">Health Facility Registry Compliance</span>
+                <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600 block">Health Facility Registry Compliance</span>
                 <div class="flex items-baseline gap-2">
-                  <span class="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">{{ liveFacilitiesCount }} / {{ facilityCount }}</span>
-                  <span class="text-xs font-bold text-emerald-700">Clinics Live</span>
+                  <span class="text-6xl font-bold text-slate-900 tracking-tight leading-none">{{ liveFacilitiesCount }} / {{ facilityCount }}</span>
+                  <span class="text-xs font-semibold text-emerald-700">Clinics Live</span>
                 </div>
                 <p class="text-xs text-slate-600 leading-relaxed">
                   Synchronized with the official Health Facility Registry (HFR) & Partner Network.
                 </p>
                 <div class="pt-2 border-t border-slate-100">
-                  <button type="button" class="text-xs font-bold text-blue-600 hover:underline" @click="activeView = 'facilities'">
+                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline" @click="activeView = 'facilities'">
                     View Facility Registry →
                   </button>
                 </div>
               </div>
 
               <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3" :class="openInvoiceCount > 0 ? 'border-amber-200 bg-amber-50/40' : ''">
-                <span class="text-xs font-bold uppercase tracking-wider text-slate-600 block">Settlement & Invoices</span>
+                <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600 block">Settlement & Invoices</span>
                 <div class="flex items-baseline gap-2">
-                  <span class="text-3xl font-extrabold tracking-tight leading-none" :class="openInvoiceCount > 0 ? 'text-amber-900' : 'text-slate-900'">
+                  <span class="text-6xl font-bold tracking-tight leading-none" :class="openInvoiceCount > 0 ? 'text-amber-900' : 'text-slate-900'">
                     {{ openInvoiceCount > 0 ? money(totalOutstandingAmount) : 'Paid' }}
                   </span>
-                  <span v-if="openInvoiceCount > 0" class="text-xs font-bold text-amber-700">Due</span>
+                  <span v-if="openInvoiceCount > 0" class="text-xs font-semibold text-amber-700">Due</span>
                 </div>
                 <p class="text-xs text-slate-600 leading-relaxed">
                   {{ openInvoiceCount > 0 ? `${openInvoiceCount} invoice awaiting payment via M-Pesa / Bank` : 'All invoices settled with zero outstanding balance.' }}
                 </p>
                 <div class="pt-2 border-t border-slate-100">
-                  <button type="button" class="text-xs font-bold text-slate-800 hover:underline" @click="activeView = 'billing'">
+                  <button type="button" class="text-xs font-semibold text-slate-800 hover:underline" @click="activeView = 'billing'">
                     Go to Invoices & Billing →
                   </button>
                 </div>
+              </div>
+            </div>
+
+            <!-- Portfolio: one equal card per facility (no alphabetical hero) -->
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Your facilities</h2>
+                <button type="button" class="text-xs font-semibold text-blue-600 hover:underline" @click="activeView = 'facilities'">
+                  View all →
+                </button>
+              </div>
+
+              <div v-if="!allFacilities.length" class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500">
+                <span class="mb-2 block text-3xl">🏥</span>
+                <p class="text-sm font-semibold text-slate-800">No facilities in your portfolio yet</p>
+                <p class="mt-1">Link your clinics from the Health Facility Registry to start using CareVerse.</p>
+              </div>
+
+              <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <article
+                  v-for="fac in allFacilities"
+                  :key="fac.mfl_code"
+                  class="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs"
+                >
+                  <div>
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="min-w-0">
+                        <button
+                          type="button"
+                          class="block truncate text-left text-base font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                          @click="openFacilityDrawer(fac)"
+                        >
+                          {{ fac.facility_name }}
+                        </button>
+                        <p class="mt-0.5 text-xs text-slate-500">{{ fac.keph_level }} · MFL: {{ fac.mfl_code }}</p>
+                        <span class="mt-1 inline-flex items-center gap-1 rounded border border-slate-200/60 bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-700">
+                          <span>🌐</span>
+                          <span>{{ fac.network }}</span>
+                        </span>
+                      </div>
+                      <span
+                        class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                        :class="fac.go_live ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'"
+                      >
+                        {{ fac.go_live ? 'Live' : 'Verifying' }}
+                      </span>
+                    </div>
+
+                    <div class="mt-4 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs">
+                      <div class="flex justify-between text-slate-600">
+                        <span>Active Plan:</span>
+                        <strong class="text-slate-900">{{ fac.token_package || 'None' }}</strong>
+                      </div>
+                      <div v-if="fac.recent_purchase" class="flex justify-between text-[11px] text-slate-600">
+                        <span>Recent Order:</span>
+                        <span class="font-mono text-slate-800">{{ money(fac.recent_purchase.amount, fac.recent_purchase.currency) }} ({{ fac.recent_purchase.date }})</span>
+                      </div>
+                      <div class="flex justify-between text-slate-600">
+                        <span>Token Runway:</span>
+                        <strong class="text-[#bc1823]">🪙 {{ (fac.token_quantity || 0).toLocaleString() }} tokens</strong>
+                      </div>
+                      <div v-if="fac.invoice_summary?.has_outstanding" class="flex justify-between border-t border-slate-200/60 pt-1.5">
+                        <span class="font-bold text-amber-800">Due Balance:</span>
+                        <strong class="font-bold text-amber-900">{{ money(fac.invoice_summary.outstanding_amount, fac.invoice_summary.currency) }}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 space-y-2 border-t border-slate-100 pt-3">
+                    <button
+                      v-if="fac.invoice_summary?.has_outstanding"
+                      type="button"
+                      class="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700"
+                      @click="openMpesaModalForFacility(fac)"
+                    >
+                      <span>📱 Pay M-Pesa: {{ money(fac.invoice_summary.outstanding_amount, fac.invoice_summary.currency) }} →</span>
+                    </button>
+                    <div class="flex items-center gap-2">
+                      <button
+                        type="button"
+                        class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-black"
+                        @click="openTopUpModal(fac)"
+                      >
+                        + Top Up Tokens
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50"
+                        @click="openCalculatorModal(fac)"
+                        title="Sizing Calculator"
+                      >
+                        🧮
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        @click="openFacilityDrawer(fac)"
+                      >
+                        Details →
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <!-- Recent activity: orders + payments, newest first -->
+            <div v-if="recentActivity.length" class="space-y-3">
+              <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Recent activity</h2>
+              <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xs">
+                <ul class="divide-y divide-slate-100">
+                  <li v-for="act in recentActivity" :key="act.kind + act.title" class="flex items-center gap-3 px-4 py-3">
+                    <span class="shrink-0 text-base">{{ act.icon }}</span>
+                    <div class="min-w-0 flex-1">
+                      <span class="block truncate text-xs font-semibold text-slate-900">{{ act.title }}</span>
+                      <span class="block truncate text-[11px] text-slate-500">{{ act.text }}</span>
+                    </div>
+                    <span class="shrink-0 font-mono text-[11px] text-slate-500">{{ act.date }}</span>
+                  </li>
+                </ul>
               </div>
             </div>
           </div>
@@ -2024,10 +2464,10 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <div v-if="activeView === 'pricing'" class="space-y-8">
             <div class="max-w-3xl">
-              <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-0.5 text-xs font-bold uppercase tracking-wider text-blue-800">
+              <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-blue-800">
                 Consumption-Based HMIS Pricing
               </span>
-              <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight mt-2">
+              <h1 class="text-4xl font-bold text-slate-900 tracking-tight mt-2 leading-tight">
                 CareVerse Token Plans & Capacity
               </h1>
               <p class="text-sm text-slate-600 mt-2 leading-relaxed">
@@ -2046,16 +2486,16 @@ onUnmounted(() => {
                 <div>
                   <!-- Tier Header -->
                   <div class="flex items-center justify-between">
-                    <h3 class="font-extrabold text-lg text-slate-900">{{ pkg.display_name }}</h3>
+                    <h3 class="font-bold text-lg text-slate-900">{{ pkg.display_name }}</h3>
                     <span
                       v-if="pkg.item_code === 'CV-TOKEN-GROWTH'"
-                      class="rounded-full bg-blue-100 text-blue-800 px-2.5 py-0.5 text-[10px] font-bold uppercase"
+                      class="rounded-full bg-blue-100 text-blue-800 px-2.5 py-0.5 text-[11px] font-semibold uppercase"
                     >
                       Most Popular
                     </span>
                     <span
                       v-else-if="Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0"
-                      class="rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[10px] font-bold"
+                      class="rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-semibold"
                     >
                       Free Trial
                     </span>
@@ -2069,7 +2509,7 @@ onUnmounted(() => {
                   <!-- Price -->
                   <div class="mt-4 pt-4 border-t border-slate-100">
                     <div class="flex items-baseline gap-1">
-                      <span class="text-2xl font-extrabold text-slate-900">
+                      <span class="text-4xl font-bold text-slate-900 leading-tight">
                         {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'KES 0' : money(pkg.price_ex_vat ?? pkg.price, pkg.currency) }}
                       </span>
                       <span class="text-xs text-slate-500 font-medium">/ month</span>
@@ -2080,7 +2520,7 @@ onUnmounted(() => {
                   </div>
 
                   <!-- Token Quantity Pill -->
-                  <div class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-200/70 px-3 py-1.5 text-xs font-bold text-[#bc1823]">
+                  <div class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-200/70 px-3 py-1.5 text-xs font-semibold text-[#bc1823]">
                     <span>🪙</span>
                     <span>{{ (pkg.token_quantity || 100).toLocaleString() }} Care Tokens</span>
                   </div>
@@ -2090,7 +2530,7 @@ onUnmounted(() => {
                 <div class="mt-6 pt-4 border-t border-slate-100">
                   <button
                     type="button"
-                    class="w-full rounded-xl py-2.5 px-4 text-xs font-bold transition shadow-xs text-center"
+                    class="w-full rounded-xl py-2.5 px-4 text-xs font-semibold transition shadow-xs text-center"
                     :class="
                       pkg.item_code === 'CV-TOKEN-GROWTH'
                         ? 'bg-blue-600 text-white hover:bg-blue-700'
@@ -2117,7 +2557,7 @@ onUnmounted(() => {
                 </div>
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                  class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                   @click="openCalculatorModal()"
                 >
                   <span>🧮 Launch Sizing Calculator</span>
@@ -2128,7 +2568,7 @@ onUnmounted(() => {
               <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr class="border-b border-slate-200 bg-slate-50 text-slate-700 font-extrabold">
+                    <tr class="border-b border-slate-200 bg-slate-50 text-slate-700 font-bold">
                       <th class="py-4 px-6 w-2/5">Clinical & Operational Capabilities</th>
                       <th class="py-4 px-4 text-center w-36">Free Trial</th>
                       <th class="py-4 px-4 text-center w-36">Starter</th>
@@ -2144,10 +2584,10 @@ onUnmounted(() => {
                         class="bg-slate-100/75 border-y border-slate-200 cursor-pointer hover:bg-slate-200/60 transition select-none"
                         @click="toggleFeatureCategory(category.key)"
                       >
-                        <td colspan="5" class="py-3 px-6 font-extrabold text-slate-900 text-xs">
+                        <td colspan="5" class="py-3 px-6 font-semibold text-slate-900 text-xs">
                           <div class="flex items-center justify-between">
                             <div class="flex items-center gap-2">
-                              <span class="text-slate-400 text-[10px]">
+                              <span class="text-slate-400 text-[11px]">
                                 {{ expandedPricingCategories[category.key] ? '▼' : '►' }}
                               </span>
                               <span>{{ category.title }}</span>
@@ -2169,7 +2609,7 @@ onUnmounted(() => {
                             <td class="py-3.5 px-6">
                               <div class="font-bold text-slate-900 flex items-center gap-1.5">
                                 <span>{{ feature.name }}</span>
-                                <span class="text-slate-400 text-[10px]" title="Click for plain language description">ℹ️</span>
+                                <span class="text-slate-400 text-[11px]" title="Click for plain language description">ℹ️</span>
                               </div>
                               <p
                                 v-if="expandedFeatureDescriptions[feature.id]"
@@ -2205,15 +2645,55 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <div v-if="activeView === 'billing'" class="space-y-6">
             <div>
-              <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Billing & Invoices</h1>
+              <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">Billing & Invoices</h1>
               <p class="text-xs text-slate-600 mt-0.5">Review outstanding statements, generate invoices for token orders, and pay instantly via M-Pesa.</p>
+            </div>
+
+            <!-- M-Pesa Paybill settlement details (primary payment method) -->
+            <div class="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
+              <div class="flex items-center gap-3">
+                <div class="size-8 shrink-0 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-semibold text-sm">M</div>
+                <div class="min-w-0">
+                  <span class="font-semibold text-xs text-emerald-900 block">M-Pesa Paybill · {{ paybillInfo.business_name }}</span>
+                  <span class="text-[11px] text-emerald-800">Primary settlement method — direct paybill with zero transaction processing surcharge</span>
+                </div>
+              </div>
+              <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Business No</span>
+                  <div class="mt-1 flex items-center justify-between gap-2">
+                    <span class="font-mono text-base font-bold text-slate-900">{{ paybillInfo.business_number }}</span>
+                    <button
+                      type="button"
+                      class="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 transition shrink-0"
+                      @click="copyText(paybillInfo.business_number, 'paybill_biz')"
+                    >
+                      {{ copiedKey === 'paybill_biz' ? '✓ Copied' : '📋 Copy' }}
+                    </button>
+                  </div>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Account No</span>
+                  <p class="mt-1 text-[11px] text-slate-600 leading-relaxed">
+                    Enter the invoice number shown on each invoice card below (e.g. <span class="font-mono">{{ allInvoices[0]?.name || 'ACC-SINV-2026-00001' }}</span>).
+                  </p>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">How to pay</span>
+                  <p class="mt-1 text-[11px] text-slate-600 leading-relaxed">
+                    1. M-Pesa app → Lipa na M-Pesa → Paybill<br />
+                    2. Business No, then Account No (invoice number)<br />
+                    3. Amount &amp; PIN, then paste the transaction code on the invoice
+                  </p>
+                </div>
+              </div>
             </div>
 
             <!-- Invoices List -->
             <div class="space-y-4">
               <div v-if="!allInvoices.length" class="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs text-slate-500">
                 <span class="text-3xl block mb-2">🎉</span>
-                <p class="font-bold text-slate-800 text-sm">All invoices settled</p>
+                <p class="font-semibold text-slate-800 text-sm">All invoices settled</p>
                 <p class="mt-1">There are no outstanding balances due on your account.</p>
               </div>
 
@@ -2225,9 +2705,9 @@ onUnmounted(() => {
                 >
                   <div>
                     <div class="flex items-center gap-2">
-                      <span class="font-bold text-sm text-slate-900">{{ invoice.invoice_number || invoice.name }}</span>
+                      <span class="font-semibold text-sm text-slate-900">{{ invoice.invoice_number || invoice.name }}</span>
                       <span
-                        class="rounded px-2 py-0.5 text-[10px] font-bold"
+                        class="rounded px-2 py-0.5 text-[11px] font-semibold"
                         :class="invoiceStatus(invoice).key === 'overdue' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'"
                       >
                         {{ invoiceStatus(invoice).label }}
@@ -2236,16 +2716,21 @@ onUnmounted(() => {
                     <p class="text-xs text-slate-500 mt-1">
                       Due: <strong>{{ invoice.due_date || 'On Receipt' }}</strong> · Issued: {{ invoice.posting_date }}
                     </p>
+                    <span class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 mt-1.5 text-[11px] font-semibold text-slate-700">
+                      <span>🏥</span>
+                      <span>{{ facilityLabel(invoice.crm_token_facility_mfl, allFacilities) }}</span>
+                      <span v-if="invoice.crm_token_facility_mfl" class="font-mono text-[11px] text-slate-500">{{ invoice.crm_token_facility_mfl }}</span>
+                    </span>
                   </div>
 
                   <div class="flex items-center gap-3 shrink-0 flex-wrap justify-end">
                     <div class="text-right">
-                      <span class="text-base font-extrabold text-slate-900 block leading-tight">{{ money(invoice.amount, invoice.currency) }}</span>
-                      <span class="text-[10px] text-slate-400 uppercase font-medium">Balance</span>
+                      <span class="text-base font-bold text-slate-900 block leading-tight">{{ money(invoice.amount, invoice.currency) }}</span>
+                      <span class="text-[11px] text-slate-400 uppercase font-medium">Balance</span>
                     </div>
                     <button
                       type="button"
-                      class="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition inline-flex items-center gap-1.5"
+                      class="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition inline-flex items-center gap-1.5"
                       @click="openMpesaModal(invoice)"
                     >
                       <span>📱 Pay M-Pesa (No Fee)</span>
@@ -2265,7 +2750,7 @@ onUnmounted(() => {
 
             <!-- Orders awaiting invoice -->
             <div v-if="allOrders.length" class="space-y-3 pt-6 border-t border-slate-200">
-              <h2 class="text-sm font-bold uppercase tracking-wider text-slate-600">Pending Token Orders</h2>
+              <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">Pending Token Orders</h2>
               <div class="space-y-3">
                 <article
                   v-for="order in allOrders"
@@ -2273,15 +2758,15 @@ onUnmounted(() => {
                   class="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs flex items-center justify-between"
                 >
                   <div>
-                    <span class="font-bold text-xs text-slate-900">{{ packageLabel(order.crm_token_package_item, context.token_packages) }}</span>
+                    <span class="font-semibold text-xs text-slate-900">{{ packageLabel(order.crm_token_package_item, context.token_packages) }}</span>
                     <span class="text-xs text-slate-500 ml-2">For {{ facilityLabel(order.crm_token_facility_mfl, allFacilities) }} · Order #{{ order.name }}</span>
                   </div>
                   <div class="flex items-center gap-3">
-                    <span class="text-xs font-bold text-slate-800">{{ money(order.grand_total, order.currency) }}</span>
+                    <span class="text-xs font-semibold text-slate-800">{{ money(order.grand_total, order.currency) }}</span>
                     <button
                       v-if="order.can_create_invoice"
                       type="button"
-                      class="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-black transition cursor-pointer"
+                      class="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black transition cursor-pointer"
                       @click="createInvoice(order)"
                     >
                       Generate Invoice
@@ -2295,7 +2780,7 @@ onUnmounted(() => {
             <div v-if="allPayments.length" class="space-y-3 pt-6 border-t border-slate-200">
               <div class="flex items-center justify-between">
                 <div>
-                  <h2 class="text-sm font-bold uppercase tracking-wider text-slate-600">Payment Receipts & History</h2>
+                  <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">Payment Receipts & History</h2>
                   <p class="text-xs text-slate-500 mt-0.5">Verified payment receipts, M-Pesa confirmations, and bank settlements.</p>
                 </div>
                 <span class="text-xs text-slate-600 font-semibold bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
@@ -2307,7 +2792,7 @@ onUnmounted(() => {
                 <div class="overflow-x-auto">
                   <table class="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr class="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      <tr class="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                         <th class="py-3 px-4">Receipt #</th>
                         <th class="py-3 px-4">Date</th>
                         <th class="py-3 px-4">Mode & Reference</th>
@@ -2325,10 +2810,10 @@ onUnmounted(() => {
                             {{ pay.reference_no }}
                           </span>
                         </td>
-                        <td class="py-3 px-4 text-right font-extrabold text-slate-900">{{ money(pay.amount, 'KES') }}</td>
+                        <td class="py-3 px-4 text-right font-bold text-slate-900">{{ money(pay.amount, 'KES') }}</td>
                         <td class="py-3 px-4 text-center">
                           <span
-                            class="rounded-full px-2 py-0.5 text-[10px] font-bold border"
+                            class="rounded-full px-2 py-0.5 text-[11px] font-semibold border"
                             :class="pay.status === 'Submitted' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
                           >
                             {{ pay.status }}
@@ -2343,11 +2828,18 @@ onUnmounted(() => {
           </div>
 
           <!-- ============================================================== -->
+          <!-- VIEW E1: OPT-IN REQUESTS (first-class records with quotes)     -->
+          <!-- ============================================================== -->
+          <div v-if="activeView === 'optin_requests'" class="space-y-6">
+            <OptInRequests :requests="optinRequests" />
+          </div>
+
+          <!-- ============================================================== -->
           <!-- VIEW E: HEALTH FACILITY REGISTRY SYNC                          -->
           <!-- ============================================================== -->
           <div v-if="activeView === 'hfr_sync'" class="space-y-6 max-w-4xl">
             <div>
-              <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Health Facility Registry Sync</h1>
+              <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">Health Facility Registry Sync</h1>
               <p class="text-xs text-slate-600 mt-0.5">Synchronize facility records directly with the official Digital Health Agency (DHA) Health Facility Registry.</p>
             </div>
 
@@ -2355,7 +2847,7 @@ onUnmounted(() => {
             <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
               <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
-                  <h3 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <h3 class="font-semibold text-sm text-slate-900 flex items-center gap-2">
                     <span>🆔</span>
                     <span>1-Click Auto-Discovery by National ID</span>
                   </h3>
@@ -2366,7 +2858,7 @@ onUnmounted(() => {
                 </div>
                 <button
                   type="button"
-                  class="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition shrink-0 disabled:opacity-50 inline-flex items-center gap-1.5"
+                  class="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition shrink-0 disabled:opacity-50 inline-flex items-center gap-1.5"
                   :disabled="hfrOwnerSearchBusy"
                   @click="discoverFacilitiesByOwnerId()"
                 >
@@ -2376,7 +2868,7 @@ onUnmounted(() => {
 
               <!-- Discovered Facilities List -->
               <div v-if="hfrOwnerSearchResults.length" class="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                <span class="text-xs font-bold uppercase text-slate-600">Discovered Facilities ({{ hfrOwnerSearchResults.length }})</span>
+                <span class="text-xs font-semibold uppercase text-slate-600">Discovered Facilities ({{ hfrOwnerSearchResults.length }})</span>
                 <div class="space-y-2 max-h-72 overflow-y-auto">
                   <div
                     v-for="cand in hfrOwnerSearchResults"
@@ -2385,8 +2877,8 @@ onUnmounted(() => {
                   >
                     <div>
                       <div class="flex items-center gap-2">
-                        <span class="font-bold text-xs text-slate-900">{{ cand.name }}</span>
-                        <span v-if="cand.already_linked" class="rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5">
+                        <span class="font-semibold text-xs text-slate-900">{{ cand.name }}</span>
+                        <span v-if="cand.already_linked" class="rounded bg-emerald-100 text-emerald-800 text-[11px] font-semibold px-2 py-0.5">
                           ✓ In Portfolio
                         </span>
                       </div>
@@ -2398,7 +2890,7 @@ onUnmounted(() => {
                     <button
                       v-if="!cand.already_linked"
                       type="button"
-                      class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-black transition shrink-0 disabled:opacity-50"
+                      class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black transition shrink-0 disabled:opacity-50"
                       :disabled="hfrLinkBusy"
                       @click="linkHfrCandidate(cand)"
                     >
@@ -2411,7 +2903,7 @@ onUnmounted(() => {
 
             <!-- Manual Search by MFL Code -->
             <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
-              <h3 class="font-bold text-sm text-slate-900">Manual Facility Search (by MFL or Registration #)</h3>
+              <h3 class="font-semibold text-sm text-slate-900">Manual Facility Search (by MFL or Registration #)</h3>
               <p class="text-xs text-slate-600 leading-relaxed">
                 If you have a clinic branch registered under a partner, trustee, or corporate registration number, search and link it directly via its 5-digit Master Facility List (MFL) code.
               </p>
@@ -2419,7 +2911,7 @@ onUnmounted(() => {
               <div class="pt-2 flex items-center gap-3">
                 <button
                   type="button"
-                  class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-800 shadow-2xs hover:bg-slate-50 transition"
+                  class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 transition"
                   @click="openAddFacilityModal()"
                 >
                   <span>+ Search by MFL Code or Registration #</span>
@@ -2434,12 +2926,12 @@ onUnmounted(() => {
           <div v-if="activeView === 'profile'" class="space-y-6 max-w-4xl">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">My Profile & Identification</h1>
+                <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">My Profile & Identification</h1>
                 <p class="text-xs text-slate-600 mt-0.5">Manage your verified National ID, legal organization entity, and Health Facility Registry linkage.</p>
               </div>
               <button
                 type="button"
-                class="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition inline-flex items-center gap-1.5 self-start sm:self-auto"
+                class="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition inline-flex items-center gap-1.5 self-start sm:self-auto"
                 @click="openEditProfileModal()"
               >
                 <span>✏️ Edit Profile Details</span>
@@ -2451,9 +2943,9 @@ onUnmounted(() => {
               <!-- Card 1: National Identification -->
               <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-4">
                 <div class="flex items-center justify-between">
-                  <span class="text-xs font-bold uppercase tracking-wider text-slate-500">National Identification</span>
+                  <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">National Identification</span>
                   <span
-                    class="rounded-full px-2.5 py-0.5 text-[10px] font-bold border"
+                    class="rounded-full px-2.5 py-0.5 text-[11px] font-semibold border"
                     :class="userProfile.national_id ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
                   >
                     {{ userProfile.national_id ? 'Verified Key' : 'Action Required' }}
@@ -2463,12 +2955,12 @@ onUnmounted(() => {
                 <div class="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2">
                   <div class="text-xs text-slate-500 font-medium">Kenyan National ID Number:</div>
                   <div class="flex items-center justify-between">
-                    <span class="font-mono text-xl font-extrabold tracking-wider text-slate-900">
+                    <span class="font-mono text-xl font-bold tracking-wider text-slate-900">
                       {{ showUnmaskedId ? (userProfile.national_id || 'Not on file') : (userProfile.masked_national_id || 'Not on file') }}
                     </span>
                     <button
                       type="button"
-                      class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 transition inline-flex items-center gap-1"
+                      class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition inline-flex items-center gap-1"
                       @click="showUnmaskedId = !showUnmaskedId"
                       :title="showUnmaskedId ? 'Mask National ID' : 'Reveal National ID'"
                     >
@@ -2484,7 +2976,7 @@ onUnmounted(() => {
                 <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
                   <button
                     type="button"
-                    class="text-xs font-bold text-blue-600 hover:underline"
+                    class="text-xs font-semibold text-blue-600 hover:underline"
                     @click="discoverFacilitiesByOwnerId(); activeView = 'hfr_sync'"
                   >
                     1-Click Registry Discovery →
@@ -2502,8 +2994,8 @@ onUnmounted(() => {
               <!-- Card 2: Legal Organization & Identity -->
               <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-4">
                 <div class="flex items-center justify-between">
-                  <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Enterprise Entity</span>
-                  <span class="rounded-full bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-0.5 text-[10px] font-bold">
+                  <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Enterprise Entity</span>
+                  <span class="rounded-full bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-0.5 text-[11px] font-semibold">
                     Primary Account
                   </span>
                 </div>
@@ -2511,7 +3003,7 @@ onUnmounted(() => {
                 <div class="space-y-3 text-xs">
                   <div class="rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1">
                     <span class="text-slate-500 font-medium block">Parent Legal Organization</span>
-                    <strong class="font-extrabold text-sm text-slate-900 block">{{ primaryOrganizationName }}</strong>
+                    <strong class="font-semibold text-sm text-slate-900 block">{{ primaryOrganizationName }}</strong>
                   </div>
 
                   <div class="grid grid-cols-2 gap-2 text-xs">
@@ -2541,7 +3033,7 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <div v-if="activeView === 'support'" class="space-y-6 max-w-3xl">
             <div>
-              <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Network Support & Contacts</h1>
+              <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">Network Support & Contacts</h1>
               <p class="text-xs text-slate-600 mt-0.5">Dedicated clinical onboarding lead and emergency support channels.</p>
             </div>
 
@@ -2562,7 +3054,25 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
+          </template>
         </main>
+
+        <!-- Facility detail drawer: ties all of one facility's records together -->
+        <FacilityDrawer
+          v-if="drawerFacility"
+          :facility="drawerFacility"
+          :invoices="drawerInvoices"
+          :orders="drawerOrders"
+          :token-packages="context.token_packages"
+          :copied-mfl="copiedMfl"
+          :default-currency="defaultCurrency"
+          @close="closeFacilityDrawer"
+          @open-top-up="openTopUpModal"
+          @open-calculator="openCalculatorModal"
+          @pay="openMpesaModal"
+          @create-invoice="createInvoice"
+          @copy-mfl="copyMfl"
+        />
       </div>
     </div>
 
@@ -2576,12 +3086,12 @@ onUnmounted(() => {
         <!-- 1-Click National ID Discovery Banner if ID exists -->
         <div v-if="userProfile.masked_national_id" class="rounded-xl bg-blue-50/70 border border-blue-200 p-3.5 flex items-center justify-between gap-3">
           <div>
-            <span class="font-bold text-xs text-blue-900 block">Registered Owner ID: {{ userProfile.masked_national_id }}</span>
+            <span class="font-semibold text-xs text-blue-900 block">Registered Owner ID: {{ userProfile.masked_national_id }}</span>
             <span class="text-[11px] text-blue-700">Auto-discover clinic branches licensed under this National ID with 1 click.</span>
           </div>
           <button
             type="button"
-            class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition shrink-0 disabled:opacity-50"
+            class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition shrink-0 disabled:opacity-50"
             :disabled="hfrOwnerSearchBusy"
             @click="discoverFacilitiesByOwnerId(); addFacilityModalOpen = false; activeView = 'hfr_sync'"
           >
@@ -2590,13 +3100,13 @@ onUnmounted(() => {
         </div>
 
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
             Search Health Facility Registry by MFL Code or Registration Number
           </label>
           <div class="flex gap-2">
             <select
               v-model="hfrSearchBy"
-              class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shrink-0"
+              class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shrink-0"
             >
               <option value="mfl_code">MFL Code</option>
               <option value="registration_number">Registration #</option>
@@ -2610,7 +3120,7 @@ onUnmounted(() => {
             />
             <button
               type="button"
-              class="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 shrink-0"
+              class="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shrink-0"
               :disabled="hfrSearchBusy"
               @click="executeHfrSearch()"
             >
@@ -2621,7 +3131,7 @@ onUnmounted(() => {
 
         <!-- Search Results -->
         <div v-if="hfrSearchResults.length" class="space-y-2">
-          <span class="text-xs font-bold uppercase text-slate-600">Matching Registry Records ({{ hfrSearchResults.length }})</span>
+          <span class="text-xs font-semibold uppercase text-slate-600">Matching Registry Records ({{ hfrSearchResults.length }})</span>
           <div class="space-y-2 max-h-60 overflow-y-auto">
             <div
               v-for="cand in hfrSearchResults"
@@ -2630,12 +3140,12 @@ onUnmounted(() => {
               :class="hfrSelectedCandidate?.fid === cand.fid ? 'border-blue-500 bg-blue-50/30' : 'border-slate-200'"
             >
               <div>
-                <span class="font-bold text-xs text-slate-900 block">{{ cand.name }}</span>
+                <span class="font-semibold text-xs text-slate-900 block">{{ cand.name }}</span>
                 <span class="text-[11px] text-slate-500">MFL: {{ cand.mfl_code }} · {{ cand.level || 'Clinic' }} · {{ cand.county }} · {{ cand.owner_type }}</span>
               </div>
               <button
                 type="button"
-                class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-black transition shrink-0 disabled:opacity-50"
+                class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black transition shrink-0 disabled:opacity-50"
                 :disabled="hfrLinkBusy"
                 @click="linkHfrCandidate(cand)"
               >
@@ -2655,13 +3165,16 @@ onUnmounted(() => {
     >
       <div class="p-1 space-y-5">
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
             Target Facility
           </label>
           <select
             v-model="selectedFacilityMfl"
-            class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 shadow-2xs focus:border-blue-500"
+            class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-slate-900 shadow-2xs focus:border-blue-500"
           >
+            <option v-if="allFacilities.length > 1" value="" disabled>
+              Select a facility to top up…
+            </option>
             <option
               v-for="fac in allFacilities"
               :key="fac.mfl_code"
@@ -2673,7 +3186,7 @@ onUnmounted(() => {
         </div>
 
         <div class="space-y-2">
-          <span class="text-xs font-bold uppercase text-slate-700 block">Select Package Tier</span>
+          <span class="text-xs font-semibold uppercase text-slate-700 block">Select Package Tier</span>
           <div class="grid gap-3 sm:grid-cols-2">
             <article
               v-for="pkg in context.token_packages"
@@ -2688,17 +3201,17 @@ onUnmounted(() => {
             >
               <div>
                 <div class="flex items-center justify-between">
-                  <span class="font-bold text-sm text-slate-900">{{ pkg.display_name }}</span>
-                  <span class="font-bold text-xs text-blue-700">
+                  <span class="font-semibold text-sm text-slate-900">{{ pkg.display_name }}</span>
+                  <span class="font-semibold text-xs text-blue-700">
                     {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'Free' : money(pkg.gross_total || pkg.price, pkg.currency) }}
                   </span>
                 </div>
-                <div class="mt-2 text-xs font-bold text-slate-900">🪙 {{ (pkg.token_quantity || 0).toLocaleString() }} Tokens</div>
+                <div class="mt-2 text-xs font-semibold text-slate-900">🪙 {{ (pkg.token_quantity || 0).toLocaleString() }} Tokens</div>
                 <p class="mt-1 text-[11px] text-slate-500 leading-normal">{{ pkg.coverage_summary || pkg.description }}</p>
               </div>
               <div class="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
                 <span class="text-slate-400">{{ Number(pkg.gross_total) > 0 ? 'incl. 16% VAT' : 'No charge' }}</span>
-                <span class="font-bold" :class="selectedTopUpPackageCode === pkg.item_code ? 'text-blue-600' : 'text-slate-400'">
+                <span class="font-semibold" :class="selectedTopUpPackageCode === pkg.item_code ? 'text-blue-600' : 'text-slate-400'">
                   {{ selectedTopUpPackageCode === pkg.item_code ? 'Selected ✓' : 'Select' }}
                 </span>
               </div>
@@ -2712,7 +3225,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="rounded-xl bg-[#bc1823] px-5 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-[#a3141d] disabled:opacity-50"
+            class="rounded-xl bg-[#bc1823] px-5 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-[#a3141d] disabled:opacity-50"
             :disabled="purchaseBusy || !selectedFacility || !selectedPackageObj"
             @click="executeTopUp()"
           >
@@ -2751,15 +3264,15 @@ onUnmounted(() => {
         <!-- Top M-Pesa Branding Header -->
         <div class="rounded-2xl bg-emerald-700 text-white p-4 shadow-sm flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <div class="size-10 rounded-xl bg-white text-emerald-800 flex items-center justify-center font-extrabold text-base shadow-xs">
+            <div class="size-10 rounded-xl bg-white text-emerald-800 flex items-center justify-center font-bold text-base shadow-xs">
               M
             </div>
             <div>
-              <span class="font-extrabold text-sm tracking-tight block">Lipa na M-Pesa · Paybill</span>
+              <span class="font-semibold text-sm tracking-tight block">Lipa na M-Pesa · Paybill</span>
               <span class="text-xs text-emerald-100 block">Direct Instant Settlement with Zero Transaction Processing Surcharge</span>
             </div>
           </div>
-          <span class="rounded-full bg-emerald-800/80 border border-emerald-500/50 px-2.5 py-1 text-[11px] font-bold">
+          <span class="rounded-full bg-emerald-800/80 border border-emerald-500/50 px-2.5 py-1 text-[11px] font-semibold">
             Official Paybill
           </span>
         </div>
@@ -2768,14 +3281,14 @@ onUnmounted(() => {
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <!-- 1. Paybill Number -->
           <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col justify-between">
-            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Business No</span>
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Business No</span>
             <div class="mt-1">
-              <span class="font-mono text-lg font-extrabold text-slate-900 block leading-tight">{{ paybillInfo.business_number }}</span>
-              <span class="text-[10px] text-slate-500 block truncate">{{ paybillInfo.business_name }}</span>
+              <span class="font-mono text-lg font-bold text-slate-900 block leading-tight">{{ paybillInfo.business_number }}</span>
+              <span class="text-[11px] text-slate-500 block truncate">{{ paybillInfo.business_name }}</span>
             </div>
             <button
               type="button"
-              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
+              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
               @click="copyText(paybillInfo.business_number, 'paybill_biz')"
             >
               <span>{{ copiedKey === 'paybill_biz' ? '✓ Copied' : '📋 Copy' }}</span>
@@ -2784,14 +3297,14 @@ onUnmounted(() => {
 
           <!-- 2. Account Number -->
           <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col justify-between">
-            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Account No</span>
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Account No</span>
             <div class="mt-1">
-              <span class="font-mono text-sm font-extrabold text-slate-900 block truncate leading-tight">{{ mpesaInvoice?.name }}</span>
-              <span class="text-[10px] text-slate-500 block">Invoice Reference</span>
+              <span class="font-mono text-sm font-semibold text-slate-900 block truncate leading-tight">{{ mpesaInvoice?.name }}</span>
+              <span class="text-[11px] text-slate-500 block">Invoice Reference</span>
             </div>
             <button
               type="button"
-              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
+              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
               @click="copyText(mpesaInvoice?.name, 'paybill_acc')"
             >
               <span>{{ copiedKey === 'paybill_acc' ? '✓ Copied' : '📋 Copy' }}</span>
@@ -2800,14 +3313,14 @@ onUnmounted(() => {
 
           <!-- 3. Exact Amount -->
           <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col justify-between">
-            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Amount Due</span>
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Amount Due</span>
             <div class="mt-1">
-              <span class="font-mono text-lg font-extrabold text-emerald-700 block leading-tight">{{ money(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount, mpesaInvoice?.currency) }}</span>
-              <span class="text-[10px] text-slate-500 block">KES Net Total</span>
+              <span class="font-mono text-lg font-bold text-emerald-700 block leading-tight">{{ money(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount, mpesaInvoice?.currency) }}</span>
+              <span class="text-[11px] text-slate-500 block">KES Net Total</span>
             </div>
             <button
               type="button"
-              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
+              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
               @click="copyText(Math.round(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount || 0), 'paybill_amt')"
             >
               <span>{{ copiedKey === 'paybill_amt' ? '✓ Copied' : '📋 Copy' }}</span>
@@ -2827,7 +3340,7 @@ onUnmounted(() => {
 
         <!-- M-Pesa Transaction Input Form -->
         <div class="space-y-3 pt-2 border-t border-slate-100">
-          <label class="block text-xs font-bold uppercase tracking-wider text-slate-800">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-800">
             Submit M-Pesa Confirmation Code (from SMS)
           </label>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2837,9 +3350,9 @@ onUnmounted(() => {
                 v-model="mpesaCodeInput"
                 placeholder="e.g. SB65A1TU7X"
                 maxlength="15"
-                class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-mono font-extrabold uppercase tracking-wider text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10 placeholder:text-slate-400 placeholder:normal-case placeholder:font-sans"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-mono font-semibold uppercase tracking-[0.08em] text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10 placeholder:text-slate-400 placeholder:normal-case placeholder:font-sans"
               />
-              <span class="text-[10px] text-slate-400 mt-1 block">10-character code from Safaricom SMS</span>
+              <span class="text-[11px] text-slate-400 mt-1 block">10-character code from Safaricom SMS</span>
             </div>
             <div>
               <input
@@ -2848,7 +3361,7 @@ onUnmounted(() => {
                 placeholder="M-Pesa Phone (e.g. 0712 345 678)"
                 class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10"
               />
-              <span class="text-[10px] text-slate-400 mt-1 block">Phone used for the M-Pesa transaction</span>
+              <span class="text-[11px] text-slate-400 mt-1 block">Phone used for the M-Pesa transaction</span>
             </div>
           </div>
         </div>
@@ -2872,7 +3385,7 @@ onUnmounted(() => {
             </button>
             <button
               type="button"
-              class="rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition"
+              class="rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition"
               :disabled="mpesaReportBusy || !mpesaCodeInput"
               @click="submitMpesaPayment()"
             >
@@ -2891,7 +3404,7 @@ onUnmounted(() => {
     >
       <div class="p-1 space-y-4">
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
             Full Name
           </label>
           <input
@@ -2903,7 +3416,7 @@ onUnmounted(() => {
         </div>
 
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
             Kenyan National ID Number
           </label>
           <input
@@ -2911,7 +3424,7 @@ onUnmounted(() => {
             v-model="profileForm.national_id"
             placeholder="6 to 10 digit National ID"
             maxlength="10"
-            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:border-blue-500"
           />
           <p class="text-[11px] text-slate-500 mt-1">
             Used to securely query and auto-discover facilities licensed under your ownership in the official Health Facility Registry.
@@ -2919,7 +3432,7 @@ onUnmounted(() => {
         </div>
 
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
             Mobile Number
           </label>
           <input
@@ -2940,7 +3453,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50 transition"
+            class="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50 transition"
             :disabled="profileSaving"
             @click="saveUserProfile()"
           >

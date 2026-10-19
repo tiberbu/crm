@@ -321,3 +321,20 @@ html {
   box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.45);
   border-color: rgba(255, 255, 255, 0.1);
 }
+
+/* --- CX Portal (FacilityPortal SPA) typography base ---------------------
+   The portal root carries .cx-portal. Two things live here:
+   - Pin the Inter variable face. frappe-ui sets InterVar on <html>, but a
+     stray `font-sans` on the portal root used to re-assert Tailwind's
+     system-font stack and silently replace it.
+   - Tabular figures so KPIs, amounts, token counts, and ID columns align.
+   Scoped to the portal entry; the main CRM app is unaffected.              */
+.cx-portal {
+  font-family:
+    'InterVar',
+    'Inter',
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
