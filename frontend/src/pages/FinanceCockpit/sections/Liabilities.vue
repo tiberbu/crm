@@ -31,6 +31,7 @@
             subRes.fetch()
           }
         "
+        @row-click="(row) => navigateTo({ doctype: 'Subscription', name: row.name, company: company })"
         @retry="subRes.fetch()"
       >
         <template #actions="{ row }">
@@ -53,7 +54,6 @@
       </p>
       <a
         :href="deferredUrl"
-        target="_blank"
         class="inline-flex items-center gap-2 text-sm px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
       >
         <svg
@@ -83,9 +83,14 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import FinanceTable from '../components/FinanceTable.vue'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
+import {
+  cockpitReportHref,
+  useFinanceNavigation,
+} from '../composables/useFinanceNavigation.js'
 import { readableError } from '../composables/financeErrors.js'
 
 const { company } = useCompanyContext()
+const { navigateTo } = useFinanceNavigation()
 const activeTab = ref('subscriptions')
 const genPending = ref(null)
 
@@ -94,10 +99,10 @@ const TABS = [
   { key: 'deferred', label: 'Deferred Revenue/Expense' },
 ]
 
-const deferredUrl = computed(
-  () =>
-    '/app/query-report/Deferred%20Revenue%20and%20Expense?company=' +
-    encodeURIComponent(company.value || ''),
+const deferredUrl = computed(() =>
+  cockpitReportHref('Deferred Revenue and Expense', {
+    company: company.value || '',
+  }),
 )
 
 const subPage = ref(0)

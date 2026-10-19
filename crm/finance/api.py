@@ -106,13 +106,43 @@ def _request_flag(value, label, default=0):
 	frappe.throw(_("{0} must be yes or no.").format(label), frappe.ValidationError)
 
 
+_COCKPIT_DOCTYPE_ROUTES = {
+	"Sales Invoice": ("invoices", None),
+	"Sales Order": ("orders", None),
+	"Quotation": ("quotes", None),
+	"Payment Entry": ("payments", None),
+	"Purchase Invoice": ("payables", "invoices"),
+	"Purchase Order": ("payables", "orders"),
+	"Supplier": ("payables", "suppliers"),
+	"Customer": ("invoices", None),
+	"Expense Claim": ("expenses", "claims"),
+	"Employee Advance": ("expenses", "advances"),
+	"Journal Entry": ("general-ledger", "journal"),
+	"Period Closing Voucher": ("general-ledger", "closing"),
+	"Bank Account": ("banking", "accounts"),
+	"Bank Transaction": ("banking", "transactions"),
+	"CRM Partner Rebate Voucher": ("partner-commission", "rebates"),
+	"CRM Sales Commission": ("partner-commission", "commissions"),
+	"Asset": ("assets", None),
+	"Subscription": ("liabilities", "subscriptions"),
+}
+
+
 def _record_url(doctype, docname):
-	"""Build a Desk record link without assuming row values are strings."""
+	"""Build a Finance Cockpit record link without assuming row values are strings."""
+	from urllib.parse import urlencode
+
 	doctype_text = _safe_text(doctype)
 	docname_text = _safe_text(docname)
 	if not doctype_text or not docname_text:
 		return ""
-	return "/app/%s/%s" % (doctype_text.lower().replace(" ", "-"), docname_text)
+	section, tab = _COCKPIT_DOCTYPE_ROUTES.get(doctype_text, ("dashboard", None))
+	params = {}
+	if tab:
+		params["tab"] = tab
+	params["doctype"] = doctype_text
+	params["name"] = docname_text
+	return f"/finance-cockpit#/{section}?{urlencode(params)}"
 
 
 def _require_document_permission(doctype, name, ptype="read"):
@@ -478,7 +508,7 @@ def _collect_overdue_invoices(company, currency, roles):
 				urgency,
 				"record_payment",
 				"Record Payment",
-				record_url="/app/payment-entry/new-payment-entry-1?party_type=Customer&party=%s"
+				record_url="/finance-cockpit#/payments?doctype=Payment+Entry&mode=new&party_type=Customer&party=%s"
 				% r.customer,
 			)
 		)
@@ -791,7 +821,7 @@ def _collect_overdue_purchase_invoices(company, currency, roles):
 				urgency,
 				"record_payment",
 				"Record Payment",
-				record_url="/app/payment-entry/new-payment-entry-1?party_type=Supplier&party=%s"
+				record_url="/finance-cockpit#/payables?tab=payments&doctype=Payment+Entry&mode=new&payment_type=Pay&party_type=Supplier&party=%s"
 				% r.supplier,
 			)
 		)
@@ -865,7 +895,8 @@ def _collect_bank_transactions_unmatched(company, currency, roles):
 				urgency,
 				"reconcile",
 				"Reconcile",
-				record_url="/app/bank-reconciliation-tool?bank_account=%s" % r.bank_account,
+				record_url="/finance-cockpit#/banking?tab=transactions&status=Unreconciled&bank_account=%s"
+				% r.bank_account,
 			)
 		)
 	return items
@@ -898,7 +929,7 @@ def _collect_period_closing_due(currency, roles):
 			"critical",
 			"create",
 			"Create Period Closing",
-			record_url="/app/period-closing-voucher/new-period-closing-voucher-1",
+			record_url="/finance-cockpit#/general-ledger?tab=closing&doctype=Period+Closing+Voucher&mode=new",
 		)
 	]
 
@@ -3432,7 +3463,7 @@ def global_search(query, company=None, limit=20):
 					"label": i.get("name"),
 					"subtitle": i.get("customer") or "",
 					"meta": i.get("grand_total") or 0,
-					"url": "/app/sales-invoice/%s" % i.get("name"),
+					"url": _record_url("Sales Invoice", i.get("name")),
 				}
 			)
 
@@ -3450,7 +3481,7 @@ def global_search(query, company=None, limit=20):
 					"label": c.get("customer_name") or c.get("name"),
 					"subtitle": "Customer",
 					"meta": "",
-					"url": "/app/customer/%s" % c.get("name"),
+					"url": _record_url("Customer", c.get("name")),
 				}
 			)
 
@@ -3468,7 +3499,7 @@ def global_search(query, company=None, limit=20):
 					"label": p.get("name"),
 					"subtitle": p.get("party") or "",
 					"meta": p.get("paid_amount") or 0,
-					"url": "/app/payment-entry/%s" % p.get("name"),
+					"url": _record_url("Payment Entry", p.get("name")),
 				}
 			)
 
@@ -3487,7 +3518,7 @@ def global_search(query, company=None, limit=20):
 					"label": i.get("name"),
 					"subtitle": i.get("supplier") or "",
 					"meta": i.get("grand_total") or 0,
-					"url": "/app/purchase-invoice/%s" % i.get("name"),
+					"url": _record_url("Purchase Invoice", i.get("name")),
 				}
 			)
 
@@ -3505,7 +3536,7 @@ def global_search(query, company=None, limit=20):
 					"label": s.get("supplier_name") or s.get("name"),
 					"subtitle": "Supplier",
 					"meta": "",
-					"url": "/app/supplier/%s" % s.get("name"),
+					"url": _record_url("Supplier", s.get("name")),
 				}
 			)
 

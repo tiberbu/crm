@@ -245,6 +245,7 @@ import { ref, computed } from 'vue'
 import StatusPill from './StatusPill.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useCurrency } from '../composables/useCurrency.js'
+import { cockpitRecordHref } from '../composables/useFinanceNavigation.js'
 import FinanceErrorState from './FinanceErrorState.vue'
 
 const props = defineProps({
@@ -288,16 +289,10 @@ function linkHref(row, col) {
   if (
     !name ||
     !doctype ||
-    row?.[col.availableKey || 'network_available'] !== true ||
-    typeof name !== 'string' ||
-    name.includes('/') ||
-    name.includes('\\') ||
-    [...name].some((character) => character.charCodeAt(0) < 32)
-  ) return ''
-  const slug = doctype.trim().toLowerCase().replace(/\s+/g, '-')
-  const company = row.company
-  const companyQuery = company ? `?company=${encodeURIComponent(company)}` : ''
-  return `/app/${encodeURIComponent(slug)}/${encodeURIComponent(name)}${companyQuery}`
+    row?.[col.availableKey || 'network_available'] !== true
+  )
+    return ''
+  return cockpitRecordHref(doctype, name, row.company)
 }
 
 function linkFallback(row, col) {

@@ -119,10 +119,9 @@
           >{{ successPe }} sent for approval</span
         >
         <a
-          :href="'/app/payment-entry/' + successPe"
-          target="_blank"
+          :href="cockpitRecordHref('Payment Entry', successPe, company)"
           class="text-xs text-ink-green-6 hover:underline font-medium"
-          >View in Accounts →</a
+          >Open Payment Entry →</a
         >
       </div>
       <div
@@ -579,6 +578,7 @@ import FcIcon from './FcIcon.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { readableError } from '../../composables/financeErrors.js'
+import { cockpitRecordHref } from '../../composables/useFinanceNavigation.js'
 import {
   clampInvoiceAllocation,
   resolveMappedInvoicePayment,

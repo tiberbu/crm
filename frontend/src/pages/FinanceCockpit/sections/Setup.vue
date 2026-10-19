@@ -15,9 +15,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import FinanceRuleSettings from './FinanceRuleSettings.vue'
 import FinanceSetupRecords from './FinanceSetupRecords.vue'
+import { useFinanceNavigation } from '../composables/useFinanceNavigation.js'
 
 const items = [
   { key: 'rules', label: 'Commission and rebates' },
@@ -31,5 +32,12 @@ const items = [
   { key: 'currency', label: 'Currency exchange' },
 ]
 
-const selected = ref('rules')
+const { navState } = useFinanceNavigation()
+const selected = ref(navState.value?.tab || 'rules')
+watch(
+  () => navState.value?.tab,
+  (tab) => {
+    if (tab && items.some((i) => i.key === tab)) selected.value = tab
+  },
+)
 </script>

@@ -26,12 +26,12 @@
           refetch()
         }
       "
+      @row-click="(row) => navigateTo({ doctype: 'Journal Entry', name: row.name, company: company })"
       @retry="refetch"
     >
       <template #actions="{ row }">
         <a
-          :href="'/app/journal-entry/' + row.name"
-          target="_blank"
+          :href="cockpitRecordHref('Journal Entry', row.name, company)"
           class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           @click.stop
           >View</a
@@ -47,8 +47,13 @@ import { createResource } from 'frappe-ui'
 import LucideAlertCircle from '~icons/lucide/alert-circle'
 import FinanceTable from '../../components/FinanceTable.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
+import {
+  cockpitRecordHref,
+  useFinanceNavigation,
+} from '../../composables/useFinanceNavigation.js'
 
 const { company } = useCompanyContext()
+const { navigateTo } = useFinanceNavigation()
 const page = ref(0)
 
 const columns = [

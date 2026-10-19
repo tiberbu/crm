@@ -15,14 +15,22 @@
 
 <script setup>
 import FinanceSectionTabs from '../components/FinanceSectionTabs.vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import BankAccounts from './banking/BankAccounts.vue'
 import BankTransactions from './banking/BankTransactions.vue'
+import { useFinanceNavigation } from '../composables/useFinanceNavigation.js'
 
 const TABS = [
   { key: 'accounts', label: 'Bank Accounts' },
   { key: 'transactions', label: 'Transactions' },
 ]
 
-const activeTab = ref('accounts')
+const { navState } = useFinanceNavigation()
+const activeTab = ref(navState.value?.tab || 'accounts')
+watch(
+  () => navState.value?.tab,
+  (tab) => {
+    if (tab && TABS.some((t) => t.key === tab)) activeTab.value = tab
+  },
+)
 </script>

@@ -204,7 +204,54 @@
               </div>
             </section>
             <template v-else>
-            <template v-if="activeSection === 'dashboard'"
+            <div v-if="hasActiveRecord" class="space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <Breadcrumbs :items="recordBreadcrumbs" />
+              </div>
+              <PaymentAllocationForm
+                v-if="
+                  navState.mode === 'new' &&
+                  navState.doctype === 'Payment Entry' &&
+                  navState.params?.party_type !== 'Supplier' &&
+                  !mappedSeedDoc
+                "
+                :seed="deepSeedDoc"
+                @saved="onRecordSaved"
+                @close="clearRecordParams"
+              />
+              <PaymentAllocationForm
+                v-else-if="
+                  navState.mode === 'new' &&
+                  mappedSeedDoc?.doctype === 'Payment Entry' &&
+                  mappedSeedDoc?.party_type !== 'Supplier'
+                "
+                :seed="mappedSeedDoc"
+                @saved="onRecordSaved"
+                @close="clearRecordParams"
+              />
+              <FinanceForm
+                v-else-if="navState.mode === 'new' || navState.mode === 'edit'"
+                :key="`${mappedSeedDoc?.doctype || navState.doctype}:${navState.mode === 'edit' ? navState.name : 'new'}`"
+                :doctype="mappedSeedDoc?.doctype || navState.doctype"
+                :name="navState.mode === 'edit' ? navState.name : null"
+                :seed="navState.mode === 'new' ? mappedSeedDoc || deepSeedDoc : null"
+                @saved="onRecordSaved"
+                @close="clearRecordParams"
+              />
+              <FinanceDetail
+                v-else
+                :key="`${navState.doctype}:${navState.name}`"
+                :doctype="navState.doctype"
+                :name="navState.name"
+                :read-only="isReadOnlyDoctype(navState.doctype)"
+                :allow-lifecycle-actions="true"
+                @edit="goEditRecord"
+                @mapped="onMappedRecord"
+                @deleted="clearRecordParams"
+                @close="clearRecordParams"
+              />
+            </div>
+            <template v-else-if="activeSection === 'dashboard'"
               ><CrmDashboard @navigate="onNavigate"
             /></template>
             <template v-else-if="activeSection === 'quotes'"
@@ -270,19 +317,23 @@
 </template>
 
 <script setup>
-import { ref, computed, h, markRaw, onMounted } from 'vue'
+import { ref, computed, h, markRaw, onMounted, onUnmounted } from 'vue'
 import {
   FrappeUIProvider,
   Sidebar,
   SidebarItem,
   Dropdown,
   Tooltip,
+  Breadcrumbs,
   createResource,
   useTheme,
 } from 'frappe-ui'
 import { useStorage } from '@vueuse/core'
 import ThemeSwitcher from '@/components/Settings/ThemeSwitcher.vue'
 import FinanceCommandPalette from './components/FinanceCommandPalette.vue'
+import FinanceDetail from './components/crud/FinanceDetail.vue'
+import FinanceForm from './components/crud/FinanceForm.vue'
+import PaymentAllocationForm from './components/crud/PaymentAllocationForm.vue'
 import CrmDashboard from './sections/CrmDashboard.vue'
 import Quotes from './sections/Quotes.vue'
 import Orders from './sections/Orders.vue'
@@ -300,6 +351,14 @@ import CrmReports from './sections/CrmReports.vue'
 import FinanceErrorState from './components/FinanceErrorState.vue'
 import { SIDEBAR_SECTIONS, getFinanceSections } from './constants/sidebarConfig.js'
 import { provideCompanyContext } from './composables/useCompanyContext.js'
+import {
+  provideFinanceNavigation,
+  parseCockpitHash,
+  cockpitRecordHref,
+  cockpitNewRecordHref,
+  cockpitReportHref,
+  cockpitSectionHref,
+} from './composables/useFinanceNavigation.js'
 import { useBoot } from './composables/useBoot.js'
 
 const { company, setCompany, companiesResource } = provideCompanyContext()
@@ -328,19 +387,178 @@ const fcLogo = markRaw({
 })
 
 const activeSection = ref('dashboard')
+const mappedSeedDoc = ref(null)
 const ALL_SECTION_KEYS = [...SIDEBAR_SECTIONS.map((s) => s.key), 'settings']
 
-function onNavigate(key) {
-  if (key !== 'settings' && !getFinanceSections(getRoles()).some((section) => section.key === key)) return
-  activeSection.value = key
-  window.location.hash = '#/' + key.replace(/_/g, '-')
+const READ_ONLY_DOCTYPES = new Set([
+  'Quotation',
+  'Sales Order',
+  'Payment Entry',
+  'CRM Opt-In Network',
+  'CRM Pre-Qualified Facility',
+  'CRM Opt-In Submission',
+  'CRM Contract',
+  'CRM Deal',
+])
+
+function isReadOnlyDoctype(doctype) {
+  return READ_ONLY_DOCTYPES.has(doctype)
 }
-onMounted(() => {
-  const hash = window.location.hash
-  if (hash?.startsWith('#/')) {
-    const key = hash.slice(2).replace(/-/g, '_')
-    if (ALL_SECTION_KEYS.includes(key)) onNavigate(key)
+
+function canAccessSection(key) {
+  return (
+    key === 'settings' ||
+    getFinanceSections(getRoles()).some((section) => section.key === key)
+  )
+}
+
+const { navState, clearRecordParams } = provideFinanceNavigation(onNavigate)
+
+const hasActiveRecord = computed(
+  () =>
+    !!navState.value?.doctype &&
+    (!!navState.value?.name ||
+      navState.value?.mode === 'new' ||
+      navState.value?.mode === 'edit'),
+)
+
+const deepSeedDoc = computed(() => {
+  const params = navState.value?.params || {}
+  const seed = { doctype: navState.value?.doctype }
+  if (company.value) seed.company = company.value
+  for (const [k, v] of Object.entries(params)) {
+    if (!['tab', 'doctype', 'name', 'mode', 'report'].includes(k) && v) {
+      seed[k] = v
+    }
   }
+  return seed
+})
+
+const recordBreadcrumbs = computed(() => {
+  const sectionLabel =
+    SIDEBAR_SECTIONS.find((s) => s.key === activeSection.value)?.label ||
+    'Finance'
+  const items = [{ label: sectionLabel, onClick: clearRecordParams }]
+  if (navState.value?.mode === 'new') {
+    items.push({
+      label: `New ${mappedSeedDoc.value?.doctype || navState.value?.doctype}`,
+      onClick: () => {},
+    })
+  } else if (navState.value?.mode === 'edit') {
+    items.push({
+      label: navState.value?.name || navState.value?.doctype,
+      onClick: () =>
+        onNavigate(
+          cockpitRecordHref(
+            navState.value.doctype,
+            navState.value.name,
+            company.value,
+          ),
+        ),
+    })
+    items.push({ label: 'Edit', onClick: () => {} })
+  } else if (navState.value?.name) {
+    items.push({ label: navState.value.name, onClick: () => {} })
+  }
+  return items
+})
+
+function goEditRecord() {
+  onNavigate(
+    cockpitRecordHref(navState.value.doctype, navState.value.name, {
+      company: company.value,
+      section: activeSection.value,
+      tab: navState.value.tab,
+      mode: 'edit',
+    }),
+  )
+}
+
+function onMappedRecord(doc) {
+  mappedSeedDoc.value = doc
+  onNavigate(
+    cockpitNewRecordHref(doc?.doctype || navState.value.doctype, {
+      company: company.value,
+      section: activeSection.value,
+      tab: navState.value.tab,
+    }),
+  )
+}
+
+function onRecordSaved(doc) {
+  const savedDoctype = mappedSeedDoc.value?.doctype || navState.value.doctype
+  mappedSeedDoc.value = null
+  if (doc?.name && savedDoctype) {
+    onNavigate(cockpitRecordHref(savedDoctype, doc.name, company.value))
+  } else {
+    clearRecordParams()
+  }
+}
+
+function applyHashState(hashStr) {
+  const parsed = parseCockpitHash(hashStr)
+  if (ALL_SECTION_KEYS.includes(parsed.section) && canAccessSection(parsed.section)) {
+    activeSection.value = parsed.section
+  }
+  if (
+    parsed.params?.company &&
+    companiesResource.data?.some((c) => c.name === parsed.params.company)
+  ) {
+    setCompany(parsed.params.company)
+  }
+  if (parsed.mode !== 'new') {
+    mappedSeedDoc.value = null
+  }
+  navState.value = parsed
+}
+
+function syncFromHash() {
+  applyHashState(window.location.hash)
+}
+
+function onNavigate(target) {
+  if (!target) return
+  if (typeof target === 'string') {
+    if (target.startsWith('#/')) {
+      window.location.hash = target
+      applyHashState(target)
+      return
+    }
+    if (!canAccessSection(target)) return
+    mappedSeedDoc.value = null
+    activeSection.value = target
+    const href = '#/' + target.replace(/_/g, '-')
+    window.location.hash = href
+    applyHashState(href)
+    return
+  }
+  if (typeof target === 'object') {
+    let href = ''
+    if (target.report) {
+      href = cockpitReportHref(target.report, target.filters || {})
+    } else if (target.doctype && target.name) {
+      href = cockpitRecordHref(target.doctype, target.name, target)
+    } else if (target.doctype && target.mode === 'new') {
+      href = cockpitNewRecordHref(target.doctype, target)
+    } else if (target.section) {
+      href = cockpitSectionHref(target.section, target.params || {})
+    }
+    if (href) {
+      window.location.hash = href
+      applyHashState(href)
+    }
+  }
+}
+
+onMounted(() => {
+  if (window.location.hash?.startsWith('#/')) {
+    syncFromHash()
+  }
+  window.addEventListener('hashchange', syncFromHash)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('hashchange', syncFromHash)
 })
 
 const userRoles = computed(() => getRoles())

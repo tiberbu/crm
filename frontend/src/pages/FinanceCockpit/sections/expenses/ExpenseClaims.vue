@@ -44,6 +44,7 @@
             refetch()
           }
         "
+        @row-click="(row) => navigateTo({ doctype: 'Expense Claim', name: row.name, company: company })"
         @retry="refetch"
       >
         <template #actions="{ row }">
@@ -72,8 +73,10 @@ import { createResource } from 'frappe-ui'
 import LucideAlertCircle from '~icons/lucide/alert-circle'
 import FinanceTable from '../../components/FinanceTable.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
+import { useFinanceNavigation } from '../../composables/useFinanceNavigation.js'
 
 const { company } = useCompanyContext()
+const { navigateTo } = useFinanceNavigation()
 const page = ref(0)
 const statusFilter = ref('')
 const markingPaid = ref(null)

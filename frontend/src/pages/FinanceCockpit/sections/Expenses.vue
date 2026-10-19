@@ -16,10 +16,11 @@
 
 <script setup>
 import FinanceSectionTabs from '../components/FinanceSectionTabs.vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import ExpenseClaims from './expenses/ExpenseClaims.vue'
 import EmployeeAdvances from './expenses/EmployeeAdvances.vue'
 import ExpenseJournals from './expenses/ExpenseJournals.vue'
+import { useFinanceNavigation } from '../composables/useFinanceNavigation.js'
 
 const TABS = [
   { key: 'claims', label: 'Expense Claims' },
@@ -27,5 +28,12 @@ const TABS = [
   { key: 'journals', label: 'Expense Journals' },
 ]
 
-const activeTab = ref('claims')
+const { navState } = useFinanceNavigation()
+const activeTab = ref(navState.value?.tab || 'claims')
+watch(
+  () => navState.value?.tab,
+  (tab) => {
+    if (tab && TABS.some((t) => t.key === tab)) activeTab.value = tab
+  },
+)
 </script>

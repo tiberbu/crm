@@ -13,6 +13,7 @@
         refetch()
       }
     "
+    @row-click="(row) => navigateTo({ doctype: 'Payment Entry', name: row.name, company: company })"
     @retry="refetch"
   />
 </template>
@@ -22,8 +23,10 @@ import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import FinanceTable from '../../components/FinanceTable.vue'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
+import { useFinanceNavigation } from '../../composables/useFinanceNavigation.js'
 
 const { company } = useCompanyContext()
+const { navigateTo } = useFinanceNavigation()
 const page = ref(0)
 
 const columns = [

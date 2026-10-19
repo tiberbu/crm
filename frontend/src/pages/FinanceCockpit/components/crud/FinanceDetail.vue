@@ -363,7 +363,7 @@
               <a
                 v-for="invoiceName in invoiceState.invoiceNames"
                 :key="invoiceName"
-                :href="`/app/sales-invoice/${encodeURIComponent(invoiceName)}`"
+                :href="contextHref('Sales Invoice', invoiceName, doc?.company)"
                 class="font-medium text-ink-gray-8 underline underline-offset-2"
               >
                 {{ invoiceName }}
@@ -404,7 +404,7 @@
               <tbody>
                 <tr v-for="payment in paymentHistory" :key="payment.name" class="border-b border-outline-gray-1 last:border-0">
                   <td class="py-2 pr-3">
-                    <a :href="`/app/payment-entry/${encodeURIComponent(payment.name)}`" class="font-medium text-ink-gray-8 underline underline-offset-2">{{ payment.name }}</a>
+                    <a :href="contextHref('Payment Entry', payment.name, doc?.company)" class="font-medium text-ink-gray-8 underline underline-offset-2">{{ payment.name }}</a>
                     <div v-if="payment.reference_no" class="text-xs text-ink-gray-4">{{ payment.reference_no }}</div>
                   </td>
                   <td class="py-2 pr-3 text-ink-gray-6">{{ payment.posting_date || '—' }}</td>
@@ -575,7 +575,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Button, toast, dialog, createResource } from 'frappe-ui'
 import StatusBadge from './StatusBadge.vue'
 import SectionCard from './SectionCard.vue'
@@ -587,6 +587,7 @@ import { useCrud, readableError } from '../../composables/useCrud.js'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { useBoot } from '../../composables/useBoot.js'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
+import { cockpitRecordHref } from '../../composables/useFinanceNavigation.js'
 import { resolveLayout, isNumericType } from '../../constants/formLayouts.js'
 import { printUrl } from '../../constants/printFormats.js'
 import { useMappedDoc } from '../../composables/useMappedDoc.js'
@@ -810,18 +811,24 @@ const relatedItems = computed(() => {
 
   if (props.doctype === 'Sales Invoice') {
     if (d.crm_deal) {
-      items.push({
-        label: 'View Deal →',
-        icon: 'briefcase',
-        href: '/crm/deals/' + d.crm_deal,
-      })
+      const dealHref = cockpitRecordHref('CRM Deal', d.crm_deal, d.company)
+      if (dealHref) {
+        items.push({
+          label: 'View Deal →',
+          icon: 'briefcase',
+          href: dealHref,
+        })
+      }
     }
     if (d.crm_quotation) {
-      items.push({
-        label: 'View Quote →',
-        icon: 'file-text',
-        href: '/crm/quotes/' + d.crm_quotation,
-      })
+      const quoteHref = cockpitRecordHref('Quotation', d.crm_quotation, d.company)
+      if (quoteHref) {
+        items.push({
+          label: 'View Quote →',
+          icon: 'file-text',
+          href: quoteHref,
+        })
+      }
     }
   }
 
@@ -892,28 +899,8 @@ function paymentRefHref(reference) {
   )
 }
 
-function nativePaymentDocHref(doctype, name, company) {
-  if (
-    !doctype ||
-    !name ||
-    typeof doctype !== 'string' ||
-    typeof name !== 'string' ||
-    hasUnsafePathCharacters(doctype) ||
-    hasUnsafePathCharacters(name)
-  ) {
-    return ''
-  }
-  const slug = doctype.trim().toLowerCase().replace(/\s+/g, '-')
-  const companyQuery = company ? `?company=${encodeURIComponent(company)}` : ''
-  return `/app/${encodeURIComponent(slug)}/${encodeURIComponent(name)}${companyQuery}`
-}
-
-function hasUnsafePathCharacters(value) {
-  return (
-    value.includes('/') ||
-    value.includes('\\') ||
-    [...value].some((character) => character.charCodeAt(0) < 32)
-  )
+function nativePaymentDocHref(doctype, name, recordCompany) {
+  return cockpitRecordHref(doctype, name, recordCompany)
 }
 
 function isNum(f) {
@@ -1018,6 +1005,7 @@ async function loadPaymentHistory() {
   }
 }
 onMounted(load)
+watch(() => [props.doctype, props.name], load)
 
 async function loadInvoiceState() {
   if (props.doctype !== 'Sales Order') return

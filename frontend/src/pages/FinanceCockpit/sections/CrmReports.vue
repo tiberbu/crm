@@ -1,12 +1,28 @@
 <template>
   <div class="crm-reports space-y-5">
     <!-- Report selector tabs -->
-    <FinanceSectionTabs
-      :model-value="active"
-      :tabs="REPORT_DEFS"
-      aria-label="Finance reports"
-      @update:model-value="selectReport"
-    />
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <FinanceSectionTabs
+        :model-value="active"
+        :tabs="REPORT_DEFS"
+        aria-label="Finance reports"
+        @update:model-value="selectReport"
+      />
+      <div
+        v-if="customReportName"
+        class="flex items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-xs text-ink-gray-7"
+      >
+        <span class="font-medium">{{ customReportName }}</span>
+        <span v-if="filterSummary" class="text-ink-gray-5">· {{ filterSummary }}</span>
+        <button
+          type="button"
+          class="ml-1 font-medium text-ink-blue-6 hover:underline"
+          @click="clearCustomReport"
+        >
+          Reset
+        </button>
+      </div>
+    </div>
 
     <!-- Report body -->
     <div v-if="loading" class="space-y-2">
@@ -57,7 +73,7 @@
       <div
         class="px-4 py-2 text-xs text-ink-gray-4 border-t border-outline-gray-1"
       >
-        {{ rows.length }} rows · {{ currentDef?.label }} · {{ company }}
+        {{ rows.length }} rows · {{ activeReportLabel }} · {{ company }}
       </div>
     </div>
 
@@ -72,10 +88,14 @@
 import { ref, computed, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useCompanyContext } from '../composables/useCompanyContext.js'
+import { useFinanceNavigation } from '../composables/useFinanceNavigation.js'
 import FinanceSectionTabs from '../components/FinanceSectionTabs.vue'
 import FinanceErrorState from '../components/FinanceErrorState.vue'
 
 const { company } = useCompanyContext()
+const { navState, navigateTo } = useFinanceNavigation()
+
+const TODAY = () => new Date().toISOString().slice(0, 10)
 
 const REPORT_DEFS = [
   {
@@ -84,7 +104,16 @@ const REPORT_DEFS = [
     report_name: 'Accounts Receivable',
     filters: () => ({
       company: company.value,
-      report_date: new Date().toISOString().slice(0, 10),
+      report_date: TODAY(),
+    }),
+  },
+  {
+    key: 'ap_aging',
+    label: 'AP Aging',
+    report_name: 'Accounts Payable',
+    filters: () => ({
+      company: company.value,
+      report_date: TODAY(),
     }),
   },
   {
@@ -106,13 +135,46 @@ const REPORT_DEFS = [
 ]
 
 const active = ref('ar_aging')
+const customReportName = computed(() => navState.value?.report || '')
+const customFilters = computed(() => {
+  const params = { ...(navState.value?.params || {}) }
+  delete params.report
+  delete params.tab
+  delete params.doctype
+  delete params.name
+  delete params.mode
+  return params
+})
+
+const filterSummary = computed(() =>
+  Object.entries(customFilters.value)
+    .filter(([k, v]) => k !== 'company' && v)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(', '),
+)
+
 const currentDef = computed(() =>
-  REPORT_DEFS.find((r) => r.key === active.value),
+  REPORT_DEFS.find((r) => r.key === active.value) || REPORT_DEFS[0],
+)
+
+const activeReportLabel = computed(
+  () => customReportName.value || currentDef.value?.label || 'Report',
 )
 
 const resource = createResource({
   url: 'frappe.desk.query_report.run',
   makeParams() {
+    if (customReportName.value) {
+      return {
+        report_name: customReportName.value,
+        filters: {
+          company: company.value,
+          report_date: TODAY(),
+          ...customFilters.value,
+        },
+        ignore_prepared_report: 1,
+      }
+    }
     const def = currentDef.value
     return {
       report_name: def.report_name,
@@ -138,10 +200,21 @@ const rows = computed(() => {
 
 function selectReport(key) {
   active.value = key
-  resource.fetch()
+  if (customReportName.value) {
+    navigateTo('reports')
+  } else {
+    resource.fetch()
+  }
 }
 
-watch(company, () => resource.fetch())
+function clearCustomReport() {
+  navigateTo('reports')
+}
+
+watch(
+  () => [company.value, customReportName.value, JSON.stringify(customFilters.value)],
+  () => resource.fetch(),
+)
 
 function isNumeric(col) {
   return ['Currency', 'Float', 'Int', 'Percent'].includes(col.fieldtype)

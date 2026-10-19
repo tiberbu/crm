@@ -19,11 +19,12 @@
 
 <script setup>
 import FinanceSectionTabs from '../components/FinanceSectionTabs.vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import ApInvoices from './payables/ApInvoices.vue'
 import PurchaseOrders from './payables/PurchaseOrders.vue'
 import SupplierPayments from './payables/SupplierPayments.vue'
 import Suppliers from './payables/Suppliers.vue'
+import { useFinanceNavigation } from '../composables/useFinanceNavigation.js'
 
 const TABS = [
   { key: 'invoices', label: 'AP Invoices' },
@@ -32,5 +33,12 @@ const TABS = [
   { key: 'suppliers', label: 'Suppliers' },
 ]
 
-const activeTab = ref('invoices')
+const { navState } = useFinanceNavigation()
+const activeTab = ref(navState.value?.tab || 'invoices')
+watch(
+  () => navState.value?.tab,
+  (tab) => {
+    if (tab && TABS.some((t) => t.key === tab)) activeTab.value = tab
+  },
+)
 </script>
