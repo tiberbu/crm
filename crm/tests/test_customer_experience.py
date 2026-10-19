@@ -13,6 +13,8 @@ OTHER = "cx-test-other@example.com"
 
 
 def _website_user(email):
+	if frappe.db.exists("User", email):
+		return frappe.get_doc("User", email)
 	return frappe.get_doc(
 		{
 			"doctype": "User",
@@ -51,6 +53,8 @@ def _submission(email, mfl):
 class TestTokenPurchaseChain(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		frappe.db.delete("CRM Opt-In Submission", {"submitter_email": ["in", [OWNER, OTHER]]})
+		frappe.db.delete("User", {"email": ["in", [OWNER, OTHER]]})
 		frappe.db.savepoint("cx_purchase_test")
 		self.addCleanup(frappe.db.rollback, save_point="cx_purchase_test")
 		packages = [p for p in _token_packages() if (p.get("price") or 0) > 0]
@@ -200,3 +204,102 @@ class TestTokenPurchaseChain(IntegrationTestCase):
 			)
 		}
 		self.assertEqual(linked, {data["sales_order"], invoice})
+
+	def test_mask_national_id(self):
+		self.assertEqual(cx._mask_national_id("12345678"), "12••••78")
+		self.assertEqual(cx._mask_national_id("123"), "•••")
+		self.assertEqual(cx._mask_national_id(""), "")
+		self.assertEqual(cx._mask_national_id(None), "")
+
+	def test_get_and_update_user_profile(self):
+		profile = cx.get_user_profile()["data"]
+		self.assertEqual(profile["email"], OWNER)
+
+		updated = cx.update_user_profile(national_id="28472910", mobile_no="0712345678", full_name="Updated Test Name")["data"]
+		self.assertEqual(updated["national_id"], "28472910")
+		self.assertEqual(updated["masked_national_id"], "28••••10")
+		self.assertEqual(updated["mobile_no"], "0712345678")
+		self.assertEqual(updated["full_name"], "Updated Test Name")
+
+		with self.assertRaises(frappe.ValidationError):
+			cx.update_user_profile(national_id="invalid-id")
+
+	def test_lookup_facilities_by_owner_id(self):
+		with patch.object(cx, "_hfr_facilities_for_owner") as mock_hfr:
+			mock_hfr.return_value = [
+				{"fid": "f1", "mfl_code": "90001", "name": "Linked Clinic", "level": "Level 2"},
+				{"fid": "f2", "mfl_code": "90099", "name": "Unlinked Clinic", "level": "Level 3"},
+			]
+			res = cx.lookup_facilities_by_owner_id(national_id="28472910")
+			results = res["data"]
+			self.assertEqual(len(results), 2)
+			self.assertTrue(results[0]["already_linked"])
+			self.assertFalse(results[1]["already_linked"])
+
+	def test_report_mpesa_payment_validation(self):
+		with self.assertRaises(frappe.ValidationError):
+			cx.report_mpesa_payment("NON-EXISTENT-INV", "SB65A1TU7X")
+
+		with self.assertRaises(frappe.ValidationError):
+			cx.report_mpesa_payment("NON-EXISTENT-INV", "123")
+
+	def test_user_permission_lead_and_deal_resolution(self):
+		from crm.api.website_redirect import (
+			_customer_portal_accounts,
+			get_user_customer_names,
+			get_user_deal_names,
+			get_user_lead_names,
+		)
+
+		test_user = "cx-test-desk@example.com"
+		_website_user(test_user)
+
+		frappe.set_user("Administrator")
+		# Grant User Permission for a Deal
+		deal = frappe.get_doc({
+			"doctype": "CRM Deal",
+			"organization": "Kiambu Level 4 Demonstration Hospital",
+			"optin_network": "chak-cbsl",
+			"facilities": [
+				{
+					"facility_name": "Desk Demo Clinic",
+					"mfl_code": "88776",
+					"facility_level": "Level 3",
+				}
+			],
+		}).insert(ignore_permissions=True, ignore_links=True)
+
+		perm = frappe.get_doc({
+			"doctype": "User Permission",
+			"user": test_user,
+			"allow": "CRM Deal",
+			"for_value": deal.name,
+			"apply_to_all_doctypes": 1,
+		}).insert(ignore_permissions=True)
+
+		# Verify deal names resolved
+		deals = get_user_deal_names(test_user)
+		self.assertIn(deal.name, deals)
+
+		# Verify customer portal accounts projects the deal and its facilities
+		accounts = _customer_portal_accounts(test_user)
+		self.assertTrue(len(accounts) >= 1)
+		acc = accounts[0]
+		self.assertEqual(acc["organization"], "Kiambu Level 4 Demonstration Hospital")
+		self.assertEqual(len(acc["facilities"]), 1)
+		self.assertEqual(acc["facilities"][0]["facility_name"], "Desk Demo Clinic")
+		self.assertEqual(acc["facilities"][0]["mfl_code"], "88776")
+
+	def test_customer_payments_projection(self):
+		from crm.api.website_redirect import _customer_payments
+
+		frappe.set_user("Administrator")
+		cust = "Test Payment Cust"
+		if not frappe.db.exists("Customer", cust):
+			frappe.get_doc({"doctype": "Customer", "customer_name": cust}).insert(ignore_permissions=True)
+
+		payments = _customer_payments("ZUHRI MEDICARE LIMITED")
+		self.assertIsInstance(payments, list)
+
+
+

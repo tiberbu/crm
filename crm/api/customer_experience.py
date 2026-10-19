@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from contextlib import contextmanager
 from typing import Any
 
 import frappe
 from frappe import _
+from frappe.utils import cstr, flt, nowdate
 from frappe.utils.synchronization import filelock
 
-from crm.api.facility_onboarding import _calculator_config, _token_packages
+from crm.api.facility_onboarding import _calculator_config, _hfr_facilities_for_owner, _token_packages
 from crm.api.website_redirect import get_user_customer_names, get_user_ois_numbers, require_portal_user
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref, record_event
 
@@ -263,6 +265,8 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key):
 	}
 	if quotation_name:
 		quotation = frappe.get_doc("Quotation", quotation_name)
+		if quotation.docstatus == 0:
+			quotation.submit()
 	else:
 		price_list = package.get("price_list")
 		if not price_list or not frappe.db.exists("Price List", price_list):
@@ -290,6 +294,7 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key):
 		_restore_rate(quotation, price)
 		apply_quotation_taxes(quotation)
 		quotation.insert(ignore_mandatory=True, ignore_permissions=True)
+		quotation.submit()
 		quotation_name = quotation.name
 		_record_link("Quotation", quotation_name)
 
@@ -304,7 +309,7 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key):
 			setattr(sales_order, fieldname, value)
 	sales_order.set_missing_values()
 	_restore_rate(sales_order, price)
-	_apply_order_tax_template(sales_order)
+	_apply_order_tax_template(sales_order, quotation)
 	sales_order.insert(ignore_mandatory=True, ignore_permissions=True)
 	sales_order.submit()
 	_record_link("Sales Order", sales_order.name)
@@ -607,3 +612,463 @@ def _make_invoice(order, key):
 	invoice.insert(ignore_permissions=True, ignore_mandatory=True)  # SYSTEM-INTERNAL
 	invoice.submit()
 	return invoice
+
+
+@frappe.whitelist(methods=["POST"])
+def lookup_hfr_facility(query: Any, search_by: str = "mfl_code"):
+	"""Search official Health Facility Registry for facility candidates."""
+	from crm.api.hfr import search_facility
+
+	query = _text(query)
+	if not query:
+		return {"success": True, "data": []}
+	try:
+		results = search_facility(query, search_by=search_by)
+		return {"success": True, "data": results}
+	except Exception as exc:
+		frappe.log_error(f"HFR lookup failed for {query}: {exc}")
+		return {"success": False, "error": str(exc), "data": []}
+
+
+@frappe.whitelist(methods=["POST"])
+def add_facility_from_hfr(mfl_code: Any, fid: Any = None, package_item_code: Any = None):
+	"""Link a verified Health Facility Registry facility to the authenticated user's customer account."""
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(_("Please sign in to link facilities."), frappe.PermissionError)
+
+	from crm.api.website_redirect import get_user_customer_names
+
+	customer_names = get_user_customer_names(user)
+	if not customer_names:
+		frappe.throw(_("No customer account found for your profile."), frappe.ValidationError)
+	customer = customer_names[0]
+
+	mfl_code = _text(mfl_code)
+	fid = _text(fid)
+	if not mfl_code and not fid:
+		frappe.throw(_("MFL code or HFR Facility ID is required."), frappe.ValidationError)
+
+	from crm.api.hfr import get_facility_detail, search_facility
+
+	facility_data = {}
+	if fid:
+		try:
+			facility_data = get_facility_detail(fid) or {}
+		except Exception:
+			pass
+
+	if not facility_data and mfl_code:
+		try:
+			candidates = search_facility(mfl_code, search_by="mfl_code")
+			if candidates:
+				candidate_fid = candidates[0].get("fid")
+				if candidate_fid:
+					facility_data = get_facility_detail(candidate_fid) or {}
+				else:
+					facility_data = {
+						"organization_name": candidates[0].get("name"),
+						"mfl_code": candidates[0].get("mfl_code"),
+						"facility_level": candidates[0].get("level"),
+						"hfr_county": candidates[0].get("county"),
+					}
+		except Exception:
+			pass
+
+	facility_name = facility_data.get("organization_name") or mfl_code
+	keph_level = facility_data.get("facility_level") or "Level 2"
+	resolved_mfl = facility_data.get("mfl_code") or mfl_code
+
+	with _system_user():
+		row = frappe.db.get_value("CRM Pre-Qualified Facility", {"mfl_code": resolved_mfl}, "name")
+		if row:
+			fac_doc = frappe.get_doc("CRM Pre-Qualified Facility", row)
+			if facility_name:
+				fac_doc.facility_name = facility_name
+			if keph_level:
+				fac_doc.keph_level = keph_level
+		else:
+			fac_doc = frappe.get_doc(
+				{
+					"doctype": "CRM Pre-Qualified Facility",
+					"mfl_code": resolved_mfl,
+					"facility_name": facility_name,
+					"organization": facility_name,
+					"keph_level": keph_level,
+				}
+			)
+
+		fac_doc.flags.skip_invitation = True
+		if hasattr(fac_doc, "is_self_onboarded"):
+			fac_doc.is_self_onboarded = 1
+
+		membership_exists = False
+		for m in fac_doc.memberships or []:
+			if m.customer == customer:
+				membership_exists = True
+				break
+
+		if not membership_exists:
+			fac_doc.append(
+				"memberships",
+				{
+					"network": "CareVerse Partner Network",
+					"customer": customer,
+					"status": "Active",
+					"go_live": 1,
+					"contact_email": user,
+				},
+			)
+
+		fac_doc.save(ignore_permissions=True)
+
+		deals = frappe.get_all("CRM Deal", filters={"cx_customer": customer}, fields=["name"], limit=1)
+		if deals:
+			deal_doc = frappe.get_doc("CRM Deal", deals[0].name)
+			already_in_deal = any(frappe.utils.cstr(df.mfl_code).strip() == resolved_mfl for df in deal_doc.facilities or [])
+			if not already_in_deal:
+				deal_fac = {
+					"facility_name": facility_name,
+					"mfl_code": resolved_mfl,
+					"facility_level": keph_level,
+					"hfr_sync_status": "HFR Verified",
+				}
+				if package_item_code:
+					pkg = _package(package_item_code)
+					if pkg:
+						deal_fac["cx_token_package_item"] = pkg["item_code"]
+						deal_fac["cx_token_package_quantity"] = pkg.get("token_quantity") or 0
+						deal_fac["cx_token_package_price"] = pkg.get("price") or 0
+						deal_fac["cx_token_package_vat"] = pkg.get("vat_amount") or 0
+						deal_fac["cx_token_package_gross_total"] = pkg.get("gross_total") or 0
+						deal_fac["cx_token_package_currency"] = pkg.get("currency") or "KES"
+				deal_doc.append("facilities", deal_fac)
+				deal_doc.save(ignore_permissions=True)
+
+		frappe.db.commit()
+
+		return {
+			"success": True,
+			"data": {
+				"mfl_code": resolved_mfl,
+				"facility_name": facility_name,
+				"keph_level": keph_level,
+				"customer": customer,
+			},
+		}
+
+
+def _mask_national_id(national_id: str) -> str:
+	raw = _text(national_id).strip()
+	if not raw:
+		return ""
+	if len(raw) <= 4:
+		return "•" * len(raw)
+	prefix = raw[:2]
+	suffix = raw[-2:]
+	bullets = "•" * (len(raw) - 4)
+	return f"{prefix}{bullets}{suffix}"
+
+
+@frappe.whitelist(methods=["GET", "POST"])
+def get_user_profile():
+	"""Return the authenticated user's profile, masked National ID, organization, and linked facilities."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Please sign in to view your profile."), frappe.PermissionError)
+
+	user_doc = frappe.get_doc("User", user)
+	national_id = _text(user_doc.get("national_id") or "").strip()
+
+	from crm.api.website_redirect import get_user_customer_names
+	customer_names = get_user_customer_names(user)
+	customer = customer_names[0] if customer_names else None
+
+	org_name = ""
+	network_name = "CareVerse Partner Network"
+	facility_count = 0
+
+	if customer:
+		customer_doc = frappe.db.get_value("Customer", customer, ["customer_name", "customer_type"], as_dict=True) or {}
+		org_name = customer_doc.get("customer_name") or customer
+
+		deals = frappe.get_all("CRM Deal", filters={"cx_customer": customer}, fields=["name", "organization", "optin_network"], limit=5)
+		if deals:
+			if deals[0].get("optin_network"):
+				network_name = deals[0].get("optin_network")
+			if not org_name:
+				org_name = deals[0].get("organization") or customer
+
+		# If national_id is still empty, check if deal has identity ref or person info
+		if not national_id:
+			for d in deals:
+				if d.get("name"):
+					ident_ref = frappe.db.get_value("CRM Deal", d["name"], "cx_onboarding_identity_ref")
+					if ident_ref and ":" in str(ident_ref):
+						parts = str(ident_ref).split(":")
+						if len(parts) >= 2 and parts[-1].isdigit():
+							national_id = parts[-1]
+							break
+
+		if frappe.db.has_column("CRM Facility Membership", "customer"):
+			facility_count = frappe.db.count("CRM Facility Membership", {"customer": customer})
+		if facility_count == 0 and deals:
+			facility_count = frappe.db.count("CRM Deal Facility", {"parent": ["in", [d["name"] for d in deals]]})
+	else:
+		from crm.api.website_redirect import get_user_deal_names, get_user_lead_names
+		deal_names = get_user_deal_names(user)
+		if deal_names:
+			deal_doc = frappe.db.get_value("CRM Deal", deal_names[0], ["organization", "optin_network"], as_dict=True) or {}
+			org_name = deal_doc.get("organization") or ""
+			if deal_doc.get("optin_network"):
+				network_name = deal_doc.get("optin_network")
+			facility_count = frappe.db.count("CRM Deal Facility", {"parent": ["in", deal_names]})
+		else:
+			lead_names = get_user_lead_names(user)
+			if lead_names:
+				lead_doc = frappe.db.get_value("CRM Lead", lead_names[0], ["organization", "optin_network"], as_dict=True) or {}
+				org_name = lead_doc.get("organization") or ""
+				if lead_doc.get("optin_network"):
+					network_name = lead_doc.get("optin_network")
+				facility_count = frappe.db.count("CRM Lead Facility", {"parent": ["in", lead_names]})
+
+	full_name = user_doc.full_name or f"{user_doc.first_name} {user_doc.last_name or ''}".strip()
+	mobile_no = user_doc.mobile_no or user_doc.phone or ""
+
+	return {
+		"success": True,
+		"data": {
+			"user_id": user_doc.name,
+			"full_name": full_name or user_doc.email,
+			"email": user_doc.email,
+			"mobile_no": mobile_no,
+			"national_id": national_id,
+			"masked_national_id": _mask_national_id(national_id) if national_id else "",
+			"national_id_verified": bool(national_id),
+			"organization": org_name or full_name or "Healthcare Practice",
+			"primary_network": network_name,
+			"facility_count": facility_count,
+		},
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def update_user_profile(national_id: Any = None, mobile_no: Any = None, full_name: Any = None):
+	"""Update user contact and National ID on file."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Please sign in to update your profile."), frappe.PermissionError)
+
+	user_doc = frappe.get_doc("User", user)
+	updates = {}
+
+	if national_id is not None:
+		raw_id = _text(national_id).strip()
+		cleaned_id = re.sub(r"[^\d]", "", raw_id)
+		if raw_id and (not cleaned_id or len(cleaned_id) < 6 or len(cleaned_id) > 10):
+			frappe.throw(_("Kenyan National ID must be between 6 and 10 digits."), frappe.ValidationError)
+		if not frappe.db.has_column("User", "national_id"):
+			from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+			create_custom_fields({
+				"User": [{
+					"fieldname": "national_id",
+					"label": "National ID",
+					"fieldtype": "Data",
+					"insert_after": "phone",
+				}]
+			})
+		updates["national_id"] = cleaned_id
+
+	if mobile_no is not None:
+		updates["mobile_no"] = _text(mobile_no).strip()
+
+	if full_name is not None and _text(full_name).strip():
+		raw_name = _text(full_name).strip()
+		parts = raw_name.split(None, 1)
+		updates["first_name"] = parts[0]
+		updates["last_name"] = parts[1] if len(parts) > 1 else ""
+		updates["full_name"] = raw_name
+
+	if updates:
+		user_doc.db_set(updates)
+		if not getattr(frappe.flags, "in_test", False):
+			frappe.db.commit()
+
+	return get_user_profile()
+
+
+@frappe.whitelist(methods=["POST"])
+def lookup_facilities_by_owner_id(national_id: Any = None):
+	"""Search official Health Facility Registry (HFR) using the owner's National ID on file."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Please sign in to discover facilities."), frappe.PermissionError)
+
+	user_doc = frappe.get_doc("User", user)
+	id_number = _text(national_id).strip() or _text(user_doc.get("national_id") or "").strip()
+
+	if not id_number:
+		from crm.api.website_redirect import get_user_customer_names
+		customer_names = get_user_customer_names(user)
+		if customer_names:
+			deals = frappe.get_all("CRM Deal", filters={"cx_customer": customer_names[0]}, fields=["name"], limit=1)
+			if deals:
+				ident_ref = frappe.db.get_value("CRM Deal", deals[0]["name"], "cx_onboarding_identity_ref")
+				if ident_ref and ":" in str(ident_ref):
+					parts = str(ident_ref).split(":")
+					if len(parts) >= 2 and parts[-1].isdigit():
+						id_number = parts[-1]
+
+	if not id_number:
+		frappe.throw(
+			_("No National ID on file. Please enter and save your National ID in My Profile before discovering facilities."),
+			frappe.ValidationError,
+		)
+
+	if id_number and not user_doc.get("national_id"):
+		if not frappe.db.has_column("User", "national_id"):
+			from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+			create_custom_fields({
+				"User": [{
+					"fieldname": "national_id",
+					"label": "National ID",
+					"fieldtype": "Data",
+					"insert_after": "phone",
+				}]
+			})
+		user_doc.db_set("national_id", id_number)
+
+	try:
+		raw_facilities = _hfr_facilities_for_owner(id_number)
+	except Exception as exc:
+		frappe.log_error(f"HFR lookup by owner ID {id_number} failed: {exc}")
+		return {
+			"success": False,
+			"error": _("Unable to query Health Facility Registry at this time. Please try again or search by MFL code."),
+			"data": [],
+			"national_id": id_number,
+			"masked_national_id": _mask_national_id(id_number),
+		}
+
+	from crm.api.website_redirect import get_user_customer_names, get_user_ois_numbers
+	customer_names = get_user_customer_names(user)
+	existing_mfls = set()
+	if customer_names:
+		memberships = frappe.get_all("CRM Facility Membership", filters={"customer": ["in", customer_names]}, fields=["parent"])
+		parent_facilities = [m.parent for m in memberships if m.parent]
+		if parent_facilities:
+			fac_rows = frappe.get_all("CRM Pre-Qualified Facility", filters={"name": ["in", parent_facilities]}, fields=["mfl_code"])
+			for fr in fac_rows:
+				if fr.mfl_code:
+					existing_mfls.add(cstr(fr.mfl_code).strip().casefold())
+
+	ois_numbers = get_user_ois_numbers(user)
+	if ois_numbers:
+		for ois_name in ois_numbers:
+			raw_json = frappe.db.get_value("CRM Opt-In Submission", ois_name, "raw_json")
+			if raw_json:
+				try:
+					payload = json.loads(raw_json)
+					fac_list = payload.get("facilities") or payload.get("pricing") or []
+					for f in fac_list:
+						if isinstance(f, dict) and f.get("mfl_code"):
+							existing_mfls.add(cstr(f.get("mfl_code")).strip().casefold())
+				except Exception:
+					pass
+
+	results = []
+	for fac in raw_facilities:
+		fid = _text(fac.get("facility_fid") or fac.get("facility_id") or fac.get("fid") or "")
+		mfl = _text(fac.get("mfl_code") or fac.get("facility_code") or fac.get("code") or fid)
+		name = _text(fac.get("facility_name") or fac.get("name") or "Healthcare Facility")
+		level = _text(fac.get("facility_level") or fac.get("keph_level") or fac.get("level") or "Level 2 Dispensary")
+		county = _text(fac.get("county") or "")
+		subcounty = _text(fac.get("subcounty") or fac.get("sub_county") or "")
+		owner_type = _text(fac.get("facility_owner_type") or fac.get("owner_type") or fac.get("ownership") or "Private Practice")
+
+		is_linked = (mfl and mfl.casefold() in existing_mfls) or (fid and fid.casefold() in existing_mfls)
+
+		results.append({
+			"mfl_code": mfl,
+			"fid": fid,
+			"name": name,
+			"level": level,
+			"county": county,
+			"subcounty": subcounty,
+			"owner_type": owner_type,
+			"already_linked": is_linked,
+		})
+
+	return {
+		"success": True,
+		"data": results,
+		"national_id": id_number,
+		"masked_national_id": _mask_national_id(id_number),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def report_mpesa_payment(invoice_name: Any, mpesa_code: Any, amount: Any = None, phone: Any = None):
+	"""Record customer M-Pesa transaction reference for instant reconciliation against a facility invoice."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Please sign in to report payment."), frappe.PermissionError)
+
+	invoice_name = _text(invoice_name).strip()
+	mpesa_code = _text(mpesa_code).strip().upper()
+
+	if not invoice_name or not frappe.db.exists("Sales Invoice", invoice_name):
+		frappe.throw(_("Invoice not found or invalid."), frappe.ValidationError)
+
+	if not mpesa_code or len(mpesa_code) < 6:
+		frappe.throw(_("Please enter a valid M-Pesa transaction confirmation code (e.g. SB65A1TU7X)."), frappe.ValidationError)
+
+	from crm.api.website_redirect import get_user_customer_names
+	customer_names = get_user_customer_names(user)
+
+	invoice = frappe.get_doc("Sales Invoice", invoice_name)
+	if invoice.customer not in customer_names:
+		frappe.throw(_("You are not permitted to manage this invoice."), frappe.PermissionError)
+
+	existing_pe = frappe.get_all(
+		"Payment Entry",
+		filters={"reference_no": mpesa_code, "docstatus": ["!=", 2]},
+		fields=["name", "docstatus"],
+		limit=1,
+	)
+	if existing_pe:
+		return {
+			"success": True,
+			"status": "already_submitted",
+			"payment_entry": existing_pe[0].name,
+			"message": _("This M-Pesa reference is already recorded and is awaiting reconciliation."),
+		}
+
+	from crm.api.checkout import _payment_entry_for_invoice
+	pay_amount = flt(amount or invoice.outstanding_amount)
+
+	current_user = frappe.session.user
+	try:
+		frappe.set_user("Administrator")
+		pe = _payment_entry_for_invoice(
+			invoice.name,
+			pay_amount,
+			mode_of_payment="Bank Transfer",
+			reference_no=mpesa_code,
+			reference_date=nowdate(),
+		)
+		pe.remarks = f"M-Pesa Paybill payment {mpesa_code} reported by {current_user} for {invoice.name}. Phone: {_text(phone)}"
+		pe.insert(ignore_permissions=True, ignore_mandatory=True)
+		frappe.db.commit()
+		pe_name = pe.name
+	finally:
+		frappe.set_user(current_user)
+
+	return {
+		"success": True,
+		"status": "submitted_for_reconciliation",
+		"payment_entry": pe_name,
+		"mpesa_code": mpesa_code,
+		"message": _("M-Pesa payment {0} received. Your invoice will update as soon as reconciliation completes.").format(mpesa_code),
+	}
+
