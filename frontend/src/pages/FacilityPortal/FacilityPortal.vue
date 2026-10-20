@@ -43,7 +43,7 @@ const context = ref({
   calculator_config: {},
 })
 
-// Current Active Navigation View: 'dashboard' | 'facilities' | 'pricing' | 'billing' | 'hfr_sync' | 'profile' | 'support'
+// Current Active Navigation View: 'dashboard' | 'facilities' | 'pricing' | 'billing' | 'profile' | 'support'
 // The portal lands on the Dashboard — the at-a-glance portfolio story — and
 // drills down from there instead of opening on the densest data table.
 const activeView = ref('dashboard')
@@ -54,7 +54,6 @@ const isMobileViewport = ref(false)
 const mobileMoreOpen = ref(false)
 const mobileMoreItems = computed(() => [
   { view: 'pricing', label: 'Plans & Pricing', icon: 'coins' },
-  { view: 'hfr_sync', label: 'Registry Sync', icon: 'refresh' },
   { view: 'support', label: 'Network Support', icon: 'chat' },
   ...((context.value.ois || []).length
     ? [{ view: 'optin_requests', label: 'Opt-In Requests', icon: 'clipboard-list' }]
@@ -168,12 +167,13 @@ const mpesaReportBusy = ref(false)
 
 // HFR Lookup state inside Add Facility Modal
 const hfrSearchQuery = ref('')
-const hfrSearchBy = ref('mfl_code') // 'mfl_code' | 'registration_number'
+const hfrSearchBy = ref('mfl_code') // 'mfl_code' | 'facility_fid' | 'registration_number'
 const partnerIdInput = ref('')
 const hfrSearchBusy = ref(false)
 const hfrSearchResults = ref([])
+const hfrSearchError = ref('')
+const hfrSearchComplete = ref(false)
 const hfrLinkBusy = ref(false)
-const hfrSelectedCandidate = ref(null)
 
 // Action feedback & busy states
 const purchaseBusy = ref(false)
@@ -304,6 +304,13 @@ const filteredFacilities = computed(() => {
     return true
   })
 })
+
+function resetFacilityFilters() {
+  searchQuery.value = ''
+  selectedStatusFilter.value = 'all'
+  selectedLevelFilter.value = 'all'
+  selectedNetworkFilter.value = 'all'
+}
 
 // Facilities grouped by partner network
 const facilitiesByNetwork = computed(() => {
@@ -756,10 +763,16 @@ function openTopUpModal(facility = null) {
 }
 
 function openAddFacilityModal() {
+  activeView.value = 'facilities'
+  notice.value = null
   hfrSearchQuery.value = ''
   hfrSearchResults.value = []
-  hfrSelectedCandidate.value = null
+  hfrSearchError.value = ''
+  hfrSearchComplete.value = false
   partnerIdInput.value = ''
+  hfrOwnerSearchResults.value = []
+  hfrOwnerSearchComplete.value = false
+  hfrOwnerSearchError.value = ''
   addFacilityModalOpen.value = true
 }
 
@@ -768,6 +781,11 @@ function openCalculatorModal(facility = null) {
     selectedFacilityMfl.value = facility.mfl_code
   }
   calculatorModalOpen.value = true
+}
+
+function facilityAlreadyLinked(candidate) {
+  const candidateMfl = String(candidate?.mfl_code || '').trim().toLowerCase()
+  return Boolean(candidateMfl && allFacilities.value.some((facility) => String(facility.mfl_code || '').trim().toLowerCase() === candidateMfl))
 }
 
 function onCalculatorApplyPlan(pkg) {
@@ -881,7 +899,8 @@ async function executeHfrSearch() {
 
   hfrSearchBusy.value = true
   hfrSearchResults.value = []
-  hfrSelectedCandidate.value = null
+  hfrSearchError.value = ''
+  hfrSearchComplete.value = false
 
   try {
     const res = await call('crm.api.customer_experience.lookup_hfr_facility', {
@@ -890,6 +909,7 @@ async function executeHfrSearch() {
     })
     const data = unwrap(res)
     hfrSearchResults.value = Array.isArray(data) ? data : []
+    hfrSearchComplete.value = true
     if (!hfrSearchResults.value.length) {
       notice.value = {
         tone: 'pending',
@@ -897,9 +917,11 @@ async function executeHfrSearch() {
       }
     }
   } catch (error) {
+    hfrSearchError.value = error?.messages?.[0] || 'Unable to connect to the Health Facility Registry. Please try again.'
+    hfrSearchComplete.value = true
     notice.value = {
       tone: 'error',
-      text: error?.messages?.[0] || 'Unable to connect to Health Facility Registry.',
+      text: hfrSearchError.value,
     }
   } finally {
     hfrSearchBusy.value = false
@@ -1265,22 +1287,7 @@ onUnmounted(() => {
             </span>
           </button>
 
-          <!-- 5. Health Facility Registry Sync -->
-          <button
-            type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
-            :class="
-              activeView === 'hfr_sync'
-                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
-                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
-            "
-            @click="activeView = 'hfr_sync'"
-          >
-            <span class="text-base shrink-0"><CxIcon name="refresh" class="inline-block size-4 align-[-0.15em]" /></span>
-            <span v-if="!sidebarCollapsed" class="truncate">Facility Registry Sync</span>
-          </button>
-
-          <!-- 6. My Profile (National ID & Identity) -->
+          <!-- 5. My Profile (National ID & Identity) -->
           <button
             type="button"
             class="w-full flex items-center justify-between px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
@@ -1335,6 +1342,7 @@ onUnmounted(() => {
               type="text"
               v-model="searchQuery"
               placeholder="Search your facilities by name"
+              aria-label="Search your facilities by name"
               class="w-full rounded-cx-sm bg-cx-well border border-cx-border pl-9 pr-12 py-2 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:bg-cx-surface focus:border-cx-brand focus:outline-none focus:ring-2 focus:ring-cx-brand-soft transition"
               @input="onGlobalSearchInput"
             />
@@ -1477,25 +1485,18 @@ onUnmounted(() => {
                   Facilities
                 </h1>
                 <p class="text-xs text-cx-ink-3 mt-0.5">
-                  Manage registered clinic branches, track Health Facility Registry verification, and monitor token capacity.
+                  Search your linked facilities by name, then open any facility to review its operations and provisioning status.
                 </p>
               </div>
 
-              <!-- Actions relevant to managing this facility portfolio -->
+              <!-- Registry search and linking live inside Facilities, not as a second menu. -->
               <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1.5 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well shadow-cx"
-                  @click="activeView = 'hfr_sync'"
-                >
-                  <span><CxIcon name="refresh" class="inline-block size-4 align-[-0.15em]" /> Find in Facility Registry</span>
-                </button>
                 <button
                   type="button"
                   class="inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition"
                   @click="openAddFacilityModal()"
                 >
-                  <span>+ Add Facility</span>
+                  <span><CxIcon name="plus" class="inline-block size-4 align-[-0.15em]" /> Find and link facility</span>
                 </button>
               </div>
             </div>
@@ -1508,10 +1509,10 @@ onUnmounted(() => {
                   <input
                     type="text"
                     v-model="searchQuery"
-                    placeholder="Search facilities by name"
+                    placeholder="Search your facilities by name"
                     class="w-full rounded-cx-sm bg-cx-surface border border-cx-border pl-8 pr-3 py-1.5 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:outline-none focus:border-cx-brand shadow-cx"
                   />
-                  <svg class="size-3.5 text-cx-ink-4 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg class="size-3.5 text-cx-ink-4 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <circle cx="11" cy="11" r="8"></circle>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                   </svg>
@@ -1606,17 +1607,17 @@ onUnmounted(() => {
               <p class="mx-auto mt-1 max-w-md text-xs text-cx-ink-3">
                 Link your clinics from the Health Facility Registry — we can auto-discover the ones registered under your National ID.
               </p>
-              <button
-                type="button"
-                class="mt-4 rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-brand-strong"
-                @click="openAddFacilityModal()"
-              >
-                + Add Facility
-              </button>
+              <p class="mt-4 text-xs font-semibold text-cx-brand-ink">Use “Find and link facility” above to search the registry or discover clinics linked to your ID.</p>
+            </div>
+
+            <div v-else-if="!filteredFacilities.length" class="rounded-cx border border-cx-border bg-cx-surface p-8 text-center" role="status">
+              <p class="text-sm font-semibold text-cx-ink">No facilities match these filters</p>
+              <p class="mt-1 text-xs text-cx-ink-3">Search uses facility names in your portfolio. Registry identifiers are searched from “Find and link facility.”</p>
+              <button type="button" class="mt-4 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well" @click="resetFacilityFilters()">Clear search and filters</button>
             </div>
 
             <!-- TABLE VIEW -->
-          <div v-if="allFacilities.length && facilityViewMode === 'table' && !isMobileViewport" class="space-y-4">
+          <div v-if="allFacilities.length && filteredFacilities.length && facilityViewMode === 'table' && !isMobileViewport" class="space-y-4">
               <!-- Render Grouped by Network when toggle active -->
               <template v-if="groupByNetwork">
                 <div
@@ -1877,7 +1878,7 @@ onUnmounted(() => {
             </div>
 
             <!-- CARDS VIEW (Optional toggle) -->
-            <div v-else-if="allFacilities.length" class="space-y-6">
+            <div v-else-if="allFacilities.length && filteredFacilities.length" class="space-y-6">
               <!-- Render Grouped by Network when toggle active -->
               <template v-if="groupByNetwork">
                 <div
@@ -2144,7 +2145,7 @@ onUnmounted(() => {
                 </p>
                 <div class="pt-2 border-t border-cx-border-soft">
                   <button type="button" class="text-xs font-semibold text-cx-brand hover:underline" @click="activeView = 'facilities'">
-                    View Facility Registry →
+                    Manage facilities →
                   </button>
                 </div>
               </div>
@@ -2570,107 +2571,13 @@ onUnmounted(() => {
           </div>
 
           <!-- ============================================================== -->
-          <!-- VIEW E: HEALTH FACILITY REGISTRY SYNC                          -->
-          <!-- ============================================================== -->
-          <div v-if="activeView === 'hfr_sync'" class="space-y-6 max-w-4xl">
-            <div>
-              <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Health Facility Registry Sync</h1>
-              <p class="text-xs text-cx-ink-3 mt-0.5">Synchronize facility records directly with the official Digital Health Agency (DHA) Health Facility Registry.</p>
-            </div>
-
-            <!-- 1-Click Discovery by National ID on File -->
-            <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
-              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <h3 class="font-semibold text-sm text-cx-ink flex items-center gap-2">
-                    <span><CxIcon name="id" class="inline-block size-4 align-[-0.15em]" /></span>
-                    <span>1-Click Auto-Discovery by National ID</span>
-                  </h3>
-                  <p class="text-xs text-cx-ink-3 mt-1">
-                    Search for clinical branches linked to the National ID saved on your profile
-                    <span v-if="userProfile.masked_national_id" class="font-mono font-bold text-cx-ink">({{ userProfile.masked_national_id }})</span>.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition shrink-0 disabled:opacity-50 inline-flex items-center gap-1.5"
-                  :disabled="hfrOwnerSearchBusy"
-                  @click="discoverFacilitiesByOwnerId()"
-                >
-                  <span><CxIcon v-if="!hfrOwnerSearchBusy" name="search" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ hfrOwnerSearchBusy ? 'Searching Registry…' : 'Discover Facilities by My ID' }}</span>
-                </button>
-              </div>
-
-              <div v-if="hfrOwnerSearchComplete && hfrOwnerSearchError" class="mt-4 rounded-cx-sm border border-cx-danger-border bg-cx-danger-soft p-3 text-xs text-cx-danger-ink" role="alert">
-                {{ hfrOwnerSearchError }}
-              </div>
-              <div v-else-if="hfrOwnerSearchComplete && !hfrOwnerSearchResults.length" class="mt-4 rounded-cx-sm border border-cx-border bg-cx-well p-4 text-xs text-cx-ink-2" role="status">
-                <p class="font-semibold text-cx-ink">No facilities found for the ID on your profile.</p>
-                <p class="mt-1 text-cx-ink-3">You can search the registry by MFL, FID, or registration number, or review your National ID in Account settings.</p>
-              </div>
-
-              <!-- Discovered Facilities List -->
-              <div v-if="hfrOwnerSearchResults.length" class="mt-4 pt-4 border-t border-cx-border-soft space-y-2">
-                <span class="text-xs font-semibold uppercase text-cx-ink-3">Discovered Facilities ({{ hfrOwnerSearchResults.length }})</span>
-                <div class="space-y-2 max-h-72 overflow-y-auto">
-                  <div
-                    v-for="cand in hfrOwnerSearchResults"
-                    :key="cand.fid || cand.mfl_code"
-                    class="rounded-cx-sm border border-cx-border p-3.5 flex items-center justify-between gap-3 hover:bg-cx-well transition"
-                  >
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <span class="font-semibold text-xs text-cx-ink">{{ cand.name }}</span>
-                        <span v-if="cand.already_linked" class="rounded-cx-sm bg-cx-success-soft text-cx-success-ink text-[11px] font-semibold px-2 py-0.5">
-                          ✓ In Portfolio
-                        </span>
-                      </div>
-                      <span class="text-[11px] text-cx-ink-3 block mt-0.5">
-                        MFL: {{ cand.mfl_code }} · {{ cand.level }} · {{ cand.county }} {{ cand.subcounty ? `/ ${cand.subcounty}` : '' }} · {{ cand.owner_type }}
-                      </span>
-                    </div>
-
-                    <button
-                      v-if="!cand.already_linked"
-                      type="button"
-                      class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shrink-0 disabled:opacity-50"
-                      :disabled="hfrLinkBusy"
-                      @click="linkHfrCandidate(cand)"
-                    >
-                      {{ hfrLinkBusy ? 'Linking…' : '+ Add to Portfolio' }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Registry identifier lookup -->
-            <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
-              <h3 class="font-semibold text-sm text-cx-ink">Search the Health Facility Registry</h3>
-              <p class="text-xs text-cx-ink-3 leading-relaxed">
-                Look up a facility using its MFL code, HFR Facility ID (FID), or registration number.
-              </p>
-
-              <div class="pt-2 flex items-center gap-3">
-                <button
-                  type="button"
-                  class="rounded-cx-sm border border-cx-border bg-cx-surface px-4 py-2.5 text-xs font-semibold text-cx-ink shadow-cx hover:bg-cx-well transition"
-                  @click="openAddFacilityModal()"
-                >
-                  <span>Search by registry identifier</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- ============================================================== -->
           <!-- VIEW F: MY PROFILE & IDENTIFICATION                            -->
           <!-- ============================================================== -->
           <div v-if="activeView === 'profile'" class="space-y-6 max-w-4xl">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">My Profile & Identification</h1>
-                <p class="text-xs text-cx-ink-3 mt-0.5">Manage your National ID, contact details, and facility registry search.</p>
+                <p class="text-xs text-cx-ink-3 mt-0.5">Manage your National ID and contact details.</p>
               </div>
               <button
                 type="button"
@@ -2713,17 +2620,10 @@ onUnmounted(() => {
                 </div>
 
                 <p class="text-xs text-cx-ink-3 leading-relaxed">
-                  Your National ID is used to search the Health Facility Registry. Review it before searching; you can also add a facility by its MFL code.
+                  Your National ID supports ownership checks when linking facilities. Manage it here; registry search is available from Facilities.
                 </p>
 
-                <div class="pt-2 border-t border-cx-border-soft flex items-center justify-between">
-                  <button
-                    type="button"
-                    class="text-xs font-semibold text-cx-brand hover:underline"
-                    @click="discoverFacilitiesByOwnerId(); activeView = 'hfr_sync'"
-                  >
-                    1-Click Registry Discovery →
-                  </button>
+                <div class="pt-2 border-t border-cx-border-soft">
                   <button
                     type="button"
                     class="text-xs font-semibold text-cx-ink-3 hover:text-cx-ink"
@@ -2839,49 +2739,76 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- MODAL 1: ADD FACILITY VIA HEALTH FACILITY REGISTRY -->
+    <!-- FACILITIES: SEARCH AND LINK FROM HEALTH FACILITY REGISTRY -->
     <Dialog
       v-model:open="addFacilityModalOpen"
-      :title="__('Add Facility via Health Facility Registry')"
+      :title="__('Find and link a facility')"
       size="3xl"
     >
       <div class="p-1 space-y-5">
         <section class="rounded-cx-sm border border-cx-border bg-cx-well p-4">
-          <label class="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2" for="portfolio-partner-id">Partner ID</label>
-          <input
-            id="portfolio-partner-id"
-            v-model="partnerIdInput"
-            inputmode="numeric"
-            maxlength="6"
-            placeholder="Six-digit Partner ID (optional)"
-            class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm font-medium text-cx-ink focus:border-cx-brand focus:outline-none"
-          />
-          <p class="mt-1.5 text-xs text-cx-ink-3">Enter the Partner ID for the facility’s network. Leave it blank to use the configured default.</p>
-        </section>
-        <!-- 1-Click National ID Discovery Banner if ID exists -->
-        <div v-if="userProfile.masked_national_id" class="rounded-cx-sm bg-cx-brand-soft border border-cx-brand-soft-border p-3.5 flex items-center justify-between gap-3">
-          <div>
-            <span class="font-semibold text-xs text-cx-brand-ink block">Registered Owner ID: {{ userProfile.masked_national_id }}</span>
-            <span class="text-[11px] text-cx-brand-ink">Auto-discover clinic branches licensed under this National ID with 1 click.</span>
+          <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-end">
+            <div>
+              <label class="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2" for="portfolio-partner-id">Partner ID <span class="font-normal normal-case text-cx-ink-4">(optional)</span></label>
+              <input
+                id="portfolio-partner-id"
+                v-model="partnerIdInput"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="Use configured default"
+                class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm font-medium text-cx-ink focus:border-cx-brand focus:outline-none"
+              />
+            </div>
+            <p class="text-xs leading-relaxed text-cx-ink-3">Leave blank to use your configured partner ID.</p>
           </div>
-          <button
-            type="button"
-            class="rounded-cx-sm bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong transition shrink-0 disabled:opacity-50"
-            :disabled="hfrOwnerSearchBusy"
-            @click="discoverFacilitiesByOwnerId(); addFacilityModalOpen = false; activeView = 'hfr_sync'"
-          >
-            {{ hfrOwnerSearchBusy ? 'Searching…' : 'Discover by My ID →' }}
-          </button>
-        </div>
+        </section>
+        <!-- Owner ID discovery is part of the same facility linking workflow. -->
+        <section v-if="userProfile.masked_national_id" class="rounded-cx-sm border border-cx-brand-soft-border bg-cx-brand-soft p-4 space-y-3">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 class="font-semibold text-sm text-cx-brand-ink">Find facilities registered to your ID</h3>
+              <p class="mt-1 text-xs text-cx-brand-ink">Search using the ID on your profile: <span class="font-mono font-semibold">{{ userProfile.masked_national_id }}</span></p>
+            </div>
+            <button
+              type="button"
+              class="rounded-cx-sm bg-cx-brand px-3.5 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong transition disabled:opacity-50"
+              :disabled="hfrOwnerSearchBusy"
+              @click="discoverFacilitiesByOwnerId()"
+            >
+              {{ hfrOwnerSearchBusy ? 'Searching…' : 'Find my facilities' }}
+            </button>
+          </div>
+          <p v-if="hfrOwnerSearchComplete && hfrOwnerSearchError" class="rounded-cx-sm border border-cx-danger-border bg-cx-danger-soft p-3 text-xs text-cx-danger-ink" role="alert">{{ hfrOwnerSearchError }}</p>
+          <p v-else-if="hfrOwnerSearchComplete && !hfrOwnerSearchResults.length" class="rounded-cx-sm border border-cx-border bg-cx-surface p-3 text-xs text-cx-ink-2" role="status">
+            No facilities were found for this ID. You can search the registry by MFL code, FID, or registration number below.
+          </p>
+          <div v-if="hfrOwnerSearchResults.length" class="space-y-2 border-t border-cx-brand-soft-border pt-3">
+            <p class="text-xs font-semibold text-cx-brand-ink">Facilities found ({{ hfrOwnerSearchResults.length }})</p>
+            <div class="max-h-56 space-y-2 overflow-y-auto">
+              <div v-for="candidate in hfrOwnerSearchResults" :key="candidate.fid || candidate.mfl_code" class="flex flex-col gap-3 rounded-cx-sm border border-cx-border bg-cx-surface p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="text-xs font-semibold text-cx-ink">{{ candidate.name }}</p>
+                  <p class="mt-1 text-[11px] text-cx-ink-3">MFL {{ candidate.mfl_code }} · {{ candidate.level || 'Facility' }} · {{ candidate.county }}{{ candidate.subcounty ? ` / ${candidate.subcounty}` : '' }}</p>
+                </div>
+                <span v-if="candidate.already_linked || facilityAlreadyLinked(candidate)" class="shrink-0 rounded-full bg-cx-success-soft px-2.5 py-1 text-[11px] font-semibold text-cx-success-ink">In your portfolio</span>
+                <button v-else type="button" class="shrink-0 rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover disabled:opacity-50" :disabled="hfrLinkBusy" @click="linkHfrCandidate(candidate)">
+                  {{ hfrLinkBusy ? 'Linking…' : 'Add to portfolio' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <div>
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
-            Search the Health Facility Registry by MFL, FID, or registration number
-          </label>
-          <div class="flex gap-2">
+        <section class="space-y-3">
+          <div>
+            <h3 class="text-sm font-semibold text-cx-ink">Search the Health Facility Registry</h3>
+            <p class="mt-1 text-xs text-cx-ink-3">Enter a registry identifier. Your Facilities search only searches names in your current portfolio.</p>
+          </div>
+          <div class="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
             <select
               v-model="hfrSearchBy"
-              class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shrink-0"
+              aria-label="Registry identifier type"
+              class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2"
             >
               <option value="mfl_code">MFL Code</option>
               <option value="facility_fid">FID</option>
@@ -2890,20 +2817,21 @@ onUnmounted(() => {
             <input
               type="text"
               v-model="hfrSearchQuery"
-              placeholder="Enter the selected registry identifier"
-              class="flex-1 rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
+              :placeholder="hfrSearchBy === 'mfl_code' ? 'Enter MFL code' : hfrSearchBy === 'facility_fid' ? 'Enter HFR Facility ID' : 'Enter registration number'"
+              class="min-w-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
               @keyup.enter="executeHfrSearch()"
             />
             <button
               type="button"
-              class="rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong disabled:opacity-50 shrink-0"
-              :disabled="hfrSearchBusy"
+              class="rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong disabled:opacity-50"
+              :disabled="hfrSearchBusy || !hfrSearchQuery.trim()"
               @click="executeHfrSearch()"
             >
               {{ hfrSearchBusy ? 'Searching…' : 'Search' }}
             </button>
           </div>
-        </div>
+          <p v-if="hfrSearchError" class="rounded-cx-sm border border-cx-danger-border bg-cx-danger-soft p-3 text-xs text-cx-danger-ink" role="alert">{{ hfrSearchError }}</p>
+        </section>
 
         <!-- Search Results -->
         <div v-if="hfrSearchResults.length" class="space-y-2">
@@ -2913,13 +2841,14 @@ onUnmounted(() => {
               v-for="cand in hfrSearchResults"
               :key="cand.fid"
               class="rounded-cx-sm border p-3 flex items-center justify-between gap-3 hover:bg-cx-well transition"
-              :class="hfrSelectedCandidate?.fid === cand.fid ? 'border-cx-brand bg-cx-brand-soft' : 'border-cx-border'"
+              :class="facilityAlreadyLinked(cand) ? 'border-cx-success-border bg-cx-success-soft' : 'border-cx-border'"
             >
               <div>
                 <span class="font-semibold text-xs text-cx-ink block">{{ cand.name }}</span>
-                <span class="text-[11px] text-cx-ink-3">MFL: {{ cand.mfl_code }} · {{ cand.level || 'Clinic' }} · {{ cand.county }} · {{ cand.owner_type }}</span>
+                <span class="text-[11px] text-cx-ink-3">MFL {{ cand.mfl_code }} · {{ cand.level || 'Facility' }} · {{ cand.county || 'County unavailable' }} · {{ cand.owner_type || 'Registry record' }}</span>
               </div>
-              <button
+              <span v-if="facilityAlreadyLinked(cand)" class="shrink-0 rounded-full bg-cx-success-soft px-2.5 py-1 text-[11px] font-semibold text-cx-success-ink">In your portfolio</span>
+              <button v-else
                 type="button"
                 class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shrink-0 disabled:opacity-50"
                 :disabled="hfrLinkBusy"
@@ -2930,6 +2859,9 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        <p v-else-if="hfrSearchComplete && !hfrSearchError" class="rounded-cx-sm border border-cx-border bg-cx-well p-4 text-xs text-cx-ink-2" role="status">
+          No registry record matched that identifier. Check the number or choose another identifier type.
+        </p>
       </div>
     </Dialog>
 
