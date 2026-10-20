@@ -11,7 +11,10 @@
   "column_break_hfr_1",
   "hfr_username",
   "hfr_password",
-  "hfr_jwt_expiry"
+  "hfr_jwt_expiry",
+  "provisioning_section",
+  "provisioning_submit_path",
+  "provisioning_status_path"
  ],
  "fields": [
   {
@@ -61,6 +64,24 @@
    "fieldname": "hfr_jwt_expiry",
    "fieldtype": "Int",
    "label": "JWT Expiry (seconds)"
+  },
+  {
+   "fieldname": "provisioning_section",
+   "fieldtype": "Section Break",
+   "label": "HMIS Provisioning Status API",
+   "description": "Optional read-only route published through the HIE API gateway. It reuses the HIE JWT credentials above."
+  },
+  {
+   "default": "/v1/hmis/provisioning/facilities",
+   "fieldname": "provisioning_submit_path",
+   "fieldtype": "Data",
+   "label": "Provisioning Request API Path"
+  },
+  {
+   "default": "/v1/hmis/provisioning/facilities/{fid}/status",
+   "fieldname": "provisioning_status_path",
+   "fieldtype": "Data",
+   "label": "Provisioning Status API Path"
   }
  ],
  "issingle": 1,

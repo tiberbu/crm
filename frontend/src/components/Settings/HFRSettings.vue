@@ -132,6 +132,27 @@
         </div>
       </template>
 
+      <div class="h-px border-t mx-2 border-outline-elevation-2" />
+      <div class="px-2 pt-4 pb-4">
+        <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-1">
+          {{ __('HMIS Provisioning API Routes') }}
+        </div>
+        <p class="mb-4 max-w-3xl text-p-sm text-ink-gray-5">
+          {{ __('These API paths are published through the HIE gateway and use the HIE URL and Bearer JWT credentials above. The current status response does not include service-unit inventory.') }}
+        </p>
+        <div class="flex flex-col gap-3">
+          <div class="flex items-center gap-4">
+            <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Provisioning Request API Path') }}</label>
+            <FormControl v-model="form.provisioning_submit_path" type="text" placeholder="/v1/hmis/provisioning/facilities" class="flex-1" @input="markDirty" />
+          </div>
+          <div class="flex items-center gap-4">
+            <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Provisioning Status API Path') }}</label>
+            <FormControl v-model="form.provisioning_status_path" type="text" placeholder="/v1/hmis/provisioning/facilities/{fid}/status" class="flex-1" @input="markDirty" />
+          </div>
+          <p class="text-p-sm text-ink-gray-5">{{ form.provisioning_status_configured ? __('HIE gateway credentials are configured. The provisioning routes may still be pending publication.') : __('Configure the HIE gateway URL and credentials above to enable status lookups.') }}</p>
+        </div>
+      </div>
+
       <div v-if="saveError" class="mx-2 mt-2">
         <ErrorMessage :message="saveError" />
       </div>
@@ -163,6 +184,9 @@ const form = reactive({
   hfr_username: '',
   hfr_password: '',
   hfr_jwt_expiry: 20000,
+  provisioning_submit_path: '/v1/hmis/provisioning/facilities',
+  provisioning_status_path: '/v1/hmis/provisioning/facilities/{fid}/status',
+  provisioning_status_configured: false,
 })
 
 const settings = createResource({

@@ -631,7 +631,12 @@ def lookup_hfr_facility(query: Any, search_by: str = "mfl_code"):
 
 
 @frappe.whitelist(methods=["POST"])
-def add_facility_from_hfr(mfl_code: Any, fid: Any = None, package_item_code: Any = None):
+def add_facility_from_hfr(
+	mfl_code: Any,
+	fid: Any = None,
+	package_item_code: Any = None,
+	partner_id: Any = None,
+):
 	"""Link a verified Health Facility Registry facility to the authenticated user's customer account."""
 	user = frappe.session.user
 	if user == "Guest":
@@ -643,6 +648,14 @@ def add_facility_from_hfr(mfl_code: Any, fid: Any = None, package_item_code: Any
 	if not customer_names:
 		frappe.throw(_("No customer account found for your profile."), frappe.ValidationError)
 	customer = customer_names[0]
+	from crm.api.facility_onboarding import _public_network
+
+	partner = _public_network(_text(partner_id))
+	if not partner:
+		frappe.throw(
+			_("Enter a valid six-digit Partner ID, or leave it blank to use the configured default."),
+			frappe.ValidationError,
+		)
 
 	mfl_code = _text(mfl_code)
 	fid = _text(fid)
@@ -678,6 +691,11 @@ def add_facility_from_hfr(mfl_code: Any, fid: Any = None, package_item_code: Any
 	facility_name = facility_data.get("organization_name") or mfl_code
 	keph_level = facility_data.get("facility_level") or "Level 2"
 	resolved_mfl = facility_data.get("mfl_code") or mfl_code
+	if not resolved_mfl:
+		frappe.throw(
+			_("This registry record has no MFL code, so it cannot be added to the facility portfolio yet."),
+			frappe.ValidationError,
+		)
 
 	with _system_user():
 		row = frappe.db.get_value("CRM Pre-Qualified Facility", {"mfl_code": resolved_mfl}, "name")
@@ -697,6 +715,8 @@ def add_facility_from_hfr(mfl_code: Any, fid: Any = None, package_item_code: Any
 					"keph_level": keph_level,
 				}
 			)
+		fac_doc.hfr_facility_id = fid or facility_data.get("hfr_facility_id") or fac_doc.get("hfr_facility_id")
+		fac_doc.registration_number = facility_data.get("registration_number") or fac_doc.get("registration_number")
 
 		fac_doc.flags.skip_invitation = True
 		if hasattr(fac_doc, "is_self_onboarded"):
@@ -709,14 +729,17 @@ def add_facility_from_hfr(mfl_code: Any, fid: Any = None, package_item_code: Any
 				break
 
 		if not membership_exists:
+			user_doc = frappe.db.get_value("User", user, ["full_name", "mobile_no"], as_dict=True) or {}
 			fac_doc.append(
 				"memberships",
 				{
-					"network": "CareVerse Partner Network",
+					"network": partner.get("name"),
 					"customer": customer,
 					"status": "Active",
 					"go_live": 1,
+					"contact_name": user_doc.get("full_name") or user,
 					"contact_email": user,
+					"contact_phone": user_doc.get("mobile_no") or "Not provided",
 				},
 			)
 
@@ -799,17 +822,6 @@ def get_user_profile():
 			if not org_name:
 				org_name = deals[0].get("organization") or customer
 
-		# If national_id is still empty, check if deal has identity ref or person info
-		if not national_id:
-			for d in deals:
-				if d.get("name"):
-					ident_ref = frappe.db.get_value("CRM Deal", d["name"], "cx_onboarding_identity_ref")
-					if ident_ref and ":" in str(ident_ref):
-						parts = str(ident_ref).split(":")
-						if len(parts) >= 2 and parts[-1].isdigit():
-							national_id = parts[-1]
-							break
-
 		if frappe.db.has_column("CRM Facility Membership", "customer"):
 			facility_count = frappe.db.count("CRM Facility Membership", {"customer": customer})
 		if facility_count == 0 and deals:
@@ -844,7 +856,11 @@ def get_user_profile():
 			"mobile_no": mobile_no,
 			"national_id": national_id,
 			"masked_national_id": _mask_national_id(national_id) if national_id else "",
-			"national_id_verified": bool(national_id),
+			"national_id_verified": bool(
+				frappe.db.get_value("User", user, "national_id_verified")
+				if frappe.db.has_column("User", "national_id_verified")
+				else False
+			),
 			"organization": org_name or full_name or "Healthcare Practice",
 			"primary_network": network_name,
 			"facility_count": facility_count,
@@ -908,40 +924,15 @@ def lookup_facilities_by_owner_id(national_id: Any = None):
 	id_number = _text(national_id).strip() or _text(user_doc.get("national_id") or "").strip()
 
 	if not id_number:
-		from crm.api.website_redirect import get_user_customer_names
-		customer_names = get_user_customer_names(user)
-		if customer_names:
-			deals = frappe.get_all("CRM Deal", filters={"cx_customer": customer_names[0]}, fields=["name"], limit=1)
-			if deals:
-				ident_ref = frappe.db.get_value("CRM Deal", deals[0]["name"], "cx_onboarding_identity_ref")
-				if ident_ref and ":" in str(ident_ref):
-					parts = str(ident_ref).split(":")
-					if len(parts) >= 2 and parts[-1].isdigit():
-						id_number = parts[-1]
-
-	if not id_number:
 		frappe.throw(
 			_("No National ID on file. Please enter and save your National ID in My Profile before discovering facilities."),
 			frappe.ValidationError,
 		)
 
-	if id_number and not user_doc.get("national_id"):
-		if not frappe.db.has_column("User", "national_id"):
-			from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
-			create_custom_fields({
-				"User": [{
-					"fieldname": "national_id",
-					"label": "National ID",
-					"fieldtype": "Data",
-					"insert_after": "phone",
-				}]
-			})
-		user_doc.db_set("national_id", id_number)
-
 	try:
 		raw_facilities = _hfr_facilities_for_owner(id_number)
 	except Exception as exc:
-		frappe.log_error(f"HFR lookup by owner ID {id_number} failed: {exc}")
+		frappe.log_error(f"HFR lookup by owner ID failed: {exc}")
 		return {
 			"success": False,
 			"error": _("Unable to query Health Facility Registry at this time. Please try again or search by MFL code."),

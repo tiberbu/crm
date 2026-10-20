@@ -323,6 +323,11 @@ No changes to `CRM Opt-In Submission`, `CRM Onboarding Request`, or the payment 
 
 ## 11. Upstream contract summary *(from TA — binding for the client)*
 
+The proposed public APISIX routes and normalized request/response shapes are
+documented in [`cx-portal-provisioning-gateway-api.md`](cx-portal-provisioning-gateway-api.md).
+The method URLs below describe the current setup-side implementation; APISIX
+publishes the stable `/v1/hmis/...` paths to CRM.
+
 - `POST {base}/api/method/hmis_setup.api.external_provisioning.provision_facility` —
   JSON body §FR-4; 200 `{accepted, facility_setup, status:"Draft", message}`; 400s are
   field-named; 401 on bad credentials. **Creates a Draft; never deploys.**
@@ -341,9 +346,9 @@ No changes to `CRM Opt-In Submission`, `CRM Onboarding Request`, or the payment 
 Resolved in v0.2: ~~Q1 FID source~~ → D1; ~~Q2 trigger~~ → D2; ~~Q5 gateway auth~~ → D3.
 Remaining:
 
-1. **Exact gateway path(s).** The TA paths assume the setup-app host. Confirm the
-   gateway route for both endpoints (path rewrite? version prefix?) before slice B
-   freezes — fields are configurable, defaults per TA.
+1. **Gateway publication.** Publish the proposed routes in
+   `cx-portal-provisioning-gateway-api.md`. Until APISIX provisions them, CRM
+   treats an unrecognized 404 as “tracking unavailable” and keeps the portal usable.
 2. **FID on Pre-Qualified Facility.** Keep or drop (MVP = Deal Facility only)?
 3. **Licence number source.** Which CRM document owns the `LIC-…` value (contract?
    quote? new field on the facility row)?

@@ -337,4 +337,178 @@ html {
     system-ui,
     sans-serif;
   font-variant-numeric: tabular-nums;
+  background-color: var(--cx-bg, #f8fafc);
+  background-image:
+    radial-gradient(ellipse at 6% 0%, var(--cx-glow-brand, rgba(188, 24, 35, 0.055)), transparent 32rem),
+    radial-gradient(ellipse at 92% 12%, var(--cx-glow-cool, rgba(148, 163, 184, 0.11)), transparent 28rem);
+  background-attachment: fixed;
+}
+
+/* --- CX Portal design tokens (professional admin pass, 2026-10-20) -------
+   Self-contained token system for the portal SPA (PRD-CX-PORTFOLIO-002
+   overhaul). Defined at :root / [data-theme='dark'] (NOT .cx-portal-scoped)
+   because frappe-ui Dialogs teleport to <body>, outside the portal root.
+   The cx- prefix keeps them from colliding with other app tokens; nothing
+   else in the app references them. tailwind.config.js maps the `cx` color
+   palette to these vars, so `bg-cx-surface`, `text-cx-ink`, `border-cx-border`,
+   `rounded-cx`, `shadow-cx` etc. invert automatically with the theme.
+   Rule: no raw slate, white, or hex colors in portal templates — only cx-* classes. */
+:root {
+  --cx-bg: #f8fafc;
+  --cx-surface: #ffffff;
+  --cx-well: #f1f5f9;
+  --cx-band: rgba(241, 245, 249, 0.75);
+  --cx-overlay: rgba(15, 23, 42, 0.35);
+  --cx-border: #e2e8f0;
+  --cx-border-soft: #edf1f5;
+  --cx-ink: #0f172a;
+  --cx-ink-2: #334155;
+  --cx-ink-3: #64748b;
+  --cx-ink-4: #94a3b8;
+  --cx-contrast: #ffffff;
+  --cx-ink-hover: #000000;
+  --cx-brand: #bc1823;
+  --cx-brand-strong: #a3141d;
+  --cx-brand-soft: #fdf2f3;
+  --cx-brand-soft-border: #f6c2c5;
+  --cx-brand-ink: #8f111b;
+  --cx-success: #059669;
+  --cx-success-soft: #ecfdf5;
+  --cx-success-ink: #065f46;
+  --cx-success-border: #a7f3d0;
+  --cx-warning: #d97706;
+  --cx-warning-soft: #fffbeb;
+  --cx-warning-ink: #92400e;
+  --cx-warning-border: #fde68a;
+  --cx-danger: #e11d48;
+  --cx-danger-soft: #fff1f2;
+  --cx-danger-ink: #9f1239;
+  --cx-danger-border: #fecdd3;
+  --cx-shadow-subtle: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --cx-shadow-raised: 0 8px 24px rgba(15, 23, 42, 0.12);
+  --cx-glass-chrome: rgba(255, 255, 255, 0.82);
+  --cx-glass-panel: rgba(255, 255, 255, 0.72);
+  --cx-glass-highlight: rgba(255, 255, 255, 0.88);
+  --cx-glass-blur: 18px;
+  --cx-glow-brand: rgba(188, 24, 35, 0.055);
+  --cx-glow-cool: rgba(148, 163, 184, 0.11);
+  --cx-r-sm: 8px;
+  --cx-r-lg: 16px;
+}
+
+[data-theme='dark'] {
+  --cx-bg: #0f1115;
+  --cx-surface: #16181d;
+  --cx-well: #1e2126;
+  --cx-band: rgba(30, 33, 38, 0.75);
+  --cx-overlay: rgba(0, 0, 0, 0.55);
+  --cx-border: #2a2e35;
+  --cx-border-soft: #23262b;
+  --cx-ink: #f1f5f9;
+  --cx-ink-2: #cbd5e1;
+  --cx-ink-3: #94a3b8;
+  --cx-ink-4: #64748b;
+  --cx-contrast: #0f1115;
+  --cx-ink-hover: #ffffff;
+  --cx-brand: #d23a41;
+  --cx-brand-strong: #e0545a;
+  --cx-brand-soft: #320e12;
+  --cx-brand-soft-border: #760f17;
+  --cx-brand-ink: #ff8f93;
+  --cx-success: #34d399;
+  --cx-success-soft: rgba(16, 185, 129, 0.14);
+  --cx-success-ink: #6ee7b7;
+  --cx-success-border: rgba(16, 185, 129, 0.3);
+  --cx-warning: #fbbf24;
+  --cx-warning-soft: rgba(245, 158, 11, 0.14);
+  --cx-warning-ink: #fcd34d;
+  --cx-warning-border: rgba(245, 158, 11, 0.3);
+  --cx-danger: #fb7185;
+  --cx-danger-soft: rgba(244, 63, 94, 0.14);
+  --cx-danger-ink: #fda4af;
+  --cx-danger-border: rgba(244, 63, 94, 0.3);
+  --cx-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --cx-shadow-raised: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --cx-glass-chrome: rgba(22, 24, 29, 0.82);
+  --cx-glass-panel: rgba(30, 33, 38, 0.78);
+  --cx-glass-highlight: rgba(255, 255, 255, 0.07);
+  --cx-glow-brand: rgba(210, 58, 65, 0.1);
+  --cx-glow-cool: rgba(148, 163, 184, 0.045);
+}
+
+/* CX portal custom surfaces. These use a restrained blur and thin highlight
+   edge to add depth while keeping tables and long-form billing details crisp. */
+.cx-portal .cx-glass-chrome {
+  background: var(--cx-glass-chrome);
+  -webkit-backdrop-filter: blur(var(--cx-glass-blur)) saturate(145%);
+  backdrop-filter: blur(var(--cx-glass-blur)) saturate(145%);
+}
+
+.cx-portal .cx-glass-panel {
+  background: var(--cx-glass-panel);
+  border-color: color-mix(in srgb, var(--cx-border) 72%, transparent);
+  box-shadow: var(--cx-shadow-subtle), inset 0 1px 0 var(--cx-glass-highlight);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+  backdrop-filter: blur(12px) saturate(135%);
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    border-color 180ms ease;
+}
+
+.cx-portal .cx-glass-panel:hover {
+  box-shadow: var(--cx-shadow-raised), inset 0 1px 0 var(--cx-glass-highlight);
+  transform: translateY(-1px);
+}
+
+/* The network opt-in wizard keeps each partner's brand color while using the
+   same restrained glass material as the signed-in owner portal. */
+.cx-enrollment {
+  background-color: #f4f6f8;
+  background-image:
+    radial-gradient(circle at 82% 8%, color-mix(in srgb, var(--brand-primary, #c0101a) 7%, transparent), transparent 28rem),
+    radial-gradient(circle at 8% 76%, rgba(16, 185, 129, 0.035), transparent 25rem);
+}
+
+.cx-enrollment-glass {
+  border-color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 18px 48px rgba(28, 35, 45, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+
+@media (max-width: 639px) {
+  .cx-enrollment-glass {
+    background: rgba(255, 255, 255, 0.92);
+    -webkit-backdrop-filter: blur(12px) saturate(125%);
+    backdrop-filter: blur(12px) saturate(125%);
+  }
+}
+
+.cx-portal .cx-toast {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  width: min(36rem, calc(100vw - 2rem));
+  transform: translateX(-50%);
+  border-radius: var(--cx-r-sm);
+  box-shadow: var(--cx-shadow-raised);
+  -webkit-backdrop-filter: blur(var(--cx-glass-blur)) saturate(145%);
+  backdrop-filter: blur(var(--cx-glass-blur)) saturate(145%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cx-portal .cx-glass-panel,
+  .cx-portal .cx-glass-panel:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .cx-portal .cx-toast {
+    top: 0.75rem;
+    width: calc(100vw - 1.5rem);
+  }
 }

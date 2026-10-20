@@ -79,6 +79,15 @@ The motivation behind building Frappe CRM stems from the need for a simple, cust
 -   **WhatsApp:** Integrate WhatsApp to send and receive messages from the CRM. [Frappe WhatsApp](https://github.com/shridarpatil/frappe_whatsapp) is used for this integration.
 -   **ERPNext:** Integrate with [ERPNext](https://erpnext.com) to extend the CRM capabilities to include invoicing, accounting, and more.
 
+### Tiberbu CX Portal
+
+The CX Portal facility portfolio, Health Facility Registry lookup, and HMIS
+implementation status integration are documented in
+[`docs/cx-portal-ux-design-pattern.md`](docs/cx-portal-ux-design-pattern.md),
+[`docs/cx-portal-health-facility-registry-and-portfolio-prd.md`](docs/cx-portal-health-facility-registry-and-portfolio-prd.md),
+and the proposed HIE APISIX contract in
+[`docs/cx-portal-provisioning-gateway-api.md`](docs/cx-portal-provisioning-gateway-api.md).
+
 ### Under the Hood
 
 - [Frappe Framework](https://github.com/frappe/frappe): A full-stack web application framework.
