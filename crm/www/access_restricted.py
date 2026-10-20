@@ -76,8 +76,8 @@ def get_context(context):
 	# non-admin. Redirect the two users who should never see it.
 	user = frappe.session.user
 	if user == "Administrator":
-		# An admin is never blocked — send them to Desk.
-		frappe.local.flags.redirect_location = "/app"
+		# Keep the branded application flow; this page never sends users to native Desk.
+		frappe.local.flags.redirect_location = "/crm"
 		raise frappe.Redirect
 	if not user or user == "Guest":
 		# Not authenticated yet — let them log in.

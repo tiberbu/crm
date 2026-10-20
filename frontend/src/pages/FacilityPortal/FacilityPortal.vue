@@ -43,7 +43,7 @@ const context = ref({
   calculator_config: {},
 })
 
-// Current Active Navigation View: 'dashboard' | 'facilities' | 'pricing' | 'billing' | 'hfr_sync' | 'profile' | 'support'
+// Current Active Navigation View: 'dashboard' | 'facilities' | 'pricing' | 'billing' | 'profile' | 'support'
 // The portal lands on the Dashboard — the at-a-glance portfolio story — and
 // drills down from there instead of opening on the densest data table.
 const activeView = ref('dashboard')
@@ -54,7 +54,6 @@ const isMobileViewport = ref(false)
 const mobileMoreOpen = ref(false)
 const mobileMoreItems = computed(() => [
   { view: 'pricing', label: 'Plans & Pricing', icon: 'coins' },
-  { view: 'hfr_sync', label: 'Registry Sync', icon: 'refresh' },
   { view: 'support', label: 'Network Support', icon: 'chat' },
   ...((context.value.ois || []).length
     ? [{ view: 'optin_requests', label: 'Opt-In Requests', icon: 'clipboard-list' }]
@@ -76,10 +75,13 @@ function selectMobileView(view) {
 const logout = createResource({
   url: 'logout',
   onSuccess: () => {
-    window.location.href = '/login?redirect-to=/crm/facility-portal.html'
+    window.location.href = '/'
   },
   onError: () => {
-    window.location.href = '/login'
+    notice.value = {
+      tone: 'error',
+      text: 'Could not sign out. Your session is still active; please try again.',
+    }
   },
 })
 
@@ -142,9 +144,9 @@ const hfrOwnerSearchResults = ref([])
 const hfrOwnerSearchComplete = ref(false)
 const hfrOwnerSearchError = ref('')
 
-// Search, Filter & Grouping state for Facilities Data Table
+// Shared facility-name search plus directory filters and grouping state
 const searchQuery = ref('')
-const selectedStatusFilter = ref('all') // 'all' | 'live' | 'verifying'
+const selectedStatusFilter = ref('all') // 'all' | 'ready' | 'progress' | 'lead'
 const selectedLevelFilter = ref('all') // 'all' | 'Level 2' | 'Level 3' | 'Level 4'
 const selectedNetworkFilter = ref('all') // 'all' | network names
 const groupByNetwork = ref(false) // Toggle to group facilities by network/partner
@@ -168,12 +170,13 @@ const mpesaReportBusy = ref(false)
 
 // HFR Lookup state inside Add Facility Modal
 const hfrSearchQuery = ref('')
-const hfrSearchBy = ref('mfl_code') // 'mfl_code' | 'registration_number'
+const hfrSearchBy = ref('mfl_code') // 'mfl_code' | 'facility_fid' | 'registration_number'
 const partnerIdInput = ref('')
 const hfrSearchBusy = ref(false)
 const hfrSearchResults = ref([])
+const hfrSearchError = ref('')
+const hfrSearchComplete = ref(false)
 const hfrLinkBusy = ref(false)
-const hfrSelectedCandidate = ref(null)
 
 // Action feedback & busy states
 const purchaseBusy = ref(false)
@@ -273,6 +276,16 @@ const availableNetworks = computed(() => {
   return Array.from(set).sort()
 })
 
+const availableLevelFilters = computed(() => {
+  const levels = new Set()
+  for (const facility of allFacilities.value) {
+    const level = String(facility.keph_level || '').trim()
+    if (!level) continue
+    levels.add(level.match(/^Level\s+\d+/i)?.[0] || level)
+  }
+  return Array.from(levels).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+})
+
 // Filtered facilities for data table and card view
 const filteredFacilities = computed(() => {
   return allFacilities.value.filter((fac) => {
@@ -284,8 +297,9 @@ const filteredFacilities = computed(() => {
     }
 
     // Status filter
-    if (selectedStatusFilter.value === 'live' && !fac.go_live) return false
-    if (selectedStatusFilter.value === 'verifying' && fac.go_live) return false
+    if (selectedStatusFilter.value === 'ready' && !fac.go_live) return false
+    if (selectedStatusFilter.value === 'progress' && (fac.go_live || fac.membership_status === 'Lead Inquiry')) return false
+    if (selectedStatusFilter.value === 'lead' && fac.membership_status !== 'Lead Inquiry') return false
 
     // Level filter
     if (selectedLevelFilter.value !== 'all') {
@@ -304,6 +318,18 @@ const filteredFacilities = computed(() => {
     return true
   })
 })
+
+function facilityReadinessLabel(facility) {
+  if (facility.membership_status === 'Lead Inquiry') return 'Lead inquiry'
+  return facility.go_live ? 'Ready for go-live' : 'Implementation in progress'
+}
+
+function resetFacilityFilters() {
+  searchQuery.value = ''
+  selectedStatusFilter.value = 'all'
+  selectedLevelFilter.value = 'all'
+  selectedNetworkFilter.value = 'all'
+}
 
 // Facilities grouped by partner network
 const facilitiesByNetwork = computed(() => {
@@ -420,6 +446,19 @@ const allPayments = computed(() => {
   return list
 })
 
+function pendingPaymentForInvoice(invoice) {
+  if (!invoice?.name) return null
+  return allPayments.value.find((payment) => {
+    if (payment.status !== 'Pending Verification') return false
+    const invoiceNames = payment.invoice_names?.length
+      ? payment.invoice_names
+      : payment.invoice
+        ? [payment.invoice]
+        : []
+    return invoiceNames.some((name) => String(name) === String(invoice.name))
+  }) || null
+}
+
 // Selected Facility — never falls back to the first facility; an empty
 // selection means "not chosen yet" and the Top Up modal shows a picker.
 const selectedFacility = computed(() => {
@@ -447,9 +486,40 @@ const drawerOrders = computed(() => {
   const mfl = String(drawerFacility.value?.mfl_code || '').toLowerCase()
   return allOrders.value.filter((o) => String(o.crm_token_facility_mfl || '').toLowerCase() === mfl)
 })
+const drawerPayments = computed(() => {
+  const invoiceNames = new Set(drawerInvoices.value.map((invoice) => String(invoice.name)))
+  return allPayments.value.filter((payment) => {
+    const names = payment.invoice_names?.length
+      ? payment.invoice_names
+      : payment.invoice
+        ? [payment.invoice]
+        : []
+    return names.some((name) => invoiceNames.has(String(name)))
+  })
+})
+function invoiceForFacility(facility) {
+  const invoiceName = facility.invoice_summary?.invoice_name
+  return allInvoices.value.find((invoice) => invoice.name === invoiceName) || allInvoices.value.find(
+    (invoice) => String(invoice.crm_token_facility_mfl || '').toLowerCase() === String(facility.mfl_code || '').toLowerCase(),
+  ) || null
+}
+function pendingPaymentForFacility(facility) {
+  const invoice = invoiceForFacility(facility)
+  return invoice ? pendingPaymentForInvoice(invoice) : null
+}
 function openFacilityDrawer(facility) {
   facilityDrawerMfl.value = facility.mfl_code
   activeView.value = 'facility_detail'
+}
+function openFacilityFromSurface(event, facility) {
+  if (event.target?.closest?.('button, a, input, select, textarea, [role="button"]')) return
+  openFacilityDrawer(facility)
+}
+function openAttentionFacility(item) {
+  const facility = allFacilities.value.find(
+    (row) => String(row.mfl_code || '').toLowerCase() === String(item.mfl_code || '').toLowerCase(),
+  )
+  if (facility) openFacilityDrawer(facility)
 }
 function closeFacilityDrawer() {
   facilityDrawerMfl.value = ''
@@ -492,30 +562,22 @@ const primaryOrganizationName = computed(() => {
   )
 })
 
-// Dashboard: items that need the user's attention (invoices due/overdue,
-// facilities still verifying on the registry)
+// Dashboard: actionable invoice items. Registry verification is not a customer action.
 const dashboardAttention = computed(() => {
   const items = []
   for (const inv of allInvoices.value) {
+    const facilityMfl = String(inv.crm_token_facility_mfl || '').trim()
+    const facility = allFacilities.value.find(
+      (item) => String(item.mfl_code || '').trim().toLowerCase() === facilityMfl.toLowerCase(),
+    )
     const status = invoiceStatus(inv)
     items.push({
       key: `inv-${inv.name}`,
       icon: 'credit-card',
       text: `Invoice ${inv.invoice_number || inv.name} — ${money(inv.amount, inv.currency)} ${status.key === 'overdue' ? 'overdue' : 'due'}`,
-      meta: `Facility: ${facilityLabel(inv.crm_token_facility_mfl, allFacilities.value)}`,
-      view: 'billing',
+      meta: `Facility: ${facility?.facility_name || facilityLabel(inv.crm_token_facility_mfl, allFacilities.value)}`,
+      mfl_code: facility?.mfl_code || '',
     })
-  }
-  for (const fac of allFacilities.value) {
-    if (!fac.go_live) {
-      items.push({
-        key: `verify-${fac.mfl_code}`,
-        icon: 'refresh',
-        text: `${fac.facility_name} is verifying on the Health Facility Registry`,
-        meta: `MFL: ${fac.mfl_code} · ${fac.keph_level}`,
-        view: 'facilities',
-      })
-    }
   }
   return items
 })
@@ -528,8 +590,8 @@ const recentActivity = computed(() => {
     items.push({
       kind: 'payment',
       icon: 'receipt',
-      title: `Receipt ${pay.name}`,
-      text: `${pay.mode_of_payment || 'Payment'} · ${money(pay.amount, 'KES')}`,
+      title: pay.status === 'Pending Verification' ? 'M-Pesa report' : 'Payment recorded',
+      text: `${pay.mode_of_payment || 'Payment'} · ${money(pay.amount, 'KES')}${pay.status === 'Pending Verification' ? ' · Verification pending' : ''}`,
       date: pay.posting_date,
     })
   }
@@ -588,32 +650,36 @@ const defaultCurrency = computed(() => {
 // ---------------------------------------------------------------------------
 // Actions & Handlers
 // ---------------------------------------------------------------------------
-function copyMfl(code) {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(code)
-    copiedMfl.value = code
-    setTimeout(() => {
-      if (copiedMfl.value === code) copiedMfl.value = ''
-    }, 2000)
-  }
+async function copyMfl(code) {
+  if (!await copyText(code, `mfl-${code}`)) return
+  copiedMfl.value = code
+  setTimeout(() => {
+    if (copiedMfl.value === code) copiedMfl.value = ''
+  }, 2000)
 }
 
-function copyText(text, key) {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(String(text))
+async function copyText(text, key) {
+  if (text === undefined || text === null || text === '') {
+    notice.value = { tone: 'error', text: 'This value is not available to copy.' }
+    return false
+  }
+  try {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      throw new Error('Clipboard access is unavailable.')
+    }
+    await navigator.clipboard.writeText(String(text))
     copiedKey.value = key
     setTimeout(() => {
       if (copiedKey.value === key) copiedKey.value = ''
     }, 2000)
+    return true
+  } catch {
+    notice.value = { tone: 'error', text: 'Could not copy this value. Select and copy it manually.' }
+    return false
   }
 }
 
-const paybillInfo = computed(() => {
-  return context.value.paybill_info || {
-    business_number: '4130669',
-    business_name: 'Tiberbu Healthnet',
-  }
-})
+const paybillInfo = computed(() => context.value.paybill_info || {})
 
 async function loadUserProfile() {
   try {
@@ -720,10 +786,16 @@ function openTopUpModal(facility = null) {
 }
 
 function openAddFacilityModal() {
+  activeView.value = 'facilities'
+  notice.value = null
   hfrSearchQuery.value = ''
   hfrSearchResults.value = []
-  hfrSelectedCandidate.value = null
+  hfrSearchError.value = ''
+  hfrSearchComplete.value = false
   partnerIdInput.value = ''
+  hfrOwnerSearchResults.value = []
+  hfrOwnerSearchComplete.value = false
+  hfrOwnerSearchError.value = ''
   addFacilityModalOpen.value = true
 }
 
@@ -732,6 +804,11 @@ function openCalculatorModal(facility = null) {
     selectedFacilityMfl.value = facility.mfl_code
   }
   calculatorModalOpen.value = true
+}
+
+function facilityAlreadyLinked(candidate) {
+  const candidateMfl = String(candidate?.mfl_code || '').trim().toLowerCase()
+  return Boolean(candidateMfl && allFacilities.value.some((facility) => String(facility.mfl_code || '').trim().toLowerCase() === candidateMfl))
 }
 
 function onCalculatorApplyPlan(pkg) {
@@ -746,6 +823,13 @@ function selectPlanFromPricingTab(pkg) {
 }
 
 function openMpesaModal(invoice) {
+  if (pendingPaymentForInvoice(invoice)) {
+    notice.value = {
+      tone: 'pending',
+      text: 'An M-Pesa payment report is being verified for this invoice. Please wait before starting another payment.',
+    }
+    return
+  }
   mpesaInvoice.value = invoice
   mpesaCodeInput.value = ''
   mpesaPhoneInput.value = userProfile.value.mobile_no || ''
@@ -754,12 +838,7 @@ function openMpesaModal(invoice) {
 
 function openMpesaModalForFacility(facility) {
   const invName = facility.invoice_summary?.invoice_name
-  let inv = allInvoices.value.find((i) => i.name === invName)
-  if (!inv) {
-    inv = allInvoices.value.find(
-      (i) => String(i.crm_token_facility_mfl).toLowerCase() === String(facility.mfl_code).toLowerCase(),
-    )
-  }
+  let inv = invoiceForFacility(facility)
   if (!inv) {
     inv = {
       name: invName || `INV-${facility.mfl_code}`,
@@ -793,10 +872,11 @@ async function submitMpesaPayment() {
       phone: mpesaPhoneInput.value.trim(),
     })
     const data = unwrap(res)
+    const alreadyPending = data?.status === 'payment_already_pending'
     mpesaModalOpen.value = false
     notice.value = {
-      tone: 'success',
-      text: data?.message || `M-Pesa payment ${code} recorded successfully! Your invoice will update upon reconciliation.`,
+      tone: alreadyPending ? 'pending' : 'success',
+      text: data?.message || `M-Pesa payment ${code} recorded successfully. Your invoice will update after verification.`,
     }
     await refreshContext()
   } catch (error) {
@@ -842,7 +922,8 @@ async function executeHfrSearch() {
 
   hfrSearchBusy.value = true
   hfrSearchResults.value = []
-  hfrSelectedCandidate.value = null
+  hfrSearchError.value = ''
+  hfrSearchComplete.value = false
 
   try {
     const res = await call('crm.api.customer_experience.lookup_hfr_facility', {
@@ -851,6 +932,7 @@ async function executeHfrSearch() {
     })
     const data = unwrap(res)
     hfrSearchResults.value = Array.isArray(data) ? data : []
+    hfrSearchComplete.value = true
     if (!hfrSearchResults.value.length) {
       notice.value = {
         tone: 'pending',
@@ -858,9 +940,11 @@ async function executeHfrSearch() {
       }
     }
   } catch (error) {
+    hfrSearchError.value = error?.messages?.[0] || 'Unable to connect to the Health Facility Registry. Please try again.'
+    hfrSearchComplete.value = true
     notice.value = {
       tone: 'error',
-      text: error?.messages?.[0] || 'Unable to connect to Health Facility Registry.',
+      text: hfrSearchError.value,
     }
   } finally {
     hfrSearchBusy.value = false
@@ -929,7 +1013,7 @@ async function executeTopUp() {
     topUpModalOpen.value = false
     notice.value = {
       tone: 'success',
-      text: `Order ${payload.sales_order || ''} successfully generated for ${selectedFacility.value.facility_name}. Settle payment under Billing & Invoices to activate tokens.`,
+      text: `Order ${payload.sales_order || ''} created for ${selectedFacility.value.facility_name}. Check Billing & Invoices for any amount due.`,
     }
 
     await refreshContext()
@@ -967,6 +1051,13 @@ async function createInvoice(order) {
 }
 
 async function payInvoice(invoice) {
+  if (pendingPaymentForInvoice(invoice)) {
+    notice.value = {
+      tone: 'pending',
+      text: 'An M-Pesa payment report is being verified for this invoice. Please wait before starting another payment.',
+    }
+    return
+  }
   busyId.value = invoice.name
   notice.value = null
   try {
@@ -1219,22 +1310,7 @@ onUnmounted(() => {
             </span>
           </button>
 
-          <!-- 5. Health Facility Registry Sync -->
-          <button
-            type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
-            :class="
-              activeView === 'hfr_sync'
-                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
-                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
-            "
-            @click="activeView = 'hfr_sync'"
-          >
-            <span class="text-base shrink-0"><CxIcon name="refresh" class="inline-block size-4 align-[-0.15em]" /></span>
-            <span v-if="!sidebarCollapsed" class="truncate">Facility Registry Sync</span>
-          </button>
-
-          <!-- 6. My Profile (National ID & Identity) -->
+          <!-- 5. My Profile (National ID & Identity) -->
           <button
             type="button"
             class="w-full flex items-center justify-between px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
@@ -1276,10 +1352,10 @@ onUnmounted(() => {
 
       <!-- 2. MAIN APPLICATION CONTENT -->
       <div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        <!-- Top App Bar (Global Search & Quick Actions) -->
+        <!-- Top App Bar (Facility search and account identity) -->
         <header class="cx-glass-chrome h-16 bg-cx-surface border-b border-cx-border px-3 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-20">
           <!-- Search Bar -->
-          <div class="relative w-28 sm:w-80 lg:w-96">
+          <div class="relative w-[min(58vw,20rem)] sm:w-80 lg:w-96">
             <svg class="size-4 text-cx-ink-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -1289,12 +1365,15 @@ onUnmounted(() => {
               type="text"
               v-model="searchQuery"
               placeholder="Search your facilities by name"
-              class="w-full rounded-cx-sm bg-cx-well border border-cx-border pl-9 pr-12 py-2 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:bg-cx-surface focus:border-cx-brand focus:outline-none focus:ring-2 focus:ring-cx-brand-soft transition"
+              aria-label="Search your facilities by name"
+              class="w-full rounded-cx-sm bg-cx-well border border-cx-border pl-9 pr-9 sm:pr-12 py-2 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:bg-cx-surface focus:border-cx-brand focus:outline-none focus:ring-2 focus:ring-cx-brand-soft transition"
               @input="onGlobalSearchInput"
             />
-            <span class="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-cx-sm bg-cx-band px-1.5 py-0.5 text-[11px] font-mono text-cx-ink-3">
+            <button v-if="searchQuery" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 text-sm text-cx-ink-3 hover:text-cx-ink sm:hidden" aria-label="Clear facility search" @click="searchQuery = ''">×</button>
+            <span v-else class="absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded-cx-sm bg-cx-band px-1.5 py-0.5 text-[11px] font-mono text-cx-ink-3 sm:block">
               ⌘K
             </span>
+            <button v-if="searchQuery" type="button" class="absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded-cx-sm bg-cx-band px-1.5 py-0.5 text-[11px] font-semibold text-cx-ink-3 hover:text-cx-ink sm:block" aria-label="Clear facility search" @click="searchQuery = ''">Clear</button>
           </div>
 
           <!-- Account controls -->
@@ -1413,7 +1492,7 @@ onUnmounted(() => {
             :facility="drawerFacility"
             :invoices="drawerInvoices"
             :orders="drawerOrders"
-            :payments="drawerFacility.payments || []"
+            :payments="drawerPayments"
             :default-currency="defaultCurrency"
             :load-provisioning-status="loadProvisioningStatus"
             @back="closeFacilityDrawer"
@@ -1431,70 +1510,51 @@ onUnmounted(() => {
                   Facilities
                 </h1>
                 <p class="text-xs text-cx-ink-3 mt-0.5">
-                  Manage registered clinic branches, track Health Facility Registry verification, and monitor token capacity.
+                  Search your linked facilities by name, then open any facility to review its operations and provisioning status.
                 </p>
               </div>
 
-              <!-- Actions relevant to managing this facility portfolio -->
+              <!-- Registry search and linking live inside Facilities, not as a second menu. -->
               <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1.5 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well shadow-cx"
-                  @click="activeView = 'hfr_sync'"
-                >
-                  <span><CxIcon name="refresh" class="inline-block size-4 align-[-0.15em]" /> Find in Facility Registry</span>
-                </button>
                 <button
                   type="button"
                   class="inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition"
                   @click="openAddFacilityModal()"
                 >
-                  <span>+ Add Facility</span>
+                  <span><CxIcon name="plus" class="inline-block size-4 align-[-0.15em]" /> Find and link facility</span>
                 </button>
               </div>
             </div>
 
-            <!-- Table Filters Toolbar (from screenshot: Search, Bulk Action, View Mode, Filters) -->
+            <!-- Directory filters and view controls -->
             <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
               <div class="flex items-center gap-2 flex-wrap">
-                <!-- Search input -->
-                <div class="relative w-64">
-                  <input
-                    type="text"
-                    v-model="searchQuery"
-                    placeholder="Search facilities by name"
-                    class="w-full rounded-cx-sm bg-cx-surface border border-cx-border pl-8 pr-3 py-1.5 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:outline-none focus:border-cx-brand shadow-cx"
-                  />
-                  <svg class="size-3.5 text-cx-ink-4 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                  </svg>
-                </div>
-
                 <!-- Status Filter -->
                 <select
                   v-model="selectedStatusFilter"
+                  aria-label="Filter facilities by go-live readiness"
                   class="rounded-cx-sm bg-cx-surface border border-cx-border px-3 py-1.5 text-xs font-semibold text-cx-ink-2 shadow-cx focus:outline-none focus:border-cx-brand"
                 >
-                  <option value="all">All Statuses</option>
-                  <option value="live">Live on Registry</option>
-                  <option value="verifying">Verification Pending</option>
+                  <option value="all">All readiness</option>
+                  <option value="ready">Ready for go-live</option>
+                  <option value="progress">Implementation in progress</option>
+                  <option value="lead">Lead inquiry</option>
                 </select>
 
                 <!-- Level Filter -->
                 <select
                   v-model="selectedLevelFilter"
+                  aria-label="Filter facilities by KEPH level"
                   class="rounded-cx-sm bg-cx-surface border border-cx-border px-3 py-1.5 text-xs font-semibold text-cx-ink-2 shadow-cx focus:outline-none focus:border-cx-brand"
                 >
                   <option value="all">All KEPH Levels</option>
-                  <option value="Level 2">Level 2 Dispensary</option>
-                  <option value="Level 3">Level 3 Health Centre</option>
-                  <option value="Level 4">Level 4 Hospital</option>
+                  <option v-for="level in availableLevelFilters" :key="level" :value="level">{{ level }}</option>
                 </select>
 
                 <!-- Partner / Network Filter -->
                 <select
                   v-model="selectedNetworkFilter"
+                  aria-label="Filter facilities by partner network"
                   class="rounded-cx-sm bg-cx-surface border border-cx-border px-3 py-1.5 text-xs font-semibold text-cx-ink-2 shadow-cx focus:outline-none focus:border-cx-brand"
                 >
                   <option value="all">All Networks / Partners</option>
@@ -1553,6 +1613,10 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <p v-if="searchQuery || selectedStatusFilter !== 'all' || selectedLevelFilter !== 'all' || selectedNetworkFilter !== 'all'" class="-mt-2 text-[11px] text-cx-ink-3" role="status">
+              Showing {{ filteredFacilities.length }} of {{ allFacilities.length }} facilities
+            </p>
+
             <!-- Empty portfolio state -->
             <div v-if="!allFacilities.length" class="rounded-cx border border-cx-border bg-cx-surface p-10 text-center">
               <span class="mb-2 block text-3xl"><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
@@ -1560,17 +1624,17 @@ onUnmounted(() => {
               <p class="mx-auto mt-1 max-w-md text-xs text-cx-ink-3">
                 Link your clinics from the Health Facility Registry — we can auto-discover the ones registered under your National ID.
               </p>
-              <button
-                type="button"
-                class="mt-4 rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-brand-strong"
-                @click="openAddFacilityModal()"
-              >
-                + Add Facility
-              </button>
+              <p class="mt-4 text-xs font-semibold text-cx-brand-ink">Use “Find and link facility” above to search the registry or discover clinics linked to your ID.</p>
+            </div>
+
+            <div v-else-if="!filteredFacilities.length" class="rounded-cx border border-cx-border bg-cx-surface p-8 text-center" role="status">
+              <p class="text-sm font-semibold text-cx-ink">No facilities match these filters</p>
+              <p class="mt-1 text-xs text-cx-ink-3">Search uses facility names in your portfolio. Registry identifiers are searched from “Find and link facility.”</p>
+              <button type="button" class="mt-4 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well" @click="resetFacilityFilters()">Clear search and filters</button>
             </div>
 
             <!-- TABLE VIEW -->
-          <div v-if="allFacilities.length && facilityViewMode === 'table' && !isMobileViewport" class="space-y-4">
+          <div v-if="allFacilities.length && filteredFacilities.length && facilityViewMode === 'table' && !isMobileViewport" class="space-y-4">
               <!-- Render Grouped by Network when toggle active -->
               <template v-if="groupByNetwork">
                 <div
@@ -1600,7 +1664,7 @@ onUnmounted(() => {
                           <th class="py-3 px-4">Facility Name</th>
                           <th class="py-3 px-4">KEPH Level</th>
                           <th class="py-3 px-4">MFL Code</th>
-                          <th class="py-3 px-4">Registry Status</th>
+                          <th class="py-3 px-4">Go-live readiness</th>
                           <th class="py-3 px-4">Plan & Recent Purchase</th>
                           <th class="py-3 px-4 text-right">Care Tokens</th>
                           <th class="py-3 px-4 text-right">Settlement & Actions</th>
@@ -1610,7 +1674,8 @@ onUnmounted(() => {
                         <tr
                           v-for="facility in group.facilities"
                           :key="facility.mfl_code"
-                          class="hover:bg-cx-band transition"
+                          class="cursor-pointer hover:bg-cx-band transition"
+                          @click="openFacilityFromSurface($event, facility)"
                         >
                           <td class="py-3.5 px-4 font-semibold text-cx-ink">
                             <div class="flex items-center gap-3">
@@ -1653,7 +1718,7 @@ onUnmounted(() => {
                               :class="facility.go_live ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                             >
                               <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-cx-success' : 'bg-amber-600'"></span>
-                              <span>{{ facility.go_live ? 'Live' : 'Verifying' }}</span>
+                              <span>{{ facilityReadinessLabel(facility) }}</span>
                             </span>
                           </td>
                           <td class="py-3.5 px-4 font-medium text-cx-ink-2">
@@ -1671,7 +1736,7 @@ onUnmounted(() => {
                           <td class="py-3.5 px-4 text-right">
                             <div class="flex items-center justify-end gap-1.5 flex-wrap">
                               <button
-                                v-if="facility.invoice_summary?.has_outstanding"
+                                v-if="facility.invoice_summary?.has_outstanding && !pendingPaymentForFacility(facility)"
                                 type="button"
                                 class="rounded-cx-sm bg-cx-success px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition shadow-cx inline-flex items-center gap-1 shrink-0 cursor-pointer"
                                 @click="openMpesaModalForFacility(facility)"
@@ -1679,6 +1744,9 @@ onUnmounted(() => {
                               >
                                 <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                               </button>
+                              <span v-else-if="facility.invoice_summary?.has_outstanding" class="text-[11px] font-semibold text-cx-warning-ink">
+                                Payment verification pending
+                              </span>
                               <button
                                 type="button"
                                 class="rounded-cx-sm bg-cx-ink px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shadow-cx cursor-pointer"
@@ -1704,7 +1772,7 @@ onUnmounted(() => {
                         <th class="py-3 px-4">Facility & Network</th>
                         <th class="py-3 px-4">KEPH Level</th>
                         <th class="py-3 px-4">MFL Code</th>
-                        <th class="py-3 px-4">Registry Status</th>
+                        <th class="py-3 px-4">Go-live readiness</th>
                         <th class="py-3 px-4">Plan & Recent Purchase</th>
                         <th class="py-3 px-4 text-right">Care Tokens</th>
                         <th class="py-3 px-4 text-right">Settlement & Actions</th>
@@ -1714,7 +1782,8 @@ onUnmounted(() => {
                       <tr
                         v-for="facility in filteredFacilities"
                         :key="facility.mfl_code"
-                        class="hover:bg-cx-band transition"
+                        class="cursor-pointer hover:bg-cx-band transition"
+                        @click="openFacilityFromSurface($event, facility)"
                       >
                         <!-- Name & Location & Network -->
                         <td class="py-3.5 px-4 font-semibold text-cx-ink">
@@ -1768,7 +1837,7 @@ onUnmounted(() => {
                             "
                           >
                             <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-cx-success' : 'bg-amber-600'"></span>
-                            <span>{{ facility.go_live ? 'Live' : 'Verifying' }}</span>
+                            <span>{{ facilityReadinessLabel(facility) }}</span>
                           </span>
                         </td>
 
@@ -1792,7 +1861,7 @@ onUnmounted(() => {
                         <td class="py-3.5 px-4 text-right">
                           <div class="flex items-center justify-end gap-1.5 flex-wrap">
                             <button
-                              v-if="facility.invoice_summary?.has_outstanding"
+                              v-if="facility.invoice_summary?.has_outstanding && !pendingPaymentForFacility(facility)"
                               type="button"
                               class="rounded-cx-sm bg-cx-success px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition shadow-cx inline-flex items-center gap-1 shrink-0 cursor-pointer"
                               @click="openMpesaModalForFacility(facility)"
@@ -1800,6 +1869,9 @@ onUnmounted(() => {
                             >
                               <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                             </button>
+                            <span v-else-if="facility.invoice_summary?.has_outstanding" class="text-[11px] font-semibold text-cx-warning-ink">
+                              Payment verification pending
+                            </span>
                             <button
                               type="button"
                               class="rounded-cx-sm bg-cx-ink px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shadow-cx cursor-pointer"
@@ -1823,7 +1895,7 @@ onUnmounted(() => {
             </div>
 
             <!-- CARDS VIEW (Optional toggle) -->
-            <div v-else-if="allFacilities.length" class="space-y-6">
+            <div v-else-if="allFacilities.length && filteredFacilities.length" class="space-y-6">
               <!-- Render Grouped by Network when toggle active -->
               <template v-if="groupByNetwork">
                 <div
@@ -1845,7 +1917,8 @@ onUnmounted(() => {
                     <article
                       v-for="facility in group.facilities"
                       :key="facility.mfl_code"
-                      class="cx-glass-panel rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
+                      class="cx-glass-panel cursor-pointer rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
+                      @click="openFacilityFromSurface($event, facility)"
                     >
                       <div>
                         <div class="flex items-start justify-between gap-2">
@@ -1867,7 +1940,7 @@ onUnmounted(() => {
                             class="rounded-full px-2 py-0.5 text-[11px] font-semibold border shrink-0"
                             :class="facility.go_live ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                           >
-                            {{ facility.go_live ? 'Live' : 'Verifying' }}
+                            {{ facilityReadinessLabel(facility) }}
                           </span>
                         </div>
 
@@ -1893,13 +1966,16 @@ onUnmounted(() => {
 
                       <div class="mt-4 pt-3 border-t border-cx-border-soft space-y-2">
                         <button
-                          v-if="facility.invoice_summary?.has_outstanding"
+                          v-if="facility.invoice_summary?.has_outstanding && !pendingPaymentForFacility(facility)"
                           type="button"
                           class="w-full rounded-cx-sm bg-cx-success px-3 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition flex items-center justify-center gap-1.5 shadow-cx cursor-pointer"
                           @click="openMpesaModalForFacility(facility)"
                         >
                           <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                         </button>
+                        <span v-else-if="facility.invoice_summary?.has_outstanding" class="block text-center text-[11px] font-semibold text-cx-warning-ink">
+                          Payment verification pending
+                        </span>
                         <div class="flex items-center gap-2">
                           <button
                             type="button"
@@ -1920,7 +1996,8 @@ onUnmounted(() => {
                 <article
                   v-for="facility in filteredFacilities"
                   :key="facility.mfl_code"
-                  class="cx-glass-panel rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
+                  class="cx-glass-panel cursor-pointer rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
+                  @click="openFacilityFromSurface($event, facility)"
                 >
                   <div>
                     <div class="flex items-start justify-between gap-2">
@@ -1942,7 +2019,7 @@ onUnmounted(() => {
                         class="rounded-full px-2 py-0.5 text-[11px] font-semibold border shrink-0"
                         :class="facility.go_live ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                       >
-                        {{ facility.go_live ? 'Live' : 'Verifying' }}
+                        {{ facilityReadinessLabel(facility) }}
                       </span>
                     </div>
 
@@ -1968,13 +2045,16 @@ onUnmounted(() => {
 
                   <div class="mt-4 pt-3 border-t border-cx-border-soft space-y-2">
                     <button
-                      v-if="facility.invoice_summary?.has_outstanding"
+                      v-if="facility.invoice_summary?.has_outstanding && !pendingPaymentForFacility(facility)"
                       type="button"
                       class="w-full rounded-cx-sm bg-cx-success px-3 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition flex items-center justify-center gap-1.5 shadow-cx cursor-pointer"
                       @click="openMpesaModalForFacility(facility)"
                     >
                       <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                     </button>
+                    <span v-else-if="facility.invoice_summary?.has_outstanding" class="block text-center text-[11px] font-semibold text-cx-warning-ink">
+                      Payment verification pending
+                    </span>
                     <div class="flex items-center gap-2">
                       <button
                         type="button"
@@ -2034,11 +2114,20 @@ onUnmounted(() => {
                     </div>
                   </div>
                   <button
+                    v-if="item.mfl_code"
                     type="button"
                     class="shrink-0 text-xs font-semibold text-cx-brand hover:underline"
-                    @click="activeView = item.view"
+                    @click="openAttentionFacility(item)"
                   >
                     Review →
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    class="shrink-0 text-xs font-semibold text-cx-brand hover:underline"
+                    @click="activeView = 'billing'"
+                  >
+                    Open billing →
                   </button>
                 </div>
               </div>
@@ -2073,7 +2162,7 @@ onUnmounted(() => {
                 </p>
                 <div class="pt-2 border-t border-cx-border-soft">
                   <button type="button" class="text-xs font-semibold text-cx-brand hover:underline" @click="activeView = 'facilities'">
-                    View Facility Registry →
+                    Manage facilities →
                   </button>
                 </div>
               </div>
@@ -2116,7 +2205,8 @@ onUnmounted(() => {
                 <article
                   v-for="fac in allFacilities"
                   :key="fac.mfl_code"
-                  class="flex flex-col justify-between rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx"
+                  class="flex cursor-pointer flex-col justify-between rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx hover:border-cx-brand transition"
+                  @click="openFacilityFromSurface($event, fac)"
                 >
                   <div>
                     <div class="flex items-start justify-between gap-2">
@@ -2138,7 +2228,7 @@ onUnmounted(() => {
                         class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                         :class="fac.go_live ? 'border-cx-success-border bg-cx-success-soft text-cx-success-ink' : 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'"
                       >
-                        {{ fac.go_live ? 'Live' : 'Verifying' }}
+                        {{ facilityReadinessLabel(fac) }}
                       </span>
                     </div>
 
@@ -2164,13 +2254,16 @@ onUnmounted(() => {
 
                   <div class="mt-4 space-y-2 border-t border-cx-border-soft pt-3">
                     <button
-                      v-if="fac.invoice_summary?.has_outstanding"
+                      v-if="fac.invoice_summary?.has_outstanding && !pendingPaymentForFacility(fac)"
                       type="button"
                       class="flex w-full items-center justify-center gap-1.5 rounded-cx-sm bg-cx-success px-3 py-2 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-success"
                       @click="openMpesaModalForFacility(fac)"
                     >
                       <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(fac.invoice_summary.outstanding_amount, fac.invoice_summary.currency) }} →</span>
                     </button>
+                    <span v-else-if="fac.invoice_summary?.has_outstanding" class="block text-center text-[11px] font-semibold text-cx-warning-ink">
+                      Payment verification pending
+                    </span>
                     <div class="flex items-center gap-2">
                       <button
                         type="button"
@@ -2222,7 +2315,7 @@ onUnmounted(() => {
                 CareVerse Token Plans & Capacity
               </h1>
               <p class="text-sm text-cx-ink-3 mt-2 leading-relaxed">
-                Tiberbu operates on transparent, transactional Care Tokens. Pay only for verified patient visits, labs, and e-claims with zero seat licenses or hidden server fees.
+                Compare the current Care Token packages for your facility. Each package shows its price and billing period; token use depends on your HMIS activity.
               </p>
             </div>
 
@@ -2256,17 +2349,17 @@ onUnmounted(() => {
                       <span class="text-4xl font-bold text-cx-ink leading-tight">
                         {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'KES 0' : money(pkg.price_ex_vat ?? pkg.price, pkg.currency) }}
                       </span>
-                      <span class="text-xs text-cx-ink-3 font-medium">/ month</span>
+                      <span class="text-xs text-cx-ink-3 font-medium">/ {{ String(pkg.billing_period || 'Monthly').toLowerCase() }}</span>
                     </div>
                     <span class="text-[11px] text-cx-ink-4 block mt-0.5">
-                      {{ Number(pkg.gross_total) > 0 ? `${money(pkg.gross_total, pkg.currency)} incl. 16% VAT` : 'Zero commitment' }}
+                      {{ Number(pkg.gross_total) > 0 ? `${money(pkg.gross_total, pkg.currency)} incl. ${pkg.vat_label || 'VAT'}` : 'No charge' }}
                     </span>
                   </div>
 
                   <!-- Token Quantity Pill -->
                   <div class="mt-4 inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-brand-soft border border-cx-brand-soft-border px-3 py-1.5 text-xs font-semibold text-cx-brand">
                     <span><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
-                    <span>{{ (pkg.token_quantity || 100).toLocaleString() }} Care Tokens</span>
+                    <span>{{ Number(pkg.token_quantity || 0).toLocaleString() }} Care Tokens</span>
                   </div>
                 </div>
 
@@ -2277,7 +2370,7 @@ onUnmounted(() => {
                     class="w-full rounded-cx-sm bg-cx-brand py-2.5 px-4 text-xs font-semibold text-cx-contrast transition shadow-cx text-center hover:bg-cx-brand-strong"
                     @click="selectPlanFromPricingTab(pkg)"
                   >
-                    {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'Activate Free Trial' : `Select ${pkg.display_name}` }}
+                    {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'Choose free package' : `Choose ${pkg.display_name}` }}
                   </button>
                 </div>
               </article>
@@ -2294,26 +2387,27 @@ onUnmounted(() => {
           <div v-if="activeView === 'billing'" class="space-y-6">
             <div>
               <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Billing & Invoices</h1>
-              <p class="text-xs text-cx-ink-3 mt-0.5">Review outstanding statements, generate invoices for token orders, and pay instantly via M-Pesa.</p>
+              <p class="text-xs text-cx-ink-3 mt-0.5">Review invoices and token orders. Pay by M-Pesa Paybill and submit the transaction code for verification, or use Paystack card checkout.</p>
             </div>
 
-            <!-- M-Pesa Paybill settlement details (primary payment method) -->
+            <!-- M-Pesa Paybill settlement details -->
             <div class="rounded-cx border border-cx-success-border bg-cx-success-soft p-4">
               <div class="flex items-center gap-3">
                 <div class="size-8 shrink-0 rounded-cx-sm bg-cx-success text-cx-contrast flex items-center justify-center font-semibold text-sm">M</div>
                 <div class="min-w-0">
-                  <span class="font-semibold text-xs text-cx-success-ink block">M-Pesa Paybill · {{ paybillInfo.business_name }}</span>
-                  <span class="text-[11px] text-cx-success-ink">Primary settlement method — direct paybill with zero transaction processing surcharge</span>
+                  <span class="font-semibold text-xs text-cx-success-ink block">M-Pesa Paybill<span v-if="paybillInfo.business_name"> · {{ paybillInfo.business_name }}</span></span>
+                  <span class="text-[11px] text-cx-success-ink">Pay the invoice by Paybill, then submit your M-Pesa confirmation code for verification.</span>
                 </div>
               </div>
               <div class="mt-3 grid gap-3 sm:grid-cols-3">
                 <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-3">
                   <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Business No</span>
                   <div class="mt-1 flex items-center justify-between gap-2">
-                    <span class="font-mono text-base font-bold text-cx-ink">{{ paybillInfo.business_number }}</span>
+                    <span class="font-mono text-base font-bold text-cx-ink">{{ paybillInfo.business_number || 'Not available' }}</span>
                     <button
                       type="button"
-                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2 hover:bg-cx-well transition shrink-0"
+                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2 hover:bg-cx-well transition shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+                      :disabled="!paybillInfo.business_number"
                       @click="copyText(paybillInfo.business_number, 'paybill_biz')"
                     >
                       <CxIcon :name="copiedKey === 'paybill_biz' ? 'check' : 'copy'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ copiedKey === 'paybill_biz' ? 'Copied' : 'Copy' }}
@@ -2323,7 +2417,7 @@ onUnmounted(() => {
                 <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-3">
                   <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Account No</span>
                   <p class="mt-1 text-[11px] text-cx-ink-3 leading-relaxed">
-                    Enter the invoice number shown on each invoice card below (e.g. <span class="font-mono">{{ allInvoices[0]?.name || 'ACC-SINV-2026-00001' }}</span>).
+                    Enter the invoice number shown on the invoice you are paying.
                   </p>
                 </div>
                 <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-3">
@@ -2331,7 +2425,7 @@ onUnmounted(() => {
                   <p class="mt-1 text-[11px] text-cx-ink-3 leading-relaxed">
                     1. M-Pesa app → Lipa na M-Pesa → Paybill<br />
                     2. Business No, then Account No (invoice number)<br />
-                    3. Amount &amp; PIN, then paste the transaction code on the invoice
+                    3. Amount &amp; PIN. After payment, enter the M-Pesa confirmation code in the invoice payment flow.
                   </p>
                 </div>
               </div>
@@ -2355,6 +2449,13 @@ onUnmounted(() => {
                     <div class="flex items-center gap-2">
                       <span class="font-semibold text-sm text-cx-ink">{{ invoice.invoice_number || invoice.name }}</span>
                       <span
+                        v-if="pendingPaymentForInvoice(invoice)"
+                        class="rounded-cx-sm bg-cx-warning-soft px-2 py-0.5 text-[11px] font-semibold text-cx-warning-ink"
+                      >
+                        M-Pesa report · verification pending
+                      </span>
+                      <span
+                        v-else
                         class="rounded-cx-sm px-2 py-0.5 text-[11px] font-semibold"
                         :class="invoiceStatus(invoice).key === 'overdue' ? 'bg-cx-danger-soft text-cx-danger-ink' : 'bg-amber-100 text-cx-warning-ink'"
                       >
@@ -2363,6 +2464,9 @@ onUnmounted(() => {
                     </div>
                     <p class="text-xs text-cx-ink-3 mt-1">
                       Due: <strong>{{ invoice.due_date || 'On Receipt' }}</strong> · Issued: {{ invoice.posting_date }}
+                    </p>
+                    <p v-if="pendingPaymentForInvoice(invoice)" class="mt-1 text-[11px] text-cx-warning-ink">
+                      Payment reference {{ pendingPaymentForInvoice(invoice).reference_no || pendingPaymentForInvoice(invoice).name }} is being checked. Please wait before paying again.
                     </p>
                     <span class="inline-flex items-center gap-1.5 rounded-cx-sm border border-cx-border bg-cx-well px-2 py-0.5 mt-1.5 text-[11px] font-semibold text-cx-ink-2">
                       <span><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
@@ -2374,22 +2478,24 @@ onUnmounted(() => {
                   <div class="flex items-center gap-3 shrink-0 flex-wrap justify-end">
                     <div class="text-right">
                       <span class="text-base font-bold text-cx-ink block leading-tight">{{ money(invoice.amount, invoice.currency) }}</span>
-                      <span class="text-[11px] text-cx-ink-4 uppercase font-medium">Balance</span>
+                      <span class="text-[11px] text-cx-ink-4 uppercase font-medium">
+                        {{ pendingPaymentForInvoice(invoice) ? 'Balance until verified' : 'Balance' }}
+                      </span>
                     </div>
+                    <span
+                      v-if="pendingPaymentForInvoice(invoice)"
+                      class="rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft px-3 py-2 text-xs font-semibold text-cx-warning-ink"
+                    >
+                      Payment verification pending
+                    </span>
                     <button
+                      v-else
                       type="button"
                       class="rounded-cx-sm bg-cx-success px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-success transition inline-flex items-center gap-1.5"
+                      :disabled="busyId === invoice.name"
                       @click="openMpesaModal(invoice)"
                     >
-                      <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa (No Fee)</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition disabled:opacity-50"
-                      :disabled="busyId === invoice.name"
-                      @click="payInvoice(invoice)"
-                    >
-                      <span>{{ busyId === invoice.name ? 'Connecting…' : 'Card / Paystack →' }}</span>
+                      <span>{{ busyId === invoice.name ? 'Connecting…' : 'Choose payment method' }}</span>
                     </button>
                   </div>
                 </article>
@@ -2428,11 +2534,11 @@ onUnmounted(() => {
             <div v-if="allPayments.length" class="space-y-3 pt-6 border-t border-cx-border">
               <div class="flex items-center justify-between">
                 <div>
-                  <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Payment Receipts & History</h2>
-                  <p class="text-xs text-cx-ink-3 mt-0.5">Verified payment receipts, M-Pesa confirmations, and bank settlements.</p>
+                  <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Payment activity</h2>
+                  <p class="text-xs text-cx-ink-3 mt-0.5">Recorded payments and M-Pesa reports awaiting verification.</p>
                 </div>
                 <span class="text-xs text-cx-ink-3 font-semibold bg-cx-well px-2.5 py-1 rounded-cx-sm border border-cx-border">
-                  {{ allPayments.length }} {{ allPayments.length === 1 ? 'receipt' : 'receipts' }}
+                  {{ allPayments.length }} {{ allPayments.length === 1 ? 'payment' : 'payments' }}
                 </span>
               </div>
 
@@ -2441,8 +2547,8 @@ onUnmounted(() => {
                   <table class="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr class="border-b border-cx-border bg-cx-well text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">
-                        <th class="py-3 px-4">Receipt #</th>
                         <th class="py-3 px-4">Date</th>
+                        <th class="py-3 px-4">Invoice</th>
                         <th class="py-3 px-4">Mode & Reference</th>
                         <th class="py-3 px-4 text-right">Amount</th>
                         <th class="py-3 px-4 text-center">Status</th>
@@ -2450,8 +2556,8 @@ onUnmounted(() => {
                     </thead>
                     <tbody class="divide-y divide-cx-border-soft">
                       <tr v-for="pay in allPayments" :key="pay.name" class="hover:bg-cx-band transition">
-                        <td class="py-3 px-4 font-mono font-bold text-cx-ink">{{ pay.name }}</td>
                         <td class="py-3 px-4 text-cx-ink-3">{{ pay.posting_date }}</td>
+                        <td class="py-3 px-4 font-mono text-[11px] text-cx-ink-2">{{ pay.invoice_names?.join(', ') || pay.invoice || '—' }}</td>
                         <td class="py-3 px-4">
                           <span class="font-semibold text-cx-ink">{{ pay.mode_of_payment }}</span>
                           <span v-if="pay.reference_no" class="ml-2 font-mono text-[11px] text-cx-ink-3 bg-cx-well px-1.5 py-0.5 rounded-cx-sm border border-cx-border">
@@ -2462,7 +2568,7 @@ onUnmounted(() => {
                         <td class="py-3 px-4 text-center">
                           <span
                             class="rounded-full px-2 py-0.5 text-[11px] font-semibold border"
-                            :class="pay.status === 'Submitted' ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
+                            :class="pay.status === 'Recorded' ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                           >
                             {{ pay.status }}
                           </span>
@@ -2483,107 +2589,13 @@ onUnmounted(() => {
           </div>
 
           <!-- ============================================================== -->
-          <!-- VIEW E: HEALTH FACILITY REGISTRY SYNC                          -->
-          <!-- ============================================================== -->
-          <div v-if="activeView === 'hfr_sync'" class="space-y-6 max-w-4xl">
-            <div>
-              <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Health Facility Registry Sync</h1>
-              <p class="text-xs text-cx-ink-3 mt-0.5">Synchronize facility records directly with the official Digital Health Agency (DHA) Health Facility Registry.</p>
-            </div>
-
-            <!-- 1-Click Discovery by National ID on File -->
-            <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
-              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <h3 class="font-semibold text-sm text-cx-ink flex items-center gap-2">
-                    <span><CxIcon name="id" class="inline-block size-4 align-[-0.15em]" /></span>
-                    <span>1-Click Auto-Discovery by National ID</span>
-                  </h3>
-                  <p class="text-xs text-cx-ink-3 mt-1">
-                    Search for clinical branches linked to the National ID saved on your profile
-                    <span v-if="userProfile.masked_national_id" class="font-mono font-bold text-cx-ink">({{ userProfile.masked_national_id }})</span>.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition shrink-0 disabled:opacity-50 inline-flex items-center gap-1.5"
-                  :disabled="hfrOwnerSearchBusy"
-                  @click="discoverFacilitiesByOwnerId()"
-                >
-                  <span><CxIcon v-if="!hfrOwnerSearchBusy" name="search" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ hfrOwnerSearchBusy ? 'Searching Registry…' : 'Discover Facilities by My ID' }}</span>
-                </button>
-              </div>
-
-              <div v-if="hfrOwnerSearchComplete && hfrOwnerSearchError" class="mt-4 rounded-cx-sm border border-cx-danger-border bg-cx-danger-soft p-3 text-xs text-cx-danger-ink" role="alert">
-                {{ hfrOwnerSearchError }}
-              </div>
-              <div v-else-if="hfrOwnerSearchComplete && !hfrOwnerSearchResults.length" class="mt-4 rounded-cx-sm border border-cx-border bg-cx-well p-4 text-xs text-cx-ink-2" role="status">
-                <p class="font-semibold text-cx-ink">No facilities found for the ID on your profile.</p>
-                <p class="mt-1 text-cx-ink-3">You can search the registry by MFL, FID, or registration number, or review your National ID in Account settings.</p>
-              </div>
-
-              <!-- Discovered Facilities List -->
-              <div v-if="hfrOwnerSearchResults.length" class="mt-4 pt-4 border-t border-cx-border-soft space-y-2">
-                <span class="text-xs font-semibold uppercase text-cx-ink-3">Discovered Facilities ({{ hfrOwnerSearchResults.length }})</span>
-                <div class="space-y-2 max-h-72 overflow-y-auto">
-                  <div
-                    v-for="cand in hfrOwnerSearchResults"
-                    :key="cand.fid || cand.mfl_code"
-                    class="rounded-cx-sm border border-cx-border p-3.5 flex items-center justify-between gap-3 hover:bg-cx-well transition"
-                  >
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <span class="font-semibold text-xs text-cx-ink">{{ cand.name }}</span>
-                        <span v-if="cand.already_linked" class="rounded-cx-sm bg-cx-success-soft text-cx-success-ink text-[11px] font-semibold px-2 py-0.5">
-                          ✓ In Portfolio
-                        </span>
-                      </div>
-                      <span class="text-[11px] text-cx-ink-3 block mt-0.5">
-                        MFL: {{ cand.mfl_code }} · {{ cand.level }} · {{ cand.county }} {{ cand.subcounty ? `/ ${cand.subcounty}` : '' }} · {{ cand.owner_type }}
-                      </span>
-                    </div>
-
-                    <button
-                      v-if="!cand.already_linked"
-                      type="button"
-                      class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shrink-0 disabled:opacity-50"
-                      :disabled="hfrLinkBusy"
-                      @click="linkHfrCandidate(cand)"
-                    >
-                      {{ hfrLinkBusy ? 'Linking…' : '+ Add to Portfolio' }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Registry identifier lookup -->
-            <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
-              <h3 class="font-semibold text-sm text-cx-ink">Search the Health Facility Registry</h3>
-              <p class="text-xs text-cx-ink-3 leading-relaxed">
-                Look up a facility using its MFL code, HFR Facility ID (FID), or registration number.
-              </p>
-
-              <div class="pt-2 flex items-center gap-3">
-                <button
-                  type="button"
-                  class="rounded-cx-sm border border-cx-border bg-cx-surface px-4 py-2.5 text-xs font-semibold text-cx-ink shadow-cx hover:bg-cx-well transition"
-                  @click="openAddFacilityModal()"
-                >
-                  <span>Search by registry identifier</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- ============================================================== -->
           <!-- VIEW F: MY PROFILE & IDENTIFICATION                            -->
           <!-- ============================================================== -->
           <div v-if="activeView === 'profile'" class="space-y-6 max-w-4xl">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">My Profile & Identification</h1>
-                <p class="text-xs text-cx-ink-3 mt-0.5">Manage your National ID, contact details, and facility registry search.</p>
+                <p class="text-xs text-cx-ink-3 mt-0.5">Manage your National ID and contact details.</p>
               </div>
               <button
                 type="button"
@@ -2626,17 +2638,10 @@ onUnmounted(() => {
                 </div>
 
                 <p class="text-xs text-cx-ink-3 leading-relaxed">
-                  Your National ID is used to search the Health Facility Registry. Review it before searching; you can also add a facility by its MFL code.
+                  Your National ID supports ownership checks when linking facilities. Manage it here; registry search is available from Facilities.
                 </p>
 
-                <div class="pt-2 border-t border-cx-border-soft flex items-center justify-between">
-                  <button
-                    type="button"
-                    class="text-xs font-semibold text-cx-brand hover:underline"
-                    @click="discoverFacilitiesByOwnerId(); activeView = 'hfr_sync'"
-                  >
-                    1-Click Registry Discovery →
-                  </button>
+                <div class="pt-2 border-t border-cx-border-soft">
                   <button
                     type="button"
                     class="text-xs font-semibold text-cx-ink-3 hover:text-cx-ink"
@@ -2690,7 +2695,7 @@ onUnmounted(() => {
           <div v-if="activeView === 'support'" class="space-y-6 max-w-3xl">
             <div>
               <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Network Support & Contacts</h1>
-              <p class="text-xs text-cx-ink-3 mt-0.5">Dedicated clinical onboarding lead and emergency support channels.</p>
+              <p class="text-xs text-cx-ink-3 mt-0.5">Contact the support team for help with your account, facilities, or HMIS implementation.</p>
             </div>
 
             <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
@@ -2700,7 +2705,7 @@ onUnmounted(() => {
                   <span class="font-bold text-cx-ink">{{ primaryNetworkName }}</span>
                 </div>
                 <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3.5 text-xs flex items-center justify-between">
-                  <span class="text-cx-ink-3 font-medium">Clinical Helpdesk</span>
+                  <span class="text-cx-ink-3 font-medium">Support email</span>
                   <a href="mailto:support@tiberbu.health" class="font-bold text-cx-brand hover:underline">support@tiberbu.health</a>
                 </div>
 
@@ -2752,49 +2757,76 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- MODAL 1: ADD FACILITY VIA HEALTH FACILITY REGISTRY -->
+    <!-- FACILITIES: SEARCH AND LINK FROM HEALTH FACILITY REGISTRY -->
     <Dialog
       v-model:open="addFacilityModalOpen"
-      :title="__('Add Facility via Health Facility Registry')"
+      :title="__('Find and link a facility')"
       size="3xl"
     >
       <div class="p-1 space-y-5">
         <section class="rounded-cx-sm border border-cx-border bg-cx-well p-4">
-          <label class="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2" for="portfolio-partner-id">Partner ID</label>
-          <input
-            id="portfolio-partner-id"
-            v-model="partnerIdInput"
-            inputmode="numeric"
-            maxlength="6"
-            placeholder="Six-digit Partner ID (optional)"
-            class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm font-medium text-cx-ink focus:border-cx-brand focus:outline-none"
-          />
-          <p class="mt-1.5 text-xs text-cx-ink-3">Enter the Partner ID for the facility’s network. Leave it blank to use the configured default.</p>
-        </section>
-        <!-- 1-Click National ID Discovery Banner if ID exists -->
-        <div v-if="userProfile.masked_national_id" class="rounded-cx-sm bg-cx-brand-soft border border-cx-brand-soft-border p-3.5 flex items-center justify-between gap-3">
-          <div>
-            <span class="font-semibold text-xs text-cx-brand-ink block">Registered Owner ID: {{ userProfile.masked_national_id }}</span>
-            <span class="text-[11px] text-cx-brand-ink">Auto-discover clinic branches licensed under this National ID with 1 click.</span>
+          <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-end">
+            <div>
+              <label class="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2" for="portfolio-partner-id">Partner ID <span class="font-normal normal-case text-cx-ink-4">(optional)</span></label>
+              <input
+                id="portfolio-partner-id"
+                v-model="partnerIdInput"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="Use configured default"
+                class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm font-medium text-cx-ink focus:border-cx-brand focus:outline-none"
+              />
+            </div>
+            <p class="text-xs leading-relaxed text-cx-ink-3">Leave blank to use your configured partner ID.</p>
           </div>
-          <button
-            type="button"
-            class="rounded-cx-sm bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong transition shrink-0 disabled:opacity-50"
-            :disabled="hfrOwnerSearchBusy"
-            @click="discoverFacilitiesByOwnerId(); addFacilityModalOpen = false; activeView = 'hfr_sync'"
-          >
-            {{ hfrOwnerSearchBusy ? 'Searching…' : 'Discover by My ID →' }}
-          </button>
-        </div>
+        </section>
+        <!-- Owner ID discovery is part of the same facility linking workflow. -->
+        <section v-if="userProfile.masked_national_id" class="rounded-cx-sm border border-cx-brand-soft-border bg-cx-brand-soft p-4 space-y-3">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 class="font-semibold text-sm text-cx-brand-ink">Find facilities registered to your ID</h3>
+              <p class="mt-1 text-xs text-cx-brand-ink">Search using the ID on your profile: <span class="font-mono font-semibold">{{ userProfile.masked_national_id }}</span></p>
+            </div>
+            <button
+              type="button"
+              class="rounded-cx-sm bg-cx-brand px-3.5 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong transition disabled:opacity-50"
+              :disabled="hfrOwnerSearchBusy"
+              @click="discoverFacilitiesByOwnerId()"
+            >
+              {{ hfrOwnerSearchBusy ? 'Searching…' : 'Find my facilities' }}
+            </button>
+          </div>
+          <p v-if="hfrOwnerSearchComplete && hfrOwnerSearchError" class="rounded-cx-sm border border-cx-danger-border bg-cx-danger-soft p-3 text-xs text-cx-danger-ink" role="alert">{{ hfrOwnerSearchError }}</p>
+          <p v-else-if="hfrOwnerSearchComplete && !hfrOwnerSearchResults.length" class="rounded-cx-sm border border-cx-border bg-cx-surface p-3 text-xs text-cx-ink-2" role="status">
+            No facilities were found for this ID. You can search the registry by MFL code, FID, or registration number below.
+          </p>
+          <div v-if="hfrOwnerSearchResults.length" class="space-y-2 border-t border-cx-brand-soft-border pt-3">
+            <p class="text-xs font-semibold text-cx-brand-ink">Facilities found ({{ hfrOwnerSearchResults.length }})</p>
+            <div class="max-h-56 space-y-2 overflow-y-auto">
+              <div v-for="candidate in hfrOwnerSearchResults" :key="candidate.fid || candidate.mfl_code" class="flex flex-col gap-3 rounded-cx-sm border border-cx-border bg-cx-surface p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="text-xs font-semibold text-cx-ink">{{ candidate.name }}</p>
+                  <p class="mt-1 text-[11px] text-cx-ink-3">MFL {{ candidate.mfl_code }} · {{ candidate.level || 'Facility' }} · {{ candidate.county }}{{ candidate.subcounty ? ` / ${candidate.subcounty}` : '' }}</p>
+                </div>
+                <span v-if="candidate.already_linked || facilityAlreadyLinked(candidate)" class="shrink-0 rounded-full bg-cx-success-soft px-2.5 py-1 text-[11px] font-semibold text-cx-success-ink">In your portfolio</span>
+                <button v-else type="button" class="shrink-0 rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover disabled:opacity-50" :disabled="hfrLinkBusy" @click="linkHfrCandidate(candidate)">
+                  {{ hfrLinkBusy ? 'Linking…' : 'Add to portfolio' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <div>
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
-            Search the Health Facility Registry by MFL, FID, or registration number
-          </label>
-          <div class="flex gap-2">
+        <section class="space-y-3">
+          <div>
+            <h3 class="text-sm font-semibold text-cx-ink">Search the Health Facility Registry</h3>
+            <p class="mt-1 text-xs text-cx-ink-3">Enter a registry identifier. Your Facilities search only searches names in your current portfolio.</p>
+          </div>
+          <div class="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
             <select
               v-model="hfrSearchBy"
-              class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shrink-0"
+              aria-label="Registry identifier type"
+              class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2"
             >
               <option value="mfl_code">MFL Code</option>
               <option value="facility_fid">FID</option>
@@ -2803,20 +2835,21 @@ onUnmounted(() => {
             <input
               type="text"
               v-model="hfrSearchQuery"
-              placeholder="Enter the selected registry identifier"
-              class="flex-1 rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
+              :placeholder="hfrSearchBy === 'mfl_code' ? 'Enter MFL code' : hfrSearchBy === 'facility_fid' ? 'Enter HFR Facility ID' : 'Enter registration number'"
+              class="min-w-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
               @keyup.enter="executeHfrSearch()"
             />
             <button
               type="button"
-              class="rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong disabled:opacity-50 shrink-0"
-              :disabled="hfrSearchBusy"
+              class="rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong disabled:opacity-50"
+              :disabled="hfrSearchBusy || !hfrSearchQuery.trim()"
               @click="executeHfrSearch()"
             >
               {{ hfrSearchBusy ? 'Searching…' : 'Search' }}
             </button>
           </div>
-        </div>
+          <p v-if="hfrSearchError" class="rounded-cx-sm border border-cx-danger-border bg-cx-danger-soft p-3 text-xs text-cx-danger-ink" role="alert">{{ hfrSearchError }}</p>
+        </section>
 
         <!-- Search Results -->
         <div v-if="hfrSearchResults.length" class="space-y-2">
@@ -2826,13 +2859,14 @@ onUnmounted(() => {
               v-for="cand in hfrSearchResults"
               :key="cand.fid"
               class="rounded-cx-sm border p-3 flex items-center justify-between gap-3 hover:bg-cx-well transition"
-              :class="hfrSelectedCandidate?.fid === cand.fid ? 'border-cx-brand bg-cx-brand-soft' : 'border-cx-border'"
+              :class="facilityAlreadyLinked(cand) ? 'border-cx-success-border bg-cx-success-soft' : 'border-cx-border'"
             >
               <div>
                 <span class="font-semibold text-xs text-cx-ink block">{{ cand.name }}</span>
-                <span class="text-[11px] text-cx-ink-3">MFL: {{ cand.mfl_code }} · {{ cand.level || 'Clinic' }} · {{ cand.county }} · {{ cand.owner_type }}</span>
+                <span class="text-[11px] text-cx-ink-3">MFL {{ cand.mfl_code }} · {{ cand.level || 'Facility' }} · {{ cand.county || 'County unavailable' }} · {{ cand.owner_type || 'Registry record' }}</span>
               </div>
-              <button
+              <span v-if="facilityAlreadyLinked(cand)" class="shrink-0 rounded-full bg-cx-success-soft px-2.5 py-1 text-[11px] font-semibold text-cx-success-ink">In your portfolio</span>
+              <button v-else
                 type="button"
                 class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shrink-0 disabled:opacity-50"
                 :disabled="hfrLinkBusy"
@@ -2843,6 +2877,9 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        <p v-else-if="hfrSearchComplete && !hfrSearchError" class="rounded-cx-sm border border-cx-border bg-cx-well p-4 text-xs text-cx-ink-2" role="status">
+          No registry record matched that identifier. Check the number or choose another identifier type.
+        </p>
       </div>
     </Dialog>
 
@@ -2877,10 +2914,12 @@ onUnmounted(() => {
         <div class="space-y-2">
           <span class="text-xs font-semibold uppercase text-cx-ink-2 block">Select Package Tier</span>
           <div class="grid gap-3 sm:grid-cols-2">
-            <article
+            <button
               v-for="pkg in context.token_packages"
               :key="pkg.item_code"
-              class="rounded-cx-sm border p-4 cursor-pointer transition flex flex-col justify-between"
+              type="button"
+              :aria-pressed="selectedTopUpPackageCode === pkg.item_code"
+              class="rounded-cx-sm border p-4 text-left cursor-pointer transition flex flex-col justify-between focus:outline-none focus-visible:ring-2 focus-visible:ring-cx-brand"
               :class="
                 selectedTopUpPackageCode === pkg.item_code
                   ? 'border-2 border-cx-brand bg-cx-brand-soft ring-2 ring-cx-brand-soft'
@@ -2899,12 +2938,12 @@ onUnmounted(() => {
                 <p class="mt-1 text-[11px] text-cx-ink-3 leading-normal">{{ pkg.coverage_summary || pkg.description }}</p>
               </div>
               <div class="mt-3 pt-2 border-t border-cx-border-soft flex items-center justify-between text-[11px]">
-                <span class="text-cx-ink-4">{{ Number(pkg.gross_total) > 0 ? 'incl. 16% VAT' : 'No charge' }}</span>
+                <span class="text-cx-ink-4">{{ Number(pkg.gross_total) > 0 ? `${String(pkg.billing_period || 'Monthly').toLowerCase()} · incl. ${pkg.vat_label || 'VAT'}` : 'No charge' }}</span>
                 <span class="font-semibold" :class="selectedTopUpPackageCode === pkg.item_code ? 'text-cx-brand' : 'text-cx-ink-4'">
                   {{ selectedTopUpPackageCode === pkg.item_code ? 'Selected ✓' : 'Select' }}
                 </span>
               </div>
-            </article>
+            </button>
           </div>
         </div>
 
@@ -2943,10 +2982,10 @@ onUnmounted(() => {
       </div>
     </Dialog>
 
-    <!-- MODAL 4: PAY VIA M-PESA PAYBILL -->
+    <!-- MODAL 4: CHOOSE PAYMENT METHOD -->
     <Dialog
       v-model:open="mpesaModalOpen"
-      :title="__('Pay via M-Pesa Paybill')"
+      :title="__('Choose payment method')"
       size="2xl"
     >
       <div class="p-1 space-y-5">
@@ -2958,13 +2997,16 @@ onUnmounted(() => {
             </div>
             <div>
               <span class="font-semibold text-sm tracking-tight block">Lipa na M-Pesa · Paybill</span>
-              <span class="text-xs text-cx-contrast block">Direct Instant Settlement with Zero Transaction Processing Surcharge</span>
+              <span class="text-xs text-cx-contrast block">Pay by Paybill, then submit the confirmation code for verification</span>
             </div>
           </div>
           <span class="rounded-full bg-emerald-800/80 border border-emerald-500/50 px-2.5 py-1 text-[11px] font-semibold">
-            Official Paybill
+            M-Pesa Paybill
           </span>
         </div>
+        <p class="text-xs text-cx-ink-3">
+          Pay with M-Pesa using the details below, or choose card checkout with Paystack at the bottom.
+        </p>
 
         <!-- 3 Copyable Cards Grid -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2977,7 +3019,8 @@ onUnmounted(() => {
             </div>
             <button
               type="button"
-              class="mt-2.5 w-full rounded-cx-sm border border-cx-border bg-cx-surface py-1 px-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center justify-center gap-1"
+              class="mt-2.5 w-full rounded-cx-sm border border-cx-border bg-cx-surface py-1 px-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center justify-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="!paybillInfo.business_number"
               @click="copyText(paybillInfo.business_number, 'paybill_biz')"
             >
               <span><CxIcon :name="copiedKey === 'paybill_biz' ? 'check' : 'copy'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ copiedKey === 'paybill_biz' ? 'Copied' : 'Copy' }}</span>
@@ -3005,7 +3048,7 @@ onUnmounted(() => {
             <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Amount Due</span>
             <div class="mt-1">
               <span class="font-mono text-lg font-bold text-cx-success-ink block leading-tight">{{ money(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount, mpesaInvoice?.currency) }}</span>
-              <span class="text-[11px] text-cx-ink-3 block">KES Net Total</span>
+              <span class="text-[11px] text-cx-ink-3 block">Invoice currency: {{ mpesaInvoice?.currency || 'KES' }}</span>
             </div>
             <button
               type="button"
@@ -3019,7 +3062,7 @@ onUnmounted(() => {
 
         <!-- Step-by-step instructions -->
         <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-4 space-y-1.5 text-xs text-cx-ink-3">
-          <strong class="text-cx-ink font-bold block mb-1">How to pay on your phone:</strong>
+          <strong class="text-cx-ink font-bold block mb-1">Pay this invoice by M-Pesa Paybill:</strong>
           <p>1. Open SIM Toolkit or M-Pesa App &gt; <strong>Lipa na M-Pesa</strong> &gt; <strong>Paybill</strong></p>
           <p>2. Enter Business Number <strong>{{ paybillInfo.business_number }}</strong> ({{ paybillInfo.business_name }})</p>
           <p>3. Enter Account Number <strong>{{ mpesaInvoice?.name }}</strong></p>
@@ -3029,13 +3072,15 @@ onUnmounted(() => {
 
         <!-- M-Pesa Transaction Input Form -->
         <div class="space-y-3 pt-2 border-t border-cx-border-soft">
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink">
-            Submit M-Pesa Confirmation Code (from SMS)
-          </label>
+          <div>
+            <label for="cx-mpesa-code" class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink">After paying, enter your M-Pesa confirmation code</label>
+            <p class="mt-1 text-[11px] text-cx-ink-3">Your invoice stays open until the payment is verified. Do not submit a code before completing the Paybill payment.</p>
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <input
                 type="text"
+                id="cx-mpesa-code"
                 v-model="mpesaCodeInput"
                 placeholder="e.g. SB65A1TU7X"
                 maxlength="15"
@@ -3047,6 +3092,7 @@ onUnmounted(() => {
               <input
                 type="tel"
                 v-model="mpesaPhoneInput"
+                aria-label="Phone number used for the M-Pesa transaction"
                 placeholder="M-Pesa Phone (e.g. 0712 345 678)"
                 class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-xs font-medium text-cx-ink focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10"
               />
@@ -3062,7 +3108,7 @@ onUnmounted(() => {
             class="text-xs font-semibold text-cx-ink-3 hover:text-cx-brand underline text-left"
             @click="payInvoice(mpesaInvoice); mpesaModalOpen = false"
           >
-            Or checkout using Credit/Debit Card via Paystack →
+            Pay by card with Paystack →
           </button>
           <div class="flex items-center gap-2 justify-end">
             <button
@@ -3078,7 +3124,7 @@ onUnmounted(() => {
               :disabled="mpesaReportBusy || !mpesaCodeInput"
               @click="submitMpesaPayment()"
             >
-              {{ mpesaReportBusy ? 'Verifying Receipt…' : 'Confirm & Reconcile Payment →' }}
+              {{ mpesaReportBusy ? 'Submitting…' : 'Submit M-Pesa reference →' }}
             </button>
           </div>
         </div>

@@ -18,15 +18,13 @@ from urllib.parse import urlparse
 
 import frappe
 from frappe import _
-from frappe.apps import get_default_path
 from frappe.utils import cint
 from frappe.utils.data import escape_html
 from frappe.utils.html_utils import get_icon_html
 from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
 from frappe.utils.password import get_decrypted_password
-from frappe.website.utils import get_home_page
 
-from crm.api.website_redirect import PORTAL_ROUTE, get_portal_route
+from crm.api.website_redirect import get_portal_route
 from crm.branding import apply_brand_context, get_configured_app_brand
 
 no_cache = True
@@ -47,9 +45,9 @@ def get_context(context):
 			redirect_to = portal_route
 		elif not redirect_to:
 			if frappe.session.data.user_type == "Website User":
-				redirect_to = get_default_path() or get_home_page()
+				redirect_to = "/access-restricted?resource=portal"
 			else:
-				redirect_to = get_default_path() or "/crm"
+				redirect_to = "/crm"
 		if redirect_to != "login":
 			frappe.local.flags.redirect_location = redirect_to
 			raise frappe.Redirect
@@ -77,10 +75,10 @@ def get_context(context):
 
 	# In a provider-side OIDC authorize flow, suppress social buttons by policy.
 	is_oidc_flow = _is_oidc_authorize_redirect(redirect_to)
-	context.provider_logins = [] if is_oidc_flow else _build_provider_logins(redirect_to or PORTAL_ROUTE)
+	context.provider_logins = [] if is_oidc_flow else _build_provider_logins(redirect_to or "/crm")
 	context.social_login = bool(context.provider_logins)
 
-	context.redirect_to = redirect_to or PORTAL_ROUTE
+	context.redirect_to = redirect_to or "/crm"
 	# CSRF token for the guest session (generating it is what makes /api/method/login
 	# accept the POST from this page; see frappe auth.LoginManager.validate_csrf_token).
 	context.csrf_token = frappe.sessions.get_csrf_token()
@@ -137,12 +135,15 @@ def _build_provider_logins(redirect_to: str) -> list[dict]:
 
 
 def sanitize_redirect(redirect: str | None) -> str | None:
-	"""Allow same-host redirects only; reject cross-origin. Mirrors native frappe/www/login.py."""
+	"""Allow same-host application routes, but never forward branded login to Desk."""
 	if not redirect:
 		return redirect
 
 	parsed_redirect = urlparse(redirect)
 	parsed_request_host = urlparse(frappe.local.request.url)
+	path = parsed_redirect.path or "/"
+	if path == "/app" or path.startswith("/app/") or path == "/desk" or path.startswith("/desk/"):
+		return "/crm"
 	output_parsed_url = parsed_redirect._replace(
 		netloc=parsed_request_host.netloc, scheme=parsed_request_host.scheme
 	)

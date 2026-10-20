@@ -118,13 +118,13 @@ function money(value, currency) {
             </button>
           </div>
           <div class="flex items-center justify-between">
-            <span class="font-medium text-cx-ink-3">Registry Status</span>
+            <span class="font-medium text-cx-ink-3">Go-live readiness</span>
             <span
               class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold"
               :class="facility.go_live ? 'border-cx-success-border bg-cx-success-soft text-cx-success-ink' : 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'"
             >
               <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-cx-success' : 'bg-amber-600'"></span>
-              <span>{{ facility.go_live ? 'Live on Health Facility Registry' : 'Verifying' }}</span>
+              <span>{{ facility.membership_status === 'Lead Inquiry' ? 'Lead inquiry' : facility.go_live ? 'Ready for go-live' : 'Implementation in progress' }}</span>
             </span>
           </div>
           <div class="flex items-center justify-between border-t border-cx-border-soft pt-2">

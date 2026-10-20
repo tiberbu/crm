@@ -966,12 +966,12 @@ def _customer_orders(customer: str) -> list[dict]:
 
 
 def _customer_payments(customer: str) -> list[dict]:
-	"""Retrieve payment receipts and submissions for this customer."""
+	"""Retrieve posted payments and customer M-Pesa reports awaiting reconciliation."""
 	if not customer:
 		return []
 	if not frappe.db.exists("DocType", "Payment Entry"):
 		return []
-	fields = ["name", "posting_date", "paid_amount", "received_amount", "mode_of_payment", "reference_no", "status", "docstatus"]
+	fields = ["name", "posting_date", "paid_amount", "received_amount", "mode_of_payment", "reference_no", "status", "docstatus", "remarks"]
 	try:
 		rows = frappe.get_list(
 			"Payment Entry",
@@ -981,20 +981,46 @@ def _customer_payments(customer: str) -> list[dict]:
 			limit_page_length=50,
 			ignore_permissions=True,
 		)
+		payment_names = [row.name for row in rows]
+		refs_by_payment = {}
+		if payment_names and frappe.db.exists("DocType", "Payment Entry Reference"):
+			refs = frappe.get_all(
+				"Payment Entry Reference",
+				filters={"parent": ["in", payment_names], "reference_doctype": "Sales Invoice"},
+				fields=["parent", "reference_name"],
+				limit_page_length=0,
+				ignore_permissions=True,
+			)
+			for ref in refs:
+				refs_by_payment.setdefault(ref.parent, []).append(ref.reference_name)
 		return [
 			{
 				"name": row.name,
 				"posting_date": str(row.posting_date or ""),
 				"amount": float(row.paid_amount or row.received_amount or 0),
-				"mode_of_payment": row.mode_of_payment or "M-Pesa / Bank",
+				"mode_of_payment": "M-Pesa Paybill" if _is_pending_mpesa_report(row) else (row.mode_of_payment or "M-Pesa / Bank"),
 				"reference_no": row.reference_no or "",
-				"status": "Submitted" if row.docstatus == 1 else "Pending Verification",
+				"status": "Pending Verification" if _is_pending_mpesa_report(row) else "Recorded",
+				"invoice_names": refs_by_payment.get(row.name, []),
+				"invoice": (refs_by_payment.get(row.name) or [None])[0],
 				"customer": customer,
 			}
 			for row in rows
+			if row.docstatus == 1 or _is_pending_mpesa_report(row)
 		]
 	except Exception:
 		return []
+
+
+def _is_pending_mpesa_report(payment_entry) -> bool:
+	"""Only portal M-Pesa reports are pending customer-visible Payment Entries."""
+	if isinstance(payment_entry, dict):
+		remarks = cstr(payment_entry.get("remarks") or "")
+		docstatus = payment_entry.get("docstatus")
+	else:
+		remarks = cstr(getattr(payment_entry, "remarks", "") or "")
+		docstatus = getattr(payment_entry, "docstatus", 0)
+	return int(docstatus or 0) == 0 and remarks.startswith("M-Pesa Paybill payment ")
 
 
 def _facility_payment_history(customer: str, facility_mfl: str) -> list[dict]:
@@ -1023,22 +1049,24 @@ def _facility_payment_history(customer: str, facility_mfl: str) -> list[dict]:
 		return []
 	entries = frappe.get_all(
 		"Payment Entry",
-		filters={"name": ["in", parent_names], "party": customer, "party_type": "Customer", "docstatus": 1},
-		fields=["name", "posting_date", "paid_amount", "received_amount", "mode_of_payment", "reference_no"],
+		filters={"name": ["in", parent_names], "party": customer, "party_type": "Customer", "docstatus": ["in", [0, 1]]},
+		fields=["name", "posting_date", "paid_amount", "received_amount", "mode_of_payment", "reference_no", "remarks", "docstatus"],
 		order_by="posting_date desc, creation desc",
 		limit_page_length=100,
 		ignore_permissions=True,
 	)
-	entry_by_name = {row.name: row for row in entries}
+	entry_by_name = {
+		row.name: row for row in entries if row.docstatus == 1 or _is_pending_mpesa_report(row)
+	}
 	return [
 		{
 			"name": entry_by_name[row.parent].name,
 			"invoice": row.reference_name,
 			"posting_date": str(entry_by_name[row.parent].posting_date or ""),
 			"amount": float(row.allocated_amount or 0),
-			"mode_of_payment": entry_by_name[row.parent].mode_of_payment or "M-Pesa / Bank",
+			"mode_of_payment": "M-Pesa Paybill" if _is_pending_mpesa_report(entry_by_name[row.parent]) else (entry_by_name[row.parent].mode_of_payment or "M-Pesa / Bank"),
 			"reference_no": entry_by_name[row.parent].reference_no or "",
-			"status": "Submitted",
+			"status": "Pending Verification" if _is_pending_mpesa_report(entry_by_name[row.parent]) else "Recorded",
 			"customer": customer,
 		}
 		for row in refs

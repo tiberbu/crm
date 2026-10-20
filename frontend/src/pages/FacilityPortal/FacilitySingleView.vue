@@ -48,6 +48,18 @@ function money(amount, currency) {
 function invoiceStatus(invoice) {
   return invoice.status || 'Outstanding'
 }
+
+function pendingPaymentForInvoice(invoice) {
+  return props.payments.find((payment) => {
+    if (payment.status !== 'Pending Verification') return false
+    const invoiceNames = payment.invoice_names?.length
+      ? payment.invoice_names
+      : payment.invoice
+        ? [payment.invoice]
+        : []
+    return invoiceNames.some((name) => String(name) === String(invoice.name))
+  }) || null
+}
 </script>
 
 <template>
@@ -115,8 +127,18 @@ function invoiceStatus(invoice) {
         <div v-if="!invoices.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-3">No outstanding invoices are linked to this facility.</div>
         <div v-else class="divide-y divide-cx-border-soft">
           <div v-for="invoice in invoices" :key="invoice.name" class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0">
-            <div><p class="text-xs font-semibold text-cx-ink">{{ invoice.invoice_number || invoice.name }}</p><p class="mt-1 text-[11px] text-cx-ink-3">Due {{ invoice.due_date || 'on receipt' }} · {{ invoiceStatus(invoice) }}</p></div>
-            <div class="flex items-center gap-3"><strong class="text-sm text-cx-ink">{{ money(invoice.amount, invoice.currency) }}</strong><button v-if="Number(invoice.amount) > 0" type="button" class="rounded-cx-sm bg-cx-success px-3 py-1.5 text-[11px] font-semibold text-cx-contrast" @click="emit('pay', invoice)">Pay</button></div>
+            <div>
+              <p class="text-xs font-semibold text-cx-ink">{{ invoice.invoice_number || invoice.name }}</p>
+              <p class="mt-1 text-[11px] text-cx-ink-3">Due {{ invoice.due_date || 'on receipt' }} · {{ pendingPaymentForInvoice(invoice) ? 'Payment verification pending' : invoiceStatus(invoice) }}</p>
+              <p v-if="pendingPaymentForInvoice(invoice)" class="mt-1 text-[11px] font-semibold text-cx-warning-ink">
+                M-Pesa report {{ pendingPaymentForInvoice(invoice).reference_no || pendingPaymentForInvoice(invoice).name }} is awaiting verification. Please wait before paying again.
+              </p>
+            </div>
+            <div class="flex items-center gap-3">
+              <strong class="text-sm text-cx-ink">{{ money(invoice.amount, invoice.currency) }}</strong>
+              <button v-if="Number(invoice.amount) > 0 && !pendingPaymentForInvoice(invoice)" type="button" class="rounded-cx-sm bg-cx-success px-3 py-1.5 text-[11px] font-semibold text-cx-contrast" @click="emit('pay', invoice)">Choose payment</button>
+              <span v-else-if="pendingPaymentForInvoice(invoice)" class="text-[11px] font-semibold text-cx-warning-ink">Verification pending</span>
+            </div>
           </div>
         </div>
       </section>
@@ -125,7 +147,11 @@ function invoiceStatus(invoice) {
         <div v-if="!payments.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-3">No payments have been matched to this facility’s invoices.</div>
         <div v-else class="divide-y divide-cx-border-soft">
           <div v-for="payment in payments" :key="`${payment.name}-${payment.invoice || ''}`" class="flex items-center justify-between gap-3 py-3 first:pt-0">
-            <div><p class="text-xs font-semibold text-cx-ink">{{ payment.mode_of_payment }} · {{ payment.reference_no || payment.name }}</p><p class="mt-1 text-[11px] text-cx-ink-3">{{ payment.posting_date }}<span v-if="payment.invoice"> · Invoice {{ payment.invoice }}</span></p></div>
+            <div>
+              <p class="text-xs font-semibold text-cx-ink">{{ payment.mode_of_payment }} · {{ payment.reference_no || payment.name }}</p>
+              <p class="mt-1 text-[11px] text-cx-ink-3">{{ payment.posting_date }}<span v-if="payment.invoice"> · Invoice {{ payment.invoice }}</span></p>
+              <span class="mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold" :class="payment.status === 'Pending Verification' ? 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink' : 'border-cx-success-border bg-cx-success-soft text-cx-success-ink'">{{ payment.status || 'Recorded' }}</span>
+            </div>
             <strong class="shrink-0 text-sm text-cx-ink">{{ money(payment.amount) }}</strong>
           </div>
         </div>

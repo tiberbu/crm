@@ -1000,7 +1000,7 @@ def lookup_facilities_by_owner_id(national_id: Any = None):
 
 @frappe.whitelist(methods=["POST"])
 def report_mpesa_payment(invoice_name: Any, mpesa_code: Any, amount: Any = None, phone: Any = None):
-	"""Record customer M-Pesa transaction reference for instant reconciliation against a facility invoice."""
+	"""Record a customer M-Pesa transaction reference for finance reconciliation against an invoice."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		frappe.throw(_("Please sign in to report payment."), frappe.PermissionError)
@@ -1033,6 +1033,16 @@ def report_mpesa_payment(invoice_name: Any, mpesa_code: Any, amount: Any = None,
 			"status": "already_submitted",
 			"payment_entry": existing_pe[0].name,
 			"message": _("This M-Pesa reference is already recorded and is awaiting reconciliation."),
+		}
+
+	from crm.api.checkout import _pending_mpesa_report_for_invoice
+	pending_payment = _pending_mpesa_report_for_invoice(invoice.name)
+	if pending_payment:
+		return {
+			"success": True,
+			"status": "payment_already_pending",
+			"payment_entry": pending_payment,
+			"message": _("A payment report for this invoice is already being verified. Please wait for confirmation before paying again."),
 		}
 
 	from crm.api.checkout import _payment_entry_for_invoice

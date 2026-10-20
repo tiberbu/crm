@@ -427,7 +427,7 @@
             if (target.charAt(0) !== '/') target = '/' + target;
             // /update-password is included so a forced/expired password-reset redirect
             // (…/update-password?key=…) survives the guard WITH its key intact.
-            var safe = ['/crm', '/app', '/desk', '/api', '/cx-portal', '/finance-cockpit', '/update-password'];
+            var safe = ['/crm', '/api', '/cx-portal', '/finance-cockpit', '/update-password'];
             var ok = safe.some(function (p) { return target.indexOf(p) === 0; });
             return ok ? target : '';
         }
