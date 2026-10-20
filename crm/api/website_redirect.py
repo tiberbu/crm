@@ -997,6 +997,82 @@ def _customer_payments(customer: str) -> list[dict]:
 		return []
 
 
+def _facility_payment_history(customer: str, facility_mfl: str) -> list[dict]:
+	"""Return payments allocated to invoices tagged to one facility."""
+	if not frappe.db.has_column("Sales Invoice", "crm_token_facility_mfl"):
+		return []
+	invoices = frappe.get_all(
+		"Sales Invoice",
+		filters={"customer": customer, "crm_token_facility_mfl": facility_mfl},
+		fields=["name"],
+		limit_page_length=0,
+		ignore_permissions=True,
+	)
+	invoice_names = [row.name for row in invoices]
+	if not invoice_names or not frappe.db.exists("DocType", "Payment Entry Reference"):
+		return []
+	refs = frappe.get_all(
+		"Payment Entry Reference",
+		filters={"reference_doctype": "Sales Invoice", "reference_name": ["in", invoice_names]},
+		fields=["parent", "reference_name", "allocated_amount"],
+		limit_page_length=0,
+		ignore_permissions=True,
+	)
+	parent_names = list({row.parent for row in refs if row.parent})
+	if not parent_names:
+		return []
+	entries = frappe.get_all(
+		"Payment Entry",
+		filters={"name": ["in", parent_names], "party": customer, "party_type": "Customer", "docstatus": 1},
+		fields=["name", "posting_date", "paid_amount", "received_amount", "mode_of_payment", "reference_no"],
+		order_by="posting_date desc, creation desc",
+		limit_page_length=100,
+		ignore_permissions=True,
+	)
+	entry_by_name = {row.name: row for row in entries}
+	return [
+		{
+			"name": entry_by_name[row.parent].name,
+			"invoice": row.reference_name,
+			"posting_date": str(entry_by_name[row.parent].posting_date or ""),
+			"amount": float(row.allocated_amount or 0),
+			"mode_of_payment": entry_by_name[row.parent].mode_of_payment or "M-Pesa / Bank",
+			"reference_no": entry_by_name[row.parent].reference_no or "",
+			"status": "Submitted",
+			"customer": customer,
+		}
+		for row in refs
+		if row.parent in entry_by_name
+	]
+
+
+def _facility_invoice_history(customer: str, facility_mfl: str) -> list[dict]:
+	"""Return paid and outstanding invoices carrying this facility's billing tag."""
+	if not frappe.db.has_column("Sales Invoice", "crm_token_facility_mfl"):
+		return []
+	rows = frappe.get_all(
+		"Sales Invoice",
+		filters={"customer": customer, "crm_token_facility_mfl": facility_mfl, "docstatus": ["in", [0, 1]]},
+		fields=["name", "posting_date", "due_date", "grand_total", "outstanding_amount", "currency", "status", "docstatus"],
+		order_by="posting_date desc, creation desc",
+		limit_page_length=100,
+		ignore_permissions=True,
+	)
+	return [
+		{
+			"name": row.name,
+			"invoice_number": row.name,
+			"posting_date": str(row.posting_date or ""),
+			"due_date": str(row.due_date or ""),
+			"amount": float(row.outstanding_amount or 0),
+			"grand_total": float(row.grand_total or 0),
+			"currency": row.currency or "KES",
+			"status": "Outstanding" if frappe.utils.flt(row.outstanding_amount) > 0 else "Paid",
+			"customer": customer,
+			"crm_token_facility_mfl": facility_mfl,
+		}
+		for row in rows
+	]
 def _customer_portal_accounts(user: str) -> list[dict]:
 	"""Project Customer, Deal, and Lead-linked facilities, orders, invoices, and payments granted to this user."""
 	customer_names = get_user_customer_names(user)
@@ -1071,7 +1147,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 	facilities = frappe.get_all(
 		"CRM Pre-Qualified Facility",
 		filters={"name": ["in", parent_names]},
-		fields=["name", "mfl_code", "facility_name", "keph_level"],
+		fields=["name", "mfl_code", "facility_name", "keph_level", "hfr_facility_id", "registration_number"],
 		ignore_permissions=True,
 		limit_page_length=0,
 	) if parent_names else []
@@ -1079,6 +1155,8 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 
 	deal_facility_fields = ["name", "parent", "mfl_code", "facility_name", "facility_level"]
 	package_fieldnames = (
+		"hfr_facility_id",
+		"registration_number",
 		"cx_token_package_item",
 		"cx_token_package_quantity",
 		"cx_token_package_price",
@@ -1171,16 +1249,16 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				if past_orders:
 					latest_order = past_orders[0]
 
-			fac_invoices = [
-				inv for inv in open_invoices
-				if cstr(inv.get("crm_token_facility_mfl")).strip().casefold() == mfl_key
-			]
+			fac_invoices = _facility_invoice_history(customer, mfl_raw)
+			fac_payments = _facility_payment_history(customer, mfl_raw)
 
 			rows.append({
 				"facility_name": cstr(facility.get("facility_name") or "Facility"),
 				"mfl_code": mfl_raw,
+				"hfr_facility_id": cstr(facility.get("hfr_facility_id") or ""),
+				"registration_number": cstr(facility.get("registration_number") or ""),
 				"keph_level": cstr(facility.get("keph_level") or ""),
-				"network": membership.get("network") or (primary_deal.get("optin_network") if primary_deal else None) or "CareVerse Partner Network",
+				"network": frappe.db.get_value("CRM Opt-In Network", membership.get("network"), "display_name") if membership.get("network") else (primary_deal.get("optin_network") if primary_deal else None) or "CareVerse Partner Network",
 				"membership_status": cstr(membership.get("status") or "Active"),
 				"go_live": bool(frappe.utils.cint(membership.get("go_live"))),
 				"deal": fac_deal,
@@ -1208,6 +1286,8 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 					"invoice_name": fac_invoices[0].get("name") if fac_invoices else None,
 					"count": len(fac_invoices),
 				},
+				"invoices": fac_invoices,
+				"payments": fac_payments,
 			})
 
 		# Also collect from CRM Deal Facility for any deals under this customer
@@ -1222,6 +1302,8 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				rows.append({
 					"facility_name": cstr(df.get("facility_name") or "Facility"),
 					"mfl_code": mfl_raw,
+					"hfr_facility_id": cstr(df.get("hfr_facility_id") or ""),
+					"registration_number": cstr(df.get("registration_number") or ""),
 					"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
 					"network": d.get("optin_network") or "CareVerse Partner Network",
 					"membership_status": "Active",
@@ -1236,6 +1318,8 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 					"package_currency": cstr(df.get("cx_token_package_currency") or ""),
 					"recent_purchase": None,
 					"invoice_summary": {"has_outstanding": False, "outstanding_amount": 0, "currency": "KES", "invoice_name": None, "count": 0},
+					"invoices": _facility_invoice_history(customer, mfl_raw),
+					"payments": _facility_payment_history(customer, mfl_raw),
 				})
 
 		org_name = customer_legal_name
@@ -1273,6 +1357,8 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			fac_rows.append({
 				"facility_name": cstr(df.get("facility_name") or "Facility"),
 				"mfl_code": cstr(df.get("mfl_code") or ""),
+				"hfr_facility_id": cstr(df.get("hfr_facility_id") or ""),
+				"registration_number": cstr(df.get("registration_number") or ""),
 				"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
 				"network": deal_doc.get("optin_network") or "CareVerse Partner Network",
 				"membership_status": "Active",

@@ -70,7 +70,6 @@
             ? 'border-color: var(--brand-primary); background-color: color-mix(in srgb, var(--brand-primary) 5%, transparent)'
             : ''
         "
-        :aria-disabled="facility.already_quoted ? 'true' : 'false'"
         @click="facility.already_quoted ? null : toggleFacility(facility)"
       >
         <!-- Top row: indicator + KEPH badge -->
@@ -94,33 +93,15 @@
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
           </div>
-          <div
+          <input
             v-else
-            :class="[
-              'flex h-5 w-5 items-center justify-center rounded-full border-2 transition-all',
-              isSelected(facility.mfl_code)
-                ? 'border-transparent text-white'
-                : 'border-gray-300 dark:border-gray-600',
-            ]"
-            :style="
-              isSelected(facility.mfl_code)
-                ? 'background-color: var(--brand-primary)'
-                : ''
-            "
-          >
-            <svg
-              v-if="isSelected(facility.mfl_code)"
-              class="h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="3"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </div>
+            type="checkbox"
+            :checked="isSelected(facility.mfl_code)"
+            :aria-label="`Select ${facility.facility_name}`"
+            class="size-5 shrink-0 rounded border-gray-300 accent-[color:var(--brand-primary)] focus:ring-2 focus:ring-[color:var(--brand-primary)]"
+            @click.stop
+            @change="toggleFacility(facility)"
+          />
           <!-- KEPH badge -->
           <span
             :class="[

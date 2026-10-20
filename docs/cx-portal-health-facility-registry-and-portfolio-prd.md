@@ -64,7 +64,7 @@ This PRD establishes the comprehensive product requirements, data models, UX arc
 - **Observed Behavior:** Adding a facility requires the user to remember and type their 5-digit MFL code.
 - **Codebase Root Cause:**
   - The DHA national registry API supports `_hfr_facilities_for_owner(owner_id_number)` which returns *all* health facilities owned by or registered under a verified citizen's National ID.
-  - The portal modal only offered a text input searching by MFL Code or Registration Number, completely neglecting the pre-verified National ID on file.
+  - The portal modal only offered a text input searching by MFL Code or Registration Number, completely neglecting the National ID saved on the user's profile.
 
 ### 2.5 Inconsistent Nomenclature
 - **Observed Behavior:** References to `KMHFR` and `KHFMR` scattered across headers, status pills, and modals.
@@ -81,17 +81,26 @@ This PRD establishes the comprehensive product requirements, data models, UX arc
 2. **First-Class Per-Facility Financial Attribution:**
    - Every Care Token purchase, quotation, sales order, and sales invoice MUST be linked to a specific facility via `crm_token_facility_mfl`.
    - Every facility row in the portfolio MUST explicitly expose its **Affiliated Network**, its **Recent Token Purchase**, and its **Outstanding / Paid Invoices**.
-3. **National ID as the Master Key for Facility Discovery:**
-   - Because the facility owner's National ID is verified during initial onboarding, the portal MUST store and surface this National ID in "My Profile".
-   - Facility search MUST default to a 1-click **"Discover Facilities by My National ID"** query that fetches all registered facilities from the Health Facility Registry without requiring manual MFL/FID input.
+3. **Separate Local Search from Registry Discovery:**
+   - The facility portfolio and Ctrl+K search MUST find local portfolio facilities by name. MFL, FID, and registration numbers are not local search terms.
+   - Health Facility Registry discovery MAY use a verified National ID to find owner-linked branches. Its manual lookup MUST support MFL, FID, and registration number with the identifier type shown explicitly.
+   - The user's National ID remains visible in My Profile and is used only for the registry owner-discovery workflow.
 4. **Universal Terminology:**
    - Every UI label, tooltip, table header, and notification must use **Health Facility Registry** (or "HFR" where abbreviation is necessary). `KMHFR` and `KHFMR` are strictly forbidden.
 5. **Least Privilege & Data Integrity:**
-   - A user may only discover, view, and link facilities returned by the Health Facility Registry for their verified National ID or validly proved ownership.
+   - A user may only discover, view, and link facilities returned by the Health Facility Registry for their National ID saved on the user profile or validly proved ownership.
 
 ---
 
 ## 4. User Personas & Core Journeys
+
+### Portal implementation note (2026-10-20)
+
+- Local facility search is name-only. Identifier lookup belongs in HFR discovery.
+- Selecting a facility opens a dedicated single-facility view with its registry identity, network, outstanding invoices, invoice-linked payments, token orders, and HMIS deployment status.
+- Facility linking resolves a six-digit Partner ID. Leaving the field empty uses `facility_onboarding_default_partner_id` from CRM Opt-In Settings.
+- Provisioning status is read from `GET /v1/hmis/provisioning/facilities/{fid}/status` through the HIE APISIX gateway, using the HIE Bearer JWT. CRM resolves the FID from an authorized portfolio facility; the browser sends only its local MFL key to the CRM endpoint.
+- The external provisioning contract currently reports setup status, progress, log, error, and last attempt. It does not report service-unit inventory or site URL health. The portal labels service-unit count as unavailable until that API is extended; it does not infer deployment completion from Draft status.
 
 | Persona | Role | Key Needs in CX Portal |
 | :--- | :--- | :--- |
@@ -118,7 +127,7 @@ This PRD establishes the comprehensive product requirements, data models, UX arc
 2. The user sees their verified credentials:
    - Full Legal Name
    - Primary Email & Contact Number
-   - **Kenyan National ID Number on File** (e.g., `28472910` with verified checkmark)
+   - **Kenyan National ID Number on File** (e.g., `••••••••` with verified checkmark)
    - Legal Organization / Practice Name
    - Linked Facilities Count & Network Affiliations
 3. If an ID was not previously recorded, the user can provide and verify their National ID.
@@ -126,9 +135,9 @@ This PRD establishes the comprehensive product requirements, data models, UX arc
 ### Journey C: Zero-Input Facility Discovery via Health Facility Registry
 1. User clicks **"+ Add Facility"** or navigates to **"Health Facility Registry Sync"**.
 2. The primary prompt announces:
-   > *"We found your National ID on file: **ID 28472910**. Click below to automatically discover all health facilities registered under your ownership."*
+   > *"We found your National ID on file: **ID ••••••••**. Click below to automatically discover all health facilities registered under your ownership."*
 3. User clicks **"🔍 Search Facilities by My National ID"**.
-4. The system queries `_hfr_facilities_for_owner("28472910")` via the national HFR API.
+4. The system queries `_hfr_facilities_for_owner("••••••••")` via the national HFR API.
 5. The UI displays matching facilities:
    - Facilities already in the portfolio are badged as `Already Linked`.
    - Newly discovered facilities are badged as `New Facility Available`.
@@ -240,7 +249,7 @@ This PRD establishes the comprehensive product requirements, data models, UX arc
       "full_name": "Dr. Salim Ahmed",
       "email": "salim@tiberbu.com",
       "mobile_no": "+254712345678",
-      "national_id": "28472910",
+      "national_id": "••••••••",
       "national_id_verified": true,
       "organization": "ZUHRI MEDICARE LIMITED",
       "primary_network": "CHAK Partner Network",
@@ -270,7 +279,7 @@ This PRD establishes the comprehensive product requirements, data models, UX arc
   {
     "success": true,
     "data": {
-      "national_id": "28472910",
+      "national_id": "••••••••",
       "facilities": [
         {
           "fid": "FID-47-120942-5",
@@ -383,7 +392,7 @@ Manage your verified personal identity, practice organization, and national regi
 | Full Name:              Dr. Salim Ahmed                                                                 |
 | Email Address:          salim@tiberbu.com  (Login credential)                                           |
 | Mobile Number:          +254 712 345 678   [Edit]                                                       |
-| National ID Number:     28472910           [● Verified Citizen]  [Update ID]                             |
+| National ID Number:     ••••••••           [● Verified Citizen]  [Update ID]                             |
 |                                                                                                         |
 | * Your National ID is used to automatically discover registered health facilities from the national      |
 |   Health Facility Registry without needing to enter manual MFL codes.                                   |
@@ -407,9 +416,9 @@ Manage your verified personal identity, practice organization, and national regi
 |                                                                                                         |
 |  +---------------------------------------------------------------------------------------------------+  |
 |  | 🪪 FAST SYNC USING NATIONAL ID ON FILE                                                             |  |
-|  | We will look up all licensed facilities registered under your verified National ID: 28472910      |  |
+|  | We will look up all licensed facilities registered under your National ID saved on the user profile: ••••••••      |  |
 |  |                                                                                                   |  |
-|  | [ 🔍 Discover Facilities Registered Under ID 28472910 ]                                           |  |
+|  | [ 🔍 Discover Facilities Registered Under ID •••••••• ]                                           |  |
 |  +---------------------------------------------------------------------------------------------------+  |
 |                                                                                                         |
 |  Found 3 facilities in National Health Facility Registry:                                               |
@@ -442,7 +451,7 @@ Manage your verified personal identity, practice organization, and national regi
 1. **No Alphabetical Dominance:** The top header, sidebar footer, and profile display *Zuhri Medicare Limited*. *A.P. Embakasi* appears as a normal row in the facility table.
 2. **Every Facility Exposes Network & Financials:** On the Facilities page, each row displays its Network (e.g. `CHAK Partner Network`), its last token order date/amount, and its specific invoice status.
 3. **My Profile Exists:** The user can navigate to `/cx-portal#profile` (or click `My Profile`), view their National ID, verify it is recorded, and update it if needed.
-4. **1-Click Facility Addition:** The user clicks "Add Facility" -> clicks "Discover Facilities Registered Under ID 28472910" -> sees their newly licensed clinic -> clicks "Add to Portfolio" -> facility appears in their table immediately without typing MFL code.
+4. **1-Click Facility Addition:** The user clicks "Add Facility" -> clicks "Discover Facilities Registered Under ID ••••••••" -> sees their newly licensed clinic -> clicks "Add to Portfolio" -> facility appears in their table immediately without typing MFL code.
 5. **No KMHFR/KHFMR:** All labels read **Health Facility Registry**.
 
 ---
@@ -465,3 +474,8 @@ Manage your verified personal identity, practice organization, and national regi
   - Run Vitest (202+ tests) and backend test suite.
   - Deploy to `cr-dev.tiberbu.app` and update PR #93.
 
+
+
+## Portal UX pattern
+
+Follow the interaction and visual rules in [CX Portal UX Design Pattern](cx-portal-ux-design-pattern.md) for future portal work. The examples in this PRD use masked placeholders; never put a real National ID in product documentation.

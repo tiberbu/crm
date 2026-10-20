@@ -1,10 +1,10 @@
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-950" :style="brandStyle">
+  <div class="cx-enrollment min-h-screen bg-gray-50 dark:bg-gray-950" :style="brandStyle">
     <!-- Wrapper card (steps 1-6): a bounded, viewport-fitting column — fixed header,
          scrollable body — so the wizard never grows past one screen. -->
     <div
       v-if="showCard"
-      class="mx-auto flex h-screen max-w-2xl flex-col overflow-hidden bg-white shadow-xl dark:bg-gray-900 md:my-[4vh] md:h-[92vh] md:rounded-2xl"
+      class="cx-enrollment-glass mx-auto flex h-screen max-w-2xl flex-col overflow-hidden border bg-white shadow-xl dark:bg-gray-900 md:my-[4vh] md:h-[92vh] md:rounded-2xl"
     >
       <!-- Card header: logo + progress bar -->
       <div
@@ -112,7 +112,7 @@
       class="flex min-h-screen items-center justify-center px-4"
     >
       <div
-        class="w-full max-w-sm bg-white rounded-xl shadow-lg py-6 dark:bg-gray-900"
+        class="cx-enrollment-glass w-full max-w-sm rounded-xl border py-6 dark:bg-gray-900"
       >
         <StepProgress
           :network-slug="networkSlug"
@@ -128,7 +128,7 @@
       class="flex min-h-screen items-center justify-center px-4"
     >
       <div
-        class="w-full max-w-sm bg-white rounded-xl shadow-lg py-6 dark:bg-gray-900"
+        class="cx-enrollment-glass w-full max-w-sm rounded-xl border py-6 dark:bg-gray-900"
       >
         <StepSuccess />
       </div>
@@ -140,7 +140,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
     >
       <div
-        class="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-xl dark:bg-gray-800"
+        class="cx-enrollment-glass w-full max-w-sm rounded-xl border p-6 text-center dark:bg-gray-800"
       >
         <div
           class="mb-4 flex h-12 w-12 items-center justify-center rounded-full mx-auto"

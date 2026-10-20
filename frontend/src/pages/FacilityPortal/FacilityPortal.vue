@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import CxIcon from './components/CxIcon.vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { call, createResource, Dialog } from 'frappe-ui'
 import TokenCalculator from '@/components/TokenCalculator.vue'
-import FacilityDrawer from './FacilityDrawer.vue'
+import FacilitySingleView from './FacilitySingleView.vue'
 import OptInRequests from './OptInRequests.vue'
 import {
   facilityLabel,
@@ -49,6 +50,25 @@ const activeView = ref('dashboard')
 
 // Sidebar collapsed state for responsive layout
 const sidebarCollapsed = ref(false)
+const isMobileViewport = ref(false)
+const mobileMoreOpen = ref(false)
+const mobileMoreItems = computed(() => [
+  { view: 'pricing', label: 'Plans & Pricing', icon: 'coins' },
+  { view: 'hfr_sync', label: 'Registry Sync', icon: 'refresh' },
+  { view: 'support', label: 'Network Support', icon: 'chat' },
+  ...((context.value.ois || []).length
+    ? [{ view: 'optin_requests', label: 'Opt-In Requests', icon: 'clipboard-list' }]
+    : []),
+])
+
+function updateMobileViewport() {
+  isMobileViewport.value = window.matchMedia('(max-width: 639px)').matches
+}
+
+function selectMobileView(view) {
+  activeView.value = view
+  mobileMoreOpen.value = false
+}
 
 // Logout — the framework's /api/method/logout is POST-only, so the old GET
 // anchor 403'd and bounced to an unknown route. frappe-ui's resourceFetcher
@@ -119,6 +139,8 @@ const profileSaving = ref(false)
 // HFR Auto-Discovery by Owner ID
 const hfrOwnerSearchBusy = ref(false)
 const hfrOwnerSearchResults = ref([])
+const hfrOwnerSearchComplete = ref(false)
+const hfrOwnerSearchError = ref('')
 
 // Search, Filter & Grouping state for Facilities Data Table
 const searchQuery = ref('')
@@ -126,7 +148,6 @@ const selectedStatusFilter = ref('all') // 'all' | 'live' | 'verifying'
 const selectedLevelFilter = ref('all') // 'all' | 'Level 2' | 'Level 3' | 'Level 4'
 const selectedNetworkFilter = ref('all') // 'all' | network names
 const groupByNetwork = ref(false) // Toggle to group facilities by network/partner
-const selectedFacilityMfls = ref([]) // For table row checkbox selections
 const facilityViewMode = ref('table') // 'table' | 'cards'
 
 // Facility selection for Top-Up & Calculator
@@ -148,6 +169,7 @@ const mpesaReportBusy = ref(false)
 // HFR Lookup state inside Add Facility Modal
 const hfrSearchQuery = ref('')
 const hfrSearchBy = ref('mfl_code') // 'mfl_code' | 'registration_number'
+const partnerIdInput = ref('')
 const hfrSearchBusy = ref(false)
 const hfrSearchResults = ref([])
 const hfrLinkBusy = ref(false)
@@ -157,27 +179,19 @@ const hfrSelectedCandidate = ref(null)
 const purchaseBusy = ref(false)
 const busyId = ref('')
 const notice = ref(null)
+let noticeTimeout = null
+watch(notice, (value) => {
+  clearTimeout(noticeTimeout)
+  noticeTimeout = null
+  if (value && value.tone !== 'pending') {
+    noticeTimeout = setTimeout(() => {
+      notice.value = null
+    }, 5000)
+  }
+})
 const bankTransferOis = ref('')
 const copiedMfl = ref('')
 const copiedKey = ref('')
-
-// Collapsible feature categories state for GitHub-style pricing table
-const expandedPricingCategories = ref({
-  opd: true,
-  diagnostics: true,
-  ipd: true,
-  billing: true,
-  compliance: true,
-})
-const expandedFeatureDescriptions = ref({})
-
-function toggleFeatureCategory(categoryKey) {
-  expandedPricingCategories.value[categoryKey] = !expandedPricingCategories.value[categoryKey]
-}
-
-function toggleFeatureDescription(featureId) {
-  expandedFeatureDescriptions.value[featureId] = !expandedFeatureDescriptions.value[featureId]
-}
 
 // ---------------------------------------------------------------------------
 // Unified Data Model (Customer Accounts & OIS)
@@ -192,6 +206,7 @@ const allFacilities = computed(() => {
       if (mfl && !seenMfl.has(mfl.toLowerCase())) {
         seenMfl.add(mfl.toLowerCase())
         list.push({
+          ...fac,
           facility_name: fac.facility_name || 'Healthcare Facility',
           mfl_code: mfl,
           keph_level: fac.keph_level || 'Level 2 Dispensary',
@@ -221,6 +236,7 @@ const allFacilities = computed(() => {
       if (mfl && !seenMfl.has(mfl.toLowerCase())) {
         seenMfl.add(mfl.toLowerCase())
         list.push({
+          ...fac,
           facility_name: fac.facility_name || 'Healthcare Facility',
           mfl_code: mfl,
           keph_level: fac.keph_level || 'Level 2 Dispensary',
@@ -264,10 +280,7 @@ const filteredFacilities = computed(() => {
     const q = searchQuery.value.trim().toLowerCase()
     if (q) {
       const matchName = fac.facility_name.toLowerCase().includes(q)
-      const matchMfl = fac.mfl_code.toLowerCase().includes(q)
-      const matchLevel = fac.keph_level.toLowerCase().includes(q)
-      const matchNetwork = (fac.network || '').toLowerCase().includes(q)
-      if (!matchName && !matchMfl && !matchLevel && !matchNetwork) return false
+      if (!matchName) return false
     }
 
     // Status filter
@@ -426,6 +439,7 @@ const drawerFacility = computed(
   () => allFacilities.value.find((f) => String(f.mfl_code) === String(facilityDrawerMfl.value)) || null,
 )
 const drawerInvoices = computed(() => {
+  if (drawerFacility.value?.invoices) return drawerFacility.value.invoices
   const mfl = String(drawerFacility.value?.mfl_code || '').toLowerCase()
   return allInvoices.value.filter((inv) => String(inv.crm_token_facility_mfl || '').toLowerCase() === mfl)
 })
@@ -435,9 +449,16 @@ const drawerOrders = computed(() => {
 })
 function openFacilityDrawer(facility) {
   facilityDrawerMfl.value = facility.mfl_code
+  activeView.value = 'facility_detail'
 }
 function closeFacilityDrawer() {
   facilityDrawerMfl.value = ''
+  activeView.value = 'facilities'
+}
+
+async function loadProvisioningStatus(mflCode) {
+  const response = await call('crm.api.hfr.get_provisioning_status', { mfl_code: mflCode })
+  return unwrap(response)
 }
 
 // Selected Package
@@ -479,7 +500,7 @@ const dashboardAttention = computed(() => {
     const status = invoiceStatus(inv)
     items.push({
       key: `inv-${inv.name}`,
-      icon: '💳',
+      icon: 'credit-card',
       text: `Invoice ${inv.invoice_number || inv.name} — ${money(inv.amount, inv.currency)} ${status.key === 'overdue' ? 'overdue' : 'due'}`,
       meta: `Facility: ${facilityLabel(inv.crm_token_facility_mfl, allFacilities.value)}`,
       view: 'billing',
@@ -489,7 +510,7 @@ const dashboardAttention = computed(() => {
     if (!fac.go_live) {
       items.push({
         key: `verify-${fac.mfl_code}`,
-        icon: '🔄',
+        icon: 'refresh',
         text: `${fac.facility_name} is verifying on the Health Facility Registry`,
         meta: `MFL: ${fac.mfl_code} · ${fac.keph_level}`,
         view: 'facilities',
@@ -506,7 +527,7 @@ const recentActivity = computed(() => {
     if (!pay.posting_date) continue
     items.push({
       kind: 'payment',
-      icon: '🧾',
+      icon: 'receipt',
       title: `Receipt ${pay.name}`,
       text: `${pay.mode_of_payment || 'Payment'} · ${money(pay.amount, 'KES')}`,
       date: pay.posting_date,
@@ -516,7 +537,7 @@ const recentActivity = computed(() => {
     if (!order.transaction_date) continue
     items.push({
       kind: 'order',
-      icon: '🪙',
+      icon: 'coins',
       title: packageLabel(order.crm_token_package_item, context.value.token_packages || []),
       text: `Order ${order.name} · ${money(order.grand_total, order.currency)}`,
       date: order.transaction_date,
@@ -563,149 +584,6 @@ const defaultCurrency = computed(() => {
     'KES'
   )
 })
-
-// ---------------------------------------------------------------------------
-// GitHub-Style Detailed Feature Comparison Matrix
-// ---------------------------------------------------------------------------
-const featureComparisonCategories = [
-  {
-    key: 'opd',
-    title: 'Outpatient & Patient Registration (OPD)',
-    description: 'Patient master index, intake, triage, and outpatient consultation workflows.',
-    features: [
-      {
-        id: 'patient_reg',
-        name: 'Patient Intake & Biometrics',
-        description: 'Instant master patient index (MPI) creation, National ID and DHA Client Registry integration for deduplicated patient records.',
-        values: ['400 MPI Intakes', '1,000 MPI Intakes', '2,800 MPI Intakes', 'Unlimited MPI Intakes'],
-      },
-      {
-        id: 'opd_consult',
-        name: 'Consultation Encounters & ICD-10',
-        description: 'Doctor examination notes, standardized diagnosis coding (ICD-10 / Health Facility Registry), vitals capture, and referral tracking.',
-        values: ['10 full encounters', '~70 OPD visits', '~200 OPD visits', '~440 OPD visits'],
-      },
-      {
-        id: 'triage_vitals',
-        name: 'Triage & Nursing Vitals Station',
-        description: 'Automated blood pressure, pulse, temperature, and BMI charting with clinical alert triggers for high-risk patients.',
-        values: ['Included', 'Included', 'Included', 'Priority Support'],
-      },
-      {
-        id: 'chronic_care',
-        name: 'Specialized Clinics & Chronic Care',
-        description: 'Dedicated follow-up visit tracking for hypertension, diabetes, maternal child health (MCH), and oncology clinics.',
-        values: ['Standard', 'Standard', 'Advanced Programs', 'Full Multi-Specialty'],
-      },
-    ],
-  },
-  {
-    key: 'diagnostics',
-    title: 'Diagnostics, Laboratory & Pharmacy',
-    description: 'Electronic laboratory orders, e-prescriptions, and dispensary inventory tracking.',
-    features: [
-      {
-        id: 'lab_orders',
-        name: 'Laboratory Investigation Orders',
-        description: 'Doctor-to-lab electronic ordering, lab sample barcoding, result verification, and automated normal-range flagging.',
-        values: ['Basic Labs', 'Full OPD Labs', 'Full Labs + Bonus', 'High-Volume Pathology'],
-      },
-      {
-        id: 'e_prescriptions',
-        name: 'Electronic Prescriptions (e-Rx)',
-        description: 'Direct prescription transmission to pharmacy, drug dosage validation, contraindication alerts, and generic substitutes.',
-        values: ['Standard', 'Standard', 'Smart Formulary', 'Automated Dispensing'],
-      },
-      {
-        id: 'pharmacy_stock',
-        name: 'Dispensary Stock & Batch Tracking',
-        description: 'Automatic deduction of inventory upon medication dispensing, expiry date tracking, and low-stock reorder notices.',
-        values: ['Standard', 'Standard', 'Batch & Expiry', 'Multi-Store Inventory'],
-      },
-      {
-        id: 'imaging_orders',
-        name: 'Diagnostic Imaging (X-Ray & Ultrasound)',
-        description: 'Order capture and report attachment for radiology, ultrasound, and ECG diagnostics.',
-        values: ['Manual Upload', 'Standard Imaging', 'Integrated PACS/DICOM', 'High-Res Multi-Modality'],
-      },
-    ],
-  },
-  {
-    key: 'ipd',
-    title: 'Inpatient & Surgical Services (IPD)',
-    description: 'Ward allocation, nursing medication charts, and procedural encounter tracking.',
-    features: [
-      {
-        id: 'ward_beds',
-        name: 'Inpatient Ward & Bed Tracking',
-        description: 'Real-time bed occupancy overview, patient room transfers, nursing notes, and daily ward round tracking.',
-        values: ['Not included', 'Day-care only', 'Up to 25 beds', 'Unlimited Wards & Beds'],
-      },
-      {
-        id: 'surgical_proc',
-        name: 'Minor & Major Surgical Procedures',
-        description: 'Pre-op checklists, surgeon and anesthesia notes, theatre usage recording, and post-op recovery logs.',
-        values: ['Not included', 'Minor procedures', 'Minor & General', 'Full Surgical Theatre'],
-      },
-      {
-        id: 'discharge_claim',
-        name: 'Discharge Summaries & IPD Invoicing',
-        description: 'Consolidated itemized patient discharge bills with all medications, bed charges, and lab investigations mapped automatically.',
-        values: ['Basic OPD Receipt', 'Itemized Invoice', 'Automated Claims', 'Complete Audit Pack'],
-      },
-    ],
-  },
-  {
-    key: 'billing',
-    title: 'Billing, M-Pesa POS & Insurance Claims',
-    description: 'Cashier point-of-sale, SHA e-claims, and insurer pre-authorizations.',
-    features: [
-      {
-        id: 'mpesa_c2b',
-        name: 'M-Pesa STK Push & C2B POS',
-        description: 'Cashier initiates instant M-Pesa prompt on patient phone; real-time payment confirmation without manual reference entry.',
-        values: ['Manual Paybill', 'Automated STK Push', 'Automated STK Push', 'Multi-Till Enterprise'],
-      },
-      {
-        id: 'sha_claims',
-        name: 'Social Health Authority (SHA) e-Claims',
-        description: 'Standardized digital claim generation mapped to SHA / NHIF benefit packages, pre-auth codes, and patient biometric token IDs.',
-        values: ['Self-file export', 'SHA e-Claims Ready', 'Automated Claim Batch', 'Direct HIE Pipeline'],
-      },
-      {
-        id: 'private_insurance',
-        name: 'Private Insurance & Corporate Accounts',
-        description: 'Smart pre-authorization tracking, deductible verification, and corporate debtor statement generation.',
-        values: ['Cash-only', 'Basic Invoicing', 'Multi-Payer Direct', 'Complete Corporate POS'],
-      },
-    ],
-  },
-  {
-    key: 'compliance',
-    title: 'Health Facility Registry Compliance, Network & Support',
-    description: 'National health registry synchronization and dedicated clinical SLA.',
-    features: [
-      {
-        id: 'hfr_sync',
-        name: 'Health Facility Registry Sync',
-        description: 'Automated synchronization with official Health Facility Registry (HFR) validating facility license and KEPH level.',
-        values: ['Quarterly', 'Monthly', 'Real-Time Sync', 'Continuous DHA Link'],
-      },
-      {
-        id: 'data_protection',
-        name: 'Data Protection Act (Kenya) Compliant',
-        description: 'Locally hosted, encrypted patient data meeting Office of Data Protection Commissioner (ODPC) healthcare standards.',
-        values: ['Compliant', 'Compliant', 'Compliant', 'Compliant + Audit Log'],
-      },
-      {
-        id: 'sla_support',
-        name: 'Support SLA & Dedicated Account Lead',
-        description: 'Priority helpdesk response time and assigned Partner Network Lead for operational troubleshooting.',
-        values: ['Community Email', 'Standard 24h SLA', 'Priority 4h + WhatsApp', 'Dedicated 1h Hotline'],
-      },
-    ],
-  },
-]
 
 // ---------------------------------------------------------------------------
 // Actions & Handlers
@@ -793,6 +671,9 @@ async function saveUserProfile() {
 
 async function discoverFacilitiesByOwnerId() {
   hfrOwnerSearchBusy.value = true
+  hfrOwnerSearchComplete.value = false
+  hfrOwnerSearchError.value = ''
+  hfrOwnerSearchResults.value = []
   notice.value = null
   try {
     const res = await call('crm.api.customer_experience.lookup_facilities_by_owner_id', {
@@ -800,6 +681,7 @@ async function discoverFacilitiesByOwnerId() {
     })
     const data = unwrap(res)
     hfrOwnerSearchResults.value = Array.isArray(data) ? data : []
+    hfrOwnerSearchComplete.value = true
     if (res?.masked_national_id && !userProfile.value.masked_national_id) {
       userProfile.value.masked_national_id = res.masked_national_id
       userProfile.value.national_id = res.national_id
@@ -811,9 +693,11 @@ async function discoverFacilitiesByOwnerId() {
       }
     }
   } catch (error) {
+    hfrOwnerSearchComplete.value = true
+    hfrOwnerSearchError.value = error?.messages?.[0] || 'Unable to discover facilities by National ID.'
     notice.value = {
       tone: 'error',
-      text: error?.messages?.[0] || 'Unable to discover facilities by National ID.',
+      text: hfrOwnerSearchError.value,
     }
   } finally {
     hfrOwnerSearchBusy.value = false
@@ -830,9 +714,7 @@ function openTopUpModal(facility = null) {
     selectedFacilityMfl.value = ''
   }
   if (!selectedTopUpPackageCode.value && context.value.token_packages?.length) {
-    selectedTopUpPackageCode.value =
-      context.value.token_packages.find((p) => p.item_code === 'CV-TOKEN-GROWTH')
-        ?.item_code || context.value.token_packages[0].item_code
+    selectedTopUpPackageCode.value = context.value.token_packages[0].item_code
   }
   topUpModalOpen.value = true
 }
@@ -841,6 +723,7 @@ function openAddFacilityModal() {
   hfrSearchQuery.value = ''
   hfrSearchResults.value = []
   hfrSelectedCandidate.value = null
+  partnerIdInput.value = ''
   addFacilityModalOpen.value = true
 }
 
@@ -993,6 +876,7 @@ async function linkHfrCandidate(candidate) {
     const res = await call('crm.api.customer_experience.add_facility_from_hfr', {
       mfl_code: candidate.mfl_code,
       fid: candidate.fid,
+      partner_id: partnerIdInput.value.trim(),
     })
     const payload = unwrap(res)
 
@@ -1152,6 +1036,8 @@ async function retryLoad() {
 }
 
 onMounted(async () => {
+  updateMobileViewport()
+  window.addEventListener('resize', updateMobileViewport, { passive: true })
   if (typeof document !== 'undefined') {
     document.addEventListener('click', handleDocumentClick)
     document.addEventListener('keydown', onGlobalKeydown)
@@ -1160,6 +1046,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('resize', updateMobileViewport)
+  clearTimeout(noticeTimeout)
   if (typeof document !== 'undefined') {
     document.removeEventListener('click', handleDocumentClick)
     document.removeEventListener('keydown', onGlobalKeydown)
@@ -1168,19 +1056,20 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="cx-portal min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col antialiased">
+  <div class="cx-portal min-h-screen bg-cx-bg text-cx-ink flex flex-col antialiased">
     <!-- Notice Toast Bar -->
     <div
       v-if="notice"
-      class="border-b px-4 py-2.5 text-xs font-semibold flex items-center justify-between z-50 sticky top-0"
+      class="cx-toast border px-4 py-2.5 text-xs font-semibold flex items-center justify-between z-50"
       :class="{
-        'bg-emerald-50 text-emerald-900 border-emerald-200': notice.tone === 'success',
-        'bg-amber-50 text-amber-900 border-amber-200': notice.tone === 'pending',
-        'bg-rose-50 text-rose-900 border-rose-200': notice.tone === 'error',
+        'bg-cx-success-soft text-cx-success-ink border-cx-success-border': notice.tone === 'success',
+        'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border': notice.tone === 'pending',
+        'bg-cx-danger-soft text-rose-900 border-cx-danger-border': notice.tone === 'error',
       }"
     >
       <div class="flex items-center gap-2 max-w-5xl mx-auto w-full">
-        <span>{{ notice.tone === 'success' ? '✓' : notice.tone === 'pending' ? '⏱' : '⚠️' }}</span>
+        <CxIcon v-if="notice.tone === 'success'" name="check-circle" class="size-4 shrink-0" />
+        <CxIcon v-else :name="notice.tone === 'pending' ? 'clock' : 'alert'" class="size-4 shrink-0" />
         <span>{{ notice.text }}</span>
       </div>
       <button type="button" class="underline ml-4 shrink-0" @click="notice = null">Dismiss</button>
@@ -1189,33 +1078,33 @@ onUnmounted(() => {
     <div class="flex-1 flex overflow-hidden">
       <!-- 1. PERSISTENT COLLAPSIBLE SIDEBAR (Exact SaaS Pattern from Screenshot) -->
       <aside
-        class="bg-white border-r border-slate-200 flex flex-col shrink-0 transition-all duration-200 select-none z-30"
+        class="cx-glass-chrome hidden md:flex bg-cx-surface border-r border-cx-border flex-col shrink-0 transition-all duration-200 select-none z-30"
         :class="sidebarCollapsed ? 'w-16' : 'w-64'"
       >
         <!-- Brand Header -->
-        <div class="h-16 border-b border-slate-200 flex items-center justify-between px-4">
+        <div class="h-16 border-b border-cx-border flex items-center justify-between px-4">
           <div class="flex items-center gap-2.5 overflow-hidden" v-if="!sidebarCollapsed">
-            <div class="size-8 rounded-lg bg-[#bc1823] text-white flex items-center justify-center font-semibold text-sm shadow-xs shrink-0">
+            <div class="size-8 rounded-cx-sm bg-cx-brand text-cx-contrast flex items-center justify-center font-semibold text-sm shadow-cx shrink-0">
               T
             </div>
             <div class="truncate">
-              <span class="font-bold text-sm tracking-tight text-slate-900 block leading-tight">
-                Tiberbu <span class="text-[#bc1823]">CareVerse</span>
+              <span class="font-bold text-sm tracking-tight text-cx-ink block leading-tight">
+                Tiberbu <span class="text-cx-brand">CareVerse</span>
               </span>
-              <span class="text-[11px] font-semibold text-slate-600 uppercase tracking-[0.08em] block">
+              <span class="text-[11px] font-semibold text-cx-ink-3 uppercase tracking-[0.08em] block">
                 HMIS Enterprise
               </span>
             </div>
           </div>
           <div v-else class="mx-auto">
-            <div class="size-8 rounded-lg bg-[#bc1823] text-white flex items-center justify-center font-semibold text-sm shadow-xs">
+            <div class="size-8 rounded-cx-sm bg-cx-brand text-cx-contrast flex items-center justify-center font-semibold text-sm shadow-cx">
               T
             </div>
           </div>
 
           <button
             type="button"
-            class="text-slate-600 hover:text-slate-800 p-1 rounded-md hover:bg-slate-100 transition hidden sm:inline-block"
+            class="text-cx-ink-3 hover:text-cx-ink p-1 rounded-cx-sm hover:bg-cx-well transition hidden sm:inline-block"
             :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
             @click="sidebarCollapsed = !sidebarCollapsed"
           >
@@ -1231,37 +1120,37 @@ onUnmounted(() => {
           <!-- 1. Dashboard -->
           <button
             type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
             :class="
               activeView === 'dashboard'
-                ? 'bg-blue-50 text-blue-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
+                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
             "
             @click="activeView = 'dashboard'"
           >
-            <span class="text-base shrink-0">📊</span>
+            <span class="text-base shrink-0"><CxIcon name="dashboard" class="inline-block size-4 align-[-0.15em]" /></span>
             <span v-if="!sidebarCollapsed" class="truncate">Dashboard</span>
           </button>
 
           <!-- 2. Facilities (Active in Screenshot) -->
           <button
             type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
             :class="
-              activeView === 'facilities'
-                ? 'bg-blue-50 text-blue-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              activeView === 'facilities' || activeView === 'facility_detail'
+                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
+                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
             "
             @click="activeView = 'facilities'"
           >
             <div class="flex items-center gap-3 truncate">
-              <span class="text-base shrink-0">🏥</span>
+              <span class="text-base shrink-0"><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
               <span v-if="!sidebarCollapsed" class="truncate">Facilities</span>
             </div>
             <span
               v-if="!sidebarCollapsed"
               class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-              :class="activeView === 'facilities' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'"
+              :class="activeView === 'facilities' ? 'bg-cx-brand-soft text-cx-brand-ink' : 'bg-cx-well text-cx-ink-3'"
             >
               {{ facilityCount }}
             </span>
@@ -1270,36 +1159,36 @@ onUnmounted(() => {
           <!-- 3. Plans & Pricing (GitHub Style) -->
           <button
             type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
             :class="
               activeView === 'pricing'
-                ? 'bg-blue-50 text-blue-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
+                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
             "
             @click="activeView = 'pricing'"
           >
-            <span class="text-base shrink-0">🪙</span>
+            <span class="text-base shrink-0"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
             <span v-if="!sidebarCollapsed" class="truncate">Plans & Pricing</span>
           </button>
 
           <!-- 4. Billing & Invoices -->
           <button
             type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
             :class="
               activeView === 'billing'
-                ? 'bg-blue-50 text-blue-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
+                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
             "
             @click="activeView = 'billing'"
           >
             <div class="flex items-center gap-3 truncate">
-              <span class="text-base shrink-0">💳</span>
+              <span class="text-base shrink-0"><CxIcon name="credit-card" class="inline-block size-4 align-[-0.15em]" /></span>
               <span v-if="!sidebarCollapsed" class="truncate">Billing & Invoices</span>
             </div>
             <span
               v-if="!sidebarCollapsed && openInvoiceCount > 0"
-              class="rounded-full bg-amber-500 text-white px-2 py-0.5 text-[11px] font-semibold"
+              class="rounded-full bg-cx-warning-soft text-cx-warning-ink px-2 py-0.5 text-[11px] font-semibold"
             >
               {{ openInvoiceCount }}
             </span>
@@ -1309,22 +1198,22 @@ onUnmounted(() => {
           <button
             v-if="(context.ois || []).length"
             type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
             :class="
               activeView === 'optin_requests'
-                ? 'bg-blue-50 text-blue-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
+                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
             "
             @click="activeView = 'optin_requests'"
           >
             <div class="flex items-center gap-3 truncate">
-              <span class="text-base shrink-0">📝</span>
+              <span class="text-base shrink-0"><CxIcon name="clipboard-list" class="inline-block size-4 align-[-0.15em]" /></span>
               <span v-if="!sidebarCollapsed" class="truncate">Opt-In Requests</span>
             </div>
             <span
               v-if="!sidebarCollapsed"
               class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-              :class="activeView === 'optin_requests' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'"
+              :class="activeView === 'optin_requests' ? 'bg-cx-brand-soft text-cx-brand-ink' : 'bg-cx-well text-cx-ink-3'"
             >
               {{ (context.ois || []).length }}
             </span>
@@ -1333,36 +1222,36 @@ onUnmounted(() => {
           <!-- 5. Health Facility Registry Sync -->
           <button
             type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
             :class="
               activeView === 'hfr_sync'
-                ? 'bg-blue-50 text-blue-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
+                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
             "
             @click="activeView = 'hfr_sync'"
           >
-            <span class="text-base shrink-0">🔄</span>
+            <span class="text-base shrink-0"><CxIcon name="refresh" class="inline-block size-4 align-[-0.15em]" /></span>
             <span v-if="!sidebarCollapsed" class="truncate">Facility Registry Sync</span>
           </button>
 
           <!-- 6. My Profile (National ID & Identity) -->
           <button
             type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
             :class="
               activeView === 'profile'
-                ? 'bg-blue-50 text-blue-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
+                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
             "
             @click="activeView = 'profile'"
           >
             <div class="flex items-center gap-3 truncate">
-              <span class="text-base shrink-0">👤</span>
+              <span class="text-base shrink-0"><CxIcon name="user" class="inline-block size-4 align-[-0.15em]" /></span>
               <span v-if="!sidebarCollapsed" class="truncate">My Profile</span>
             </div>
             <span
               v-if="!sidebarCollapsed && userProfile.masked_national_id"
-              class="rounded-full bg-slate-100 text-slate-700 font-mono px-2 py-0.5 text-[11px]"
+              class="rounded-full bg-cx-well text-cx-ink-2 font-mono px-2 py-0.5 text-[11px]"
             >
               {{ userProfile.masked_national_id }}
             </span>
@@ -1371,15 +1260,15 @@ onUnmounted(() => {
           <!-- 7. Network Support -->
           <button
             type="button"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-left"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
             :class="
               activeView === 'support'
-                ? 'bg-blue-50 text-blue-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
+                : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
             "
             @click="activeView = 'support'"
           >
-            <span class="text-base shrink-0">💬</span>
+            <span class="text-base shrink-0"><CxIcon name="chat" class="inline-block size-4 align-[-0.15em]" /></span>
             <span v-if="!sidebarCollapsed" class="truncate">Network Support</span>
           </button>
         </nav>
@@ -1388,10 +1277,10 @@ onUnmounted(() => {
       <!-- 2. MAIN APPLICATION CONTENT -->
       <div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
         <!-- Top App Bar (Global Search & Quick Actions) -->
-        <header class="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 sticky top-0 z-20">
+        <header class="cx-glass-chrome h-16 bg-cx-surface border-b border-cx-border px-3 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-20">
           <!-- Search Bar -->
-          <div class="relative w-80 lg:w-96">
-            <svg class="size-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <div class="relative w-28 sm:w-80 lg:w-96">
+            <svg class="size-4 text-cx-ink-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
@@ -1399,65 +1288,39 @@ onUnmounted(() => {
               ref="globalSearchRef"
               type="text"
               v-model="searchQuery"
-              placeholder="Search facilities, MFL codes, invoices..."
-              class="w-full rounded-xl bg-slate-50 border border-slate-200 pl-9 pr-12 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition"
+              placeholder="Search your facilities by name"
+              class="w-full rounded-cx-sm bg-cx-well border border-cx-border pl-9 pr-12 py-2 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:bg-cx-surface focus:border-cx-brand focus:outline-none focus:ring-2 focus:ring-cx-brand-soft transition"
               @input="onGlobalSearchInput"
             />
-            <span class="absolute right-2.5 top-1/2 -translate-y-1/2 rounded bg-slate-200/60 px-1.5 py-0.5 text-[11px] font-mono text-slate-500">
+            <span class="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-cx-sm bg-cx-band px-1.5 py-0.5 text-[11px] font-mono text-cx-ink-3">
               ⌘K
             </span>
           </div>
 
-          <!-- Top Actions -->
-          <div class="flex items-center gap-3">
-            <span class="hidden md:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
-              <span class="size-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-              <span>Registry Verified</span>
-            </span>
-
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
-              @click="openAddFacilityModal()"
-            >
-              <span class="text-sm leading-none">+</span>
-              <span>Add Facility</span>
-            </button>
-
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-xl bg-[#bc1823] px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#a3141d] transition cursor-pointer"
-              @click="openTopUpModal()"
-            >
-              <span>🪙</span>
-              <span>Top Up</span>
-            </button>
-
-            <!-- Vertical Divider -->
-            <div class="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
-
-            <!-- Top-Right User Avatar & Dropdown Menu -->
+          <!-- Account controls -->
+          <div class="flex items-center gap-1 sm:gap-3">
+            <!-- Profile and sign-out live here; product navigation stays in the sidebar. -->
             <div class="relative" ref="userMenuRef">
               <button
                 type="button"
-                class="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-100 transition focus:outline-none select-none cursor-pointer border border-transparent hover:border-slate-200"
+                class="flex items-center gap-2 p-1 rounded-cx-sm hover:bg-cx-well transition focus:outline-none select-none cursor-pointer border border-transparent hover:border-cx-border"
                 @click.stop="toggleUserMenu"
-                aria-expanded="isUserMenuOpen"
-                title="Account & Navigation Menu"
+                :aria-expanded="isUserMenuOpen"
+                title="Account menu"
               >
-                <div class="size-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-xs shadow-xs shrink-0 ring-2 ring-blue-100">
+                <div class="size-8 rounded-full bg-cx-brand text-cx-contrast flex items-center justify-center font-semibold text-xs shadow-cx shrink-0 ring-2 ring-cx-brand-soft">
                   {{ userInitials }}
                 </div>
                 <div class="hidden lg:block text-left mr-0.5">
-                  <span class="text-xs font-semibold text-slate-800 block leading-tight truncate max-w-[130px]">
+                  <span class="text-xs font-semibold text-cx-ink block leading-tight truncate max-w-[130px]">
                     {{ userDisplayName }}
                   </span>
-                  <span class="text-[11px] text-slate-500 block leading-tight truncate max-w-[130px]">
+                  <span class="text-[11px] text-cx-ink-3 block leading-tight truncate max-w-[130px]">
                     {{ primaryOrganizationName }}
                   </span>
                 </div>
                 <svg
-                  class="size-4 text-slate-400 transition-transform duration-200"
+                  class="size-4 text-cx-ink-4 transition-transform duration-200"
                   :class="isUserMenuOpen ? 'rotate-180' : ''"
                   viewBox="0 0 24 24"
                   fill="none"
@@ -1471,81 +1334,37 @@ onUnmounted(() => {
               <!-- Floating User Menu -->
               <div
                 v-if="isUserMenuOpen"
-                class="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white shadow-xl border border-slate-200 p-2 z-50 text-xs animate-in fade-in slide-in-from-top-1 duration-150"
+                class="cx-glass-panel absolute right-0 top-full mt-2 w-64 rounded-cx bg-cx-surface shadow-cx-raised border border-cx-border p-2 z-50 text-xs animate-in fade-in slide-in-from-top-1 duration-150"
               >
                 <!-- User Header Info -->
-                <div class="px-3 py-2.5 bg-slate-50 rounded-xl mb-1.5 border border-slate-100">
-                  <span class="font-bold text-slate-900 block truncate">{{ userDisplayName }}</span>
-                  <span class="text-[11px] text-slate-500 block truncate font-mono">{{ context.user }}</span>
+                <div class="px-3 py-2.5 bg-cx-well rounded-cx-sm mb-1.5 border border-cx-border-soft">
+                  <span class="font-bold text-cx-ink block truncate">{{ userDisplayName }}</span>
+                  <span class="text-[11px] text-cx-ink-3 block truncate font-mono">{{ context.user }}</span>
                   <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <span class="rounded bg-blue-100 text-blue-700 text-[11px] font-semibold px-1.5 py-0.5">
+                    <span class="rounded-cx-sm bg-cx-brand-soft text-cx-brand-ink text-[11px] font-semibold px-1.5 py-0.5">
                       {{ primaryOrganizationName || 'Health System' }}
                     </span>
-                    <span v-if="userProfile.masked_national_id" class="rounded bg-slate-200/80 text-slate-700 text-[11px] font-mono px-1.5 py-0.5">
+                    <span v-if="userProfile.masked_national_id" class="rounded-cx-sm bg-cx-band text-cx-ink-2 text-[11px] font-mono px-1.5 py-0.5">
                       {{ userProfile.masked_national_id }}
                     </span>
                   </div>
                 </div>
 
-                <!-- Navigation Links -->
-                <div class="space-y-0.5">
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
-                    @click="navigateTo('profile')"
-                  >
-                    <span>👤</span>
-                    <span>My Profile & National ID</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
-                    @click="navigateTo('facilities')"
-                  >
-                    <span>🏥</span>
-                    <span>My Facilities ({{ facilityCount }})</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
-                    @click="navigateTo('billing')"
-                  >
-                    <span>💳</span>
-                    <span>Invoices & Payments</span>
-                  </button>
-                  <button
-                    v-if="(context.ois || []).length"
-                    type="button"
-                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
-                    @click="navigateTo('optin_requests')"
-                  >
-                    <span>📝</span>
-                    <span>Opt-In Requests ({{ (context.ois || []).length }})</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
-                    @click="navigateTo('hfr_sync')"
-                  >
-                    <span>🔄</span>
-                    <span>Facility Registry Sync</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 font-semibold transition text-left cursor-pointer"
-                    @click="navigateTo('support')"
-                  >
-                    <span>💬</span>
-                    <span>Network Support</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-cx-sm text-cx-ink-2 hover:bg-cx-well hover:text-cx-ink font-semibold transition text-left cursor-pointer"
+                  @click="navigateTo('profile')"
+                >
+                  <CxIcon name="user" class="size-4" />
+                  <span>Account settings</span>
+                </button>
 
-                <div class="border-t border-slate-100 my-1.5"></div>
+                <div class="border-t border-cx-border-soft my-1.5"></div>
 
                 <!-- Sign Out — POST /api/method/logout via frappe-ui resource (POST-only endpoint) -->
                 <button
                   type="button"
-                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 font-semibold transition text-left cursor-pointer disabled:opacity-60"
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-cx-sm text-cx-danger hover:bg-cx-danger-soft font-semibold transition text-left cursor-pointer disabled:opacity-60"
                   :disabled="logout.loading"
                   @click="logout.submit()"
                 >
@@ -1560,28 +1379,28 @@ onUnmounted(() => {
         </header>
 
         <!-- Dynamic Main Views -->
-        <main class="p-6 max-w-7xl w-full mx-auto space-y-6">
+        <main class="p-4 pb-24 sm:p-6 sm:pb-24 md:pb-6 max-w-7xl w-full mx-auto space-y-6">
           <!-- Loading skeleton -->
           <div v-if="loading" class="space-y-4" aria-busy="true">
-            <div class="h-8 w-56 rounded-lg bg-slate-200/70 animate-pulse" />
-            <div class="h-3 w-96 max-w-full rounded bg-slate-200/60 animate-pulse" />
+            <div class="h-8 w-56 rounded-cx-sm bg-cx-band animate-pulse" />
+            <div class="h-3 w-96 max-w-full rounded-cx-sm bg-cx-band animate-pulse" />
             <div class="grid gap-4 sm:grid-cols-3">
-              <div v-for="i in 3" :key="i" class="rounded-2xl border border-slate-200 bg-white p-5">
-                <div class="mb-3 h-3 w-24 rounded bg-slate-200/80 animate-pulse" />
-                <div class="h-7 w-32 rounded bg-slate-200/80 animate-pulse" />
+              <div v-for="i in 3" :key="i" class="rounded-cx border border-cx-border bg-cx-surface p-5">
+                <div class="mb-3 h-3 w-24 rounded-cx-sm bg-cx-band animate-pulse" />
+                <div class="h-7 w-32 rounded-cx-sm bg-cx-band animate-pulse" />
               </div>
             </div>
-            <div class="h-96 rounded-2xl border border-slate-200 bg-white" />
+            <div class="h-96 rounded-cx border border-cx-border bg-cx-surface" />
           </div>
 
           <!-- Error state with retry -->
-          <div v-else-if="errorMessage" class="rounded-2xl border border-rose-200 bg-white p-10 text-center">
-            <span class="text-3xl">⚠️</span>
-            <h1 class="mt-3 text-lg font-bold text-slate-900">Unable to load your portal</h1>
-            <p class="mx-auto mt-1 max-w-md text-xs text-slate-600">{{ errorMessage }}</p>
+          <div v-else-if="errorMessage" class="rounded-cx border border-cx-danger-border bg-cx-surface p-10 text-center">
+            <span class="text-3xl"><CxIcon name="alert" class="inline-block size-4 align-[-0.15em]" /></span>
+            <h1 class="mt-3 text-lg font-bold text-cx-ink">Unable to load your portal</h1>
+            <p class="mx-auto mt-1 max-w-md text-xs text-cx-ink-3">{{ errorMessage }}</p>
             <button
               type="button"
-              class="mt-4 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition"
+              class="mt-4 rounded-cx-sm bg-cx-brand px-5 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition"
               @click="retryLoad()"
             >
               Try again
@@ -1589,6 +1408,18 @@ onUnmounted(() => {
           </div>
 
           <template v-else>
+          <FacilitySingleView
+            v-if="activeView === 'facility_detail' && drawerFacility"
+            :facility="drawerFacility"
+            :invoices="drawerInvoices"
+            :orders="drawerOrders"
+            :payments="drawerFacility.payments || []"
+            :default-currency="defaultCurrency"
+            :load-provisioning-status="loadProvisioningStatus"
+            @back="closeFacilityDrawer"
+            @open-top-up="openTopUpModal"
+            @pay="openMpesaModal"
+          />
           <!-- ============================================================== -->
           <!-- VIEW A: FACILITIES TABLE (Exact match to screenshot structure) -->
           <!-- ============================================================== -->
@@ -1596,26 +1427,26 @@ onUnmounted(() => {
             <!-- Breadcrumbs / Page Header -->
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">
+                <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">
                   Facilities
                 </h1>
-                <p class="text-xs text-slate-600 mt-0.5">
+                <p class="text-xs text-cx-ink-3 mt-0.5">
                   Manage registered clinic branches, track Health Facility Registry verification, and monitor token capacity.
                 </p>
               </div>
 
-              <!-- Top Table Actions (Export & Add Facility) -->
+              <!-- Actions relevant to managing this facility portfolio -->
               <div class="flex items-center gap-2">
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs"
-                  @click="openAddFacilityModal()"
+                  class="inline-flex items-center gap-1.5 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well shadow-cx"
+                  @click="activeView = 'hfr_sync'"
                 >
-                  <span>🔄 Sync Facility Registry</span>
+                  <span><CxIcon name="refresh" class="inline-block size-4 align-[-0.15em]" /> Find in Facility Registry</span>
                 </button>
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition"
+                  class="inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition"
                   @click="openAddFacilityModal()"
                 >
                   <span>+ Add Facility</span>
@@ -1631,10 +1462,10 @@ onUnmounted(() => {
                   <input
                     type="text"
                     v-model="searchQuery"
-                    placeholder="Search by name, MFL, county..."
-                    class="w-full rounded-xl bg-white border border-slate-200 pl-8 pr-3 py-1.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
+                    placeholder="Search facilities by name"
+                    class="w-full rounded-cx-sm bg-cx-surface border border-cx-border pl-8 pr-3 py-1.5 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:outline-none focus:border-cx-brand shadow-cx"
                   />
-                  <svg class="size-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg class="size-3.5 text-cx-ink-4 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="11" cy="11" r="8"></circle>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                   </svg>
@@ -1643,7 +1474,7 @@ onUnmounted(() => {
                 <!-- Status Filter -->
                 <select
                   v-model="selectedStatusFilter"
-                  class="rounded-xl bg-white border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:border-blue-500"
+                  class="rounded-cx-sm bg-cx-surface border border-cx-border px-3 py-1.5 text-xs font-semibold text-cx-ink-2 shadow-cx focus:outline-none focus:border-cx-brand"
                 >
                   <option value="all">All Statuses</option>
                   <option value="live">Live on Registry</option>
@@ -1653,7 +1484,7 @@ onUnmounted(() => {
                 <!-- Level Filter -->
                 <select
                   v-model="selectedLevelFilter"
-                  class="rounded-xl bg-white border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:border-blue-500"
+                  class="rounded-cx-sm bg-cx-surface border border-cx-border px-3 py-1.5 text-xs font-semibold text-cx-ink-2 shadow-cx focus:outline-none focus:border-cx-brand"
                 >
                   <option value="all">All KEPH Levels</option>
                   <option value="Level 2">Level 2 Dispensary</option>
@@ -1664,7 +1495,7 @@ onUnmounted(() => {
                 <!-- Partner / Network Filter -->
                 <select
                   v-model="selectedNetworkFilter"
-                  class="rounded-xl bg-white border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:border-blue-500"
+                  class="rounded-cx-sm bg-cx-surface border border-cx-border px-3 py-1.5 text-xs font-semibold text-cx-ink-2 shadow-cx focus:outline-none focus:border-cx-brand"
                 >
                   <option value="all">All Networks / Partners</option>
                   <option v-for="net in availableNetworks" :key="net" :value="net">
@@ -1678,21 +1509,21 @@ onUnmounted(() => {
                 <!-- Group By Network Button -->
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition shadow-2xs cursor-pointer select-none"
-                  :class="groupByNetwork ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'"
+                  class="inline-flex items-center gap-1.5 rounded-cx-sm border px-2.5 py-1.5 text-xs font-semibold transition shadow-cx cursor-pointer select-none"
+                  :class="groupByNetwork ? 'bg-cx-well border-cx-border text-cx-ink' : 'bg-cx-surface border-cx-border text-cx-ink-3 hover:bg-cx-well'"
                   @click="groupByNetwork = !groupByNetwork"
                   title="Group facilities by partner network"
                 >
-                  <span>🌐</span>
+                  <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                   <span>{{ groupByNetwork ? 'Grouped by Network' : 'Group by Network' }}</span>
                 </button>
 
-                <div class="h-4 w-px bg-slate-200"></div>
+                <div class="h-4 w-px bg-cx-border"></div>
 
                 <button
                   type="button"
-                  class="rounded-lg border p-1.5 text-xs cursor-pointer"
-                  :class="facilityViewMode === 'table' ? 'bg-slate-100 border-slate-300 text-slate-900 font-semibold' : 'bg-white border-slate-200 text-slate-500'"
+                  class="hidden sm:inline-flex rounded-cx-sm border p-1.5 text-xs cursor-pointer"
+                  :class="facilityViewMode === 'table' ? 'bg-cx-well border-cx-border text-cx-ink font-semibold' : 'bg-cx-surface border-cx-border text-cx-ink-3'"
                   @click="facilityViewMode = 'table'"
                   title="Table view"
                 >
@@ -1707,8 +1538,8 @@ onUnmounted(() => {
                 </button>
                 <button
                   type="button"
-                  class="rounded-lg border p-1.5 text-xs cursor-pointer"
-                  :class="facilityViewMode === 'cards' ? 'bg-slate-100 border-slate-300 text-slate-900 font-semibold' : 'bg-white border-slate-200 text-slate-500'"
+                  class="hidden sm:inline-flex rounded-cx-sm border p-1.5 text-xs cursor-pointer"
+                  :class="facilityViewMode === 'cards' ? 'bg-cx-well border-cx-border text-cx-ink font-semibold' : 'bg-cx-surface border-cx-border text-cx-ink-3'"
                   @click="facilityViewMode = 'cards'"
                   title="Card view"
                 >
@@ -1723,15 +1554,15 @@ onUnmounted(() => {
             </div>
 
             <!-- Empty portfolio state -->
-            <div v-if="!allFacilities.length" class="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-              <span class="mb-2 block text-3xl">🏥</span>
-              <p class="text-sm font-semibold text-slate-800">No facilities in your portfolio yet</p>
-              <p class="mx-auto mt-1 max-w-md text-xs text-slate-500">
+            <div v-if="!allFacilities.length" class="rounded-cx border border-cx-border bg-cx-surface p-10 text-center">
+              <span class="mb-2 block text-3xl"><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
+              <p class="text-sm font-semibold text-cx-ink">No facilities in your portfolio yet</p>
+              <p class="mx-auto mt-1 max-w-md text-xs text-cx-ink-3">
                 Link your clinics from the Health Facility Registry — we can auto-discover the ones registered under your National ID.
               </p>
               <button
                 type="button"
-                class="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-blue-700"
+                class="mt-4 rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-brand-strong"
                 @click="openAddFacilityModal()"
               >
                 + Add Facility
@@ -1739,24 +1570,24 @@ onUnmounted(() => {
             </div>
 
             <!-- TABLE VIEW -->
-            <div v-if="allFacilities.length && facilityViewMode === 'table'" class="space-y-4">
+          <div v-if="allFacilities.length && facilityViewMode === 'table' && !isMobileViewport" class="space-y-4">
               <!-- Render Grouped by Network when toggle active -->
               <template v-if="groupByNetwork">
                 <div
                   v-for="group in facilitiesByNetwork"
                   :key="group.network"
-                  class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden space-y-0"
+                  class="cx-glass-panel bg-cx-surface rounded-cx border border-cx-border shadow-cx overflow-hidden space-y-0"
                 >
                   <!-- Group Header Banner -->
-                  <div class="px-5 py-3 bg-gradient-to-r from-slate-50 to-slate-100/70 border-b border-slate-200 flex items-center justify-between">
+                  <div class="px-5 py-3 bg-cx-band border-b border-cx-border flex items-center justify-between">
                     <div class="flex items-center gap-2.5">
-                      <div class="size-6 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center font-semibold text-xs">
-                        🌐
+                      <div class="size-6 rounded-cx-sm bg-cx-well text-cx-ink-2 flex items-center justify-center font-semibold text-xs">
+                        <CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" />
                       </div>
-                      <span class="font-semibold text-xs text-slate-900 uppercase tracking-[0.08em]">
+                      <span class="font-semibold text-xs text-cx-ink uppercase tracking-[0.08em]">
                         {{ group.network }}
                       </span>
-                      <span class="rounded-full bg-white border border-slate-200 text-slate-700 px-2 py-0.5 text-[11px] font-semibold">
+                      <span class="rounded-full bg-cx-surface border border-cx-border text-cx-ink-2 px-2 py-0.5 text-[11px] font-semibold">
                         {{ group.facilities.length }} {{ group.facilities.length === 1 ? 'branch' : 'branches' }}
                       </span>
                     </div>
@@ -1765,10 +1596,7 @@ onUnmounted(() => {
                   <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                          <th class="py-3 px-4 w-10">
-                            <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-0" />
-                          </th>
+                        <tr class="border-b border-cx-border bg-cx-band text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">
                           <th class="py-3 px-4">Facility Name</th>
                           <th class="py-3 px-4">KEPH Level</th>
                           <th class="py-3 px-4">MFL Code</th>
@@ -1778,73 +1606,65 @@ onUnmounted(() => {
                           <th class="py-3 px-4 text-right">Settlement & Actions</th>
                         </tr>
                       </thead>
-                      <tbody class="divide-y divide-slate-100">
+                      <tbody class="divide-y divide-cx-border-soft">
                         <tr
                           v-for="facility in group.facilities"
                           :key="facility.mfl_code"
-                          class="hover:bg-slate-50/80 transition"
+                          class="hover:bg-cx-band transition"
                         >
-                          <td class="py-3.5 px-4">
-                            <input
-                              type="checkbox"
-                              :value="facility.mfl_code"
-                              v-model="selectedFacilityMfls"
-                              class="rounded border-slate-300 text-blue-600 focus:ring-0"
-                            />
-                          </td>
-                          <td class="py-3.5 px-4 font-semibold text-slate-900">
+                          <td class="py-3.5 px-4 font-semibold text-cx-ink">
                             <div class="flex items-center gap-3">
-                              <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-semibold text-xs shrink-0 border border-blue-100">
-                                🏥
+                              <div class="size-8 rounded-cx-sm bg-cx-brand-soft text-cx-brand-ink flex items-center justify-center font-semibold text-xs shrink-0 border border-cx-brand-soft">
+                                <CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" />
                               </div>
                               <div>
                                 <button
                                 type="button"
-                                class="block text-left font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                                class="block text-left font-bold text-cx-ink underline-offset-2 hover:text-cx-brand-strong hover:underline"
                                 @click="openFacilityDrawer(facility)"
                               >
                                 {{ facility.facility_name }}
                               </button>
-                                <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-slate-200/60">
-                                  <span>🌐</span>
+                                <span class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-cx-border-soft">
+                                  <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                                   <span>{{ facility.network }}</span>
                                 </span>
                               </div>
                             </div>
                           </td>
                           <td class="py-3.5 px-4">
-                            <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 border border-slate-200">
+                            <span class="inline-flex items-center rounded-cx-sm bg-cx-well px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2 border border-cx-border">
                               {{ facility.keph_level }}
                             </span>
                           </td>
                           <td class="py-3.5 px-4">
                             <button
                               type="button"
-                              class="font-mono text-xs font-semibold text-slate-700 hover:text-blue-600 inline-flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 cursor-pointer"
+                              class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer"
                               @click="copyMfl(facility.mfl_code)"
                             >
                               <span>{{ facility.mfl_code }}</span>
-                              <span class="text-[11px] text-slate-600">{{ copiedMfl === facility.mfl_code ? '✓' : '📋' }}</span>
+                              <CxIcon :name="copiedMfl === facility.mfl_code ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
                             </button>
                           </td>
                           <td class="py-3.5 px-4">
                             <span
                               class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border"
-                              :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                              :class="facility.go_live ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                             >
-                              <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-emerald-600' : 'bg-amber-600'"></span>
+                              <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-cx-success' : 'bg-amber-600'"></span>
                               <span>{{ facility.go_live ? 'Live' : 'Verifying' }}</span>
                             </span>
                           </td>
-                          <td class="py-3.5 px-4 font-medium text-slate-700">
-                            <span class="font-bold text-slate-900 block">{{ facility.token_package || 'No active plan' }}</span>
-                            <span v-if="facility.recent_purchase" class="text-[11px] text-slate-500 font-mono block mt-0.5">
+                          <td class="py-3.5 px-4 font-medium text-cx-ink-2">
+                            <span class="font-bold text-cx-ink block">{{ facility.token_package || 'No active plan' }}</span>
+                            <span v-if="facility.recent_purchase" class="text-[11px] text-cx-ink-3 font-mono block mt-0.5">
                               {{ facility.recent_purchase.package_name }}: {{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} · {{ facility.recent_purchase.date }}
                             </span>
                           </td>
                           <td class="py-3.5 px-4 text-right">
-                            <span class="font-semibold text-[#bc1823] font-mono text-sm inline-flex items-center gap-1">
-                              <span>🪙</span>
+                            <span class="font-semibold text-cx-brand font-mono text-sm inline-flex items-center gap-1">
+                              <span><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
                               <span>{{ (facility.token_quantity || 0).toLocaleString() }}</span>
                             </span>
                           </td>
@@ -1853,26 +1673,18 @@ onUnmounted(() => {
                               <button
                                 v-if="facility.invoice_summary?.has_outstanding"
                                 type="button"
-                                class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                                class="rounded-cx-sm bg-cx-success px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition shadow-cx inline-flex items-center gap-1 shrink-0 cursor-pointer"
                                 @click="openMpesaModalForFacility(facility)"
                                 title="Pay outstanding invoice via M-Pesa"
                               >
-                                <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
+                                <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                               </button>
                               <button
                                 type="button"
-                                class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-black transition shadow-xs cursor-pointer"
+                                class="rounded-cx-sm bg-cx-ink px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shadow-cx cursor-pointer"
                                 @click="openTopUpModal(facility)"
                               >
                                 Top Up
-                              </button>
-                              <button
-                                type="button"
-                                class="rounded-lg border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                                title="Sizing Calculator"
-                                @click="openCalculatorModal(facility)"
-                              >
-                                🧮
                               </button>
                             </div>
                           </td>
@@ -1884,14 +1696,11 @@ onUnmounted(() => {
               </template>
 
               <!-- Render Flat Table when not grouped -->
-              <div v-else class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+              <div v-else class="cx-glass-panel bg-cx-surface rounded-cx border border-cx-border shadow-cx overflow-hidden">
                 <div class="overflow-x-auto">
                   <table class="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr class="border-b border-slate-200 bg-slate-50/75 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                        <th class="py-3 px-4 w-10">
-                          <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-0" />
-                        </th>
+                      <tr class="border-b border-cx-border bg-cx-band text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">
                         <th class="py-3 px-4">Facility & Network</th>
                         <th class="py-3 px-4">KEPH Level</th>
                         <th class="py-3 px-4">MFL Code</th>
@@ -1901,38 +1710,28 @@ onUnmounted(() => {
                         <th class="py-3 px-4 text-right">Settlement & Actions</th>
                       </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-100">
+                    <tbody class="divide-y divide-cx-border-soft">
                       <tr
                         v-for="facility in filteredFacilities"
                         :key="facility.mfl_code"
-                        class="hover:bg-slate-50/80 transition"
+                        class="hover:bg-cx-band transition"
                       >
-                        <!-- Checkbox -->
-                        <td class="py-3.5 px-4">
-                          <input
-                            type="checkbox"
-                            :value="facility.mfl_code"
-                            v-model="selectedFacilityMfls"
-                            class="rounded border-slate-300 text-blue-600 focus:ring-0"
-                          />
-                        </td>
-
                         <!-- Name & Location & Network -->
-                        <td class="py-3.5 px-4 font-semibold text-slate-900">
+                        <td class="py-3.5 px-4 font-semibold text-cx-ink">
                           <div class="flex items-center gap-3">
-                            <div class="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-semibold text-xs shrink-0 border border-blue-100">
-                              🏥
+                            <div class="size-8 rounded-cx-sm bg-cx-brand-soft text-cx-brand-ink flex items-center justify-center font-semibold text-xs shrink-0 border border-cx-brand-soft">
+                              <CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" />
                             </div>
                             <div>
                               <button
                                 type="button"
-                                class="block text-left font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                                class="block text-left font-bold text-cx-ink underline-offset-2 hover:text-cx-brand-strong hover:underline"
                                 @click="openFacilityDrawer(facility)"
                               >
                                 {{ facility.facility_name }}
                               </button>
-                              <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-slate-200/60">
-                                <span>🌐</span>
+                              <span class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-cx-border-soft">
+                                <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                                 <span>{{ facility.network }}</span>
                               </span>
                             </div>
@@ -1941,7 +1740,7 @@ onUnmounted(() => {
 
                         <!-- Level -->
                         <td class="py-3.5 px-4">
-                          <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 border border-slate-200">
+                          <span class="inline-flex items-center rounded-cx-sm bg-cx-well px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2 border border-cx-border">
                             {{ facility.keph_level }}
                           </span>
                         </td>
@@ -1950,11 +1749,11 @@ onUnmounted(() => {
                         <td class="py-3.5 px-4">
                           <button
                             type="button"
-                            class="font-mono text-xs font-semibold text-slate-700 hover:text-blue-600 inline-flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 cursor-pointer"
+                            class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer"
                             @click="copyMfl(facility.mfl_code)"
                           >
                             <span>{{ facility.mfl_code }}</span>
-                            <span class="text-[11px] text-slate-600">{{ copiedMfl === facility.mfl_code ? '✓' : '📋' }}</span>
+                            <CxIcon :name="copiedMfl === facility.mfl_code ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
                           </button>
                         </td>
 
@@ -1964,27 +1763,27 @@ onUnmounted(() => {
                             class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border"
                             :class="
                               facility.go_live
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                                ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border'
+                                : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'
                             "
                           >
-                            <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-emerald-600' : 'bg-amber-600'"></span>
+                            <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-cx-success' : 'bg-amber-600'"></span>
                             <span>{{ facility.go_live ? 'Live' : 'Verifying' }}</span>
                           </span>
                         </td>
 
                         <!-- Plan & Recent Purchase -->
-                        <td class="py-3.5 px-4 font-medium text-slate-700">
-                          <span class="font-bold text-slate-900 block">{{ facility.token_package || 'No active plan' }}</span>
-                          <span v-if="facility.recent_purchase" class="text-[11px] text-slate-500 font-mono block mt-0.5">
+                        <td class="py-3.5 px-4 font-medium text-cx-ink-2">
+                          <span class="font-bold text-cx-ink block">{{ facility.token_package || 'No active plan' }}</span>
+                          <span v-if="facility.recent_purchase" class="text-[11px] text-cx-ink-3 font-mono block mt-0.5">
                             {{ facility.recent_purchase.package_name }}: {{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} · {{ facility.recent_purchase.date }}
                           </span>
                         </td>
 
                         <!-- Tokens -->
                         <td class="py-3.5 px-4 text-right">
-                          <span class="font-semibold text-[#bc1823] font-mono text-sm inline-flex items-center gap-1">
-                            <span>🪙</span>
+                          <span class="font-semibold text-cx-brand font-mono text-sm inline-flex items-center gap-1">
+                            <span><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
                             <span>{{ (facility.token_quantity || 0).toLocaleString() }}</span>
                           </span>
                         </td>
@@ -1995,26 +1794,18 @@ onUnmounted(() => {
                             <button
                               v-if="facility.invoice_summary?.has_outstanding"
                               type="button"
-                              class="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                              class="rounded-cx-sm bg-cx-success px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition shadow-cx inline-flex items-center gap-1 shrink-0 cursor-pointer"
                               @click="openMpesaModalForFacility(facility)"
                               title="Pay outstanding invoice via M-Pesa"
                             >
-                              <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
+                              <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                             </button>
                             <button
                               type="button"
-                              class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-black transition shadow-xs cursor-pointer"
+                              class="rounded-cx-sm bg-cx-ink px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shadow-cx cursor-pointer"
                               @click="openTopUpModal(facility)"
                             >
                               Top Up
-                            </button>
-                            <button
-                              type="button"
-                              class="rounded-lg border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                              title="Sizing Calculator"
-                              @click="openCalculatorModal(facility)"
-                            >
-                              🧮
                             </button>
                           </div>
                         </td>
@@ -2024,9 +1815,9 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Footer summary -->
-                <div class="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-medium">
+                <div class="p-4 bg-cx-well border-t border-cx-border flex items-center justify-between text-xs text-cx-ink-3 font-medium">
                   <span>Showing {{ filteredFacilities.length }} of {{ allFacilities.length }} registered clinics</span>
-                  <span>All records verified via Digital Health Agency (DHA) Health Facility Registry</span>
+                  <span>Registry status is shown on each facility row</span>
                 </div>
               </div>
             </div>
@@ -2040,11 +1831,11 @@ onUnmounted(() => {
                   :key="group.network"
                   class="space-y-3"
                 >
-                  <div class="flex items-center justify-between bg-slate-100/90 rounded-xl px-4 py-2.5 border border-slate-200">
+                  <div class="flex items-center justify-between bg-cx-band rounded-cx-sm px-4 py-2.5 border border-cx-border">
                     <div class="flex items-center gap-2">
-                      <span class="text-sm">🌐</span>
-                      <span class="font-semibold text-xs text-slate-900 uppercase tracking-[0.08em]">{{ group.network }}</span>
-                      <span class="rounded-full bg-white border border-slate-300 text-slate-700 px-2 py-0.5 text-[11px] font-semibold">
+                      <span class="text-sm"><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
+                      <span class="font-semibold text-xs text-cx-ink uppercase tracking-[0.08em]">{{ group.network }}</span>
+                      <span class="rounded-full bg-cx-surface border border-cx-border text-cx-ink-2 px-2 py-0.5 text-[11px] font-semibold">
                         {{ group.facilities.length }} {{ group.facilities.length === 1 ? 'branch' : 'branches' }}
                       </span>
                     </div>
@@ -2054,76 +1845,68 @@ onUnmounted(() => {
                     <article
                       v-for="facility in group.facilities"
                       :key="facility.mfl_code"
-                      class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs flex flex-col justify-between hover:border-blue-400 transition"
+                      class="cx-glass-panel rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
                     >
                       <div>
                         <div class="flex items-start justify-between gap-2">
                           <div>
                             <button
                       type="button"
-                      class="block text-left text-base font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                      class="block text-left text-base font-bold text-cx-ink underline-offset-2 hover:text-cx-brand-strong hover:underline"
                       @click="openFacilityDrawer(facility)"
                     >
                       {{ facility.facility_name }}
                     </button>
-                            <p class="text-xs text-slate-500 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
-                            <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-slate-200/60">
-                              <span>🌐</span>
+                            <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
+                            <span class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-cx-border-soft">
+                              <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                               <span>{{ facility.network }}</span>
                             </span>
                           </div>
                           <span
                             class="rounded-full px-2 py-0.5 text-[11px] font-semibold border shrink-0"
-                            :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                            :class="facility.go_live ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                           >
                             {{ facility.go_live ? 'Live' : 'Verifying' }}
                           </span>
                         </div>
 
-                        <div class="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1.5 text-xs">
-                          <div class="flex justify-between text-slate-600">
+                        <div class="mt-4 rounded-cx-sm bg-cx-well border border-cx-border-soft p-3 space-y-1.5 text-xs">
+                          <div class="flex justify-between text-cx-ink-3">
                             <span>Active Plan:</span>
-                            <strong class="text-slate-900">{{ facility.token_package || 'None' }}</strong>
+                            <strong class="text-cx-ink">{{ facility.token_package || 'None' }}</strong>
                           </div>
-                          <div v-if="facility.recent_purchase" class="flex justify-between text-slate-600 text-[11px]">
+                          <div v-if="facility.recent_purchase" class="flex justify-between text-cx-ink-3 text-[11px]">
                             <span>Recent Order:</span>
-                            <span class="font-mono text-slate-800">{{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} ({{ facility.recent_purchase.date }})</span>
+                            <span class="font-mono text-cx-ink">{{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} ({{ facility.recent_purchase.date }})</span>
                           </div>
-                          <div class="flex justify-between text-slate-600">
+                          <div class="flex justify-between text-cx-ink-3">
                             <span>Token Runway:</span>
-                            <strong class="text-[#bc1823]">🪙 {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
+                            <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
                           </div>
-                          <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-slate-200/60">
-                            <span class="font-bold text-amber-800">Due Balance:</span>
-                            <strong class="font-bold text-amber-900">{{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }}</strong>
+                          <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-cx-border-soft">
+                            <span class="font-bold text-cx-warning-ink">Due Balance:</span>
+                            <strong class="font-bold text-cx-warning-ink">{{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }}</strong>
                           </div>
                         </div>
                       </div>
 
-                      <div class="mt-4 pt-3 border-t border-slate-100 space-y-2">
+                      <div class="mt-4 pt-3 border-t border-cx-border-soft space-y-2">
                         <button
                           v-if="facility.invoice_summary?.has_outstanding"
                           type="button"
-                          class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          class="w-full rounded-cx-sm bg-cx-success px-3 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition flex items-center justify-center gap-1.5 shadow-cx cursor-pointer"
                           @click="openMpesaModalForFacility(facility)"
                         >
-                          <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
+                          <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                         </button>
                         <div class="flex items-center gap-2">
                           <button
                             type="button"
-                            class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black transition cursor-pointer"
+                            class="flex-1 rounded-cx-sm bg-cx-ink px-3 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition cursor-pointer"
                             @click="openTopUpModal(facility)"
                           >
                             + Top Up Tokens
-                          </button>
-                          <button
-                            type="button"
-                            class="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50 cursor-pointer"
-                            @click="openCalculatorModal(facility)"
-                            title="Sizing Calculator"
-                          >
-                            🧮
                           </button>
                         </div>
                       </div>
@@ -2137,76 +1920,68 @@ onUnmounted(() => {
                 <article
                   v-for="facility in filteredFacilities"
                   :key="facility.mfl_code"
-                  class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs flex flex-col justify-between hover:border-blue-400 transition"
+                  class="cx-glass-panel rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
                 >
                   <div>
                     <div class="flex items-start justify-between gap-2">
                       <div>
                         <button
                       type="button"
-                      class="block text-left text-base font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                      class="block text-left text-base font-bold text-cx-ink underline-offset-2 hover:text-cx-brand-strong hover:underline"
                       @click="openFacilityDrawer(facility)"
                     >
                       {{ facility.facility_name }}
                     </button>
-                        <p class="text-xs text-slate-500 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
-                        <span class="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-slate-200/60">
-                          <span>🌐</span>
+                        <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
+                        <span class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-cx-border-soft">
+                          <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                           <span>{{ facility.network }}</span>
                         </span>
                       </div>
                       <span
                         class="rounded-full px-2 py-0.5 text-[11px] font-semibold border shrink-0"
-                        :class="facility.go_live ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                        :class="facility.go_live ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                       >
                         {{ facility.go_live ? 'Live' : 'Verifying' }}
                       </span>
                     </div>
 
-                    <div class="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1.5 text-xs">
-                      <div class="flex justify-between text-slate-600">
+                    <div class="mt-4 rounded-cx-sm bg-cx-well border border-cx-border-soft p-3 space-y-1.5 text-xs">
+                      <div class="flex justify-between text-cx-ink-3">
                         <span>Active Plan:</span>
-                        <strong class="text-slate-900">{{ facility.token_package || 'None' }}</strong>
+                        <strong class="text-cx-ink">{{ facility.token_package || 'None' }}</strong>
                       </div>
-                      <div v-if="facility.recent_purchase" class="flex justify-between text-slate-600 text-[11px]">
+                      <div v-if="facility.recent_purchase" class="flex justify-between text-cx-ink-3 text-[11px]">
                         <span>Recent Order:</span>
-                        <span class="font-mono text-slate-800">{{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} ({{ facility.recent_purchase.date }})</span>
+                        <span class="font-mono text-cx-ink">{{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} ({{ facility.recent_purchase.date }})</span>
                       </div>
-                      <div class="flex justify-between text-slate-600">
+                      <div class="flex justify-between text-cx-ink-3">
                         <span>Token Runway:</span>
-                        <strong class="text-[#bc1823]">🪙 {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
+                        <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
                       </div>
-                      <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-slate-200/60">
-                        <span class="font-bold text-amber-800">Due Balance:</span>
-                        <strong class="font-bold text-amber-900">{{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }}</strong>
+                      <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-cx-border-soft">
+                        <span class="font-bold text-cx-warning-ink">Due Balance:</span>
+                        <strong class="font-bold text-cx-warning-ink">{{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }}</strong>
                       </div>
                     </div>
                   </div>
 
-                  <div class="mt-4 pt-3 border-t border-slate-100 space-y-2">
+                  <div class="mt-4 pt-3 border-t border-cx-border-soft space-y-2">
                     <button
                       v-if="facility.invoice_summary?.has_outstanding"
                       type="button"
-                      class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      class="w-full rounded-cx-sm bg-cx-success px-3 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition flex items-center justify-center gap-1.5 shadow-cx cursor-pointer"
                       @click="openMpesaModalForFacility(facility)"
                     >
-                      <span>📱 Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
+                      <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                     </button>
                     <div class="flex items-center gap-2">
                       <button
                         type="button"
-                        class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black transition cursor-pointer"
+                        class="flex-1 rounded-cx-sm bg-cx-ink px-3 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition cursor-pointer"
                         @click="openTopUpModal(facility)"
                       >
                         + Top Up Tokens
-                      </button>
-                      <button
-                        type="button"
-                        class="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50 cursor-pointer"
-                        @click="openCalculatorModal(facility)"
-                        title="Sizing Calculator"
-                      >
-                        🧮
                       </button>
                     </div>
                   </div>
@@ -2220,63 +1995,47 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <div v-if="activeView === 'dashboard'" class="space-y-6">
             <!-- Organization identity band: the legal parent entity owns the account -->
-            <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
+            <div class="cx-glass-panel rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
               <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div class="min-w-0">
-                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Your Organization</span>
-                  <h1 class="mt-0.5 truncate text-4xl font-bold tracking-tight text-slate-900 leading-tight">{{ primaryOrganizationName }}</h1>
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Your Organization</span>
+                  <h1 class="mt-0.5 truncate text-4xl font-bold tracking-tight text-cx-ink leading-tight">{{ primaryOrganizationName }}</h1>
                   <div class="mt-2 flex flex-wrap items-center gap-2">
-                    <span class="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
-                      <span>🌐</span>
+                    <span class="inline-flex items-center gap-1 rounded-cx-sm border border-cx-border bg-cx-well px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2">
+                      <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                       <span>{{ primaryNetworkName }}</span>
                     </span>
-                    <span class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                      <span>🏥</span>
+                    <span class="inline-flex items-center gap-1 rounded-cx-sm border border-cx-border bg-cx-well px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2">
+                      <span><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
                       <span>{{ facilityCount }} {{ facilityCount === 1 ? 'facility' : 'facilities' }}</span>
                     </span>
-                    <span v-if="userProfile.masked_national_id" class="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700">
+                    <span v-if="userProfile.masked_national_id" class="rounded-cx-sm border border-cx-border bg-cx-well px-2 py-0.5 font-mono text-[11px] text-cx-ink-2">
                       {{ userProfile.masked_national_id }}
                     </span>
                   </div>
-                </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    class="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-50"
-                    @click="openAddFacilityModal()"
-                  >
-                    <span>+ Add Facility</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-xl bg-[#bc1823] px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-[#a3141d]"
-                    @click="openTopUpModal()"
-                  >
-                    <span>🪙 Top Up</span>
-                  </button>
                 </div>
               </div>
             </div>
 
             <!-- Attention band: only what needs action, with a direct drill-in -->
-            <div v-if="dashboardAttention.length" class="rounded-2xl border border-amber-200 bg-amber-50/50 p-4">
-              <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-900">Needs your attention</span>
+            <div v-if="dashboardAttention.length" class="rounded-cx border border-cx-warning-border bg-cx-warning-soft p-4">
+              <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-warning-ink">Needs your attention</span>
               <div class="mt-2 space-y-2">
                 <div
                   v-for="item in dashboardAttention"
                   :key="item.key"
-                  class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5"
+                  class="flex items-center justify-between gap-3 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5"
                 >
                   <div class="flex min-w-0 items-center gap-2.5">
-                    <span class="shrink-0 text-base">{{ item.icon }}</span>
+                    <CxIcon :name="item.icon" class="size-4 shrink-0" />
                     <div class="min-w-0">
-                      <span class="block truncate text-xs font-semibold text-slate-900">{{ item.text }}</span>
-                      <span class="block truncate text-[11px] text-slate-500">{{ item.meta }}</span>
+                      <span class="block truncate text-xs font-semibold text-cx-ink">{{ item.text }}</span>
+                      <span class="block truncate text-[11px] text-cx-ink-3">{{ item.meta }}</span>
                     </div>
                   </div>
                   <button
                     type="button"
-                    class="shrink-0 text-xs font-semibold text-blue-600 hover:underline"
+                    class="shrink-0 text-xs font-semibold text-cx-brand hover:underline"
                     @click="activeView = item.view"
                   >
                     Review →
@@ -2287,51 +2046,51 @@ onUnmounted(() => {
 
             <!-- Top 3 Executive Metrics -->
             <div class="grid gap-4 sm:grid-cols-3">
-              <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
-                <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600 block">Total Token Runway</span>
+              <div class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx space-y-3">
+                <span class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Care Tokens across facilities</span>
                 <div class="flex items-baseline gap-2">
-                  <span class="text-6xl font-bold text-[#bc1823] tracking-tight leading-none">{{ totalTokenCount.toLocaleString() }}</span>
-                  <span class="text-xs font-semibold text-slate-600">Care Tokens</span>
+                  <span class="text-6xl font-bold text-cx-brand tracking-tight leading-none">{{ totalTokenCount.toLocaleString() }}</span>
+                  <span class="text-xs font-semibold text-cx-ink-3">Care Tokens</span>
                 </div>
-                <p class="text-xs text-slate-600 leading-relaxed">
-                  Supports approx. <strong>~{{ Math.floor(totalTokenCount / 15) }} clinical patient encounters</strong> across all registered clinics.
+                <p class="text-xs text-cx-ink-3 leading-relaxed">
+                  Combined balance across your linked facilities.
                 </p>
-                <div class="pt-2 border-t border-slate-100">
-                  <button type="button" class="text-xs font-semibold text-[#bc1823] hover:underline" @click="openTopUpModal()">
-                    + Top Up Runway Capacity →
+                <div class="pt-2 border-t border-cx-border-soft">
+                  <button type="button" class="text-xs font-semibold text-cx-brand hover:underline" @click="openTopUpModal()">
+                    + Add Care Tokens →
                   </button>
                 </div>
               </div>
 
-              <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
-                <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600 block">Health Facility Registry Compliance</span>
+              <div class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx space-y-3">
+                <span class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Registry status</span>
                 <div class="flex items-baseline gap-2">
-                  <span class="text-6xl font-bold text-slate-900 tracking-tight leading-none">{{ liveFacilitiesCount }} / {{ facilityCount }}</span>
-                  <span class="text-xs font-semibold text-emerald-700">Clinics Live</span>
+                  <span class="text-6xl font-bold text-cx-ink tracking-tight leading-none">{{ liveFacilitiesCount }} / {{ facilityCount }}</span>
+                  <span class="text-xs font-semibold text-cx-success-ink">Clinics Live</span>
                 </div>
-                <p class="text-xs text-slate-600 leading-relaxed">
-                  Synchronized with the official Health Facility Registry (HFR) & Partner Network.
+                <p class="text-xs text-cx-ink-3 leading-relaxed">
+                  Facilities marked live have completed the registry checks shown in your portfolio.
                 </p>
-                <div class="pt-2 border-t border-slate-100">
-                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline" @click="activeView = 'facilities'">
+                <div class="pt-2 border-t border-cx-border-soft">
+                  <button type="button" class="text-xs font-semibold text-cx-brand hover:underline" @click="activeView = 'facilities'">
                     View Facility Registry →
                   </button>
                 </div>
               </div>
 
-              <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs space-y-3" :class="openInvoiceCount > 0 ? 'border-amber-200 bg-amber-50/40' : ''">
-                <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600 block">Settlement & Invoices</span>
+              <div class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx space-y-3" :class="openInvoiceCount > 0 ? 'border-cx-warning-border bg-cx-warning-soft' : ''">
+                <span class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Settlement & Invoices</span>
                 <div class="flex items-baseline gap-2">
-                  <span class="text-6xl font-bold tracking-tight leading-none" :class="openInvoiceCount > 0 ? 'text-amber-900' : 'text-slate-900'">
+                  <span class="text-6xl font-bold tracking-tight leading-none" :class="openInvoiceCount > 0 ? 'text-cx-warning-ink' : 'text-cx-ink'">
                     {{ openInvoiceCount > 0 ? money(totalOutstandingAmount) : 'Paid' }}
                   </span>
-                  <span v-if="openInvoiceCount > 0" class="text-xs font-semibold text-amber-700">Due</span>
+                  <span v-if="openInvoiceCount > 0" class="text-xs font-semibold text-cx-warning-ink">Due</span>
                 </div>
-                <p class="text-xs text-slate-600 leading-relaxed">
+                <p class="text-xs text-cx-ink-3 leading-relaxed">
                   {{ openInvoiceCount > 0 ? `${openInvoiceCount} invoice awaiting payment via M-Pesa / Bank` : 'All invoices settled with zero outstanding balance.' }}
                 </p>
-                <div class="pt-2 border-t border-slate-100">
-                  <button type="button" class="text-xs font-semibold text-slate-800 hover:underline" @click="activeView = 'billing'">
+                <div class="pt-2 border-t border-cx-border-soft">
+                  <button type="button" class="text-xs font-semibold text-cx-ink hover:underline" @click="activeView = 'billing'">
                     Go to Invoices & Billing →
                   </button>
                 </div>
@@ -2341,15 +2100,15 @@ onUnmounted(() => {
             <!-- Portfolio: one equal card per facility (no alphabetical hero) -->
             <div class="space-y-3">
               <div class="flex items-center justify-between">
-                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Your facilities</h2>
-                <button type="button" class="text-xs font-semibold text-blue-600 hover:underline" @click="activeView = 'facilities'">
+                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Your facilities</h2>
+                <button type="button" class="text-xs font-semibold text-cx-brand hover:underline" @click="activeView = 'facilities'">
                   View all →
                 </button>
               </div>
 
-              <div v-if="!allFacilities.length" class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500">
-                <span class="mb-2 block text-3xl">🏥</span>
-                <p class="text-sm font-semibold text-slate-800">No facilities in your portfolio yet</p>
+              <div v-if="!allFacilities.length" class="rounded-cx border border-cx-border bg-cx-surface p-8 text-center text-xs text-cx-ink-3">
+                <span class="mb-2 block text-3xl"><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
+                <p class="text-sm font-semibold text-cx-ink">No facilities in your portfolio yet</p>
                 <p class="mt-1">Link your clinics from the Health Facility Registry to start using CareVerse.</p>
               </div>
 
@@ -2357,80 +2116,72 @@ onUnmounted(() => {
                 <article
                   v-for="fac in allFacilities"
                   :key="fac.mfl_code"
-                  class="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs"
+                  class="flex flex-col justify-between rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx"
                 >
                   <div>
                     <div class="flex items-start justify-between gap-2">
                       <div class="min-w-0">
                         <button
                           type="button"
-                          class="block truncate text-left text-base font-bold text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                          class="block truncate text-left text-base font-bold text-cx-ink underline-offset-2 hover:text-cx-brand-strong hover:underline"
                           @click="openFacilityDrawer(fac)"
                         >
                           {{ fac.facility_name }}
                         </button>
-                        <p class="mt-0.5 text-xs text-slate-500">{{ fac.keph_level }} · MFL: {{ fac.mfl_code }}</p>
-                        <span class="mt-1 inline-flex items-center gap-1 rounded border border-slate-200/60 bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-700">
-                          <span>🌐</span>
+                        <p class="mt-0.5 text-xs text-cx-ink-3">{{ fac.keph_level }} · MFL: {{ fac.mfl_code }}</p>
+                        <span class="mt-1 inline-flex items-center gap-1 rounded-cx-sm border border-cx-border-soft bg-cx-well px-1.5 py-0.5 text-[11px] font-medium text-cx-ink-2">
+                          <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                           <span>{{ fac.network }}</span>
                         </span>
                       </div>
                       <span
                         class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                        :class="fac.go_live ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'"
+                        :class="fac.go_live ? 'border-cx-success-border bg-cx-success-soft text-cx-success-ink' : 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'"
                       >
                         {{ fac.go_live ? 'Live' : 'Verifying' }}
                       </span>
                     </div>
 
-                    <div class="mt-4 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs">
-                      <div class="flex justify-between text-slate-600">
+                    <div class="mt-4 space-y-1.5 rounded-cx-sm border border-cx-border-soft bg-cx-well p-3 text-xs">
+                      <div class="flex justify-between text-cx-ink-3">
                         <span>Active Plan:</span>
-                        <strong class="text-slate-900">{{ fac.token_package || 'None' }}</strong>
+                        <strong class="text-cx-ink">{{ fac.token_package || 'None' }}</strong>
                       </div>
-                      <div v-if="fac.recent_purchase" class="flex justify-between text-[11px] text-slate-600">
+                      <div v-if="fac.recent_purchase" class="flex justify-between text-[11px] text-cx-ink-3">
                         <span>Recent Order:</span>
-                        <span class="font-mono text-slate-800">{{ money(fac.recent_purchase.amount, fac.recent_purchase.currency) }} ({{ fac.recent_purchase.date }})</span>
+                        <span class="font-mono text-cx-ink">{{ money(fac.recent_purchase.amount, fac.recent_purchase.currency) }} ({{ fac.recent_purchase.date }})</span>
                       </div>
-                      <div class="flex justify-between text-slate-600">
+                      <div class="flex justify-between text-cx-ink-3">
                         <span>Token Runway:</span>
-                        <strong class="text-[#bc1823]">🪙 {{ (fac.token_quantity || 0).toLocaleString() }} tokens</strong>
+                        <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (fac.token_quantity || 0).toLocaleString() }} tokens</strong>
                       </div>
-                      <div v-if="fac.invoice_summary?.has_outstanding" class="flex justify-between border-t border-slate-200/60 pt-1.5">
-                        <span class="font-bold text-amber-800">Due Balance:</span>
-                        <strong class="font-bold text-amber-900">{{ money(fac.invoice_summary.outstanding_amount, fac.invoice_summary.currency) }}</strong>
+                      <div v-if="fac.invoice_summary?.has_outstanding" class="flex justify-between border-t border-cx-border-soft pt-1.5">
+                        <span class="font-bold text-cx-warning-ink">Due Balance:</span>
+                        <strong class="font-bold text-cx-warning-ink">{{ money(fac.invoice_summary.outstanding_amount, fac.invoice_summary.currency) }}</strong>
                       </div>
                     </div>
                   </div>
 
-                  <div class="mt-4 space-y-2 border-t border-slate-100 pt-3">
+                  <div class="mt-4 space-y-2 border-t border-cx-border-soft pt-3">
                     <button
                       v-if="fac.invoice_summary?.has_outstanding"
                       type="button"
-                      class="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700"
+                      class="flex w-full items-center justify-center gap-1.5 rounded-cx-sm bg-cx-success px-3 py-2 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-success"
                       @click="openMpesaModalForFacility(fac)"
                     >
-                      <span>📱 Pay M-Pesa: {{ money(fac.invoice_summary.outstanding_amount, fac.invoice_summary.currency) }} →</span>
+                      <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(fac.invoice_summary.outstanding_amount, fac.invoice_summary.currency) }} →</span>
                     </button>
                     <div class="flex items-center gap-2">
                       <button
                         type="button"
-                        class="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-black"
+                        class="flex-1 rounded-cx-sm bg-cx-ink px-3 py-2 text-xs font-semibold text-cx-contrast transition hover:bg-cx-ink-hover"
                         @click="openTopUpModal(fac)"
                       >
                         + Top Up Tokens
                       </button>
                       <button
                         type="button"
-                        class="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50"
-                        @click="openCalculatorModal(fac)"
-                        title="Sizing Calculator"
-                      >
-                        🧮
-                      </button>
-                      <button
-                        type="button"
-                        class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        class="rounded-cx-sm border border-cx-border bg-cx-surface px-2.5 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well"
                         @click="openFacilityDrawer(fac)"
                       >
                         Details →
@@ -2443,16 +2194,16 @@ onUnmounted(() => {
 
             <!-- Recent activity: orders + payments, newest first -->
             <div v-if="recentActivity.length" class="space-y-3">
-              <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Recent activity</h2>
-              <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xs">
-                <ul class="divide-y divide-slate-100">
+              <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Recent activity</h2>
+              <div class="overflow-hidden rounded-cx border border-cx-border bg-cx-surface shadow-cx">
+                <ul class="divide-y divide-cx-border-soft">
                   <li v-for="act in recentActivity" :key="act.kind + act.title" class="flex items-center gap-3 px-4 py-3">
-                    <span class="shrink-0 text-base">{{ act.icon }}</span>
+                    <CxIcon :name="act.icon" class="size-4 shrink-0" />
                     <div class="min-w-0 flex-1">
-                      <span class="block truncate text-xs font-semibold text-slate-900">{{ act.title }}</span>
-                      <span class="block truncate text-[11px] text-slate-500">{{ act.text }}</span>
+                      <span class="block truncate text-xs font-semibold text-cx-ink">{{ act.title }}</span>
+                      <span class="block truncate text-[11px] text-cx-ink-3">{{ act.text }}</span>
                     </div>
-                    <span class="shrink-0 font-mono text-[11px] text-slate-500">{{ act.date }}</span>
+                    <span class="shrink-0 font-mono text-[11px] text-cx-ink-3">{{ act.date }}</span>
                   </li>
                 </ul>
               </div>
@@ -2464,13 +2215,13 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <div v-if="activeView === 'pricing'" class="space-y-8">
             <div class="max-w-3xl">
-              <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-blue-800">
+              <span class="inline-flex items-center gap-1.5 rounded-full border border-cx-brand-soft-border bg-cx-brand-soft px-3 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-cx-brand-ink">
                 Consumption-Based HMIS Pricing
               </span>
-              <h1 class="text-4xl font-bold text-slate-900 tracking-tight mt-2 leading-tight">
+              <h1 class="text-4xl font-bold text-cx-ink tracking-tight mt-2 leading-tight">
                 CareVerse Token Plans & Capacity
               </h1>
-              <p class="text-sm text-slate-600 mt-2 leading-relaxed">
+              <p class="text-sm text-cx-ink-3 mt-2 leading-relaxed">
                 Tiberbu operates on transparent, transactional Care Tokens. Pay only for verified patient visits, labs, and e-claims with zero seat licenses or hidden server fees.
               </p>
             </div>
@@ -2480,62 +2231,50 @@ onUnmounted(() => {
               <article
                 v-for="pkg in context.token_packages"
                 :key="pkg.item_code"
-                class="rounded-2xl border bg-white p-6 shadow-2xs flex flex-col justify-between transition hover:border-slate-300 hover:shadow-xs"
-                :class="pkg.item_code === 'CV-TOKEN-GROWTH' ? 'border-2 border-blue-600 ring-4 ring-blue-500/10' : 'border-slate-200'"
+                class="rounded-cx border border-cx-border bg-cx-surface p-6 shadow-cx flex flex-col justify-between transition hover:border-cx-border hover:shadow-cx"
               >
                 <div>
                   <!-- Tier Header -->
                   <div class="flex items-center justify-between">
-                    <h3 class="font-bold text-lg text-slate-900">{{ pkg.display_name }}</h3>
+                    <h3 class="font-bold text-lg text-cx-ink">{{ pkg.display_name }}</h3>
                     <span
-                      v-if="pkg.item_code === 'CV-TOKEN-GROWTH'"
-                      class="rounded-full bg-blue-100 text-blue-800 px-2.5 py-0.5 text-[11px] font-semibold uppercase"
-                    >
-                      Most Popular
-                    </span>
-                    <span
-                      v-else-if="Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0"
-                      class="rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-semibold"
+                      v-if="Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0"
+                      class="rounded-full bg-cx-well text-cx-ink-2 px-2 py-0.5 text-[11px] font-semibold"
                     >
                       Free Trial
                     </span>
                   </div>
 
                   <!-- Short plain-language description -->
-                  <p class="text-xs text-slate-500 mt-2 min-h-10 leading-normal">
+                  <p class="text-xs text-cx-ink-3 mt-2 min-h-10 leading-normal">
                     {{ pkg.coverage_summary || pkg.description }}
                   </p>
 
                   <!-- Price -->
-                  <div class="mt-4 pt-4 border-t border-slate-100">
+                  <div class="mt-4 pt-4 border-t border-cx-border-soft">
                     <div class="flex items-baseline gap-1">
-                      <span class="text-4xl font-bold text-slate-900 leading-tight">
+                      <span class="text-4xl font-bold text-cx-ink leading-tight">
                         {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'KES 0' : money(pkg.price_ex_vat ?? pkg.price, pkg.currency) }}
                       </span>
-                      <span class="text-xs text-slate-500 font-medium">/ month</span>
+                      <span class="text-xs text-cx-ink-3 font-medium">/ month</span>
                     </div>
-                    <span class="text-[11px] text-slate-400 block mt-0.5">
+                    <span class="text-[11px] text-cx-ink-4 block mt-0.5">
                       {{ Number(pkg.gross_total) > 0 ? `${money(pkg.gross_total, pkg.currency)} incl. 16% VAT` : 'Zero commitment' }}
                     </span>
                   </div>
 
                   <!-- Token Quantity Pill -->
-                  <div class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-200/70 px-3 py-1.5 text-xs font-semibold text-[#bc1823]">
-                    <span>🪙</span>
+                  <div class="mt-4 inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-brand-soft border border-cx-brand-soft-border px-3 py-1.5 text-xs font-semibold text-cx-brand">
+                    <span><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
                     <span>{{ (pkg.token_quantity || 100).toLocaleString() }} Care Tokens</span>
                   </div>
                 </div>
 
                 <!-- CTA Button -->
-                <div class="mt-6 pt-4 border-t border-slate-100">
+                <div class="mt-6 pt-4 border-t border-cx-border-soft">
                   <button
                     type="button"
-                    class="w-full rounded-xl py-2.5 px-4 text-xs font-semibold transition shadow-xs text-center"
-                    :class="
-                      pkg.item_code === 'CV-TOKEN-GROWTH'
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
-                        : 'bg-slate-900 text-white hover:bg-black'
-                    "
+                    class="w-full rounded-cx-sm bg-cx-brand py-2.5 px-4 text-xs font-semibold text-cx-contrast transition shadow-cx text-center hover:bg-cx-brand-strong"
                     @click="selectPlanFromPricingTab(pkg)"
                   >
                     {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'Activate Free Trial' : `Select ${pkg.display_name}` }}
@@ -2544,99 +2283,8 @@ onUnmounted(() => {
               </article>
             </div>
 
-            <!-- GitHub-Style Collapsible Detailed Feature Comparison Table -->
-            <div class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden mt-12">
-              <div class="p-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <h2 class="text-xl font-bold text-slate-900 tracking-tight">
-                    Detailed Feature & Workflow Comparison
-                  </h2>
-                  <p class="text-xs text-slate-600 mt-1">
-                    Expand any module to see plain-language clinical workflow descriptions and what is covered in each tier.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  @click="openCalculatorModal()"
-                >
-                  <span>🧮 Launch Sizing Calculator</span>
-                </button>
-              </div>
-
-              <!-- Table Headers -->
-              <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr class="border-b border-slate-200 bg-slate-50 text-slate-700 font-bold">
-                      <th class="py-4 px-6 w-2/5">Clinical & Operational Capabilities</th>
-                      <th class="py-4 px-4 text-center w-36">Free Trial</th>
-                      <th class="py-4 px-4 text-center w-36">Starter</th>
-                      <th class="py-4 px-4 text-center w-36 bg-blue-50/50 text-blue-900">Growth</th>
-                      <th class="py-4 px-4 text-center w-36">Scale</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    <template v-for="category in featureComparisonCategories" :key="category.key">
-                      <!-- Collapsible Category Header Row -->
-                      <tr
-                        class="bg-slate-100/75 border-y border-slate-200 cursor-pointer hover:bg-slate-200/60 transition select-none"
-                        @click="toggleFeatureCategory(category.key)"
-                      >
-                        <td colspan="5" class="py-3 px-6 font-semibold text-slate-900 text-xs">
-                          <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                              <span class="text-slate-400 text-[11px]">
-                                {{ expandedPricingCategories[category.key] ? '▼' : '►' }}
-                              </span>
-                              <span>{{ category.title }}</span>
-                            </div>
-                            <span class="text-[11px] font-normal text-slate-500">
-                              {{ category.description }}
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-
-                      <!-- Category Features (Rendered if expanded) -->
-                      <template v-if="expandedPricingCategories[category.key]">
-                        <template v-for="feature in category.features" :key="feature.id">
-                          <tr
-                            class="border-b border-slate-100 hover:bg-slate-50/80 transition cursor-pointer"
-                            @click="toggleFeatureDescription(feature.id)"
-                          >
-                            <td class="py-3.5 px-6">
-                              <div class="font-bold text-slate-900 flex items-center gap-1.5">
-                                <span>{{ feature.name }}</span>
-                                <span class="text-slate-400 text-[11px]" title="Click for plain language description">ℹ️</span>
-                              </div>
-                              <p
-                                v-if="expandedFeatureDescriptions[feature.id]"
-                                class="mt-1.5 text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed"
-                              >
-                                {{ feature.description }}
-                              </p>
-                            </td>
-                            <td class="py-3.5 px-4 text-center text-slate-600 font-medium">
-                              {{ feature.values[0] }}
-                            </td>
-                            <td class="py-3.5 px-4 text-center text-slate-600 font-medium">
-                              {{ feature.values[1] }}
-                            </td>
-                            <td class="py-3.5 px-4 text-center font-bold text-blue-900 bg-blue-50/20">
-                              {{ feature.values[2] }}
-                            </td>
-                            <td class="py-3.5 px-4 text-center text-slate-800 font-medium">
-                              {{ feature.values[3] }}
-                            </td>
-                          </tr>
-                        </template>
-                      </template>
-                    </template>
-                  </tbody>
-                </table>
-              </div>
+            <div class="mt-8 rounded-cx border border-cx-border bg-cx-well p-4 text-xs text-cx-ink-3">
+              Package names, prices, token quantities, and summaries above reflect the current catalog. Contact Network Support if you need a capability-by-capability comparison.
             </div>
           </div>
 
@@ -2645,42 +2293,42 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <div v-if="activeView === 'billing'" class="space-y-6">
             <div>
-              <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">Billing & Invoices</h1>
-              <p class="text-xs text-slate-600 mt-0.5">Review outstanding statements, generate invoices for token orders, and pay instantly via M-Pesa.</p>
+              <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Billing & Invoices</h1>
+              <p class="text-xs text-cx-ink-3 mt-0.5">Review outstanding statements, generate invoices for token orders, and pay instantly via M-Pesa.</p>
             </div>
 
             <!-- M-Pesa Paybill settlement details (primary payment method) -->
-            <div class="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
+            <div class="rounded-cx border border-cx-success-border bg-cx-success-soft p-4">
               <div class="flex items-center gap-3">
-                <div class="size-8 shrink-0 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-semibold text-sm">M</div>
+                <div class="size-8 shrink-0 rounded-cx-sm bg-cx-success text-cx-contrast flex items-center justify-center font-semibold text-sm">M</div>
                 <div class="min-w-0">
-                  <span class="font-semibold text-xs text-emerald-900 block">M-Pesa Paybill · {{ paybillInfo.business_name }}</span>
-                  <span class="text-[11px] text-emerald-800">Primary settlement method — direct paybill with zero transaction processing surcharge</span>
+                  <span class="font-semibold text-xs text-cx-success-ink block">M-Pesa Paybill · {{ paybillInfo.business_name }}</span>
+                  <span class="text-[11px] text-cx-success-ink">Primary settlement method — direct paybill with zero transaction processing surcharge</span>
                 </div>
               </div>
               <div class="mt-3 grid gap-3 sm:grid-cols-3">
-                <div class="rounded-xl border border-slate-200 bg-white p-3">
-                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Business No</span>
+                <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-3">
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Business No</span>
                   <div class="mt-1 flex items-center justify-between gap-2">
-                    <span class="font-mono text-base font-bold text-slate-900">{{ paybillInfo.business_number }}</span>
+                    <span class="font-mono text-base font-bold text-cx-ink">{{ paybillInfo.business_number }}</span>
                     <button
                       type="button"
-                      class="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 transition shrink-0"
+                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2 hover:bg-cx-well transition shrink-0"
                       @click="copyText(paybillInfo.business_number, 'paybill_biz')"
                     >
-                      {{ copiedKey === 'paybill_biz' ? '✓ Copied' : '📋 Copy' }}
+                      <CxIcon :name="copiedKey === 'paybill_biz' ? 'check' : 'copy'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ copiedKey === 'paybill_biz' ? 'Copied' : 'Copy' }}
                     </button>
                   </div>
                 </div>
-                <div class="rounded-xl border border-slate-200 bg-white p-3">
-                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Account No</span>
-                  <p class="mt-1 text-[11px] text-slate-600 leading-relaxed">
+                <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-3">
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Account No</span>
+                  <p class="mt-1 text-[11px] text-cx-ink-3 leading-relaxed">
                     Enter the invoice number shown on each invoice card below (e.g. <span class="font-mono">{{ allInvoices[0]?.name || 'ACC-SINV-2026-00001' }}</span>).
                   </p>
                 </div>
-                <div class="rounded-xl border border-slate-200 bg-white p-3">
-                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">How to pay</span>
-                  <p class="mt-1 text-[11px] text-slate-600 leading-relaxed">
+                <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-3">
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">How to pay</span>
+                  <p class="mt-1 text-[11px] text-cx-ink-3 leading-relaxed">
                     1. M-Pesa app → Lipa na M-Pesa → Paybill<br />
                     2. Business No, then Account No (invoice number)<br />
                     3. Amount &amp; PIN, then paste the transaction code on the invoice
@@ -2691,9 +2339,9 @@ onUnmounted(() => {
 
             <!-- Invoices List -->
             <div class="space-y-4">
-              <div v-if="!allInvoices.length" class="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs text-slate-500">
-                <span class="text-3xl block mb-2">🎉</span>
-                <p class="font-semibold text-slate-800 text-sm">All invoices settled</p>
+              <div v-if="!allInvoices.length" class="bg-cx-surface rounded-cx border border-cx-border p-8 text-center text-xs text-cx-ink-3">
+                <span class="text-3xl block mb-2"><CxIcon name="check-circle" class="inline-block size-4 align-[-0.15em]" /></span>
+                <p class="font-semibold text-cx-ink text-sm">All invoices settled</p>
                 <p class="mt-1">There are no outstanding balances due on your account.</p>
               </div>
 
@@ -2701,43 +2349,43 @@ onUnmounted(() => {
                 <article
                   v-for="invoice in allInvoices"
                   :key="invoice.name"
-                  class="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+                  class="bg-cx-surface rounded-cx border border-cx-border p-5 shadow-cx flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
                 >
                   <div>
                     <div class="flex items-center gap-2">
-                      <span class="font-semibold text-sm text-slate-900">{{ invoice.invoice_number || invoice.name }}</span>
+                      <span class="font-semibold text-sm text-cx-ink">{{ invoice.invoice_number || invoice.name }}</span>
                       <span
-                        class="rounded px-2 py-0.5 text-[11px] font-semibold"
-                        :class="invoiceStatus(invoice).key === 'overdue' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'"
+                        class="rounded-cx-sm px-2 py-0.5 text-[11px] font-semibold"
+                        :class="invoiceStatus(invoice).key === 'overdue' ? 'bg-cx-danger-soft text-cx-danger-ink' : 'bg-amber-100 text-cx-warning-ink'"
                       >
                         {{ invoiceStatus(invoice).label }}
                       </span>
                     </div>
-                    <p class="text-xs text-slate-500 mt-1">
+                    <p class="text-xs text-cx-ink-3 mt-1">
                       Due: <strong>{{ invoice.due_date || 'On Receipt' }}</strong> · Issued: {{ invoice.posting_date }}
                     </p>
-                    <span class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 mt-1.5 text-[11px] font-semibold text-slate-700">
-                      <span>🏥</span>
+                    <span class="inline-flex items-center gap-1.5 rounded-cx-sm border border-cx-border bg-cx-well px-2 py-0.5 mt-1.5 text-[11px] font-semibold text-cx-ink-2">
+                      <span><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
                       <span>{{ facilityLabel(invoice.crm_token_facility_mfl, allFacilities) }}</span>
-                      <span v-if="invoice.crm_token_facility_mfl" class="font-mono text-[11px] text-slate-500">{{ invoice.crm_token_facility_mfl }}</span>
+                      <span v-if="invoice.crm_token_facility_mfl" class="font-mono text-[11px] text-cx-ink-3">{{ invoice.crm_token_facility_mfl }}</span>
                     </span>
                   </div>
 
                   <div class="flex items-center gap-3 shrink-0 flex-wrap justify-end">
                     <div class="text-right">
-                      <span class="text-base font-bold text-slate-900 block leading-tight">{{ money(invoice.amount, invoice.currency) }}</span>
-                      <span class="text-[11px] text-slate-400 uppercase font-medium">Balance</span>
+                      <span class="text-base font-bold text-cx-ink block leading-tight">{{ money(invoice.amount, invoice.currency) }}</span>
+                      <span class="text-[11px] text-cx-ink-4 uppercase font-medium">Balance</span>
                     </div>
                     <button
                       type="button"
-                      class="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition inline-flex items-center gap-1.5"
+                      class="rounded-cx-sm bg-cx-success px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-success transition inline-flex items-center gap-1.5"
                       @click="openMpesaModal(invoice)"
                     >
-                      <span>📱 Pay M-Pesa (No Fee)</span>
+                      <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa (No Fee)</span>
                     </button>
                     <button
                       type="button"
-                      class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
+                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition disabled:opacity-50"
                       :disabled="busyId === invoice.name"
                       @click="payInvoice(invoice)"
                     >
@@ -2749,24 +2397,24 @@ onUnmounted(() => {
             </div>
 
             <!-- Orders awaiting invoice -->
-            <div v-if="allOrders.length" class="space-y-3 pt-6 border-t border-slate-200">
-              <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">Pending Token Orders</h2>
+            <div v-if="allOrders.length" class="space-y-3 pt-6 border-t border-cx-border">
+              <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Pending Token Orders</h2>
               <div class="space-y-3">
                 <article
                   v-for="order in allOrders"
                   :key="order.name"
-                  class="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs flex items-center justify-between"
+                  class="bg-cx-surface rounded-cx border border-cx-border p-4 shadow-cx flex items-center justify-between"
                 >
                   <div>
-                    <span class="font-semibold text-xs text-slate-900">{{ packageLabel(order.crm_token_package_item, context.token_packages) }}</span>
-                    <span class="text-xs text-slate-500 ml-2">For {{ facilityLabel(order.crm_token_facility_mfl, allFacilities) }} · Order #{{ order.name }}</span>
+                    <span class="font-semibold text-xs text-cx-ink">{{ packageLabel(order.crm_token_package_item, context.token_packages) }}</span>
+                    <span class="text-xs text-cx-ink-3 ml-2">For {{ facilityLabel(order.crm_token_facility_mfl, allFacilities) }} · Order #{{ order.name }}</span>
                   </div>
                   <div class="flex items-center gap-3">
-                    <span class="text-xs font-semibold text-slate-800">{{ money(order.grand_total, order.currency) }}</span>
+                    <span class="text-xs font-semibold text-cx-ink">{{ money(order.grand_total, order.currency) }}</span>
                     <button
                       v-if="order.can_create_invoice"
                       type="button"
-                      class="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black transition cursor-pointer"
+                      class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition cursor-pointer"
                       @click="createInvoice(order)"
                     >
                       Generate Invoice
@@ -2777,22 +2425,22 @@ onUnmounted(() => {
             </div>
 
             <!-- Payment Receipts & History -->
-            <div v-if="allPayments.length" class="space-y-3 pt-6 border-t border-slate-200">
+            <div v-if="allPayments.length" class="space-y-3 pt-6 border-t border-cx-border">
               <div class="flex items-center justify-between">
                 <div>
-                  <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">Payment Receipts & History</h2>
-                  <p class="text-xs text-slate-500 mt-0.5">Verified payment receipts, M-Pesa confirmations, and bank settlements.</p>
+                  <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Payment Receipts & History</h2>
+                  <p class="text-xs text-cx-ink-3 mt-0.5">Verified payment receipts, M-Pesa confirmations, and bank settlements.</p>
                 </div>
-                <span class="text-xs text-slate-600 font-semibold bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                <span class="text-xs text-cx-ink-3 font-semibold bg-cx-well px-2.5 py-1 rounded-cx-sm border border-cx-border">
                   {{ allPayments.length }} {{ allPayments.length === 1 ? 'receipt' : 'receipts' }}
                 </span>
               </div>
 
-              <div class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+              <div class="bg-cx-surface rounded-cx border border-cx-border shadow-cx overflow-hidden">
                 <div class="overflow-x-auto">
                   <table class="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr class="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                      <tr class="border-b border-cx-border bg-cx-well text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">
                         <th class="py-3 px-4">Receipt #</th>
                         <th class="py-3 px-4">Date</th>
                         <th class="py-3 px-4">Mode & Reference</th>
@@ -2800,21 +2448,21 @@ onUnmounted(() => {
                         <th class="py-3 px-4 text-center">Status</th>
                       </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-100">
-                      <tr v-for="pay in allPayments" :key="pay.name" class="hover:bg-slate-50/80 transition">
-                        <td class="py-3 px-4 font-mono font-bold text-slate-900">{{ pay.name }}</td>
-                        <td class="py-3 px-4 text-slate-600">{{ pay.posting_date }}</td>
+                    <tbody class="divide-y divide-cx-border-soft">
+                      <tr v-for="pay in allPayments" :key="pay.name" class="hover:bg-cx-band transition">
+                        <td class="py-3 px-4 font-mono font-bold text-cx-ink">{{ pay.name }}</td>
+                        <td class="py-3 px-4 text-cx-ink-3">{{ pay.posting_date }}</td>
                         <td class="py-3 px-4">
-                          <span class="font-semibold text-slate-800">{{ pay.mode_of_payment }}</span>
-                          <span v-if="pay.reference_no" class="ml-2 font-mono text-[11px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                          <span class="font-semibold text-cx-ink">{{ pay.mode_of_payment }}</span>
+                          <span v-if="pay.reference_no" class="ml-2 font-mono text-[11px] text-cx-ink-3 bg-cx-well px-1.5 py-0.5 rounded-cx-sm border border-cx-border">
                             {{ pay.reference_no }}
                           </span>
                         </td>
-                        <td class="py-3 px-4 text-right font-bold text-slate-900">{{ money(pay.amount, 'KES') }}</td>
+                        <td class="py-3 px-4 text-right font-bold text-cx-ink">{{ money(pay.amount, 'KES') }}</td>
                         <td class="py-3 px-4 text-center">
                           <span
                             class="rounded-full px-2 py-0.5 text-[11px] font-semibold border"
-                            :class="pay.status === 'Submitted' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                            :class="pay.status === 'Submitted' ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                           >
                             {{ pay.status }}
                           </span>
@@ -2839,50 +2487,58 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <div v-if="activeView === 'hfr_sync'" class="space-y-6 max-w-4xl">
             <div>
-              <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">Health Facility Registry Sync</h1>
-              <p class="text-xs text-slate-600 mt-0.5">Synchronize facility records directly with the official Digital Health Agency (DHA) Health Facility Registry.</p>
+              <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Health Facility Registry Sync</h1>
+              <p class="text-xs text-cx-ink-3 mt-0.5">Synchronize facility records directly with the official Digital Health Agency (DHA) Health Facility Registry.</p>
             </div>
 
             <!-- 1-Click Discovery by National ID on File -->
-            <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
+            <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
               <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
-                  <h3 class="font-semibold text-sm text-slate-900 flex items-center gap-2">
-                    <span>🆔</span>
+                  <h3 class="font-semibold text-sm text-cx-ink flex items-center gap-2">
+                    <span><CxIcon name="id" class="inline-block size-4 align-[-0.15em]" /></span>
                     <span>1-Click Auto-Discovery by National ID</span>
                   </h3>
-                  <p class="text-xs text-slate-600 mt-1">
-                    Discover all clinical branches registered under your verified National ID on file
-                    <span v-if="userProfile.masked_national_id" class="font-mono font-bold text-slate-800">({{ userProfile.masked_national_id }})</span>.
+                  <p class="text-xs text-cx-ink-3 mt-1">
+                    Search for clinical branches linked to the National ID saved on your profile
+                    <span v-if="userProfile.masked_national_id" class="font-mono font-bold text-cx-ink">({{ userProfile.masked_national_id }})</span>.
                   </p>
                 </div>
                 <button
                   type="button"
-                  class="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition shrink-0 disabled:opacity-50 inline-flex items-center gap-1.5"
+                  class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition shrink-0 disabled:opacity-50 inline-flex items-center gap-1.5"
                   :disabled="hfrOwnerSearchBusy"
                   @click="discoverFacilitiesByOwnerId()"
                 >
-                  <span>{{ hfrOwnerSearchBusy ? 'Searching Registry…' : '🔍 Discover Facilities by My ID' }}</span>
+                  <span><CxIcon v-if="!hfrOwnerSearchBusy" name="search" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ hfrOwnerSearchBusy ? 'Searching Registry…' : 'Discover Facilities by My ID' }}</span>
                 </button>
               </div>
 
+              <div v-if="hfrOwnerSearchComplete && hfrOwnerSearchError" class="mt-4 rounded-cx-sm border border-cx-danger-border bg-cx-danger-soft p-3 text-xs text-cx-danger-ink" role="alert">
+                {{ hfrOwnerSearchError }}
+              </div>
+              <div v-else-if="hfrOwnerSearchComplete && !hfrOwnerSearchResults.length" class="mt-4 rounded-cx-sm border border-cx-border bg-cx-well p-4 text-xs text-cx-ink-2" role="status">
+                <p class="font-semibold text-cx-ink">No facilities found for the ID on your profile.</p>
+                <p class="mt-1 text-cx-ink-3">You can search the registry by MFL, FID, or registration number, or review your National ID in Account settings.</p>
+              </div>
+
               <!-- Discovered Facilities List -->
-              <div v-if="hfrOwnerSearchResults.length" class="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                <span class="text-xs font-semibold uppercase text-slate-600">Discovered Facilities ({{ hfrOwnerSearchResults.length }})</span>
+              <div v-if="hfrOwnerSearchResults.length" class="mt-4 pt-4 border-t border-cx-border-soft space-y-2">
+                <span class="text-xs font-semibold uppercase text-cx-ink-3">Discovered Facilities ({{ hfrOwnerSearchResults.length }})</span>
                 <div class="space-y-2 max-h-72 overflow-y-auto">
                   <div
                     v-for="cand in hfrOwnerSearchResults"
                     :key="cand.fid || cand.mfl_code"
-                    class="rounded-xl border border-slate-200 p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 transition"
+                    class="rounded-cx-sm border border-cx-border p-3.5 flex items-center justify-between gap-3 hover:bg-cx-well transition"
                   >
                     <div>
                       <div class="flex items-center gap-2">
-                        <span class="font-semibold text-xs text-slate-900">{{ cand.name }}</span>
-                        <span v-if="cand.already_linked" class="rounded bg-emerald-100 text-emerald-800 text-[11px] font-semibold px-2 py-0.5">
+                        <span class="font-semibold text-xs text-cx-ink">{{ cand.name }}</span>
+                        <span v-if="cand.already_linked" class="rounded-cx-sm bg-cx-success-soft text-cx-success-ink text-[11px] font-semibold px-2 py-0.5">
                           ✓ In Portfolio
                         </span>
                       </div>
-                      <span class="text-[11px] text-slate-500 block mt-0.5">
+                      <span class="text-[11px] text-cx-ink-3 block mt-0.5">
                         MFL: {{ cand.mfl_code }} · {{ cand.level }} · {{ cand.county }} {{ cand.subcounty ? `/ ${cand.subcounty}` : '' }} · {{ cand.owner_type }}
                       </span>
                     </div>
@@ -2890,7 +2546,7 @@ onUnmounted(() => {
                     <button
                       v-if="!cand.already_linked"
                       type="button"
-                      class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black transition shrink-0 disabled:opacity-50"
+                      class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shrink-0 disabled:opacity-50"
                       :disabled="hfrLinkBusy"
                       @click="linkHfrCandidate(cand)"
                     >
@@ -2901,20 +2557,20 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Manual Search by MFL Code -->
-            <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
-              <h3 class="font-semibold text-sm text-slate-900">Manual Facility Search (by MFL or Registration #)</h3>
-              <p class="text-xs text-slate-600 leading-relaxed">
-                If you have a clinic branch registered under a partner, trustee, or corporate registration number, search and link it directly via its 5-digit Master Facility List (MFL) code.
+            <!-- Registry identifier lookup -->
+            <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
+              <h3 class="font-semibold text-sm text-cx-ink">Search the Health Facility Registry</h3>
+              <p class="text-xs text-cx-ink-3 leading-relaxed">
+                Look up a facility using its MFL code, HFR Facility ID (FID), or registration number.
               </p>
 
               <div class="pt-2 flex items-center gap-3">
                 <button
                   type="button"
-                  class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 transition"
+                  class="rounded-cx-sm border border-cx-border bg-cx-surface px-4 py-2.5 text-xs font-semibold text-cx-ink shadow-cx hover:bg-cx-well transition"
                   @click="openAddFacilityModal()"
                 >
-                  <span>+ Search by MFL Code or Registration #</span>
+                  <span>Search by registry identifier</span>
                 </button>
               </div>
             </div>
@@ -2926,64 +2582,64 @@ onUnmounted(() => {
           <div v-if="activeView === 'profile'" class="space-y-6 max-w-4xl">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">My Profile & Identification</h1>
-                <p class="text-xs text-slate-600 mt-0.5">Manage your verified National ID, legal organization entity, and Health Facility Registry linkage.</p>
+                <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">My Profile & Identification</h1>
+                <p class="text-xs text-cx-ink-3 mt-0.5">Manage your National ID, contact details, and facility registry search.</p>
               </div>
               <button
                 type="button"
-                class="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition inline-flex items-center gap-1.5 self-start sm:self-auto"
+                class="rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition inline-flex items-center gap-1.5 self-start sm:self-auto"
                 @click="openEditProfileModal()"
               >
-                <span>✏️ Edit Profile Details</span>
+                <span><CxIcon name="pencil" class="mr-1 inline-block size-4 align-[-0.15em]" />Edit Profile Details</span>
               </button>
             </div>
 
             <!-- Profile Cards Grid -->
             <div class="grid gap-6 md:grid-cols-2">
               <!-- Card 1: National Identification -->
-              <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-4">
+              <div class="rounded-cx border border-cx-border bg-cx-surface p-6 shadow-cx space-y-4">
                 <div class="flex items-center justify-between">
-                  <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">National Identification</span>
+                  <span class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">National Identification</span>
                   <span
                     class="rounded-full px-2.5 py-0.5 text-[11px] font-semibold border"
-                    :class="userProfile.national_id ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'"
+                    :class="userProfile.national_id_verified ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-well text-cx-ink-2 border-cx-border'"
                   >
-                    {{ userProfile.national_id ? 'Verified Key' : 'Action Required' }}
+                    {{ userProfile.national_id_verified ? 'Verified' : (userProfile.national_id ? 'On file' : 'Not added') }}
                   </span>
                 </div>
 
-                <div class="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2">
-                  <div class="text-xs text-slate-500 font-medium">Kenyan National ID Number:</div>
+                <div class="rounded-cx-sm bg-cx-well border border-cx-border p-4 space-y-2">
+                  <div class="text-xs text-cx-ink-3 font-medium">Kenyan National ID Number:</div>
                   <div class="flex items-center justify-between">
-                    <span class="font-mono text-xl font-bold tracking-wider text-slate-900">
+                    <span class="font-mono text-xl font-bold tracking-wider text-cx-ink">
                       {{ showUnmaskedId ? (userProfile.national_id || 'Not on file') : (userProfile.masked_national_id || 'Not on file') }}
                     </span>
                     <button
                       type="button"
-                      class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition inline-flex items-center gap-1"
+                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-2.5 py-1 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center gap-1"
                       @click="showUnmaskedId = !showUnmaskedId"
                       :title="showUnmaskedId ? 'Mask National ID' : 'Reveal National ID'"
                     >
-                      <span>{{ showUnmaskedId ? '🔒 Mask' : '👁️ Reveal' }}</span>
+                      <span><CxIcon :name="showUnmaskedId ? 'shield-check' : 'eye'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ showUnmaskedId ? 'Mask' : 'Reveal' }}</span>
                     </button>
                   </div>
                 </div>
 
-                <p class="text-xs text-slate-500 leading-relaxed">
-                  Your National ID is used to securely query the Digital Health Agency (DHA) Health Facility Registry and verify ownership of your clinical branches without manual MFL entry.
+                <p class="text-xs text-cx-ink-3 leading-relaxed">
+                  Your National ID is used to search the Health Facility Registry. Review it before searching; you can also add a facility by its MFL code.
                 </p>
 
-                <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <div class="pt-2 border-t border-cx-border-soft flex items-center justify-between">
                   <button
                     type="button"
-                    class="text-xs font-semibold text-blue-600 hover:underline"
+                    class="text-xs font-semibold text-cx-brand hover:underline"
                     @click="discoverFacilitiesByOwnerId(); activeView = 'hfr_sync'"
                   >
                     1-Click Registry Discovery →
                   </button>
                   <button
                     type="button"
-                    class="text-xs font-semibold text-slate-600 hover:text-slate-900"
+                    class="text-xs font-semibold text-cx-ink-3 hover:text-cx-ink"
                     @click="openEditProfileModal()"
                   >
                     Change ID Number
@@ -2992,36 +2648,36 @@ onUnmounted(() => {
               </div>
 
               <!-- Card 2: Legal Organization & Identity -->
-              <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-4">
+              <div class="rounded-cx border border-cx-border bg-cx-surface p-6 shadow-cx space-y-4">
                 <div class="flex items-center justify-between">
-                  <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Enterprise Entity</span>
-                  <span class="rounded-full bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-0.5 text-[11px] font-semibold">
+                  <span class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Enterprise Entity</span>
+                  <span class="rounded-full bg-cx-brand-soft text-cx-brand-ink border border-cx-brand-soft-border px-2.5 py-0.5 text-[11px] font-semibold">
                     Primary Account
                   </span>
                 </div>
 
                 <div class="space-y-3 text-xs">
-                  <div class="rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1">
-                    <span class="text-slate-500 font-medium block">Parent Legal Organization</span>
-                    <strong class="font-semibold text-sm text-slate-900 block">{{ primaryOrganizationName }}</strong>
+                  <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3 space-y-1">
+                    <span class="text-cx-ink-3 font-medium block">Parent Legal Organization</span>
+                    <strong class="font-semibold text-sm text-cx-ink block">{{ primaryOrganizationName }}</strong>
                   </div>
 
                   <div class="grid grid-cols-2 gap-2 text-xs">
-                    <div class="rounded-xl bg-slate-50 border border-slate-100 p-2.5">
-                      <span class="text-slate-500 block text-[11px]">Primary Network</span>
-                      <strong class="text-slate-800 block truncate">{{ userProfile.primary_network || 'CareVerse Partner Network' }}</strong>
+                    <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-2.5">
+                      <span class="text-cx-ink-3 block text-[11px]">Primary Network</span>
+                      <strong class="text-cx-ink block truncate">{{ userProfile.primary_network || 'CareVerse Partner Network' }}</strong>
                     </div>
-                    <div class="rounded-xl bg-slate-50 border border-slate-100 p-2.5">
-                      <span class="text-slate-500 block text-[11px]">Managed Clinics</span>
-                      <strong class="text-slate-800 block">{{ allFacilities.length }} facilities</strong>
+                    <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-2.5">
+                      <span class="text-cx-ink-3 block text-[11px]">Managed Clinics</span>
+                      <strong class="text-cx-ink block">{{ allFacilities.length }} facilities</strong>
                     </div>
                   </div>
 
-                  <div class="rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1">
-                    <span class="text-slate-500 font-medium block">Signatory / User</span>
-                    <strong class="text-slate-900 block">{{ userProfile.full_name || context.user }}</strong>
-                    <span class="text-slate-500 font-mono text-[11px] block">{{ userProfile.email }}</span>
-                    <span class="text-slate-600 font-mono text-[11px] block">Phone: {{ userProfile.mobile_no || 'Not set' }}</span>
+                  <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3 space-y-1">
+                    <span class="text-cx-ink-3 font-medium block">Signatory / User</span>
+                    <strong class="text-cx-ink block">{{ userProfile.full_name || context.user }}</strong>
+                    <span class="text-cx-ink-3 font-mono text-[11px] block">{{ userProfile.email }}</span>
+                    <span class="text-cx-ink-3 font-mono text-[11px] block">Phone: {{ userProfile.mobile_no || 'Not set' }}</span>
                   </div>
                 </div>
               </div>
@@ -3033,46 +2689,66 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <div v-if="activeView === 'support'" class="space-y-6 max-w-3xl">
             <div>
-              <h1 class="text-4xl font-bold text-slate-900 tracking-tight leading-tight">Network Support & Contacts</h1>
-              <p class="text-xs text-slate-600 mt-0.5">Dedicated clinical onboarding lead and emergency support channels.</p>
+              <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Network Support & Contacts</h1>
+              <p class="text-xs text-cx-ink-3 mt-0.5">Dedicated clinical onboarding lead and emergency support channels.</p>
             </div>
 
-            <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
+            <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
               <div class="space-y-2.5">
-                <div class="rounded-xl bg-slate-50 border border-slate-100 p-3.5 text-xs flex items-center justify-between">
-                  <span class="text-slate-600 font-medium">Network Partner</span>
-                  <span class="font-bold text-slate-900">{{ primaryNetworkName }}</span>
+                <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3.5 text-xs flex items-center justify-between">
+                  <span class="text-cx-ink-3 font-medium">Network Partner</span>
+                  <span class="font-bold text-cx-ink">{{ primaryNetworkName }}</span>
                 </div>
-                <div class="rounded-xl bg-slate-50 border border-slate-100 p-3.5 text-xs flex items-center justify-between">
-                  <span class="text-slate-600 font-medium">Clinical Helpdesk</span>
-                  <a href="mailto:support@tiberbu.health" class="font-bold text-[#bc1823] hover:underline">support@tiberbu.health</a>
+                <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3.5 text-xs flex items-center justify-between">
+                  <span class="text-cx-ink-3 font-medium">Clinical Helpdesk</span>
+                  <a href="mailto:support@tiberbu.health" class="font-bold text-cx-brand hover:underline">support@tiberbu.health</a>
                 </div>
-                <div class="rounded-xl bg-slate-50 border border-slate-100 p-3.5 text-xs flex items-center justify-between">
-                  <span class="text-slate-600 font-medium">WhatsApp Hotline</span>
-                  <span class="font-bold text-slate-900 font-mono">+254 700 000 000</span>
-                </div>
+
               </div>
             </div>
           </div>
           </template>
         </main>
 
-        <!-- Facility detail drawer: ties all of one facility's records together -->
-        <FacilityDrawer
-          v-if="drawerFacility"
-          :facility="drawerFacility"
-          :invoices="drawerInvoices"
-          :orders="drawerOrders"
-          :token-packages="context.token_packages"
-          :copied-mfl="copiedMfl"
-          :default-currency="defaultCurrency"
-          @close="closeFacilityDrawer"
-          @open-top-up="openTopUpModal"
-          @open-calculator="openCalculatorModal"
-          @pay="openMpesaModal"
-          @create-invoice="createInvoice"
-          @copy-mfl="copyMfl"
-        />
+        <nav
+          class="cx-glass-chrome fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-cx-border px-2 pt-2 md:hidden"
+          style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom))"
+          aria-label="Primary navigation"
+        >
+          <button v-for="tab in [
+            { view: 'dashboard', label: 'Home', icon: 'dashboard' },
+            { view: 'facilities', label: 'Facilities', icon: 'hospital' },
+            { view: 'billing', label: 'Billing', icon: 'credit-card' },
+            { view: 'profile', label: 'Profile', icon: 'user' },
+          ]" :key="tab.view" type="button"
+            class="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-cx-sm text-[10px] font-semibold transition"
+            :class="(activeView === tab.view || (tab.view === 'facilities' && activeView === 'facility_detail')) ? 'text-cx-brand' : 'text-cx-ink-3'"
+            :aria-current="(activeView === tab.view || (tab.view === 'facilities' && activeView === 'facility_detail')) ? 'page' : undefined"
+            @click="selectMobileView(tab.view)"
+          >
+            <CxIcon :name="tab.icon" class="size-5" />
+            <span>{{ tab.label }}</span>
+          </button>
+          <button type="button"
+            class="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-cx-sm text-[10px] font-semibold transition"
+            :class="mobileMoreOpen ? 'text-cx-brand' : 'text-cx-ink-3'"
+            :aria-expanded="mobileMoreOpen"
+            aria-label="More navigation options"
+            @click="mobileMoreOpen = !mobileMoreOpen"
+          >
+            <CxIcon name="menu" class="size-5" />
+            <span>More</span>
+          </button>
+          <div v-if="mobileMoreOpen" class="cx-glass-panel absolute bottom-full right-2 mb-2 w-56 rounded-cx border border-cx-border p-2 shadow-cx-raised">
+            <button v-for="item in mobileMoreItems" :key="item.view" type="button"
+              class="flex w-full items-center gap-2.5 rounded-cx-sm px-3 py-2.5 text-left text-xs font-semibold text-cx-ink-2 hover:bg-cx-well"
+              @click="selectMobileView(item.view)"
+            >
+              <CxIcon :name="item.icon" class="size-4" />{{ item.label }}
+            </button>
+          </div>
+        </nav>
+
       </div>
     </div>
 
@@ -3083,15 +2759,27 @@ onUnmounted(() => {
       size="3xl"
     >
       <div class="p-1 space-y-5">
+        <section class="rounded-cx-sm border border-cx-border bg-cx-well p-4">
+          <label class="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2" for="portfolio-partner-id">Partner ID</label>
+          <input
+            id="portfolio-partner-id"
+            v-model="partnerIdInput"
+            inputmode="numeric"
+            maxlength="6"
+            placeholder="Six-digit Partner ID (optional)"
+            class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm font-medium text-cx-ink focus:border-cx-brand focus:outline-none"
+          />
+          <p class="mt-1.5 text-xs text-cx-ink-3">Enter the Partner ID for the facility’s network. Leave it blank to use the configured default.</p>
+        </section>
         <!-- 1-Click National ID Discovery Banner if ID exists -->
-        <div v-if="userProfile.masked_national_id" class="rounded-xl bg-blue-50/70 border border-blue-200 p-3.5 flex items-center justify-between gap-3">
+        <div v-if="userProfile.masked_national_id" class="rounded-cx-sm bg-cx-brand-soft border border-cx-brand-soft-border p-3.5 flex items-center justify-between gap-3">
           <div>
-            <span class="font-semibold text-xs text-blue-900 block">Registered Owner ID: {{ userProfile.masked_national_id }}</span>
-            <span class="text-[11px] text-blue-700">Auto-discover clinic branches licensed under this National ID with 1 click.</span>
+            <span class="font-semibold text-xs text-cx-brand-ink block">Registered Owner ID: {{ userProfile.masked_national_id }}</span>
+            <span class="text-[11px] text-cx-brand-ink">Auto-discover clinic branches licensed under this National ID with 1 click.</span>
           </div>
           <button
             type="button"
-            class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition shrink-0 disabled:opacity-50"
+            class="rounded-cx-sm bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong transition shrink-0 disabled:opacity-50"
             :disabled="hfrOwnerSearchBusy"
             @click="discoverFacilitiesByOwnerId(); addFacilityModalOpen = false; activeView = 'hfr_sync'"
           >
@@ -3100,27 +2788,28 @@ onUnmounted(() => {
         </div>
 
         <div>
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
-            Search Health Facility Registry by MFL Code or Registration Number
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
+            Search the Health Facility Registry by MFL, FID, or registration number
           </label>
           <div class="flex gap-2">
             <select
               v-model="hfrSearchBy"
-              class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shrink-0"
+              class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shrink-0"
             >
               <option value="mfl_code">MFL Code</option>
+              <option value="facility_fid">FID</option>
               <option value="registration_number">Registration #</option>
             </select>
             <input
               type="text"
               v-model="hfrSearchQuery"
-              placeholder="e.g. 12094"
-              class="flex-1 rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500"
+              placeholder="Enter the selected registry identifier"
+              class="flex-1 rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
               @keyup.enter="executeHfrSearch()"
             />
             <button
               type="button"
-              class="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shrink-0"
+              class="rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong disabled:opacity-50 shrink-0"
               :disabled="hfrSearchBusy"
               @click="executeHfrSearch()"
             >
@@ -3131,25 +2820,25 @@ onUnmounted(() => {
 
         <!-- Search Results -->
         <div v-if="hfrSearchResults.length" class="space-y-2">
-          <span class="text-xs font-semibold uppercase text-slate-600">Matching Registry Records ({{ hfrSearchResults.length }})</span>
+          <span class="text-xs font-semibold uppercase text-cx-ink-3">Matching Registry Records ({{ hfrSearchResults.length }})</span>
           <div class="space-y-2 max-h-60 overflow-y-auto">
             <div
               v-for="cand in hfrSearchResults"
               :key="cand.fid"
-              class="rounded-xl border p-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition"
-              :class="hfrSelectedCandidate?.fid === cand.fid ? 'border-blue-500 bg-blue-50/30' : 'border-slate-200'"
+              class="rounded-cx-sm border p-3 flex items-center justify-between gap-3 hover:bg-cx-well transition"
+              :class="hfrSelectedCandidate?.fid === cand.fid ? 'border-cx-brand bg-cx-brand-soft' : 'border-cx-border'"
             >
               <div>
-                <span class="font-semibold text-xs text-slate-900 block">{{ cand.name }}</span>
-                <span class="text-[11px] text-slate-500">MFL: {{ cand.mfl_code }} · {{ cand.level || 'Clinic' }} · {{ cand.county }} · {{ cand.owner_type }}</span>
+                <span class="font-semibold text-xs text-cx-ink block">{{ cand.name }}</span>
+                <span class="text-[11px] text-cx-ink-3">MFL: {{ cand.mfl_code }} · {{ cand.level || 'Clinic' }} · {{ cand.county }} · {{ cand.owner_type }}</span>
               </div>
               <button
                 type="button"
-                class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black transition shrink-0 disabled:opacity-50"
+                class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shrink-0 disabled:opacity-50"
                 :disabled="hfrLinkBusy"
                 @click="linkHfrCandidate(cand)"
               >
-                {{ hfrLinkBusy ? 'Linking…' : 'Link Facility' }}
+                {{ hfrLinkBusy ? 'Adding…' : 'Add to portfolio' }}
               </button>
             </div>
           </div>
@@ -3165,12 +2854,12 @@ onUnmounted(() => {
     >
       <div class="p-1 space-y-5">
         <div>
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
             Target Facility
           </label>
           <select
             v-model="selectedFacilityMfl"
-            class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-slate-900 shadow-2xs focus:border-blue-500"
+            class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-cx-ink shadow-cx focus:border-cx-brand"
           >
             <option v-if="allFacilities.length > 1" value="" disabled>
               Select a facility to top up…
@@ -3186,32 +2875,32 @@ onUnmounted(() => {
         </div>
 
         <div class="space-y-2">
-          <span class="text-xs font-semibold uppercase text-slate-700 block">Select Package Tier</span>
+          <span class="text-xs font-semibold uppercase text-cx-ink-2 block">Select Package Tier</span>
           <div class="grid gap-3 sm:grid-cols-2">
             <article
               v-for="pkg in context.token_packages"
               :key="pkg.item_code"
-              class="rounded-xl border p-4 cursor-pointer transition flex flex-col justify-between"
+              class="rounded-cx-sm border p-4 cursor-pointer transition flex flex-col justify-between"
               :class="
                 selectedTopUpPackageCode === pkg.item_code
-                  ? 'border-2 border-blue-600 bg-blue-50/20 ring-2 ring-blue-500/10'
-                  : 'border-slate-200 hover:border-slate-300 bg-white'
+                  ? 'border-2 border-cx-brand bg-cx-brand-soft ring-2 ring-cx-brand-soft'
+                  : 'border-cx-border hover:border-cx-border bg-cx-surface'
               "
               @click="selectedTopUpPackageCode = pkg.item_code"
             >
               <div>
                 <div class="flex items-center justify-between">
-                  <span class="font-semibold text-sm text-slate-900">{{ pkg.display_name }}</span>
-                  <span class="font-semibold text-xs text-blue-700">
+                  <span class="font-semibold text-sm text-cx-ink">{{ pkg.display_name }}</span>
+                  <span class="font-semibold text-xs text-cx-brand-ink">
                     {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'Free' : money(pkg.gross_total || pkg.price, pkg.currency) }}
                   </span>
                 </div>
-                <div class="mt-2 text-xs font-semibold text-slate-900">🪙 {{ (pkg.token_quantity || 0).toLocaleString() }} Tokens</div>
-                <p class="mt-1 text-[11px] text-slate-500 leading-normal">{{ pkg.coverage_summary || pkg.description }}</p>
+                <div class="mt-2 text-xs font-semibold text-cx-ink"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (pkg.token_quantity || 0).toLocaleString() }} Tokens</div>
+                <p class="mt-1 text-[11px] text-cx-ink-3 leading-normal">{{ pkg.coverage_summary || pkg.description }}</p>
               </div>
-              <div class="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                <span class="text-slate-400">{{ Number(pkg.gross_total) > 0 ? 'incl. 16% VAT' : 'No charge' }}</span>
-                <span class="font-semibold" :class="selectedTopUpPackageCode === pkg.item_code ? 'text-blue-600' : 'text-slate-400'">
+              <div class="mt-3 pt-2 border-t border-cx-border-soft flex items-center justify-between text-[11px]">
+                <span class="text-cx-ink-4">{{ Number(pkg.gross_total) > 0 ? 'incl. 16% VAT' : 'No charge' }}</span>
+                <span class="font-semibold" :class="selectedTopUpPackageCode === pkg.item_code ? 'text-cx-brand' : 'text-cx-ink-4'">
                   {{ selectedTopUpPackageCode === pkg.item_code ? 'Selected ✓' : 'Select' }}
                 </span>
               </div>
@@ -3219,13 +2908,13 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-          <button type="button" class="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50" @click="topUpModalOpen = false">
+        <div class="pt-4 border-t border-cx-border-soft flex items-center justify-end gap-3">
+          <button type="button" class="rounded-cx-sm border border-cx-border px-4 py-2 text-xs font-semibold text-cx-ink-3 hover:bg-cx-well" @click="topUpModalOpen = false">
             Cancel
           </button>
           <button
             type="button"
-            class="rounded-xl bg-[#bc1823] px-5 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-[#a3141d] disabled:opacity-50"
+            class="rounded-cx-sm bg-cx-brand px-5 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong disabled:opacity-50"
             :disabled="purchaseBusy || !selectedFacility || !selectedPackageObj"
             @click="executeTopUp()"
           >
@@ -3262,14 +2951,14 @@ onUnmounted(() => {
     >
       <div class="p-1 space-y-5">
         <!-- Top M-Pesa Branding Header -->
-        <div class="rounded-2xl bg-emerald-700 text-white p-4 shadow-sm flex items-center justify-between">
+        <div class="rounded-cx bg-cx-success text-cx-contrast p-4 shadow-cx flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <div class="size-10 rounded-xl bg-white text-emerald-800 flex items-center justify-center font-bold text-base shadow-xs">
+            <div class="size-10 rounded-cx-sm bg-cx-surface text-cx-success-ink flex items-center justify-center font-bold text-base shadow-cx">
               M
             </div>
             <div>
               <span class="font-semibold text-sm tracking-tight block">Lipa na M-Pesa · Paybill</span>
-              <span class="text-xs text-emerald-100 block">Direct Instant Settlement with Zero Transaction Processing Surcharge</span>
+              <span class="text-xs text-cx-contrast block">Direct Instant Settlement with Zero Transaction Processing Surcharge</span>
             </div>
           </div>
           <span class="rounded-full bg-emerald-800/80 border border-emerald-500/50 px-2.5 py-1 text-[11px] font-semibold">
@@ -3280,57 +2969,57 @@ onUnmounted(() => {
         <!-- 3 Copyable Cards Grid -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <!-- 1. Paybill Number -->
-          <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col justify-between">
-            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Business No</span>
+          <div class="rounded-cx-sm border border-cx-border bg-cx-band p-3 flex flex-col justify-between">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Business No</span>
             <div class="mt-1">
-              <span class="font-mono text-lg font-bold text-slate-900 block leading-tight">{{ paybillInfo.business_number }}</span>
-              <span class="text-[11px] text-slate-500 block truncate">{{ paybillInfo.business_name }}</span>
+              <span class="font-mono text-lg font-bold text-cx-ink block leading-tight">{{ paybillInfo.business_number }}</span>
+              <span class="text-[11px] text-cx-ink-3 block truncate">{{ paybillInfo.business_name }}</span>
             </div>
             <button
               type="button"
-              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
+              class="mt-2.5 w-full rounded-cx-sm border border-cx-border bg-cx-surface py-1 px-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center justify-center gap-1"
               @click="copyText(paybillInfo.business_number, 'paybill_biz')"
             >
-              <span>{{ copiedKey === 'paybill_biz' ? '✓ Copied' : '📋 Copy' }}</span>
+              <span><CxIcon :name="copiedKey === 'paybill_biz' ? 'check' : 'copy'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ copiedKey === 'paybill_biz' ? 'Copied' : 'Copy' }}</span>
             </button>
           </div>
 
           <!-- 2. Account Number -->
-          <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col justify-between">
-            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Account No</span>
+          <div class="rounded-cx-sm border border-cx-border bg-cx-band p-3 flex flex-col justify-between">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Account No</span>
             <div class="mt-1">
-              <span class="font-mono text-sm font-semibold text-slate-900 block truncate leading-tight">{{ mpesaInvoice?.name }}</span>
-              <span class="text-[11px] text-slate-500 block">Invoice Reference</span>
+              <span class="font-mono text-sm font-semibold text-cx-ink block truncate leading-tight">{{ mpesaInvoice?.name }}</span>
+              <span class="text-[11px] text-cx-ink-3 block">Invoice Reference</span>
             </div>
             <button
               type="button"
-              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
+              class="mt-2.5 w-full rounded-cx-sm border border-cx-border bg-cx-surface py-1 px-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center justify-center gap-1"
               @click="copyText(mpesaInvoice?.name, 'paybill_acc')"
             >
-              <span>{{ copiedKey === 'paybill_acc' ? '✓ Copied' : '📋 Copy' }}</span>
+              <span><CxIcon :name="copiedKey === 'paybill_acc' ? 'check' : 'copy'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ copiedKey === 'paybill_acc' ? 'Copied' : 'Copy' }}</span>
             </button>
           </div>
 
           <!-- 3. Exact Amount -->
-          <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col justify-between">
-            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 block">Amount Due</span>
+          <div class="rounded-cx-sm border border-cx-border bg-cx-band p-3 flex flex-col justify-between">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Amount Due</span>
             <div class="mt-1">
-              <span class="font-mono text-lg font-bold text-emerald-700 block leading-tight">{{ money(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount, mpesaInvoice?.currency) }}</span>
-              <span class="text-[11px] text-slate-500 block">KES Net Total</span>
+              <span class="font-mono text-lg font-bold text-cx-success-ink block leading-tight">{{ money(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount, mpesaInvoice?.currency) }}</span>
+              <span class="text-[11px] text-cx-ink-3 block">KES Net Total</span>
             </div>
             <button
               type="button"
-              class="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-1 px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition inline-flex items-center justify-center gap-1"
+              class="mt-2.5 w-full rounded-cx-sm border border-cx-border bg-cx-surface py-1 px-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center justify-center gap-1"
               @click="copyText(Math.round(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount || 0), 'paybill_amt')"
             >
-              <span>{{ copiedKey === 'paybill_amt' ? '✓ Copied' : '📋 Copy' }}</span>
+              <span><CxIcon :name="copiedKey === 'paybill_amt' ? 'check' : 'copy'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ copiedKey === 'paybill_amt' ? 'Copied' : 'Copy' }}</span>
             </button>
           </div>
         </div>
 
         <!-- Step-by-step instructions -->
-        <div class="rounded-xl bg-slate-50 border border-slate-100 p-4 space-y-1.5 text-xs text-slate-600">
-          <strong class="text-slate-900 font-bold block mb-1">How to pay on your phone:</strong>
+        <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-4 space-y-1.5 text-xs text-cx-ink-3">
+          <strong class="text-cx-ink font-bold block mb-1">How to pay on your phone:</strong>
           <p>1. Open SIM Toolkit or M-Pesa App &gt; <strong>Lipa na M-Pesa</strong> &gt; <strong>Paybill</strong></p>
           <p>2. Enter Business Number <strong>{{ paybillInfo.business_number }}</strong> ({{ paybillInfo.business_name }})</p>
           <p>3. Enter Account Number <strong>{{ mpesaInvoice?.name }}</strong></p>
@@ -3339,8 +3028,8 @@ onUnmounted(() => {
         </div>
 
         <!-- M-Pesa Transaction Input Form -->
-        <div class="space-y-3 pt-2 border-t border-slate-100">
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-800">
+        <div class="space-y-3 pt-2 border-t border-cx-border-soft">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink">
             Submit M-Pesa Confirmation Code (from SMS)
           </label>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3350,27 +3039,27 @@ onUnmounted(() => {
                 v-model="mpesaCodeInput"
                 placeholder="e.g. SB65A1TU7X"
                 maxlength="15"
-                class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-mono font-semibold uppercase tracking-[0.08em] text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10 placeholder:text-slate-400 placeholder:normal-case placeholder:font-sans"
+                class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-xs font-mono font-semibold uppercase tracking-[0.08em] text-cx-ink focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10 placeholder:text-cx-ink-4 placeholder:normal-case placeholder:font-sans"
               />
-              <span class="text-[11px] text-slate-400 mt-1 block">10-character code from Safaricom SMS</span>
+              <span class="text-[11px] text-cx-ink-4 mt-1 block">10-character code from Safaricom SMS</span>
             </div>
             <div>
               <input
                 type="tel"
                 v-model="mpesaPhoneInput"
                 placeholder="M-Pesa Phone (e.g. 0712 345 678)"
-                class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10"
+                class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-xs font-medium text-cx-ink focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10"
               />
-              <span class="text-[11px] text-slate-400 mt-1 block">Phone used for the M-Pesa transaction</span>
+              <span class="text-[11px] text-cx-ink-4 mt-1 block">Phone used for the M-Pesa transaction</span>
             </div>
           </div>
         </div>
 
         <!-- Actions -->
-        <div class="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div class="pt-4 border-t border-cx-border-soft flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <button
             type="button"
-            class="text-xs font-semibold text-slate-600 hover:text-blue-600 underline text-left"
+            class="text-xs font-semibold text-cx-ink-3 hover:text-cx-brand underline text-left"
             @click="payInvoice(mpesaInvoice); mpesaModalOpen = false"
           >
             Or checkout using Credit/Debit Card via Paystack →
@@ -3378,14 +3067,14 @@ onUnmounted(() => {
           <div class="flex items-center gap-2 justify-end">
             <button
               type="button"
-              class="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              class="rounded-cx-sm border border-cx-border px-4 py-2 text-xs font-semibold text-cx-ink-3 hover:bg-cx-well"
               @click="mpesaModalOpen = false"
             >
               Cancel
             </button>
             <button
               type="button"
-              class="rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition"
+              class="rounded-cx-sm bg-cx-success px-5 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-success disabled:opacity-50 transition"
               :disabled="mpesaReportBusy || !mpesaCodeInput"
               @click="submitMpesaPayment()"
             >
@@ -3404,19 +3093,19 @@ onUnmounted(() => {
     >
       <div class="p-1 space-y-4">
         <div>
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
             Full Name
           </label>
           <input
             type="text"
             v-model="profileForm.full_name"
             placeholder="e.g. Salim Mwaura"
-            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500"
+            class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
           />
         </div>
 
         <div>
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
             Kenyan National ID Number
           </label>
           <input
@@ -3424,36 +3113,36 @@ onUnmounted(() => {
             v-model="profileForm.national_id"
             placeholder="6 to 10 digit National ID"
             maxlength="10"
-            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:border-blue-500"
+            class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-mono font-semibold text-cx-ink focus:outline-none focus:border-cx-brand"
           />
-          <p class="text-[11px] text-slate-500 mt-1">
+          <p class="text-[11px] text-cx-ink-3 mt-1">
             Used to securely query and auto-discover facilities licensed under your ownership in the official Health Facility Registry.
           </p>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 mb-1.5">
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
             Mobile Number
           </label>
           <input
             type="tel"
             v-model="profileForm.mobile_no"
             placeholder="e.g. 0712345678"
-            class="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500"
+            class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
           />
         </div>
 
-        <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+        <div class="pt-4 border-t border-cx-border-soft flex items-center justify-end gap-3">
           <button
             type="button"
-            class="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            class="rounded-cx-sm border border-cx-border px-4 py-2 text-xs font-semibold text-cx-ink-3 hover:bg-cx-well"
             @click="profileModalOpen = false"
           >
             Cancel
           </button>
           <button
             type="button"
-            class="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50 transition"
+            class="rounded-cx-sm bg-cx-brand px-5 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong disabled:opacity-50 transition"
             :disabled="profileSaving"
             @click="saveUserProfile()"
           >

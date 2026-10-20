@@ -9,6 +9,8 @@
   "facility_name",
   "organization",
   "keph_level",
+  "hfr_facility_id",
+  "registration_number",
   "is_self_onboarded",
   "memberships"
  ],
@@ -43,6 +45,17 @@
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
+  },
+  {
+   "fieldname": "hfr_facility_id",
+   "fieldtype": "Data",
+   "label": "HFR Facility ID",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "registration_number",
+   "fieldtype": "Data",
+   "label": "Registration Number"
   },
   {
    "default": "0",
