@@ -420,6 +420,19 @@ const allPayments = computed(() => {
   return list
 })
 
+function pendingPaymentForInvoice(invoice) {
+  if (!invoice?.name) return null
+  return allPayments.value.find((payment) => {
+    if (payment.status !== 'Pending Verification') return false
+    const invoiceNames = payment.invoice_names?.length
+      ? payment.invoice_names
+      : payment.invoice
+        ? [payment.invoice]
+        : []
+    return invoiceNames.some((name) => String(name) === String(invoice.name))
+  }) || null
+}
+
 // Selected Facility — never falls back to the first facility; an empty
 // selection means "not chosen yet" and the Top Up modal shows a picker.
 const selectedFacility = computed(() => {
@@ -447,6 +460,27 @@ const drawerOrders = computed(() => {
   const mfl = String(drawerFacility.value?.mfl_code || '').toLowerCase()
   return allOrders.value.filter((o) => String(o.crm_token_facility_mfl || '').toLowerCase() === mfl)
 })
+const drawerPayments = computed(() => {
+  const invoiceNames = new Set(drawerInvoices.value.map((invoice) => String(invoice.name)))
+  return allPayments.value.filter((payment) => {
+    const names = payment.invoice_names?.length
+      ? payment.invoice_names
+      : payment.invoice
+        ? [payment.invoice]
+        : []
+    return names.some((name) => invoiceNames.has(String(name)))
+  })
+})
+function invoiceForFacility(facility) {
+  const invoiceName = facility.invoice_summary?.invoice_name
+  return allInvoices.value.find((invoice) => invoice.name === invoiceName) || allInvoices.value.find(
+    (invoice) => String(invoice.crm_token_facility_mfl || '').toLowerCase() === String(facility.mfl_code || '').toLowerCase(),
+  ) || null
+}
+function pendingPaymentForFacility(facility) {
+  const invoice = invoiceForFacility(facility)
+  return invoice ? pendingPaymentForInvoice(invoice) : null
+}
 function openFacilityDrawer(facility) {
   facilityDrawerMfl.value = facility.mfl_code
   activeView.value = 'facility_detail'
@@ -530,8 +564,8 @@ const recentActivity = computed(() => {
     items.push({
       kind: 'payment',
       icon: 'receipt',
-      title: `Receipt ${pay.name}`,
-      text: `${pay.mode_of_payment || 'Payment'} · ${money(pay.amount, 'KES')}`,
+      title: pay.status === 'Pending Verification' ? 'M-Pesa report' : 'Payment recorded',
+      text: `${pay.mode_of_payment || 'Payment'} · ${money(pay.amount, 'KES')}${pay.status === 'Pending Verification' ? ' · Verification pending' : ''}`,
       date: pay.posting_date,
     })
   }
@@ -748,6 +782,13 @@ function selectPlanFromPricingTab(pkg) {
 }
 
 function openMpesaModal(invoice) {
+  if (pendingPaymentForInvoice(invoice)) {
+    notice.value = {
+      tone: 'pending',
+      text: 'An M-Pesa payment report is being verified for this invoice. Please wait before starting another payment.',
+    }
+    return
+  }
   mpesaInvoice.value = invoice
   mpesaCodeInput.value = ''
   mpesaPhoneInput.value = userProfile.value.mobile_no || ''
@@ -756,12 +797,7 @@ function openMpesaModal(invoice) {
 
 function openMpesaModalForFacility(facility) {
   const invName = facility.invoice_summary?.invoice_name
-  let inv = allInvoices.value.find((i) => i.name === invName)
-  if (!inv) {
-    inv = allInvoices.value.find(
-      (i) => String(i.crm_token_facility_mfl).toLowerCase() === String(facility.mfl_code).toLowerCase(),
-    )
-  }
+  let inv = invoiceForFacility(facility)
   if (!inv) {
     inv = {
       name: invName || `INV-${facility.mfl_code}`,
@@ -795,10 +831,11 @@ async function submitMpesaPayment() {
       phone: mpesaPhoneInput.value.trim(),
     })
     const data = unwrap(res)
+    const alreadyPending = data?.status === 'payment_already_pending'
     mpesaModalOpen.value = false
     notice.value = {
-      tone: 'success',
-      text: data?.message || `M-Pesa payment ${code} recorded successfully! Your invoice will update upon reconciliation.`,
+      tone: alreadyPending ? 'pending' : 'success',
+      text: data?.message || `M-Pesa payment ${code} recorded successfully. Your invoice will update after verification.`,
     }
     await refreshContext()
   } catch (error) {
@@ -969,6 +1006,13 @@ async function createInvoice(order) {
 }
 
 async function payInvoice(invoice) {
+  if (pendingPaymentForInvoice(invoice)) {
+    notice.value = {
+      tone: 'pending',
+      text: 'An M-Pesa payment report is being verified for this invoice. Please wait before starting another payment.',
+    }
+    return
+  }
   busyId.value = invoice.name
   notice.value = null
   try {
@@ -1415,7 +1459,7 @@ onUnmounted(() => {
             :facility="drawerFacility"
             :invoices="drawerInvoices"
             :orders="drawerOrders"
-            :payments="drawerFacility.payments || []"
+            :payments="drawerPayments"
             :default-currency="defaultCurrency"
             :load-provisioning-status="loadProvisioningStatus"
             @back="closeFacilityDrawer"
@@ -1674,7 +1718,7 @@ onUnmounted(() => {
                           <td class="py-3.5 px-4 text-right">
                             <div class="flex items-center justify-end gap-1.5 flex-wrap">
                               <button
-                                v-if="facility.invoice_summary?.has_outstanding"
+                                v-if="facility.invoice_summary?.has_outstanding && !pendingPaymentForFacility(facility)"
                                 type="button"
                                 class="rounded-cx-sm bg-cx-success px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition shadow-cx inline-flex items-center gap-1 shrink-0 cursor-pointer"
                                 @click="openMpesaModalForFacility(facility)"
@@ -1682,6 +1726,9 @@ onUnmounted(() => {
                               >
                                 <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                               </button>
+                              <span v-else-if="facility.invoice_summary?.has_outstanding" class="text-[11px] font-semibold text-cx-warning-ink">
+                                Payment verification pending
+                              </span>
                               <button
                                 type="button"
                                 class="rounded-cx-sm bg-cx-ink px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shadow-cx cursor-pointer"
@@ -1796,7 +1843,7 @@ onUnmounted(() => {
                         <td class="py-3.5 px-4 text-right">
                           <div class="flex items-center justify-end gap-1.5 flex-wrap">
                             <button
-                              v-if="facility.invoice_summary?.has_outstanding"
+                              v-if="facility.invoice_summary?.has_outstanding && !pendingPaymentForFacility(facility)"
                               type="button"
                               class="rounded-cx-sm bg-cx-success px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition shadow-cx inline-flex items-center gap-1 shrink-0 cursor-pointer"
                               @click="openMpesaModalForFacility(facility)"
@@ -1804,6 +1851,9 @@ onUnmounted(() => {
                             >
                               <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                             </button>
+                            <span v-else-if="facility.invoice_summary?.has_outstanding" class="text-[11px] font-semibold text-cx-warning-ink">
+                              Payment verification pending
+                            </span>
                             <button
                               type="button"
                               class="rounded-cx-sm bg-cx-ink px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shadow-cx cursor-pointer"
@@ -1898,13 +1948,16 @@ onUnmounted(() => {
 
                       <div class="mt-4 pt-3 border-t border-cx-border-soft space-y-2">
                         <button
-                          v-if="facility.invoice_summary?.has_outstanding"
+                          v-if="facility.invoice_summary?.has_outstanding && !pendingPaymentForFacility(facility)"
                           type="button"
                           class="w-full rounded-cx-sm bg-cx-success px-3 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition flex items-center justify-center gap-1.5 shadow-cx cursor-pointer"
                           @click="openMpesaModalForFacility(facility)"
                         >
                           <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                         </button>
+                        <span v-else-if="facility.invoice_summary?.has_outstanding" class="block text-center text-[11px] font-semibold text-cx-warning-ink">
+                          Payment verification pending
+                        </span>
                         <div class="flex items-center gap-2">
                           <button
                             type="button"
@@ -1974,13 +2027,16 @@ onUnmounted(() => {
 
                   <div class="mt-4 pt-3 border-t border-cx-border-soft space-y-2">
                     <button
-                      v-if="facility.invoice_summary?.has_outstanding"
+                      v-if="facility.invoice_summary?.has_outstanding && !pendingPaymentForFacility(facility)"
                       type="button"
                       class="w-full rounded-cx-sm bg-cx-success px-3 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-success transition flex items-center justify-center gap-1.5 shadow-cx cursor-pointer"
                       @click="openMpesaModalForFacility(facility)"
                     >
                       <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(facility.invoice_summary.outstanding_amount, facility.invoice_summary.currency) }} →</span>
                     </button>
+                    <span v-else-if="facility.invoice_summary?.has_outstanding" class="block text-center text-[11px] font-semibold text-cx-warning-ink">
+                      Payment verification pending
+                    </span>
                     <div class="flex items-center gap-2">
                       <button
                         type="button"
@@ -2180,13 +2236,16 @@ onUnmounted(() => {
 
                   <div class="mt-4 space-y-2 border-t border-cx-border-soft pt-3">
                     <button
-                      v-if="fac.invoice_summary?.has_outstanding"
+                      v-if="fac.invoice_summary?.has_outstanding && !pendingPaymentForFacility(fac)"
                       type="button"
                       class="flex w-full items-center justify-center gap-1.5 rounded-cx-sm bg-cx-success px-3 py-2 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-success"
                       @click="openMpesaModalForFacility(fac)"
                     >
                       <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa: {{ money(fac.invoice_summary.outstanding_amount, fac.invoice_summary.currency) }} →</span>
                     </button>
+                    <span v-else-if="fac.invoice_summary?.has_outstanding" class="block text-center text-[11px] font-semibold text-cx-warning-ink">
+                      Payment verification pending
+                    </span>
                     <div class="flex items-center gap-2">
                       <button
                         type="button"
@@ -2347,7 +2406,7 @@ onUnmounted(() => {
                   <p class="mt-1 text-[11px] text-cx-ink-3 leading-relaxed">
                     1. M-Pesa app → Lipa na M-Pesa → Paybill<br />
                     2. Business No, then Account No (invoice number)<br />
-                    3. Amount &amp; PIN, then paste the transaction code on the invoice
+                    3. Amount &amp; PIN, then enter your transaction code when prompted
                   </p>
                 </div>
               </div>
@@ -2371,6 +2430,13 @@ onUnmounted(() => {
                     <div class="flex items-center gap-2">
                       <span class="font-semibold text-sm text-cx-ink">{{ invoice.invoice_number || invoice.name }}</span>
                       <span
+                        v-if="pendingPaymentForInvoice(invoice)"
+                        class="rounded-cx-sm bg-cx-warning-soft px-2 py-0.5 text-[11px] font-semibold text-cx-warning-ink"
+                      >
+                        M-Pesa report · verification pending
+                      </span>
+                      <span
+                        v-else
                         class="rounded-cx-sm px-2 py-0.5 text-[11px] font-semibold"
                         :class="invoiceStatus(invoice).key === 'overdue' ? 'bg-cx-danger-soft text-cx-danger-ink' : 'bg-amber-100 text-cx-warning-ink'"
                       >
@@ -2379,6 +2445,9 @@ onUnmounted(() => {
                     </div>
                     <p class="text-xs text-cx-ink-3 mt-1">
                       Due: <strong>{{ invoice.due_date || 'On Receipt' }}</strong> · Issued: {{ invoice.posting_date }}
+                    </p>
+                    <p v-if="pendingPaymentForInvoice(invoice)" class="mt-1 text-[11px] text-cx-warning-ink">
+                      Payment reference {{ pendingPaymentForInvoice(invoice).reference_no || pendingPaymentForInvoice(invoice).name }} is being checked. Please wait before paying again.
                     </p>
                     <span class="inline-flex items-center gap-1.5 rounded-cx-sm border border-cx-border bg-cx-well px-2 py-0.5 mt-1.5 text-[11px] font-semibold text-cx-ink-2">
                       <span><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
@@ -2390,22 +2459,24 @@ onUnmounted(() => {
                   <div class="flex items-center gap-3 shrink-0 flex-wrap justify-end">
                     <div class="text-right">
                       <span class="text-base font-bold text-cx-ink block leading-tight">{{ money(invoice.amount, invoice.currency) }}</span>
-                      <span class="text-[11px] text-cx-ink-4 uppercase font-medium">Balance</span>
+                      <span class="text-[11px] text-cx-ink-4 uppercase font-medium">
+                        {{ pendingPaymentForInvoice(invoice) ? 'Balance until verified' : 'Balance' }}
+                      </span>
                     </div>
+                    <span
+                      v-if="pendingPaymentForInvoice(invoice)"
+                      class="rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft px-3 py-2 text-xs font-semibold text-cx-warning-ink"
+                    >
+                      Payment verification pending
+                    </span>
                     <button
+                      v-else
                       type="button"
                       class="rounded-cx-sm bg-cx-success px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-success transition inline-flex items-center gap-1.5"
+                      :disabled="busyId === invoice.name"
                       @click="openMpesaModal(invoice)"
                     >
-                      <span><CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay M-Pesa (No Fee)</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition disabled:opacity-50"
-                      :disabled="busyId === invoice.name"
-                      @click="payInvoice(invoice)"
-                    >
-                      <span>{{ busyId === invoice.name ? 'Connecting…' : 'Card / Paystack →' }}</span>
+                      <span>{{ busyId === invoice.name ? 'Connecting…' : 'Choose payment method' }}</span>
                     </button>
                   </div>
                 </article>
@@ -2444,11 +2515,11 @@ onUnmounted(() => {
             <div v-if="allPayments.length" class="space-y-3 pt-6 border-t border-cx-border">
               <div class="flex items-center justify-between">
                 <div>
-                  <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Payment Receipts & History</h2>
-                  <p class="text-xs text-cx-ink-3 mt-0.5">Verified payment receipts, M-Pesa confirmations, and bank settlements.</p>
+                  <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Payment activity</h2>
+                  <p class="text-xs text-cx-ink-3 mt-0.5">Recorded payments and M-Pesa reports awaiting verification.</p>
                 </div>
                 <span class="text-xs text-cx-ink-3 font-semibold bg-cx-well px-2.5 py-1 rounded-cx-sm border border-cx-border">
-                  {{ allPayments.length }} {{ allPayments.length === 1 ? 'receipt' : 'receipts' }}
+                  {{ allPayments.length }} {{ allPayments.length === 1 ? 'payment' : 'payments' }}
                 </span>
               </div>
 
@@ -2457,8 +2528,8 @@ onUnmounted(() => {
                   <table class="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr class="border-b border-cx-border bg-cx-well text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">
-                        <th class="py-3 px-4">Receipt #</th>
                         <th class="py-3 px-4">Date</th>
+                        <th class="py-3 px-4">Invoice</th>
                         <th class="py-3 px-4">Mode & Reference</th>
                         <th class="py-3 px-4 text-right">Amount</th>
                         <th class="py-3 px-4 text-center">Status</th>
@@ -2466,8 +2537,8 @@ onUnmounted(() => {
                     </thead>
                     <tbody class="divide-y divide-cx-border-soft">
                       <tr v-for="pay in allPayments" :key="pay.name" class="hover:bg-cx-band transition">
-                        <td class="py-3 px-4 font-mono font-bold text-cx-ink">{{ pay.name }}</td>
                         <td class="py-3 px-4 text-cx-ink-3">{{ pay.posting_date }}</td>
+                        <td class="py-3 px-4 font-mono text-[11px] text-cx-ink-2">{{ pay.invoice_names?.join(', ') || pay.invoice || '—' }}</td>
                         <td class="py-3 px-4">
                           <span class="font-semibold text-cx-ink">{{ pay.mode_of_payment }}</span>
                           <span v-if="pay.reference_no" class="ml-2 font-mono text-[11px] text-cx-ink-3 bg-cx-well px-1.5 py-0.5 rounded-cx-sm border border-cx-border">
@@ -2478,7 +2549,7 @@ onUnmounted(() => {
                         <td class="py-3 px-4 text-center">
                           <span
                             class="rounded-full px-2 py-0.5 text-[11px] font-semibold border"
-                            :class="pay.status === 'Submitted' ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
+                            :class="pay.status === 'Recorded' ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                           >
                             {{ pay.status }}
                           </span>
@@ -2959,10 +3030,10 @@ onUnmounted(() => {
       </div>
     </Dialog>
 
-    <!-- MODAL 4: PAY VIA M-PESA PAYBILL -->
+    <!-- MODAL 4: CHOOSE PAYMENT METHOD -->
     <Dialog
       v-model:open="mpesaModalOpen"
-      :title="__('Pay via M-Pesa Paybill')"
+      :title="__('Choose payment method')"
       size="2xl"
     >
       <div class="p-1 space-y-5">
@@ -2981,6 +3052,9 @@ onUnmounted(() => {
             Official Paybill
           </span>
         </div>
+        <p class="text-xs text-cx-ink-3">
+          Pay with M-Pesa using the details below, or choose card checkout with Paystack at the bottom.
+        </p>
 
         <!-- 3 Copyable Cards Grid -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -3046,7 +3120,7 @@ onUnmounted(() => {
         <!-- M-Pesa Transaction Input Form -->
         <div class="space-y-3 pt-2 border-t border-cx-border-soft">
           <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink">
-            Submit M-Pesa Confirmation Code (from SMS)
+            Report your M-Pesa confirmation code
           </label>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -3078,7 +3152,7 @@ onUnmounted(() => {
             class="text-xs font-semibold text-cx-ink-3 hover:text-cx-brand underline text-left"
             @click="payInvoice(mpesaInvoice); mpesaModalOpen = false"
           >
-            Or checkout using Credit/Debit Card via Paystack →
+            Pay by card with Paystack →
           </button>
           <div class="flex items-center gap-2 justify-end">
             <button
@@ -3094,7 +3168,7 @@ onUnmounted(() => {
               :disabled="mpesaReportBusy || !mpesaCodeInput"
               @click="submitMpesaPayment()"
             >
-              {{ mpesaReportBusy ? 'Verifying Receipt…' : 'Confirm & Reconcile Payment →' }}
+              {{ mpesaReportBusy ? 'Submitting…' : 'Submit M-Pesa reference →' }}
             </button>
           </div>
         </div>

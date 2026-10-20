@@ -393,6 +393,33 @@ def _invoice_for_session(submission, invoice_name):
 	return next((row for row in _invoice_rows(submission) if row["name"] == _normalise(invoice_name)), None)
 
 
+def _pending_mpesa_report_for_invoice(invoice_name: str) -> str | None:
+	"""Return a draft Payment Entry created by the portal's M-Pesa report flow."""
+	if not frappe.db.exists("DocType", "Payment Entry Reference"):
+		return None
+	refs = frappe.get_all(
+		"Payment Entry Reference",
+		filters={"reference_doctype": "Sales Invoice", "reference_name": _normalise(invoice_name)},
+		fields=["parent"],
+		limit_page_length=0,
+		ignore_permissions=True,
+	)
+	parent_names = list({row.parent for row in refs if row.parent})
+	if not parent_names:
+		return None
+	entries = frappe.get_all(
+		"Payment Entry",
+		filters={"name": ["in", parent_names], "docstatus": 0},
+		fields=["name", "remarks"],
+		limit_page_length=0,
+		ignore_permissions=True,
+	)
+	return next(
+		(row.name for row in entries if _normalise(row.remarks).startswith("M-Pesa Paybill payment ")),
+		None,
+	)
+
+
 def _paystack_settings():
 	settings = _settings()
 	secret = _setting_secret(settings, "paystack_secret_key")
@@ -417,6 +444,11 @@ def _start_paystack(submission, invoice_name, callback_path):
 	invoice_row = _invoice_for_session(submission, invoice_name)
 	if not invoice_row:
 		frappe.throw(_("That invoice is no longer available for payment."), frappe.ValidationError)
+	if _pending_mpesa_report_for_invoice(invoice_row["name"]):
+		frappe.throw(
+			_("An M-Pesa payment report is already being verified for this invoice. Please wait before starting another payment."),
+			frappe.ValidationError,
+		)
 	secret = _paystack_settings()[0]
 	reference = "OIS-%s-%s-%s" % (
 		submission.name.replace("/", "-"),
@@ -483,6 +515,11 @@ def _start_paystack_customer(customer: str, invoice_name: str, callback_path: st
 	invoice_row = _customer_invoice_row(customer, invoice_name)
 	if not invoice_row:
 		frappe.throw(_("That invoice is no longer available for payment."), frappe.ValidationError)
+	if _pending_mpesa_report_for_invoice(invoice_row["name"]):
+		frappe.throw(
+			_("An M-Pesa payment report is already being verified for this invoice. Please wait before starting another payment."),
+			frappe.ValidationError,
+		)
 	secret = _paystack_settings()[0]
 	reference = "CUST-%s-%s-%s" % (
 		_normalise(customer).replace("/", "-"),
