@@ -451,6 +451,16 @@ function openFacilityDrawer(facility) {
   facilityDrawerMfl.value = facility.mfl_code
   activeView.value = 'facility_detail'
 }
+function openFacilityFromSurface(event, facility) {
+  if (event.target?.closest?.('button, a, input, select, textarea, [role="button"]')) return
+  openFacilityDrawer(facility)
+}
+function openAttentionFacility(item) {
+  const facility = allFacilities.value.find(
+    (row) => String(row.mfl_code || '').toLowerCase() === String(item.mfl_code || '').toLowerCase(),
+  )
+  if (facility) openFacilityDrawer(facility)
+}
 function closeFacilityDrawer() {
   facilityDrawerMfl.value = ''
   activeView.value = 'facilities'
@@ -492,30 +502,22 @@ const primaryOrganizationName = computed(() => {
   )
 })
 
-// Dashboard: items that need the user's attention (invoices due/overdue,
-// facilities still verifying on the registry)
+// Dashboard: actionable invoice items. Registry verification is not a customer action.
 const dashboardAttention = computed(() => {
   const items = []
   for (const inv of allInvoices.value) {
+    const facilityMfl = String(inv.crm_token_facility_mfl || '').trim()
+    const facility = allFacilities.value.find(
+      (item) => String(item.mfl_code || '').trim().toLowerCase() === facilityMfl.toLowerCase(),
+    )
     const status = invoiceStatus(inv)
     items.push({
       key: `inv-${inv.name}`,
       icon: 'credit-card',
       text: `Invoice ${inv.invoice_number || inv.name} — ${money(inv.amount, inv.currency)} ${status.key === 'overdue' ? 'overdue' : 'due'}`,
-      meta: `Facility: ${facilityLabel(inv.crm_token_facility_mfl, allFacilities.value)}`,
-      view: 'billing',
+      meta: `Facility: ${facility?.facility_name || facilityLabel(inv.crm_token_facility_mfl, allFacilities.value)}`,
+      mfl_code: facility?.mfl_code || '',
     })
-  }
-  for (const fac of allFacilities.value) {
-    if (!fac.go_live) {
-      items.push({
-        key: `verify-${fac.mfl_code}`,
-        icon: 'refresh',
-        text: `${fac.facility_name} is verifying on the Health Facility Registry`,
-        meta: `MFL: ${fac.mfl_code} · ${fac.keph_level}`,
-        view: 'facilities',
-      })
-    }
   }
   return items
 })
@@ -1610,7 +1612,8 @@ onUnmounted(() => {
                         <tr
                           v-for="facility in group.facilities"
                           :key="facility.mfl_code"
-                          class="hover:bg-cx-band transition"
+                          class="cursor-pointer hover:bg-cx-band transition"
+                          @click="openFacilityFromSurface($event, facility)"
                         >
                           <td class="py-3.5 px-4 font-semibold text-cx-ink">
                             <div class="flex items-center gap-3">
@@ -1714,7 +1717,8 @@ onUnmounted(() => {
                       <tr
                         v-for="facility in filteredFacilities"
                         :key="facility.mfl_code"
-                        class="hover:bg-cx-band transition"
+                        class="cursor-pointer hover:bg-cx-band transition"
+                        @click="openFacilityFromSurface($event, facility)"
                       >
                         <!-- Name & Location & Network -->
                         <td class="py-3.5 px-4 font-semibold text-cx-ink">
@@ -1845,7 +1849,8 @@ onUnmounted(() => {
                     <article
                       v-for="facility in group.facilities"
                       :key="facility.mfl_code"
-                      class="cx-glass-panel rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
+                      class="cx-glass-panel cursor-pointer rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
+                      @click="openFacilityFromSurface($event, facility)"
                     >
                       <div>
                         <div class="flex items-start justify-between gap-2">
@@ -1920,7 +1925,8 @@ onUnmounted(() => {
                 <article
                   v-for="facility in filteredFacilities"
                   :key="facility.mfl_code"
-                  class="cx-glass-panel rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
+                  class="cx-glass-panel cursor-pointer rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx flex flex-col justify-between hover:border-cx-brand transition"
+                  @click="openFacilityFromSurface($event, facility)"
                 >
                   <div>
                     <div class="flex items-start justify-between gap-2">
@@ -2034,11 +2040,20 @@ onUnmounted(() => {
                     </div>
                   </div>
                   <button
+                    v-if="item.mfl_code"
                     type="button"
                     class="shrink-0 text-xs font-semibold text-cx-brand hover:underline"
-                    @click="activeView = item.view"
+                    @click="openAttentionFacility(item)"
                   >
                     Review →
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    class="shrink-0 text-xs font-semibold text-cx-brand hover:underline"
+                    @click="activeView = 'billing'"
+                  >
+                    Open billing →
                   </button>
                 </div>
               </div>
@@ -2116,7 +2131,8 @@ onUnmounted(() => {
                 <article
                   v-for="fac in allFacilities"
                   :key="fac.mfl_code"
-                  class="flex flex-col justify-between rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx"
+                  class="flex cursor-pointer flex-col justify-between rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx hover:border-cx-brand transition"
+                  @click="openFacilityFromSurface($event, fac)"
                 >
                   <div>
                     <div class="flex items-start justify-between gap-2">
