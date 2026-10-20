@@ -7,6 +7,7 @@ This pattern guides future customer experience screens for Kenyan health facilit
 - Keep the global header for page search, account identity, and system context. Do not put workflow actions such as adding a facility or buying tokens in the header.
 - Use the sidebar on desktop and the bottom tab bar on mobile for product navigation. Do not repeat navigation destinations in the avatar menu.
 - Keep the account menu to account identity, one Account settings destination, and Sign out.
+- Keep customer sign-in, password-reset completion, and sign-out within the branded portal or public landing page. Never use `/app` or `/desk` as a customer-facing return target.
 - Give each page one clear heading and one primary task. Place actions beside the content they change.
 
 ## Actions and selection

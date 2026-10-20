@@ -75,10 +75,13 @@ function selectMobileView(view) {
 const logout = createResource({
   url: 'logout',
   onSuccess: () => {
-    window.location.href = '/login?redirect-to=/crm/facility-portal.html'
+    window.location.href = '/'
   },
   onError: () => {
-    window.location.href = '/login'
+    notice.value = {
+      tone: 'error',
+      text: 'Could not sign out. Your session is still active; please try again.',
+    }
   },
 })
 
