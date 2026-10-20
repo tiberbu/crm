@@ -16,6 +16,8 @@ This pattern guides future customer experience screens for Kenyan health facilit
 - Do not show checkboxes, filters, or controls unless their result is available to the user. Keep row actions to the common next step; put secondary tools in facility details.
 - Keep search scope honest in its label and placeholder. Search only fields that are actually indexed.
 - In the local portfolio and Ctrl+K, search facility names only. Keep MFL, FID, and registration-number lookup inside Health Facility Registry discovery, where the identifier type is explicit.
+- Keep one facility-name search field shared by the header and Facilities page; do not repeat the same search control on one screen. Make that field wide enough to use on a phone and provide a clear action.
+- Label the portfolio `go_live` field as go-live readiness. Do not present it as HFR verification or HMIS deployment status; show deployment status only from the provisioning status route in the Single Facility View.
 - Adding a facility must resolve a six-digit Partner ID to its network. An empty Partner ID uses the configured default; show that behavior beside the field before the user submits.
 - Open a facility into a dedicated single-facility view. Bring its identity, network, invoices, payment history, orders, and HMIS implementation status together on that page.
 
@@ -26,6 +28,9 @@ This pattern guides future customer experience screens for Kenyan health facilit
 - Mask personal identifiers by default. Documentation and mock data must use masked placeholders, never real National IDs.
 - Do not claim token balances predict patient visits without a validated conversion model. Do not label a package “Most Popular” without current, supported evidence.
 - Show the source-backed package catalog and avoid feature matrices built from stale hardcoded tiers.
+- Render the catalog billing period, token quantity, and VAT label from the catalog response. Do not invent a monthly price, token quantity, or fixed tax rate when the API has no such value.
+- Describe M-Pesa Paybill as a manual payment followed by reference submission and verification. Do not promise instant settlement or fee treatment unless the payment service confirms it. Do not offer another payment action while a report is awaiting verification.
+- Treat zero-price packages as orders unless the backend confirms direct activation; do not promise that tokens are already active when only an order was created.
 
 ## States and recovery
 
@@ -43,6 +48,7 @@ This pattern guides future customer experience screens for Kenyan health facilit
 - Use plain language familiar to Kenyan facility owners. Prefer KES, M-Pesa, MFL, and KEPH labels where they help complete the task; explain unfamiliar abbreviations at first use.
 - Call provisioning routes through the HIE APISIX gateway using the configured HIE base URL and Bearer JWT. Do not expose setup-host credentials to the browser.
 - Show deployment status and progress only from the HMIS setup service. Do not imply a draft setup has been deployed. The current status contract does not report service-unit inventory; display “Not reported” until that contract supplies it.
+- Use support descriptions that match the actual channel shown. Do not claim a named onboarding lead, emergency service, or staffed helpdesk when the page only provides a general email address.
 - On mobile, keep actions reachable, avoid dense filter rows, and ensure tables have a card or responsive alternative.
 
 ## Review checklist

@@ -141,9 +141,9 @@ const hfrOwnerSearchResults = ref([])
 const hfrOwnerSearchComplete = ref(false)
 const hfrOwnerSearchError = ref('')
 
-// Search, Filter & Grouping state for Facilities Data Table
+// Shared facility-name search plus directory filters and grouping state
 const searchQuery = ref('')
-const selectedStatusFilter = ref('all') // 'all' | 'live' | 'verifying'
+const selectedStatusFilter = ref('all') // 'all' | 'ready' | 'progress' | 'lead'
 const selectedLevelFilter = ref('all') // 'all' | 'Level 2' | 'Level 3' | 'Level 4'
 const selectedNetworkFilter = ref('all') // 'all' | network names
 const groupByNetwork = ref(false) // Toggle to group facilities by network/partner
@@ -273,6 +273,16 @@ const availableNetworks = computed(() => {
   return Array.from(set).sort()
 })
 
+const availableLevelFilters = computed(() => {
+  const levels = new Set()
+  for (const facility of allFacilities.value) {
+    const level = String(facility.keph_level || '').trim()
+    if (!level) continue
+    levels.add(level.match(/^Level\s+\d+/i)?.[0] || level)
+  }
+  return Array.from(levels).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+})
+
 // Filtered facilities for data table and card view
 const filteredFacilities = computed(() => {
   return allFacilities.value.filter((fac) => {
@@ -284,8 +294,9 @@ const filteredFacilities = computed(() => {
     }
 
     // Status filter
-    if (selectedStatusFilter.value === 'live' && !fac.go_live) return false
-    if (selectedStatusFilter.value === 'verifying' && fac.go_live) return false
+    if (selectedStatusFilter.value === 'ready' && !fac.go_live) return false
+    if (selectedStatusFilter.value === 'progress' && (fac.go_live || fac.membership_status === 'Lead Inquiry')) return false
+    if (selectedStatusFilter.value === 'lead' && fac.membership_status !== 'Lead Inquiry') return false
 
     // Level filter
     if (selectedLevelFilter.value !== 'all') {
@@ -304,6 +315,11 @@ const filteredFacilities = computed(() => {
     return true
   })
 })
+
+function facilityReadinessLabel(facility) {
+  if (facility.membership_status === 'Lead Inquiry') return 'Lead inquiry'
+  return facility.go_live ? 'Ready for go-live' : 'Implementation in progress'
+}
 
 function resetFacilityFilters() {
   searchQuery.value = ''
@@ -631,32 +647,36 @@ const defaultCurrency = computed(() => {
 // ---------------------------------------------------------------------------
 // Actions & Handlers
 // ---------------------------------------------------------------------------
-function copyMfl(code) {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(code)
-    copiedMfl.value = code
-    setTimeout(() => {
-      if (copiedMfl.value === code) copiedMfl.value = ''
-    }, 2000)
-  }
+async function copyMfl(code) {
+  if (!await copyText(code, `mfl-${code}`)) return
+  copiedMfl.value = code
+  setTimeout(() => {
+    if (copiedMfl.value === code) copiedMfl.value = ''
+  }, 2000)
 }
 
-function copyText(text, key) {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(String(text))
+async function copyText(text, key) {
+  if (text === undefined || text === null || text === '') {
+    notice.value = { tone: 'error', text: 'This value is not available to copy.' }
+    return false
+  }
+  try {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      throw new Error('Clipboard access is unavailable.')
+    }
+    await navigator.clipboard.writeText(String(text))
     copiedKey.value = key
     setTimeout(() => {
       if (copiedKey.value === key) copiedKey.value = ''
     }, 2000)
+    return true
+  } catch {
+    notice.value = { tone: 'error', text: 'Could not copy this value. Select and copy it manually.' }
+    return false
   }
 }
 
-const paybillInfo = computed(() => {
-  return context.value.paybill_info || {
-    business_number: '4130669',
-    business_name: 'Tiberbu Healthnet',
-  }
-})
+const paybillInfo = computed(() => context.value.paybill_info || {})
 
 async function loadUserProfile() {
   try {
@@ -990,7 +1010,7 @@ async function executeTopUp() {
     topUpModalOpen.value = false
     notice.value = {
       tone: 'success',
-      text: `Order ${payload.sales_order || ''} successfully generated for ${selectedFacility.value.facility_name}. Settle payment under Billing & Invoices to activate tokens.`,
+      text: `Order ${payload.sales_order || ''} created for ${selectedFacility.value.facility_name}. Check Billing & Invoices for any amount due.`,
     }
 
     await refreshContext()
@@ -1329,10 +1349,10 @@ onUnmounted(() => {
 
       <!-- 2. MAIN APPLICATION CONTENT -->
       <div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        <!-- Top App Bar (Global Search & Quick Actions) -->
+        <!-- Top App Bar (Facility search and account identity) -->
         <header class="cx-glass-chrome h-16 bg-cx-surface border-b border-cx-border px-3 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-20">
           <!-- Search Bar -->
-          <div class="relative w-28 sm:w-80 lg:w-96">
+          <div class="relative w-[min(58vw,20rem)] sm:w-80 lg:w-96">
             <svg class="size-4 text-cx-ink-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -1343,12 +1363,14 @@ onUnmounted(() => {
               v-model="searchQuery"
               placeholder="Search your facilities by name"
               aria-label="Search your facilities by name"
-              class="w-full rounded-cx-sm bg-cx-well border border-cx-border pl-9 pr-12 py-2 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:bg-cx-surface focus:border-cx-brand focus:outline-none focus:ring-2 focus:ring-cx-brand-soft transition"
+              class="w-full rounded-cx-sm bg-cx-well border border-cx-border pl-9 pr-9 sm:pr-12 py-2 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:bg-cx-surface focus:border-cx-brand focus:outline-none focus:ring-2 focus:ring-cx-brand-soft transition"
               @input="onGlobalSearchInput"
             />
-            <span class="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-cx-sm bg-cx-band px-1.5 py-0.5 text-[11px] font-mono text-cx-ink-3">
+            <button v-if="searchQuery" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 text-sm text-cx-ink-3 hover:text-cx-ink sm:hidden" aria-label="Clear facility search" @click="searchQuery = ''">×</button>
+            <span v-else class="absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded-cx-sm bg-cx-band px-1.5 py-0.5 text-[11px] font-mono text-cx-ink-3 sm:block">
               ⌘K
             </span>
+            <button v-if="searchQuery" type="button" class="absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded-cx-sm bg-cx-band px-1.5 py-0.5 text-[11px] font-semibold text-cx-ink-3 hover:text-cx-ink sm:block" aria-label="Clear facility search" @click="searchQuery = ''">Clear</button>
           </div>
 
           <!-- Account controls -->
@@ -1501,47 +1523,35 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Table Filters Toolbar (from screenshot: Search, Bulk Action, View Mode, Filters) -->
+            <!-- Directory filters and view controls -->
             <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
               <div class="flex items-center gap-2 flex-wrap">
-                <!-- Search input -->
-                <div class="relative w-64">
-                  <input
-                    type="text"
-                    v-model="searchQuery"
-                    placeholder="Search your facilities by name"
-                    class="w-full rounded-cx-sm bg-cx-surface border border-cx-border pl-8 pr-3 py-1.5 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:outline-none focus:border-cx-brand shadow-cx"
-                  />
-                  <svg class="size-3.5 text-cx-ink-4 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                  </svg>
-                </div>
-
                 <!-- Status Filter -->
                 <select
                   v-model="selectedStatusFilter"
+                  aria-label="Filter facilities by go-live readiness"
                   class="rounded-cx-sm bg-cx-surface border border-cx-border px-3 py-1.5 text-xs font-semibold text-cx-ink-2 shadow-cx focus:outline-none focus:border-cx-brand"
                 >
-                  <option value="all">All Statuses</option>
-                  <option value="live">Live on Registry</option>
-                  <option value="verifying">Verification Pending</option>
+                  <option value="all">All readiness</option>
+                  <option value="ready">Ready for go-live</option>
+                  <option value="progress">Implementation in progress</option>
+                  <option value="lead">Lead inquiry</option>
                 </select>
 
                 <!-- Level Filter -->
                 <select
                   v-model="selectedLevelFilter"
+                  aria-label="Filter facilities by KEPH level"
                   class="rounded-cx-sm bg-cx-surface border border-cx-border px-3 py-1.5 text-xs font-semibold text-cx-ink-2 shadow-cx focus:outline-none focus:border-cx-brand"
                 >
                   <option value="all">All KEPH Levels</option>
-                  <option value="Level 2">Level 2 Dispensary</option>
-                  <option value="Level 3">Level 3 Health Centre</option>
-                  <option value="Level 4">Level 4 Hospital</option>
+                  <option v-for="level in availableLevelFilters" :key="level" :value="level">{{ level }}</option>
                 </select>
 
                 <!-- Partner / Network Filter -->
                 <select
                   v-model="selectedNetworkFilter"
+                  aria-label="Filter facilities by partner network"
                   class="rounded-cx-sm bg-cx-surface border border-cx-border px-3 py-1.5 text-xs font-semibold text-cx-ink-2 shadow-cx focus:outline-none focus:border-cx-brand"
                 >
                   <option value="all">All Networks / Partners</option>
@@ -1600,6 +1610,10 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <p v-if="searchQuery || selectedStatusFilter !== 'all' || selectedLevelFilter !== 'all' || selectedNetworkFilter !== 'all'" class="-mt-2 text-[11px] text-cx-ink-3" role="status">
+              Showing {{ filteredFacilities.length }} of {{ allFacilities.length }} facilities
+            </p>
+
             <!-- Empty portfolio state -->
             <div v-if="!allFacilities.length" class="rounded-cx border border-cx-border bg-cx-surface p-10 text-center">
               <span class="mb-2 block text-3xl"><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
@@ -1647,7 +1661,7 @@ onUnmounted(() => {
                           <th class="py-3 px-4">Facility Name</th>
                           <th class="py-3 px-4">KEPH Level</th>
                           <th class="py-3 px-4">MFL Code</th>
-                          <th class="py-3 px-4">Registry Status</th>
+                          <th class="py-3 px-4">Go-live readiness</th>
                           <th class="py-3 px-4">Plan & Recent Purchase</th>
                           <th class="py-3 px-4 text-right">Care Tokens</th>
                           <th class="py-3 px-4 text-right">Settlement & Actions</th>
@@ -1701,7 +1715,7 @@ onUnmounted(() => {
                               :class="facility.go_live ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                             >
                               <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-cx-success' : 'bg-amber-600'"></span>
-                              <span>{{ facility.go_live ? 'Live' : 'Verifying' }}</span>
+                              <span>{{ facilityReadinessLabel(facility) }}</span>
                             </span>
                           </td>
                           <td class="py-3.5 px-4 font-medium text-cx-ink-2">
@@ -1755,7 +1769,7 @@ onUnmounted(() => {
                         <th class="py-3 px-4">Facility & Network</th>
                         <th class="py-3 px-4">KEPH Level</th>
                         <th class="py-3 px-4">MFL Code</th>
-                        <th class="py-3 px-4">Registry Status</th>
+                        <th class="py-3 px-4">Go-live readiness</th>
                         <th class="py-3 px-4">Plan & Recent Purchase</th>
                         <th class="py-3 px-4 text-right">Care Tokens</th>
                         <th class="py-3 px-4 text-right">Settlement & Actions</th>
@@ -1820,7 +1834,7 @@ onUnmounted(() => {
                             "
                           >
                             <span class="size-1.5 rounded-full" :class="facility.go_live ? 'bg-cx-success' : 'bg-amber-600'"></span>
-                            <span>{{ facility.go_live ? 'Live' : 'Verifying' }}</span>
+                            <span>{{ facilityReadinessLabel(facility) }}</span>
                           </span>
                         </td>
 
@@ -1923,7 +1937,7 @@ onUnmounted(() => {
                             class="rounded-full px-2 py-0.5 text-[11px] font-semibold border shrink-0"
                             :class="facility.go_live ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                           >
-                            {{ facility.go_live ? 'Live' : 'Verifying' }}
+                            {{ facilityReadinessLabel(facility) }}
                           </span>
                         </div>
 
@@ -2002,7 +2016,7 @@ onUnmounted(() => {
                         class="rounded-full px-2 py-0.5 text-[11px] font-semibold border shrink-0"
                         :class="facility.go_live ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-warning-soft text-cx-warning-ink border-cx-warning-border'"
                       >
-                        {{ facility.go_live ? 'Live' : 'Verifying' }}
+                        {{ facilityReadinessLabel(facility) }}
                       </span>
                     </div>
 
@@ -2211,7 +2225,7 @@ onUnmounted(() => {
                         class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                         :class="fac.go_live ? 'border-cx-success-border bg-cx-success-soft text-cx-success-ink' : 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'"
                       >
-                        {{ fac.go_live ? 'Live' : 'Verifying' }}
+                        {{ facilityReadinessLabel(fac) }}
                       </span>
                     </div>
 
@@ -2298,7 +2312,7 @@ onUnmounted(() => {
                 CareVerse Token Plans & Capacity
               </h1>
               <p class="text-sm text-cx-ink-3 mt-2 leading-relaxed">
-                Tiberbu operates on transparent, transactional Care Tokens. Pay only for verified patient visits, labs, and e-claims with zero seat licenses or hidden server fees.
+                Compare the current Care Token packages for your facility. Each package shows its price and billing period; token use depends on your HMIS activity.
               </p>
             </div>
 
@@ -2332,17 +2346,17 @@ onUnmounted(() => {
                       <span class="text-4xl font-bold text-cx-ink leading-tight">
                         {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'KES 0' : money(pkg.price_ex_vat ?? pkg.price, pkg.currency) }}
                       </span>
-                      <span class="text-xs text-cx-ink-3 font-medium">/ month</span>
+                      <span class="text-xs text-cx-ink-3 font-medium">/ {{ String(pkg.billing_period || 'Monthly').toLowerCase() }}</span>
                     </div>
                     <span class="text-[11px] text-cx-ink-4 block mt-0.5">
-                      {{ Number(pkg.gross_total) > 0 ? `${money(pkg.gross_total, pkg.currency)} incl. 16% VAT` : 'Zero commitment' }}
+                      {{ Number(pkg.gross_total) > 0 ? `${money(pkg.gross_total, pkg.currency)} incl. ${pkg.vat_label || 'VAT'}` : 'No charge' }}
                     </span>
                   </div>
 
                   <!-- Token Quantity Pill -->
                   <div class="mt-4 inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-brand-soft border border-cx-brand-soft-border px-3 py-1.5 text-xs font-semibold text-cx-brand">
                     <span><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
-                    <span>{{ (pkg.token_quantity || 100).toLocaleString() }} Care Tokens</span>
+                    <span>{{ Number(pkg.token_quantity || 0).toLocaleString() }} Care Tokens</span>
                   </div>
                 </div>
 
@@ -2353,7 +2367,7 @@ onUnmounted(() => {
                     class="w-full rounded-cx-sm bg-cx-brand py-2.5 px-4 text-xs font-semibold text-cx-contrast transition shadow-cx text-center hover:bg-cx-brand-strong"
                     @click="selectPlanFromPricingTab(pkg)"
                   >
-                    {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'Activate Free Trial' : `Select ${pkg.display_name}` }}
+                    {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'Choose free package' : `Choose ${pkg.display_name}` }}
                   </button>
                 </div>
               </article>
@@ -2370,26 +2384,27 @@ onUnmounted(() => {
           <div v-if="activeView === 'billing'" class="space-y-6">
             <div>
               <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Billing & Invoices</h1>
-              <p class="text-xs text-cx-ink-3 mt-0.5">Review outstanding statements, generate invoices for token orders, and pay instantly via M-Pesa.</p>
+              <p class="text-xs text-cx-ink-3 mt-0.5">Review invoices and token orders. Pay by M-Pesa Paybill and submit the transaction code for verification, or use Paystack card checkout.</p>
             </div>
 
-            <!-- M-Pesa Paybill settlement details (primary payment method) -->
+            <!-- M-Pesa Paybill settlement details -->
             <div class="rounded-cx border border-cx-success-border bg-cx-success-soft p-4">
               <div class="flex items-center gap-3">
                 <div class="size-8 shrink-0 rounded-cx-sm bg-cx-success text-cx-contrast flex items-center justify-center font-semibold text-sm">M</div>
                 <div class="min-w-0">
-                  <span class="font-semibold text-xs text-cx-success-ink block">M-Pesa Paybill · {{ paybillInfo.business_name }}</span>
-                  <span class="text-[11px] text-cx-success-ink">Primary settlement method — direct paybill with zero transaction processing surcharge</span>
+                  <span class="font-semibold text-xs text-cx-success-ink block">M-Pesa Paybill<span v-if="paybillInfo.business_name"> · {{ paybillInfo.business_name }}</span></span>
+                  <span class="text-[11px] text-cx-success-ink">Pay the invoice by Paybill, then submit your M-Pesa confirmation code for verification.</span>
                 </div>
               </div>
               <div class="mt-3 grid gap-3 sm:grid-cols-3">
                 <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-3">
                   <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Business No</span>
                   <div class="mt-1 flex items-center justify-between gap-2">
-                    <span class="font-mono text-base font-bold text-cx-ink">{{ paybillInfo.business_number }}</span>
+                    <span class="font-mono text-base font-bold text-cx-ink">{{ paybillInfo.business_number || 'Not available' }}</span>
                     <button
                       type="button"
-                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2 hover:bg-cx-well transition shrink-0"
+                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2 hover:bg-cx-well transition shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+                      :disabled="!paybillInfo.business_number"
                       @click="copyText(paybillInfo.business_number, 'paybill_biz')"
                     >
                       <CxIcon :name="copiedKey === 'paybill_biz' ? 'check' : 'copy'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ copiedKey === 'paybill_biz' ? 'Copied' : 'Copy' }}
@@ -2399,7 +2414,7 @@ onUnmounted(() => {
                 <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-3">
                   <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Account No</span>
                   <p class="mt-1 text-[11px] text-cx-ink-3 leading-relaxed">
-                    Enter the invoice number shown on each invoice card below (e.g. <span class="font-mono">{{ allInvoices[0]?.name || 'ACC-SINV-2026-00001' }}</span>).
+                    Enter the invoice number shown on the invoice you are paying.
                   </p>
                 </div>
                 <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-3">
@@ -2407,7 +2422,7 @@ onUnmounted(() => {
                   <p class="mt-1 text-[11px] text-cx-ink-3 leading-relaxed">
                     1. M-Pesa app → Lipa na M-Pesa → Paybill<br />
                     2. Business No, then Account No (invoice number)<br />
-                    3. Amount &amp; PIN, then enter your transaction code when prompted
+                    3. Amount &amp; PIN. After payment, enter the M-Pesa confirmation code in the invoice payment flow.
                   </p>
                 </div>
               </div>
@@ -2677,7 +2692,7 @@ onUnmounted(() => {
           <div v-if="activeView === 'support'" class="space-y-6 max-w-3xl">
             <div>
               <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Network Support & Contacts</h1>
-              <p class="text-xs text-cx-ink-3 mt-0.5">Dedicated clinical onboarding lead and emergency support channels.</p>
+              <p class="text-xs text-cx-ink-3 mt-0.5">Contact the support team for help with your account, facilities, or HMIS implementation.</p>
             </div>
 
             <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
@@ -2687,7 +2702,7 @@ onUnmounted(() => {
                   <span class="font-bold text-cx-ink">{{ primaryNetworkName }}</span>
                 </div>
                 <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3.5 text-xs flex items-center justify-between">
-                  <span class="text-cx-ink-3 font-medium">Clinical Helpdesk</span>
+                  <span class="text-cx-ink-3 font-medium">Support email</span>
                   <a href="mailto:support@tiberbu.health" class="font-bold text-cx-brand hover:underline">support@tiberbu.health</a>
                 </div>
 
@@ -2896,10 +2911,12 @@ onUnmounted(() => {
         <div class="space-y-2">
           <span class="text-xs font-semibold uppercase text-cx-ink-2 block">Select Package Tier</span>
           <div class="grid gap-3 sm:grid-cols-2">
-            <article
+            <button
               v-for="pkg in context.token_packages"
               :key="pkg.item_code"
-              class="rounded-cx-sm border p-4 cursor-pointer transition flex flex-col justify-between"
+              type="button"
+              :aria-pressed="selectedTopUpPackageCode === pkg.item_code"
+              class="rounded-cx-sm border p-4 text-left cursor-pointer transition flex flex-col justify-between focus:outline-none focus-visible:ring-2 focus-visible:ring-cx-brand"
               :class="
                 selectedTopUpPackageCode === pkg.item_code
                   ? 'border-2 border-cx-brand bg-cx-brand-soft ring-2 ring-cx-brand-soft'
@@ -2918,12 +2935,12 @@ onUnmounted(() => {
                 <p class="mt-1 text-[11px] text-cx-ink-3 leading-normal">{{ pkg.coverage_summary || pkg.description }}</p>
               </div>
               <div class="mt-3 pt-2 border-t border-cx-border-soft flex items-center justify-between text-[11px]">
-                <span class="text-cx-ink-4">{{ Number(pkg.gross_total) > 0 ? 'incl. 16% VAT' : 'No charge' }}</span>
+                <span class="text-cx-ink-4">{{ Number(pkg.gross_total) > 0 ? `${String(pkg.billing_period || 'Monthly').toLowerCase()} · incl. ${pkg.vat_label || 'VAT'}` : 'No charge' }}</span>
                 <span class="font-semibold" :class="selectedTopUpPackageCode === pkg.item_code ? 'text-cx-brand' : 'text-cx-ink-4'">
                   {{ selectedTopUpPackageCode === pkg.item_code ? 'Selected ✓' : 'Select' }}
                 </span>
               </div>
-            </article>
+            </button>
           </div>
         </div>
 
@@ -2977,11 +2994,11 @@ onUnmounted(() => {
             </div>
             <div>
               <span class="font-semibold text-sm tracking-tight block">Lipa na M-Pesa · Paybill</span>
-              <span class="text-xs text-cx-contrast block">Direct Instant Settlement with Zero Transaction Processing Surcharge</span>
+              <span class="text-xs text-cx-contrast block">Pay by Paybill, then submit the confirmation code for verification</span>
             </div>
           </div>
           <span class="rounded-full bg-emerald-800/80 border border-emerald-500/50 px-2.5 py-1 text-[11px] font-semibold">
-            Official Paybill
+            M-Pesa Paybill
           </span>
         </div>
         <p class="text-xs text-cx-ink-3">
@@ -2999,7 +3016,8 @@ onUnmounted(() => {
             </div>
             <button
               type="button"
-              class="mt-2.5 w-full rounded-cx-sm border border-cx-border bg-cx-surface py-1 px-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center justify-center gap-1"
+              class="mt-2.5 w-full rounded-cx-sm border border-cx-border bg-cx-surface py-1 px-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center justify-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="!paybillInfo.business_number"
               @click="copyText(paybillInfo.business_number, 'paybill_biz')"
             >
               <span><CxIcon :name="copiedKey === 'paybill_biz' ? 'check' : 'copy'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ copiedKey === 'paybill_biz' ? 'Copied' : 'Copy' }}</span>
@@ -3027,7 +3045,7 @@ onUnmounted(() => {
             <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Amount Due</span>
             <div class="mt-1">
               <span class="font-mono text-lg font-bold text-cx-success-ink block leading-tight">{{ money(mpesaInvoice?.amount || mpesaInvoice?.outstanding_amount, mpesaInvoice?.currency) }}</span>
-              <span class="text-[11px] text-cx-ink-3 block">KES Net Total</span>
+              <span class="text-[11px] text-cx-ink-3 block">Invoice currency: {{ mpesaInvoice?.currency || 'KES' }}</span>
             </div>
             <button
               type="button"
@@ -3041,7 +3059,7 @@ onUnmounted(() => {
 
         <!-- Step-by-step instructions -->
         <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-4 space-y-1.5 text-xs text-cx-ink-3">
-          <strong class="text-cx-ink font-bold block mb-1">How to pay on your phone:</strong>
+          <strong class="text-cx-ink font-bold block mb-1">Pay this invoice by M-Pesa Paybill:</strong>
           <p>1. Open SIM Toolkit or M-Pesa App &gt; <strong>Lipa na M-Pesa</strong> &gt; <strong>Paybill</strong></p>
           <p>2. Enter Business Number <strong>{{ paybillInfo.business_number }}</strong> ({{ paybillInfo.business_name }})</p>
           <p>3. Enter Account Number <strong>{{ mpesaInvoice?.name }}</strong></p>
@@ -3051,13 +3069,15 @@ onUnmounted(() => {
 
         <!-- M-Pesa Transaction Input Form -->
         <div class="space-y-3 pt-2 border-t border-cx-border-soft">
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink">
-            Report your M-Pesa confirmation code
-          </label>
+          <div>
+            <label for="cx-mpesa-code" class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink">After paying, enter your M-Pesa confirmation code</label>
+            <p class="mt-1 text-[11px] text-cx-ink-3">Your invoice stays open until the payment is verified. Do not submit a code before completing the Paybill payment.</p>
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <input
                 type="text"
+                id="cx-mpesa-code"
                 v-model="mpesaCodeInput"
                 placeholder="e.g. SB65A1TU7X"
                 maxlength="15"
@@ -3069,6 +3089,7 @@ onUnmounted(() => {
               <input
                 type="tel"
                 v-model="mpesaPhoneInput"
+                aria-label="Phone number used for the M-Pesa transaction"
                 placeholder="M-Pesa Phone (e.g. 0712 345 678)"
                 class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-xs font-medium text-cx-ink focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/10"
               />
