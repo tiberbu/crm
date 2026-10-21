@@ -90,6 +90,12 @@ and the proposed HIE APISIX contract in
 The setup-side API source contract is maintained in the bench handoff
 [`EXTERNAL_PROVISIONING_API (1).md`](../../EXTERNAL_PROVISIONING_API%20(1).md).
 
+Operator and facility-owner walkthroughs for facility self-onboarding, CRM,
+Customer Experience, and Finance Cockpit are collected in the
+[`Tiberbu Solution Guides`](docs/user-guides/README.md). Each solution has its
+own guide, with user steps, stakeholder controls, screenshots, and handoff
+ownership.
+
 ### Under the Hood
 
 - [Frappe Framework](https://github.com/frappe/frappe): A full-stack web application framework.
