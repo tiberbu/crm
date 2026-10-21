@@ -9,12 +9,13 @@ const props = defineProps({
   payments: { type: Array, default: () => [] },
   tokenPackages: { type: Array, default: () => [] },
   defaultCurrency: { type: String, default: 'KES' },
-  loadProvisioningStatus: { type: Function, required: true },
+  ensureProvisioningDraft: { type: Function, required: true },
 })
 const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay'])
 const provisioning = ref(null)
 const provisioningBusy = ref(true)
 const provisioningError = ref('')
+const errorDetailsOpen = ref(false)
 let statusRequestSequence = 0
 
 const submissionErrorMessage = computed(() => {
@@ -33,6 +34,12 @@ const canRetryStatusCheck = computed(() => {
   if (submission) return submission.retryable === true
   return provisioning.value?.retryable !== false
 })
+// Older portal records may still serialize the HFR deployment identifier as
+// `facility_fid` or `fid`. Never treat an MFL code or generic HIE ID as a FID.
+const deploymentFid = computed(() => {
+  const candidates = [props.facility.hfr_facility_id, props.facility.facility_fid, props.facility.fid, provisioning.value?.fid]
+  return candidates.map((value) => String(value || '').trim()).find(Boolean) || ''
+})
 const submissionCreated = computed(() => provisioning.value?.submission?.state === 'created')
 const submissionAlreadyExists = computed(() => provisioning.value?.submission?.state === 'already_exists')
 const submissionUnknown = computed(() => provisioning.value?.submission?.state === 'unknown')
@@ -43,7 +50,7 @@ async function loadStatus() {
   provisioningBusy.value = true
   provisioningError.value = ''
   try {
-    const result = await props.loadProvisioningStatus(requestedMflCode)
+    const result = await props.ensureProvisioningDraft(requestedMflCode)
     if (requestSequence === statusRequestSequence) provisioning.value = result
   } catch (error) {
     if (requestSequence === statusRequestSequence) {
@@ -72,7 +79,7 @@ const statusLabel = computed(() => {
   if (status === 'deployed') return 'Live'
   if (status === 'draft') return 'Draft ready for review'
   if (status === 'not_submitted') return 'Setup not started'
-  if (status === 'not_linked') return 'HFR FID needed'
+  if (status === 'not_linked') return deploymentFid.value ? 'FID lookup needs attention' : 'HFR FID needed'
   if (status.includes('error') || provisioning.value?.has_error) return 'Needs attention'
   if (status === 'not_configured') return 'Tracking not connected'
   if (status === 'route_not_provisioned') return 'Tracking not available yet'
@@ -108,7 +115,9 @@ const statusGuidance = computed(() => {
   if (status === 'draft') return 'A setup record exists. The implementation team must review it and start deployment from the setup tool.'
   if (status === 'deployed') return 'The implementation service reports this facility as deployed.'
   if (status === 'not_submitted') return 'No setup record exists yet. The setup request will be prepared automatically once the facility has the required HFR, administrator, and billing details.'
-  if (status === 'not_linked') return 'This facility has no saved HFR deployment FID. Add or refresh the facility from the Health Facility Registry, then check again.'
+  if (status === 'not_linked') return deploymentFid.value
+    ? `The portal has HFR FID ${deploymentFid.value}, but the setup service could not match it. Retry the status check; if it continues, contact network support and include this FID.`
+    : 'This facility has no saved HFR deployment FID. Add or refresh the facility from the Health Facility Registry, then check again.'
   if (status.includes('error') || provisioning.value?.has_error) return 'The implementation team needs to review the latest deployment attempt.'
   return provisioning.value?.message || (provisioningBusy.value ? 'Checking the implementation service…' : 'Implementation status has not been checked.')
 })
@@ -123,6 +132,18 @@ const statusSource = computed(() => provisioning.value?.source === 'external_set
 const setupUnavailable = computed(() => provisioning.value?.status === 'unavailable' || Boolean(provisioningError.value) || Boolean(submissionErrorMessage.value) || submissionUnknown.value)
 const setupConnectionReached = computed(() => Boolean(provisioning.value?.connection_reached))
 const setupAlertMessage = computed(() => submissionErrorMessage.value || (submissionUnknown.value ? provisioning.value?.submission?.message : '') || provisioning.value?.message || provisioningError.value)
+const errorDetails = computed(() => {
+  const details = provisioning.value?.submission?.error_details || provisioning.value?.error_details || provisioningError.value
+  return typeof details === 'string' ? details : details ? JSON.stringify(details, null, 2) : ''
+})
+const errorHttpStatus = computed(() => {
+  try {
+    return JSON.parse(errorDetails.value)?.http_status || ''
+  } catch {
+    return ''
+  }
+})
+const errorCorrelationId = computed(() => provisioning.value?.submission?.correlation_id || provisioning.value?.correlation_id || '')
 const goLiveReady = computed(() => String(provisioning.value?.status || '').toLowerCase() === 'deployed')
 const configuredPackage = computed(() => props.tokenPackages.find((pkg) => pkg.item_code === props.facility.token_package_item_code) || null)
 const selectedPackageTokens = computed(() => Number(props.facility.token_quantity || configuredPackage.value?.token_quantity || 0))
@@ -274,6 +295,7 @@ function reviewInvoice() {
             <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">{{ setupAlertMessage }}</p>
             <p v-if="provisioning?.error_code === 'method_not_published'" class="mt-2 text-[11px] leading-relaxed text-cx-ink-3">Your portal reached the deployment service, but its status method is not published for portal access yet. Token selection and billing information below remain available.</p>
             <p v-if="submissionUnknown" class="mt-2 text-[11px] leading-relaxed text-cx-ink-3">The next check will look for an existing setup before any further submission is considered.</p>
+            <button v-if="errorDetails" type="button" class="mt-3 text-[11px] font-semibold text-cx-brand underline-offset-2 hover:underline" @click="errorDetailsOpen = true">View deployment diagnostics</button>
           </div>
           <button v-if="canRetryStatusCheck" type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">Retry check</button>
         </div>
@@ -321,7 +343,7 @@ function reviewInvoice() {
         <div class="grid gap-px border-y border-white/60 bg-cx-border-soft/70 sm:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.6fr)]">
           <div class="bg-cx-brand-soft/45 px-4 py-4 sm:px-6 sm:py-5">
             <p class="text-[10px] font-semibold uppercase tracking-[0.13em] text-cx-ink-3">Deployment Facility ID · FID</p>
-            <p v-if="facility.hfr_facility_id" class="mt-1.5 break-all font-mono text-xl font-semibold tracking-tight text-cx-ink sm:text-2xl">{{ facility.hfr_facility_id }}</p>
+            <p v-if="deploymentFid" class="mt-1.5 break-all font-mono text-xl font-semibold tracking-tight text-cx-ink sm:text-2xl">{{ deploymentFid }}</p>
             <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to an HFR FID</p>
           </div>
           <div class="bg-cx-surface/65 px-4 py-4 sm:px-6 sm:py-5">
@@ -342,9 +364,9 @@ function reviewInvoice() {
             <p v-else class="text-[11px] leading-relaxed text-cx-ink-3">No details recorded</p>
           </section>
         </div>
-        <div v-if="facility.hfr_sync_status !== 'HFR Verified' || !facility.hfr_facility_id" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6">
+        <div v-if="!deploymentFid || (facility.hfr_sync_status && facility.hfr_sync_status !== 'HFR Verified')" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6">
           <p class="text-[11px] leading-relaxed text-cx-warning-ink">
-            {{ !facility.hfr_facility_id ? 'A verified HFR FID is required for deployment status and setup.' : 'This profile has not been verified against the Health Facility Registry.' }}
+            {{ !deploymentFid ? 'A verified HFR FID is required for deployment status and setup.' : `FID ${deploymentFid} is saved, but this profile has not been verified against the Health Facility Registry.` }}
           </p>
           <button type="button" class="text-[11px] font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
         </div>
@@ -463,6 +485,27 @@ function reviewInvoice() {
         <div v-else class="grid gap-3 sm:grid-cols-2">
           <article v-for="order in orders" :key="order.name" class="rounded-cx-sm border border-cx-border-soft p-3"><p class="text-xs font-semibold text-cx-ink">{{ order.name }}</p><p class="mt-1 text-[11px] text-cx-ink-3">{{ order.transaction_date }} · {{ order.status }}</p><p class="mt-2 text-sm font-bold text-cx-ink">{{ money(order.grand_total, order.currency) }}</p></article>
         </div>
+      </section>
+    </div>
+
+    <div v-if="errorDetailsOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation" tabindex="-1" @click.self="errorDetailsOpen = false" @keydown.esc="errorDetailsOpen = false">
+      <section role="dialog" aria-modal="true" aria-labelledby="hmis-error-details-title" class="w-full max-w-3xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <header class="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 id="hmis-error-details-title" class="text-sm font-bold text-slate-900">Deployment service diagnostics</h2>
+              <span v-if="errorHttpStatus" class="rounded-full bg-red-50 px-2 py-0.5 font-mono text-[10px] font-semibold text-red-700">HTTP {{ errorHttpStatus }}</span>
+            </div>
+            <p class="mt-1 text-[11px] text-slate-600">MFL {{ facility.mfl_code }} · FID {{ deploymentFid || 'not linked' }}</p>
+            <p v-if="errorCorrelationId" class="mt-1 break-all font-mono text-[10px] text-slate-500">Correlation ID: {{ errorCorrelationId }}</p>
+          </div>
+          <button type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" @click="errorDetailsOpen = false">Close</button>
+        </header>
+        <div class="bg-slate-950 px-5 py-4">
+          <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Upstream response / deployment log</p>
+          <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-slate-100">{{ errorDetails }}</pre>
+        </div>
+        <p class="border-t border-slate-200 bg-slate-50 px-5 py-3 text-[11px] leading-relaxed text-slate-600">Credentials are redacted. If the response only says “Internal Server Error,” the deployment service did not include its traceback in the API response; share the correlation ID with the deployment administrator so they can find the server-side log.</p>
       </section>
     </div>
   </section>
