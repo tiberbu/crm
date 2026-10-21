@@ -534,7 +534,9 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 				}
 			return _external_provisioning_unavailable("bad_request", response.status_code)
 		if response.status_code in (401, 403):
-			return _external_provisioning_unavailable("auth", response.status_code)
+			failure = _gateway_error(response).get("message", "").casefold()
+			kind = "method_not_published" if "not whitelisted" in failure else "auth"
+			return _external_provisioning_unavailable(kind, response.status_code)
 		response.raise_for_status()
 		payload = _gateway_data(response)
 		status = frappe.utils.cstr(payload.get("status") or "Unknown")
@@ -558,6 +560,35 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 
 
 def _external_provisioning_unavailable(kind, status_code):
+	if kind == "method_not_published":
+		error_code = "method_not_published"
+		error_title = _("Connected, but status access is not enabled")
+		message = _(
+			"The deployment service responded, but has not enabled its status method for this portal yet. Contact your implementation team."
+		)
+		retryable = False
+	elif kind == "auth":
+		error_code = "access_denied"
+		error_title = _("The deployment service denied status access")
+		message = _(
+			"The deployment service is reachable, but the configured service account cannot read this status. Contact your administrator."
+		)
+		retryable = False
+	elif kind == "network":
+		error_code = "network_error"
+		error_title = _("Could not reach the deployment service")
+		message = _("Check your connection and try refreshing the status.")
+		retryable = True
+	elif kind == "bad_request":
+		error_code = "status_request_rejected"
+		error_title = _("The deployment service could not find a clear status")
+		message = _("Ask your implementation team to check this facility’s setup record.")
+		retryable = False
+	else:
+		error_code = "service_error"
+		error_title = _("The deployment service could not return status")
+		message = _("Try refreshing shortly. Your billing and facility records are unaffected.")
+		retryable = True
 	frappe.log_error(
 		title="External HMIS provisioning API unavailable",
 		message="kind=%s status=%s" % (kind, status_code or "unknown"),
@@ -569,7 +600,11 @@ def _external_provisioning_unavailable(kind, status_code):
 		"last_attempt": None,
 		"service_units": None,
 		"source": "external_setup",
-		"message": _("Direct HMIS setup status is unavailable. The deployment service may not have published this API yet."),
+		"error_code": error_code,
+		"error_title": error_title,
+		"retryable": retryable,
+		"connection_reached": kind in ("method_not_published", "auth", "bad_request"),
+		"message": message,
 	}
 
 
@@ -603,6 +638,18 @@ def _gateway_error(response):
 
 def _provisioning_unavailable(kind, status_code, correlation_id=None):
 	"""Return a safe portal state while the HIE provisioning API is unavailable."""
+	if kind == "auth":
+		error_code = "access_denied"
+		error_title = _("The HIE gateway denied status access")
+		message = _(
+			"The gateway responded, but did not authorize this status request. Contact your support team."
+		)
+		retryable = False
+	else:
+		error_code = "network_error" if kind == "network" else "service_error"
+		error_title = _("Could not refresh implementation status")
+		message = _("Try refreshing shortly. Your billing and facility records are unaffected.")
+		retryable = True
 	frappe.log_error(
 		title="HMIS provisioning API unavailable",
 		message="kind=%s status=%s correlation_id=%s" % (kind, status_code or "unknown", correlation_id or "unknown"),
@@ -614,6 +661,10 @@ def _provisioning_unavailable(kind, status_code, correlation_id=None):
 		"last_attempt": None,
 		"service_units": None,
 		"source": "hie_gateway",
+		"error_code": error_code,
+		"error_title": error_title,
+		"retryable": retryable,
+		"connection_reached": kind == "auth",
 		"correlation_id": correlation_id,
-		"message": _("HMIS implementation tracking is temporarily unavailable. Try again later."),
+		"message": message,
 	}

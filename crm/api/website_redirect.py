@@ -863,14 +863,60 @@ def require_portal_user() -> list[str]:
 def _portal_network(network_name: str) -> dict:
 	if not network_name:
 		return {}
+	cache = getattr(frappe.local, "_cx_portal_network_cache", None)
+	if cache is None:
+		cache = {}
+		frappe.local._cx_portal_network_cache = cache
+	if network_name in cache:
+		return cache[network_name]
 	rows = frappe.get_list(
 		"CRM Opt-In Network",
 		filters={"name": network_name},
-		fields=["name", "display_name", "logo_url", "primary_colour", "contact_email", "footer_legal_name"],
+		fields=[
+			"name",
+			"slug",
+			"display_name",
+			"partner_id",
+			"logo_url",
+			"primary_colour",
+			"contact_email",
+			"technology_delivery_partner_name",
+			"technology_delivery_partner_short_name",
+			"footer_legal_name",
+		],
 		limit_page_length=1,
 		ignore_permissions=True,
 	)
-	return rows[0] if rows else {}
+	if not rows:
+		cache[network_name] = {}
+		return {}
+
+	network = dict(rows[0])
+	coordinator_rows = frappe.get_all(
+		"CRM Network Coordinator",
+		filters={"parent": network_name, "parenttype": "CRM Opt-In Network"},
+		fields=["user"],
+		limit_page_length=20,
+		ignore_permissions=True,
+	)
+	contacts = []
+	for coordinator in coordinator_rows:
+		user = coordinator.get("user")
+		if not user:
+			continue
+		person = frappe.db.get_value(
+			"User", user, ["full_name", "email", "mobile_no", "phone"], as_dict=True
+		) or {}
+		contacts.append(
+			{
+				"name": person.get("full_name") or user,
+				"email": person.get("email") or "",
+				"phone": person.get("mobile_no") or person.get("phone") or "",
+			}
+		)
+	network["coordinators"] = contacts
+	cache[network_name] = network
+	return network
 
 
 def _portal_token_catalog() -> list[dict]:
@@ -1287,6 +1333,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				"registration_number": cstr(facility.get("registration_number") or ""),
 				"keph_level": cstr(facility.get("keph_level") or ""),
 				"network": frappe.db.get_value("CRM Opt-In Network", membership.get("network"), "display_name") if membership.get("network") else (primary_deal.get("optin_network") if primary_deal else None) or "CareVerse Partner Network",
+				"network_support": _portal_network(membership.get("network") or (primary_deal.get("optin_network") if primary_deal else "")),
 				"membership_status": cstr(membership.get("status") or "Active"),
 				"go_live": bool(frappe.utils.cint(membership.get("go_live"))),
 				"deal": fac_deal,
@@ -1295,6 +1342,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 					cstr(package.get("cx_token_package_item")),
 					cstr(package.get("cx_token_package_item") or ""),
 				),
+				"token_package_item_code": cstr(package.get("cx_token_package_item") or ""),
 				"token_quantity": frappe.utils.cint(package.get("cx_token_package_quantity")),
 				"package_price": package.get("cx_token_package_price"),
 				"package_vat": package.get("cx_token_package_vat"),
@@ -1334,11 +1382,13 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 					"registration_number": cstr(df.get("registration_number") or ""),
 					"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
 					"network": d.get("optin_network") or "CareVerse Partner Network",
+					"network_support": _portal_network(d.get("optin_network")),
 					"membership_status": "Active",
 					"go_live": True,
 					"deal": d.get("name"),
 					"customer": customer,
 					"token_package": item_names.get(cstr(df.get("cx_token_package_item")), cstr(df.get("cx_token_package_item") or "")),
+					"token_package_item_code": cstr(df.get("cx_token_package_item") or ""),
 					"token_quantity": frappe.utils.cint(df.get("cx_token_package_quantity")),
 					"package_price": df.get("cx_token_package_price"),
 					"package_vat": df.get("cx_token_package_vat"),
@@ -1389,11 +1439,13 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				"registration_number": cstr(df.get("registration_number") or ""),
 				"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
 				"network": deal_doc.get("optin_network") or "CareVerse Partner Network",
+				"network_support": _portal_network(deal_doc.get("optin_network")),
 				"membership_status": "Active",
 				"go_live": True,
 				"deal": d_name,
 				"customer": d_name,
 				"token_package": item_names.get(cstr(df.get("cx_token_package_item")), cstr(df.get("cx_token_package_item") or "")),
+				"token_package_item_code": cstr(df.get("cx_token_package_item") or ""),
 				"token_quantity": frappe.utils.cint(df.get("cx_token_package_quantity")),
 				"package_price": df.get("cx_token_package_price"),
 				"package_vat": df.get("cx_token_package_vat"),
@@ -1434,11 +1486,13 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				"mfl_code": cstr(lf.get("mfl_code") or ""),
 				"keph_level": cstr(lf.get("facility_level") or "Level 2 Dispensary"),
 				"network": lead_doc.get("optin_network") or "CareVerse Partner Network",
+				"network_support": _portal_network(lead_doc.get("optin_network")),
 				"membership_status": "Lead Inquiry",
 				"go_live": False,
 				"deal": "",
 				"customer": l_name,
 				"token_package": "",
+				"token_package_item_code": "",
 				"token_quantity": 0,
 				"package_price": 0,
 				"package_vat": 0,
