@@ -133,6 +133,40 @@ class TestExternalProvisioningStatus(UnitTestCase):
 		self.assertEqual(second["submission"]["state"], "unknown")
 		mock_post.assert_called_once()
 
+	@patch.dict("crm.api.hfr.frappe.conf", {"encryption_key": "test-site-encryption-key"})
+	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
+	@patch("crm.api.hfr.frappe.cache")
+	@patch("crm.api.hfr._get_external_provisioning_status", side_effect=lambda *args: {"status": "not_submitted"})
+	@patch("crm.api.hfr.requests.post")
+	def test_rejected_payload_fingerprint_is_keyed_and_does_not_repost_same_payload(
+		self, mock_post, _mock_status, mock_cache, _mock_lock
+	):
+		cache = MagicMock()
+		state = {}
+		cache.get_value.side_effect = lambda key: state.get(key)
+		cache.set_value.side_effect = lambda key, value, **kwargs: state.__setitem__(key, value)
+		mock_cache.return_value = cache
+		rejected = MagicMock()
+		rejected.status_code = 400
+		rejected.headers = {}
+		rejected.json.return_value = {"message": "Missing required field"}
+		mock_post.return_value = rejected
+
+		first = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), self._valid_payload(), [],
+		)
+		second = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), self._valid_payload(), [],
+		)
+
+		self.assertEqual(first["submission"]["state"], "error")
+		self.assertEqual(second["submission"]["state"], "error")
+		mock_post.assert_called_once()
+		stored_attempt = next(value for value in state.values() if str(value).startswith("rejected:"))
+		self.assertNotIn("facility@example.test", stored_attempt)
+
 	@patch("crm.api.hfr._generate_jwt", return_value="hfr-token")
 	@patch("crm.api.hfr._get_settings")
 	@patch("crm.api.hfr.requests.get")

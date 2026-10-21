@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import hmac
 import re
 import time
 from datetime import date
@@ -805,8 +806,16 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 
 	lock_key = hashlib.sha256(frappe.utils.cstr(fid).encode()).hexdigest()[:32]
 	attempt_key = "crm_external_provisioning_attempt:%s" % lock_key
-	payload_fingerprint = hashlib.sha256(
-		(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "|" + api_key).encode()
+	# This is a keyed request identity for cache deduplication, not password storage.
+	# HMAC also prevents payload contact details from being recoverable from the cache.
+	encryption_key = frappe.conf.get("encryption_key")
+	if not encryption_key:
+		frappe.throw(_("The site encryption key is required to protect provisioning retry state."))
+	canonical_request = json.dumps(
+		{"payload": payload, "api_key": api_key}, sort_keys=True, separators=(",", ":")
+	)
+	payload_fingerprint = hmac.new(
+		frappe.utils.cstr(encryption_key).encode(), canonical_request.encode(), hashlib.sha512
 	).hexdigest()
 	with filelock("crm_external_provisioning_%s" % lock_key, timeout=60):
 		current = _get_external_provisioning_status(base_url, api_key, api_secret, fid)
