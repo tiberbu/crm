@@ -4,12 +4,22 @@
 **Consumers:** CRM provisioning workflow and the signed-in CX Portal  
 **Upstream:** HIE APISIX → HMIS setup service
 
-This contract gives the CX Portal a stable, versioned API shape. The current
-setup-side method contract is in the operator handoff file
-`EXTERNAL_PROVISIONING_API (1).md` at the bench root, outside this CRM repository.
-APISIX may map these public routes to those setup-side methods.
-CRM must call APISIX through the configured HIE base URL. Setup-site Basic
-credentials remain at the gateway; CRM uses the existing HIE Bearer JWT.
+This contract gives the CX Portal a stable, versioned API shape. The upstream
+setup-side contract is in [`EXTERNAL_PROVISIONING_API (1).md`](../../EXTERNAL_PROVISIONING_API%20(1).md)
+at the bench root. CX Portal status reads use this source precedence:
+
+1. When the `CRM HFR Settings` external setup URL, service API key, and service
+   API secret are all populated, CRM calls the setup service status method
+   directly using Frappe Basic API-key authentication.
+2. Otherwise CRM uses the HIE APISIX status route and existing HIE Bearer JWT.
+
+If any external setup credential field is populated but the set is incomplete,
+CRM reports that configuration as incomplete and does not silently fall back to
+HIE.
+
+The CX Portal remains read-only. CRM does not submit new setup records from this
+screen. The direct setup credentials must belong to a dedicated service user and
+stay server-side; an Administrator login password is not an API key/secret.
 
 ## Routes
 
@@ -103,10 +113,11 @@ GET /v1/hmis/provisioning/facilities/FID-29-116804-5/status
 or `Error`. `progress` is an integer from 0 to 100 when known. `site_status`,
 `service_units`, and `service_unit_count` are optional until the setup service
 can provide them. The current v1.2 upstream status method reports only
-`status`, `progress`, `log`, `error`, and `last_attempt`; APISIX should add the
-site and service-unit fields from the saved Facility Setup configuration. CRM
-must show “Not reported” when those fields are absent and must never infer them
-from progress or a Draft status.
+`status`, `progress`, `log`, `error`, and `last_attempt`. The live setup host
+returned HTTP 403 saying the method is not whitelisted when checked on
+2026-10-21. CRM must show “Not reported” for site health and service-unit
+details when those fields are absent and must never infer them from progress
+or a Draft status.
 
 The raw `log` and `error` are internal diagnostic fields. The customer portal
 must not receive them. CRM may log a redacted correlation ID and error code for
@@ -143,6 +154,7 @@ The CX Portal currently implements the authorized, read-only status use case.
 The `POST` shape is documented for the CRM commercial provisioning workflow;
 submission remains gated on the approved trigger, complete payload mapping, and
 CRM-side idempotency because the current upstream method can create duplicate
-drafts. Until APISIX publishes the status route, CRM treats missing routes,
-timeouts, and gateway errors as “tracking unavailable” and leaves billing and
-facility access available.
+drafts. When direct setup-service credentials are configured, that source takes
+precedence; otherwise CRM uses the HIE gateway. Until the selected source
+publishes the status method, CRM treats missing routes, timeouts, and gateway
+errors as “tracking unavailable” and leaves billing and facility access available.

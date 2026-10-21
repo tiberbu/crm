@@ -87,6 +87,8 @@ implementation status integration are documented in
 [`docs/cx-portal-health-facility-registry-and-portfolio-prd.md`](docs/cx-portal-health-facility-registry-and-portfolio-prd.md),
 and the proposed HIE APISIX contract in
 [`docs/cx-portal-provisioning-gateway-api.md`](docs/cx-portal-provisioning-gateway-api.md).
+The setup-side API source contract is maintained in the bench handoff
+[`EXTERNAL_PROVISIONING_API (1).md`](../../EXTERNAL_PROVISIONING_API%20(1).md).
 
 ### Under the Hood
 

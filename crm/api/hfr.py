@@ -223,7 +223,10 @@ def resync_facility_row(doctype, docname, row_name):
 def get_hfr_settings():
 	"""Return non-sensitive HFR settings for the frontend."""
 	s = frappe.get_single(_DOCTYPE)
-	return {
+	response = {"hfr_enabled": s.hfr_enabled}
+	if not frappe.has_permission(_DOCTYPE, "read"):
+		return response
+	response.update({
 		"hfr_enabled": s.hfr_enabled,
 		"hfr_url": s.hfr_url,
 		"hfr_fetch_path": s.hfr_fetch_path,
@@ -235,12 +238,22 @@ def get_hfr_settings():
 		"provisioning_status_configured": bool(
 			s.hfr_enabled and s.hfr_url and s.hfr_username and s.get_password("hfr_password")
 		),
-	}
+		"external_provisioning_url": s.get("external_provisioning_url") or "",
+		"external_provisioning_key": s.get("external_provisioning_key") or "",
+		"external_provisioning_secret_configured": bool(s.get_password("external_provisioning_secret")),
+		"external_provisioning_configured": bool(
+			s.get("external_provisioning_url")
+			and s.get("external_provisioning_key")
+			and s.get_password("external_provisioning_secret")
+		),
+	})
+	return response
 
 
 @frappe.whitelist(methods=["POST"])
 def update_hfr_settings(settings):
 	"""Persist HFR settings. Password only updated when provided."""
+	frappe.only_for("System Manager")
 	if isinstance(settings, str):
 		settings = json.loads(settings)
 
@@ -254,6 +267,10 @@ def update_hfr_settings(settings):
 		s.hfr_password = settings["hfr_password"]
 	s.provisioning_submit_path = settings.get("provisioning_submit_path") or "/v1/hmis/provisioning/facilities"
 	s.provisioning_status_path = settings.get("provisioning_status_path") or "/v1/hmis/provisioning/facilities/{fid}/status"
+	s.external_provisioning_url = frappe.utils.cstr(settings.get("external_provisioning_url") or "").strip().rstrip("/")
+	s.external_provisioning_key = frappe.utils.cstr(settings.get("external_provisioning_key") or "").strip()
+	if settings.get("external_provisioning_secret"):
+		s.external_provisioning_secret = settings["external_provisioning_secret"]
 	s.save()
 	return {"success": True}
 
@@ -325,10 +342,28 @@ def get_provisioning_status(mfl_code):
 			"progress": None,
 			"last_attempt": None,
 			"service_units": None,
+			"source": "hie_gateway",
 			"message": _("An HFR Facility ID is required to look up HMIS implementation status."),
 		}
 
 	settings = frappe.get_single(_DOCTYPE)
+	external_url = frappe.utils.cstr(settings.get("external_provisioning_url") or "").strip().rstrip("/")
+	external_key = frappe.utils.cstr(settings.get("external_provisioning_key") or "").strip()
+	external_secret = settings.get_password("external_provisioning_secret") if settings.get("external_provisioning_secret") else ""
+	external_is_partial = bool(external_url or external_key or external_secret)
+	if external_is_partial:
+		if not (external_url and external_key and external_secret):
+			return {
+				"configured": False,
+				"status": "not_configured",
+				"progress": None,
+				"last_attempt": None,
+				"service_units": None,
+				"source": "external_setup",
+				"message": _("External HMIS setup access is incomplete. Ask your administrator to finish the service credentials."),
+			}
+		return _get_external_provisioning_status(external_url, external_key, external_secret, facility.hfr_facility_id)
+
 	if not settings.hfr_enabled:
 		return {
 			"configured": False,
@@ -336,6 +371,7 @@ def get_provisioning_status(mfl_code):
 			"progress": None,
 			"last_attempt": None,
 			"service_units": None,
+			"source": "hie_gateway",
 			"message": _("HIE registry and implementation tracking are not configured yet."),
 		}
 	base_url = frappe.utils.cstr(settings.get("hfr_url") or "").strip().rstrip("/")
@@ -349,6 +385,7 @@ def get_provisioning_status(mfl_code):
 			"progress": None,
 			"last_attempt": None,
 			"service_units": None,
+			"source": "hie_gateway",
 			"message": _("HMIS deployment tracking has not been connected yet."),
 		}
 	if not path_template.startswith("/") or path_template.startswith("//") or "://" in path_template or "{fid}" not in path_template:
@@ -377,6 +414,7 @@ def get_provisioning_status(mfl_code):
 					"progress": 0,
 					"last_attempt": None,
 					"service_units": None,
+					"source": "hie_gateway",
 					"correlation_id": response.headers.get("X-Correlation-Id") or correlation_id,
 					"message": _("HMIS setup has not started for this facility."),
 				}
@@ -386,6 +424,7 @@ def get_provisioning_status(mfl_code):
 				"progress": None,
 				"last_attempt": None,
 				"service_units": None,
+				"source": "hie_gateway",
 				"correlation_id": response.headers.get("X-Correlation-Id") or correlation_id,
 				"message": _("HIE implementation tracking is not available yet. Try again later."),
 			}
@@ -398,6 +437,7 @@ def get_provisioning_status(mfl_code):
 				"progress": None,
 				"last_attempt": None,
 				"service_units": None,
+				"source": "hie_gateway",
 				"correlation_id": response.headers.get("X-Correlation-Id") or correlation_id,
 				"message": _("HMIS status needs support review. Contact your implementation team."),
 			}
@@ -408,6 +448,7 @@ def get_provisioning_status(mfl_code):
 				"progress": None,
 				"last_attempt": None,
 				"service_units": None,
+				"source": "hie_gateway",
 				"correlation_id": response.headers.get("X-Correlation-Id") or correlation_id,
 				"message": _("The HMIS status request could not be processed. Contact support if this continues."),
 			}
@@ -438,6 +479,7 @@ def get_provisioning_status(mfl_code):
 			"last_attempt": frappe.utils.cstr(payload.get("last_attempt") or "") or None,
 			"message": _("Deployment status is synced from the HMIS setup service."),
 			"service_units": unit_names,
+			"source": "hie_gateway",
 			"service_units_count": unit_count,
 			"correlation_id": response.headers.get("X-Correlation-Id") or correlation_id,
 			"service_units_message": None if unit_count is not None else _("The HMIS setup status API does not report configured service units."),
@@ -449,6 +491,86 @@ def get_provisioning_status(mfl_code):
 	except (ValueError, TypeError):
 		frappe.log_error(title="HMIS provisioning response invalid", message="The HIE response was not valid JSON.")
 		return _provisioning_unavailable("response", None, correlation_id)
+
+
+def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
+	"""Read status directly from the setup service when its service account is configured."""
+	base_url = base_url.rstrip("/")
+	if not base_url.startswith("https://"):
+		return {
+			"configured": False,
+			"status": "not_configured",
+			"progress": None,
+			"last_attempt": None,
+			"service_units": None,
+			"source": "external_setup",
+			"message": _("External HMIS setup must use a secure HTTPS address."),
+		}
+	url = base_url + "/api/method/hmis_setup.api.external_provisioning.get_provision_status"
+	try:
+		response = requests.get(url, params={"fid": fid}, auth=(api_key, api_secret), headers={"Accept": "application/json"}, timeout=15)
+		if response.status_code == 400:
+			body = _gateway_error(response)
+			message = frappe.utils.cstr(body.get("message") or "")
+			if "No Facility Setup found" in message:
+				return {
+					"configured": True,
+					"status": "not_submitted",
+					"progress": 0,
+					"last_attempt": None,
+					"service_units": None,
+					"source": "external_setup",
+					"message": _("HMIS setup has not started for this facility."),
+				}
+			if "Multiple Facility Setup" in message:
+				return {
+					"configured": True,
+					"status": "needs_support",
+					"progress": None,
+					"last_attempt": None,
+					"service_units": None,
+					"source": "external_setup",
+					"message": _("More than one setup record uses this facility ID. Contact the implementation team."),
+				}
+			return _external_provisioning_unavailable("bad_request", response.status_code)
+		if response.status_code in (401, 403):
+			return _external_provisioning_unavailable("auth", response.status_code)
+		response.raise_for_status()
+		payload = _gateway_data(response)
+		status = frappe.utils.cstr(payload.get("status") or "Unknown")
+		return {
+			"configured": True,
+			"status": status,
+			"progress": frappe.utils.flt(payload.get("progress")) if payload.get("progress") is not None else None,
+			"last_attempt": frappe.utils.cstr(payload.get("last_attempt") or "") or None,
+			"has_error": bool(payload.get("error")),
+			"service_units": None,
+			"service_units_count": None,
+			"site_status": None,
+			"source": "external_setup",
+			"message": _("Status synced from the HMIS setup service. Deployment is reviewed and started by the implementation team."),
+			"service_units_message": _("The setup status API does not report configured service units."),
+		}
+	except requests.exceptions.RequestException:
+		return _external_provisioning_unavailable("network", None)
+	except (ValueError, TypeError):
+		return _external_provisioning_unavailable("response", None)
+
+
+def _external_provisioning_unavailable(kind, status_code):
+	frappe.log_error(
+		title="External HMIS provisioning API unavailable",
+		message="kind=%s status=%s" % (kind, status_code or "unknown"),
+	)
+	return {
+		"configured": True,
+		"status": "unavailable",
+		"progress": None,
+		"last_attempt": None,
+		"service_units": None,
+		"source": "external_setup",
+		"message": _("Direct HMIS setup status is unavailable. The deployment service may not have published this API yet."),
+	}
 
 
 def _gateway_data(response):
@@ -472,6 +594,8 @@ def _gateway_error(response):
 		if isinstance(error, dict):
 			return error
 		message = body.get("message") if isinstance(body, dict) else None
+		if not isinstance(message, str) and isinstance(body, dict):
+			message = body.get("exception") or body.get("exc")
 		return {"message": message if isinstance(message, str) else ""}
 	except (ValueError, TypeError):
 		return {}
@@ -489,6 +613,7 @@ def _provisioning_unavailable(kind, status_code, correlation_id=None):
 		"progress": None,
 		"last_attempt": None,
 		"service_units": None,
+		"source": "hie_gateway",
 		"correlation_id": correlation_id,
 		"message": _("HMIS implementation tracking is temporarily unavailable. Try again later."),
 	}

@@ -1,7 +1,7 @@
 # PRD — Facility Auto-Provisioning via the HIE Deployment Tool
 
 **Customer-facing product:** Tiberbu Customer Experience (cx-portal) + CRM facility deals
-**Implementation system:** `crm` app (`apps/crm`) calling the External Facility Provisioning API of the `hmis_setup` deployment tool, exposed through the **HIE gateway base URL**
+**Implementation system:** `crm` app (`apps/crm`) reading the External Facility Provisioning API of the `hmis_setup` deployment tool directly when dedicated service API credentials are configured, with the **HIE gateway** as fallback
 > `crm` / `hmis_setup` / "setup app" are implementation names, not customer-facing language.
 
 > **Upstream contract:** "External Facility Provisioning API — Contract v1.2" (attachment,
@@ -21,7 +21,7 @@
 |---|---|---|
 | D1 | FID source | **MFL → FID lookup.** The existing HIE/HFR integration already returns the HIE facility ID (`facility_fid`) alongside the MFL code and stores it as `hfr_facility_id` on facility rows *(repo: `crm/api/hfr.py` → `_map_facility_to_org_fields`, `search_facility(search_by="mfl_code")`)*. The new FID field is auto-populated from that lookup; manual entry is a fallback. |
 | D2 | Trigger | **Deal Won + valid FID + purchased package present** for the facility — reuses the existing E7 deal-Won automation pattern *(repo: `crm.automation.support_journey.on_deal_update`)*. |
-| D3 | Gateway auth | **Reuse the existing HIE integration used by HFR.** CRM calls the gateway with the same HIE JWT Bearer auth as HFR search *(repo: `CRM HFR Settings` — `hfr_url` HIE Base URL, `hfr_username`/`hfr_password`, HS256 JWT; `crm/api/hfr.py` → `_generate_jwt`)*. The TA's Basic-auth API key/secret are consumed gateway-side against the setup app, not by CRM. |
+| D3 | Status auth | **Use the external setup service when its dedicated API credentials are configured; otherwise use HIE APISIX.** Direct calls use Frappe Basic API-key authentication with a dedicated service user's API key/secret stored server-side in `CRM HFR Settings`. Never use an Administrator login password. HIE Bearer JWT remains the fallback. The live host returned 403 (`get_provision_status` is not whitelisted) on 2026-10-21; direct status remains unavailable until the method is published. |
 
 ---
 
@@ -333,9 +333,10 @@ publishes the stable `/v1/hmis/...` paths to CRM.
   field-named; 401 on bad credentials. **Creates a Draft; never deploys.**
 - `GET …/get_provision_status?fid=<FID>` — 200 `{status, progress, log, error,
   last_attempt}`; 400 on missing/invalid FID, no match, or ambiguous (multiple drafts).
-- Auth: direct access uses `Authorization: Basic base64("<api_key>:<api_secret>")`;
-  **behind the HIE gateway, CRM authenticates with the existing HIE JWT (D3)** — the
-  gateway maps it to the setup-site credential.
+- Auth: direct access uses Frappe Basic API-key authentication with a dedicated
+  service user. Current CRM status reads use this directly when the external
+  setup credentials in `CRM HFR Settings` are populated; otherwise they use the
+  HIE JWT fallback (D3). Submission remains outside the portal flow.
 - FID: `^FID-\d{2}-[\w-]+$` (case-insensitive); registry lookup by `fr-code` upstream.
 - No dedupe upstream; duplicate drafts ⇒ ambiguous status 400 ⇒ caller must clean up.
 - Rotation: regenerate the setup-site API user's keys; old pairs stop immediately
@@ -346,9 +347,9 @@ publishes the stable `/v1/hmis/...` paths to CRM.
 Resolved in v0.2: ~~Q1 FID source~~ → D1; ~~Q2 trigger~~ → D2; ~~Q5 gateway auth~~ → D3.
 Remaining:
 
-1. **Gateway publication.** Publish the proposed routes in
-   `cx-portal-provisioning-gateway-api.md`. Until APISIX provisions them, CRM
-   treats an unrecognized 404 as “tracking unavailable” and keeps the portal usable.
+1. **Status API publication.** The setup host returned 403 because
+   `get_provision_status` was not whitelisted (checked 2026-10-21). Publish the
+   method or the HIE APISIX status route before enabling live status tracking.
 2. **FID on Pre-Qualified Facility.** Keep or drop (MVP = Deal Facility only)?
 3. **Licence number source.** Which CRM document owns the `LIC-…` value (contract?
    quote? new field on the facility row)?
