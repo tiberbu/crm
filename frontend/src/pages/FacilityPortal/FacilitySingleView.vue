@@ -7,12 +7,13 @@ const props = defineProps({
   invoices: { type: Array, default: () => [] },
   orders: { type: Array, default: () => [] },
   payments: { type: Array, default: () => [] },
+  tokenPackages: { type: Array, default: () => [] },
   defaultCurrency: { type: String, default: 'KES' },
   loadProvisioningStatus: { type: Function, required: true },
 })
-const emit = defineEmits(['back', 'open-top-up', 'pay'])
+const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay'])
 const provisioning = ref(null)
-const provisioningBusy = ref(false)
+const provisioningBusy = ref(true)
 const provisioningError = ref('')
 
 async function loadStatus() {
@@ -20,8 +21,9 @@ async function loadStatus() {
   provisioningError.value = ''
   try {
     provisioning.value = await props.loadProvisioningStatus(props.facility.mfl_code)
-  } catch (error) {
-    provisioningError.value = error?.messages?.[0] || 'Implementation status could not be loaded.'
+  } catch {
+    provisioning.value = null
+    provisioningError.value = 'We could not refresh implementation status. Your facility and billing records are unchanged. Try again shortly.'
   } finally {
     provisioningBusy.value = false
   }
@@ -30,9 +32,12 @@ onMounted(loadStatus)
 watch(() => props.facility.mfl_code, loadStatus)
 
 const statusLabel = computed(() => {
+  if (provisioningBusy.value && !provisioning.value) return 'Checking status'
+  if (provisioningError.value && !provisioning.value) return 'Status unavailable'
   const status = String(provisioning.value?.status || '').toLowerCase()
   if (status === 'deployed') return 'Live'
-  if (status === 'draft' || status === 'not_submitted') return 'Awaiting deployment'
+  if (status === 'draft') return 'Draft ready for review'
+  if (status === 'not_submitted') return 'Setup not started'
   if (status.includes('error') || provisioning.value?.has_error) return 'Needs attention'
   if (status === 'not_configured') return 'Tracking not connected'
   if (status === 'route_not_provisioned') return 'Tracking not available yet'
@@ -40,6 +45,54 @@ const statusLabel = computed(() => {
   if (status === 'unavailable') return 'Status unavailable'
   return provisioning.value?.status || 'Not started'
 })
+
+const statusTone = computed(() => {
+  if (provisioningBusy.value && !provisioning.value) return 'border-cx-brand-soft-border bg-cx-brand-soft text-cx-brand-ink'
+  if (provisioningError.value && !provisioning.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  const status = String(provisioning.value?.status || '').toLowerCase()
+  if (status === 'deployed') return 'border-cx-success-border bg-cx-success-soft text-cx-success-ink'
+  if (status === 'draft' || status === 'not_submitted') return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  if (status.includes('error') || status === 'needs_support' || provisioning.value?.has_error) return 'border-cx-danger-border bg-cx-danger-soft text-cx-danger-ink'
+  return 'border-cx-border bg-cx-well text-cx-ink-2'
+})
+
+const statusGuidance = computed(() => {
+  if (provisioningBusy.value && !provisioning.value) return 'Connecting to the implementation service and retrieving the latest facility status.'
+  if (provisioningError.value && !provisioning.value) return 'The latest status is not available right now. You can retry without affecting your facility or payments.'
+  if (provisioning.value?.error_title) return provisioning.value.message || 'The implementation service could not return the latest status.'
+  const status = String(provisioning.value?.status || '').toLowerCase()
+  if (status === 'draft') return 'A setup record exists. The implementation team must review it and start deployment from the setup tool.'
+  if (status === 'deployed') return 'The implementation service reports this facility as deployed.'
+  if (status === 'not_submitted') return 'There is no setup record for this facility yet. Contact your implementation team to begin setup.'
+  if (status.includes('error') || provisioning.value?.has_error) return 'The implementation team needs to review the latest deployment attempt.'
+  return provisioning.value?.message || (provisioningBusy.value ? 'Checking the implementation service…' : 'Implementation status has not been checked.')
+})
+
+const progressValue = computed(() => {
+  if (provisioning.value?.progress == null || provisioning.value?.progress === '') return null
+  const value = Number(provisioning.value?.progress)
+  return Number.isFinite(value) ? Math.min(100, Math.max(0, Math.round(value))) : null
+})
+
+const statusSource = computed(() => provisioning.value?.source === 'external_setup' ? 'Setup service' : provisioning.value?.source === 'hie_gateway' ? 'HIE gateway' : 'Status source pending')
+const setupUnavailable = computed(() => provisioning.value?.status === 'unavailable' || Boolean(provisioningError.value))
+const setupConnectionReached = computed(() => Boolean(provisioning.value?.connection_reached))
+const goLiveReady = computed(() => String(provisioning.value?.status || '').toLowerCase() === 'deployed')
+const configuredPackage = computed(() => props.tokenPackages.find((pkg) => pkg.item_code === props.facility.token_package_item_code) || null)
+const selectedPackageTokens = computed(() => Number(props.facility.token_quantity || configuredPackage.value?.token_quantity || 0))
+const selectedPackageCost = computed(() => Number(props.facility.package_gross_total ?? configuredPackage.value?.gross_total ?? props.facility.package_price ?? configuredPackage.value?.price ?? 0))
+const hasConfiguredPackage = computed(() => Boolean(props.facility.token_package || configuredPackage.value || selectedPackageTokens.value > 0))
+const facilityOutstandingInvoice = computed(() => props.invoices.find((invoice) => Number(invoice.amount || 0) > 0) || null)
+const facilityPaymentPending = computed(() => props.invoices.some((invoice) => Number(invoice.amount || 0) > 0 && pendingPaymentForInvoice(invoice)))
+
+const freePackages = computed(() => props.tokenPackages.filter((pkg) => {
+  const amount = Number(pkg.price_ex_vat ?? pkg.price ?? pkg.gross_total)
+  return Number.isFinite(amount) && amount <= 0
+}))
+const paidPackages = computed(() => props.tokenPackages.filter((pkg) => {
+  const amount = Number(pkg.price_ex_vat ?? pkg.price ?? pkg.gross_total)
+  return Number.isFinite(amount) && amount > 0
+}))
 
 function money(amount, currency) {
   return new Intl.NumberFormat('en-KE', { style: 'currency', currency: currency || props.defaultCurrency, maximumFractionDigits: 0 }).format(amount || 0)
@@ -60,6 +113,10 @@ function pendingPaymentForInvoice(invoice) {
     return invoiceNames.some((name) => String(name) === String(invoice.name))
   }) || null
 }
+
+function reviewInvoice() {
+  document.getElementById('facility-invoices')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
 </script>
 
 <template>
@@ -73,56 +130,146 @@ function pendingPaymentForInvoice(invoice) {
         <h1 class="mt-1 text-3xl font-bold tracking-tight text-cx-ink">{{ facility.facility_name }}</h1>
         <p class="mt-1 text-sm text-cx-ink-3">{{ facility.keph_level }} <span v-if="facility.county">· {{ facility.county }}</span></p>
       </div>
-      <button type="button" class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong" @click="emit('open-top-up', facility)">
-        Top up tokens
-      </button>
-    </div>
-
-    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <article class="rounded-cx border border-cx-border bg-cx-surface p-4 shadow-cx">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-cx-ink-3">MFL code</p><p class="mt-2 font-mono text-lg font-bold text-cx-ink">{{ facility.mfl_code || '—' }}</p>
-      </article>
-      <article class="rounded-cx border border-cx-border bg-cx-surface p-4 shadow-cx">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-cx-ink-3">HFR facility ID</p><p class="mt-2 break-all font-mono text-sm font-bold text-cx-ink">{{ facility.hfr_facility_id || 'Not linked' }}</p>
-      </article>
-      <article class="rounded-cx border border-cx-border bg-cx-surface p-4 shadow-cx">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-cx-ink-3">Partner network</p><p class="mt-2 text-sm font-bold text-cx-ink">{{ facility.network || '—' }}</p>
-      </article>
-      <article class="rounded-cx border border-cx-border bg-cx-surface p-4 shadow-cx">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-cx-ink-3">Registration number</p><p class="mt-2 font-mono text-sm font-bold text-cx-ink">{{ facility.registration_number || '—' }}</p>
-      </article>
-    </div>
-
-    <article class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p class="text-[11px] font-semibold uppercase tracking-[0.1em] text-cx-ink-3">HMIS implementation</p>
-          <h2 class="mt-1 text-xl font-bold text-cx-ink">{{ statusLabel }}</h2>
-          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-cx-ink-3">
-            {{ provisioning?.message || (provisioningBusy ? 'Checking the HMIS setup service…' : 'Deployment status has not been checked.') }}
-          </p>
-        </div>
-        <button type="button" class="rounded-cx-sm border border-cx-border px-3 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well disabled:opacity-50" :disabled="provisioningBusy" @click="loadStatus">
-          {{ provisioningBusy ? 'Refreshing…' : 'Refresh status' }}
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" class="inline-flex items-center gap-2 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2.5 text-xs font-semibold text-cx-ink-2 shadow-sm transition hover:bg-cx-well" @click="emit('open-support', facility)">
+          <CxIcon name="chat" class="size-4" /> Network support
+        </button>
+        <button type="button" class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong" @click="emit('open-top-up', facility, 'paid')">
+          Top up tokens
         </button>
       </div>
-      <p v-if="provisioningError" class="mt-3 text-xs text-cx-danger-ink" role="alert">{{ provisioningError }}</p>
-      <div v-if="provisioning?.progress != null" class="mt-5">
-        <div class="mb-1.5 flex justify-between text-xs"><span class="font-medium text-cx-ink-2">Deployment progress</span><strong class="text-cx-ink">{{ Math.round(provisioning.progress) }}%</strong></div>
-        <div class="h-2 overflow-hidden rounded-full bg-cx-well"><div class="h-full rounded-full bg-cx-brand transition-all" :style="{ width: `${Math.min(100, Math.max(0, provisioning.progress))}%` }"></div></div>
+    </div>
+
+    <section class="overflow-hidden rounded-cx border border-cx-border bg-cx-surface shadow-cx">
+      <div class="border-b border-cx-border-soft bg-gradient-to-br from-cx-surface via-cx-surface to-cx-well/70 p-5 sm:p-7">
+        <div class="flex flex-wrap items-start justify-between gap-5">
+          <div class="max-w-3xl">
+            <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-cx-ink-3">Implementation</p>
+            <div class="mt-2 flex flex-wrap items-center gap-3">
+              <h2 class="text-2xl font-bold tracking-tight text-cx-ink">HMIS implementation</h2>
+              <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold" :class="statusTone">{{ statusLabel }}</span>
+            </div>
+            <p class="mt-2 max-w-2xl text-sm leading-relaxed text-cx-ink-2">{{ statusGuidance }}</p>
+          </div>
+          <button type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well disabled:opacity-50" :disabled="provisioningBusy" @click="loadStatus">
+            {{ provisioningBusy ? 'Refreshing…' : 'Refresh status' }}
+          </button>
+        </div>
+        <div v-if="provisioningBusy && !provisioning" class="cx-glass-panel mt-5 flex max-w-3xl items-center gap-4 rounded-cx-sm border border-cx-brand-soft-border bg-cx-brand-soft/60 p-4" aria-live="polite" aria-busy="true">
+          <span class="size-5 shrink-0 animate-spin rounded-full border-2 border-cx-brand/25 border-t-cx-brand" />
+          <div class="min-w-0 flex-1 space-y-2">
+            <p class="text-xs font-semibold text-cx-brand-ink">Checking the implementation service</p>
+            <div class="h-2 w-3/4 animate-pulse rounded-full bg-cx-brand/15" />
+            <p class="text-[11px] text-cx-ink-3">This can take a few seconds. You can continue reviewing facility details.</p>
+          </div>
+        </div>
+        <div v-else-if="setupUnavailable" class="cx-glass-panel mt-5 flex max-w-3xl items-start gap-3 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/70 p-4" role="alert">
+          <span class="grid size-9 shrink-0 place-items-center rounded-full bg-cx-surface/80 text-cx-warning-ink"><CxIcon name="alert" class="size-4" /></span>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="text-xs font-bold text-cx-ink">{{ provisioning?.error_title || 'Status could not be refreshed' }}</p>
+              <span v-if="setupConnectionReached" class="rounded-full border border-cx-success-border bg-cx-success-soft px-2 py-0.5 text-[10px] font-semibold text-cx-success-ink">Service reached</span>
+            </div>
+            <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">{{ provisioning?.message || provisioningError }}</p>
+            <p v-if="provisioning?.error_code === 'method_not_published'" class="mt-2 text-[11px] leading-relaxed text-cx-ink-3">Your portal reached the deployment service, but its status method is not published for portal access yet. Token selection and billing information below remain available.</p>
+          </div>
+          <button v-if="provisioning?.retryable !== false" type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">Retry</button>
+        </div>
+        <div v-if="progressValue != null" class="mt-6 max-w-3xl">
+          <div class="mb-2 flex items-center justify-between text-xs"><span class="font-semibold text-cx-ink-2">Reported deployment progress</span><strong class="text-sm text-cx-ink">{{ progressValue }}%</strong></div>
+          <div class="h-2.5 overflow-hidden rounded-full bg-cx-well"><div class="h-full rounded-full bg-cx-brand transition-all duration-500" :style="{ width: `${progressValue}%` }"></div></div>
+        </div>
       </div>
-      <div class="mt-5 grid gap-3 border-t border-cx-border-soft pt-4 sm:grid-cols-3">
-        <div><p class="text-[11px] text-cx-ink-3">Last deployment attempt</p><p class="mt-1 text-xs font-semibold text-cx-ink">{{ provisioning?.last_attempt || 'No attempt recorded' }}</p></div>
-        <div><p class="text-[11px] text-cx-ink-3">Service units configured</p><p class="mt-1 text-xs font-semibold text-cx-ink">{{ provisioning?.service_units_count != null ? `${provisioning.service_units_count} configured` : 'Not reported by setup service' }}</p></div>
-        <div><p class="text-[11px] text-cx-ink-3">HMIS site status</p><p class="mt-1 text-xs font-semibold text-cx-ink">{{ provisioning?.site_status || statusLabel }}</p></div>
+
+      <div class="grid divide-y divide-cx-border-soft sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <div class="p-4 sm:px-6">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Last deployment attempt</p>
+          <p class="mt-1.5 text-sm font-semibold text-cx-ink">{{ provisioning?.last_attempt || 'No attempt recorded' }}</p>
+        </div>
+        <div class="p-4 sm:px-6">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Status provided by</p>
+          <p class="mt-1.5 text-sm font-semibold text-cx-ink">{{ statusSource }}</p>
+        </div>
+        <div class="p-4 sm:px-6">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Facility ID used for tracking</p>
+          <p class="mt-1.5 break-all font-mono text-sm font-semibold text-cx-ink">{{ facility.hfr_facility_id || 'Not linked' }}</p>
+        </div>
       </div>
-      <div v-if="provisioning?.service_units?.length" class="mt-3 flex flex-wrap gap-2">
-        <span v-for="unit in provisioning.service_units" :key="unit" class="rounded-full border border-cx-border bg-cx-well px-2.5 py-1 text-[11px] font-medium text-cx-ink-2">{{ unit }}</span>
+
+      <div class="border-t border-cx-border-soft px-4 py-4 sm:px-6">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-semibold text-cx-ink">Provisioned HMIS details</h3>
+            <p class="mt-1 max-w-2xl text-xs leading-relaxed text-cx-ink-3">The published status API does not include service-unit configuration or a live site health check. These details will appear when the setup service exposes them.</p>
+          </div>
+          <span class="rounded-full border border-cx-border bg-cx-well px-2.5 py-1 text-[10px] font-medium text-cx-ink-3">Not reported by API</span>
+        </div>
       </div>
-    </article>
+
+      <div class="border-t border-cx-border-soft bg-cx-well/50 px-4 py-3 text-[11px] leading-relaxed text-cx-ink-3 sm:px-6">
+        Facility identifiers: <span class="font-medium text-cx-ink-2">MFL {{ facility.mfl_code || '—' }}</span><span v-if="facility.registration_number"> · Registration {{ facility.registration_number }}</span><span v-if="facility.network"> · {{ facility.network }}</span>
+      </div>
+
+      <section v-if="!goLiveReady" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="max-w-2xl">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-sm font-bold text-cx-ink">Go-live token allocation</h3>
+              <span class="rounded-full border border-cx-warning-border bg-cx-warning-soft px-2.5 py-1 text-[10px] font-semibold text-cx-warning-ink">Required before setup</span>
+            </div>
+            <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">The setup service requires a token quantity when a go-live setup request is created. Choose a free package or order paid tokens; after paying an invoice, wait for payment verification before setup proceeds.</p>
+          </div>
+          <div v-if="hasConfiguredPackage" class="rounded-cx-sm border border-cx-border bg-cx-surface/80 px-3 py-2 text-right shadow-sm">
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Selected package</p>
+            <p class="mt-1 text-xs font-bold text-cx-ink">{{ configuredPackage?.display_name || facility.token_package || 'Token package' }}</p>
+            <p class="mt-0.5 text-[11px] text-cx-ink-2">{{ selectedPackageTokens.toLocaleString() }} tokens · {{ selectedPackageCost > 0 ? money(selectedPackageCost, facility.package_currency) : 'Free' }}</p>
+          </div>
+        </div>
+
+        <div v-if="hasConfiguredPackage" class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-cx-sm border border-cx-border-soft bg-cx-surface/80 p-3">
+          <div class="flex items-start gap-2.5">
+            <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-cx-success-soft text-cx-success-ink"><CxIcon name="check" class="size-4" /></span>
+            <div>
+              <p class="text-xs font-semibold text-cx-ink">Package selection is on file</p>
+              <p class="mt-0.5 text-[11px] leading-relaxed text-cx-ink-3">This is the package quantity on file, not a live remaining-token balance or confirmation that setup has received this quantity. The status API does not report token usage.</p>
+              <p v-if="facilityPaymentPending" class="mt-1 text-[11px] font-semibold text-cx-warning-ink">A facility payment is awaiting verification. Wait for confirmation before paying that invoice again.</p>
+              <p v-else-if="facilityOutstandingInvoice" class="mt-1 text-[11px] text-cx-ink-3">This facility has an outstanding invoice below. Review its status before ordering more tokens.</p>
+            </div>
+          </div>
+          <button v-if="facilityOutstandingInvoice && !facilityPaymentPending" type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 hover:bg-cx-well" @click="reviewInvoice">Review invoice</button>
+        </div>
+
+        <div v-else class="mt-4 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/50 p-3 text-xs leading-relaxed text-cx-warning-ink">
+          No token package is selected for this facility yet. Choose a free allocation or select a paid package to create its order and invoice.
+        </div>
+
+        <div v-if="!hasConfiguredPackage" class="mt-4 flex flex-wrap gap-2">
+          <button v-if="freePackages.length" type="button" class="rounded-cx-sm border border-cx-brand-soft-border bg-cx-brand-soft px-3.5 py-2.5 text-xs font-semibold text-cx-brand-ink transition hover:bg-cx-brand-soft/80" @click="emit('open-top-up', facility, 'free')">
+            Choose free tokens
+          </button>
+          <button v-if="paidPackages.length" type="button" class="rounded-cx-sm bg-cx-brand px-3.5 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-brand-strong" @click="emit('open-top-up', facility, 'paid')">
+            Choose paid tokens
+          </button>
+          <button v-if="!freePackages.length && !paidPackages.length" type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-xs font-semibold text-cx-ink-2" @click="emit('open-support', facility)">
+            Ask Network Support
+          </button>
+        </div>
+        <div v-else-if="paidPackages.length" class="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p class="text-[11px] leading-relaxed text-cx-ink-3">The portal can create token orders and show their invoices. The go-live setup request itself is reviewed by the implementation team.</p>
+          <button type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 hover:bg-cx-well" @click="emit('open-top-up', facility, 'paid')">Buy more tokens</button>
+        </div>
+      </section>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-well/40 px-4 py-3 sm:px-6">
+        <p class="text-[11px] text-cx-ink-3">Need help with go-live or token allocation?</p>
+        <button type="button" class="inline-flex items-center gap-1.5 text-xs font-semibold text-cx-brand hover:underline" @click="emit('open-support', facility)">
+          Contact Network Support <CxIcon name="chevron-right" class="size-3.5" />
+        </button>
+      </div>
+    </section>
 
     <div class="grid gap-5 xl:grid-cols-2">
-      <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
+      <section id="facility-invoices" class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
         <div class="mb-4 flex items-center justify-between"><h2 class="text-base font-bold text-cx-ink">Invoices</h2><span class="rounded-full bg-cx-well px-2.5 py-1 text-[11px] font-semibold text-cx-ink-2">{{ invoices.length }}</span></div>
         <div v-if="!invoices.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-3">No outstanding invoices are linked to this facility.</div>
         <div v-else class="divide-y divide-cx-border-soft">

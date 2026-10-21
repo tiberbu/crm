@@ -99,7 +99,7 @@ This PRD establishes the comprehensive product requirements, data models, UX arc
 - Local facility search is name-only. Identifier lookup belongs in HFR discovery.
 - Selecting a facility opens a dedicated single-facility view with its registry identity, network, outstanding invoices, invoice-linked payments, token orders, and HMIS deployment status.
 - Facility linking resolves a six-digit Partner ID. Leaving the field empty uses `facility_onboarding_default_partner_id` from CRM Opt-In Settings.
-- Provisioning status is read from `GET /v1/hmis/provisioning/facilities/{fid}/status` through the HIE APISIX gateway, using the HIE Bearer JWT. CRM resolves the FID from an authorized portfolio facility; the browser sends only its local MFL key to the CRM endpoint.
+- Provisioning status is read from the external setup service when its URL and dedicated API key/secret are configured in CRM HFR Settings; otherwise CRM uses `GET /v1/hmis/provisioning/facilities/{fid}/status` through the HIE APISIX gateway with HIE Bearer JWT. CRM resolves the FID from an authorized portfolio facility; the browser sends only its local MFL key to the CRM endpoint. See [CX Portal HMIS Provisioning API Contract](cx-portal-provisioning-gateway-api.md) and the bench handoff [`EXTERNAL_PROVISIONING_API (1).md`](../../EXTERNAL_PROVISIONING_API%20(1).md).
 - The external provisioning contract currently reports setup status, progress, log, error, and last attempt. It does not report service-unit inventory or site URL health. The portal labels service-unit count as unavailable until that API is extended; it does not infer deployment completion from Draft status.
 
 | Persona | Role | Key Needs in CX Portal |

@@ -21,6 +21,7 @@ This pattern guides future customer experience screens for Kenyan health facilit
 - Label the portfolio `go_live` field as go-live readiness. Do not present it as HFR verification or HMIS deployment status; show deployment status only from the provisioning status route in the Single Facility View.
 - Adding a facility must resolve a six-digit Partner ID to its network. An empty Partner ID uses the configured default; show that behavior beside the field before the user submits.
 - Open a facility into a dedicated single-facility view. Bring its identity, network, invoices, payment history, orders, and HMIS implementation status together on that page.
+- Keep the Network Support action available across portal sections. Open a drawer over the current page, show the facility being viewed when applicable, and use configured Opt-In Network contacts and technology partner details rather than hard-coded addresses.
 
 ## Trust and data meaning
 
@@ -32,12 +33,17 @@ This pattern guides future customer experience screens for Kenyan health facilit
 - Render the catalog billing period, token quantity, and VAT label from the catalog response. Do not invent a monthly price, token quantity, or fixed tax rate when the API has no such value.
 - Describe M-Pesa Paybill as a manual payment followed by reference submission and verification. Do not promise instant settlement or fee treatment unless the payment service confirms it. Do not offer another payment action while a report is awaiting verification.
 - Treat zero-price packages as orders unless the backend confirms direct activation; do not promise that tokens are already active when only an order was created.
+- Align go-live setup and tokens in the Single Facility View. The setup request requires `tokens_awarded`; show the selected package quantity and price alongside the facility’s invoices and payment verification state.
+- Use “package allocation” or “tokens selected,” never “token balance,” when the API exposes package quantity but not remaining credits. The current status endpoint has no token-usage field.
+- Offer free and paid token packages through the existing token-order and billing workflow. A free package still creates an order; a paid package creates an invoice. Do not imply either action submits or deploys HMIS provisioning.
+- Keep the setup submission state explicit: the current CX portal reads provisioning status and the setup team reviews/submits the draft. Do not label a selected package as an accepted `tokens_awarded` value until the provisioning request returns a successful draft response.
 
 ## States and recovery
 
 - Every registry lookup has loading, result, no-result, and error states that stay visible in the page. Explain the next useful action, such as searching by MFL code or reviewing the profile ID.
 - Use specific outcomes: “Found 3 facilities,” “No facilities found,” or a clear error. Avoid success styling for an action that only began or for data that is merely present.
 - Preserve user input after recoverable errors and provide a direct retry or fallback path.
+- For provisioning status, use an in-page loading skeleton and a calm retry state. Distinguish “service reached but method not published” from a network outage, and keep facility and billing actions available while status is unavailable.
 
 ## Visual and interaction style
 

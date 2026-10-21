@@ -135,10 +135,10 @@
       <div class="h-px border-t mx-2 border-outline-elevation-2" />
       <div class="px-2 pt-4 pb-4">
         <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-1">
-          {{ __('HMIS Provisioning API Routes') }}
+          {{ __('HIE Gateway Status API') }}
         </div>
         <p class="mb-4 max-w-3xl text-p-sm text-ink-gray-5">
-          {{ __('These API paths are published through the HIE gateway and use the HIE URL and Bearer JWT credentials above. The current status response does not include service-unit inventory.') }}
+          {{ __('Used as the fallback when the external setup service credentials below are not configured. The current status response does not include service-unit inventory.') }}
         </p>
         <div class="flex flex-col gap-3">
           <div class="flex items-center gap-4">
@@ -149,7 +149,34 @@
             <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Provisioning Status API Path') }}</label>
             <FormControl v-model="form.provisioning_status_path" type="text" placeholder="/v1/hmis/provisioning/facilities/{fid}/status" class="flex-1" @input="markDirty" />
           </div>
-          <p class="text-p-sm text-ink-gray-5">{{ form.provisioning_status_configured ? __('HIE gateway credentials are configured. The provisioning routes may still be pending publication.') : __('Configure the HIE gateway URL and credentials above to enable status lookups.') }}</p>
+          <p class="text-p-sm text-ink-gray-5">{{ form.provisioning_status_configured ? __('HIE gateway fallback credentials are configured. The provisioning route must also be published.') : __('Configure the HIE gateway URL and credentials above to enable fallback status lookups.') }}</p>
+        </div>
+      </div>
+
+      <div class="h-px border-t mx-2 border-outline-elevation-2" />
+      <div class="px-2 pt-4 pb-4">
+        <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-1">
+          {{ __('External HMIS Setup Service') }}
+        </div>
+        <p class="mb-4 max-w-3xl text-p-sm text-ink-gray-5">
+          {{ __('If all three values are configured, status reads go directly to the setup service and take precedence over HIE. Use a dedicated Frappe service-user API key and secret. The setup API creates draft records only; deployment still requires implementation-team review.') }}
+        </p>
+        <div class="flex flex-col gap-3">
+          <div class="flex items-center gap-4">
+            <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Setup Service Base URL') }}</label>
+            <FormControl v-model="form.external_provisioning_url" type="text" placeholder="https://deploy.example.co.ke" class="flex-1" @input="markDirty" />
+          </div>
+          <div class="flex items-center gap-4">
+            <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Service API Key') }}</label>
+            <FormControl v-model="form.external_provisioning_key" type="text" class="flex-1" @input="markDirty" />
+          </div>
+          <div class="flex items-center gap-4">
+            <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Service API Secret') }}</label>
+            <FormControl v-model="form.external_provisioning_secret" type="password" :placeholder="__('Leave blank to keep existing')" class="flex-1" @input="markDirty" />
+          </div>
+          <p class="text-p-sm text-ink-gray-5">
+            {{ form.external_provisioning_configured ? __('Direct setup service credentials are configured and take precedence over HIE for status lookups.') : (form.external_provisioning_secret_configured ? __('A saved API secret exists. Save a base URL and API key to activate the direct setup service.') : __('Direct setup service credentials are not complete; status lookups use the HIE gateway fallback.')) }}
+          </p>
         </div>
       </div>
 
@@ -187,6 +214,11 @@ const form = reactive({
   provisioning_submit_path: '/v1/hmis/provisioning/facilities',
   provisioning_status_path: '/v1/hmis/provisioning/facilities/{fid}/status',
   provisioning_status_configured: false,
+  external_provisioning_url: '',
+  external_provisioning_key: '',
+  external_provisioning_secret: '',
+  external_provisioning_secret_configured: false,
+  external_provisioning_configured: false,
 })
 
 const settings = createResource({
@@ -195,6 +227,7 @@ const settings = createResource({
   onSuccess(data) {
     Object.assign(form, data)
     form.hfr_password = ''
+    form.external_provisioning_secret = ''
     isDirty.value = false
   },
 })
@@ -225,6 +258,7 @@ function save() {
   saveError.value = ''
   const payload = { ...form }
   if (!payload.hfr_password) delete payload.hfr_password
+  if (!payload.external_provisioning_secret) delete payload.external_provisioning_secret
   saveResource.submit({ settings: payload })
 }
 </script>

@@ -14,7 +14,11 @@
   "hfr_jwt_expiry",
   "provisioning_section",
   "provisioning_submit_path",
-  "provisioning_status_path"
+  "provisioning_status_path",
+  "external_provisioning_section",
+  "external_provisioning_url",
+  "external_provisioning_key",
+  "external_provisioning_secret"
  ],
  "fields": [
   {
@@ -82,6 +86,27 @@
    "fieldname": "provisioning_status_path",
    "fieldtype": "Data",
    "label": "Provisioning Status API Path"
+  },
+  {
+    "fieldname": "external_provisioning_section",
+    "fieldtype": "Section Break",
+    "label": "External HMIS Setup Service",
+    "description": "When URL, API key, and API secret are all configured, facility status uses the external setup API. Otherwise it uses the HIE gateway configuration above. Use a dedicated Frappe service user API key and secret; do not use an Administrator password."
+  },
+  {
+    "fieldname": "external_provisioning_url",
+    "fieldtype": "Data",
+    "label": "Setup Service Base URL"
+  },
+  {
+    "fieldname": "external_provisioning_key",
+    "fieldtype": "Data",
+    "label": "Service API Key"
+  },
+  {
+    "fieldname": "external_provisioning_secret",
+    "fieldtype": "Password",
+    "label": "Service API Secret"
   }
  ],
  "issingle": 1,

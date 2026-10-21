@@ -43,10 +43,12 @@ const context = ref({
   calculator_config: {},
 })
 
-// Current Active Navigation View: 'dashboard' | 'facilities' | 'pricing' | 'billing' | 'profile' | 'support'
+// Current Active Navigation View: 'dashboard' | 'facilities' | 'pricing' | 'billing' | 'profile'
 // The portal lands on the Dashboard — the at-a-glance portfolio story — and
 // drills down from there instead of opening on the densest data table.
 const activeView = ref('dashboard')
+const supportDrawerOpen = ref(false)
+const supportFacilityMfl = ref('')
 
 // Sidebar collapsed state for responsive layout
 const sidebarCollapsed = ref(false)
@@ -65,6 +67,11 @@ function updateMobileViewport() {
 }
 
 function selectMobileView(view) {
+  if (view === 'support') {
+    openNetworkSupportDrawer()
+    mobileMoreOpen.value = false
+    return
+  }
   activeView.value = view
   mobileMoreOpen.value = false
 }
@@ -104,6 +111,10 @@ function onGlobalSearchInput() {
 }
 
 function onGlobalKeydown(e) {
+  if (e.key === 'Escape' && supportDrawerOpen.value) {
+    closeNetworkSupportDrawer()
+    return
+  }
   if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
     e.preventDefault()
     globalSearchRef.value?.focus()
@@ -155,6 +166,7 @@ const facilityViewMode = ref('table') // 'table' | 'cards'
 // Facility selection for Top-Up & Calculator
 const selectedFacilityMfl = ref('')
 const selectedTopUpPackageCode = ref('')
+const topUpMode = ref('all')
 
 // Modals
 const topUpModalOpen = ref(false)
@@ -213,13 +225,15 @@ const allFacilities = computed(() => {
           facility_name: fac.facility_name || 'Healthcare Facility',
           mfl_code: mfl,
           keph_level: fac.keph_level || 'Level 2 Dispensary',
-          network: fac.network || account.network || 'CareVerse Partner Network',
+          network_support: fac.network_support || null,
+          network: fac.network_support?.display_name || fac.network || account.network || 'CareVerse Partner Network',
           membership_status: fac.membership_status || 'Active',
           go_live: Boolean(fac.go_live),
           deal: fac.deal || account.deal || '',
           customer: fac.customer || account.customer || '',
           organization: account.organization || account.customer || '',
           token_package: fac.token_package || '',
+          token_package_item_code: fac.token_package_item_code || '',
           token_quantity: Number(fac.token_quantity) || 0,
           package_price: fac.package_price,
           package_vat: fac.package_vat,
@@ -243,7 +257,8 @@ const allFacilities = computed(() => {
           facility_name: fac.facility_name || 'Healthcare Facility',
           mfl_code: mfl,
           keph_level: fac.keph_level || 'Level 2 Dispensary',
-          network: submission.network_slug || 'CareVerse Partner Network',
+          network_support: fac.network_support || submission.network || null,
+          network: submission.network?.display_name || submission.network_slug || 'CareVerse Partner Network',
           membership_status: fac.membership_status || 'Active',
           go_live: Boolean(fac.network_contact?.go_live),
           deal: '',
@@ -251,6 +266,7 @@ const allFacilities = computed(() => {
           ois_name: submission.name,
           organization: submission.facility_signatory_name || submission.name,
           token_package: submission.progress?.package?.display_name || '',
+          token_package_item_code: submission.progress?.package?.item_code || '',
           token_quantity: Number(submission.progress?.package?.token_quantity) || 0,
           package_price: submission.progress?.package?.price,
           package_vat: submission.progress?.package?.vat_amount,
@@ -477,6 +493,46 @@ const facilityDrawerMfl = ref('')
 const drawerFacility = computed(
   () => allFacilities.value.find((f) => String(f.mfl_code) === String(facilityDrawerMfl.value)) || null,
 )
+const supportDrawerFacility = computed(
+  () => allFacilities.value.find((f) => String(f.mfl_code) === String(supportFacilityMfl.value)) || null,
+)
+const primaryNetworkName = computed(() =>
+  allFacilities.value[0]?.network || userProfile.value.primary_network || 'CareVerse Partner Network',
+)
+const networkSupportGroups = computed(() => {
+  const groups = new Map()
+  for (const facility of allFacilities.value) {
+    const details = facility.network_support || {}
+    const name = details.display_name || facility.network || 'CareVerse Partner Network'
+    const key = details.name || details.slug || name
+    const group = groups.get(key) || {
+      key,
+      name,
+      partnerId: details.partner_id || '',
+      contactEmail: details.contact_email || '',
+      deliveryPartner: details.technology_delivery_partner_name || '',
+      deliveryPartnerShortName: details.technology_delivery_partner_short_name || '',
+      coordinators: Array.isArray(details.coordinators) ? details.coordinators : [],
+      facilities: [],
+    }
+    if (!group.facilities.includes(facility.facility_name)) group.facilities.push(facility.facility_name)
+    groups.set(key, group)
+  }
+  const currentKey = supportDrawerFacility.value?.network_support?.name || supportDrawerFacility.value?.network
+  return Array.from(groups.values()).sort((a, b) => Number(b.key === currentKey) - Number(a.key === currentKey))
+})
+
+function openNetworkSupportDrawer(facility = null) {
+  const target = facility || (activeView.value === 'facility_detail' ? drawerFacility.value : null)
+  supportFacilityMfl.value = target?.mfl_code || ''
+  supportDrawerOpen.value = true
+  mobileMoreOpen.value = false
+}
+
+function closeNetworkSupportDrawer() {
+  supportDrawerOpen.value = false
+}
+
 const drawerInvoices = computed(() => {
   if (drawerFacility.value?.invoices) return drawerFacility.value.invoices
   const mfl = String(drawerFacility.value?.mfl_code || '').toLowerCase()
@@ -770,7 +826,30 @@ async function discoverFacilitiesByOwnerId() {
   }
 }
 
-function openTopUpModal(facility = null) {
+function packageIsFree(pkg) {
+  const amount = Number(pkg?.price_ex_vat ?? pkg?.price ?? pkg?.gross_total)
+  return Number.isFinite(amount) && amount <= 0
+}
+
+function packageIsPaid(pkg) {
+  const amount = Number(pkg?.price_ex_vat ?? pkg?.price ?? pkg?.gross_total)
+  return Number.isFinite(amount) && amount > 0
+}
+
+const freeTokenPackages = computed(() => (context.value.token_packages || []).filter((pkg) => packageIsFree(pkg)))
+const paidTokenPackages = computed(() => (context.value.token_packages || []).filter((pkg) => packageIsPaid(pkg)))
+const visibleTopUpPackages = computed(() => topUpMode.value === 'free'
+  ? freeTokenPackages.value
+  : topUpMode.value === 'paid'
+    ? paidTokenPackages.value
+    : context.value.token_packages || [])
+const topUpModalTitle = computed(() => topUpMode.value === 'free'
+  ? __('Choose Free Go-live Tokens')
+  : topUpMode.value === 'paid'
+    ? __('Buy Care Tokens')
+    : __('Top Up Care Tokens'))
+
+function openTopUpModal(facility = null, mode = 'all') {
   if (facility) {
     selectedFacilityMfl.value = facility.mfl_code
   } else if (allFacilities.value.length === 1) {
@@ -779,8 +858,16 @@ function openTopUpModal(facility = null) {
     // Multiple facilities: user must explicitly pick one (PRD REQ-ARC-02)
     selectedFacilityMfl.value = ''
   }
-  if (!selectedTopUpPackageCode.value && context.value.token_packages?.length) {
-    selectedTopUpPackageCode.value = context.value.token_packages[0].item_code
+  topUpMode.value = mode
+  if (!visibleTopUpPackages.value.length) {
+    notice.value = {
+      tone: 'error',
+      text: mode === 'free' ? 'No free token package is available right now. Contact Network Support.' : 'No paid token packages are available right now. Contact Network Support.',
+    }
+    return
+  }
+  if (!visibleTopUpPackages.value.some((pkg) => pkg.item_code === selectedTopUpPackageCode.value)) {
+    selectedTopUpPackageCode.value = visibleTopUpPackages.value[0].item_code
   }
   topUpModalOpen.value = true
 }
@@ -1338,11 +1425,11 @@ onUnmounted(() => {
             type="button"
             class="w-full flex items-center gap-3 px-3 py-2.5 rounded-cx-sm text-xs font-semibold transition text-left"
             :class="
-              activeView === 'support'
+              supportDrawerOpen
                 ? 'bg-cx-brand-soft text-cx-brand-ink shadow-cx'
                 : 'text-cx-ink-3 hover:bg-cx-well hover:text-cx-ink'
             "
-            @click="activeView = 'support'"
+            @click="openNetworkSupportDrawer()"
           >
             <span class="text-base shrink-0"><CxIcon name="chat" class="inline-block size-4 align-[-0.15em]" /></span>
             <span v-if="!sidebarCollapsed" class="truncate">Network Support</span>
@@ -1493,10 +1580,12 @@ onUnmounted(() => {
             :invoices="drawerInvoices"
             :orders="drawerOrders"
             :payments="drawerPayments"
+            :token-packages="context.token_packages"
             :default-currency="defaultCurrency"
             :load-provisioning-status="loadProvisioningStatus"
             @back="closeFacilityDrawer"
             @open-top-up="openTopUpModal"
+            @open-support="openNetworkSupportDrawer"
             @pay="openMpesaModal"
           />
           <!-- ============================================================== -->
@@ -2689,31 +2778,93 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- ============================================================== -->
-          <!-- VIEW G: NETWORK SUPPORT & CONTACTS                             -->
-          <!-- ============================================================== -->
-          <div v-if="activeView === 'support'" class="space-y-6 max-w-3xl">
-            <div>
-              <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Network Support & Contacts</h1>
-              <p class="text-xs text-cx-ink-3 mt-0.5">Contact the support team for help with your account, facilities, or HMIS implementation.</p>
-            </div>
-
-            <div class="bg-cx-surface rounded-cx border border-cx-border p-6 shadow-cx space-y-4">
-              <div class="space-y-2.5">
-                <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3.5 text-xs flex items-center justify-between">
-                  <span class="text-cx-ink-3 font-medium">Network Partner</span>
-                  <span class="font-bold text-cx-ink">{{ primaryNetworkName }}</span>
-                </div>
-                <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3.5 text-xs flex items-center justify-between">
-                  <span class="text-cx-ink-3 font-medium">Support email</span>
-                  <a href="mailto:support@tiberbu.health" class="font-bold text-cx-brand hover:underline">support@tiberbu.health</a>
-                </div>
-
-              </div>
-            </div>
-          </div>
           </template>
         </main>
+
+        <Transition
+          enter-active-class="transition duration-200 ease-out"
+          enter-from-class="opacity-0"
+          enter-to-class="opacity-100"
+          leave-active-class="transition duration-150 ease-in"
+          leave-from-class="opacity-100"
+          leave-to-class="opacity-0"
+        >
+          <div v-if="supportDrawerOpen" class="fixed inset-0 z-[70]">
+            <button type="button" class="absolute inset-0 size-full cursor-default bg-cx-ink/35 backdrop-blur-sm" aria-label="Close network support" @click="closeNetworkSupportDrawer" />
+            <aside
+              class="cx-glass-panel absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-cx-border bg-cx-surface/90 shadow-cx-raised backdrop-blur-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="network-support-title"
+            >
+              <header class="flex items-start justify-between gap-4 border-b border-cx-border-soft px-5 py-5 sm:px-7">
+                <div>
+                  <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-cx-ink-3">CareVerse partner network</p>
+                  <h2 id="network-support-title" class="mt-1 text-xl font-bold tracking-tight text-cx-ink">Network Support</h2>
+                  <p class="mt-1 text-xs leading-relaxed text-cx-ink-3">Configured contacts for your network, available while you stay on this page.</p>
+                </div>
+                <button type="button" class="grid size-9 shrink-0 place-items-center rounded-cx-sm border border-cx-border bg-cx-surface text-cx-ink-2 transition hover:bg-cx-well" aria-label="Close network support" @click="closeNetworkSupportDrawer">
+                  <CxIcon name="x" class="size-4" />
+                </button>
+              </header>
+
+              <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
+                <div v-if="supportDrawerFacility" class="rounded-cx border border-cx-brand-soft-border bg-cx-brand-soft/70 p-4">
+                  <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-brand-ink">Facility you’re viewing</p>
+                  <p class="mt-1 text-sm font-bold text-cx-ink">{{ supportDrawerFacility.facility_name }}</p>
+                  <p class="mt-1 text-xs text-cx-ink-2">{{ supportDrawerFacility.network }}<span v-if="supportDrawerFacility.mfl_code"> · MFL {{ supportDrawerFacility.mfl_code }}</span></p>
+                </div>
+
+                <article v-for="network in networkSupportGroups" :key="network.key" class="rounded-cx border border-cx-border bg-cx-surface/80 p-5 shadow-cx">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 class="text-base font-bold text-cx-ink">{{ network.name }}</h3>
+                      <p v-if="network.partnerId" class="mt-1 text-[11px] text-cx-ink-3">Partner ID <span class="font-mono font-semibold text-cx-ink-2">{{ network.partnerId }}</span></p>
+                    </div>
+                    <span class="rounded-full border border-cx-border bg-cx-well px-2.5 py-1 text-[10px] font-medium text-cx-ink-3">{{ network.facilities.length }} {{ network.facilities.length === 1 ? 'facility' : 'facilities' }}</span>
+                  </div>
+
+                  <div class="mt-4 space-y-3">
+                    <div v-if="network.contactEmail" class="flex items-center justify-between gap-3 rounded-cx-sm border border-cx-border-soft bg-cx-well/70 p-3">
+                      <div>
+                        <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Network support</p>
+                        <a :href="`mailto:${network.contactEmail}`" class="mt-1 inline-flex text-sm font-semibold text-cx-brand hover:underline">{{ network.contactEmail }}</a>
+                      </div>
+                      <a :href="`mailto:${network.contactEmail}`" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 hover:bg-cx-well">Email</a>
+                    </div>
+
+                    <div v-if="network.coordinators.length" class="space-y-2">
+                      <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Network coordinators</p>
+                      <div v-for="person in network.coordinators" :key="person.email || person.name" class="rounded-cx-sm border border-cx-border-soft bg-cx-well/70 p-3">
+                        <p class="text-sm font-semibold text-cx-ink">{{ person.name }}</p>
+                        <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                          <a v-if="person.email" :href="`mailto:${person.email}`" class="text-cx-brand hover:underline">{{ person.email }}</a>
+                          <a v-if="person.phone" :href="`tel:${person.phone}`" class="text-cx-ink-2 hover:text-cx-brand">{{ person.phone }}</a>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p v-if="network.deliveryPartner" class="rounded-cx-sm bg-cx-well/60 px-3 py-2 text-xs text-cx-ink-2">
+                      Technology delivery partner: <strong>{{ network.deliveryPartner }}<span v-if="network.deliveryPartnerShortName"> ({{ network.deliveryPartnerShortName }})</span></strong>
+                    </p>
+                    <p v-if="!network.contactEmail && !network.coordinators.length" class="rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/70 p-3 text-xs leading-relaxed text-cx-warning-ink">
+                      Support contacts have not been configured for this network. Contact your network administrator to add them.
+                    </p>
+                    <p v-if="network.facilities.length" class="text-[11px] leading-relaxed text-cx-ink-3">
+                      Supports: {{ network.facilities.slice(0, 4).join(', ') }}<span v-if="network.facilities.length > 4"> and {{ network.facilities.length - 4 }} more</span>
+                    </p>
+                  </div>
+                </article>
+
+                <div v-if="!networkSupportGroups.length" class="rounded-cx border border-cx-border bg-cx-surface/80 p-6 text-center shadow-cx">
+                  <span class="mx-auto grid size-11 place-items-center rounded-full bg-cx-well text-cx-ink-3"><CxIcon name="chat" class="size-5" /></span>
+                  <h3 class="mt-3 text-sm font-bold text-cx-ink">No network contacts found</h3>
+                  <p class="mt-1 text-xs leading-relaxed text-cx-ink-3">Your facilities are not linked to a configured Opt-In Network support contact yet.</p>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </Transition>
 
         <nav
           class="cx-glass-chrome fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-cx-border px-2 pt-2 md:hidden"
@@ -2886,10 +3037,14 @@ onUnmounted(() => {
     <!-- MODAL 2: TOP-UP CAPACITY MODAL -->
     <Dialog
       v-model:open="topUpModalOpen"
-      :title="__('Top Up Care Tokens')"
+      :title="topUpModalTitle"
       size="3xl"
     >
       <div class="p-1 space-y-5">
+        <div v-if="topUpMode !== 'all'" class="cx-glass-panel rounded-cx-sm border border-cx-brand-soft-border bg-cx-brand-soft/50 p-3 text-xs leading-relaxed text-cx-ink-2">
+          {{ topUpMode === 'free' ? 'Choose a no-charge package to create the facility token order for go-live planning.' : 'Choose a paid package to create a token order. The invoice and payment status will be available in Billing & Invoices.' }}
+          The setup team reviews and submits the HMIS provisioning request separately.
+        </div>
         <div>
           <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
             Target Facility
@@ -2912,10 +3067,10 @@ onUnmounted(() => {
         </div>
 
         <div class="space-y-2">
-          <span class="text-xs font-semibold uppercase text-cx-ink-2 block">Select Package Tier</span>
+          <span class="text-xs font-semibold uppercase text-cx-ink-2 block">{{ topUpMode === 'free' ? 'Select a free token package' : topUpMode === 'paid' ? 'Select a paid token package' : 'Select package' }}</span>
           <div class="grid gap-3 sm:grid-cols-2">
             <button
-              v-for="pkg in context.token_packages"
+              v-for="pkg in visibleTopUpPackages"
               :key="pkg.item_code"
               type="button"
               :aria-pressed="selectedTopUpPackageCode === pkg.item_code"
