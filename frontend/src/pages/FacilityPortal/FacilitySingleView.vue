@@ -15,25 +15,59 @@ const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay'])
 const provisioning = ref(null)
 const provisioningBusy = ref(true)
 const provisioningError = ref('')
+let statusRequestSequence = 0
+
+const submissionErrorMessage = computed(() => {
+  return provisioning.value?.submission?.state === 'error'
+    ? provisioning.value.submission.message || 'The setup request could not be completed.'
+    : ''
+})
+const submissionBlockedMessage = computed(() => {
+  return provisioning.value?.submission?.state === 'blocked'
+    ? provisioning.value.submission.message || 'The setup request is waiting for required facility or billing information.'
+    : ''
+})
+const canRetryStatusCheck = computed(() => {
+  const submission = provisioning.value?.submission
+  if (submission?.state === 'blocked') return true
+  if (submission) return submission.retryable === true
+  return provisioning.value?.retryable !== false
+})
+const submissionCreated = computed(() => provisioning.value?.submission?.state === 'created')
+const submissionAlreadyExists = computed(() => provisioning.value?.submission?.state === 'already_exists')
+const submissionUnknown = computed(() => provisioning.value?.submission?.state === 'unknown')
 
 async function loadStatus() {
+  const requestSequence = ++statusRequestSequence
+  const requestedMflCode = props.facility.mfl_code
   provisioningBusy.value = true
   provisioningError.value = ''
   try {
-    provisioning.value = await props.loadProvisioningStatus(props.facility.mfl_code)
+    const result = await props.loadProvisioningStatus(requestedMflCode)
+    if (requestSequence === statusRequestSequence) provisioning.value = result
   } catch {
-    provisioning.value = null
-    provisioningError.value = 'We could not refresh implementation status. Your facility and billing records are unchanged. Try again shortly.'
+    if (requestSequence === statusRequestSequence) {
+      provisioning.value = null
+      provisioningError.value = 'We could not refresh implementation status. Your facility and billing records are unchanged. Try again shortly.'
+    }
   } finally {
-    provisioningBusy.value = false
+    if (requestSequence === statusRequestSequence) provisioningBusy.value = false
   }
 }
 onMounted(loadStatus)
-watch(() => props.facility.mfl_code, loadStatus)
+watch(() => props.facility.mfl_code, () => {
+  provisioning.value = null
+  loadStatus()
+})
 
 const statusLabel = computed(() => {
   if (provisioningBusy.value && !provisioning.value) return 'Checking status'
   if (provisioningError.value && !provisioning.value) return 'Status unavailable'
+  if (submissionBlockedMessage.value) return 'Setup needs information'
+  if (submissionErrorMessage.value) return 'Setup request needs attention'
+  if (submissionUnknown.value) return 'Checking setup request'
+  if (submissionCreated.value) return 'Draft submitted for review'
+  if (submissionAlreadyExists.value) return 'Draft already exists'
   const status = String(provisioning.value?.status || '').toLowerCase()
   if (status === 'deployed') return 'Live'
   if (status === 'draft') return 'Draft ready for review'
@@ -49,6 +83,10 @@ const statusLabel = computed(() => {
 const statusTone = computed(() => {
   if (provisioningBusy.value && !provisioning.value) return 'border-cx-brand-soft-border bg-cx-brand-soft text-cx-brand-ink'
   if (provisioningError.value && !provisioning.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  if (submissionBlockedMessage.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  if (submissionErrorMessage.value) return 'border-cx-danger-border bg-cx-danger-soft text-cx-danger-ink'
+  if (submissionUnknown.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  if (submissionCreated.value || submissionAlreadyExists.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
   const status = String(provisioning.value?.status || '').toLowerCase()
   if (status === 'deployed') return 'border-cx-success-border bg-cx-success-soft text-cx-success-ink'
   if (status === 'draft' || status === 'not_submitted') return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
@@ -57,13 +95,18 @@ const statusTone = computed(() => {
 })
 
 const statusGuidance = computed(() => {
-  if (provisioningBusy.value && !provisioning.value) return 'Connecting to the implementation service and retrieving the latest facility status.'
+  if (provisioningBusy.value && !provisioning.value) return 'Checking the setup service. If no setup exists, the service will prepare the request automatically when the facility is eligible.'
   if (provisioningError.value && !provisioning.value) return 'The latest status is not available right now. You can retry without affecting your facility or payments.'
+  if (submissionBlockedMessage.value) return submissionBlockedMessage.value
+  if (submissionErrorMessage.value) return submissionErrorMessage.value
+  if (submissionUnknown.value) return provisioning.value.submission.message || 'The request response was unclear. We are checking whether a setup record was created before trying anything again.'
+  if (submissionCreated.value) return provisioning.value.submission.message || 'A draft setup request was created. The implementation team will review it before deployment.'
+  if (submissionAlreadyExists.value) return provisioning.value.submission.message || 'A setup request already exists. The implementation team will review it before deployment.'
   if (provisioning.value?.error_title) return provisioning.value.message || 'The implementation service could not return the latest status.'
   const status = String(provisioning.value?.status || '').toLowerCase()
   if (status === 'draft') return 'A setup record exists. The implementation team must review it and start deployment from the setup tool.'
   if (status === 'deployed') return 'The implementation service reports this facility as deployed.'
-  if (status === 'not_submitted') return 'There is no setup record for this facility yet. Contact your implementation team to begin setup.'
+  if (status === 'not_submitted') return 'No setup record exists yet. The setup request will be prepared automatically once the facility has the required HFR, administrator, and billing details.'
   if (status.includes('error') || provisioning.value?.has_error) return 'The implementation team needs to review the latest deployment attempt.'
   return provisioning.value?.message || (provisioningBusy.value ? 'Checking the implementation service…' : 'Implementation status has not been checked.')
 })
@@ -75,8 +118,9 @@ const progressValue = computed(() => {
 })
 
 const statusSource = computed(() => provisioning.value?.source === 'external_setup' ? 'Setup service' : provisioning.value?.source === 'hie_gateway' ? 'HIE gateway' : 'Status source pending')
-const setupUnavailable = computed(() => provisioning.value?.status === 'unavailable' || Boolean(provisioningError.value))
+const setupUnavailable = computed(() => provisioning.value?.status === 'unavailable' || Boolean(provisioningError.value) || Boolean(submissionErrorMessage.value) || submissionUnknown.value)
 const setupConnectionReached = computed(() => Boolean(provisioning.value?.connection_reached))
+const setupAlertMessage = computed(() => submissionErrorMessage.value || (submissionUnknown.value ? provisioning.value?.submission?.message : '') || provisioning.value?.message || provisioningError.value)
 const goLiveReady = computed(() => String(provisioning.value?.status || '').toLowerCase() === 'deployed')
 const configuredPackage = computed(() => props.tokenPackages.find((pkg) => pkg.item_code === props.facility.token_package_item_code) || null)
 const selectedPackageTokens = computed(() => Number(props.facility.token_quantity || configuredPackage.value?.token_quantity || 0))
@@ -84,6 +128,35 @@ const selectedPackageCost = computed(() => Number(props.facility.package_gross_t
 const hasConfiguredPackage = computed(() => Boolean(props.facility.token_package || configuredPackage.value || selectedPackageTokens.value > 0))
 const facilityOutstandingInvoice = computed(() => props.invoices.find((invoice) => Number(invoice.amount || 0) > 0) || null)
 const facilityPaymentPending = computed(() => props.invoices.some((invoice) => Number(invoice.amount || 0) > 0 && pendingPaymentForInvoice(invoice)))
+const yesNo = (value) => value == null || value === '' ? '' : Number(value) ? 'Yes' : 'No'
+const hfrProfileDetails = computed(() => [
+  { label: 'MFL Code', value: props.facility.mfl_code },
+  { label: 'Registration number', value: props.facility.registration_number },
+  { label: 'Facility type', value: props.facility.facility_type },
+  { label: 'Category', value: props.facility.facility_category },
+  { label: 'Owner', value: props.facility.facility_owner },
+  { label: 'Owner type', value: props.facility.facility_owner_type },
+  { label: 'Regulatory body', value: props.facility.regulatory_body },
+  { label: 'Board registration', value: props.facility.board_registration_number },
+  { label: 'KRA PIN', value: props.facility.kra_pin },
+  { label: 'Operational status', value: props.facility.operational_status },
+  { label: 'County', value: props.facility.hfr_county || props.facility.county },
+  { label: 'Sub-county', value: props.facility.hfr_sub_county },
+  { label: 'Constituency', value: props.facility.hfr_constituency },
+  { label: 'Ward', value: props.facility.hfr_ward },
+  { label: 'Coordinates', value: props.facility.latitude != null && props.facility.longitude != null ? `${props.facility.latitude}, ${props.facility.longitude}` : '' },
+  { label: 'License number', value: props.facility.license_number },
+  { label: 'License type', value: props.facility.license_type },
+  { label: 'License expiry', value: props.facility.license_expiry },
+  { label: 'Facility standing', value: props.facility.facility_standing },
+  { label: 'Number of beds', value: props.facility.number_of_beds },
+  { label: 'Number of cots', value: props.facility.number_of_cots },
+  { label: 'Open whole day', value: yesNo(props.facility.open_whole_day) },
+  { label: 'Open weekends', value: yesNo(props.facility.open_weekends) },
+  { label: 'Open public holidays', value: yesNo(props.facility.open_public_holidays) },
+  { label: 'Open late night', value: yesNo(props.facility.open_late_night) },
+  { label: 'Last HFR sync', value: props.facility.hfr_last_synced },
+])
 
 const freePackages = computed(() => props.tokenPackages.filter((pkg) => {
   const amount = Number(pkg.price_ex_vat ?? pkg.price ?? pkg.gross_total)
@@ -152,13 +225,13 @@ function reviewInvoice() {
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-cx-ink-2">{{ statusGuidance }}</p>
           </div>
           <button type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well disabled:opacity-50" :disabled="provisioningBusy" @click="loadStatus">
-            {{ provisioningBusy ? 'Refreshing…' : 'Refresh status' }}
+            {{ provisioningBusy ? 'Checking…' : 'Check status' }}
           </button>
         </div>
         <div v-if="provisioningBusy && !provisioning" class="cx-glass-panel mt-5 flex max-w-3xl items-center gap-4 rounded-cx-sm border border-cx-brand-soft-border bg-cx-brand-soft/60 p-4" aria-live="polite" aria-busy="true">
           <span class="size-5 shrink-0 animate-spin rounded-full border-2 border-cx-brand/25 border-t-cx-brand" />
           <div class="min-w-0 flex-1 space-y-2">
-            <p class="text-xs font-semibold text-cx-brand-ink">Checking the implementation service</p>
+            <p class="text-xs font-semibold text-cx-brand-ink">Checking status and preparing setup if needed</p>
             <div class="h-2 w-3/4 animate-pulse rounded-full bg-cx-brand/15" />
             <p class="text-[11px] text-cx-ink-3">This can take a few seconds. You can continue reviewing facility details.</p>
           </div>
@@ -170,10 +243,20 @@ function reviewInvoice() {
               <p class="text-xs font-bold text-cx-ink">{{ provisioning?.error_title || 'Status could not be refreshed' }}</p>
               <span v-if="setupConnectionReached" class="rounded-full border border-cx-success-border bg-cx-success-soft px-2 py-0.5 text-[10px] font-semibold text-cx-success-ink">Service reached</span>
             </div>
-            <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">{{ provisioning?.message || provisioningError }}</p>
+            <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">{{ setupAlertMessage }}</p>
             <p v-if="provisioning?.error_code === 'method_not_published'" class="mt-2 text-[11px] leading-relaxed text-cx-ink-3">Your portal reached the deployment service, but its status method is not published for portal access yet. Token selection and billing information below remain available.</p>
+            <p v-if="submissionUnknown" class="mt-2 text-[11px] leading-relaxed text-cx-ink-3">The next check will look for an existing setup before any further submission is considered.</p>
           </div>
-          <button v-if="provisioning?.retryable !== false" type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">Retry</button>
+          <button v-if="canRetryStatusCheck" type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">Retry check</button>
+        </div>
+        <div v-else-if="submissionBlockedMessage" class="cx-glass-panel mt-5 flex max-w-3xl items-start gap-3 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/70 p-4" role="status">
+          <span class="grid size-9 shrink-0 place-items-center rounded-full bg-cx-surface/80 text-cx-warning-ink"><CxIcon name="alert" class="size-4" /></span>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-bold text-cx-ink">Setup request not sent</p>
+            <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">{{ submissionBlockedMessage }}</p>
+            <p class="mt-2 text-[11px] leading-relaxed text-cx-ink-3">Update the missing facility or billing information, then check again. This check did not create a setup draft.</p>
+          </div>
+          <button type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">{{ provisioningBusy ? 'Checking…' : 'Check again' }}</button>
         </div>
         <div v-if="progressValue != null" class="mt-6 max-w-3xl">
           <div class="mb-2 flex items-center justify-between text-xs"><span class="font-semibold text-cx-ink-2">Reported deployment progress</span><strong class="text-sm text-cx-ink">{{ progressValue }}%</strong></div>
@@ -191,9 +274,28 @@ function reviewInvoice() {
           <p class="mt-1.5 text-sm font-semibold text-cx-ink">{{ statusSource }}</p>
         </div>
         <div class="p-4 sm:px-6">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Facility ID used for tracking</p>
-          <p class="mt-1.5 break-all font-mono text-sm font-semibold text-cx-ink">{{ facility.hfr_facility_id || 'Not linked' }}</p>
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">HFR Facility ID (FID) for deployment lookup</p>
+          <p v-if="facility.hfr_facility_id" class="mt-1.5 break-all font-mono text-sm font-semibold text-cx-ink">{{ facility.hfr_facility_id }}</p>
+          <p v-else class="mt-1.5 text-xs font-semibold text-cx-warning-ink">No HFR FID is saved for this facility</p>
         </div>
+      </div>
+
+      <div class="border-t border-cx-border-soft px-4 py-5 sm:px-6">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-cx-ink">Health Facility Registry profile</h3>
+            <p class="mt-1 text-xs text-cx-ink-3">Registry details saved for deployment setup and facility verification.</p>
+          </div>
+          <span v-if="facility.hfr_sync_status" class="rounded-full border border-cx-border bg-cx-well px-2.5 py-1 text-[10px] font-medium text-cx-ink-2">{{ facility.hfr_sync_status }}</span>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div v-for="detail in hfrProfileDetails" :key="detail.label" class="min-w-0 rounded-cx-sm border border-cx-border-soft bg-cx-well/50 px-3 py-2.5">
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">{{ detail.label }}</p>
+            <p class="mt-1 break-words text-xs font-medium text-cx-ink-2">{{ detail.value || 'Not recorded' }}</p>
+          </div>
+        </div>
+        <p v-if="facility.hfr_sync_status !== 'HFR Verified'" class="mt-3 text-[11px] leading-relaxed text-cx-warning-ink">This registry profile has not been verified from HFR. Refresh or relink it from the Health Facility Registry to load current facility details.</p>
+        <p v-if="!facility.hfr_facility_id" class="mt-3 text-[11px] leading-relaxed text-cx-warning-ink">Deployment lookup requires the HFR FID. Refresh or relink this facility from the Health Facility Registry before submitting setup.</p>
       </div>
 
       <div class="border-t border-cx-border-soft px-4 py-4 sm:px-6">

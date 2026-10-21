@@ -666,27 +666,30 @@ def add_facility_from_hfr(
 
 	facility_data = {}
 	if fid:
-		try:
-			facility_data = get_facility_detail(fid) or {}
-		except Exception:
-			pass
+		facility_data = get_facility_detail(fid) or {}
 
 	if not facility_data and mfl_code:
-		try:
-			candidates = search_facility(mfl_code, search_by="mfl_code")
-			if candidates:
-				candidate_fid = candidates[0].get("fid")
-				if candidate_fid:
-					facility_data = get_facility_detail(candidate_fid) or {}
-				else:
-					facility_data = {
-						"organization_name": candidates[0].get("name"),
-						"mfl_code": candidates[0].get("mfl_code"),
-						"facility_level": candidates[0].get("level"),
-						"hfr_county": candidates[0].get("county"),
-					}
-		except Exception:
-			pass
+		candidates = search_facility(mfl_code, search_by="mfl_code")
+		if candidates:
+			candidate_fid = candidates[0].get("facility_fid")
+			if candidate_fid:
+				facility_data = get_facility_detail(candidate_fid) or {}
+	if not facility_data:
+		frappe.throw(
+			_("Full Health Facility Registry details could not be loaded. The facility was not linked; try again when the registry is available."),
+			frappe.ValidationError,
+		)
+	resolved_fid = _text(facility_data.get("hfr_facility_id")).strip()
+	if not re.fullmatch(r"FID-\d{2}-[\w-]+", resolved_fid, flags=re.IGNORECASE):
+		frappe.throw(
+			_("The Health Facility Registry record has no valid Facility ID (FID) for deployment lookup, so it was not linked."),
+			frappe.ValidationError,
+		)
+	if fid and resolved_fid.casefold() != fid.casefold():
+		frappe.throw(
+			_("The Health Facility Registry returned a different Facility ID than the one requested. The facility was not linked."),
+			frappe.ValidationError,
+		)
 
 	facility_name = facility_data.get("organization_name") or mfl_code
 	keph_level = facility_data.get("facility_level") or "Level 2"
@@ -715,8 +718,40 @@ def add_facility_from_hfr(
 					"keph_level": keph_level,
 				}
 			)
-		fac_doc.hfr_facility_id = fid or facility_data.get("hfr_facility_id") or fac_doc.get("hfr_facility_id")
-		fac_doc.registration_number = facility_data.get("registration_number") or fac_doc.get("registration_number")
+		fac_doc.hfr_facility_id = resolved_fid
+		for fieldname in (
+			"facility_type",
+			"facility_category",
+			"facility_owner",
+			"facility_owner_type",
+			"regulatory_body",
+			"board_registration_number",
+			"kra_pin",
+			"operational_status",
+			"hfr_county",
+			"hfr_sub_county",
+			"hfr_constituency",
+			"hfr_ward",
+			"latitude",
+			"longitude",
+			"license_number",
+			"license_type",
+			"license_expiry",
+			"facility_standing",
+			"number_of_beds",
+			"number_of_cots",
+			"open_whole_day",
+			"open_weekends",
+			"open_public_holidays",
+			"open_late_night",
+		):
+			value = facility_data.get(fieldname)
+			if value not in (None, ""):
+				fac_doc.set(fieldname, value)
+		if facility_data.get("registration_number"):
+			fac_doc.registration_number = facility_data["registration_number"]
+		fac_doc.hfr_sync_status = "HFR Verified"
+		fac_doc.hfr_last_synced = frappe.utils.now_datetime()
 
 		fac_doc.flags.skip_invitation = True
 		if hasattr(fac_doc, "is_self_onboarded"):
@@ -748,14 +783,55 @@ def add_facility_from_hfr(
 		deals = frappe.get_all("CRM Deal", filters={"cx_customer": customer}, fields=["name"], limit=1)
 		if deals:
 			deal_doc = frappe.get_doc("CRM Deal", deals[0].name)
-			already_in_deal = any(frappe.utils.cstr(df.mfl_code).strip() == resolved_mfl for df in deal_doc.facilities or [])
-			if not already_in_deal:
-				deal_fac = {
-					"facility_name": facility_name,
-					"mfl_code": resolved_mfl,
-					"facility_level": keph_level,
-					"hfr_sync_status": "HFR Verified",
-				}
+			deal_fac_row = next(
+				(
+					df
+					for df in deal_doc.facilities or []
+					if frappe.utils.cstr(df.mfl_code).strip() == resolved_mfl
+				),
+				None,
+			)
+			deal_fac = {
+				"facility_name": facility_name,
+				"mfl_code": resolved_mfl,
+				"facility_level": keph_level,
+				"hfr_facility_id": facility_data.get("hfr_facility_id") or "",
+				"hfr_sync_status": "HFR Verified",
+			}
+			for fieldname in (
+				"facility_type",
+				"facility_category",
+				"facility_owner",
+				"facility_owner_type",
+				"regulatory_body",
+				"board_registration_number",
+				"kra_pin",
+				"operational_status",
+				"hfr_county",
+				"hfr_sub_county",
+				"hfr_constituency",
+				"hfr_ward",
+				"latitude",
+				"longitude",
+				"license_number",
+				"license_type",
+				"license_expiry",
+				"facility_standing",
+				"number_of_beds",
+				"number_of_cots",
+				"open_whole_day",
+				"open_weekends",
+				"open_public_holidays",
+				"open_late_night",
+				"registration_number",
+			):
+				value = facility_data.get(fieldname)
+				if value not in (None, ""):
+					deal_fac[fieldname] = value
+			if deal_fac_row:
+				for fieldname, value in deal_fac.items():
+					deal_fac_row.set(fieldname, value)
+			else:
 				if package_item_code:
 					pkg = _package(package_item_code)
 					if pkg:
@@ -766,7 +842,7 @@ def add_facility_from_hfr(
 						deal_fac["cx_token_package_gross_total"] = pkg.get("gross_total") or 0
 						deal_fac["cx_token_package_currency"] = pkg.get("currency") or "KES"
 				deal_doc.append("facilities", deal_fac)
-				deal_doc.save(ignore_permissions=True)
+			deal_doc.save(ignore_permissions=True)
 
 		frappe.db.commit()
 

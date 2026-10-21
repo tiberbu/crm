@@ -19,9 +19,9 @@
 
 | # | Decision | Resolution |
 |---|---|---|
-| D1 | FID source | **MFL → FID lookup.** The existing HIE/HFR integration already returns the HIE facility ID (`facility_fid`) alongside the MFL code and stores it as `hfr_facility_id` on facility rows *(repo: `crm/api/hfr.py` → `_map_facility_to_org_fields`, `search_facility(search_by="mfl_code")`)*. The new FID field is auto-populated from that lookup; manual entry is a fallback. |
+| D1 | FID source | **MFL → FID lookup.** The HFR detail endpoint's `facility_fid` is the deployment FID and is stored as `hfr_facility_id`; generic `hie_id` is not interchangeable. Registry search exposes the exact `facility_fid` separately, and facility linking requires a valid deployment-format FID. |
 | D2 | Trigger | **Deal Won + valid FID + purchased package present** for the facility — reuses the existing E7 deal-Won automation pattern *(repo: `crm.automation.support_journey.on_deal_update`)*. |
-| D3 | Status auth | **Use the external setup service when its dedicated API credentials are configured; otherwise use HIE APISIX.** Direct calls use Frappe Basic API-key authentication with a dedicated service user's API key/secret stored server-side in `CRM HFR Settings`. Never use an Administrator login password. HIE Bearer JWT remains the fallback. The live host returned 403 (`get_provision_status` is not whitelisted) on 2026-10-21; direct status remains unavailable until the method is published. |
+| D3 | Status auth | **Use the external setup service when its dedicated API credentials are configured; otherwise use HIE APISIX.** Direct calls use Frappe Basic API-key authentication with a dedicated service user's API key/secret stored server-side in `CRM HFR Settings`. Never use an Administrator login password. HIE Bearer JWT remains the fallback. An authenticated GET probe on 2026-10-21 reached `get_provision_status`; a synthetic, well-formed FID with no draft returned Frappe HTTP 417 `ValidationError: No Facility Setup found…`. The CRM adapter now maps this to `Not submitted`; the TA documents HTTP 400 for the same outcome. |
 
 ---
 
@@ -130,10 +130,11 @@ Not Provisioned → Submitted → Awaiting Deployment → In Progress → Live
 
 ### FR-1 — FID field in CRM (auto-populated MFL → FID lookup; D1)
 
-- `CRM Deal Facility` gains `fid` (Data, "Facility ID (HIE)").
+- Facility records use `hfr_facility_id` (labelled "HFR Facility ID / FID" on the customer facility DocType) as the deployment join key.
 - **Auto-population:** when a facility row is created or resynced from HFR, `fid` is
-  filled from the registry response — the same value the existing sync already writes to
-  `hfr_facility_id` (`facility_fid`/`hie_id`, *(repo: `_map_facility_to_org_fields`)*).
+  filled from the registry response — specifically `facility_fid`, which is written to
+  `hfr_facility_id` *(repo: `_map_facility_to_org_fields`)*. A generic `hie_id` is never
+  used as a deployment FID.
   Where `hfr_facility_id` is absent but `mfl_code` exists, the job calls the existing
   `search_facility(mfl_code, search_by="mfl_code")` *(repo: `crm/api/hfr.py`)*, takes
   the row whose MFL matches exactly, and uses its `fid`. Zero matches or multiple exact
@@ -347,9 +348,9 @@ publishes the stable `/v1/hmis/...` paths to CRM.
 Resolved in v0.2: ~~Q1 FID source~~ → D1; ~~Q2 trigger~~ → D2; ~~Q5 gateway auth~~ → D3.
 Remaining:
 
-1. **Status API publication.** The setup host returned 403 because
-   `get_provision_status` was not whitelisted (checked 2026-10-21). Publish the
-   method or the HIE APISIX status route before enabling live status tracking.
+1. **Status API publication.** The authenticated direct GET was reachable on
+   2026-10-21. The setup host returned HTTP 417 for a missing draft, which CRM
+   normalizes as `Not submitted`; this differs from the TA's documented HTTP 400.
 2. **FID on Pre-Qualified Facility.** Keep or drop (MVP = Deal Facility only)?
 3. **Licence number source.** Which CRM document owns the `LIC-…` value (contract?
    quote? new field on the facility row)?
