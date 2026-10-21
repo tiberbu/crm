@@ -1046,7 +1046,7 @@ async function linkHfrCandidate(candidate) {
   try {
     const res = await call('crm.api.customer_experience.add_facility_from_hfr', {
       mfl_code: candidate.mfl_code,
-      fid: candidate.fid,
+      fid: candidate.facility_fid || candidate.fid,
       partner_id: partnerIdInput.value.trim(),
     })
     const payload = unwrap(res)
@@ -2954,10 +2954,11 @@ onUnmounted(() => {
           <div v-if="hfrOwnerSearchResults.length" class="space-y-2 border-t border-cx-brand-soft-border pt-3">
             <p class="text-xs font-semibold text-cx-brand-ink">Facilities found ({{ hfrOwnerSearchResults.length }})</p>
             <div class="max-h-56 space-y-2 overflow-y-auto">
-              <div v-for="candidate in hfrOwnerSearchResults" :key="candidate.fid || candidate.mfl_code" class="flex flex-col gap-3 rounded-cx-sm border border-cx-border bg-cx-surface p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div v-for="candidate in hfrOwnerSearchResults" :key="candidate.facility_fid || candidate.mfl_code" class="flex flex-col gap-3 rounded-cx-sm border border-cx-border bg-cx-surface p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p class="text-xs font-semibold text-cx-ink">{{ candidate.name }}</p>
                   <p class="mt-1 text-[11px] text-cx-ink-3">MFL {{ candidate.mfl_code }} · {{ candidate.level || 'Facility' }} · {{ candidate.county }}{{ candidate.subcounty ? ` / ${candidate.subcounty}` : '' }}</p>
+                  <p class="mt-1 text-[11px] text-cx-ink-3">{{ candidate.facility_fid ? `HFR FID ${candidate.facility_fid}` : 'Deployment FID will be resolved from the MFL code' }}</p>
                 </div>
                 <span v-if="candidate.already_linked || facilityAlreadyLinked(candidate)" class="shrink-0 rounded-full bg-cx-success-soft px-2.5 py-1 text-[11px] font-semibold text-cx-success-ink">In your portfolio</span>
                 <button v-else type="button" class="shrink-0 rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover disabled:opacity-50" :disabled="hfrLinkBusy" @click="linkHfrCandidate(candidate)">
@@ -3008,7 +3009,7 @@ onUnmounted(() => {
           <div class="space-y-2 max-h-60 overflow-y-auto">
             <div
               v-for="cand in hfrSearchResults"
-              :key="cand.fid"
+              :key="cand.facility_fid || cand.mfl_code"
               class="rounded-cx-sm border p-3 flex items-center justify-between gap-3 hover:bg-cx-well transition"
               :class="facilityAlreadyLinked(cand) ? 'border-cx-success-border bg-cx-success-soft' : 'border-cx-border'"
             >

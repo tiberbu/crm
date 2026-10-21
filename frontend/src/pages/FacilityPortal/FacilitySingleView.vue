@@ -45,10 +45,10 @@ async function loadStatus() {
   try {
     const result = await props.loadProvisioningStatus(requestedMflCode)
     if (requestSequence === statusRequestSequence) provisioning.value = result
-  } catch {
+  } catch (error) {
     if (requestSequence === statusRequestSequence) {
       provisioning.value = null
-      provisioningError.value = 'We could not refresh implementation status. Your facility and billing records are unchanged. Try again shortly.'
+      provisioningError.value = error?.messages?.[0] || error?.message || 'We could not refresh implementation status. Your facility and billing records are unchanged. Try again shortly.'
     }
   } finally {
     if (requestSequence === statusRequestSequence) provisioningBusy.value = false
@@ -72,6 +72,7 @@ const statusLabel = computed(() => {
   if (status === 'deployed') return 'Live'
   if (status === 'draft') return 'Draft ready for review'
   if (status === 'not_submitted') return 'Setup not started'
+  if (status === 'not_linked') return 'HFR FID needed'
   if (status.includes('error') || provisioning.value?.has_error) return 'Needs attention'
   if (status === 'not_configured') return 'Tracking not connected'
   if (status === 'route_not_provisioned') return 'Tracking not available yet'
@@ -107,6 +108,7 @@ const statusGuidance = computed(() => {
   if (status === 'draft') return 'A setup record exists. The implementation team must review it and start deployment from the setup tool.'
   if (status === 'deployed') return 'The implementation service reports this facility as deployed.'
   if (status === 'not_submitted') return 'No setup record exists yet. The setup request will be prepared automatically once the facility has the required HFR, administrator, and billing details.'
+  if (status === 'not_linked') return 'This facility has no saved HFR deployment FID. Add or refresh the facility from the Health Facility Registry, then check again.'
   if (status.includes('error') || provisioning.value?.has_error) return 'The implementation team needs to review the latest deployment attempt.'
   return provisioning.value?.message || (provisioningBusy.value ? 'Checking the implementation service…' : 'Implementation status has not been checked.')
 })

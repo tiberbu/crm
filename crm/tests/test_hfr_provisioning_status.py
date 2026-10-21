@@ -9,7 +9,10 @@ from crm.api.hfr import (
 	_build_external_provisioning_payload,
 	_get_external_provisioning_status,
 	_hfr_request,
+	_merge_facility_hfr_fallback,
 	_map_facility_to_org_fields,
+	_external_submit_error,
+	search_facility,
 )
 
 
@@ -33,6 +36,33 @@ class TestExternalProvisioningStatus(UnitTestCase):
 			"billing_model": "Token",
 			"admin_mobile": "+254700000001",
 		}
+
+	@patch("crm.api.hfr._hfr_request", return_value={"data": [
+		{"hie_id": "HIE-ONLY", "facility_code": "12345"},
+		{"hie_id": "HIE-2", "facility_fid": "FID-29-116804-5", "facility_code": "116804"},
+	]})
+	@patch("crm.api.hfr._build_hfr_url", return_value="https://hfr.example.test/facilities")
+	@patch("crm.api.hfr._get_settings")
+	def test_search_never_exposes_generic_hie_id_as_deployment_fid(self, _settings, _url, _request):
+		rows = search_facility("12345")
+		self.assertIsNone(rows[0]["fid"])
+		self.assertEqual(rows[0]["hie_id"], "HIE-ONLY")
+		self.assertEqual(rows[1]["fid"], "FID-29-116804-5")
+
+	def test_status_facility_uses_deal_fid_when_prequalified_copy_is_blank(self):
+		facility = _merge_facility_hfr_fallback(
+			{"mfl_code": "116804", "hfr_facility_id": None, "facility_name": "Registry name"},
+			{"hfr_facility_id": "FID-29-116804-5", "facility_name": "Deal copy", "license_number": "LIC-1"},
+		)
+		self.assertEqual(facility.hfr_facility_id, "FID-29-116804-5")
+		self.assertEqual(facility.facility_name, "Registry name")
+		self.assertEqual(facility.license_number, "LIC-1")
+
+	def test_ta_validation_message_is_visible_to_facility_operator(self):
+		message = _external_submit_error(
+			400, {"message": "Missing required field(s): licence, token_expiry_date."}
+		)
+		self.assertIn("licence, token_expiry_date", message)
 
 	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
 	@patch("crm.api.hfr.frappe.cache")

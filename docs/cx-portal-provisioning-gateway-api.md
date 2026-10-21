@@ -17,16 +17,23 @@ If any external setup credential field is populated but the set is incomplete,
 CRM reports that configuration as incomplete and does not silently fall back to
 HIE.
 
-The CX Portal remains read-only. CRM does not submit new setup records from this
-screen. The direct setup credentials must belong to a dedicated service user and
-stay server-side; an Administrator login password is not an API key/secret.
+The portal does not send setup requests itself. When the external setup service
+is configured, its status RPC checks the status and automatically attempts one
+draft submission if the upstream status is `not_submitted` and CRM has every
+required value from approved facility, purchase, and administrator records. If
+required source data is missing, CRM returns a blocked state with the missing
+field names and does not call POST. The direct setup credentials stay
+server-side and must belong to a dedicated service user.
 
 ## Routes
 
 | Method | Route | Use |
 |---|---|---|
-| `POST` | `/v1/hmis/provisioning/facilities` | CRM submits a facility for draft setup after the approved commercial trigger and data checks. |
-| `GET` | `/v1/hmis/provisioning/facilities/{fid}/status` | CRM reads the deployment state for a facility; the portal uses this read-only projection. |
+| `POST` | `/api/method/hmis_setup.api.external_provisioning.provision_facility` | CRM creates a draft when the status check returns `not_submitted` and all required data is available. |
+| `GET` | `/api/method/hmis_setup.api.external_provisioning.get_provision_status?fid={fid}` | CRM checks status before any draft submission and reloads status after an accepted submission. |
+
+Without a complete external setup configuration, CRM uses the HIE gateway for
+status reads only. The current HIE fallback does not submit drafts.
 
 `fid` is the HFR Facility ID and must match `^FID-\d{2}-[\w-]+$` (case-insensitive).
 CRM resolves it from a facility the signed-in user is authorized to view. The
@@ -34,18 +41,12 @@ browser does not send an arbitrary FID to the gateway.
 
 ## Shared headers
 
-```http
-Authorization: Bearer <HIE-JWT>
-Accept: application/json
-Content-Type: application/json
-X-Correlation-Id: <request-correlation-id>
-```
-
-For `POST`, CRM also sends an `Idempotency-Key` derived from the CRM facility
-and provisioning version. APISIX should forward it and the setup adapter should
-return the original result for a duplicate key. It must reject a second request
-for the same active FID with `409` even if the caller uses a new key; the current
-setup method does not deduplicate drafts.
+Direct setup calls use HTTP Basic authentication with the configured Frappe API
+key and secret. HIE fallback status calls use the existing Bearer JWT. Both use
+`Accept: application/json` and an `X-Correlation-Id`. The setup endpoint does
+not deduplicate drafts. CRM serializes requests
+by FID, rechecks status before POST, and will not automatically repeat a request
+after an ambiguous response because a duplicate draft makes status ambiguous.
 
 ## Submit a facility
 
@@ -154,11 +155,9 @@ raw upstream response bodies, setup logs, or credentials.
 
 ## Current implementation boundary
 
-The CX Portal currently implements the authorized, read-only status use case.
-The `POST` shape is documented for the CRM commercial provisioning workflow;
-submission remains gated on the approved trigger, complete payload mapping, and
-CRM-side idempotency because the current upstream method can create duplicate
-drafts. When direct setup-service credentials are configured, that source takes
-precedence; otherwise CRM uses the HIE gateway. Until the selected source
-publishes the status method, CRM treats missing routes, timeouts, and gateway
-errors as “tracking unavailable” and leaves billing and facility access available.
+The single-facility view has no direct submit control. Its status RPC performs
+the automatic draft flow described above when direct setup credentials are
+configured. It serializes requests by FID, checks status again before POST, and
+will not repost an ambiguous request because the setup endpoint does not dedupe
+drafts. The HIE fallback currently reads status only. Missing routes, timeouts,
+and gateway errors leave billing and facility access available.
