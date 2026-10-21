@@ -1,0 +1,266 @@
+from contextlib import nullcontext
+from unittest.mock import MagicMock, patch
+
+from frappe.tests import UnitTestCase
+from frappe.utils.file_lock import LockTimeoutError
+
+from crm.api.hfr import (
+	_auto_submit_external_provisioning,
+	_build_external_provisioning_payload,
+	_get_external_provisioning_status,
+	_hfr_request,
+	_map_facility_to_org_fields,
+)
+
+
+class TestExternalProvisioningStatus(UnitTestCase):
+	def _not_submitted(self):
+		return {
+			"configured": True,
+			"status": "not_submitted",
+			"progress": 0,
+			"source": "external_setup",
+		}
+
+	def _valid_payload(self):
+		return {
+			"fid": "FID-99-TEST-1",
+			"licence": "LIC-TEST-1",
+			"tokens_awarded": 500,
+			"token_expiry_date": "2027-10-21",
+			"admin_email": "facility@example.test",
+			"admin_name": "Facility Admin",
+			"billing_model": "Token",
+			"admin_mobile": "+254700000001",
+		}
+
+	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
+	@patch("crm.api.hfr.frappe.cache")
+	@patch("crm.api.hfr._get_external_provisioning_status")
+	@patch("crm.api.hfr.requests.post")
+	def test_auto_submit_posts_basic_auth_then_reloads_status(self, mock_post, mock_status, mock_cache, _mock_lock):
+		cache = MagicMock()
+		cache.get_value.return_value = None
+		mock_cache.return_value = cache
+		accepted = MagicMock()
+		accepted.status_code = 200
+		accepted.headers = {"X-Correlation-Id": "corr-123"}
+		accepted.json.return_value = {
+			"message": {
+				"accepted": True,
+				"facility_setup": "SETUP-0001",
+				"status": "Draft",
+				"message": "Draft created",
+			}
+		}
+		mock_post.return_value = accepted
+		mock_status.side_effect = [self._not_submitted(), {"configured": True, "status": "Draft", "progress": 0}]
+
+		result = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), self._valid_payload(), [],
+		)
+
+		self.assertEqual(result["status"], "Draft")
+		self.assertEqual(result["submission"]["state"], "created")
+		self.assertEqual(result["submission"]["facility_setup"], "SETUP-0001")
+		mock_status.assert_any_call("https://deploy.example.test", "key", "secret", "FID-99-TEST-1")
+		self.assertEqual(mock_status.call_count, 2)  # authoritative GET before POST, then refresh GET
+		mock_post.assert_called_once_with(
+			"https://deploy.example.test/api/method/hmis_setup.api.external_provisioning.provision_facility",
+			auth=("key", "secret"),
+			json=self._valid_payload(),
+			headers={"Accept": "application/json", "Content-Type": "application/json", "X-Correlation-Id": mock_post.call_args.kwargs["headers"]["X-Correlation-Id"]},
+			timeout=60,
+		)
+
+	@patch("crm.api.hfr.requests.post")
+	def test_missing_ta_fields_block_submission(self, mock_post):
+		payload, missing = _build_external_provisioning_payload({"fid": "FID-99-TEST-1"})
+		result = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), payload, missing,
+		)
+		self.assertEqual(result["submission"]["state"], "blocked")
+		self.assertIn("licence", result["submission"]["missing_fields"])
+		self.assertIn("token_expiry_date", result["submission"]["missing_fields"])
+		mock_post.assert_not_called()
+
+	def test_payload_builder_accepts_complete_policy_verified_data(self):
+		source = {
+			**self._valid_payload(),
+			"deal_won_package_purchase_verified": True,
+			"facility_name": "Example Health Centre",
+			"facility_level": "LEVEL 3",
+		}
+		payload, missing = _build_external_provisioning_payload(source)
+		self.assertEqual(missing, [])
+		self.assertEqual(payload["tokens_awarded"], 500)
+		self.assertEqual(payload["facility_name"], "Example Health Centre")
+
+	@patch("crm.api.hfr.filelock", side_effect=LockTimeoutError("locked"))
+	@patch("crm.api.hfr.requests.post")
+	def test_lock_timeout_returns_status_check_retry_without_post(self, mock_post, _mock_lock):
+		result = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), self._valid_payload(), [],
+		)
+		self.assertEqual(result["submission"]["state"], "unknown")
+		self.assertEqual(result["submission"]["retry_mode"], "status_check")
+		mock_post.assert_not_called()
+
+	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
+	@patch("crm.api.hfr.frappe.cache")
+	@patch("crm.api.hfr._get_external_provisioning_status", side_effect=lambda *args: {"status": "not_submitted"})
+	@patch("crm.api.hfr.requests.post", side_effect=__import__("requests").exceptions.Timeout)
+	def test_uncertain_post_is_checked_but_never_reposted(self, mock_post, _mock_status, mock_cache, _mock_lock):
+		cache = MagicMock()
+		state = {}
+		cache.get_value.side_effect = lambda key: state.get(key)
+		cache.set_value.side_effect = lambda key, value, **kwargs: state.__setitem__(key, value)
+		mock_cache.return_value = cache
+
+		first = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), self._valid_payload(), [],
+		)
+		second = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), self._valid_payload(), [],
+		)
+
+		self.assertEqual(first["submission"]["state"], "unknown")
+		self.assertEqual(second["submission"]["state"], "unknown")
+		mock_post.assert_called_once()
+
+	@patch.dict("crm.api.hfr.frappe.conf", {"encryption_key": "test-site-encryption-key"})
+	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
+	@patch("crm.api.hfr.frappe.cache")
+	@patch("crm.api.hfr._get_external_provisioning_status", side_effect=lambda *args: {"status": "not_submitted"})
+	@patch("crm.api.hfr.requests.post")
+	def test_rejected_payload_fingerprint_is_keyed_and_does_not_repost_same_payload(
+		self, mock_post, _mock_status, mock_cache, _mock_lock
+	):
+		cache = MagicMock()
+		state = {}
+		cache.get_value.side_effect = lambda key: state.get(key)
+		cache.set_value.side_effect = lambda key, value, **kwargs: state.__setitem__(key, value)
+		mock_cache.return_value = cache
+		rejected = MagicMock()
+		rejected.status_code = 400
+		rejected.headers = {}
+		rejected.json.return_value = {"message": "Missing required field"}
+		mock_post.return_value = rejected
+
+		first = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), self._valid_payload(), [],
+		)
+		second = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), self._valid_payload(), [],
+		)
+
+		self.assertEqual(first["submission"]["state"], "error")
+		self.assertEqual(second["submission"]["state"], "error")
+		mock_post.assert_called_once()
+		stored_attempt = next(value for value in state.values() if str(value).startswith("rejected:"))
+		self.assertNotIn("facility@example.test", stored_attempt)
+
+	@patch("crm.api.hfr._generate_jwt", return_value="hfr-token")
+	@patch("crm.api.hfr._get_settings")
+	@patch("crm.api.hfr.requests.get")
+	def test_hfr_search_values_are_sent_as_get_query_params(self, mock_get, _mock_settings, _mock_jwt):
+		response = MagicMock()
+		response.json.return_value = {"data": []}
+		mock_get.return_value = response
+
+		self.assertEqual(_hfr_request("https://hfr.example.test/lookup", {"facility-code": "12345"}), {"data": []})
+		mock_get.assert_called_once_with(
+			"https://hfr.example.test/lookup",
+			params={"facility-code": "12345"},
+			headers={
+				"Authorization": "Bearer hfr-token",
+				"Content-Type": "application/json",
+				"Accept": "application/json",
+			},
+			timeout=30,
+		)
+
+	def test_hfr_facility_id_uses_deployment_fid_not_generic_hie_id(self):
+		mapped = _map_facility_to_org_fields(
+			{"facility_fid": "FID-29-116804-5", "hie_id": "HIE-123", "facility_code": "12345"}
+		)
+		self.assertEqual(mapped["hfr_facility_id"], "FID-29-116804-5")
+		self.assertEqual(mapped["mfl_code"], "12345")
+
+		without_fid = _map_facility_to_org_fields({"hie_id": "HIE-123", "facility_code": "12345"})
+		self.assertIsNone(without_fid["hfr_facility_id"])
+
+	@patch("crm.api.hfr._generate_jwt", return_value="hfr-token")
+	@patch("crm.api.hfr._get_settings")
+	@patch("crm.api.hfr.requests.get")
+	def test_hfr_not_found_response_is_an_empty_search_result(self, mock_get, _mock_settings, _mock_jwt):
+		response = MagicMock()
+		response.status_code = 400
+		response.json.return_value = {"status": "error", "message": "Organization with the facility-code 12345 not found"}
+		mock_get.return_value = response
+
+		self.assertEqual(_hfr_request("https://hfr.example.test/lookup", {"facility-code": "12345"}), {"message": []})
+		response.raise_for_status.assert_not_called()
+
+	@patch("crm.api.hfr.requests.get")
+	def test_frappe_validation_error_for_missing_setup_maps_to_not_submitted(self, mock_get):
+		response = MagicMock()
+		response.status_code = 417
+		response.json.return_value = {
+			"exc_type": "ValidationError",
+			"exception": "frappe.exceptions.ValidationError: No Facility Setup found for FID 'FID-99-TEST-1'.",
+		}
+		mock_get.return_value = response
+
+		result = _get_external_provisioning_status(
+			"https://deploy.example.test", "service-key", "service-secret", "FID-99-TEST-1"
+		)
+
+		self.assertEqual(result["status"], "not_submitted")
+		self.assertEqual(result["source"], "external_setup")
+		self.assertEqual(result["progress"], 0)
+		mock_get.assert_called_once_with(
+			"https://deploy.example.test/api/method/hmis_setup.api.external_provisioning.get_provision_status",
+			params={"fid": "FID-99-TEST-1"},
+			auth=("service-key", "service-secret"),
+			headers={"Accept": "application/json"},
+			timeout=15,
+		)
+
+	@patch("crm.api.hfr.requests.get")
+	def test_duplicate_setup_validation_error_maps_to_support(self, mock_get):
+		response = MagicMock()
+		response.status_code = 417
+		response.json.return_value = {
+			"exc_type": "ValidationError",
+			"exception": "frappe.exceptions.ValidationError: Multiple Facility Setup documents found for FID 'FID-99-TEST-1'.",
+		}
+		mock_get.return_value = response
+
+		result = _get_external_provisioning_status(
+			"https://deploy.example.test", "service-key", "service-secret", "FID-99-TEST-1"
+		)
+
+		self.assertEqual(result["status"], "needs_support")
+		self.assertEqual(result["source"], "external_setup")
+
+	@patch("crm.api.hfr.requests.get")
+	def test_unexpected_http_error_is_not_reported_as_network_failure(self, mock_get):
+		response = MagicMock()
+		response.status_code = 503
+		mock_get.return_value = response
+
+		result = _get_external_provisioning_status(
+			"https://deploy.example.test", "service-key", "service-secret", "FID-99-TEST-1"
+		)
+
+		self.assertEqual(result["status"], "unavailable")
+		self.assertEqual(result["error_code"], "service_error")
+		self.assertTrue(result["retryable"])

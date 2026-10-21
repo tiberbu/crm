@@ -1149,6 +1149,31 @@ def _facility_invoice_history(customer: str, facility_mfl: str) -> list[dict]:
 	]
 def _customer_portal_accounts(user: str) -> list[dict]:
 	"""Project Customer, Deal, and Lead-linked facilities, orders, invoices, and payments granted to this user."""
+	hfr_detail_fields = (
+		"hfr_facility_id", "registration_number", "facility_type", "facility_category",
+		"facility_owner", "facility_owner_type", "regulatory_body", "board_registration_number",
+		"kra_pin", "operational_status", "hfr_county", "hfr_sub_county", "hfr_constituency",
+		"hfr_ward", "latitude", "longitude", "license_number", "license_type", "license_expiry",
+		"facility_standing", "number_of_beds", "number_of_cots", "open_whole_day",
+		"open_weekends", "open_public_holidays", "open_late_night",
+		"hfr_sync_status", "hfr_last_synced",
+	)
+
+	def hfr_details(primary, fallback=None):
+		primary = primary or {}
+		fallback = fallback or {}
+		result = {}
+		for fieldname in hfr_detail_fields:
+			value = primary.get(fieldname)
+			if value in (None, ""):
+				value = fallback.get(fieldname)
+			result[fieldname] = value if value is not None else ""
+		return result
+
+	def available_fields(doctype, fieldnames):
+		meta = frappe.get_meta(doctype)
+		return [fieldname for fieldname in fieldnames if meta.has_field(fieldname)]
+
 	customer_names = get_user_customer_names(user)
 	deal_names = get_user_deal_names(user)
 	lead_names = get_user_lead_names(user)
@@ -1221,16 +1246,17 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 	facilities = frappe.get_all(
 		"CRM Pre-Qualified Facility",
 		filters={"name": ["in", parent_names]},
-		fields=["name", "mfl_code", "facility_name", "keph_level", "hfr_facility_id", "registration_number"],
+		fields=available_fields(
+			"CRM Pre-Qualified Facility",
+			["name", "mfl_code", "facility_name", "keph_level"] + list(hfr_detail_fields),
+		),
 		ignore_permissions=True,
 		limit_page_length=0,
 	) if parent_names else []
 	facility_by_name = {row.name: row for row in facilities}
 
 	deal_facility_fields = ["name", "parent", "mfl_code", "facility_name", "facility_level"]
-	package_fieldnames = (
-		"hfr_facility_id",
-		"registration_number",
+	package_fieldnames = hfr_detail_fields + (
 		"cx_token_package_item",
 		"cx_token_package_quantity",
 		"cx_token_package_price",
@@ -1239,9 +1265,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 		"cx_token_package_currency",
 	)
 	deal_facility_meta = frappe.get_meta("CRM Deal Facility")
-	deal_facility_fields.extend(
-		fieldname for fieldname in package_fieldnames if deal_facility_meta.has_field(fieldname)
-	)
+	deal_facility_fields.extend(fieldname for fieldname in package_fieldnames if deal_facility_meta.has_field(fieldname))
 	deal_facility_rows = frappe.get_all(
 		"CRM Deal Facility",
 		filters={"parent": ["in", list(all_scoped_deal_names)]},
@@ -1329,8 +1353,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			rows.append({
 				"facility_name": cstr(facility.get("facility_name") or "Facility"),
 				"mfl_code": mfl_raw,
-				"hfr_facility_id": cstr(facility.get("hfr_facility_id") or ""),
-				"registration_number": cstr(facility.get("registration_number") or ""),
+				**hfr_details(facility, package),
 				"keph_level": cstr(facility.get("keph_level") or ""),
 				"network": frappe.db.get_value("CRM Opt-In Network", membership.get("network"), "display_name") if membership.get("network") else (primary_deal.get("optin_network") if primary_deal else None) or "CareVerse Partner Network",
 				"network_support": _portal_network(membership.get("network") or (primary_deal.get("optin_network") if primary_deal else "")),
@@ -1378,8 +1401,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				rows.append({
 					"facility_name": cstr(df.get("facility_name") or "Facility"),
 					"mfl_code": mfl_raw,
-					"hfr_facility_id": cstr(df.get("hfr_facility_id") or ""),
-					"registration_number": cstr(df.get("registration_number") or ""),
+					**hfr_details(df),
 					"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
 					"network": d.get("optin_network") or "CareVerse Partner Network",
 					"network_support": _portal_network(d.get("optin_network")),
@@ -1435,8 +1457,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			fac_rows.append({
 				"facility_name": cstr(df.get("facility_name") or "Facility"),
 				"mfl_code": cstr(df.get("mfl_code") or ""),
-				"hfr_facility_id": cstr(df.get("hfr_facility_id") or ""),
-				"registration_number": cstr(df.get("registration_number") or ""),
+				**hfr_details(df),
 				"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
 				"network": deal_doc.get("optin_network") or "CareVerse Partner Network",
 				"network_support": _portal_network(deal_doc.get("optin_network")),
@@ -1477,13 +1498,14 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 		lead_fac_rows = frappe.get_all(
 			"CRM Lead Facility",
 			filters={"parent": l_name},
-			fields=["facility_name", "mfl_code", "facility_level"],
+			fields=available_fields("CRM Lead Facility", ["facility_name", "mfl_code", "facility_level"] + list(hfr_detail_fields)),
 			limit_page_length=0,
 		)
 		fac_rows = [
 			{
 				"facility_name": cstr(lf.get("facility_name") or "Facility"),
 				"mfl_code": cstr(lf.get("mfl_code") or ""),
+				**hfr_details(lf),
 				"keph_level": cstr(lf.get("facility_level") or "Level 2 Dispensary"),
 				"network": lead_doc.get("optin_network") or "CareVerse Partner Network",
 				"network_support": _portal_network(lead_doc.get("optin_network")),

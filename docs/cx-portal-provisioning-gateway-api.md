@@ -113,12 +113,15 @@ GET /v1/hmis/provisioning/facilities/FID-29-116804-5/status
 or `Error`. `progress` is an integer from 0 to 100 when known. `site_status`,
 `service_units`, and `service_unit_count` are optional until the setup service
 can provide them. The current v1.2 upstream status method reports only
-`status`, `progress`, `log`, `error`, and `last_attempt`. Live read-only checks
-of both setup methods returned HTTP 403 saying the function is not whitelisted
-on 2026-10-21. The POST probe used an invalid synthetic FID and was rejected
-before a Facility Setup could be created. CRM must show “Not reported” for site
-health and service-unit details when those fields are absent and must never
-infer them from progress or a Draft status.
+`status`, `progress`, `log`, `error`, and `last_attempt`. An authenticated GET
+probe on 2026-10-21 reached the direct setup status method; a synthetic,
+well-formed FID with no draft returned HTTP 417 and
+`ValidationError: No Facility Setup found…`. The TA documents HTTP 400 for this
+case. CRM normalizes both responses to “Not submitted”. The POST endpoint was
+not probed in this pass because it has no upstream deduplication and a valid
+request creates a persistent Draft Facility Setup. CRM must show “Not reported”
+for site health and service-unit details when those fields are absent and must
+never infer them from progress or a Draft status.
 
 The raw `log` and `error` are internal diagnostic fields. The customer portal
 must not receive them. CRM may log a redacted correlation ID and error code for
