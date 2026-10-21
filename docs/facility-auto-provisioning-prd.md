@@ -85,9 +85,10 @@ Success means:
 6. **Honest remote states.** Failures distinguish *not configured* (silent no-op),
    *transient network* (auto-retry, capped), *validation/business 400* (needs support,
    no blind retry), and *auth 401/403* (config incident, alert) *(TA §4.4 semantics)*.
-7. **Portal is read-only and OIS-scoped.** The owner sees only their own facilities'
-   provisioning state, consistent with the existing portal access model
-   *(repo: `crm.api.customer_experience` gating)*.
+7. **Portal is facility-scoped and OIS-authorized.** The owner sees only their own
+   facilities' provisioning state. The portal has no submit control; when direct
+   setup credentials are configured, its status RPC may create one draft after an
+   upstream `not_submitted` result and complete source-data checks.
 8. **Registry-first data.** Facility facts come from the HIE/HFR registry via the
    existing integration; manual overrides only before submission and only for the FID.
 
@@ -96,7 +97,7 @@ Success means:
 | Actor | Needs | Can do | Cannot do |
 |---|---|---|---|
 | Sales / implementation (CRM) | Get a sold facility provisioned without assembling data by hand | See the auto-populated FID; confirm/correct it pre-submission; retry a blocked submission; read provisioning history | Force a deploy; alter the billing snapshot sent upstream |
-| Facility owner (cx-portal) | Know where their deployment stands | Read status/progress/next action per facility; request support via existing channels | Trigger, cancel, or retry provisioning; see other facilities or internal notes |
+| Facility owner (cx-portal) | Know where their deployment stands | Read status/progress/next action per facility; re-check status; request support via existing channels | Send a setup payload directly; cancel provisioning; see other facilities or internal notes |
 | Deployment tool operator (Setup app) | Receive clean, complete drafts | Review the Draft Facility Setup; deploy from the Setup app UI | — (out of CRM scope) |
 | Support (CRM) | Resolve 400s and ambiguous states | Read redacted request log, correct FID/payload source, re-run | Expose credentials or raw registry payloads to the customer |
 
@@ -201,7 +202,7 @@ Extend `CRM HFR Settings` (existing HIE home: `hfr_url` "HIE Base URL", `hfr_use
 | API field *(TA §4.1)* | Source in CRM | Notes |
 |---|---|---|
 | `fid` | `CRM Deal Facility.fid` (new, auto-populated) | Tracking key; regex-validated |
-| `licence` | Contract/quote licence number | Exact field open — §12 Q3 |
+| `licence` | HFR `license_number`, falling back to HFR `registration_number` | The TA accepts the licence number or registration number. |
 | `tokens_awarded` | Purchased `CRM Token Package.token_quantity` for the facility | From the Opt-In/quote line *(repo: field exists)* |
 | `token_expiry_date` | Package/contract end date | ISO `YYYY-MM-DD`; derivation §12 Q4 |
 | `admin_email` | `CRM Opt-In Submission.facility_signatory_email` | Verified owner only (invariant 8) |
@@ -248,9 +249,10 @@ through OIS User Permissions (same scoping as `get_purchase_context`,
   - `Live` → "Your system is deployed."
   - `Blocked` → "We're resolving an issue. Our team will contact you." (never the raw
     upstream error or 400 detail — invariants 4, 6).
-- Data via one new whitelisted read API (e.g. `get_provisioning_status`) returning
-  per-facility: status label, progress, last updated, next-action copy. No
-  retry/submit actions in the portal (invariants 1, 7).
+- Data via the whitelisted `get_provisioning_status` API returning per-facility
+  status, progress, last updated, next-action copy, and automatic submission
+  outcome. Re-checking status may initiate the guarded draft flow; the portal
+  never supplies or edits the POST payload.
 - Email milestones at: `Submitted`, `In Progress` (first time), `Live`; `Blocked` goes
   to support, customer gets a neutral "we'll be in touch" note — reusing the existing
   branded email pattern *(repo: `crm.api._email`)*. Scope §12 Q5.
@@ -337,7 +339,9 @@ publishes the stable `/v1/hmis/...` paths to CRM.
 - Auth: direct access uses Frappe Basic API-key authentication with a dedicated
   service user. Current CRM status reads use this directly when the external
   setup credentials in `CRM HFR Settings` are populated; otherwise they use the
-  HIE JWT fallback (D3). Submission remains outside the portal flow.
+  HIE JWT fallback (D3). With external credentials configured, an upstream
+  `not_submitted` response causes CRM to POST only if all approved source data is
+  present; the HIE fallback does not submit.
 - FID: `^FID-\d{2}-[\w-]+$` (case-insensitive); registry lookup by `fr-code` upstream.
 - No dedupe upstream; duplicate drafts ⇒ ambiguous status 400 ⇒ caller must clean up.
 - Rotation: regenerate the setup-site API user's keys; old pairs stop immediately
@@ -345,22 +349,20 @@ publishes the stable `/v1/hmis/...` paths to CRM.
 
 ## 12. Open questions (before implementation)
 
-Resolved in v0.2: ~~Q1 FID source~~ → D1; ~~Q2 trigger~~ → D2; ~~Q5 gateway auth~~ → D3.
+Resolved in v0.2: ~~Q1 FID source~~ → D1; ~~Q2 trigger~~ → D2; ~~Q3 licence source~~ → TA §4.1 HFR licence/registration number; ~~Q5 gateway auth~~ → D3.
 Remaining:
 
 1. **Status API publication.** The authenticated direct GET was reachable on
    2026-10-21. The setup host returned HTTP 417 for a missing draft, which CRM
    normalizes as `Not submitted`; this differs from the TA's documented HTTP 400.
 2. **FID on Pre-Qualified Facility.** Keep or drop (MVP = Deal Facility only)?
-3. **Licence number source.** Which CRM document owns the `LIC-…` value (contract?
-   quote? new field on the facility row)?
-4. **Billing model + expiry derivation.** Where `License` vs `Token` and the two
+3. **Billing model + expiry derivation.** Where `License` vs `Token` and the two
    expiry dates come from — token package `billing_period`, contract end, or new
    fields?
-5. **Email scope.** Customer emails for all milestones (proposed) or only `Live` /
+4. **Email scope.** Customer emails for all milestones (proposed) or only `Live` /
    `Blocked-neutral`?
-6. **Multiple facilities per deal.** Assumed: one provisioning request per facility
+5. **Multiple facilities per deal.** Assumed: one provisioning request per facility
    row. Confirm.
-7. **FID format confirmation.** Confirm the registry `facility_fid` value matches the
+6. **FID format confirmation.** Confirm the registry `facility_fid` value matches the
    TA `FID-XX-…` shape (the HFR integration already stores it as `hfr_facility_id`;
    spot-check against a live facility during slice A).

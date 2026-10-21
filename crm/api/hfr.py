@@ -162,8 +162,11 @@ def search_facility(query, search_by="mfl_code"):
 
 	return [
 		{
-			"fid": f.get("facility_fid") or f.get("hie_id"),
+			# ``fid`` is retained for older clients, but it must remain the
+			# deployment FID. A generic HIE identifier is not interchangeable.
+			"fid": f.get("facility_fid"),
 			"facility_fid": f.get("facility_fid"),
+			"hie_id": f.get("hie_id"),
 			"name": f.get("facility_name"),
 			"mfl_code": f.get("facility_mfl") or f.get("facility_code"),
 			"level": f.get("kephl_level"),
@@ -302,6 +305,19 @@ def update_hfr_settings(settings):
 	return {"success": True}
 
 
+def _merge_facility_hfr_fallback(primary, fallback):
+	"""Fill blank portal facility fields from its matching Deal Facility row."""
+	primary = frappe._dict(primary or {})
+	fallback = frappe._dict(fallback or {})
+	for fieldname in (
+		"hfr_facility_id", "facility_name", "facility_level", "registration_number",
+		"license_number", "hfr_county", "hfr_sub_county",
+	):
+		if not primary.get(fieldname) and fallback.get(fieldname):
+			primary[fieldname] = fallback[fieldname]
+	return primary
+
+
 @frappe.whitelist(methods=["GET", "POST"])
 def get_provisioning_status(mfl_code):
 	"""Return deployment progress for a facility in the signed-in user's portfolio.
@@ -358,6 +374,11 @@ def get_provisioning_status(mfl_code):
 			deal_facility = frappe._dict(deal_rows[0])
 			if not facility:
 				facility = frappe._dict(deal_rows[0])
+			else:
+				# The portal projects HFR values from the Deal Facility when the
+				# linked Pre-Qualified Facility is incomplete. Apply the same
+				# fallback here so status lookup uses the exact same deployment FID.
+				facility = _merge_facility_hfr_fallback(facility, deal_facility)
 	if not facility and leads:
 		lead_rows = frappe.get_all(
 			"CRM Lead Facility",
@@ -618,9 +639,9 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals):
 	"""Resolve only server-owned CRM data that can support a facility draft.
 
-	The accepted Opt-In signatory is the only approved administrator source. HFR
-	registration/licence and package billing dates remain unresolved in the
-	provisioning PRD, so this resolver intentionally does not infer those values.
+	The accepted Opt-In signatory is the only approved administrator source. The
+	TA maps licence to the HFR licence number or registration number. Billing
+	model and expiry policy remain unresolved in the provisioning PRD.
 	"""
 	facility = frappe._dict(facility or {})
 	deal_facility = frappe._dict(deal_facility or {})
@@ -685,13 +706,14 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals):
 			}
 	return {
 		"fid": facility.get("hfr_facility_id"),
+		"licence": facility.get("license_number") or facility.get("registration_number"),
 		"facility_name": facility.get("facility_name"),
 		"facility_level": facility.get("keph_level") or facility.get("facility_level"),
 		"county": facility.get("hfr_county"),
 		"sub_county": facility.get("hfr_sub_county"),
 		"tokens_awarded": purchased_package.get("cx_token_package_quantity") if purchased_package else None,
 		**admin,
-		# Licence, billing model, and expiry sources are unresolved in PRD §12.
+		# Billing model and expiry sources remain unresolved in PRD §12.
 		"deal_won_package_purchase_verified": bool(purchased_package),
 	}
 
@@ -918,7 +940,20 @@ def _external_submit_error(status_code, body):
 	if status_code in (401, 403):
 		return _("The deployment service denied setup submission. Ask your administrator to check the service account permissions.")
 	if status_code in (400, 417):
-		return _("The deployment service rejected the facility details. Ask support to review the required contract and facility fields.")
+		message = body.get("message") if isinstance(body, dict) else None
+		if isinstance(message, str):
+			message = " ".join(message.split())
+			# TA validation errors identify missing or invalid fields. Return those
+			# concise messages; suppress tracebacks and internal server details.
+			if (
+				message
+				and len(message) <= 300
+				and "traceback" not in message.casefold()
+				and "file \"" not in message.casefold()
+				and not any(char in message for char in "{}[]")
+			):
+				return _("The deployment service rejected the facility details: {0}").format(message)
+		return _("The deployment service rejected the facility details. Review the required contract and facility fields, then retry.")
 	if status_code == 404:
 		return _("The deployment submission method is not available on the service. Ask your administrator to check the endpoint configuration.")
 	if status_code == 429:

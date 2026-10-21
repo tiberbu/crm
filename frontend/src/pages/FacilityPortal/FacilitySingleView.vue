@@ -45,10 +45,10 @@ async function loadStatus() {
   try {
     const result = await props.loadProvisioningStatus(requestedMflCode)
     if (requestSequence === statusRequestSequence) provisioning.value = result
-  } catch {
+  } catch (error) {
     if (requestSequence === statusRequestSequence) {
       provisioning.value = null
-      provisioningError.value = 'We could not refresh implementation status. Your facility and billing records are unchanged. Try again shortly.'
+      provisioningError.value = error?.messages?.[0] || error?.message || 'We could not refresh implementation status. Your facility and billing records are unchanged. Try again shortly.'
     }
   } finally {
     if (requestSequence === statusRequestSequence) provisioningBusy.value = false
@@ -72,6 +72,7 @@ const statusLabel = computed(() => {
   if (status === 'deployed') return 'Live'
   if (status === 'draft') return 'Draft ready for review'
   if (status === 'not_submitted') return 'Setup not started'
+  if (status === 'not_linked') return 'HFR FID needed'
   if (status.includes('error') || provisioning.value?.has_error) return 'Needs attention'
   if (status === 'not_configured') return 'Tracking not connected'
   if (status === 'route_not_provisioned') return 'Tracking not available yet'
@@ -107,6 +108,7 @@ const statusGuidance = computed(() => {
   if (status === 'draft') return 'A setup record exists. The implementation team must review it and start deployment from the setup tool.'
   if (status === 'deployed') return 'The implementation service reports this facility as deployed.'
   if (status === 'not_submitted') return 'No setup record exists yet. The setup request will be prepared automatically once the facility has the required HFR, administrator, and billing details.'
+  if (status === 'not_linked') return 'This facility has no saved HFR deployment FID. Add or refresh the facility from the Health Facility Registry, then check again.'
   if (status.includes('error') || provisioning.value?.has_error) return 'The implementation team needs to review the latest deployment attempt.'
   return provisioning.value?.message || (provisioningBusy.value ? 'Checking the implementation service…' : 'Implementation status has not been checked.')
 })
@@ -129,34 +131,60 @@ const hasConfiguredPackage = computed(() => Boolean(props.facility.token_package
 const facilityOutstandingInvoice = computed(() => props.invoices.find((invoice) => Number(invoice.amount || 0) > 0) || null)
 const facilityPaymentPending = computed(() => props.invoices.some((invoice) => Number(invoice.amount || 0) > 0 && pendingPaymentForInvoice(invoice)))
 const yesNo = (value) => value == null || value === '' ? '' : Number(value) ? 'Yes' : 'No'
-const hfrProfileDetails = computed(() => [
-  { label: 'MFL Code', value: props.facility.mfl_code },
-  { label: 'Registration number', value: props.facility.registration_number },
-  { label: 'Facility type', value: props.facility.facility_type },
-  { label: 'Category', value: props.facility.facility_category },
-  { label: 'Owner', value: props.facility.facility_owner },
-  { label: 'Owner type', value: props.facility.facility_owner_type },
-  { label: 'Regulatory body', value: props.facility.regulatory_body },
-  { label: 'Board registration', value: props.facility.board_registration_number },
-  { label: 'KRA PIN', value: props.facility.kra_pin },
-  { label: 'Operational status', value: props.facility.operational_status },
-  { label: 'County', value: props.facility.hfr_county || props.facility.county },
-  { label: 'Sub-county', value: props.facility.hfr_sub_county },
-  { label: 'Constituency', value: props.facility.hfr_constituency },
-  { label: 'Ward', value: props.facility.hfr_ward },
-  { label: 'Coordinates', value: props.facility.latitude != null && props.facility.longitude != null ? `${props.facility.latitude}, ${props.facility.longitude}` : '' },
-  { label: 'License number', value: props.facility.license_number },
-  { label: 'License type', value: props.facility.license_type },
-  { label: 'License expiry', value: props.facility.license_expiry },
-  { label: 'Facility standing', value: props.facility.facility_standing },
-  { label: 'Number of beds', value: props.facility.number_of_beds },
-  { label: 'Number of cots', value: props.facility.number_of_cots },
-  { label: 'Open whole day', value: yesNo(props.facility.open_whole_day) },
-  { label: 'Open weekends', value: yesNo(props.facility.open_weekends) },
-  { label: 'Open public holidays', value: yesNo(props.facility.open_public_holidays) },
-  { label: 'Open late night', value: yesNo(props.facility.open_late_night) },
-  { label: 'Last HFR sync', value: props.facility.hfr_last_synced },
-])
+const hfrProfileGroups = computed(() => {
+  const details = [
+    {
+      title: 'Registration',
+      items: [
+        { label: 'Registration number', value: props.facility.registration_number },
+        { label: 'License number', value: props.facility.license_number },
+        { label: 'License type', value: props.facility.license_type },
+        { label: 'License expiry', value: props.facility.license_expiry },
+        { label: 'Board registration', value: props.facility.board_registration_number },
+        { label: 'Regulatory body', value: props.facility.regulatory_body },
+        { label: 'KRA PIN', value: props.facility.kra_pin },
+      ],
+    },
+    {
+      title: 'Location',
+      items: [
+        { label: 'County', value: props.facility.hfr_county || props.facility.county },
+        { label: 'Sub-county', value: props.facility.hfr_sub_county },
+        { label: 'Constituency', value: props.facility.hfr_constituency },
+        { label: 'Ward', value: props.facility.hfr_ward },
+        { label: 'Coordinates', value: props.facility.latitude != null && props.facility.longitude != null ? `${props.facility.latitude}, ${props.facility.longitude}` : '' },
+      ],
+    },
+    {
+      title: 'Facility profile',
+      items: [
+        { label: 'Type', value: props.facility.facility_type },
+        { label: 'Category', value: props.facility.facility_category },
+        { label: 'Level', value: props.facility.keph_level || props.facility.facility_level },
+        { label: 'Owner', value: props.facility.facility_owner },
+        { label: 'Owner type', value: props.facility.facility_owner_type },
+        { label: 'Operational status', value: props.facility.operational_status },
+        { label: 'Facility standing', value: props.facility.facility_standing },
+      ],
+    },
+    {
+      title: 'Capacity & hours',
+      items: [
+        { label: 'Beds', value: props.facility.number_of_beds },
+        { label: 'Cots', value: props.facility.number_of_cots },
+        { label: 'Open all day', value: yesNo(props.facility.open_whole_day) },
+        { label: 'Open weekends', value: yesNo(props.facility.open_weekends) },
+        { label: 'Open holidays', value: yesNo(props.facility.open_public_holidays) },
+        { label: 'Open late night', value: yesNo(props.facility.open_late_night) },
+      ],
+    },
+  ]
+
+  return details.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.value !== null && item.value !== undefined && item.value !== ''),
+  }))
+})
 
 const freePackages = computed(() => props.tokenPackages.filter((pkg) => {
   const amount = Number(pkg.price_ex_vat ?? pkg.price ?? pkg.gross_total)
@@ -264,39 +292,63 @@ function reviewInvoice() {
         </div>
       </div>
 
-      <div class="grid divide-y divide-cx-border-soft sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-        <div class="p-4 sm:px-6">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Last deployment attempt</p>
-          <p class="mt-1.5 text-sm font-semibold text-cx-ink">{{ provisioning?.last_attempt || 'No attempt recorded' }}</p>
+      <div class="flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-cx-border-soft bg-cx-surface/45 px-5 py-3.5 text-xs sm:px-7">
+        <div class="flex items-baseline gap-2">
+          <span class="text-cx-ink-3">Last attempt</span>
+          <span class="font-medium text-cx-ink-2">{{ provisioning?.last_attempt || 'None recorded' }}</span>
         </div>
-        <div class="p-4 sm:px-6">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Status provided by</p>
-          <p class="mt-1.5 text-sm font-semibold text-cx-ink">{{ statusSource }}</p>
-        </div>
-        <div class="p-4 sm:px-6">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">HFR Facility ID (FID) for deployment lookup</p>
-          <p v-if="facility.hfr_facility_id" class="mt-1.5 break-all font-mono text-sm font-semibold text-cx-ink">{{ facility.hfr_facility_id }}</p>
-          <p v-else class="mt-1.5 text-xs font-semibold text-cx-warning-ink">No HFR FID is saved for this facility</p>
+        <div class="flex items-baseline gap-2">
+          <span class="text-cx-ink-3">Status source</span>
+          <span class="font-medium text-cx-ink-2">{{ statusSource }}</span>
         </div>
       </div>
 
-      <div class="border-t border-cx-border-soft px-4 py-5 sm:px-6">
-        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <section class="cx-glass-panel mx-4 my-5 overflow-hidden rounded-cx border border-white/70 bg-cx-surface/65 shadow-cx sm:mx-6 sm:my-6 sm:backdrop-blur-xl">
+        <header class="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-6">
           <div>
-            <h3 class="text-sm font-semibold text-cx-ink">Health Facility Registry profile</h3>
-            <p class="mt-1 text-xs text-cx-ink-3">Registry details saved for deployment setup and facility verification.</p>
+            <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-cx-brand">Health Facility Registry</p>
+            <h3 class="mt-1 text-base font-semibold tracking-tight text-cx-ink">Facility profile</h3>
           </div>
-          <span v-if="facility.hfr_sync_status" class="rounded-full border border-cx-border bg-cx-well px-2.5 py-1 text-[10px] font-medium text-cx-ink-2">{{ facility.hfr_sync_status }}</span>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div v-for="detail in hfrProfileDetails" :key="detail.label" class="min-w-0 rounded-cx-sm border border-cx-border-soft bg-cx-well/50 px-3 py-2.5">
-            <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">{{ detail.label }}</p>
-            <p class="mt-1 break-words text-xs font-medium text-cx-ink-2">{{ detail.value || 'Not recorded' }}</p>
+          <div class="flex items-center gap-2">
+            <span v-if="facility.hfr_sync_status" class="inline-flex items-center gap-1.5 rounded-full border border-cx-border-soft bg-cx-surface/70 px-2.5 py-1 text-[10px] font-medium text-cx-ink-2">
+              <span class="size-1.5 rounded-full" :class="facility.hfr_sync_status === 'HFR Verified' ? 'bg-cx-success-ink' : 'bg-cx-warning-ink'" />
+              {{ facility.hfr_sync_status }}
+            </span>
+            <span v-if="facility.hfr_last_synced" class="text-[10px] text-cx-ink-3">Synced {{ facility.hfr_last_synced }}</span>
+          </div>
+        </header>
+
+        <div class="grid gap-px border-y border-white/60 bg-cx-border-soft/70 sm:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.6fr)]">
+          <div class="bg-cx-brand-soft/45 px-4 py-4 sm:px-6 sm:py-5">
+            <p class="text-[10px] font-semibold uppercase tracking-[0.13em] text-cx-ink-3">Deployment Facility ID · FID</p>
+            <p v-if="facility.hfr_facility_id" class="mt-1.5 break-all font-mono text-xl font-semibold tracking-tight text-cx-ink sm:text-2xl">{{ facility.hfr_facility_id }}</p>
+            <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to an HFR FID</p>
+          </div>
+          <div class="bg-cx-surface/65 px-4 py-4 sm:px-6 sm:py-5">
+            <p class="text-[10px] font-semibold uppercase tracking-[0.13em] text-cx-ink-3">MFL code</p>
+            <p class="mt-1.5 font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ facility.mfl_code || '—' }}</p>
           </div>
         </div>
-        <p v-if="facility.hfr_sync_status !== 'HFR Verified'" class="mt-3 text-[11px] leading-relaxed text-cx-warning-ink">This registry profile has not been verified from HFR. Refresh or relink it from the Health Facility Registry to load current facility details.</p>
-        <p v-if="!facility.hfr_facility_id" class="mt-3 text-[11px] leading-relaxed text-cx-warning-ink">Deployment lookup requires the HFR FID. Refresh or relink this facility from the Health Facility Registry before submitting setup.</p>
-      </div>
+
+        <div class="grid sm:grid-cols-2 xl:grid-cols-4">
+          <section v-for="(group, index) in hfrProfileGroups" :key="group.title" class="min-w-0 px-4 py-4 sm:px-5 sm:py-5" :class="index ? 'border-t border-cx-border-soft sm:border-l xl:border-t-0' : ''">
+            <h4 class="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-cx-ink-3">{{ group.title }}</h4>
+            <dl v-if="group.items.length" class="divide-y divide-cx-border-soft/80">
+              <div v-for="item in group.items" :key="item.label" class="flex items-start justify-between gap-3 py-2 first:pt-1 last:pb-1">
+                <dt class="text-[11px] leading-relaxed text-cx-ink-3">{{ item.label }}</dt>
+                <dd class="max-w-[60%] break-words text-right text-[11px] font-medium leading-relaxed text-cx-ink-2">{{ item.value }}</dd>
+              </div>
+            </dl>
+            <p v-else class="text-[11px] leading-relaxed text-cx-ink-3">No details recorded</p>
+          </section>
+        </div>
+        <div v-if="facility.hfr_sync_status !== 'HFR Verified' || !facility.hfr_facility_id" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6">
+          <p class="text-[11px] leading-relaxed text-cx-warning-ink">
+            {{ !facility.hfr_facility_id ? 'A verified HFR FID is required for deployment status and setup.' : 'This profile has not been verified against the Health Facility Registry.' }}
+          </p>
+          <button type="button" class="text-[11px] font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
+        </div>
+      </section>
 
       <div class="border-t border-cx-border-soft px-4 py-4 sm:px-6">
         <div class="flex flex-wrap items-start justify-between gap-3">
