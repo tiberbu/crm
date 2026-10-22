@@ -865,9 +865,18 @@
                     · {{ networkMembership(row).contact_phone }}
                   </template>
                 </p>
+                <span
+                  class="mt-1 inline-flex rounded-full border border-outline-gray-2 px-2 py-0.5 text-[10px] font-medium text-ink-gray-6"
+                >
+                  {{ isSelfOnboardingContact(row) ? __('Self-Onboarding') : __('Network Opt-In') }}
+                </span>
               </td>
               <td class="px-4 py-3">
+                <span v-if="isSelfOnboardingContact(row)" class="text-xs text-ink-gray-5">
+                  {{ __('Customer Experience access') }}
+                </span>
                 <span
+                  v-else
                   :class="
                     inviteStatusPill(networkMembership(row)?.invite_status)
                   "
@@ -955,7 +964,7 @@
                     "
                     :disabled="!canResendInvite(networkMembership(row))"
                     @click="resendInvite(row)"
-                    >{{ __('Resend Invite') }}</Button
+                    >{{ isSelfOnboardingContact(row) ? __('Resend CX access') : __('Resend Opt-In invitation') }}</Button
                   >
                   <Button
                     size="sm"
@@ -1230,8 +1239,15 @@
             <input
               v-model="form.contact_email"
               type="email"
+              :disabled="!!editingFacility && isSelfOnboardingContact(editingFacility)"
               class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
             />
+            <p
+              v-if="editingFacility && isSelfOnboardingContact(editingFacility)"
+              class="text-[11px] text-ink-gray-5"
+            >
+              {{ __('This email is tied to the verified Customer Experience account.') }}
+            </p>
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6"
@@ -1831,6 +1847,14 @@ function networkMembership(row) {
     memberships.find((m) => m.network === props.networkSlug) ??
     memberships[0] ??
     null
+  )
+}
+
+function isSelfOnboardingContact(row) {
+  const membership = networkMembership(row)
+  return (
+    membership?.contact_source === 'Self-Onboarding' ||
+    membership?.customer_experience?.is_self_onboarded === true
   )
 }
 

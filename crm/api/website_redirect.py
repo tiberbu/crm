@@ -146,7 +146,7 @@ def _portal_progress(submission):
 				"membership_status": membership_status,
 				"network_contact": {
 					"name": membership.name if membership else None,
-					"source": "token_self_onboarding",
+					"source": "token_self_onboarding" if is_self_onboarding else "network_optin",
 					"go_live": go_live,
 					"go_live_status": "Ready for GoLive" if go_live else "Implementation in progress",
 				},
@@ -251,7 +251,7 @@ def _self_onboarding_progress(submission, contacts, opted_in, all_live):
 		{"key": "facility", "label": "Facilities confirmed", "status": "complete" if contacts else "current"},
 		{
 			"key": "optin",
-			"label": "Opt-In submitted",
+			"label": "Self-Onboarding request submitted",
 			"status": "complete" if cstr(getattr(submission, "status", "")) == "Processed" else "current",
 		},
 		{"key": "package", "label": "Token package selected", "status": "complete" if package_selected else "upcoming"},

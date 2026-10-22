@@ -40,6 +40,7 @@ class TestCustomerExperienceProgress(UnitTestCase):
 		self.assertNotIn("signatures", keys)
 		self.assertNotIn("contract", result)
 		self.assertNotEqual(result["current"], "sign_contract")
+		self.assertEqual(result["facilities"][0]["network_contact"]["source"], "token_self_onboarding")
 		self.assertEqual(result["steps"][3]["status"], "complete")
 		self.assertIn("allocation", result["token_credit_status"].lower())
 		exists.assert_not_called()
@@ -113,7 +114,7 @@ class TestCustomerExperienceProgress(UnitTestCase):
 			result = _portal_progress(submission)
 
 		self.assertTrue(result["facilities"][0]["network_contact"]["go_live"])
-		self.assertEqual(result["facilities"][0]["network_contact"]["source"], "token_self_onboarding")
+		self.assertEqual(result["facilities"][0]["network_contact"]["source"], "network_optin")
 		self.assertEqual(result["steps"][-1]["key"], "golive")
 		self.assertEqual(result["steps"][-1]["status"], "complete")
 

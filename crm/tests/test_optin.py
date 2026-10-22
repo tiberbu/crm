@@ -53,6 +53,8 @@ from crm.api.optin import (
 	_facility_witness_signing_state,
 	_generate_contract_for_submission,
 	_get_optin_deal_forecast_fields,
+	_get_membership,
+	_get_all_memberships,
 	_invoice_schedule_for_plan,
 	_prepare_submission_payload,
 	_process_submission,
@@ -71,11 +73,157 @@ from crm.api.optin import (
 	requires_contract_signature,
 	should_send_legacy_payment_link,
 	teardown_submission,
+	verify_prequalified,
+	_mark_opted_in_facilities,
+	send_deal_optin_invitation,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
 from crm.setup.optin import ensure_internal_signatory_reminder_job
 from crm.utils.jinja import get_contract_network_for_print, render_current_terms_for_contract
 from crm.utils.optin_bundles import billing_schedule
+
+
+class TestOptInInvitationAccess(UnitTestCase):
+	def test_self_onboarding_contact_does_not_qualify_for_membership_optin(self):
+		self_contact = frappe._dict(
+			{
+				"name": "MEM-SELF",
+				"parent": "FAC-SELF",
+				"contact_name": "Self Contact",
+				"contact_phone": "",
+				"customer": "CUST-SELF",
+			}
+		)
+		network_contact = frappe._dict(
+			{
+				"name": "MEM-NETWORK",
+				"parent": "FAC-NETWORK",
+				"contact_name": "Invited Contact",
+				"contact_phone": "",
+				"customer": "",
+			}
+		)
+		facility = frappe._dict(
+			{
+				"name": "FAC-NETWORK",
+				"mfl_code": "10001",
+				"facility_name": "Network Clinic",
+				"keph_level": "Level 3",
+			}
+		)
+		with (
+			patch("crm.api.optin.frappe.db.has_column", return_value=True),
+			patch(
+				"crm.api.optin.frappe.get_list",
+				side_effect=[[self_contact, network_contact], [facility]],
+			),
+		):
+			result = _get_membership("contact@example.com", "network-a")
+
+		self.assertEqual(result.membership_name, "MEM-NETWORK")
+
+	def test_self_onboarding_contacts_are_not_returned_as_optin_facilities(self):
+		with (
+			patch("crm.api.optin.frappe.db.has_column", return_value=True),
+			patch(
+				"crm.api.optin.frappe.get_list",
+				side_effect=[
+					[
+						frappe._dict({"name": "MEM-SELF", "parent": "FAC-SELF", "customer": "CUST-1"}),
+						frappe._dict({"name": "MEM-NETWORK", "parent": "FAC-NETWORK", "customer": ""}),
+					],
+					[
+						frappe._dict({
+							"name": "FAC-NETWORK",
+							"mfl_code": "10001",
+							"facility_name": "Network Clinic",
+							"keph_level": "Level 3",
+						})
+					],
+				],
+			),
+		):
+			result = _get_all_memberships("contact@example.com", "network-a")
+
+		self.assertEqual([row.name for row in result], ["FAC-NETWORK"])
+
+	def test_optin_completion_does_not_mark_self_onboarding_membership(self):
+		with (
+			patch("crm.api.optin.frappe.db.has_column", return_value=True),
+			patch(
+				"crm.api.optin.frappe.get_list",
+				side_effect=[
+					[frappe._dict({"name": "FAC-1"})],
+					[
+						frappe._dict({"name": "MEM-SELF", "customer": "CUST-1"}),
+						frappe._dict({"name": "MEM-NETWORK", "customer": ""}),
+					],
+				],
+			),
+			patch("crm.api.optin.frappe.db.set_value") as set_value,
+		):
+			_mark_opted_in_facilities("network-a", [{"mfl_code": "10001"}])
+
+		set_value.assert_called_once_with(
+			"CRM Facility Membership",
+			"MEM-NETWORK",
+			"status",
+			"Opted In",
+			update_modified=False,
+		)
+
+	def test_deal_optin_email_keeps_the_signed_invitation_link(self):
+		deal = frappe._dict(
+			{
+				"name": "CRM-DEAL-001",
+				"optin_network": "network-a",
+				"email": "contact@example.com",
+				"first_name": "Amina",
+				"last_name": "Otieno",
+			}
+		)
+		network = frappe._dict({"display_name": "Example Network"})
+		with (
+			patch("crm.api.optin._require_optin_manager"),
+			patch("crm.api.optin.frappe.has_permission", return_value=True),
+			patch("crm.api.optin.frappe.get_doc", return_value=deal),
+			patch("crm.api.optin.frappe.get_list", return_value=[]),
+			patch("crm.api.optin._get_network_doc", return_value=network),
+			patch(
+				"crm.api.optin._deal_invitation_facilities",
+				return_value=[{"mfl_code": "10001", "facility_name": "A Clinic", "keph_level": "Level 3"}],
+			),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin._encode_deal_invitation", return_value="opaque.signed-token") as encode,
+			patch("crm.api.optin.frappe.utils.get_url", return_value="https://portal.example"),
+			patch("crm.api.optin._facility_email_subject_label", return_value="A Clinic"),
+			patch("crm.api.optin.create_transactional_communication", return_value=None),
+			patch("crm.api.optin.frappe.sendmail") as sendmail,
+		):
+			result = send_deal_optin_invitation("CRM-DEAL-001", "Negotiated Year 1")
+
+		encode.assert_called_once()
+		self.assertEqual(encode.call_args.args[0]["deal"], "CRM-DEAL-001")
+		self.assertEqual(result["sent_to"], "contact@example.com")
+		self.assertIn(
+			"https://portal.example/opt-in?network=network-a&deal_invitation=opaque.signed-token",
+			sendmail.call_args.kwargs["message"],
+		)
+
+	def test_unlisted_email_cannot_request_optin_otp(self):
+		with (
+			patch("crm.api.optin._get_client_ip", return_value="127.0.0.1"),
+			patch("crm.api.optin.frappe.cache") as cache,
+			patch("crm.api.optin._decode_deal_invitation", return_value=None),
+			patch("crm.api.optin._get_membership", return_value=None) as get_membership,
+			patch("crm.api.optin.frappe.enqueue") as enqueue,
+		):
+			cache.return_value.get_value.return_value = 0
+			result = verify_prequalified(" NotInvited@Example.com ", " network-a ")
+
+		self.assertEqual(result, {"matched": False, "rate_limited": False})
+		get_membership.assert_called_once_with("notinvited@example.com", "network-a")
+		enqueue.assert_not_called()
 
 
 class TestOptInForecastFields(UnitTestCase):

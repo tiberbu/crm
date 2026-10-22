@@ -55,6 +55,7 @@ from crm.utils.optin_bundles import (
 	split_period_amount,
 )
 from crm.utils.optin_network import set_network_link
+from crm.utils.onboarding_source import is_self_onboarding_contact
 from crm.utils.price_list_history import ensure_initial
 from crm.utils.quotation_tax import (
 	apply_quotation_taxes,
@@ -466,6 +467,8 @@ def _get_membership(email, network_slug):
 	"""
 	membership_fields = ["name", "parent", "contact_name", "contact_phone", "otp_expiry", "otp_attempts"]
 	try:
+		if frappe.db.has_column("CRM Facility Membership", "customer"):
+			membership_fields.append("customer")
 		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
 			membership_fields.insert(4, "price_list_override")
 		if frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json"):
@@ -480,12 +483,12 @@ def _get_membership(email, network_slug):
 			"status": "Active",
 		},
 		fields=membership_fields,
-		limit=1,
+		limit_page_length=0,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
-	if not mem_rows:
+	mem = next((row for row in mem_rows if not is_self_onboarding_contact(row)), None)
+	if not mem:
 		return None
-	mem = mem_rows[0]
 	# Fetch facility facts from parent
 	fac_rows = frappe.get_list(
 		"CRM Pre-Qualified Facility",
@@ -519,6 +522,8 @@ def _get_all_memberships(email, network_slug):
 	"""Return all Active facilities for this email+network as a list of dicts."""
 	membership_fields = ["name", "parent"]
 	try:
+		if frappe.db.has_column("CRM Facility Membership", "customer"):
+			membership_fields.append("customer")
 		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
 			membership_fields.append("price_list_override")
 		if frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json"):
@@ -535,6 +540,7 @@ def _get_all_memberships(email, network_slug):
 		fields=membership_fields,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
+	mem_rows = [row for row in mem_rows if not is_self_onboarding_contact(row)]
 	if not mem_rows:
 		return []
 	parent_names = [m.parent for m in mem_rows if m.parent]
@@ -3096,6 +3102,9 @@ def _mark_opted_in_facilities(network_slug, facilities):
 		parent_names = [row.name for row in facility_rows]
 		if not parent_names:
 			return
+		membership_fields = ["name"]
+		if frappe.db.has_column("CRM Facility Membership", "customer"):
+			membership_fields.append("customer")
 		memberships = frappe.get_list(
 			"CRM Facility Membership",
 			filters={
@@ -3103,11 +3112,13 @@ def _mark_opted_in_facilities(network_slug, facilities):
 				"parent": ["in", parent_names],
 				"network": network_slug,
 			},
-			fields=["name"],
+			fields=membership_fields,
 			limit_page_length=0,
 			ignore_permissions=True,  # SYSTEM-INTERNAL
 		)
 		for membership in memberships:
+			if is_self_onboarding_contact(membership):
+				continue
 			frappe.db.set_value(
 				"CRM Facility Membership",
 				membership.name,

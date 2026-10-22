@@ -682,6 +682,7 @@ const optinRequests = computed(() => {
       status: ois.status || 'Submitted',
       network: ois.network || ois.network_slug || 'CareVerse Partner Network',
       signatory: ois.facility_signatory_name || '',
+      source: ois.onboarding_source || '',
       contract: ois.contract || '',
       facilities: (ois.progress?.facilities || []).map((f) => ({
         name: f.facility_name,
@@ -2768,7 +2769,7 @@ onUnmounted(() => {
                   </div>
 
                   <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3 space-y-1">
-                    <span class="text-cx-ink-3 font-medium block">Signatory / User</span>
+                    <span class="text-cx-ink-3 font-medium block">Account contact</span>
                     <strong class="text-cx-ink block">{{ userProfile.full_name || context.user }}</strong>
                     <span class="text-cx-ink-3 font-mono text-[11px] block">{{ userProfile.email }}</span>
                     <span class="text-cx-ink-3 font-mono text-[11px] block">Phone: {{ userProfile.mobile_no || 'Not set' }}</span>
