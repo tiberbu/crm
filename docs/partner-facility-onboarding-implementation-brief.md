@@ -6,6 +6,17 @@
 **Status:** Public Customer Experience entry, facility onboarding welcome/wizard, sign-in routing, and authenticated portal foundation stabilized; token purchase order-to-invoice flow remains the next story
 **Date:** 2026-10-08
 
+> **Current workflow contract (2026-10-22):** This implementation brief
+> contains an earlier proposal. Where it describes public Self-Onboarding
+> creating an Opt-In Submission/Contract or collecting signatures, that
+> proposal is superseded. Self-Onboarding verifies the owner and facilities,
+> allows Network/package selection, records acceptance of the Self-Onboarding
+> Terms, and submits a request. It has no signature, signatory, witness, or
+> contract-signing step; Terms acceptance is not a signature. Network Opt-In is
+> a separate invitation-only route for facilities already added to a Network.
+> Its secure invitation email link leads to its quotation, agreement, and
+> applicable signatory/signature process.
+
 ## 0. Stabilization pass — 2026-10-08
 
 This pass records the implemented customer-facing entry points and the verification
@@ -26,6 +37,7 @@ purchase, invoice, or payment stories are complete.
 |---|---|---|---|
 | `/` | Public facility owner | Explains Customer Experience, the value to an owner, the onboarding journey, requirements, security, and next steps. | `crm/www/index.html`, `crm/www/index.py` |
 | `/facility-onboarding` | Public facility owner | Opens directly on the welcome screen, then continues through identity, OTP, facility selection, package/network selection, review, and submission. | `crm/www/facility-onboarding.html`, `crm/www/facility_onboarding.py`, `frontend/src/pages/FacilityOnboarding/FacilityOnboardingLanding.vue` |
+| `/opt-in` | Invited facility owner | Secondary entry to the separate Network Opt-In route; server eligibility checks remain required. | `frontend/src/opt-in-main.js`, `frontend/src/pages/OptIn/StepLanding.vue` |
 | `/login?redirect-to=/cx-portal` | Existing facility owner | Branded sign-in path for Customer Experience access. | `crm/www/login.html`, `crm/www/login.py` |
 | `/cx-portal` | Authenticated facility owner | Redirects guests to the Customer Experience sign-in path; authenticated users receive the facility-scoped portal shell. | `crm/www/cx-portal.html`, `crm/www/cx_portal.py`, `frontend/src/pages/FacilityPortal/FacilityPortal.vue` |
 
@@ -72,7 +84,7 @@ precaching.
 
 ## 1. Product goal
 
-Enable a Facility Admin to verify ownership, choose an Opt-In Network using its six-digit Partner ID, select a token service package, submit an Opt-In Request, and complete the existing contract-signature process.
+Enable a Facility Admin to verify ownership, choose a Network and token service package, accept the Self-Onboarding Terms, and submit a request. This public route has no signatures and does not become Network Opt-In.
 
 This onboarding workflow is for token users only.
 
@@ -86,7 +98,7 @@ The workflow does not create purchases, invoices, or payments automatically.
 
 After login, the facility user finds an open Sales Order and intentionally starts payment. CRM then creates the Sales Invoice with payment terms due within 30 days and opens the existing Paystack Checkout experience. Payment will usually happen immediately, but the invoice remains the accounting authority.
 
-After the required signatures, CRM adds the facility to the Network, creates or reconciles a Website User, and sends a Customer Experience login invitation.
+After Self-Onboarding submission, CRM records the request and makes the available next action visible in Customer Experience. Network Opt-In membership activation and signatures remain in the separate invitation-only workflow.
 
 ## 2. Business outcome
 
@@ -96,13 +108,12 @@ At completion:
 2. The facility is linked to one Opt-In Network. The Network is the Agent for this workflow.
 3. The owner selects a facility-friendly token service item from the configured catalogue Price List.
 4. CRM creates a next-period quotation and Sales Order using native ERPNext records.
-5. CRM creates the Opt-In Request.
-6. The facility appears in the resolved Network list with a pending-signature status.
-7. All required facility and Network signatories complete the applicable signature steps.
-8. The membership becomes `Opted In` only after signature completion.
+5. The owner accepts the Self-Onboarding Terms and submits a request.
+6. CRM displays request progress and any available commercial next action in Customer Experience.
+7. Self-Onboarding does not collect signatures or wait for signature completion.
 9. The owner receives a Website User invitation and can view progress.
 
-Every Opt-In Request and Network contact created or linked by this journey must be identifiable as token-based self-onboarding.
+Self-Onboarding request records must have clear source attribution. They must not be described as signed Opt-In Submissions or as awaiting signatories.
 
 Future token purchases are intentional user actions from the authenticated Customer Experience.
 
@@ -121,9 +132,8 @@ For each future purchase, Customer Experience creates or resumes a Quotation and
 - Facility selection.
 - Six-digit Partner ID entry or an approved admin-preconfigured Network.
 - Next-period Quotation and Sales Order.
-- Existing Opt-In Request and contract-signature process.
-- Applicable facility and Network signatories.
-- Network membership creation and post-signature activation.
+- Terms acceptance and Self-Onboarding request submission; no signature flow.
+- Invitation-only Network Opt-In quotation, agreement, signatories, and signatures remain a separate existing journey.
 - Website User invitation.
 - Authenticated Customer Experience with read-only progress and purchase/payment actions.
 - Authenticated token purchases.
@@ -170,15 +180,16 @@ The resolved Network is a strict foreign-key gate for the entire onboarding requ
 
 CRM must reject an unknown, inactive, ambiguous, or mismatched Network. A blank Partner ID is accepted only when the CRM setting contains a valid six-digit Partner ID for an enabled Network.
 
-The Opt-In Request must use the contacts and signatory configuration belonging
-to the resolved Network, whether that Network came from the owner’s Partner ID
-or the approved admin-preconfigured Network.
+The invitation-only Network Opt-In Request must use the contacts and signatory
+configuration belonging to the resolved Network. Public Self-Onboarding uses
+its selected Network for request context only; it does not load signatories or
+create an Opt-In Request.
 
 ## 5. User journey
 
 ### 5.1 Information and entry
 
-The landing page must explain:
+The public Self-Onboarding landing page must explain:
 
 - what the facility is joining;
 - what tokens are;
@@ -186,9 +197,14 @@ The landing page must explain:
 - the information required;
 - the onboarding steps;
 - the applicable price and VAT treatment;
-- the signatories and approvals required;
+- that no signature is required in Self-Onboarding and Terms acceptance is not
+  a signature;
 - support and legal terms; and
 - what happens after submission.
+
+The separate invitation-only Network Opt-In entry explains its own quotation,
+agreement, signatory, witness, and signature requirements. Keep that language
+off the Self-Onboarding page.
 
 The page must not expose internal ERPNext or integration concepts.
 
@@ -258,9 +274,24 @@ The quotation and Sales Order must use the same token package, items, rates, cur
 
 There is no Year 1–Year 5 quotation for this workflow.
 
-### 5.6 Opt-In and signatures
+### 5.6 Self-Onboarding request submission
 
-The wizard collects the existing Opt-In information, including:
+The owner reviews the selected facilities, Network, package, quote, and
+Self-Onboarding Terms, then accepts the Terms and submits the request. The UI
+does not collect facility signatory or witness details, create a contract, or
+wait for signatures. Terms acceptance is not a signature.
+
+The implementation submits the request through the Self-Onboarding API. It
+does not hand off to `OptInWizard` or create an Opt-In Submission merely to
+represent this request.
+
+### 5.7 Invitation-only Network Opt-In and signatures
+
+The requirements in this section apply only to the separate journey for a
+facility already added to a Network and invited by email. They do not apply to
+public Self-Onboarding.
+
+The invited Network Opt-In wizard collects the existing Opt-In information, including:
 
 - facility details;
 - facility signatory details;
@@ -282,13 +313,14 @@ All required signatories must be applied according to the configured signing rul
 
 The signing sequence may include the facility signatory, witness, Network signatory, or multiple Network signatories as applicable.
 
-No required signatory may be skipped because the onboarding started from a public or guest flow.
+The invited flow must apply its configured signatory rules even when the
+invited user opens the secure link without an authenticated CRM account.
 
 The existing signature OTP, signing tokens, witness rules, and status transitions remain authoritative.
 
-### 5.7 Completion and portal access
+### 5.8 Invitation-only Opt-In completion and portal access
 
-After all required signatures:
+After all required Network Opt-In signatures:
 
 - the membership becomes `Opted In`;
 - the Opt-In Request is marked accordingly;
@@ -298,7 +330,7 @@ After all required signatures:
 
 Account creation and email delivery must be retryable and must not create duplicate submissions.
 
-### 5.8 Future token purchases
+### 5.9 Future token purchases
 
 After login, the facility user can intentionally buy more tokens from the portal.
 
@@ -348,7 +380,10 @@ The selected catalogue service item is independent of the resolved Network’s e
 
 A Network may have legacy or configured classification prices. Those prices must not change, block, or replace the token package price in this workflow.
 
-The Network still matters for identity, branding, membership, contacts, signatories, and Opt-In ownership. It does not determine the token package rate.
+For Self-Onboarding, the Network provides identity, branding, and membership
+context; the configured catalogue determines the token package rate. Network
+signatories and Opt-In ownership apply only to the separate invited Opt-In
+journey.
 
 CRM Settings must provide the catalog metadata required for display:
 
@@ -445,6 +480,10 @@ No cron job, scheduled task, automatic renewal, or background purchase flow may 
 
 ## 7. Network signatory requirements
 
+This section governs the separate invitation-only Network Opt-In and its
+commercial Contract. It does not add signature requirements to public
+Self-Onboarding, which ends at Terms acceptance and request submission.
+
 Network signatories are part of the commercial approval process.
 
 The system must support:
@@ -467,11 +506,11 @@ The Opt-In Request cannot become fully opted in until every required signature i
 
 ### 7.1 Contact attribution
 
-For this PRD, a Network contact is any CRM Contact created or linked to the resolved Network during token self-onboarding.
+For this PRD, a Network contact is any CRM Contact created or linked to the resolved Network during the separate invited Network Opt-In flow.
 
-This includes the Facility Admin, facility signatory, witness, and any Network signatory contact created or linked by the flow.
+This includes the invited facility's account contact, facility signatory, witness, and any Network signatory contact created or linked by the Opt-In flow.
 
-Each such Contact must be marked as `Token self-onboarding` and linked to the source Opt-In Request.
+Each such Contact must be attributed to its actual source Opt-In Request. Public Self-Onboarding must not create signatory or witness contacts.
 
 Existing contacts must be reconciled idempotently. Their original creation source must not be overwritten.
 
@@ -488,21 +527,21 @@ Existing contacts must be reconciled idempotently. Their original creation sourc
 9. ERPNext stores the commercial rates and accounting values.
 10. Package search returns only enabled, onboarding-approved items from the configured catalogue.
 11. The owner cannot submit arbitrary token quantities or prices.
-12. All applicable Network signatories must complete the configured signature process.
-13. Membership remains pending until all required signatures are complete.
+12. Network signatory rules apply to invitation-only Network Opt-In; Self-Onboarding has no signatures.
+13. The invitation-only Opt-In membership remains pending until its required signatures are complete. Self-Onboarding request progress is independent of that state.
 14. Accepted or signed prices are immutable commercial snapshots.
 15. Future purchases are initiated by the facility user from the portal.
 16. An open Sales Order is the starting point for payment; the Sales Invoice is created when the user starts payment.
 17. The existing Checkout page is the only payment experience.
 18. There are no cron jobs, automatic renewals, or background purchases.
 19. Website User access is restricted to verified facility membership.
-20. Every self-onboarded Opt-In Request and Network contact carries an explicit token self-onboarding source.
-21. Source attribution survives contact reconciliation, retries, signature completion, and future purchases.
+20. Self-Onboarding requests carry explicit source attribution; they are not represented as Opt-In Submissions.
+21. Network Opt-In source attribution survives contact reconciliation, retries, signature completion, and future purchases.
 22. Network resolution is a strict existence, activity, and relationship gate.
-23. Network contacts and signatories come only from the resolved Network.
+23. In Network Opt-In, contacts and signatories come only from the resolved Network. Self-Onboarding does not collect signatories.
 24. Network legacy Price Lists do not participate in token self-onboarding pricing.
 25. One Network may contain normal KEPH/classification memberships and token-based memberships at the same time.
-26. The membership’s pricing commitment and selected service catalogue determine the commercial path; Network identity and signatories remain shared.
+26. The membership’s pricing commitment and selected service catalogue determine the commercial path; Network signatories remain within the invitation-only Opt-In route.
 
 ## 9. Brownfield consistency review
 
@@ -511,7 +550,7 @@ The existing CRM and ERPNext integration provides the accounting foundation, but
 | Existing capability | Decision for this token workflow |
 |---|---|
 | Network `price_lists_json` and legacy Price List override | Preserve for existing workflows. Do not use as the token catalog authority. |
-| Network price configuration during token onboarding | Ignore for token pricing. Use the resolved Network for contacts, signatories, membership, and branding only. |
+| Network price configuration during token onboarding | Ignore for token pricing. Use the resolved Network for membership and branding; do not load signatories in Self-Onboarding. |
 | KEPH-to-item mapping in `crm.api.optin` | Preserve for existing workflows. Do not invoke in token onboarding. |
 | ERPNext `Item Price` lookup | Continue as the rate authority for items on the configured token catalogue Price List. |
 | Native ERPNext `Quotation` | Use for the next billing period only. |
@@ -520,8 +559,8 @@ The existing CRM and ERPNext integration provides the accounting foundation, but
 | Existing Checkout page | Reuse for payment of open Sales Invoices. Do not create a second checkout. |
 | Native VAT template and tax utilities | Use for every quotation and Sales Order. Store prices ex VAT and VAT separately. |
 | Quote metadata and Price List history | Use for audit and accepted-price immutability. |
-| Existing Opt-In contract/signature flow | Reuse without creating a second signature engine. |
-| Existing Network signatory configuration | Apply every required signatory according to configured rules. |
+| Existing Opt-In contract/signature flow | Keep in the separate invitation-only Network Opt-In journey. Do not invoke it from Self-Onboarding. |
+| Existing Network signatory configuration | Apply only in invited Network Opt-In; Self-Onboarding has no signatory fields or progress. |
 | Registry/HFR response data | CRM uses the copied request shapes for identity, ownership, facility discovery, and eligibility. |
 | Registry token pricing | None. Token catalogue metadata is new CRM configuration; future Lago evaluation is out of scope. |
 
@@ -533,7 +572,7 @@ search enabled token service items in the configured Price List
   → resolve ERPNext Item Price rows
   → create next-period Quotation per facility
   → create one Sales Order per facility
-  → create Opt-In Request and Contract
+  → accept Self-Onboarding Terms and submit request (no Opt-In handoff or Contract)
 ```
 
 Future portal purchases must use this path after an authenticated user confirms:
@@ -559,12 +598,15 @@ The existing Year 1–Year 5 path must remain regression-tested separately.
 | HFR search by facility ID | `crm.api.hfr.search_facility` and `get_facility_detail` support FID lookup for the existing authenticated CRM experience. | Add a separate guest-safe proxy flow. Bind every FID to the verified identity session and recheck ownership at finalization. |
 | IDOR/BOLA prevention | Existing Opt-In endpoints protect invitation/signing-token contexts and the checkout protects invoices within an OIS session. | Add session-bound HFR ownership, facility selection, Partner resolution, token purchase, invoice, and portal authorization tests. |
 | Enumeration prevention | Existing Opt-In and checkout flows use generic responses and rate limits in their own contexts. | Apply equivalent controls to identity, HFR, FID, Partner ID, package search, invoice, and purchase endpoints. |
-| Opt-In process | Existing guest Opt-In, quotation, contract, OTP, and signatory workflows are reusable. | Add token self-onboarding provenance and pass the verified facility context into the existing process without forking signatures. |
+| Opt-In process | Existing guest Opt-In, quotation, contract, OTP, and signatory workflows remain available for invited Network Opt-In. | Keep public Self-Onboarding independent: submit a request after Terms acceptance without creating an Opt-In Submission or invoking signature workflows. |
 | Token catalogue | ERPNext `Price List`, `Item`, and `Item Price` are available. CRM Settings currently has no complete token package catalogue. | Add one configured selling Price List with searchable service-item metadata and facility-friendly coverage descriptions. |
 | Current checkout | The existing page and API support outstanding OIS invoices, Paystack, and bank-transfer reporting. | Reuse the existing Paystack integration and extend authorization for facility portal users. |
 | Customer Experience portal | Public `/` now explains the facility-owner journey; `/facility-onboarding` is the welcome/wizard entry; `/cx-portal` is the authenticated facility-scoped shell. | Continue the downstream package purchase, open-invoice, payment, and support work. Keep `/portal` as a compatibility redirect only. |
 
-The audit conclusion is that the accounting, Paystack, and signature foundations exist, while the identity-first HFR flow, token catalog, and portal purchase flow remain implementation work.
+The audit conclusion is that the accounting, Paystack, and invitation-only
+Opt-In signature foundations exist, while the identity-first HFR flow, token
+catalog, and portal purchase flow remain implementation work. The signature
+foundation is not part of Self-Onboarding.
 
 ## 10. Technology and architecture
 
@@ -599,7 +641,8 @@ CRM does not expose registry sessions, upstream tokens, or credentials.
 
 `careverse_hq` is reference material only. CRM does not import it, call its Python
 modules, or depend on its runtime. CRM owns the guest boundary, credentials,
-session, OTP, response normalization, and OIS handoff.
+session, OTP, response normalization, and Self-Onboarding request submission.
+OIS handoff is reserved for the separate invitation-only Network Opt-In flow.
 
 The registry service account is configured once in the existing `CRM HFR
 Settings` record used by CRM HFR search: HIE base URL, username, password, and
@@ -682,7 +725,9 @@ Use native ERPNext records:
 - `Sales Taxes and Charges Template`; and
 - existing Checkout/payment records.
 
-CRM owns workflow state, package metadata, package eligibility, identity binding, signatory orchestration, and pricing provenance.
+CRM owns workflow state, package metadata, package eligibility, identity
+binding, and pricing provenance. Signatory orchestration belongs to the
+separate invitation-only Network Opt-In flow.
 
 CRM must not become a second accounting ledger.
 
@@ -785,13 +830,20 @@ The CRM Settings catalog must support one global catalogue Price List and severa
 - coverage metrics;
 - enabled status.
 
-The catalogue is not tied to a Network. A Network can contain both normal KEPH/classification memberships and token memberships. The membership or Opt-In Request stores the pricing commitment and selected catalogue item; the Network identity, contacts, signatories, and facility relationships remain the same.
+The catalogue is not tied to a Network. A Network can contain both normal
+KEPH/classification memberships and token memberships. The Self-Onboarding
+request/quote stores its selected catalogue item and available pricing
+context. The separate invited Network Opt-In Request stores its commercial
+and signature snapshot. Do not add signatories to the Self-Onboarding record.
 
 The ERPNext Price List and Item Price records remain the commercial authority.
 
 The catalog must be searchable without requiring a Network link.
 
-### 12.3 Opt-In submission snapshot
+### 12.3 Invitation-only Opt-In submission snapshot
+
+This commercial and signature snapshot belongs to the separate invited
+Network Opt-In route. Self-Onboarding does not create it.
 
 Store:
 
@@ -820,9 +872,9 @@ Store:
 
 The snapshot becomes immutable after acceptance or signature.
 
-### 12.4 Self-onboarding provenance
+### 12.4 Self-Onboarding request provenance
 
-The Opt-In Request must store:
+The Self-Onboarding request must store:
 
 - `onboarding_source = token_self_onboarding`;
 - `onboarding_channel = public_portal`;
@@ -833,13 +885,18 @@ The Opt-In Request must store:
 - originating onboarding session reference or hash; and
 - creation timestamp.
 
-The Network contact created or linked by the journey must store or inherit:
+The request may link the verified owner/account contact, but it must not assign
+that person a signatory or witness role. Self-Onboarding does not create a
+Contract. Any contacts used for signature roles belong to the separate invited
+Network Opt-In route.
+
+Contacts created or linked by the separate invited Network Opt-In flow must store or inherit:
 
 - `contact_source = token_self_onboarding`;
 - contact role;
 - facility and Network relationship;
 - Network Partner ID;
-- source Opt-In Request;
+- source Network Opt-In Request;
 - verified identity/contact binding reference; and
 - creation or reconciliation timestamp.
 
@@ -849,7 +906,8 @@ The source must be visible in CRM list views, filters, reports, API responses fo
 
 If an existing Contact is reconciled, preserve its original source and add a source relationship or provenance history. Do not overwrite unrelated contact origins.
 
-Future token purchases must link to the existing self-onboarded facility and Opt-In Request. They must not create duplicate Opt-In Requests or Network contacts.
+Future token purchases must link to the existing self-onboarded facility and
+Self-Onboarding request. They must not create duplicate onboarding requests.
 
 ### 12.5 Portal purchase record
 
@@ -883,15 +941,17 @@ Account and invitation status must be independent of Opt-In status.
 
 CRM users must be able to identify token self-onboarding records without inspecting raw payloads.
 
-Opt-In Request list views must support filters for:
+Self-Onboarding request views must support filters for:
 
 - onboarding source;
 - catalogue Price List/service item/package;
 - Network Partner ID and Network;
 - facility;
 - request status;
-- signatory status; and
 - creation date.
+
+Invitation-only Network Opt-In submission views may include signatory status.
+Do not show signature progress on Self-Onboarding request rows or details.
 
 Network contact list views must support filters for:
 
@@ -901,7 +961,7 @@ Network contact list views must support filters for:
 - source Opt-In Request; and
 - creation or reconciliation date.
 
-The default display label should be `Token self-onboarding`.
+The default Self-Onboarding source label should be `Self-Onboarding request`.
 
 This label is an attribution value, not a permission. Normal CRM permissions still apply.
 
@@ -915,10 +975,10 @@ Guest onboarding methods are CRM guest-whitelisted, POST-only, rate-limited, and
 | `crm.api.customer_experience.resend_otp` | Resend OTP after cooldown. |
 | `crm.api.customer_experience.verify_otp` | Verify OTP and release safe facility results. |
 | `crm.api.customer_experience.select_facilities` | Bind selected facilities to the verified session. |
-| `crm.api.customer_experience.context` | Resolve the six-digit Partner ID or approved admin-preconfigured Network, strictly validate the Network, and return safe Network/contact/signatory context. |
+| `crm.api.customer_experience.context` | Resolve the six-digit Partner ID or approved admin-preconfigured Network and return safe Self-Onboarding Network context; no signatory data is returned. |
 | `crm.api.customer_experience.search_token_packages` | Return enabled, onboarding-approved service items from the configured catalogue Price List and CRM descriptions. |
 | `crm.api.customer_experience.preview_token_purchase` | Resolve the selected service item, Item Price row, VAT, next-period totals, and pricing context. |
-| `crm.api.customer_experience.finalize_optin` | Revalidate context, create the Quotation, Sales Order, Opt-In Request, pending Network membership, applicable Network contacts, and existing Contract. Persist `token_self_onboarding` provenance. |
+| `crm.api.facility_onboarding.submit_onboarding` | Revalidate the verified session and selections, record Terms acceptance, submit the Self-Onboarding request, and return its status. Do not create an Opt-In Submission or Contract or request signatures. |
 | `crm.api.customer_experience.create_token_purchase` | For an authenticated user, create or resume a facility-specific Quotation and Sales Order for a confirmed package selection. |
 | `crm.api.customer_experience.start_order_payment` | Confirm an authorized open Sales Order, create its Sales Invoice with 30-day terms, and return the existing Paystack Checkout route. |
 | `crm.api.customer_experience.open_invoices` | Return open Sales Invoices scoped to the logged-in facility user. |
@@ -979,20 +1039,23 @@ The pricing context must be bound to the verified session, selected facilities, 
 
 Finalization must revalidate the context and fail closed when it is stale or changed.
 
-### Network gate
+### Self-Onboarding submission gate
 
-Before `finalize_optin` creates any record, CRM must resolve and validate:
+Before `submit_onboarding` creates any record, CRM must resolve and validate:
 
 1. the supplied six-digit Partner ID, or the approved admin-preconfigured Network;
 2. the linked Network’s existence and active status;
-3. the Network’s configured contacts and signatory rules; and
+3. the selected Network and package configuration; and
 4. the verified facility’s eligibility for that Network.
 
-An unknown, inactive, missing, ambiguous, or mismatched Network must return a safe configuration error and create no Opt-In Request, contact, membership, Quotation, Sales Order, or Contract.
+An unknown, inactive, missing, ambiguous, or mismatched Network must return a safe configuration error and create no onboarding request, contact, membership, Quotation, Sales Order, or Contract. Self-Onboarding Terms acceptance is recorded explicitly and is not treated as a signature.
 
 The final token rate must still come from the selected service item’s valid ERPNext Item Price row on the global token catalogue Price List. Network legacy pricing must not be consulted as a fallback.
 
-Finalization must return safe provenance fields such as `onboarding_source`, `onboarding_channel`, and the Opt-In Request reference. Contact relationships remain server-side and are available through authorized CRM views. The response must not return raw identity values or upstream payloads.
+Submission must return safe provenance fields such as `onboarding_source`,
+`onboarding_channel`, and the Self-Onboarding request reference. Contact
+relationships remain server-side and are available through authorized CRM
+views. The response must not return raw identity values or upstream payloads.
 
 ### Portal purchase response requirements
 
@@ -1016,7 +1079,11 @@ The portal must allow the user to select an open invoice and continue to the exi
 
 The Checkout page must use Paystack for this workflow. The Paystack session must be created server-side from the authorized invoice and must be single-invoice and idempotent.
 
-## 14. Network signatory data and orchestration
+## 14. Invitation-only Network Opt-In signatory data and orchestration
+
+This specification applies to the separate invitation-only Network Opt-In
+journey. Public Self-Onboarding does not call this orchestration, collect
+signatory data, or create a Contract.
 
 The Network configuration must define:
 
@@ -1073,12 +1140,16 @@ Implement stage guards, session expiry, OTP limits, facility binding, and safe r
 
 ### E5 — Network Partner ID resolution
 
-Implement exact six-digit Partner ID lookup, admin-preconfigured Network
-resolution, strict Network existence/activity checks, and resolved-Network
-contact/signatory loading. Never fall back to a default Network or Network
-Price List.
+Implement exact six-digit Partner ID lookup, approved admin-preconfigured
+Network resolution, and strict Network existence/activity checks. For
+Self-Onboarding, do not load signatories. Resolve contacts/signatories only
+when processing the separate invitation-only Network Opt-In. Never fall back
+to a default Network or Network Price List.
 
-**Acceptance:** an invalid or mismatched Network creates no onboarding records, and a valid request uses only the resolved Network’s contacts and signatory configuration while pricing comes from the selected catalogue service item.
+**Acceptance:** an invalid or mismatched Network creates no onboarding
+records. A valid Self-Onboarding request uses the selected catalogue service
+item and has no signatory step; invited Network Opt-In uses only the resolved
+Network's contact and signatory configuration.
 
 ### E6 — Token catalogue configuration
 
@@ -1100,13 +1171,17 @@ Create a native ERPNext Quotation and Sales Order from one immutable pricing con
 
 For an authenticated portal purchase, create the Sales Invoice, expose open-invoice status, and route the user to the existing Checkout page. Do not add cron jobs, automatic renewals, or a second payment experience.
 
-### E11 — Signatory orchestration
+### E11 — Existing invited Opt-In signatory orchestration
 
-Apply every required facility and Network signatory using the existing Contract rules and signature engine.
+Apply every required facility and Network signatory for the separate
+invitation-only Network Opt-In using the existing Contract rules and signature
+engine. Never route public Self-Onboarding into this story.
 
-### E12 — Opt-In integration
+### E12 — Invitation-only Opt-In integration
 
-Create the Opt-In Request, pending Network membership, existing Contract, and signature route.
+For the invited Network Opt-In route, create the Opt-In Request, pending
+Network membership, existing Contract, and signature route. This story does
+not apply to Self-Onboarding.
 
 ### E13 — Website User and Customer Experience portal
 
@@ -1124,7 +1199,10 @@ Test enumeration, replay, IDOR/BOLA, stale pricing, duplicate submissions, VAT, 
 
 ### E16 — Self-onboarding provenance and reporting
 
-Add explicit source fields and relationships for token self-onboarded Opt-In Requests and Network contacts. Add CRM list filters, badges, reports, reconciliation history, and audit events.
+Add explicit source fields and relationships for Self-Onboarding requests and
+for Network Opt-In submissions separately. Add CRM list filters, badges,
+reports, reconciliation history, and audit events without presenting a
+Self-Onboarding request as a signed or pending-signature Opt-In submission.
 
 **Acceptance:** CRM users can find every token self-onboarded request and contact by source, package, Network, facility, status, and date without inspecting free-text notes.
 
@@ -1163,7 +1241,8 @@ Validate Finance Settings, Paystack keys, Mode of Payment, clearing account, KES
 
 ## 17. Active sprint — onboarding invitation and Customer Experience progress
 
-**Sprint objective:** complete the post-Opt-In handoff. Every completed OIS must
+**Sprint objective:** complete the post-signature handoff for the separate
+invitation-only Network Opt-In route. Every completed OIS must
 produce a least-privilege Website User invitation, a permission-bound
 `/cx-portal` experience, and a customer-safe progress view for each facility.
 
@@ -1258,9 +1337,11 @@ Design search, package cards, descriptions, token quantity, coverage examples, e
 
 Design next-period ex-VAT amount, separate VAT, gross total, billing period, package coverage, confirmation, invoice creation, open-invoice state, and the handoff to the existing Checkout page.
 
-### D6 — Signatory progress
+### D6 — Invitation-only Opt-In signatory progress
 
-Design facility and Network approval steps, pending signatures, reminders, completed signatures, and exception states.
+Design facility and Network approval steps, pending signatures, reminders,
+completed signatures, and exception states for invited Network Opt-In only.
+Do not show signature progress in Self-Onboarding.
 
 ### D7 — Customer Experience portal and support
 
@@ -1272,11 +1353,18 @@ Define keyboard flow, focus states, screen-reader content, validation, mobile la
 
 ### D9 — Provenance visibility
 
-Design the `Token self-onboarding` badge, source details, package, Network, facility, contact role, request status, and signature status in CRM list and detail views.
+Design separate source badges for Self-Onboarding requests and invited Network
+Opt-In submissions. Show signature status only on the Opt-In submission; do
+not imply that a Self-Onboarding request has signatories.
 
 ### D10 — End-to-end customer experience
 
-Design the complete progression from public trust and identity verification to package selection, quotation, Sales Order, invoice, Paystack Checkout, payment confirmation, Opt-In signatures, onboarding progress, token balance or entitlement status, open invoices, support chat, and repeat purchase.
+Design two connected but distinct routes: public Self-Onboarding through
+identity verification, package/quote review, Terms acceptance, request
+submission, and Customer Experience progress; and invitation-only Network
+Opt-In through the secure email link, quotation/agreement, applicable
+signatures, and its own progress. Shared post-submission package, invoice,
+payment, support, and repeat-purchase views must not merge their status models.
 
 The experience must preserve context between steps, explain what happens next, and provide recovery for expired sessions, failed payments, incomplete signatures, duplicate clicks, and support escalation.
 
@@ -1319,15 +1407,22 @@ The public and authenticated entry-point increment is complete when:
 - the hashed onboarding and portal entries are published by the frontend build;
 - the route, asset, link, frontend-unit, and focused Frappe checks pass.
 
-The feature is complete when an owner can verify identity, receive and verify an OTP, select an owned facility, resolve a Network by six-digit Partner ID or approved admin preconfiguration, search and select an enabled catalogue service item, review an ex-VAT next-period quotation with separate VAT and coverage information, accept it, and receive the corresponding facility-specific Sales Order.
+The Self-Onboarding feature is complete when an owner can verify identity,
+receive and verify an OTP, select an owned facility, resolve a Network,
+search/select an enabled package, review available pricing and Terms, accept
+the Self-Onboarding Terms, submit the request without a signature step, and
+see its available progress and next action in Customer Experience.
 
-The owner must then complete the Opt-In Request and every applicable facility and Network signature.
-
-After signature, the facility must be fully `Opted In`, visible in the correct Network, invited as a Website User, and able to access Customer Experience with read-only progress and purchase/payment actions.
+The separate invitation-only Network Opt-In feature is complete when an
+eligible facility can open its secure invitation link, review its Network
+quotation/agreement, provide requested signatory details, and complete the
+configured signature steps independently of Self-Onboarding.
 
 From the portal, the user must be able to intentionally select another token package, create or resume a facility-specific Quotation and Sales Order, start payment from the open Sales Order, create the Sales Invoice with 30-day terms, view the open invoice, and pay through the existing Checkout page. No cron job or automatic purchase may be required.
 
-CRM users must be able to identify every Opt-In Request and Network Contact created or linked through token self-onboarding using an explicit source, package, Network, facility, status, and date.
+CRM users must be able to distinguish Self-Onboarding requests from invited
+Network Opt-In submissions using explicit source, package, Network, facility,
+status, and date. Self-Onboarding requests must not appear as pending signature.
 
 The HFR flow must be guest-safe, session-bound, non-enumerating, and protected against IDOR/BOLA.
 
@@ -1335,4 +1430,8 @@ An unknown or mismatched Network ID must fail before any Opt-In, contact, member
 
 From the customer portal, the user must be able to select a package, find the facility-specific open Sales Order, start payment, receive the Sales Invoice with 30-day terms, view the open invoice, and pay through the existing Checkout page using Paystack.
 
-Existing KEPH/year-plan workflows must remain regression-tested separately. Token quotation, Sales Order, invoice, VAT, Paystack, signatory, provenance, security, and portal behavior must be covered by automated tests.
+Existing KEPH/year-plan and invitation-only Network Opt-In signature
+workflows must remain regression-tested separately from Self-Onboarding. Token
+quotation, Sales Order, invoice, VAT, Paystack, provenance, security, and
+portal behavior must be covered by automated tests; Self-Onboarding tests must
+assert that no signature step is introduced.

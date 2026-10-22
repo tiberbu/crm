@@ -22,6 +22,19 @@
 
 Use a registry identifier such as MFL, FID, or registration number only when the page asks you to discover or reconcile a facility in the Health Facility Registry. The normal portfolio search finds a facility by name.
 
+## Choose the right facility journey
+
+**Self-Onboarding** is the public route for a facility owner to verify their
+details, choose a Network and package, accept the Self-Onboarding Terms, and
+send a request. It does not ask for a signature, signatory, or witness details;
+accepting the Terms is not a signature.
+
+**Network Opt-In** is a separate, invitation-only process for a facility that
+has already been added to a Network. Open the secure link in the Network's
+invitation email to review its quotation and agreement and complete any
+requested signatory and signature steps. The public Opt-In entry can help you
+find that route, but access is confirmed against the invitation and Network.
+
 ## Read the single-facility view
 
 The single view puts facility identity, implementation, tokens, invoices, payments, and Network support into one page. Read it from top to bottom:

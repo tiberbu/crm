@@ -32,7 +32,7 @@ def get_context(context):
 	context.title = _("Tiberbu Customer Experience")
 	apply_brand_context(context, brand, surface="splash")
 
-	context.cta_text = "Start facility onboarding"
+	context.cta_text = "Start Self-Onboarding"
 	context.cta_link = "/facility-onboarding"
 	context.cta_secondary_text = "Already have access? Sign in"
 	context.cta_secondary_link = "/login?redirect-to=/cx-portal"

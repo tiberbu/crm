@@ -23,6 +23,11 @@ from jinja2.exceptions import TemplateSyntaxError
 
 from crm.api._email import branded_email_html, create_transactional_communication
 from crm.utils.optin_bundles import membership_price_lists, normalize_price_lists
+from crm.utils.onboarding_source import (
+	NETWORK_OPTIN_CONTACT_SOURCE,
+	SELF_ONBOARDING_CONTACT_SOURCE,
+	is_self_onboarding_contact,
+)
 
 _OPTIN_TERMS_EXPRESSIONS = {
 	"network.display_name",
@@ -1697,6 +1702,8 @@ def list_facilities(
 		"invite_sent_at",
 	]
 	try:
+		if frappe.db.has_column("CRM Facility Membership", "customer"):
+			membership_fields.append("customer")
 		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
 			membership_fields.insert(3, "price_list_override")
 		if frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json"):
@@ -1850,6 +1857,11 @@ def list_facilities(
 						"contact_name": m.contact_name,
 						"contact_email": m.contact_email,
 						"contact_phone": m.contact_phone,
+						"contact_source": (
+							SELF_ONBOARDING_CONTACT_SOURCE
+							if is_self_onboarding_contact(m)
+							else NETWORK_OPTIN_CONTACT_SOURCE
+						),
 						"invite_email_queue": m.invite_email_queue,
 						"invite_sent_at": m.invite_sent_at,
 						"invite_status": invitation_status(m),
@@ -1929,6 +1941,17 @@ def save_facility(data: Any):
 	is_new_facility = doc.is_new()
 	existing_networks = {m.network for m in (doc.memberships or [])}
 	existing_memberships = {m.network: m for m in (doc.memberships or [])}
+	for membership in memberships:
+		net = frappe.utils.cstr(membership.get("network") or "").strip()
+		existing = existing_memberships.get(net)
+		if existing and getattr(existing, "customer", None):
+			existing_email = frappe.utils.cstr(existing.contact_email or "").strip().lower()
+			requested_email = frappe.utils.cstr(membership.get("contact_email") or "").strip().lower()
+			if requested_email != existing_email:
+				frappe.throw(
+					_("The email on a verified Self-Onboarding account cannot be changed here."),
+					frappe.ValidationError,
+				)
 
 	doc.mfl_code = mfl_code or doc.mfl_code
 	doc.facility_name = frappe.utils.cstr(data.get("facility_name") or doc.facility_name or "")
@@ -1946,10 +1969,12 @@ def save_facility(data: Any):
 			"CRM Facility Membership", "price_list_overrides_json"
 		)
 		membership_has_go_live = frappe.db.has_column("CRM Facility Membership", "go_live")
+		membership_has_customer = frappe.db.has_column("CRM Facility Membership", "customer")
 	except Exception:
 		membership_has_override = False
 		membership_has_overrides = False
 		membership_has_go_live = False
+		membership_has_customer = False
 	for mem_data in memberships:
 		net = frappe.utils.cstr(mem_data.get("network") or "").strip()
 		if not net:
@@ -1961,6 +1986,12 @@ def save_facility(data: Any):
 			"contact_email": frappe.utils.cstr(mem_data.get("contact_email") or "").lower(),
 			"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
 		}
+		if membership_has_customer and net in existing_memberships:
+			# Network contact edits rebuild the child row; retain the Customer link
+			# that identifies an existing Self-Onboarding portal contact.
+			customer = existing_memberships[net].get("customer")
+			if customer:
+				membership_values["customer"] = customer
 		if membership_has_override:
 			# Preserve an existing override when the caller omits the field, while
 			# pre-opt-in edits and CSV/admin callers may clear or replace it explicitly.

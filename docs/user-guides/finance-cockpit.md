@@ -8,6 +8,12 @@
 
 *The dashboard uses synthetic company, handoff, KPI, and invoice data. Amounts and references are examples, not live accounting records.*
 
+> Signed-facility handoffs in this guide belong to the separate
+> invitation-only Network Opt-In process. Public Self-Onboarding ends when the
+> owner accepts its Terms and submits a request; it has no signature or
+> signatory step. Do not wait for a Self-Onboarding signature before following
+> its next action in Customer Experience.
+
 ## Start with the right company and queue
 
 1. Sign in with a role permitted to use the Finance Cockpit: **Administrator**, **Accounts User**, or **Accounts Manager**.

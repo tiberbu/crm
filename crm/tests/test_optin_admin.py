@@ -779,6 +779,8 @@ class TestOptInPriceListTools(UnitTestCase):
 					frappe._dict(
 						{
 							"network": "network-a",
+							"customer": "CUST-SELF",
+							"contact_email": "jane@example.com",
 							"price_list_override": "Negotiated Facility A",
 						}
 					)
@@ -821,6 +823,7 @@ class TestOptInPriceListTools(UnitTestCase):
 
 		self.assertEqual(len(facility.memberships), 1)
 		self.assertEqual(facility.memberships[0].price_list_override, "Negotiated Facility A")
+		self.assertEqual(facility.memberships[0].customer, "CUST-SELF")
 
 	def test_opted_in_membership_cannot_change_facility_price_list(self):
 		existing = frappe._dict({"status": "Opted In", "price_list_override": "Negotiated Facility A"})

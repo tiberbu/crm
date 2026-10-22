@@ -1,125 +1,108 @@
-# Facility Self-Onboarding and Token Selection
+# Get Started with Facility Self-Onboarding
 
-**Who this is for:** facility owners and the CRM/onboarding staff who help them\
-**Start here:** `/facility-onboarding`\
-**What you will complete:** verify the owner, choose eligible facilities, select one package per facility, confirm the Network and terms, and submit an Opt-In request.
+**For:** facility owners and administrators
 
-This walkthrough uses the demonstration facility **Alpha Community Clinic**, the **Example Health Network**, and sample prices. The records and prices shown in the screenshots are synthetic and are not an offer or invoice.
+**Start at:** `/facility-onboarding`
 
-## The journey at a glance
+**You’ll need:** the identification linked to your facility record and access to the email address or phone number registered with it.
 
-1. Estimate package needs (optional).
-2. Verify identity and access to the one-time code.
-3. Confirm facilities returned for that identity.
-4. Confirm the correct Network.
-5. Select a token package for each facility.
-6. Review the total and accept terms.
-7. Submit once and keep the confirmation.
+Self-Onboarding is a public way to verify your details, choose facilities and token packages, accept the terms, and send a request. You do not need an invitation to use it, and there is no signing step.
 
-## Step 1 — Start and size a package
+If your Network invited you to its separate Opt-In process, open the secure link in that invitation email. That invitation-only journey is where you review the Network quotation and agreement and provide any requested signatory details.
 
-Open the onboarding page. The welcome page explains the steps and includes an optional sizing calculator. Choose a clinic profile, enter an approximate average number of patient encounters, and review the monthly demand and package runway estimate. The estimate helps compare packages; it does not set the final price or reserve tokens.
+This guide uses **Alpha Community Clinic**, **Example Health Network**, and sample prices. The facilities and prices in the screenshots are examples, not an offer or invoice.
 
-![Onboarding welcome and token sizing calculator](images/onboarding-01-welcome.png)
+## The steps
 
-*The sizing calculator is optional. You can begin identity verification without choosing a recommendation first.*
+1. Start Self-Onboarding and, if useful, estimate your package needs.
+2. Verify your details with a one-time code.
+3. Choose the eligible facilities you want to onboard.
+4. Confirm the Network and select a package for each facility.
+5. Review the prices and terms, then submit your request.
+6. Sign in to Customer Experience to review your quote and follow the next steps.
 
-Select **Start secure onboarding** when ready. If someone has already invited you and provided a Network context, use that invitation link. If you already have Customer Experience access, choose **Sign in** rather than starting another onboarding request.
+## 1. Start and explore packages
 
-## Step 2 — Verify the facility owner
+Open the Self-Onboarding page. The optional sizing guide can help you compare packages using your estimated monthly activity. It is only an estimate; it does not set your final price or reserve tokens.
 
-Choose the requested identification type and enter the number exactly as issued. The screenshot uses a synthetic number. Do not include spaces unless the form asks for them. Select **Find my facilities** once.
+![Onboarding welcome and token sizing guide](images/onboarding-01-welcome.png)
+
+Select **Start your onboarding** when you’re ready. If you already have Customer Experience access, sign in to that account instead of starting another request.
+
+## 2. Verify your details
+
+Choose the identification type linked to your facility record and enter the number as requested on the page.
 
 ![Identity entry](images/onboarding-02-identity.png)
 
-The system checks identity before returning a facility list. It should not reveal whether an identifier belongs to a record before verification succeeds. If the request is still processing, leave the page open and follow the on-screen status; do not repeatedly submit the same identifier.
+We’ll send a one-time code to the email address or phone number registered with your identification. Your facility details appear after you verify the code.
 
-## Step 3 — Enter the one-time code
+## 3. Check your contact
 
-The code is delivered to the masked email address or phone number displayed by the page. Enter all six digits, then select **Verify and continue**. A code may be pasted into the first box; the form moves between digits automatically.
+Enter all six digits and select **Verify and continue**. You can paste the code into the first box. If it has expired or was entered incorrectly, wait for the countdown and request another code. Never share a verification code with anyone.
 
 ![One-time code entry](images/onboarding-03-otp.png)
 
-If the code is wrong or expired, the page shows an inline message. Request another code after the resend countdown ends. Check the displayed destination and your message inbox before requesting a resend. Never share the code with a caller or support agent.
+## 4. Choose your facilities
 
-## Step 4 — Confirm the facilities
-
-The facility list is returned for the verified owner. Compare the facility name, level, type, and registry identifier against your records. Tick each eligible facility you want to onboard under the same Network. You can select more than one facility; each selected facility needs its own package selection in the next step.
+Review each facility name, level, type, and registry number. Select the eligible facilities you want to onboard. You can choose more than one; you’ll select a package for each one on the next screen.
 
 ![Facilities returned for the verified owner](images/onboarding-04-facility-selection.png)
 
-A facility that is already onboarded or not eligible is identified on the card and cannot be selected. Registry facts are not editable in this flow. If a name, level, or ownership detail is wrong, stop and request correction through the registry support route.
+A facility that is already set up or is not eligible for this route cannot be selected. Registry details cannot be changed here. If a facility is missing or its details look wrong, contact support and we’ll help you find the right next step.
 
-Select **Continue to pricing** after reviewing every selected facility. If the facility you expect is missing, do not add a substitute facility by typing an identifier into the page. Contact the support channel and quote the identity-verification attempt time.
+## 5. Confirm the Network and choose packages
 
-## Step 5 — Confirm the Network and compare packages
-
-The package page shows the facility currently being priced and the Network associated with the onboarding context. If you were referred by a Network, use **Referred by a partner?** to enter the Network Partner ID. If the flow already has a configured default or invitation context, verify the displayed Network name before you continue. A Partner ID identifies a Network; it is not a password or proof that you own a facility.
+If you have a six-digit Network ID, enter the ID shared by your Network contact. If you leave the field blank, the page will use the default Network when one is available. Check the Network name before you continue.
 
 ![Token package catalogue with facility, Network, VAT, and package quantities](images/onboarding-05-token-packages.png)
 
-Compare the package name, monthly amount, VAT, total, token quantity, and coverage description. The sizing calculator is available from this screen if you want to revise your estimate. The price and package are loaded from the configured catalogue; you cannot enter a custom token quantity or price.
+Choose a package for each selected facility. Compare its token quantity, coverage description, price before VAT, VAT, and total. These prices come from the configured package list; you cannot enter a custom price or token quantity.
 
-For each selected facility:
-
-1. Select **Choose plan** on the package that fits expected activity.
-2. Confirm the chosen card is selected and the facility summary reflects the package.
-3. If multiple facilities are selected, switch through each facility and choose its package separately.
-4. Review the combined quantity and total before moving on.
+1. Select **Choose plan** on the package that suits your facility.
+2. If you selected more than one facility, switch between them and choose a package for each.
+3. Review the package summary and combined total before you continue.
 
 ![Selected token package](images/onboarding-06-package-selected.png)
 
-The quantity shown here belongs to the selected package/order. It is not a live remaining-token balance and does not confirm that a Go Live setup has received or consumed tokens. Any free package shown in the live catalogue has a zero charge; a paid package shows its configured price and VAT. The available choices depend on the Network's current configuration.
+Package quantities describe the package you selected. They are not a live token balance and do not mean your facility is already live.
 
-## Step 6 — Review, accept, and submit
+## 6. Review the terms and submit
 
-The review page brings the key decisions together: Network, facility list, package for each facility, Customer Experience email, terms, and the server-calculated total. Check every row. Use **Edit** beside Network, facilities, or package to correct a selection before submitting.
+Check the Network, facilities, package for each facility, verified Customer Experience email, and total. Use **Edit** if you want to change your Network, facilities, or packages.
 
 ![Review page showing Network, facility, selected package, terms, and VAT total](images/onboarding-07-review.png)
 
-Read the terms in the page. Tick the acceptance box only after reviewing them. The submit button remains unavailable until required information and acknowledgement are complete. The total shown by the server is the amount to use when reviewing the resulting commercial records; do not rely on the sizing estimate for the final amount.
+Read the terms and select the acceptance box only when you’re ready. Self-Onboarding does not ask for signatures or witness details. The request can be submitted after the required choices and terms acceptance are complete.
 
-Select **Submit facility onboarding** once. Do not refresh or resubmit because the page takes a moment to respond. Keep the submission reference shown on completion.
+Select **Submit your request** once and wait for the confirmation. If the page is slow, leave it open rather than submitting again.
 
-## Step 7 — Understand the confirmation
+## 7. Follow your next steps
 
 ![Onboarding submission confirmation](images/onboarding-08-submitted.png)
 
-The confirmation means the onboarding request was accepted and the selected facility was linked to the Network workflow. Check the listed next step and email instructions to sign in to Customer Experience. Submission does not mean all signatures are complete, an invoice has been issued, payment has settled, tokens are currently available, or the HMIS site is live.
+Your selected facilities are linked to the Network and your Customer Experience account. If this is a new account, check your email for password setup instructions. If you already have an account, sign in with your usual details.
 
-## What happens to the package and payment?
+In Customer Experience, review your quote and follow the next action shown for each facility. An order, invoice, payment, or activation step may follow when it is available. Sending the Self-Onboarding request does not itself issue an invoice, take payment, or make the facility live.
 
-| What you see | What it means | What to do |
-|---|---|---|
-| Package selected, no invoice | The selected service package is recorded for the onboarding request. Billing may happen later under the Network's configured billing schedule. | Keep the submission reference; check Customer Experience for the invoice when one is issued. |
-| Invoice with an amount due | Finance has issued an invoice for the linked order. | Open the invoice, confirm the facility and amount, then use a payment option shown for that invoice. |
-| Payment awaiting verification | A payment attempt or submitted payment reference has not yet been matched/confirmed. | Do not start another payment until the page tells you the prior attempt is resolved. Use Network Support if it remains pending. |
-| Paid invoice | The accounting record reports the balance settled. | Keep the receipt/reference. Token entitlement and Go Live readiness remain separate statuses. |
-| Go Live not started or in progress | HMIS implementation has its own setup workflow and status source. | Review the facility view and follow the named next action; contact implementation support if status cannot be refreshed. |
+## If you need help
 
-## If the journey does not go as expected
-
-| Situation | Safe next step |
+| What happened | What to do |
 |---|---|
-| Code not received | Confirm the masked destination, check junk/spam or SMS messages, wait for the countdown, then resend once. |
-| Code rejected | Check all six digits and expiry. Request a fresh code if necessary; do not share it. |
-| Facility missing or details disagree | Stop before submission. Request an HFR ownership/data correction and provide the safe attempt reference. |
-| Wrong Network is shown | Do not submit. Return to the Partner ID step or ask the inviter to confirm the intended Network ID. |
-| Package or total is unexpected | Do not submit. Recheck the package, quantity, VAT, and selected facility; contact the Network if the configured offer is wrong. |
-| Submit appears stuck | Keep the page and confirmation/reference. Ask support to look up the request before attempting another submission. |
-| Invitation link is expired or incorrect | Ask the inviter for a fresh link. Do not reuse another facility owner's link. |
+| Code did not arrive | Check the masked email or phone shown on screen, look in your messages, wait for the countdown, then request another code. |
+| Code was rejected | Check all six digits and the expiry time, then request a new code if needed. |
+| Facility is missing or its details are wrong | Stop before submitting and contact support so the registry details can be checked. |
+| The wrong Network is shown | Do not submit. Review the six-digit Network ID or ask your Network contact to confirm it. |
+| Package or total is unexpected | Do not submit. Review the package and VAT breakdown, then contact your Network contact or support. |
+| No email is available for Customer Experience | Contact support to update or confirm the email on your verified profile. |
+| You received an Opt-In invitation | Open the secure link in that invitation email. It is a separate Network process from Self-Onboarding. |
+| The request appears stuck | Wait for the page to respond. If you need help, contact support before starting another request. |
 
-## Notes for CRM and onboarding staff
+## For onboarding staff
 
-- Confirm an enabled Network and its Partner ID before sending an invitation. A Partner ID is a public routing identifier, not an access credential.
-- Confirm the Network contact and customer-facing instructions are current.
-- HFR supplies ownership eligibility and facility facts. Preserve the registry source; route corrections instead of editing HFR values in the onboarding case.
-- The configured package catalogue supplies eligible package items and pricing. The owner may select from offered options only.
-- Reconcile duplicates by the original submission reference. Do not create a replacement request until the original outcome is known.
-- Pass the canonical Opt-In submission, Network, facility, selected package, and signature state to the next CRM/Finance workflow. Do not treat the welcome screen, package selection, or owner confirmation as a signed or paid state.
-
-## Handoff
-
-**Facility owner → CRM:** verified owner session, selected HFR facilities, resolved Network, package choice, terms acknowledgement, and Opt-In submission reference.\
-**CRM → Accounts:** signed commercial records and any invoice work eligible under the Network's billing schedule.\
-**CRM/Accounts → Customer Experience:** the authorized facility view of progress, invoices, payments, and reported implementation status.
+- Self-Onboarding does not collect signatory or witness details and does not wait for signatures.
+- A Network Opt-In invitation is a separate, invite-only journey. Keep its quotation, agreement, and signatory steps on the secure email-link route.
+- The Health Facility Registry provides the facility details used for eligibility. Route corrections through the registry process; do not edit registry facts in the onboarding case.
+- Package choices and prices come from the configured catalogue. The facility owner can choose only from the options shown.
+- The owner’s request records their selected Network, facilities, packages, and acceptance of the Self-Onboarding terms. Do not describe that terms acceptance as a signature.
+- After submission, help the owner use Customer Experience to follow the quote and the next action shown for each facility.

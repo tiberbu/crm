@@ -164,7 +164,7 @@ describe('FacilityOnboardingLanding', () => {
     mountedApps.push(app)
 
     const startButton = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent.includes('Start secure onboarding'),
+      button.textContent.includes('Start your onboarding'),
     )
     startButton.click()
     await nextTick()
@@ -187,9 +187,13 @@ describe('FacilityOnboardingLanding', () => {
 
     expect(host.textContent).toContain('Alpha Clinic')
     expect(host.textContent).toContain('Unapproved Clinic')
-    expect(host.textContent).toContain('this Facility Level is not approved')
+    expect(host.textContent).toContain(
+      'This facility’s level isn’t currently eligible for online onboarding.',
+    )
     expect(host.textContent).toContain('Facility without a level')
-    expect(host.textContent).toContain('HFR did not return a Facility Level')
+    expect(host.textContent).toContain(
+      'We couldn’t confirm this facility’s level in the registry',
+    )
     expect(host.querySelectorAll('input[type="checkbox"]')[0].disabled).toBe(
       false,
     )
@@ -244,7 +248,7 @@ describe('FacilityOnboardingLanding', () => {
     mountedApps.push(app)
 
     const startButton = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent.includes('Start secure onboarding'),
+      button.textContent.includes('Start your onboarding'),
     )
     startButton.click()
     await nextTick()
@@ -283,7 +287,7 @@ describe('FacilityOnboardingLanding', () => {
     mountedApps.push(app)
 
     const startButton = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent.includes('Start secure onboarding'),
+      button.textContent.includes('Start your onboarding'),
     )
     startButton.click()
     await nextTick()
@@ -420,7 +424,7 @@ describe('FacilityOnboardingLanding', () => {
       terms_accepted: 1,
       accepted_terms_hash: 'a'.repeat(64),
     })
-    expect(host.textContent).toContain('Your onboarding has started')
+    expect(host.textContent).toContain('Your request has been submitted')
   })
 
   it('displays existing identity message and skips new identity creation on success when account is linked', async () => {
@@ -499,9 +503,9 @@ describe('FacilityOnboardingLanding', () => {
     const reviewForm = await goToReview(host)
     await submitForm(reviewForm)
 
-    expect(host.textContent).toContain('Your onboarding has started')
+    expect(host.textContent).toContain('Your request has been submitted')
     expect(host.textContent).toContain(
-      'An enrollment already exists for this verified identity. Your selected facilities have been added to your existing Customer Experience account.',
+      'Your selected facilities are linked to your existing Customer Experience account. Sign in with your usual details to review your quote and next steps.',
     )
     expect(host.querySelector('[data-testid="linked-identity-note"]')).not.toBeNull()
     expect(host.textContent).toContain('Sign in to Customer Experience')
@@ -582,9 +586,9 @@ describe('FacilityOnboardingLanding', () => {
     const reviewForm = await goToReview(host)
     await submitForm(reviewForm)
 
-    expect(host.textContent).toContain('Your onboarding has started')
+    expect(host.textContent).toContain('Your request has been submitted')
     expect(host.textContent).toContain(
-      'An enrollment already exists for this verified identity. Your selected facilities have been added to your existing Customer Experience account.',
+      'Your selected facilities are linked to your existing Customer Experience account. Sign in with your usual details to review your quote and next steps.',
     )
     expect(host.querySelector('[data-testid="linked-identity-note"]')).not.toBeNull()
     expect(host.textContent).toContain('Sign in to Customer Experience')
@@ -706,7 +710,7 @@ describe('FacilityOnboardingLanding', () => {
         selected_facility_ids: '["FID-1"]',
       })
       expect(host.textContent).toContain(expectedCopy)
-      expect(host.textContent).not.toContain('Your onboarding has started')
+      expect(host.textContent).not.toContain('Your request has been submitted')
       if (_outcome === 'existing_identity' || submitConflict) {
         expect(
           host.querySelector('[data-testid="duplicate-signin"]')?.textContent,
@@ -728,7 +732,7 @@ describe('FacilityOnboardingLanding', () => {
           ),
         ).toBe(true)
         expect(host.textContent).toContain(
-          'HFR did not return a Facility Level',
+          'We couldn’t confirm this facility’s level in the registry',
         )
       }
     },

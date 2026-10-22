@@ -29,9 +29,17 @@
 
       <!-- Subheadline -->
       <p class="mb-8 text-base text-gray-500 dark:text-gray-400">
-        Register your facilities for CareverseHIMS and get set up online — start
-        to finish, without a single phone call.
+        Review your network quotation and agreement, provide the required
+        signatory and witness details, and submit your Opt-In.
       </p>
+
+      <div
+        class="mb-7 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm leading-relaxed text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+        role="note"
+      >
+        This process is for facilities added to this network. Continue from your
+        network invitation and verify with the email address linked to it.
+      </div>
 
       <!-- What you're starting: explained value props -->
       <div class="mb-9 space-y-3 text-left">
@@ -72,7 +80,7 @@
         "
         @click="emit('next')"
       >
-        Get Started
+        Continue with Opt-In
       </button>
 
       <!-- Partner logos strip -->

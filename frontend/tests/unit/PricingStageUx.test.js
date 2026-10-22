@@ -100,7 +100,7 @@ async function advanceToPricing(host, facilitiesList, packagesList) {
 
   // Start onboarding
   const startBtn = [...host.querySelectorAll('button')].find((b) =>
-    b.textContent.includes('Start secure onboarding'),
+    b.textContent.includes('Start your onboarding'),
   )
   startBtn.click()
   await nextTick()
@@ -223,7 +223,7 @@ describe('Pricing Stage UX Audit & Minimalist Experience', () => {
     expect(tabs[1].textContent).toContain('Beta Dispensary')
 
     // At-A-Glance summary table should be present
-    expect(host.textContent).toContain('Facility Package Allocation')
+    expect(host.textContent).toContain('Packages for your facilities')
     expect(host.textContent).toContain('2 facilities')
 
     // Click on Growth plan for Alpha
@@ -323,7 +323,7 @@ describe('Pricing Stage UX Audit & Minimalist Experience', () => {
 
     // Trigger button should be visible
     const calcTrigger = [...host.querySelectorAll('button')].find((b) =>
-      b.textContent.includes('Open Sizing Calculator'),
+      b.textContent.includes('Open the sizing guide'),
     )
     expect(calcTrigger).toBeTruthy()
     calcTrigger.click()
@@ -332,7 +332,7 @@ describe('Pricing Stage UX Audit & Minimalist Experience', () => {
     // Modal dialog should now be rendered
     const dialog = host.querySelector('[role="dialog"]')
     expect(dialog).toBeTruthy()
-    expect(dialog.getAttribute('aria-label')).toContain('CareVerse Token Sizing Calculator')
+    expect(dialog.getAttribute('aria-label')).toContain('Token package sizing guide')
     expect(dialog.querySelector('[data-testid="token-calculator"]')).toBeTruthy()
   })
 
@@ -381,16 +381,16 @@ describe('Pricing Stage UX Audit & Minimalist Experience', () => {
     // Token calculator should be rendered on welcome landing page
     const calc = host.querySelector('[data-testid="token-calculator"]')
     expect(calc).toBeTruthy()
-    expect(host.textContent).toContain('Find the right token package for your facility')
+    expect(host.textContent).toContain('Estimate how many tokens your facility may need each month')
 
-    // Find the recommendation card's Start onboarding button
-    const recCard = calc.querySelector('[data-testid="recommended-package-card"]')
-    expect(recCard).toBeTruthy()
-    const startPlanBtn = recCard.querySelector('button')
-    expect(startPlanBtn.textContent).toContain('Start onboarding with')
-
-    // Clicking it advances directly to identity stage
-    startPlanBtn.click()
+    // The server has not supplied package choices yet; the landing action
+    // still starts onboarding without inventing a package or price.
+    expect(calc.querySelector('[data-testid="recommended-package-card"]')).toBeNull()
+    const startButton = [...host.querySelectorAll('button')].find((button) =>
+      button.textContent.includes('Start your onboarding'),
+    )
+    expect(startButton).toBeTruthy()
+    startButton.click()
     await nextTick()
 
     expect(host.querySelector('input[placeholder="Enter your ID number"]')).toBeTruthy()

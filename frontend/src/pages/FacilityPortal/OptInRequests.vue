@@ -1,21 +1,40 @@
 <script setup>
+import { computed } from 'vue'
 import CxIcon from './components/CxIcon.vue'
-defineProps({
+const props = defineProps({
   requests: { type: Array, required: true },
+})
+const hasSelfOnboarding = computed(() =>
+  props.requests.some((request) => request.source === 'token_self_onboarding'),
+)
+const hasNetworkOptIn = computed(() =>
+  props.requests.some((request) => request.source !== 'token_self_onboarding'),
+)
+const pageTitle = computed(() => {
+  if (hasSelfOnboarding.value && hasNetworkOptIn.value) return 'Requests & quotations'
+  return hasSelfOnboarding.value ? 'Self-Onboarding requests' : 'Opt-In Requests'
+})
+const pageDescription = computed(() => {
+  if (hasSelfOnboarding.value && hasNetworkOptIn.value) {
+    return 'Follow your Self-Onboarding requests and invited Network Opt-In submissions, quotations, and progress.'
+  }
+  return hasSelfOnboarding.value
+    ? 'Your Self-Onboarding requests, quotations, and next steps in one place.'
+    : 'Your invited Network Opt-In submissions, quotations, and enrollment progress in one place.'
 })
 </script>
 
 <template>
   <div>
     <div>
-      <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">Opt-In Requests</h1>
-      <p class="text-xs text-cx-ink-3 mt-0.5">Your network opt-in submissions, quotations, and enrollment progress in one place.</p>
+      <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">{{ pageTitle }}</h1>
+      <p class="text-xs text-cx-ink-3 mt-0.5">{{ pageDescription }}</p>
     </div>
 
     <div v-if="!requests.length" class="mt-6 rounded-cx border border-cx-border bg-cx-surface p-10 text-center text-xs text-cx-ink-3">
       <span class="mb-2 block text-3xl"><CxIcon name="clipboard-list" class="inline-block size-4 align-[-0.15em]" /></span>
-      <p class="text-sm font-semibold text-cx-ink">No opt-in requests</p>
-      <p class="mt-1">You have no opt-in submissions with your network partner.</p>
+      <p class="text-sm font-semibold text-cx-ink">No requests yet</p>
+      <p class="mt-1">Your Self-Onboarding requests and invited Network Opt-In submissions will appear here.</p>
     </div>
 
     <div v-else class="space-y-4 mt-6">
@@ -28,14 +47,17 @@ defineProps({
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-semibold text-sm text-cx-ink">{{ req.network }}</span>
+              <span class="rounded-full border border-cx-border bg-cx-well px-2 py-0.5 text-[10px] font-semibold text-cx-ink-2">
+                {{ req.source === 'token_self_onboarding' ? 'Self-Onboarding' : 'Network Opt-In' }}
+              </span>
               <span class="rounded-full border border-cx-border bg-cx-well px-2.5 py-0.5 text-[11px] font-semibold text-cx-ink-2">
                 {{ req.status }}
               </span>
-              <span v-if="req.contract" class="font-mono text-[11px] text-cx-ink-3">Contract: {{ req.contract }}</span>
+              <span v-if="req.source !== 'token_self_onboarding' && req.contract" class="font-mono text-[11px] text-cx-ink-3">Contract: {{ req.contract }}</span>
             </div>
             <p class="mt-1 text-[11px] text-cx-ink-3">
               {{ req.name }}
-              <span v-if="req.signatory"> · Signatory: {{ req.signatory }}</span>
+              <span v-if="req.source !== 'token_self_onboarding' && req.signatory"> · Signatory: {{ req.signatory }}</span>
             </p>
           </div>
           <span class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-well px-2.5 py-1 text-[11px] font-semibold text-cx-ink-2">

@@ -101,7 +101,7 @@ describe('Onboarding Mobile Responsiveness Across Flow', () => {
 
     // Start onboarding button is full width on mobile
     const startBtn = [...host.querySelectorAll('button')].find((b) =>
-      b.textContent.includes('Start secure onboarding'),
+      b.textContent.includes('Start your onboarding'),
     )
     expect(startBtn.className).toContain('w-full')
     expect(startBtn.className).toContain('sm:w-auto')
@@ -116,7 +116,7 @@ describe('Onboarding Mobile Responsiveness Across Flow', () => {
     mountedApps.push(app)
 
     const startBtn = [...host.querySelectorAll('button')].find((b) =>
-      b.textContent.includes('Start secure onboarding'),
+      b.textContent.includes('Start your onboarding'),
     )
     startBtn.click()
     await nextTick()

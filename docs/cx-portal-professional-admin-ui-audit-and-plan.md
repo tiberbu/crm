@@ -139,7 +139,7 @@ Note for P0: because dark parity is in scope, the neutral ramp, surfaces, border
 
 ## 5. Scope boundary
 
-- Customer-facing identity, facility onboarding, network opt-in enrollment, signed-in portal, and owner-visible request status are in scope.
+- Customer-facing identity, public Self-Onboarding, invitation-only Network Opt-In, signed-in portal, and owner-visible request status are in scope. Self-Onboarding ends at Terms acceptance and request submission; it has no signature step. Network Opt-In remains a separate invited quotation/agreement/signature route.
 - Internal CRM sales/admin screens (Leads, Deals, FinanceCockpit, Opt-In dashboard/submissions) are not part of the customer portal surface.
 - Shared components such as TokenCalculator must preserve their existing onboarding behavior when styled for portal contexts.
 
@@ -153,7 +153,7 @@ The scope now covers the full customer journey, not only the signed-in facilitie
 
 - **Signed-in facility portal:** removed workflow actions from the global header and duplicate navigation from the avatar menu; made registry discovery route to the actual discovery view; corrected search scope; removed inactive bulk selection and row-level calculator controls; removed fabricated encounter estimates and fixed package popularity/comparison claims; added persistent registry empty/error results; distinguished “On file” from authoritative “Verified”; removed the placeholder WhatsApp number; added keyboard/focus handling to the facility drawer.
 - **Owner identity and registry lookup:** corrected Salim’s development profile from the supplied ID; stopped inferring a National ID from an arbitrary deal; do not log the full ID on HFR errors. The ID already stored on Salim’s User profile was the value the portal returned. Registry lookup with the corrected profile returned four facilities, three already linked.
-- **Network opt-in enrollment:** retained partner-specific branding, added restrained glass surfaces to the wizard shell, and replaced mouse-only facility card selection with native checkboxes.
+- **Network Opt-In enrollment:** retained partner-specific branding, added restrained glass surfaces to the wizard shell, and replaced mouse-only facility card selection with native checkboxes. This is the invitation-only route and remains distinct from Self-Onboarding.
 - **Facility onboarding:** reviewed the public identity/onboarding journey; its progress, retry, verification, eligibility, and mobile states already follow the revised interaction pattern.
 - **Future guidance:** see [CX Portal UX Design Pattern](cx-portal-ux-design-pattern.md). Real National IDs are excluded from examples.
 

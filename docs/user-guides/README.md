@@ -6,17 +6,27 @@ This guide set explains the user workflows and operating handoffs across four co
 
 ```mermaid
 flowchart LR
-  A[Facility owner: self-onboarding] -->|verified facility, Network, package, Opt-In request| B[CRM]
-  B -->|signed Opt-In and commercial records| C[Finance Cockpit]
+  A[Facility owner: Self-Onboarding] -->|verified facility, Network, package, Terms acceptance, request| B[CRM]
+  I[Invited facility: Network Opt-In] -->|secure invitation link, quotation, agreement, signatures| B
+  B -->|commercial records| C[Finance Cockpit]
   C -->|invoice and payment status| D[Customer Experience portal]
-  B -->|membership and implementation status| D
+  B -->|request, membership, and implementation progress| D
 ```
 
-Facility and Network information travels with the Opt-In request so the same details do not need to be re-entered. CRM manages the Network relationship and Opt-In process; Finance records invoice and payment outcomes; Customer Experience shows the facility owner's permitted view of the journey. A selected token package is a commercial selection. It is not, by itself, a payment, a remaining-token balance, or proof that an HMIS site is live.
+Self-Onboarding and Network Opt-In are separate routes. Self-Onboarding is the
+primary public journey: it records acceptance of its Terms and submits a
+request, with no signature, signatory, witness, or contract-signing step.
+Network Opt-In is invitation-only; its secure email link opens the separate
+quotation, agreement, and signature process for a facility already added to a
+Network. CRM manages both route records and the Network relationship; Finance
+records invoice and payment outcomes; Customer Experience shows the facility
+owner's permitted journey status. A selected token package is a commercial
+selection. It is not, by itself, a payment, a remaining-token balance, or
+proof that an HMIS site is live.
 
 ## Open a guide
 
-1. [Facility self-onboarding and token selection](facility-self-onboarding.md) — identity verification, HFR facility selection, Network confirmation, token package choice, review, and submission.
+1. [Facility self-onboarding and token selection](facility-self-onboarding.md) — public identity verification, HFR facility selection, Network confirmation, token package choice, Terms acceptance, and request submission without signatures.
 2. [CRM](crm.md) — facility, Network, Opt-In, signature, and commercial handoffs for CRM staff.
 3. [Finance Cockpit](finance-cockpit.md) — receivables, invoices, payment allocation, and signed-facility accounting handoffs.
 4. [Customer Experience (CX Portal)](cx-portal.md) — facility owners' portfolio, single-facility view, bills, payment status, Go Live token alignment, and implementation status.
@@ -33,8 +43,8 @@ Facility and Network information travels with the Opt-In request so the same det
 
 | Audience | Start with |
 |---|---|
-| Facility owners | Facility self-onboarding, then Customer Experience |
-| CRM and onboarding staff | Facility self-onboarding and CRM |
+| Facility owners | Choose public Self-Onboarding or use the secure link for an invited Network Opt-In; then Customer Experience |
+| CRM and onboarding staff | Support Self-Onboarding requests and process the separate invitation-only Network Opt-In |
 | Accounts staff | Finance Cockpit |
 | Network and implementation support | CRM and Customer Experience |
 | Product and operations leads | Handoff overview, then the relevant workspace guide |
