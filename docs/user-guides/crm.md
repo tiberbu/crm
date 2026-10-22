@@ -4,6 +4,12 @@
 **Start in:** CRM\
 **Your outcome:** keep the Network and facility record accurate, complete the Opt-In and signature workflow, and hand eligible commercial work to Finance.
 
+> This guide's Opt-In, Contract, and signature instructions apply to the
+> separate invitation-only Network Opt-In route. Public Self-Onboarding is a
+> different workflow: the owner accepts the Self-Onboarding Terms and submits
+> a request, with no signatory, witness, or signature step. Do not place a
+> Self-Onboarding request into the Opt-In signature queue.
+
 ## A quick map of the work
 
 1. Confirm the Network and its Partner ID are ready for the facility.

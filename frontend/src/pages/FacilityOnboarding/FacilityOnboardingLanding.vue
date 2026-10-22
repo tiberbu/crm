@@ -59,15 +59,15 @@
             class="inline-flex items-center gap-1.5 rounded-full border border-[#f0d6d8] bg-[#fdf2f3] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#bc1823]"
           >
             <span class="size-1.5 rounded-full bg-[#bc1823]"></span>
-            {{ __('Start your facility journey') }}
+            {{ __('A simple way to get started') }}
           </span>
           <h1
             class="mt-4 max-w-2xl text-3xl font-semibold leading-tight tracking-tight text-ink-gray-9 sm:text-5xl lg:text-6xl"
           >
             {{
               networkName
-                ? `Onboard ${facilityName || 'your facility'} with ${networkName}.`
-                : __('Onboard your facility securely.')
+                ? __('Get {0} started with {1}.', [facilityName || __('your facility'), networkName])
+                : __('Get your facility started securely.')
             }}
           </h1>
           <p
@@ -75,7 +75,7 @@
           >
             {{
               __(
-                'Verify your identity, select your facilities and token package, accept the Terms, and get secure Customer Experience access.',
+                'Verify your details, choose the facilities and token package you need, review the terms and send your request. We’ll guide you through the next steps in Customer Experience.',
               )
             }}
           </p>
@@ -84,12 +84,20 @@
               class="inline-flex min-h-12 w-full sm:w-auto justify-center items-center gap-2 rounded-xl bg-[#bc1823] px-7 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d]"
               @click="stage = 'identity'"
             >
-              <span>{{ __('Start secure onboarding') }}</span>
+              <span>{{ __('Start your onboarding') }}</span>
               <span class="text-lg">→</span>
             </button>
           </div>
           <p class="mt-3 text-xs font-medium text-ink-gray-5">
-            {{ __('Usually 5–10 minutes · all displayed prices exclude VAT') }}
+            {{ __('Usually 5–10 minutes · prices and VAT are shown before you submit') }}
+          </p>
+          <p class="mt-3 text-xs text-ink-gray-6">
+            {{ __('Already invited to a Network Opt-In?') }}
+            <a
+              href="/opt-in"
+              class="font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
+            >{{ __('Continue with Opt-In') }}</a>
+            {{ __('using the secure link in your invitation email.') }}
           </p>
         </div>
         <aside
@@ -126,7 +134,7 @@
             <span>
               {{
                 __(
-                  'Your identity and facility details are checked through the registry. We do not reveal whether an ID exists until the verification step succeeds.',
+                  'We check your details securely and show matching facilities only after you verify the code sent to your registered contact.',
                 )
               }}
             </span>
@@ -150,12 +158,12 @@
             id="calculator-landing-title"
             class="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-ink-gray-9"
           >
-            {{ __('Find the right token package for your facility') }}
+            {{ __('Explore token packages for your facility') }}
           </h2>
           <p class="mt-2 text-xs sm:text-sm text-ink-gray-6 leading-relaxed">
             {{
               __(
-                'Estimate monthly token requirements based on your patient encounters and clinical services. Select your ideal plan and jump straight into onboarding.',
+                'Estimate how many tokens your facility may need each month. This optional guide can help you compare packages before you begin.',
               )
             }}
           </p>
@@ -182,13 +190,13 @@
         </span>
         <h2 id="hmis-about-title" class="mt-3 text-xl font-semibold text-ink-gray-9">
           {{
-            __('One connected path from verification to Customer Experience')
+            __('A clear path from your facility details to Customer Experience')
           }}
         </h2>
         <p class="mt-2.5 max-w-3xl text-sm leading-6 text-ink-gray-6">
           {{
             __(
-              'Tiberbu HMIS connects identity checks, facility selection, token package orders and Customer Experience access. This wizard is for facility owners and administrators.',
+              'Use this page to verify your details, choose facilities and token packages, and send your self-onboarding request. You can then follow your next steps in Customer Experience.',
             )
           }}
         </p>
@@ -331,12 +339,12 @@
             </div>
             <div>
               <h2 class="text-base sm:text-lg font-semibold text-ink-gray-9">
-                {{ __('Verify Facility Ownership') }}
+                {{ __('Verify your details') }}
               </h2>
               <p class="mt-1 text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-6">
                 {{
                   __(
-                    'Enter the ID used to register as the facility owner. We will check the registered contact first and look up facility details after you verify the code.',
+                    'Enter the identification linked to your facility record. We’ll send a one-time code to your registered contact before showing matching facilities.',
                   )
                 }}
               </p>
@@ -346,7 +354,7 @@
           <div class="mt-6 sm:mt-8 space-y-5 sm:space-y-6">
             <div>
               <label class="block text-xs font-semibold uppercase tracking-wider text-ink-gray-7">
-                {{ __('Identification type') }}
+                {{ __('Choose an identification type') }}
               </label>
               <div class="relative mt-2">
                 <select
@@ -391,7 +399,7 @@
                 : 'bg-[#bc1823] text-white hover:bg-[#a3141d]'
             "
           >
-            <span>{{ busy ? __('Checking…') : __('Find my facilities') }}</span>
+            <span>{{ busy ? __('Checking your details…') : __('Find my facilities') }}</span>
             <span v-if="!busy" class="text-base">→</span>
           </button>
           <div class="mt-4 sm:mt-5 flex items-center justify-center gap-2 text-center text-[11px] sm:text-xs text-ink-gray-7 font-medium leading-normal">
@@ -401,7 +409,7 @@
             <span>
               {{
                 __(
-                  'A one-time verification code will be sent to the contact registered against your ID.',
+                  'We’ll send a one-time code to the contact registered with your identification.',
                 )
               }}
             </span>
@@ -469,7 +477,7 @@
                 </svg>
               </div>
               <h2 class="text-base sm:text-lg font-semibold text-ink-gray-9">
-                {{ __('Enter Verification Code') }}
+              {{ __('Check your registered contact') }}
               </h2>
               <p class="mx-auto mt-1.5 sm:mt-2 max-w-md text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-6">
                 {{
@@ -479,7 +487,7 @@
                         delivery.masked_destination,
                       ])
                     : __(
-                        'If your details match our records, a 6-digit code was sent to the registered contact.',
+                        'If we can verify your details, a 6-digit code will be sent to your registered contact.',
                       )
                 }}
               </p>
@@ -599,7 +607,7 @@
               <p class="mt-1 text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-7">
                 {{
                   __(
-                    'Select all eligible facilities you want to add under the same Opt-In Network.',
+                    'Choose the eligible facilities you want to onboard. You can select more than one and choose a package for each.',
                   )
                 }}
               </p>
@@ -612,7 +620,7 @@
             >
               {{
                 __(
-                  'No eligible facilities were returned for this verified identity. Contact support if you think this is an error.',
+                  'We couldn’t find eligible facilities linked to your details. Check that you used the right identification, or contact support and we’ll help.',
                 )
               }}
             </p>
@@ -633,6 +641,7 @@
                   v-model="selectedFacilities"
                   type="checkbox"
                   :value="facility.facility_id"
+                  :aria-label="__('Select :facility', { facility: facility.facility_name || facility.mfl_code })"
                   :disabled="facility.onboarding_eligible !== true || facility.onboarding_blocked"
                   class="mt-0.5 sm:mt-1 size-5 shrink-0 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20 disabled:cursor-not-allowed disabled:opacity-40"
                 />
@@ -665,7 +674,7 @@
                     <svg class="size-4 shrink-0 text-rose-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
-                    {{ __('Already onboarded. This facility cannot be selected to proceed.') }}
+                    {{ __('This facility is already set up and can’t be added to a new request here.') }}
                   </span>
                   <span
                     v-else-if="facility.onboarding_eligible !== true"
@@ -677,10 +686,10 @@
                     {{
                       facility.facility_eligibility_reason === 'missing_level'
                         ? __(
-                            'Unavailable for token self-onboarding because HFR did not return a Facility Level.',
+                            'We couldn’t confirm this facility’s level in the registry, so it isn’t available for online onboarding.',
                           )
                         : __(
-                            'Unavailable for token self-onboarding because this Facility Level is not approved.',
+                            'This facility’s level isn’t currently eligible for online onboarding.',
                           )
                     }}
                   </span>
@@ -697,7 +706,7 @@
                 : 'bg-[#bc1823] text-white hover:bg-[#a3141d]'
             "
           >
-            <span>{{ __('Continue to pricing') }}</span>
+            <span>{{ __('Continue to packages') }}</span>
             <span class="text-base">→</span>
           </button>
         </form>
@@ -709,7 +718,7 @@
           <!-- Sizing Calculator Dialog -->
           <Dialog
             v-model:open="calculatorDialogOpen"
-            :title="__('CareVerse Token Sizing Calculator')"
+            :title="__('Token package sizing guide')"
             size="5xl"
           >
             <div class="p-1 sm:p-2 max-h-[85vh] sm:max-h-[80vh] overflow-y-auto">
@@ -783,7 +792,7 @@
                         v-else
                         class="text-[10px] text-amber-600 font-normal italic shrink-0"
                       >
-                        {{ __('Needs plan') }}
+                  {{ __('Choose a package') }}
                       </span>
                     </button>
                   </div>
@@ -818,7 +827,7 @@
                     @click="calculatorDialogOpen = true"
                   >
                     <span>🧮</span>
-                    <span>{{ __('Open Sizing Calculator') }}</span>
+                    <span>{{ __('Open the sizing guide') }}</span>
                     <span>→</span>
                   </button>
                 </div>
@@ -827,16 +836,16 @@
               <!-- Micro Info & Referral Line -->
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 text-[11px] text-ink-gray-5 pt-0.5">
                 <p>
-                  {{ __('Choose the monthly token package for this facility. Displayed prices exclude 16% VAT.') }}
+                  {{ __('Choose a monthly token package for this facility. Package prices, VAT and totals are shown before you continue.') }}
                 </p>
                 <details class="group relative self-start sm:self-auto">
                   <summary class="cursor-pointer font-medium text-ink-gray-6 hover:text-ink-gray-9 transition select-none flex items-center gap-1">
                     <span v-if="partnerId" class="text-[#bc1823] font-mono font-bold">Network ID: {{ partnerId }}</span>
-                    <span v-else class="underline underline-offset-2">{{ __('Referred by a partner?') }}</span>
+                    <span v-else class="underline underline-offset-2">{{ __('Were you referred by a Network?') }}</span>
                   </summary>
                   <div class="absolute right-0 top-5 z-20 w-[calc(100vw-3rem)] max-w-xs sm:w-72 rounded-xl border border-outline-gray-2 bg-white p-3 shadow-xl text-left">
                     <label class="block text-[11px] font-bold uppercase tracking-wider text-ink-gray-7 mb-1">
-                      {{ __('Partner Network ID (6 digits)') }}
+                      {{ __('Network ID (6 digits)') }}
                     </label>
                     <input
                       :value="partnerId"
@@ -845,19 +854,19 @@
                       maxlength="6"
                       pattern="[0-9]{6}"
                       :aria-invalid="Boolean(partnerId && partnerId.length !== 6)"
-                      :title="__('Enter all six digits or leave this field blank.')"
+                      :title="__('Enter the six-digit ID shared by your Network contact, or leave it blank if you do not have one.')"
                       placeholder="123456"
                       class="block w-full rounded-lg border border-outline-gray-3 bg-white px-2.5 py-1.5 font-mono text-base sm:text-xs shadow-xs focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
                       @input="onPartnerIdInput"
                     />
                     <p class="mt-1 text-[10px] text-ink-gray-5">
-                      {{ __('Links to partner network. Leave blank to use Tiberbu’s default.') }}
+                      {{ __('We’ll use the default Network if one is available.') }}
                     </p>
                     <span
                       v-if="partnerId && partnerId.length !== 6"
                       class="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700"
                     >
-                      ⚠️ {{ __('Must be exactly 6 digits.') }}
+                      ⚠️ {{ __('Enter all six digits, or clear the field to leave it blank.') }}
                     </span>
                   </div>
                 </details>
@@ -921,7 +930,7 @@
               role="status"
               data-testid="catalog-partner-incomplete"
             >
-              {{ __('Enter all six digits to load this Network’s packages, or clear the field to use the configured default.') }}
+              {{ __('Enter all six digits to see this Network’s packages, or leave the field blank to use the default Network if available.') }}
             </div>
 
             <!-- Empty Catalog State -->
@@ -931,7 +940,7 @@
               role="status"
               data-testid="catalog-empty"
             >
-              <p class="font-medium">{{ __('No token packages are available right now.') }}</p>
+              <p class="font-medium">{{ __('There are no token packages available for this facility right now. Please try again later or contact support.') }}</p>
               <button
                 type="button"
                 class="mt-3 inline-flex items-center gap-1.5 font-bold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
@@ -1047,7 +1056,7 @@
                       @click.stop="selectPackageForActiveFacility(item.item_code)"
                     >
                       <span v-if="isPackageSelected(item.item_code)">✓</span>
-                      <span>{{ isPackageSelected(item.item_code) ? __('Plan Selected') : __('Choose plan') }}</span>
+                      <span>{{ isPackageSelected(item.item_code) ? __('Package selected') : __('Choose package') }}</span>
                     </button>
                   </div>
                 </article>
@@ -1074,13 +1083,13 @@
               >
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3 mb-3">
                   <div class="flex items-center gap-2">
-                    <span class="text-xs sm:text-sm font-semibold text-ink-gray-9">{{ __('Facility Package Allocation') }}</span>
+                    <span class="text-xs sm:text-sm font-semibold text-ink-gray-9">{{ __('Packages for your facilities') }}</span>
                     <span class="rounded-full bg-surface-gray-2 px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-ink-gray-7">
                       {{ chosenFacilities.length }} {{ __('facilities') }}
                     </span>
                   </div>
                   <span class="text-[11px] sm:text-xs text-ink-gray-5">
-                    {{ __('Click any row to switch active facility') }}
+                    {{ __('Choose a facility to view its package') }}
                   </span>
                 </div>
 
@@ -1089,7 +1098,7 @@
                     <thead>
                       <tr class="border-b border-outline-gray-2 text-[11px] font-semibold uppercase tracking-wider text-ink-gray-5">
                         <th class="py-2.5 pr-4">{{ __('Facility') }}</th>
-                        <th class="py-2.5 px-4">{{ __('Selected Plan') }}</th>
+                        <th class="py-2.5 px-4">{{ __('Package') }}</th>
                         <th class="py-2.5 px-4 text-center">{{ __('Tokens') }}</th>
                         <th class="py-2.5 pl-4 text-right">{{ __('Monthly Cost (excl. VAT)') }}</th>
                       </tr>
@@ -1130,7 +1139,7 @@
                           >
                             {{ selectedPackageFor(facility.facility_id)?.display_name }}
                           </span>
-                          <span v-else class="text-amber-600 italic">{{ __('Needs package') }}</span>
+                          <span v-else class="text-amber-600 italic">{{ __('Choose a package') }}</span>
                         </td>
                         <td class="py-2.5 px-4 text-center">
                           <span v-if="selectedPackageFor(facility.facility_id)" class="font-semibold text-ink-gray-9">
@@ -1152,7 +1161,7 @@
                     <tfoot v-if="totals" class="border-t-2 border-outline-gray-2 font-semibold text-ink-gray-9">
                       <tr>
                         <td colspan="2" class="py-2.5 pr-4 text-xs font-bold uppercase tracking-wider text-ink-gray-6">
-                          {{ __('Combined Monthly Commitment') }}
+                          {{ __('Combined monthly total') }}
                         </td>
                         <td class="py-2.5 px-4 text-center">
                           🪙 {{ chosenFacilities.reduce((sum, f) => sum + (selectedPackageFor(f.facility_id)?.token_quantity || 0), 0).toLocaleString() }}
@@ -1184,7 +1193,7 @@
                 ? __('Loading token packages…')
                 : termsBusy
                   ? __('Loading Terms…')
-                  : __('Continue to submission review')
+                  : __('Review your choices')
             }}</span>
             <span class="text-base">→</span>
           </button>
@@ -1215,7 +1224,7 @@
                 <p class="mt-0.5 text-xs text-ink-gray-5">
                   {{
                     __(
-                      'Confirm the facilities, account contact, Network and package before submitting.',
+                      'Review your facilities, Network and packages. Then accept the terms and send your request.',
                     )
                   }}
                 </p>
@@ -1308,7 +1317,7 @@
             >
               <p>
                 {{
-                  __('We could not resolve a Network from the configured default. Enter the referring partner’s Network ID to continue.')
+                  __('We couldn’t find a Network for this request. Check the Network ID or contact support and we’ll help you continue.')
                 }}
               </p>
               <button
@@ -1316,7 +1325,7 @@
                 class="mt-2 font-bold underline underline-offset-4 text-amber-950"
                 @click="stage = 'pricing'"
               >
-                {{ __('Edit Partner Network ID') }}
+                {{ __('Review Network ID') }}
               </button>
             </div>
 
@@ -1352,12 +1361,15 @@
                   {{ __('I have read and accept these Terms and Conditions.') }}
                 </span>
               </label>
+              <p class="mt-3 text-xs leading-5 text-ink-gray-6">
+                {{ __('This self-onboarding request has no signing step. You can submit after reviewing and accepting the terms.') }}
+              </p>
               <p
                 v-if="!accountEmail"
                 class="mt-3 rounded-xl bg-amber-100/70 p-3 text-xs leading-5 text-amber-900"
                 role="alert"
               >
-                {{ __('No email is available on your verified registry profile for Customer Experience access. Contact support to continue.') }}
+                {{ __('We couldn’t find an email address on your verified profile for Customer Experience access. Please contact support and we’ll help you continue.') }}
               </p>
             </section>
 
@@ -1397,7 +1409,7 @@
             "
           >
             <span>{{
-              busy ? __('Submitting…') : __('Submit facility onboarding')
+              busy ? __('Sending your request…') : __('Submit your request')
             }}</span>
             <span v-if="!busy" class="text-base">→</span>
           </button>
@@ -1407,7 +1419,7 @@
             class="min-h-11 w-full text-sm font-semibold text-ink-gray-6 hover:text-ink-gray-9 transition"
             @click="goBack"
           >
-            {{ __('Back to package') }}
+            {{ __('Back to packages') }}
           </button>
         </form>
         <section
@@ -1420,16 +1432,16 @@
             ✓
           </div>
           <h2 class="text-xl sm:text-3xl font-semibold text-ink-gray-9 tracking-tight">
-            {{ __('Your onboarding has started') }}
+            {{ __('Your request has been submitted') }}
           </h2>
           <p class="mx-auto mt-2.5 sm:mt-3 max-w-xl text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-6">
             {{
               portalStatus === 'linked' || existingIdentityDetected
                 ? __(
-                    'An enrollment already exists for this verified identity. Your selected facilities have been added to your existing Customer Experience account. Sign in with your existing credentials to view them.',
+                    'Your selected facilities are linked to your existing Customer Experience account. Sign in with your usual details to review your quote and next steps.',
                   )
                 : __(
-                    'We created your customer account and linked the selected facilities to the Network. Check this email for password setup instructions, then sign in to your portal to view your facilities.',
+                    'Your Customer Experience account is ready, and your selected facilities are linked to the Network. Check your email for password setup instructions, then sign in to review your quote and next steps.',
                   )
             }}
           </p>
@@ -1440,8 +1452,8 @@
           >
             <span class="text-blue-600 font-bold shrink-0 text-sm sm:text-base leading-none">ℹ</span>
             <div class="leading-normal">
-              <span class="font-semibold">{{ __('Existing Identity Linked') }}:</span>
-              {{ __('Your facilities were linked to your existing Customer Experience account. Duplicate identity creation was skipped.') }}
+              <span class="font-semibold">{{ __('You’re all set') }}:</span>
+              {{ __('Your selected facilities have been added to your existing Customer Experience account.') }}
             </div>
           </div>
           <p
@@ -1790,31 +1802,31 @@ const stageTitle = computed(
       identity: __('Verify your identity'),
       otp: __('Confirm your contact'),
       facilities: __('Choose facilities'),
-      pricing: __('Choose your package'),
+      pricing: __('Choose packages'),
       review: __('Review and submit'),
       success: __('All set'),
     })[stage.value],
 )
 const journey = [
   {
-    title: __('Verify ownership'),
-    description: __('Find your registered profile and facilities securely.'),
+    title: __('Verify your details'),
+    description: __('We’ll check your details before showing matching facilities.'),
   },
   {
-    title: __('Choose a package'),
+    title: __('Choose your packages'),
     description: __(
-      'See facility-friendly token coverage and prices excluding VAT.',
+      'Compare the token packages available for each facility and review prices, VAT and totals.',
     ),
   },
   {
-    title: __('Accept Terms'),
+    title: __('Review and submit'),
     description: __(
-      'Confirm your facilities, accept the Terms, and submit your token package order.',
+      'Check your choices, accept the terms and send your request. No signing step is needed.',
     ),
   },
   {
-    title: __('Track progress'),
-    description: __('Track your progress in the portal through launch.'),
+    title: __('Follow your next steps'),
+    description: __('Sign in to Customer Experience to review your quote and follow the next action.'),
   },
 ]
 const progressSteps = computed(() =>
@@ -1834,10 +1846,10 @@ const progressSteps = computed(() =>
   }),
 )
 const stepSubtitles = computed(() => ({
-  identity: __('Verify owner'),
-  facilities: __('Select clinics'),
-  pricing: __('Choose plan'),
-  review: __('Terms & submit'),
+  identity: __('Verify your details'),
+  facilities: __('Choose facilities'),
+  pricing: __('Choose packages'),
+  review: __('Review and submit'),
 }))
 
 function money(value, currency = 'KES') {
@@ -2086,7 +2098,7 @@ async function loadCatalog(force = false) {
     catalog.value = { network: null, packages: [] }
     loadedCatalogPartnerId = null
     catalogError.value =
-      error?.messages?.[0] || __('That Network ID is not available.')
+      error?.messages?.[0] || __('We couldn’t find that Network. Check the six-digit ID or ask your Network contact for help.')
     return false
   } finally {
     if (requestId === catalogRequestId) catalogBusy.value = false
@@ -2195,7 +2207,7 @@ function conflictMessage(result) {
       )
       .map((facility) => facility.facility_name || facility.mfl_code)
     const selectedNames = names.length ? `: ${names.join(', ')}` : ''
-    return `${__('One or more selected facilities are already linked to this Network')}${selectedNames}. ${__('Remove them from your selection and try again.')}`
+    return `${__('One or more selected facilities already have a request with this Network')}${selectedNames}. ${__('Review your facility choices and try again.')}`
   }
   return ''
 }

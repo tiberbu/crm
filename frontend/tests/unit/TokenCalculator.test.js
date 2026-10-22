@@ -55,7 +55,7 @@ describe('TokenCalculator.vue', () => {
     expect(el.querySelector('[data-testid="token-calculator"]')).toBeTruthy()
     expect(el.textContent).toContain('St. Mary Dispensary')
     expect(el.textContent).toContain('Interactive Token Sizing Calculator')
-    expect(el.textContent).toContain('Projected Monthly Demand')
+    expect(el.textContent).toContain('Estimated monthly token needs')
     expect(el.querySelector('[data-testid="recommended-package-card"]')).toBeTruthy()
   })
 
@@ -72,9 +72,9 @@ describe('TokenCalculator.vue', () => {
     // Solo preset has 5 pts/day, OPD, avg bill 1500, 24 days
     // 5 * 24 = 120 encounters
     expect(el.textContent).toContain('~120 encounters')
-    // Recommendation for solo should be Starter
+    // Recommend the smallest configured package that covers the estimate.
     expect(el.querySelector('[data-testid="recommended-package-card"]').textContent).toContain(
-      'Starter',
+      'Growth',
     )
   })
 
@@ -88,10 +88,10 @@ describe('TokenCalculator.vue', () => {
 
     // 10 pts/day, 24 days = 240 encounters
     expect(el.textContent).toContain('~240 encounters')
-    // Should recommend Growth (2500 tokens)
+    // The estimate exceeds Growth capacity, so it recommends Scale.
     const recCard = el.querySelector('[data-testid="recommended-package-card"]')
-    expect(recCard.textContent).toContain('Growth')
-    expect(recCard.textContent).toContain('2,500 Tokens')
+    expect(recCard.textContent).toContain('Scale')
+    expect(recCard.textContent).toContain('5,000 Tokens')
   })
 
   it('recommends Scale package for hospital preset', async () => {
@@ -186,22 +186,11 @@ describe('TokenCalculator.vue', () => {
     expect(toggleBtn.textContent).toContain('Customize')
   })
 
-  it('uses standard fallback packages when packages prop is empty', async () => {
+  it('does not invent a package or price when no configured packages are available', async () => {
     const el = mountCalculator({ packages: [] })
     const recCard = el.querySelector('[data-testid="recommended-package-card"]')
-    expect(recCard).toBeTruthy()
-    expect(recCard.textContent).toContain('Scale')
-    expect(recCard.textContent).toContain('5,000 Tokens')
-
-    // Clicking solo preset switches recommendation to Starter
-    const soloBtn = Array.from(el.querySelectorAll('button')).find((b) =>
-      b.textContent.includes('Solo Practice / Clinic'),
-    )
-    soloBtn.click()
-    await nextTick()
-
-    expect(recCard.textContent).toContain('Starter')
-    expect(recCard.textContent).toContain('1,000 Tokens')
+    expect(recCard).toBeNull()
+    expect(el.textContent).not.toContain('KES 25,400')
   })
 })
 

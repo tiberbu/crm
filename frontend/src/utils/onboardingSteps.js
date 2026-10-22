@@ -2,10 +2,10 @@
 // here are display values only; the server re-resolves package, price and VAT.
 
 export const STEPS = [
-  { key: 'identity', label: 'Identity', stages: ['identity', 'otp'] },
+  { key: 'identity', label: 'Details', stages: ['identity', 'otp'] },
   { key: 'facilities', label: 'Facilities', stages: ['facilities'] },
-  { key: 'pricing', label: 'Package', stages: ['pricing'] },
-  { key: 'review', label: 'Submit', stages: ['review'] },
+  { key: 'pricing', label: 'Packages', stages: ['pricing'] },
+  { key: 'review', label: 'Review', stages: ['review'] },
 ]
 
 const PREVIOUS = {

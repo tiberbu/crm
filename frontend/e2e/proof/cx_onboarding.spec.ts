@@ -61,6 +61,7 @@ const FACILITIES = [
     facility_name: 'Alpha Community Clinic',
     classification: 'Level 3',
     facility_type: 'Dispensary',
+    onboarding_eligible: true,
   },
   {
     facility_id: 'FID-2',
@@ -68,6 +69,7 @@ const FACILITIES = [
     facility_name: 'Bravo Family Hospital With A Deliberately Long Name',
     classification: 'Level 4',
     facility_type: 'Hospital',
+    onboarding_eligible: true,
   },
 ]
 
@@ -92,6 +94,7 @@ test.beforeAll(async () => {
     const url = new URL(req.url || '/', 'http://local')
     const entries: Record<string, string> = {
       '/facility-onboarding': 'facility-onboarding.html',
+      '/opt-in': 'opt-in.html',
       '/cx-portal': 'cx-portal.html',
     }
     let file = ''
@@ -179,6 +182,7 @@ function mockOnboarding(page: Page, resendAfter = 60) {
               success: true,
               data: {
                 identity: { full_name: 'Amina Otieno' },
+                account_email: 'amina@example.com',
                 facilities: FACILITIES,
               },
             })
@@ -235,6 +239,86 @@ function mockOnboarding(page: Page, resendAfter = 60) {
     .then(() => seen)
 }
 
+test('public self-onboarding and network Opt-In remain separate routes', async ({
+  page,
+}) => {
+  await mockOnboarding(page)
+  const invitationToken = 'proof-signed-invitation'
+  const settingsInvitationTokens: string[] = []
+  const verificationInvitationTokens: string[] = []
+  await page.route(
+    '**/api/method/crm.api.optin.get_settings',
+    async (route) => {
+      settingsInvitationTokens.push(
+        route.request().postDataJSON?.()?.deal_invitation || '',
+      )
+      return ok(route, {
+        network_config: {
+          display_name: 'Example Health Network',
+          primary_colour: '#bc1823',
+        },
+        price_plans: [],
+        optional_services: [],
+        deal_invitation: {
+          contact: {
+            first_name: 'Amina',
+            last_name: 'Otieno',
+            email: 'amina@example.com',
+          },
+          facility_count: 1,
+        },
+      })
+    },
+  )
+  await page.route(
+    '**/api/method/crm.api.optin.verify_prequalified',
+    async (route) => {
+      verificationInvitationTokens.push(
+        route.request().postDataJSON?.()?.deal_invitation || '',
+      )
+      return ok(route, { matched: true, rate_limited: false })
+    },
+  )
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto(`${origin}/facility-onboarding`)
+    await expect(
+      page.getByRole('heading', { name: 'Get your facility started securely.' }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Start your onboarding' }),
+    ).toBeVisible()
+    await expectNoOverflow(page)
+
+    await page.goto(
+      `${origin}/opt-in?network=net-a&deal_invitation=${invitationToken}`,
+    )
+    await expect(
+      page.getByRole('heading', { name: 'Example Health Network' }),
+    ).toBeVisible()
+    await expect(
+      page.getByText(/facilities added to this network/),
+    ).toBeVisible()
+    await page.getByRole('button', { name: 'Continue with Opt-In' }).click()
+    await expect(page.getByPlaceholder('jane.doe@hospital.or.ke')).toBeVisible()
+    await page
+      .getByPlaceholder('jane.doe@hospital.or.ke')
+      .fill('amina@example.com')
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Verify your identity' }),
+    ).toBeVisible()
+    await expectNoOverflow(page)
+  }
+
+  expect(settingsInvitationTokens).toEqual([invitationToken, invitationToken])
+  expect(verificationInvitationTokens).toEqual([invitationToken, invitationToken])
+})
+
 async function typeCode(page: Page, code: string) {
   await page.getByLabel(/Verification code: 1 \/ 6/).focus()
   await page.keyboard.type(code)
@@ -257,7 +341,7 @@ for (const vp of VIEWPORTS) {
       await shot(page, `${vp.name}-onboarding-1-welcome`)
 
       await page
-        .getByRole('button', { name: /Start secure onboarding/ })
+        .getByRole('button', { name: 'Start your onboarding' })
         .click()
       await page.getByPlaceholder('Enter your ID number').fill('12345678')
       await shot(page, `${vp.name}-onboarding-2-identity`)
@@ -265,7 +349,7 @@ for (const vp of VIEWPORTS) {
 
       // Delivery status is privacy-safe and does not reveal whether an ID matched.
       await expect(
-        page.getByText(/If your details match our records/),
+        page.getByText(/A 6-digit code was sent by email to/),
       ).toBeVisible()
       await expect(page.getByText(/expires in 10 minutes/)).toBeVisible()
       await expect(
@@ -288,17 +372,47 @@ for (const vp of VIEWPORTS) {
       await expect(
         page.getByText('Bravo Family Hospital With A Deliberately Long Name'),
       ).toBeVisible()
-      await page.getByText('Alpha Community Clinic').click()
+      // Checkboxes inherit the full facility-card label; scope each control to
+      // its card instead of relying on an exact accessible-name translation.
       await page
-        .getByText('Bravo Family Hospital With A Deliberately Long Name')
-        .click()
+        .locator('label')
+        .filter({ hasText: 'Alpha Community Clinic' })
+        .locator('input[type="checkbox"]')
+        .check()
+      await page
+        .locator('label')
+        .filter({ hasText: 'Bravo Family Hospital With A Deliberately Long Name' })
+        .locator('input[type="checkbox"]')
+        .check()
       await shot(page, `${vp.name}-onboarding-5-facilities`)
-      await page.getByRole('button', { name: 'Continue to pricing' }).click()
+      await page.getByRole('button', { name: 'Continue to packages' }).click()
 
-      await expect(page.getByText('Choose your token package')).toBeVisible()
+      await expect(
+        page.getByRole('heading', { name: 'Choose packages' }),
+      ).toBeVisible()
+      await page
+        .getByRole('tab', { name: /Alpha Community Clinic Choose a package/ })
+        .click()
+      await page
+        .getByRole('article')
+        .filter({ has: page.getByRole('heading', { name: 'Core care operations' }) })
+        .getByRole('button', { name: 'Choose package' })
+        .click()
+      await page
+        .getByRole('tab', {
+          name: /Bravo Family Hospital With A Deliberately Long Name Choose a package/,
+        })
+        .click()
+      await page
+        .getByRole('article')
+        .filter({ has: page.getByRole('heading', { name: 'Core care operations' }) })
+        .getByRole('button', { name: 'Choose package' })
+        .click()
       await expect(page.getByText(/Total\s+\S*\s*34,800/).first()).toBeVisible()
       await shot(page, `${vp.name}-onboarding-6-packages`)
-      await page.getByRole('button', { name: 'Confirm your data' }).click()
+      await page
+        .getByRole('button', { name: 'Review your choices' })
+        .click()
 
       // Review shows server-supplied totals for two facilities and offers Edit/Back.
       await expect(page.getByText('Total incl. VAT')).toBeVisible()
@@ -307,26 +421,30 @@ for (const vp of VIEWPORTS) {
         /invoice|payment|pay now/i,
       )
       await expect(
-        page.getByRole('button', { name: 'Submit facility onboarding' }),
+        page.getByRole('button', { name: 'Submit your request' }),
       ).toBeDisabled()
-      await page.getByPlaceholder('you@example.com').fill('sam@example.com')
-      await page.getByPlaceholder('000000').fill('123456')
-      await page.getByRole('checkbox').check()
+      await page.getByTestId('terms-acceptance').check()
       await expect(
-        page.getByRole('button', { name: 'Submit facility onboarding' }),
+        page.getByRole('button', { name: 'Submit your request' }),
       ).toBeEnabled()
+      await expect(page.locator('body')).toContainText(
+        'This self-onboarding request has no signing step.',
+      )
       await shot(page, `${vp.name}-onboarding-7-review`)
 
-      await page.getByRole('button', { name: 'Back to package' }).click()
-      await expect(page.getByText('Choose your token package')).toBeVisible()
-      await page.getByRole('button', { name: 'Confirm your data' }).click()
-      await expect(page.getByText('Terms and Conditions').first()).toBeVisible()
-      await page.getByPlaceholder('you@example.com').fill('sam@example.com')
-      await page.getByRole('checkbox').check()
+      await page.getByRole('button', { name: 'Back to packages' }).click()
+      await expect(
+        page.getByRole('heading', { name: 'Choose packages' }),
+      ).toBeVisible()
       await page
-        .getByRole('button', { name: 'Submit facility onboarding' })
+        .getByRole('button', { name: 'Review your choices' })
         .click()
-      await expect(page.getByText('Your onboarding has started')).toBeVisible()
+      await expect(page.getByText('Self-Onboarding Terms').first()).toBeVisible()
+      await page.getByTestId('terms-acceptance').check()
+      await page
+        .getByRole('button', { name: 'Submit your request' })
+        .click()
+      await expect(page.getByText('Your request has been submitted')).toBeVisible()
       await expect(page.getByText(/password setup instructions/i)).toBeVisible()
       await expect(page.locator('body')).not.toContainText(
         /invoice|payment|pay now/i,
@@ -341,7 +459,7 @@ for (const vp of VIEWPORTS) {
       const calls = await mockOnboarding(page, 0)
       await page.goto(`${origin}/facility-onboarding`)
       await page
-        .getByRole('button', { name: /Start secure onboarding/ })
+        .getByRole('button', { name: 'Start your onboarding' })
         .click()
       await page.getByPlaceholder('Enter your ID number').fill('12345678')
       await page.getByRole('button', { name: 'Find my facilities' }).click()
@@ -365,7 +483,7 @@ for (const vp of VIEWPORTS) {
       ).toBeEnabled()
       await page.getByRole('button', { name: 'Resend code' }).click()
       await expect(
-        page.getByText(/If your details match our records/),
+        page.getByText(/A 6-digit code was sent by text message to/),
       ).toBeVisible()
       expect(calls).toContain('resend_otp')
       await shot(page, `${vp.name}-onboarding-9-resend-sms`)
@@ -431,7 +549,7 @@ function selfOnboardedPortalState() {
       steps: [
         { key: 'identity', label: 'Identity verified', status: 'complete' },
         { key: 'facility', label: 'Facilities confirmed', status: 'complete' },
-        { key: 'optin', label: 'Opt-In submitted', status: 'complete' },
+        { key: 'self_onboarding', label: 'Self-Onboarding request submitted', status: 'complete' },
         { key: 'package', label: 'Token package selected', status: 'complete' },
         { key: 'order', label: 'Quote and order ready', status: 'complete' },
         { key: 'payment', label: 'Payment', status: 'current' },
@@ -630,7 +748,7 @@ for (const vp of VIEWPORTS) {
       for (const milestone of [
         'Identity verified',
         'Facilities confirmed',
-        'Opt-In submitted',
+        'Self-Onboarding request submitted',
         'Token package selected',
         'Quote and order ready',
         'Payment',

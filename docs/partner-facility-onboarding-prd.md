@@ -8,28 +8,29 @@
 > The Partner ID is a public identifier owned by `CRM Opt-In Network`; it is
 > not a Partner Portal account or authorization token.
 
-**Status:** Draft for product, UX, CRM, Careverse HQ, and Customer Experience handoff
+**Status:** Workflow decision updated; remaining delivery details are historical proposal
 **Version:** 0.1
-**Date:** 2026-10-08
+**Date:** 2026-10-22
 **System boundary:** `crm` + `careverse_hq` + public facility onboarding + Customer Experience
 
 ## 1. Product decision
 
-Build a facility self-onboarding journey and one authenticated Customer
-Experience surface that share the CRM design language and end in one canonical
-commercial transaction: the existing Opt-In flow.
+Customer Experience supports two separate facility journeys. Self-Onboarding
+is the primary public route and requires no invitation. Network Opt-In is an
+invitation-only route for a facility that has already been added to a Network.
+The homepage gives Self-Onboarding the primary action and keeps an Opt-In link
+as a secondary way to find the invitation journey.
 
-There are two supported entry contexts:
+**Self-Onboarding has no signatures.** The owner verifies identity and contact,
+chooses eligible facilities and token packages, reviews the quote and Terms,
+accepts the Terms, and submits a request. There are no signatory or witness
+fields, contract-signing actions, or signature progress in this route. Terms
+acceptance is not a signature.
 
-1. An admin sends a facility owner an invitation or a link with a
-   preconfigured Network context.
-2. A facility owner reads the public onboarding guide, starts the wizard,
-   verifies their identity and HFR ownership, and enters the six-digit Partner
-   ID belonging to the intended Opt-In Network.
-
-The routes must converge before pricing and Opt-In. The facility is not added
-to a Network by a free-form public write, and the portal does not create a
-second quote, contract, or membership engine.
+The secure Network email link is the preferred entry to Network Opt-In because
+it carries invitation context. That separate journey retains its quotation,
+agreement, signatory, witness, and signature steps. The routes do not converge
+into a single wizard.
 
 ## 2. Problem and outcomes
 
@@ -44,7 +45,7 @@ Today, the pieces exist in separate products:
 - The current public Careverse account path provisions a facility-facing user,
   but it is not yet the requested minimalist, read-only journey portal.
 
-Success means:
+Self-Onboarding succeeds when:
 
 - A facility owner can understand the process without support intervention.
 - A verified owner can select only facilities returned by HFR for their
@@ -52,17 +53,20 @@ Success means:
 - A six-digit Partner ID resolves to exactly one enabled Opt-In Network.
 - Every facility request has an auditable Network, HFR identity,
   correlation ID, and onboarding status.
-- The facility reaches the existing Opt-In pricing, terms, signature, and
-  asynchronous submission flow without re-entering known information.
-- The facility can later view read-only onboarding and implementation progress,
-  receive email updates, and use a bounded chat capability.
+- The owner can review configured packages, VAT, totals, and Terms before
+  submitting without a signing step.
+- The owner can later use Customer Experience to review the available quote
+  and next action for each facility.
+
+Network Opt-In succeeds when an eligible invited facility can review its
+quotation and agreement and complete the existing signatory and signature
+process independently of Self-Onboarding.
 
 ## 3. Non-negotiable invariants
 
-1. **Opt-In is the terminal action.** All successful facility onboarding paths
-   terminate in the canonical CRM Opt-In submission. A case
-   can be pending, rejected, or abandoned before Opt-In, but there is no
-   alternate completion state.
+1. **The routes stay distinct.** A public Self-Onboarding request does not
+   become a Network Opt-In or enter its signing flow. Network Opt-In requires
+   Network eligibility and an invitation.
 2. **HFR is authoritative for ownership eligibility.** The public UI may only
    select facilities returned by the Careverse HFR ownership check for the
    verified identity.
@@ -85,7 +89,7 @@ Success means:
 | Actor | Needs | Can do | Cannot do |
 |---|---|---|---|
 | CRM Sales/Manager | Configure Networks, invitations, pricing, and review queues | Create a Network; accept or provide its six-digit Partner ID; invite facility owners; review exceptions; manage pricing | Bypass audit or silently alter a submitted Opt-In |
-| Facility owner | Join the correct Network with confidence | Read guide; verify identity/ownership; enter Partner ID; complete Opt-In; read progress; chat | Choose a facility they do not own, alter HFR facts, or access another facility |
+| Facility owner | Choose the right route and understand each next step | Verify identity/ownership; choose facilities/packages; accept Self-Onboarding Terms and submit, or use an eligible Network invitation; read progress | Choose a facility they do not own, alter HFR facts, or access another facility |
 | Support/Implementation | Resolve exceptions and help the customer | Read case timeline; respond in chat; retry safe steps | Impersonate a facility owner or disclose internal notes |
 
 ## 5. Canonical customer journey
@@ -93,53 +97,44 @@ Success means:
 ### 5.1 Facility self-onboarding
 
 ```text
-Public guide
-  → identity details
-  → Client Registry identity verification
-  → HFR ownership verification
-  → select eligible facility/facilities
-  → Partner ID lookup
-  → confirm Network
-  → contact confirmation and OTP
-  → facility onboarding case / CRM invitation
-  → existing Opt-In wizard
-  → five-year pricing + terms + signature
-  → async submission
-  → Network membership + Network menu visibility
-  → email + read-only Customer Experience progress
+Public home: primary “Start Self-Onboarding” action
+  → identity details and registered-contact OTP
+  → eligible facilities returned for the verified identity
+  → Network selection and configured token package(s)
+  → review prices, VAT, totals, and Terms
+  → accept Terms and submit request (no signature step)
+  → Customer Experience quote and next action when available
 ```
 
-The current Careverse implementation maps to:
+The current CRM implementation maps to:
 
-- `careverse_hq.api.public_facility_login_onboarding.verify_onboarding_identity`
-  — identity lookup through the Client Registry/HIE.
-- `verify_onboarding_ownership` — HFR owner lookup via
-  `facility_admin_registration._check_hfr_facility_ownership`.
-- `send_onboarding_otp` and `verify_public_onboarding_otp` — contact proof.
-- `submit_public_onboarding` — idempotent queued facility onboarding and user
-  provisioning path.
+- `crm.api.facility_onboarding.start_identity`, `verify_otp`, and facility
+  lookup — identity, contact, and registry checks.
+- `get_catalog` — configured Network and package catalogue.
+- `get_self_onboarding_terms` and `submit_onboarding` — Terms snapshot,
+  acceptance, and request submission.
+- Submission creates facility/customer enrollment records and an initial quote
+  when the required commercial configuration is available.
 
-The Network Partner ID binding and CRM Opt-In handoff are the missing product
-steps. The public UI should preserve the existing independently auditable stage
-model rather than collapsing it into one opaque request.
+The current public route submits a Self-Onboarding request directly after the
+owner accepts the Terms. It does not hand off to Network Opt-In. The invitation
+route remains a separate CRM Opt-In journey.
 
-### 5.2 Admin-issued invitation
+### 5.2 Invitation-only Network Opt-In
 
 ```text
-CRM admin Network configuration
-  → select Network and its Partner ID
-  → create/send invitation for facility owner
-  → secure expiring link / email
-  → facility owner completes identity + HFR verification
-  → invitation-bound Network is confirmed
-  → existing Opt-In wizard
-  → Network membership + Customer Experience access
+Facility is added to a Network and invited
+  → secure Opt-In link in the invitation email
+  → verify invitation/contact eligibility
+  → review Network quotation and agreement
+  → provide requested signatory/witness details
+  → complete applicable signature steps
+  → Opt-In progress in Customer Experience
 ```
 
-The invitation may preconfigure the Network and Partner ID, but the server
-must resolve and revalidate both. A facility owner must not be able to edit an
-invitation into a different Network without restarting through the public
-Partner ID route.
+The Opt-In entry on the website helps invited facilities find the journey. The
+server must still confirm eligibility for that Network. The invitation email
+link remains the preferred route and preserves its secure context.
 
 ## 6. Functional requirements
 
@@ -185,19 +180,17 @@ Required behavior:
 - The facility owner can report an incorrect Partner ID; this creates an
   exception, not a membership.
 
-### FR-4 — Opt-In handoff
+### FR-4 — Keep invitation-only Network Opt-In separate
 
-- The facility onboarding case passes verified identity, selected facility,
-  Network, contact, and source metadata into the existing Opt-In
-  wizard.
-- The wizard uses the Network’s configured Year 1–Year 5 price lists and the
-  same pricing, terms, witness/signatory, and submit pipeline as current CRM
-  Opt-In.
-- Facility and Network cannot be changed after pricing is loaded without
-  invalidating the preview and restarting the handoff.
-- A successful submission creates the normal CRM Opt-In Submission and downstream
-  records, then marks the facility membership `Opted In` / ready for the
-  existing implementation rules.
+- A facility already added to a Network may enter Network Opt-In through its
+  secure invitation email link. The public Opt-In entry may help the recipient
+  find that route, but eligibility remains server-checked.
+- The existing Network Opt-In process retains its quotation, agreement,
+  signatory, witness, and signature requirements.
+- Public Self-Onboarding submits its own request after Terms acceptance. It
+  does not hand off into, create, or wait for a Network Opt-In signature.
+- Changing the Network or facility in either journey invalidates that journey's
+  current review state and requires a fresh server-side validation.
 
 ### FR-5 — Authenticated Customer Experience
 
@@ -303,13 +296,15 @@ price, or Opt-In truth.
    six-digit Partner ID unless the manager supplies one.
 2. Public guide can verify identity, validate HFR ownership, accept a Partner
    ID, and display the correct Network confirmation.
-3. A verified facility case reaches the existing Opt-In wizard with facility,
-   Network, contact, and five-year pricing context intact.
-4. Opt-In submission is idempotent and produces normal CRM submission/membership
-   records; the facility appears in the Network menu only at the defined
-   post-submit state.
-5. Email and the authenticated Customer Experience view expose the current
-   case and implementation progress with no cross-Network leakage.
+3. A verified public Self-Onboarding case shows its configured package and
+   Terms; after Terms acceptance, request submission succeeds without creating
+   an Opt-In Submission, Contract, or signature task.
+4. An eligible facility already added to a Network can independently follow
+   its secure invitation email link into the existing Network Opt-In journey
+   and complete that journey's quotation, agreement, and required signatures.
+5. Email and the authenticated Customer Experience view expose each route's
+   own current progress with no cross-Network leakage or signature status on
+   Self-Onboarding requests.
 6. The Customer Experience team can build against the API, state machine, component map,
    and error semantics without reading internal Frappe documents.
 
@@ -320,7 +315,7 @@ price, or Opt-In truth.
 | A | Network creation, six-digit Partner ID generation/override, and public lookup |
 | B | Public wizard shell and HFR/identity session integration |
 | C | Facility onboarding case and CRM/Careverse handoff |
-| D | Opt-In prefill and five-year pricing preflight |
+| D | Invitation-only Opt-In entry and eligibility; public Self-Onboarding remains separate |
 | E | Membership/Network menu reconciliation and Customer Experience read model |
 | F | Customer Experience chat, email journeys, analytics, and hardening |
 
@@ -352,10 +347,10 @@ Customer Experience context.
   or both. QR can carry the same immutable code; it must not become a second
   identity system.
 - Confirm the exact CRM status that makes a facility appear in the Network
-  menu: recommended default is after successful Opt-In submission, with
-  `Opted In` visible to CRM before implementation is complete.
-- Confirm whether one owner may select multiple HFR facilities in one Opt-In
-  submission or whether each facility gets its own case/submission.
+  menu for invitation-only Network Opt-In. Keep it separate from public
+  Self-Onboarding request progress.
+- Confirm whether one owner may select multiple HFR facilities in one
+  Self-Onboarding request or whether each facility gets its own case/request.
 - Confirm Customer Experience authentication policy: passwordless email link is the
   recommended MVP; OTP-only login is an acceptable fallback.
 - Confirm chat retention, support ownership, and escalation SLA.

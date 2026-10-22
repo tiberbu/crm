@@ -34,43 +34,6 @@ const props = defineProps({
 
 const emit = defineEmits(['select-package', 'apply-plan', 'start-onboarding'])
 
-// Standard fallback packages matching the CareVerse catalog
-const defaultFallbackPackages = [
-  {
-    item_code: 'CV-TOKEN-STARTER',
-    display_name: 'Starter',
-    tokens: 1000,
-    token_quantity: 1000,
-    price: 6096,
-    price_ex_vat: 6096,
-    gross_total: 7071.36,
-    currency: 'KES',
-    coverage_summary: 'Ideal for solo clinics & outpatient practices',
-  },
-  {
-    item_code: 'CV-TOKEN-GROWTH',
-    display_name: 'Growth',
-    tokens: 2500,
-    token_quantity: 2500,
-    price: 13970,
-    price_ex_vat: 13970,
-    gross_total: 16205.2,
-    currency: 'KES',
-    coverage_summary: 'Best for active outpatient centers with diagnostics',
-  },
-  {
-    item_code: 'CV-TOKEN-SCALE',
-    display_name: 'Scale',
-    tokens: 5000,
-    token_quantity: 5000,
-    price: 25400,
-    price_ex_vat: 25400,
-    gross_total: 29464,
-    currency: 'KES',
-    coverage_summary: 'Comprehensive plan for hospitals & surgical centers',
-  },
-]
-
 // Defaults from Excel model
 const fallbackConfig = {
   monthly_platform_fee: 500,
@@ -193,7 +156,7 @@ const totalMonthlyDemand = computed(() => {
 
 // Compare packages & generate metrics
 const evaluatedPackages = computed(() => {
-  const source = props.packages?.length ? props.packages : defaultFallbackPackages
+  const source = Array.isArray(props.packages) ? props.packages : []
   const list = source.filter(
     (p) => p.item_code !== 'CV-TOKEN-FREE' && Number(p.price_ex_vat ?? p.price ?? 0) > 0,
   ) // Exclude sandbox/trial
@@ -221,21 +184,12 @@ const evaluatedPackages = computed(() => {
   })
 })
 
-// Determine Recommended Package
+// Suggest the smallest configured package that covers the estimate.
 const recommendedPackage = computed(() => {
   if (!evaluatedPackages.value.length) return null
   const demand = totalMonthlyDemand.value
-
-  // Starter tier: monthly demand <= 2200
-  if (demand <= 2200) {
-    return evaluatedPackages.value.find((p) => p.item_code === 'CV-TOKEN-STARTER') || evaluatedPackages.value[0]
-  }
-  // Growth tier: monthly demand 2201 - 4800 (covers 2,500-4,999 band)
-  if (demand <= 4800) {
-    return evaluatedPackages.value.find((p) => p.item_code === 'CV-TOKEN-GROWTH') || evaluatedPackages.value[1] || evaluatedPackages.value[0]
-  }
-  // Scale tier: monthly demand > 4800 (5,000+ tokens)
-  return evaluatedPackages.value.find((p) => p.item_code === 'CV-TOKEN-SCALE') || evaluatedPackages.value.at(-1)
+  const byCapacity = [...evaluatedPackages.value].sort((a, b) => a.tokens - b.tokens)
+  return byCapacity.find((pkg) => pkg.tokens >= demand) || byCapacity.at(-1)
 })
 
 function selectPackage(pkg) {
@@ -269,7 +223,7 @@ function money(val, currency = 'KES') {
           {{ facilityName ? `${facilityName}: ${__('Token Demand & Plan Sizing')}` : __('Estimate Your Facility Token Needs') }}
         </h3>
         <p class="mt-1 text-xs sm:text-sm text-ink-gray-6">
-          {{ __('Calculate monthly token consumption based on your patient volume, diagnostics, and clinical services.') }}
+          {{ __('Estimate token use from your monthly patient volume and services. This is a guide; you will see available packages and current prices before submitting.') }}
         </p>
       </div>
 
@@ -399,7 +353,7 @@ function money(val, currency = 'KES') {
         <div>
           <div class="flex items-center justify-between gap-2">
             <span class="text-xs font-bold uppercase tracking-wider text-[#bc1823] bg-[#fdf2f3] px-2.5 py-0.5 rounded-full border border-[#f0d6d8]">
-              {{ __('Projected Monthly Demand') }}
+              {{ __('Estimated monthly token needs') }}
             </span>
             <span class="text-xs font-mono text-ink-gray-6 font-semibold">
               ~{{ (totalMonthlyDemand / operatingDays).toFixed(0) }} {{ __('tokens/day') }}
@@ -444,19 +398,7 @@ function money(val, currency = 'KES') {
           <div class="flex items-center justify-between gap-2 flex-wrap">
             <span class="rounded-full bg-[#bc1823] px-3 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-xs flex items-center gap-1.5">
               <span>⭐</span>
-              <span>{{ __('Recommended For You') }}</span>
-            </span>
-            <span
-              v-if="recommendedPackage.item_code === 'CV-TOKEN-SCALE'"
-              class="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full"
-            >
-              {{ __('Best Value · Save 16.7%') }}
-            </span>
-            <span
-              v-else-if="recommendedPackage.item_code === 'CV-TOKEN-GROWTH'"
-              class="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full"
-            >
-              {{ __('Save 8.3% vs Starter') }}
+              <span>{{ __('Suggested package for this estimate') }}</span>
             </span>
           </div>
 

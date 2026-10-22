@@ -3,8 +3,15 @@
 **Design source:** CRM Vue 3 + `frappe-ui` and the existing public Opt-In
 wizard.
 **Primary UX goal:** a high-confidence, mobile-first wizard that turns a
-verified facility owner into a completed Opt-In and a clear Customer Experience
-view without exposing CRM complexity.
+verified facility owner into a submitted Self-Onboarding request and a clear
+Customer Experience view without exposing CRM complexity.
+
+> **Workflow rule (2026-10-22):** Self-Onboarding ends when the owner accepts
+> the Terms and submits the request. It has no signature, signatory, or witness
+> step. Network Opt-In is a separate invitation-only journey, reached from its
+> secure email link; its quotation, agreement, and signature flow remains in
+> the existing Opt-In interface. Older proposal details below are superseded
+> wherever they merge the two routes.
 
 **Implementation status — 2026-10-08:** the public landing page is `/`, the
 facility-owner welcome and wizard is `/facility-onboarding`, and the
@@ -37,17 +44,19 @@ it must still look like the same product family.
 Public
 ├── /
 │   ├── Customer Experience overview
-│   ├── Onboarding journey and requirements
-│   └── Start onboarding / Customer Experience sign-in
+│   ├── Primary: Start Self-Onboarding
+│   ├── Secondary: find invitation-only Network Opt-In
+│   └── Customer Experience sign-in
 ├── /facility-onboarding
 │   ├── Welcome / what you need
 │   ├── Verify identity
 │   ├── Confirm HFR facilities
-│   ├── Enter Network Partner ID
-│   ├── Confirm Network
 │   ├── Confirm contact / OTP
-│   ├── Opt-In handoff
-│   └── Submitted / next steps
+│   ├── Select Network and packages
+│   ├── Accept Terms and submit (no signature)
+│   └── Request submitted / next steps
+├── /opt-in
+│   └── Invitation-only Network Opt-In entry (eligibility checked)
 ├── /facility-onboarding/resume/:reference (planned)
 Authenticated
 ├── /cx-portal (Customer Experience)
@@ -69,15 +78,15 @@ CRM internal
 | Component | Responsibility | Inputs | Remote state | Exit condition |
 |---|---|---|---|---|
 | `FacilityOnboardingShell` | Layout, brand, session expiry, responsive card | Network context, resume ref | loading/error/session expired | Child emits next/back/restart |
-| `OnboardingGuide` | Explains why verification is needed and what to prepare | Copy, support contact | none | `Start onboarding` |
+| `OnboardingGuide` | Welcomes the facility owner, explains Self-Onboarding, and what to prepare | Copy, support contact | none | `Start your onboarding` |
 | `IdentityStep` | ID type/number, privacy note, validation | ID types, draft value | verifying/invalid/unavailable | Server returns session + masked identity |
 | `HfrFacilitiesStep` | Presents verified facility cards and mismatch action | HFR facility summaries | loading/empty/retry | One or more eligible facilities selected |
 | `NetworkPartnerIdStep` | Network Partner ID input or invitation-bound confirmation | Invitation context, draft code | lookup/not found/disabled | Enabled Network resolved |
 | `NetworkConfirmationCard` | Make the Network binding explicit and trustworthy | Public Network projection | none | User confirms correct Network |
 | `ContactAndOtpStep` | Confirm delivery channel and prove control | Masked email/phone | sending/verifying/resend cooldown | OTP verified |
-| `OnboardingReviewStep` | Review identity, facilities, Network, source | Case projection | saving | Handoff is accepted |
-| `OptInHandoff` | Transfers context into existing Opt-In wizard | Signed handoff/reference | loading/expired | Existing `OptInWizard` mounts |
-| `SubmissionProgress` | Shows async Opt-In steps and safe retry | Submission reference | polling/retry/failure | Completed or support-needed |
+| `OnboardingReviewStep` | Review identity, facilities, Network, package, quote, and Terms | Case projection | saving | Owner accepts Terms and submits request |
+| `OnboardingSubmission` | Submits the Self-Onboarding request without a signature handoff | Verified session, selections, Terms acceptance | submitting/retry/failure | Request accepted or support-needed |
+| `InvitationOptInEntry` | Helps an invited facility find its separate Opt-In journey | Invitation/email context | eligibility check/expired | Existing `OptInWizard` opens for eligible invite |
 | `OnboardingComplete` | Explains email/Customer Experience access and next action | Case/status projection | none | Customer Experience/email CTA |
 
 ### Supporting primitives
@@ -117,7 +126,7 @@ Show three illustrated facts:
 
 1. We verify your identity.
 2. We confirm the facilities linked to you in the Health Facility Registry.
-3. We connect the facility to the right Network and complete Opt-In.
+3. We help you choose the right Network and send a Self-Onboarding request.
 
 Show a “You’ll need” card: identification document, facility details, Network Partner
 ID, access to verified email/phone. Keep the main CTA above the fold on mobile.
@@ -171,7 +180,7 @@ through the defined support/update path; do not silently replace verified
 identity data with arbitrary input. Make resend cooldown and attempt count
 visible, with accessible live announcements.
 
-### Step 5 — Review and handoff
+### Step 5 — Review and submit
 
 Use stacked review cards with Edit links:
 
@@ -179,19 +188,20 @@ Use stacked review cards with Edit links:
 - Facility selected from HFR
 - Network and Partner ID
 - Contact and delivery channel
-- What happens after Opt-In
+- Package and quote details
+- Terms and what happens after submission
 
-The primary CTA should say **Continue to Opt-In**. This language makes the
-terminal flow visible and avoids suggesting that the case is already complete.
+The primary CTA should say **Submit your request** after required choices and
+Terms acceptance. State clearly that there is no signing step in
+Self-Onboarding and that accepting Terms is not a signature.
 
-### Step 6 — Existing Opt-In
+### Separate route — Invitation-only Network Opt-In
 
-Mount/reuse the existing CRM `OptInWizard` with a signed, short-lived handoff
-reference. Prefill known contact/facility/Network data, but keep the existing
-terms, pricing, signatory, witness, and async submit semantics. The user must
-see the Year 1–Year 5 schedule before committing.
+Do not mount this flow from the public Self-Onboarding wizard. An invited
+facility opens the secure link in its Network invitation email. That route
+retains its own quotation, agreement, signatory, witness, and signature steps.
 
-### Step 7 — Submitted
+### Step 6 — Request submitted
 
 Show the submission reference, current state, email expectation, and Customer
 Experience
@@ -221,8 +231,8 @@ stateDiagram-v2
     otp_verifying --> otp_verified: OTP success
     otp_verifying --> otp_verifying: retry within limit
     otp_verified --> review
-    review --> optin_pending: continue to Opt-In
-    optin_pending --> submitted: Opt-In accepted
+    review --> terms: review Self-Onboarding Terms
+    terms --> submitted: accept Terms and submit request
     submitted --> implementation: membership / implementation handoff
     implementation --> live: CRM implementation complete
     hfr_verifying --> support: terminal upstream issue
@@ -274,7 +284,7 @@ force a horizontal scroll.
 | No HFR facilities | “No facilities were found for this identity.” | Check ID, contact support |
 | HFR unavailable | “The registry is temporarily unavailable.” | Retry; preserve session |
 | All facilities already onboarded | List masked facility names and explain access path | Sign in / contact support |
-| Invalid Partner ID | “Check the six-digit code or ask the administrator to resend the invitation.” | Edit/retry |
+| Invalid Partner ID | “Check the six-digit Partner ID. If you do not have one, contact the Network inviting your facility.” | Edit/retry |
 | Disabled Network | “This Network is not accepting new facilities right now.” | Choose another enabled ID / support |
 | HFR/CRM mismatch | “We need to review this facility before it can continue.” | Create support case |
 | Session expired | “For your security, this session expired.” | Restart; preserve no sensitive fields in URL |
