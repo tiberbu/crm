@@ -582,8 +582,8 @@ function closeFacilityDrawer() {
   activeView.value = 'facilities'
 }
 
-async function loadProvisioningStatus(mflCode) {
-  const response = await call('crm.api.hfr.get_provisioning_status', { mfl_code: mflCode })
+async function ensureProvisioningDraft(mflCode) {
+	const response = await call('crm.api.hfr.ensure_provisioning_draft', { mfl_code: mflCode })
   return unwrap(response)
 }
 
@@ -1583,7 +1583,7 @@ onUnmounted(() => {
             :payments="drawerPayments"
             :token-packages="context.token_packages"
             :default-currency="defaultCurrency"
-            :load-provisioning-status="loadProvisioningStatus"
+            :ensure-provisioning-draft="ensureProvisioningDraft"
             @back="closeFacilityDrawer"
             @open-top-up="openTopUpModal"
             @open-support="openNetworkSupportDrawer"
