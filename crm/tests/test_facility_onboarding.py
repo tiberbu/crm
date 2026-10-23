@@ -1521,6 +1521,37 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(len(result), 1)
 		self.assertEqual(len(self.ois), 1)
 
+	def test_facility_permission_is_granted_after_the_portal_user_exists(self):
+		self._submit_env()
+		calls = []
+		token = self._verified_token()
+		with (
+			patch.object(
+				fo,
+				"_ensure_customer_experience_access",
+				side_effect=lambda *args: calls.append(("portal",)) or {"status": "sent", "user": "owner@example.com"},
+			),
+			patch(
+				"crm.api.website_redirect._ensure_facility_user_permission",
+				side_effect=lambda user, facility: calls.append(("permission", user, facility)),
+			),
+		):
+			self._submit(token)
+
+		self.assertEqual(calls, [("portal",), ("permission", "owner@example.com", "PQF-1")])
+
+	def test_failed_portal_access_grants_no_facility_permission(self):
+		self._submit_env()
+		token = self._verified_token()
+		with (
+			patch.object(fo, "_ensure_customer_experience_access", return_value={"status": "failed"}),
+			patch("crm.api.website_redirect._ensure_facility_user_permission") as grant,
+		):
+			with self.assertRaises(frappe.ValidationError):
+				self._submit(token)
+
+		grant.assert_not_called()
+
 	def test_submission_pricing_comes_from_the_server_package(self):
 		captured = {}
 

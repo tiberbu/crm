@@ -1764,6 +1764,7 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 	created_deals = []
 	enrollments = []
 	submissions = []
+	facility_doc_names = []
 
 	for facility in facilities:
 		facility_id = _text(facility.get("facility_id"))
@@ -1798,8 +1799,7 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 		deals.append(deal)
 		created_deals.append(deal.name)
 		_create_initial_deal_quote(deal, customer, facility, pkg)
-		from crm.api.website_redirect import _ensure_facility_user_permission
-		_ensure_facility_user_permission(account_email, facility_doc.name)
+		facility_doc_names.append(facility_doc.name)
 		if is_resumed:
 			_evidence(
 				"lookup",
@@ -1875,6 +1875,14 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 			_("Your facility account is saved, but portal access needs attention. Retry submission or contact support with reference {0}.").format(ref_deal),
 			frappe.ValidationError,
 		)
+
+	# Facility permissions link to the portal User, which a first-time owner only
+	# has once _ensure_customer_experience_access has run.
+	from crm.api.website_redirect import _ensure_facility_user_permission
+
+	portal_user = _text(portal_result.get("user")) or account_email
+	for facility_doc_name in facility_doc_names:
+		_ensure_facility_user_permission(portal_user, facility_doc_name)
 
 	final_portal_status = portal_result.get("status")
 	if existing_customer and final_portal_status not in {"failed", "blocked"}:
