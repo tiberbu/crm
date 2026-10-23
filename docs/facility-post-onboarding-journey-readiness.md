@@ -1,17 +1,33 @@
 # Facility Post-Onboarding Journey — Gap Analysis & Stakeholder Questions
 
 **Status:** For stakeholder review. No implementation is approved.
-**Date:** 2026-10-22
-**Baseline:** `develop` @ `39657cdc`, plus open PR #105 (self-onboarding portal-user permission fix)
-**Purpose:** Get the decisions needed to write the implementation artifacts (revised PRD, architecture, UX spec, epics and stories) that connect Facility Self-Onboarding to a live HMIS facility from start to finish.
+**Date:** 2026-10-22 · **Revised:** 2026-10-23 after PR #103
+**Baseline:** `develop` @ `ce591ff9` (includes PR #103), plus open PR #105 (self-onboarding portal-user permission fix)
+**Response page:** [Facility Go-Live Decisions](https://claude.ai/artifact/KMmq6PQeRE8n5GAA339BsF). Stakeholders answer there, under their own names.
+**Purpose:** Get the decisions needed to write the implementation artifacts (PRD updates, architecture, UX spec, epics and stories) that connect Facility Self-Onboarding to a live HMIS facility from start to finish.
 
-> **How to respond:** each question has an ID (for example `Q-PROV-1`). Reply in a PR review comment that starts with the ID, or fill in the **Answer** block under the question. If an answer depends on someone else, name them in the block. A question is closed when it has an answer, a name and a date.
+> **How to respond:** use the response page, or reply in a PR review comment that starts with the question ID (for example `Q-COM-1`). A question closes when it is marked Decided with a note.
+
+## What changed in revision 2 (PR #103)
+
+PR #103 (merged 2026-10-22) replaced `facility-auto-provisioning-prd.md` with **`docs/hmis-implementation-prd.md`** (Implementation baseline 1.0, stories HIMS-01..08) and rewrote `cx-portal-provisioning-gateway-api.md`. In the code (`crm/api/hfr.py`):
+
+- **Reading and creating are now separate.** `get_provisioning_status` is GET-only and read-only. The new `ensure_provisioning_draft` (POST) creates the draft. The Single Facility View calls it on load and on Retry.
+- **No commercial check.** A Won deal and a paid invoice are no longer required. A draft is created as soon as an authorized facility has a verified FID and the setup tool reports no draft.
+- **Payload rules decided.** `billing_model` = `Token`. `token_expiry_date` = CRM onboarding date (the facility row's creation date) + 30 days. `tokens_awarded` = the selected package quantity, or `0`.
+- **Responses and errors.** The setup tool's 400 and 417 "no setup found" responses are both handled. Every request carries a correlation ID, and System Managers can see the setup tool's error details.
+- **FID lookup.** CRM resolves the FID across Pre-Qualified, Deal and Lead facility records and the registry. It won't choose between conflicting registry FIDs, and reports `not_linked` when there is none.
+
+Effect on this document:
+- The two blockers in revision 1 are gone: drafts no longer wait for a Won deal, and `billing_model` and the token expiry are now filled in.
+- 7 questions now ask stakeholders to **confirm** a decision PR #103 made.
+- 3 questions are **closed**.
+- 1 question is **new** (Q-DEP-8).
+- The questions to answer first changed (§4).
 
 ---
 
 ## 1. The journey being completed
-
-The target journey for a facility owner after a successful Self-Onboarding submission:
 
 | Step | Journey | Owner sees |
 |---|---|---|
@@ -25,173 +41,168 @@ The target journey for a facility owner after a successful Self-Onboarding submi
 
 | Step | Spec | Code | Verdict |
 |---|---|---|---|
-| J1 | Partly: user guide `user-guides/facility-self-onboarding.md` | Submission, deal, quote and portal user are created. **Nothing marks a self-onboarded deal Won.** | **Gap that breaks the chain** |
-| J2 | `facility-auto-provisioning-prd.md` (Draft 0.2, 6 open questions), `cx-portal-provisioning-gateway-api.md` (Proposed) | Pull-on-view auto-submit exists, but **every draft is blocked by two fields CRM never supplies** | **Built, never produces a draft** |
-| J3a | `user-guides/cx-portal.md`, backlog E2-S1..S4 (in `review`) | Built | **Built, not verified on crm-dev** |
+| J1 | Partly: `user-guides/facility-self-onboarding.md` | Submission, deal, quote and portal user are created. Nothing marks a self-onboarded deal Won, but since PR #103 that no longer blocks provisioning | **No longer blocks setup.** Approval and payment stages are undefined |
+| J2 | `hmis-implementation-prd.md` (baseline 1.0), `cx-portal-provisioning-gateway-api.md` (implemented contract) | Draft created when the facility page opens. Read and create are separate. Payload is complete | **Built. Not yet tested against the real setup tool** (HIMS-08 in progress; no credentials on crm-dev) |
+| J3a | `user-guides/cx-portal.md`, backlog E2-S1..S4 | Built | **Built, not verified on crm-dev** |
 | J3b | None | None | **Not defined** |
-| J4 | `cx-portal-health-facility-registry-and-portfolio-prd.md` (Under review), `cx-portal-ux-design-pattern.md`, `cx-portal-professional-admin-ui-audit-and-plan.md` | Built for pre-go-live purchases. No token ledger, no top-up path to a live HMIS | **Built in part** |
-| J5 | Fragments (PRD FR-6, user guide) | Separate cards: Self-Onboarding requests, invoices, HMIS status | **Not defined as one journey** |
+| J4 | `cx-portal-health-facility-registry-and-portfolio-prd.md` (Under review), UX pattern, admin UI plan | Built for purchases. No token balance, no path for tokens bought after the draft | **Built in part.** More urgent now that drafts often go out with 0 tokens |
+| J5 | Fragments | Separate cards | **Not defined as one journey** |
 
-No BMAD planning artifacts (epics, stories, sprint status) exist for any of J1–J5. `tiberbu-crm-backlog.md` (2026-07-29) predates this work.
+No BMAD epics or sprint tracking exist for J1, J3b, J4 or J5. J2 has stories HIMS-01..08 in the HIMS PRD.
 
 ---
 
 ## 3. Findings by journey
 
-Evidence references point at `develop` @ `39657cdc`. I found these by reading the code, not by running the flow end to end, except where a section says otherwise.
+Evidence references are against `develop` @ `ce591ff9`. I found these by reading the code; the journeys were not run end to end.
 
 ### J1 — From request to won and paid
 
-**What exists**
-- Self-Onboarding submit creates a `CRM Opt-In Submission` (`onboarding_source = token_self_onboarding`, created `Pending`, then processed to `Processed` during submit), a deal, an initial quote and a portal Website User (`crm/api/facility_onboarding.py`, `_create_submission` and `_submit_selected_facilities`).
-- For Network Opt-In, the deal becomes Won when the facility contract is signed (`crm/automation/optin_billing.py:299` `handoff_facility_signed` → `:244` `_mark_deal_won`).
-
-**Gaps**
-- **G1.1 Self-onboarded deals never become Won.** `_mark_deal_won` is reached only from contract signing, and Self-Onboarding has no signature by design. Provisioning requires a Won deal (see G2.1), so a self-onboarded facility cannot reach provisioning without a manual status change.
-- **G1.2 No approval step is defined.** Nothing says whether a Self-Onboarding request needs human review (KYC, network acceptance, credit) before it becomes Won, or whether payment alone is enough.
-- **G1.3 The owner can't see the approval step.** Even if a review exists, nothing tells the owner it is pending.
+- Self-Onboarding submit creates a `CRM Opt-In Submission` (`onboarding_source = token_self_onboarding`, processed to `Processed`), a deal, a quote and a portal Website User (`crm/api/facility_onboarding.py`).
+- A deal becomes Won only when a Network Opt-In contract is signed (`crm/automation/optin_billing.py` `handoff_facility_signed` → `_mark_deal_won`).
+- **G1.1 (changed)** A self-onboarded deal still never becomes Won. Since PR #103 that no longer blocks provisioning, but the commercial record and the owner's status never show approved or paid.
+- **G1.2** No approval step is defined.
+- **G1.3 (new)** Drafts can now be created before approval or payment, with 0 tokens. Deployment is a manual step in the setup tool, and that's the only remaining point where an unpaid facility can be stopped. The setup tool has no payment information.
 
 ### J2 — Automatic provisioning
 
-**What exists**
-- `crm/api/hfr.py:322` `get_provisioning_status`, called from the Single Facility View. It refuses guests and checks the facility against the caller's portfolio.
-- When the external setup credentials in `CRM HFR Settings` are set and upstream reports `not_submitted`, CRM builds the payload (`hfr.py:639`, `:721`). It then submits once, behind a per-FID file lock, a status re-check and encrypted retry state (`hfr.py:794` onward). The tests are in `crm/tests/test_hfr_provisioning_status.py` (15 tests).
-- The HIE gateway fallback reads status only.
+**What exists (PR #103):** `ensure_provisioning_draft` (POST) and `get_provisioning_status` (GET, read-only) in `crm/api/hfr.py`. The ensure flow: check portfolio access → resolve one FID → check status in the setup tool → submit only on an exact "no setup found" → reload status. It's serialized by a per-FID lock. A retry after a timeout or 5xx checks status first. Missing payload data is reported by field name. Stories HIMS-01..07 are implemented baseline; HIMS-08 (regression coverage and environment verification) is in progress.
 
-**Gaps**
-- **G2.1 Every draft is blocked today.** The payload builder requires `billing_model` and `token_expiry_date`. `_get_external_provisioning_source` never sets either, deliberately, because PRD §12 Q3 is unresolved. Every facility therefore stops at "blocked — missing fields" and no draft is created. It also needs a Won deal (G1.1) and a fully paid `Sales Invoice` tagged with the facility MFL and package.
-- **G2.2 Provisioning is only checked when the owner opens the page.** The PRD specifies deal Won → background job → scheduler poll (FR-3, FR-5). The code provisions only when the owner opens the Single Facility View. A facility whose owner never opens that page is never provisioned or tracked.
-- **G2.3 No audit record or milestones.** There is no `CRM Provisioning Request` DocType (PRD FR-7), no status poll in `scheduler_events`, no `provisioning_enabled` switch and no milestone emails (FR-6).
-- **G2.4 The PRD contradicts itself.** Invariant 7 and §11 describe the built pull model, while §5, FR-3, FR-5, FR-7 and the delivery slices describe the push model.
-- **G2.5 A status read can create a draft.** `get_provisioning_status` accepts `GET` and can cause an upstream POST that creates a draft. It has no `@rate_limit`. Frappe 15 supports both `@frappe.whitelist(methods=["POST"])` and `frappe.rate_limiter.rate_limit`; I checked both in frappe 15.107.5 on this bench and against the Frappe docs via Context7.
-- **G2.6 The FID field rules aren't enforced.** PRD slice A (FID uniqueness, locking after submission, the "FID unresolved" flag) is not built. The FID is validated only when the payload is built.
-- **G2.7 The upstream contract has open differences.** Status for an unknown FID returns HTTP 417 (documented: 400). POST has never been probed, because there's no upstream dedupe. The gateway `/v1/hmis/...` routes are "Proposed".
-- **G2.8 Environment.** crm-dev has no provisioning or external setup credentials configured.
+**Gaps that remain**
+- **G2.1 (resolved by PR #103)** `billing_model` and `token_expiry_date` are now set. Both are decisions for stakeholders to confirm (Q-COM-3, Q-COM-4).
+- **G2.2 (changed)** Drafts are created only when someone opens the facility page. A facility nobody opens never gets a draft, and status refreshes only when someone looks (Q-DEP-1).
+- **G2.3** No milestone emails or SMS, and no internal list of all setup requests. The CRM Error Log with correlation IDs is the only record.
+- **G2.4 (resolved by PR #103)** The contradictory PRD was replaced by one canonical HIMS PRD.
+- **G2.5 (mostly resolved)** Reading status is now GET-only and read-only. The new POST command runs on every page load with no `@rate_limit` (Q-SEC-1).
+- **G2.6 (changed)** FID lookup is now deterministic. Nobody owns fixing facilities that have no usable FID (Q-HIE-2).
+- **G2.7** The setup tool still can't reject duplicate drafts. The HIMS PRD names duplicate-rejection by FID in the setup tool as the follow-up (Q-DEP-5). Draft creation has never been tested against a real target (Q-DEP-6).
+- **G2.8** crm-dev has no setup-service credentials, so none of this can be verified there (Q-HIE-3).
 
 ### J3 — Sign in
 
-**J3a — CX Portal (exists)**
-- During Self-Onboarding submit, the portal Website User is created and a password-setup email is sent. Login is branded and the user is redirected to `/cx-portal` (`crm/api/website_redirect.py`, backlog E2). PR #105 fixes a failure for first-time owners.
-- **G3.1 Not verified.** Nobody has run the flow end to end on crm-dev. Outgoing email (SES or the default account) is not yet configured there, and a known `client_registry` patch can break `frappe.sendmail` on this shared bench (see the PR #105 follow-ups).
-
-**J3b — Newly provisioned HMIS instance (not defined)**
-- The setup contract creates an HMIS administrator from `admin_email`. Nothing defines how the owner learns the instance URL, how they first sign in (invite, temporary password, SSO), or what the CX Portal shows once the site is Live.
-- **G3.2** No spec, no email, no portal element, and no upstream field for the instance URL (the v1.2 status response returns only `status`, `progress`, `log`, `error` and `last_attempt`).
-- **G3.3** The administrator source is the Opt-In signatory. For Self-Onboarding this is the verified owner (`facility_signatory_email = person.email`). Nobody has confirmed that this person should be the HMIS administrator.
+- **J3a (exists):** the portal user and password-setup email are created at Self-Onboarding submit, followed by a branded login and the `/cx-portal` redirect. **G3.1** Not verified on crm-dev: email is not configured there, and the `client_registry` sendmail patch affects this shared bench.
+- **J3b (not defined):** the setup tool creates an HMIS administrator from `admin_email`. **G3.2** No spec, email, portal element or status field gives the owner the instance URL or a first sign-in route (Q-DEP-2, Q-DEP-3). **G3.3** PR #103 confirms the administrator comes only from the one processed Opt-In signatory matching the facility, which is the verified owner for Self-Onboarding. Nobody has signed off on this (Q-SEC-2).
 
 ### J4 — Open a facility and top up tokens
 
-**What exists**
-- Single Facility View (`frontend/src/pages/FacilityPortal/FacilitySingleView.vue`) with **Top up tokens**, free and paid package options, invoices and payment history.
-- APIs (`crm/api/customer_experience.py`): `get_purchase_context` (:153), `create_token_order` (:180), `start_token_payment` (:522), and `report_mpesa_payment` (:1078). The last one records an M-Pesa reference for Finance to reconcile; it does not verify the payment automatically.
-
-**Gaps**
-- **G4.1 No token balance.** The portal shows package quantities, not a remaining balance (the user guide says so). Nothing records tokens bought, awarded and used.
-- **G4.2 Top-ups after go-live don't reach the HMIS.** Tokens reach the HMIS only once, as `tokens_awarded` in the provisioning draft. No API or process is defined for crediting tokens to a live instance.
-- **G4.3 Payment verification is manual and its timing is undefined.** M-Pesa references wait for Finance. There's no defined SLA, no owner notification and no automatic matching.
-- **G4.4 Environment.** On crm-dev, ordering depends on the VAT template, pricing, Selling Settings and email, all still open in the configuration checklist.
+- Built: `FacilitySingleView.vue` (Top up tokens), `crm/api/customer_experience.py` `create_token_order`, `start_token_payment`, `report_mpesa_payment` (an M-Pesa reference recorded for Finance to reconcile by hand).
+- **G4.1** No token balance (Q-FIN-2).
+- **G4.2 (more urgent)** Tokens reach the HMIS only in the draft. Drafts are now created at first page view, often with 0 tokens. Every later purchase, including top-ups after go-live, has no defined path to the HMIS (Q-DEP-4).
+- **G4.3** Payment verification is manual, with no SLA and no owner notification (Q-FIN-1).
+- **G4.4** crm-dev pricing, VAT and email configuration are still open.
 
 ### J5 — Onboarding status
 
-**What exists:** a Self-Onboarding requests card (`OptInRequests.vue`), invoice and payment rows, and the HMIS implementation card. Each is accurate on its own.
-
-**Gaps**
-- **G5.1** No single onboarding timeline is defined. The proposed stages are: request received → under review → approved → payment pending → paid → setup submitted → deploying → live → HMIS access sent.
-- **G5.2** No list of stages, no owner-facing wording, no rules for what moves the owner to the next stage, and no matching email or SMS.
-- **G5.3** No internal view of all facilities and where each one is stuck.
+- **G5.1–G5.3** There's still no single timeline, no list of stages, no matching notifications and no internal stage view (Q-CX-1, Q-CX-2, Q-CX-4).
 
 ---
 
 ## 4. Questions for stakeholders
 
-Owners are proposed. Change the owner if someone else should answer.
+Legend:
+- **[Answer first]**: blocks the next set of artifacts or verification.
+- **[Confirm]**: PR #103 already built this; sign it off or change it.
+- **[New]**: added in revision 2.
 
-### 4.1 Product / Commercial — proposed owner: Product lead
+### Answer first
 
-**Q-COM-1. What makes a Self-Onboarding deal Won?** *(unblocks G1.1, G2.1)*
-Options: (a) full payment of the initial package invoice; (b) internal approval; (c) approval, then payment; (d) a free package counts as paid once accepted.
-Proposed default: (c) for paid packages, approval only for free packages.
+| ID | Why first |
+|---|---|
+| Q-COM-1 | Decides whether drafts may go out before approval or payment |
+| Q-COM-4 | Decides whether a 30-day token expiry is acceptable for go-live |
+| Q-DEP-3 | Without it, a deployed facility has no way to start using its HMIS |
+| Q-DEP-4 | Tokens bought after the draft have no way to reach the HMIS |
+| Q-DEP-8 | The last place an unpaid facility can be stopped |
+| Q-HIE-3 | Nothing built can be tested against the real setup tool until these credentials exist |
+
+### 4.1 Commercial — proposed owner: Product lead
+
+**Q-COM-1 [Answer first] [Confirm]. Is it acceptable that a setup draft is created before approval or payment?**
+PR #103 removed the Won-deal and paid-invoice requirement. A draft is created as soon as the facility has a verified FID, carrying 0 tokens if no package was chosen.
+Options: (a) keep it; (b) require full payment first; (c) require internal approval first; (d) require approval, then payment.
 > **Answer:** _pending_ · **By:** · **Date:**
 
 **Q-COM-2. Is there an internal review of Self-Onboarding requests before go-live?** Who performs it, what do they check, and what is the SLA? *(G1.2)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-COM-3. Billing model per package: `Token` or `License`?** Where should it live: the `CRM Token Package`, the price list, or the deal? *(G2.1, PRD §12 Q3)*
+**Q-COM-3 [Confirm]. Should every CRM token package bill as Token, or is License billing ever needed?** PR #103 sends `Token` for every package. License billing would need its own expiry date and a place in CRM to record it.
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-COM-4. How are `token_expiry_date` and `license_expiry_date` derived?** Options: invoice paid date + package `billing_period`; contract end date; a fixed term. *(G2.1)*
+**Q-COM-4 [Answer first] [Confirm]. Should tokens expire 30 days after onboarding?** PR #103 counts expiry from the facility record's creation date. Tokens bought later don't change it.
+Options: (a) 30 days is correct; (b) a different period; (c) follow the purchased package's billing period.
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-COM-5. Can a facility be provisioned before payment** (for example, a free trial package), or only after the invoice is fully paid? *(G2.1)*
+**Q-COM-5 — Closed by PR #103.** Drafts are now created before payment. Whether that should stay is asked in Q-COM-1.
+
+### 4.2 HMIS deployment — proposed owner: Deployment lead
+
+**Q-DEP-1 [Confirm]. Is it enough to create drafts only when someone opens the facility page?** That's what PR #103 built. A facility nobody opens never gets a draft, and status refreshes only on view.
+Options: (a) on view is enough; (b) also create drafts and refresh status in the background.
 > **Answer:** _pending_ · **By:** · **Date:**
 
-### 4.2 HMIS deployment / setup tool team — proposed owner: Deployment lead
-
-**Q-DEP-1. Push or pull?** Should CRM submit the draft automatically when the deal is Won or paid, with background status polling (the PRD's push model)? Or should it stay with the pull model already built, where it submits when the owner opens the page? *(G2.2, G2.4)*
-Proposed default: push model, keeping the pull read as a manual refresh.
+**Q-DEP-2. Will the status response include the HMIS instance URL once deployed?** If not, where does CRM get it? *(G3.2)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-DEP-2. Will the status response include the instance URL** (and a site health indicator) once `Deployed`? If not, where does CRM get the URL? *(G3.2)*
+**Q-DEP-3 [Answer first]. How does the facility's HMIS administrator first sign in?** Options: an invite email from the HMIS, a temporary password, SSO through Identity Auth, or a CRM handover email. Who sends it? *(J3b)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-DEP-3. How does the HMIS administrator first sign in?** Options: an invite email from the HMIS, a temporary password, SSO through Identity Auth, or a CRM-sent handover email. Who sends it? *(J3b)*
+**Q-DEP-4 [Answer first]. How do tokens reach the HMIS after the draft is created?** Drafts now often carry 0 tokens. Options: an API to credit tokens exists or is planned, or a manual process (describe it and its SLA). *(G4.2)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-DEP-4. Is there (or will there be) an API to credit tokens to a live instance** after go-live? If not, what is the manual process and its SLA? *(G4.2)*
+**Q-DEP-5 [Confirm]. Will the setup tool reject a second draft for the same FID?** PR #103 handles both 400 and 417. The HIMS PRD names duplicate-rejection by FID in the setup tool as the follow-up for safe retries. If yes, when?
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-DEP-5. Status code and dedupe.** Will "no Facility Setup found" return 400 (as documented) or 417 (as observed)? Can the upstream reject duplicate drafts for the same FID (409), so CRM no longer has to be the only guard? *(G2.7)*
+**Q-DEP-6. Is there a safe place to test draft creation?** Options: a staging setup instance, a named test facility on production, or neither yet. *(G2.7, HIMS-08)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-DEP-6. Is there a safe target for testing POST** (a staging setup instance or sandbox FID) so CRM can test draft creation without creating a real draft? *(G2.7)*
+**Q-DEP-7. How long should it take from draft to deployed?** Give the typical and worst-case time. *(J5)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-DEP-7. How long should it take from Draft to Deployed?** CRM will use this to tell owners when to expect go-live and to flag stalled setups. *(J5)*
+**Q-DEP-8 [Answer first] [New]. Before deploying a draft, will the deployment team check approval and payment?** Drafts can now exist before payment, and the setup tool shows nothing about it.
+Options: (a) they check CRM before deploying (say how); (b) CRM sends the payment and approval state with the draft; (c) no check is needed. *(G1.3)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
 ### 4.3 HIE / Integration — proposed owner: Integration lead
 
-**Q-HIE-1. Will the `/v1/hmis/provisioning/...` APISIX routes be published,** or should CRM use the direct setup service permanently? *(G2.7)*
+**Q-HIE-1 — Closed by PR #103.** The direct setup service is now the standard path, and the HIE fallback only reads status. Reopen this if the gateway must stay in the path.
+
+**Q-HIE-2. Who fixes facilities that have no usable FID?** PR #103 reports `not_linked` and won't choose between conflicting FIDs. Name the team, how they fix it, and how the owner is told. *(G2.6)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-HIE-2. Confirm the FID format.** Does the registry's `facility_fid` always match `FID-XX-…`? Who resolves facilities with no FID or several FIDs? *(G2.6, PRD §12 Q6)*
-> **Answer:** _pending_ · **By:** · **Date:**
-
-**Q-HIE-3. Who issues and rotates the dedicated setup-service API key,** for crm-dev and for production? *(G2.8)*
+**Q-HIE-3 [Answer first]. Who issues and rotates the setup-service API key for crm-dev and production?** *(G2.8)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
 ### 4.4 Finance — proposed owner: Finance lead
 
-**Q-FIN-1. What is the SLA for reconciling M-Pesa references, and how is the owner told the result?** Is automatic matching (for example M-Pesa C2B or STK push) in scope? *(G4.3)*
+**Q-FIN-1. How fast are M-Pesa payments reconciled, and how is the owner told?** Is automatic matching (C2B or STK push) in scope? *(G4.3)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-FIN-2. Is the system of record for a facility's token balance CRM, the HMIS, or both** (each tracking its own figures)? *(G4.1)*
+**Q-FIN-2. Which system holds the facility's token balance:** CRM, the HMIS, or both? *(G4.1)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
 ### 4.5 Customer experience / Support — proposed owner: CX lead
 
-**Q-CX-1. Approve the onboarding stages and owner-facing wording** proposed in G5.1. Add, remove or rename stages. *(G5.1, G5.2)*
+**Q-CX-1. Do these onboarding stages and labels work for owners?** Request received → Under review → Approved → Payment pending → Paid → Setup submitted → Deploying → Live → HMIS access sent. Add, remove or rename. *(G5.1)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-CX-2. Which stages notify the owner, and by which channel** (email, SMS, both)? Covers PRD §12 Q4. *(G2.3, G5.2)*
+**Q-CX-2. Which stages should notify the owner, and by which channel** (email, SMS, both)? *(G2.3, G5.2)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-CX-3. Who handles a blocked provisioning, and what do they do?** Includes cleaning up a stray draft in the setup app. *(G2.3)*
+**Q-CX-3. Who handles a facility whose setup is blocked, and what do they do?** PR #103 gives System Managers the setup tool's error details and a correlation ID, but nobody is named to act on them. *(G2.3)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-CX-4. Does the internal team need a dashboard of facilities by stage** (G5.3)? If yes, should it be in Desk, CRM or the Finance Cockpit?
+**Q-CX-4. Does the internal team need a view of every facility by stage?** If yes, should it be in Desk, the CRM app or the Finance Cockpit? *(G5.3)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
 ### 4.6 Security / Engineering — proposed owner: Tech lead
 
-**Q-SEC-1. Should the portal status read be POST-only and rate-limited** (G2.5)? Or should the draft submission move entirely to a background job, so that reading status never creates a draft?
+**Q-SEC-1 [Confirm]. Should the draft-creation command be rate-limited?** PR #103 made reading status side-effect free. `ensure_provisioning_draft` runs on every page load and Retry with no `@rate_limit`; the per-FID lock already serializes requests for the same facility. *(G2.5)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-SEC-2. Should the verified Self-Onboarding owner become the HMIS administrator,** or can the owner nominate someone else, and if so how is that person verified? *(G3.3)*
+**Q-SEC-2 [Confirm]. Should the verified owner become the HMIS administrator,** or may the owner nominate someone else, and if so how is that person verified? *(G3.3)*
 > **Answer:** _pending_ · **By:** · **Date:**
 
-**Q-SEC-3. Should multiple facilities on one deal each get their own provisioning request?** *(PRD §12 Q5)* Should an FID field be added to `CRM Pre-Qualified Facility`? *(PRD §12 Q2)*
-> **Answer:** _pending_ · **By:** · **Date:**
+**Q-SEC-3 — Closed by PR #103.** One draft per FID by design, with the FID resolved across Pre-Qualified, Deal and Lead facility records.
 
 ---
 
@@ -199,26 +210,25 @@ Proposed default: push model, keeping the pull read as a manual refresh.
 
 | Artifact to write after answers | Needs answers to |
 |---|---|
-| Revised `facility-auto-provisioning-prd.md` v0.3 (one model, §12 closed) | Q-COM-1, 3, 4, 5 · Q-DEP-1, 5, 7 · Q-HIE-1, 2 · Q-CX-2, 3 · Q-SEC-1, 3 |
+| `hmis-implementation-prd.md` update (commercial check, expiry, background creation, duplicates, notifications) | Q-COM-1, 3, 4 · Q-DEP-1, 5, 8 · Q-CX-2, 3 · Q-SEC-1 |
+| HMIS PRD verification (HIMS-08) on crm-dev | Q-HIE-3 · Q-DEP-6 |
 | New spec: **HMIS access handover** (J3b) | Q-DEP-2, 3 · Q-SEC-2 · Q-CX-2 |
-| New spec: **Onboarding journey status** (J5) | Q-COM-1, 2 · Q-CX-1, 2, 4 · Q-DEP-7 |
-| PRD-CX-PORTFOLIO-002 addendum: **token balance and top-ups after go-live** (J4) | Q-DEP-4 · Q-FIN-1, 2 |
-| Architecture update (trigger, audit DocType, scheduler, security of the status read) | Q-DEP-1 · Q-SEC-1 · the revised PRD |
+| New spec: **Onboarding journey status** (J5) | Q-COM-1, 2 · Q-CX-1, 2, 4 · Q-DEP-7, 8 |
+| PRD-CX-PORTFOLIO-002 addendum: **token balance and tokens after the draft** (J4) | Q-DEP-4 · Q-FIN-1, 2 · Q-COM-4 |
+| Architecture update | Q-DEP-1 · Q-SEC-1 · the updated HIMS PRD |
 | UX spec for the timeline, HMIS access card and balance | J3b and J5 specs |
-| Epics, stories and sprint plan | All of the above |
-| crm-dev readiness (credentials, email, pricing) | Q-HIE-3 · the configuration checklist |
+| Epics, stories and sprint plan for J1, J3b, J4, J5 | All of the above |
 
 ## 6. Work that needs no answers (can start when approved)
 
-These don't depend on the questions above, but implementation is **not** approved by this document.
-- Make PRD §5, FR-3, FR-5, FR-7 and §10 consistent with each other, marking the push/pull decision as open.
-- Finish configuring crm-dev (email, VAT template, Selling Settings, pricing) and run J3a and J4 end to end. Record the results in this document.
-- Merge PR #105, and fix the `client_registry` email patch (it affects OTP and password emails on the shared bench).
+Implementation is not approved by this document.
+- Finish configuring crm-dev (email, VAT template, Selling Settings, pricing) and run J3a and J4 end to end.
+- Merge PR #105, and fix the `client_registry` email patch on the shared bench.
 
 ## 7. Proposed sequence after feedback
 
-1. Collect answers in this PR. Close it once every blocking question has an answer, a name and a date.
-2. Revise the PRD (BMAD `bmad-prd`, update intent) and write the J3b and J5 specs.
+1. Collect answers on the response page. Start with the [Answer first] questions.
+2. Update the HIMS PRD, and write the J3b and J5 specs and the J4 addendum.
 3. Update the architecture (`bmad-architecture`) and UX (`bmad-ux`).
 4. Write epics and stories (`bmad-create-epics-and-stories`), then sprint planning (`bmad-sprint-planning`).
-5. Implement one vertical slice at a time, starting with whatever the J1 → J2 chain needs first (Won rule, billing model and expiry), since those block every draft.
+5. Implement one vertical slice at a time, starting with tokens after the draft (Q-DEP-4) and the deployment check (Q-DEP-8). Since PR #103 these are the gaps that most directly affect real facilities.
