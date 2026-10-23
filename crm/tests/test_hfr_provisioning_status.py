@@ -1,11 +1,16 @@
 from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
+import frappe
+
 from frappe.tests import UnitTestCase
 from frappe.utils.file_lock import LockTimeoutError
 
 from crm.api.hfr import (
 	_auto_submit_external_provisioning,
+	_backfill_licence_from_hfr,
+	_get_external_provisioning_source,
+	_self_onboarded_owner_admin,
 	_build_external_provisioning_payload,
 	_get_external_provisioning_status,
 	get_hfr_settings,
@@ -413,3 +418,107 @@ class TestExternalProvisioningStatus(UnitTestCase):
 		self.assertEqual(response["hfr_url"], "https://hie.example.test")
 		self.assertFalse(response["external_provisioning_secret_configured"])
 		self.assertFalse(response["provisioning_status_configured"])
+
+	@patch("crm.api.hfr.frappe.get_all")
+	@patch("crm.api.hfr.frappe.db.get_value", return_value="PQF-1")
+	def test_self_onboarded_owner_is_the_admin_when_unambiguous(self, mock_get_value, mock_get_all):
+		mock_get_all.return_value = [
+			frappe._dict(contact_name="Jane  Owner ", contact_email="Jane@Example.test", contact_phone="+254700000001"),
+			frappe._dict(contact_name="Jane Owner", contact_email="jane@example.test", contact_phone="+254700000001"),
+		]
+
+		admin = _self_onboarded_owner_admin("FID-99-TEST-1", ["CUST-1"])
+
+		self.assertEqual(
+			admin,
+			{"admin_name": "Jane Owner", "admin_email": "jane@example.test", "admin_mobile": "+254700000001"},
+		)
+		mock_get_value.assert_called_once_with(
+			"CRM Pre-Qualified Facility", {"mfl_code": "FID-99-TEST-1", "is_self_onboarded": 1}, "name"
+		)
+		self.assertEqual(mock_get_all.call_args.kwargs["filters"]["customer"], ["in", ["CUST-1"]])
+
+	@patch("crm.api.hfr.frappe.get_all")
+	@patch("crm.api.hfr.frappe.db.get_value", return_value="PQF-1")
+	def test_conflicting_owner_contacts_supply_no_admin(self, _mock_get_value, mock_get_all):
+		mock_get_all.return_value = [
+			frappe._dict(contact_name="Jane Owner", contact_email="jane@example.test", contact_phone="+254700000001"),
+			frappe._dict(contact_name="John Other", contact_email="john@example.test", contact_phone="+254700000002"),
+		]
+		self.assertEqual(_self_onboarded_owner_admin("FID-99-TEST-1", ["CUST-1"]), {})
+
+	@patch("crm.api.hfr.frappe.db.get_value", return_value=None)
+	def test_facility_not_self_onboarded_supplies_no_owner_admin(self, _mock_get_value):
+		self.assertEqual(_self_onboarded_owner_admin("FID-99-TEST-1", ["CUST-1"]), {})
+		self.assertEqual(_self_onboarded_owner_admin("FID-99-TEST-1", []), {})
+
+	@patch("crm.api.hfr._backfill_licence_from_hfr", return_value="LIC-HFR-1")
+	@patch("crm.api.hfr._self_onboarded_owner_admin")
+	@patch("crm.api.hfr.frappe.get_all", return_value=[])
+	def test_source_falls_back_to_owner_admin_and_hfr_licence(self, _mock_get_all, mock_owner, mock_backfill):
+		mock_owner.return_value = {
+			"admin_name": "Jane Owner",
+			"admin_email": "jane@example.test",
+			"admin_mobile": "+254700000001",
+		}
+		facility = {"hfr_facility_id": "FID-99-TEST-1", "creation": "2026-10-22 10:00:00"}
+
+		source = _get_external_provisioning_source(facility, {}, "FID-99-TEST-1", ["DEAL-1"], ["CUST-1"])
+		payload, missing = _build_external_provisioning_payload(source)
+
+		self.assertEqual(missing, [])
+		self.assertEqual(payload["licence"], "LIC-HFR-1")
+		self.assertEqual(payload["admin_email"], "jane@example.test")
+		mock_owner.assert_called_once_with("FID-99-TEST-1", ["CUST-1"])
+		mock_backfill.assert_called_once_with("FID-99-TEST-1", "FID-99-TEST-1", ["DEAL-1"])
+
+	@patch("crm.api.hfr._backfill_licence_from_hfr")
+	@patch("crm.api.hfr._self_onboarded_owner_admin", return_value={})
+	@patch("crm.api.hfr.frappe.get_all", return_value=[])
+	def test_stored_licence_skips_hfr_lookup(self, _mock_get_all, _mock_owner, mock_backfill):
+		facility = {"hfr_facility_id": "FID-99-TEST-1", "registration_number": "REG-1"}
+		source = _get_external_provisioning_source(facility, {}, "FID-99-TEST-1", [], [])
+		self.assertEqual(source["licence"], "REG-1")
+		mock_backfill.assert_not_called()
+
+	@patch("crm.api.hfr.frappe.get_all", return_value=["DF-1"])
+	@patch("crm.api.hfr.frappe.db.set_value")
+	@patch("crm.api.hfr.frappe.db.get_value", return_value="PQF-1")
+	@patch("crm.api.hfr.get_facility_detail")
+	@patch("crm.api.hfr.frappe.db.get_single_value", return_value=1)
+	def test_hfr_licence_backfill_is_stored_on_crm_facility_rows(
+		self, _mock_enabled, mock_detail, _mock_get_value, mock_set_value, _mock_get_all
+	):
+		mock_detail.return_value = {
+			"hfr_facility_id": "FID-99-TEST-1",
+			"license_number": "LIC-HFR-1",
+			"registration_number": "REG-1",
+		}
+
+		self.assertEqual(_backfill_licence_from_hfr("FID-99-TEST-1", "FID-99-TEST-1", ["DEAL-1"]), "LIC-HFR-1")
+		values = {"license_number": "LIC-HFR-1", "registration_number": "REG-1"}
+		mock_set_value.assert_any_call("CRM Pre-Qualified Facility", "PQF-1", values, update_modified=False)
+		mock_set_value.assert_any_call("CRM Deal Facility", "DF-1", values, update_modified=False)
+
+	@patch("crm.api.hfr.get_facility_detail")
+	@patch("crm.api.hfr.frappe.db.get_single_value", return_value=0)
+	def test_hfr_licence_backfill_is_skipped_when_hfr_is_disabled(self, _mock_enabled, mock_detail):
+		self.assertIsNone(_backfill_licence_from_hfr("FID-99-TEST-1", "FID-99-TEST-1", []))
+		mock_detail.assert_not_called()
+
+	@patch("crm.api.hfr.frappe.log_error")
+	@patch("crm.api.hfr.frappe.db.set_value")
+	@patch("crm.api.hfr.get_facility_detail")
+	@patch("crm.api.hfr.frappe.db.get_single_value", return_value=1)
+	def test_hfr_licence_backfill_failure_is_not_shown_to_the_customer(
+		self, _mock_enabled, mock_detail, mock_set_value, _mock_log
+	):
+		def fail(_fid):
+			frappe.local.message_log.append({"message": "HFR request failed: internal detail"})
+			raise frappe.ValidationError("HFR request failed")
+
+		mock_detail.side_effect = fail
+		with patch.object(frappe.local, "message_log", [{"message": "earlier"}], create=True):
+			self.assertIsNone(_backfill_licence_from_hfr("FID-99-TEST-1", "FID-99-TEST-1", []))
+			self.assertEqual(frappe.local.message_log, [{"message": "earlier"}])
+		mock_set_value.assert_not_called()

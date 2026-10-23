@@ -17,7 +17,7 @@ The required outcome is deterministic: when an authorized facility has a verifie
 2. **Read and command are distinct:** `get_provisioning_status` is read-only. `ensure_provisioning_draft` is the command used by the Single Facility view on load and on retry.
 3. **Only an authoritative absence creates:** CRM POSTs only after the TA GET has returned the exact documented no-setup condition (TA 400 or Frappe 417 `No Facility Setup found`). Auth, timeout, unknown errors, duplicate records, and other failures never trigger POST.
 4. **No extra commercial gate:** a verified, authorized FID with no setup draft proceeds to payload validation. Deal Won and paid invoice are not prerequisites for creating the TA draft.
-5. **Payload provenance:** license/registration and facility details come from CRM’s HFR-linked facility record; tokens come from the facility’s selected CRM token package and default to `0` if no quantity is selected; administrator name, email and phone come only from one processed Opt-In facility signatory that matches the facility MFL. CRM never invents contact details.
+5. **Payload provenance:** license/registration and facility details come from CRM’s HFR-linked facility record; onboarding stores the HFR licence/registration number, and when it is blank CRM fetches it from the HFR registry by FID and stores it before building the payload. Tokens come from the facility’s selected CRM token package and default to `0` if no quantity is selected. Administrator name, email and phone come from one processed Opt-In facility signatory that matches the facility MFL or, for a self-onboarded facility (which has no Opt-In), from its one OTP-verified owner contact on the customer’s facility membership (stakeholder answer Q-SEC-2: the verified owner is the default administrator). CRM never invents contact details.
 6. **Expiry:** `token_expiry_date` is the facility onboarding date plus 30 calendar days. CRM has no dedicated onboarding-date field today, so it uses the linked facility row’s CRM creation date. For a lead with no persisted facility row, the first ensure request is the onboarding start date. This policy is deterministic and surfaced in this document.
 7. **Validation is actionable:** CRM validates required TA fields and types before POST. If verified contact/license data is absent or ambiguous, it returns the precise missing field list and does not send a malformed request.
 8. **Draft is not deployment:** a successful POST creates a TA draft only. CRM never calls the deploy action.
@@ -33,7 +33,7 @@ flowchart LR
   View -->|manual retry: same command| CRM
   CRM --> Auth[Portfolio authorization]
   Auth --> FID[Resolve one HFR FID by MFL]
-  FID --> Sources[CRM facility + package + processed Opt-In signatory]
+  FID --> Sources[CRM facility + HFR licence + package + Opt-In signatory or verified owner]
   Sources --> Payload[Validate TA payload]
   CRM -->|GET status, Basic auth, correlation ID| TA[HMIS setup service]
   TA -->|draft exists / status / error| CRM
@@ -118,7 +118,8 @@ TA endpoints are `GET /api/method/hmis_setup.api.external_provisioning.get_provi
 - Required TA field names and types are validated before network submission.
 - Token billing model is used for CRM token packages; absent token quantity maps to `0` (accepted by TA).
 - `token_expiry_date` equals CRM facility onboarding date plus 30 calendar days, using the date source in §2.
-- Only one unambiguous processed Opt-In signatory matching the MFL supplies admin contact values. Missing or conflicting values block the POST and list fields.
+- Only one unambiguous processed Opt-In signatory matching the MFL supplies admin contact values. Without one, a self-onboarded facility uses its one OTP-verified owner contact for the signed-in customer. Missing or conflicting values block the POST and list fields.
+- A blank licence is fetched from the HFR registry by FID and stored on the CRM facility rows. If HFR integration is off or the lookup fails, `licence` stays missing and the failure is logged for support, not shown to the customer.
 
 ### HIMS-05 — Serialize, reconcile, and retry (implemented baseline)
 

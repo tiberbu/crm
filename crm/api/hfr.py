@@ -490,7 +490,7 @@ def _get_provisioning_status(mfl_code, ensure_missing_draft):
 				),
 			)
 		if ensure_missing_draft and status.get("status") == "not_submitted":
-			source = _get_external_provisioning_source(facility, deal_facility, mfl_code, deals)
+			source = _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, customers)
 			payload, missing_fields = _build_external_provisioning_payload(source)
 			status = _auto_submit_external_provisioning(
 				external_url,
@@ -742,11 +742,13 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 		return _external_provisioning_unavailable("response", None, correlation_id=correlation_id)
 
 
-def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals):
+def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, customers=None):
 	"""Resolve only server-owned CRM data that can support a facility draft.
 
-	The accepted Opt-In signatory is the only approved administrator source. The
-	TA maps licence to the HFR licence number or registration number. Token expiry
+	The administrator is the accepted Opt-In signatory or, for a self-onboarded
+	facility (which has no Opt-In), the OTP-verified owner on its membership. The
+	TA maps licence to the HFR licence number or registration number, backfilled
+	from the HFR registry by FID when onboarding did not store one. Token expiry
 	is 30 days after the CRM facility onboarding record was created.
 	"""
 	facility = frappe._dict(facility or {})
@@ -780,6 +782,11 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals):
 				"admin_email": matches[0].get("facility_signatory_email"),
 				"admin_mobile": matches[0].get("facility_signatory_phone"),
 			}
+	if not any(admin.values()):
+		admin = _self_onboarded_owner_admin(mfl_code, customers)
+	licence = facility.get("license_number") or facility.get("registration_number")
+	if not licence and facility.get("hfr_facility_id"):
+		licence = _backfill_licence_from_hfr(facility.get("hfr_facility_id"), mfl_code, deals)
 	if deal_facility.get("cx_token_package_item"):
 		selected_package = deal_facility
 	onboarding_date = facility.get("onboarding_date") or deal_facility.get("creation") or facility.get("creation")
@@ -794,7 +801,7 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals):
 		onboarding_date = frappe.utils.getdate(frappe.utils.nowdate())
 	return {
 		"fid": facility.get("hfr_facility_id"),
-		"licence": facility.get("license_number") or facility.get("registration_number"),
+		"licence": licence,
 		"facility_name": facility.get("facility_name"),
 		"facility_level": facility.get("keph_level") or facility.get("facility_level"),
 		"county": facility.get("hfr_county"),
@@ -804,6 +811,77 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals):
 		"billing_model": "Token",
 		**admin,
 	}
+
+
+def _self_onboarded_owner_admin(mfl_code, customers):
+	"""Return the OTP-verified owner of a self-onboarded facility as its HMIS administrator.
+
+	Self-onboarding records the registry contact that passed OTP on the facility
+	membership. Only one unambiguous contact for the signed-in customer is used.
+	"""
+	if not customers:
+		return {}
+	facility_name = frappe.db.get_value(
+		"CRM Pre-Qualified Facility", {"mfl_code": mfl_code, "is_self_onboarded": 1}, "name"
+	)
+	if not facility_name:
+		return {}
+	rows = frappe.get_all(
+		"CRM Facility Membership",
+		filters={"parent": facility_name, "customer": ["in", customers], "status": "Active"},
+		fields=["contact_name", "contact_email", "contact_phone"],
+		limit_page_length=0,
+		ignore_permissions=True,
+	)
+	contacts = {
+		(
+			" ".join(frappe.utils.cstr(row.contact_name).split()),
+			frappe.utils.cstr(row.contact_email).strip().lower(),
+			frappe.utils.cstr(row.contact_phone).strip(),
+		)
+		for row in rows
+	}
+	if len(contacts) != 1:
+		return {}
+	name, email, phone = contacts.pop()
+	return {"admin_name": name, "admin_email": email, "admin_mobile": phone}
+
+
+def _backfill_licence_from_hfr(fid, mfl_code, deals):
+	"""Fetch the HFR licence (or registration) number by FID and store it on the CRM facility."""
+	if not frappe.db.get_single_value(_DOCTYPE, "hfr_enabled"):
+		return None
+	message_log = getattr(frappe.local, "message_log", None)
+	message_count = len(message_log) if message_log is not None else 0
+	try:
+		detail = get_facility_detail(fid)
+	except Exception:
+		# The registry error is for support, not the customer viewing the facility.
+		if message_log is not None:
+			del message_log[message_count:]
+		frappe.log_error(title="HMIS provisioning licence lookup", message="fid=%s" % fid)
+		return None
+	if frappe.utils.cstr(detail.get("hfr_facility_id")).strip() != frappe.utils.cstr(fid).strip():
+		return None
+	values = {
+		fieldname: detail.get(fieldname)
+		for fieldname in ("license_number", "registration_number")
+		if detail.get(fieldname)
+	}
+	if not values:
+		return None
+	facility_name = frappe.db.get_value("CRM Pre-Qualified Facility", {"mfl_code": mfl_code}, "name")
+	if facility_name:
+		frappe.db.set_value("CRM Pre-Qualified Facility", facility_name, values, update_modified=False)
+	if deals:
+		for row in frappe.get_all(
+			"CRM Deal Facility",
+			filters={"parent": ["in", deals], "mfl_code": mfl_code},
+			pluck="name",
+			ignore_permissions=True,
+		):
+			frappe.db.set_value("CRM Deal Facility", row, values, update_modified=False)
+	return values.get("license_number") or values.get("registration_number")
 
 
 def _token_expiry_from_onboarding_date(onboarding_date):
