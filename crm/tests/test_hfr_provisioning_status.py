@@ -8,10 +8,15 @@ from crm.api.hfr import (
 	_auto_submit_external_provisioning,
 	_build_external_provisioning_payload,
 	_get_external_provisioning_status,
+	get_provisioning_status,
+	ensure_provisioning_draft,
 	_hfr_request,
 	_merge_facility_hfr_fallback,
 	_map_facility_to_org_fields,
 	_external_submit_error,
+	_external_error_details,
+	_token_expiry_from_onboarding_date,
+	_unique_facility_projection,
 	search_facility,
 )
 
@@ -37,6 +42,16 @@ class TestExternalProvisioningStatus(UnitTestCase):
 			"admin_mobile": "+254700000001",
 		}
 
+	@patch("crm.api.hfr._get_provisioning_status", return_value={"status": "not_submitted"})
+	def test_status_query_is_read_only(self, mock_status):
+		self.assertEqual(get_provisioning_status("88776"), {"status": "not_submitted"})
+		mock_status.assert_called_once_with("88776", ensure_missing_draft=False)
+
+	@patch("crm.api.hfr._get_provisioning_status", return_value={"status": "Draft"})
+	def test_ensure_draft_is_a_separate_command(self, mock_status):
+		self.assertEqual(ensure_provisioning_draft("88776"), {"status": "Draft"})
+		mock_status.assert_called_once_with("88776", ensure_missing_draft=True)
+
 	@patch("crm.api.hfr._hfr_request", return_value={"data": [
 		{"hie_id": "HIE-ONLY", "facility_code": "12345"},
 		{"hie_id": "HIE-2", "facility_fid": "FID-29-116804-5", "facility_code": "116804"},
@@ -58,11 +73,41 @@ class TestExternalProvisioningStatus(UnitTestCase):
 		self.assertEqual(facility.facility_name, "Registry name")
 		self.assertEqual(facility.license_number, "LIC-1")
 
+	def test_facility_projection_drops_conflicting_values_instead_of_picking_a_row(self):
+		projection = _unique_facility_projection(
+			[
+				{"hfr_facility_id": "FID-29-111-1", "facility_name": "Same facility"},
+				{"hfr_facility_id": "FID-29-222-1", "facility_name": "Same facility"},
+			],
+			["hfr_facility_id", "facility_name"],
+		)
+		self.assertNotIn("hfr_facility_id", projection)
+		self.assertEqual(projection["facility_name"], "Same facility")
+
 	def test_ta_validation_message_is_visible_to_facility_operator(self):
 		message = _external_submit_error(
 			400, {"message": "Missing required field(s): licence, token_expiry_date."}
 		)
 		self.assertIn("licence, token_expiry_date", message)
+
+	def test_token_expiry_is_30_days_after_facility_onboarding_date(self):
+		self.assertEqual(_token_expiry_from_onboarding_date("2026-10-21"), "2026-11-20")
+
+	def test_raw_service_error_details_redact_credentials(self):
+		details = _external_error_details(
+			400,
+			{
+				"message": "Missing licence",
+				"api_key": "key",
+				"error": {"token": "token-value", "trace": "failed"},
+				"response_text": "api_key=raw-key",
+			},
+		)
+		self.assertIn('"http_status": 400', details)
+		self.assertIn("Missing licence", details)
+		self.assertEqual(details.count("[REDACTED]"), 3)
+		self.assertNotIn("token-value", details)
+		self.assertNotIn("raw-key", details)
 
 	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
 	@patch("crm.api.hfr.frappe.cache")
@@ -104,6 +149,34 @@ class TestExternalProvisioningStatus(UnitTestCase):
 			timeout=60,
 		)
 
+	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
+	@patch("crm.api.hfr.frappe.cache")
+	@patch("crm.api.hfr._get_external_provisioning_status")
+	@patch("crm.api.hfr.requests.post")
+	def test_authoritative_no_draft_retries_after_prior_ambiguous_post(
+		self, mock_post, mock_status, mock_cache, _mock_lock
+	):
+		cache = MagicMock()
+		cache.get_value.return_value = "unknown"
+		mock_cache.return_value = cache
+		accepted = MagicMock()
+		accepted.status_code = 200
+		accepted.headers = {"X-Correlation-Id": "corr-retry"}
+		accepted.json.return_value = {"message": {"accepted": True, "facility_setup": "SETUP-0002"}}
+		mock_post.return_value = accepted
+		mock_status.side_effect = [
+			self._not_submitted(),
+			{"configured": True, "status": "Draft", "progress": 0},
+		]
+
+		result = _auto_submit_external_provisioning(
+			"https://deploy.example.test", "key", "secret", "FID-99-TEST-1",
+			self._not_submitted(), self._valid_payload(), [],
+		)
+
+		self.assertEqual(result["submission"]["state"], "created")
+		mock_post.assert_called_once()
+
 	@patch("crm.api.hfr.requests.post")
 	def test_missing_ta_fields_block_submission(self, mock_post):
 		payload, missing = _build_external_provisioning_payload({"fid": "FID-99-TEST-1"})
@@ -119,7 +192,6 @@ class TestExternalProvisioningStatus(UnitTestCase):
 	def test_payload_builder_accepts_complete_policy_verified_data(self):
 		source = {
 			**self._valid_payload(),
-			"deal_won_package_purchase_verified": True,
 			"facility_name": "Example Health Centre",
 			"facility_level": "LEVEL 3",
 		}
@@ -143,7 +215,7 @@ class TestExternalProvisioningStatus(UnitTestCase):
 	@patch("crm.api.hfr.frappe.cache")
 	@patch("crm.api.hfr._get_external_provisioning_status", side_effect=lambda *args: {"status": "not_submitted"})
 	@patch("crm.api.hfr.requests.post", side_effect=__import__("requests").exceptions.Timeout)
-	def test_uncertain_post_is_checked_but_never_reposted(self, mock_post, _mock_status, mock_cache, _mock_lock):
+	def test_uncertain_post_retries_only_after_fresh_status_confirms_no_draft(self, mock_post, _mock_status, mock_cache, _mock_lock):
 		cache = MagicMock()
 		state = {}
 		cache.get_value.side_effect = lambda key: state.get(key)
@@ -161,15 +233,18 @@ class TestExternalProvisioningStatus(UnitTestCase):
 
 		self.assertEqual(first["submission"]["state"], "unknown")
 		self.assertEqual(second["submission"]["state"], "unknown")
-		mock_post.assert_called_once()
+		# Every explicit ensure performs a fresh GET; a confirmed absence permits
+		# another POST even when the previous response was ambiguous.
+		self.assertEqual(mock_post.call_count, 2)
 
 	@patch.dict("crm.api.hfr.frappe.conf", {"encryption_key": "test-site-encryption-key"})
 	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
 	@patch("crm.api.hfr.frappe.cache")
 	@patch("crm.api.hfr._get_external_provisioning_status", side_effect=lambda *args: {"status": "not_submitted"})
+	@patch("crm.api.hfr.frappe.log_error")
 	@patch("crm.api.hfr.requests.post")
 	def test_rejected_payload_fingerprint_is_keyed_and_does_not_repost_same_payload(
-		self, mock_post, _mock_status, mock_cache, _mock_lock
+		self, mock_post, _mock_log_error, _mock_status, mock_cache, _mock_lock
 	):
 		cache = MagicMock()
 		state = {}
@@ -260,7 +335,10 @@ class TestExternalProvisioningStatus(UnitTestCase):
 			"https://deploy.example.test/api/method/hmis_setup.api.external_provisioning.get_provision_status",
 			params={"fid": "FID-99-TEST-1"},
 			auth=("service-key", "service-secret"),
-			headers={"Accept": "application/json"},
+			headers={
+				"Accept": "application/json",
+				"X-Correlation-Id": mock_get.call_args.kwargs["headers"]["X-Correlation-Id"],
+			},
 			timeout=15,
 		)
 

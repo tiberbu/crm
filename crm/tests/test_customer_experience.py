@@ -290,6 +290,22 @@ class TestTokenPurchaseChain(IntegrationTestCase):
 		self.assertEqual(acc["facilities"][0]["facility_name"], "Desk Demo Clinic")
 		self.assertEqual(acc["facilities"][0]["mfl_code"], "88776")
 
+	@patch("crm.api.website_redirect.frappe.get_all")
+	def test_portal_hfr_fallback_is_scoped_to_authorized_org_and_mfl(self, mock_get_all):
+		from crm.api.website_redirect import _portal_hfr_registry_by_mfl
+
+		mock_get_all.return_value = [
+			{"parent": "Example Organization", "mfl_code": "88776", "hfr_facility_id": "FID-29-88776-5"}
+		]
+
+		result = _portal_hfr_registry_by_mfl(["88776"], ["Example Organization"])
+
+		self.assertEqual(result[("example organization", "88776")]["hfr_facility_id"], "FID-29-88776-5")
+		filters = mock_get_all.call_args.kwargs["filters"]
+		self.assertEqual(filters["parent"], ["in", ["Example Organization"]])
+		self.assertEqual(filters["mfl_code"], ["in", ["88776"]])
+		self.assertEqual(mock_get_all.call_args.kwargs["fields"], ["parent", "mfl_code", "hfr_facility_id"])
+
 	def test_customer_payments_projection(self):
 		from crm.api.website_redirect import _customer_payments
 

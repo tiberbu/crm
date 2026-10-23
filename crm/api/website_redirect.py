@@ -19,6 +19,7 @@ import frappe
 from frappe import _
 from frappe.utils import cstr
 
+
 PORTAL_ROUTE = "/cx-portal"
 CRM_LOGIN_MARKER = "crm_login"
 LOGIN_TEAM_ROUTES = {
@@ -77,6 +78,37 @@ def _contract_progress(contract_name):
 	}
 
 
+def _portal_hfr_registry_by_mfl(mfl_codes, organizations):
+	"""Resolve the HFR FID from an authorized organization's facility table.
+
+	Portal rows are projected from several older CRM records, while the
+	organization facility table is where a verified HFR lookup may have saved
+	the FID. Scope this fallback to both the already-authorized MFLs and the
+	organizations attached to those records; never use a browser-supplied ID.
+	"""
+	mfl_codes = sorted({cstr(value or "").strip() for value in mfl_codes if cstr(value or "").strip()})
+	organizations = sorted({cstr(value or "").strip() for value in organizations if cstr(value or "").strip()})
+	if not mfl_codes or not organizations:
+		return {}
+
+	fields = ["parent", "mfl_code", "hfr_facility_id"]
+	rows = frappe.get_all(
+		"CRM Org Facility",
+		filters={
+			"parent": ["in", organizations],
+			"parenttype": "CRM Organization",
+			"mfl_code": ["in", mfl_codes],
+		},
+		fields=fields,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: both organization and MFL come from the authorized portal scope.
+		limit_page_length=0,
+	)
+	return {
+		(cstr(row.get("parent") or "").casefold(), cstr(row.get("mfl_code") or "").strip().casefold()): row
+		for row in rows
+	}
+
+
 def _portal_progress(submission):
 	"""Build a customer-safe progress projection from canonical CRM records.
 
@@ -104,11 +136,15 @@ def _portal_progress(submission):
 			for row in frappe.get_all(
 				"CRM Pre-Qualified Facility",
 				filters={"mfl_code": ["in", mfl_codes]},
-				fields=["name", "mfl_code", "facility_name", "keph_level"],
+				fields=["name", "mfl_code", "facility_name", "keph_level", "organization", "hfr_facility_id"],
 				ignore_permissions=True,  # SYSTEM-INTERNAL: OIS permission scopes the snapshot.
 				limit_page_length=0,
 			)
 		}
+	registry_by_mfl = _portal_hfr_registry_by_mfl(
+		mfl_codes,
+		[row.get("organization") for row in facility_rows.values()],
+	)
 	parent_names = [row.name for row in facility_rows.values()]
 	membership_rows = {}
 	if parent_names and network:
@@ -142,6 +178,9 @@ def _portal_progress(submission):
 				"facility_name": cstr((facility or snapshot).get("facility_name") or "Facility"),
 				"mfl_code": mfl_code,
 				"keph_level": cstr((facility or snapshot).get("keph_level") or ""),
+				"hfr_facility_id": (facility or {}).get("hfr_facility_id") or registry_by_mfl.get(
+					(cstr((facility or {}).get("organization") or "").casefold(), mfl_code.casefold()), {}
+				).get("hfr_facility_id") or "",
 				"network": network,
 				"membership_status": membership_status,
 				"network_contact": {
@@ -1248,7 +1287,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 		filters={"name": ["in", parent_names]},
 		fields=available_fields(
 			"CRM Pre-Qualified Facility",
-			["name", "mfl_code", "facility_name", "keph_level"] + list(hfr_detail_fields),
+			["name", "mfl_code", "facility_name", "keph_level", "organization"] + list(hfr_detail_fields),
 		),
 		ignore_permissions=True,
 		limit_page_length=0,
@@ -1283,6 +1322,37 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 		if mfl:
 			package_by_mfl[mfl] = row
 			deal_by_mfl[mfl] = row.get("parent")
+
+	customer_names_by_legal_name = {
+		cstr(row.get("name") or ""): cstr(row.get("customer_name") or row.get("name") or "")
+		for row in frappe.get_all(
+			"Customer",
+			filters={"name": ["in", list(customer_names)]},
+			fields=["name", "customer_name"],
+			limit_page_length=0,
+			ignore_permissions=True,
+		)
+	} if customer_names else {}
+	deal_organization_by_name = {
+		cstr(row.get("name") or ""): cstr(row.get("organization") or "") for row in deals
+	}
+	registry_org_names = set(customer_names) | set(customer_names_by_legal_name.values())
+	registry_org_names.update(value for value in deal_organization_by_name.values() if value)
+	registry_org_names.update(cstr(row.get("organization") or "") for row in facilities if row.get("organization"))
+	registry_mfl_codes = {
+		cstr(row.get("mfl_code") or "").strip()
+		for row in [*facilities, *deal_facility_rows]
+		if cstr(row.get("mfl_code") or "").strip()
+	}
+	registry_by_org_mfl = _portal_hfr_registry_by_mfl(registry_mfl_codes, registry_org_names)
+
+	def registry_facility(organization_names, mfl_code):
+		mfl_key = cstr(mfl_code or "").strip().casefold()
+		for organization in organization_names:
+			key = (cstr(organization or "").strip().casefold(), mfl_key)
+			if key in registry_by_org_mfl:
+				return registry_by_org_mfl[key]
+		return {}
 
 	item_codes = list({cstr(row.get("cx_token_package_item")) for row in deal_facility_rows if row.get("cx_token_package_item")})
 	item_rows = frappe.get_all(
@@ -1354,6 +1424,13 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				"facility_name": cstr(facility.get("facility_name") or "Facility"),
 				"mfl_code": mfl_raw,
 				**hfr_details(facility, package),
+				"hfr_facility_id": facility.get("hfr_facility_id")
+				or registry_facility(
+					[facility.get("organization"), deal_organization_by_name.get(fac_deal), customer_legal_name, customer],
+					mfl_raw,
+				).get("hfr_facility_id")
+				or package.get("hfr_facility_id")
+				or "",
 				"keph_level": cstr(facility.get("keph_level") or ""),
 				"network": frappe.db.get_value("CRM Opt-In Network", membership.get("network"), "display_name") if membership.get("network") else (primary_deal.get("optin_network") if primary_deal else None) or "CareVerse Partner Network",
 				"network_support": _portal_network(membership.get("network") or (primary_deal.get("optin_network") if primary_deal else "")),
@@ -1402,6 +1479,9 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 					"facility_name": cstr(df.get("facility_name") or "Facility"),
 					"mfl_code": mfl_raw,
 					**hfr_details(df),
+					"hfr_facility_id": df.get("hfr_facility_id")
+					or registry_facility([deal_organization_by_name.get(d.get("name")), customer_legal_name, customer], mfl_raw).get("hfr_facility_id")
+					or "",
 					"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
 					"network": d.get("optin_network") or "CareVerse Partner Network",
 					"network_support": _portal_network(d.get("optin_network")),
@@ -1458,6 +1538,9 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				"facility_name": cstr(df.get("facility_name") or "Facility"),
 				"mfl_code": cstr(df.get("mfl_code") or ""),
 				**hfr_details(df),
+				"hfr_facility_id": df.get("hfr_facility_id")
+				or registry_facility([deal_organization_by_name.get(d_name), deal_doc.get("organization")], df.get("mfl_code")).get("hfr_facility_id")
+				or "",
 				"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
 				"network": deal_doc.get("optin_network") or "CareVerse Partner Network",
 				"network_support": _portal_network(deal_doc.get("optin_network")),
@@ -1501,11 +1584,21 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			fields=available_fields("CRM Lead Facility", ["facility_name", "mfl_code", "facility_level"] + list(hfr_detail_fields)),
 			limit_page_length=0,
 		)
+		lead_registry = _portal_hfr_registry_by_mfl(
+			[row.get("mfl_code") for row in lead_fac_rows],
+			[lead_doc.get("organization")],
+		)
 		fac_rows = [
 			{
 				"facility_name": cstr(lf.get("facility_name") or "Facility"),
 				"mfl_code": cstr(lf.get("mfl_code") or ""),
 				**hfr_details(lf),
+				"hfr_facility_id": lf.get("hfr_facility_id")
+				or lead_registry.get(
+					(cstr(lead_doc.get("organization") or "").casefold(), cstr(lf.get("mfl_code") or "").strip().casefold()),
+					{},
+				).get("hfr_facility_id")
+				or "",
 				"keph_level": cstr(lf.get("facility_level") or "Level 2 Dispensary"),
 				"network": lead_doc.get("optin_network") or "CareVerse Partner Network",
 				"network_support": _portal_network(lead_doc.get("optin_network")),

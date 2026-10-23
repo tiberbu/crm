@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import re
 import time
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import quote
 
 import frappe
@@ -318,19 +318,39 @@ def _merge_facility_hfr_fallback(primary, fallback):
 	return primary
 
 
-@frappe.whitelist(methods=["GET", "POST"])
-def get_provisioning_status(mfl_code):
-	"""Return deployment progress for a facility in the signed-in user's portfolio.
+def _unique_facility_projection(rows, fields):
+	"""Project only values that agree across all matching authorized facility rows."""
+	projection = {}
+	for fieldname in fields:
+		values = {}
+		for row in rows:
+			value = row.get(fieldname)
+			if value not in (None, ""):
+				values.setdefault(frappe.utils.cstr(value).strip(), value)
+		if len(values) == 1:
+			projection[fieldname] = next(iter(values.values()))
+	return projection
 
-	The route is called through the configured HIE API gateway with the existing
-	Bearer JWT. Its documented status payload does not include service-unit
-	inventory, so that field stays unavailable until the gateway contract provides it.
-	"""
+
+@frappe.whitelist(methods=["GET"])
+def get_provisioning_status(mfl_code):
+	"""Read deployment progress without creating or changing a setup record."""
+	return _get_provisioning_status(mfl_code, ensure_missing_draft=False)
+
+
+@frappe.whitelist(methods=["POST"])
+def ensure_provisioning_draft(mfl_code):
+	"""Ensure a draft exists: read TA status, POST only when no draft exists, then reload."""
+	return _get_provisioning_status(mfl_code, ensure_missing_draft=True)
+
+
+def _get_provisioning_status(mfl_code, ensure_missing_draft):
+	"""Resolve an authorized facility and read status, optionally ensuring a draft."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		frappe.throw(_("Please sign in to view facility implementation status."), frappe.PermissionError)
 
-	from crm.api.website_redirect import get_user_customer_names
+	from crm.api.website_redirect import get_user_customer_names, _portal_hfr_registry_by_mfl
 
 	customers = get_user_customer_names(user)
 	from crm.api.website_redirect import get_user_deal_names, get_user_lead_names
@@ -352,28 +372,28 @@ def get_provisioning_status(mfl_code):
 	facility = frappe.db.get_value(
 		"CRM Pre-Qualified Facility",
 		{"name": ["in", allowed], "mfl_code": mfl_code},
-		["name", "hfr_facility_id", "facility_name", "keph_level", "registration_number", "license_number", "hfr_county", "hfr_sub_county"],
+		["name", "hfr_facility_id", "facility_name", "keph_level", "registration_number", "license_number", "hfr_county", "hfr_sub_county", "organization", "creation"],
 		as_dict=True,
 	) if allowed else None
 	deal_facility = None
 	if deals:
 		deal_fields = [
 			field for field in (
-				"hfr_facility_id", "facility_name", "facility_level", "registration_number", "license_number",
-				"hfr_county", "hfr_sub_county", "cx_token_package_item", "cx_token_package_quantity",
+				"hfr_facility_id", "facility_name", "facility_level", "registration_number", "license_number", "organization",
+				"hfr_county", "hfr_sub_county", "cx_token_package_item", "cx_token_package_quantity", "creation",
 			) if frappe.get_meta("CRM Deal Facility").has_field(field)
 		]
 		deal_rows = frappe.get_all(
 			"CRM Deal Facility",
 			filters={"parent": ["in", deals], "mfl_code": mfl_code},
 			fields=deal_fields,
-			limit=1,
+			limit_page_length=0,
 			ignore_permissions=True,
 		)
 		if deal_rows:
-			deal_facility = frappe._dict(deal_rows[0])
+			deal_facility = frappe._dict(_unique_facility_projection(deal_rows, deal_fields))
 			if not facility:
-				facility = frappe._dict(deal_rows[0])
+				facility = frappe._dict({**deal_facility, "mfl_code": mfl_code})
 			else:
 				# The portal projects HFR values from the Deal Facility when the
 				# linked Pre-Qualified Facility is incomplete. Apply the same
@@ -384,13 +404,52 @@ def get_provisioning_status(mfl_code):
 			"CRM Lead Facility",
 			filters={"parent": ["in", leads], "mfl_code": mfl_code},
 			fields=["hfr_facility_id"],
-			limit=1,
+			limit_page_length=0,
 			ignore_permissions=True,
 		)
 		if lead_rows:
-			facility = frappe._dict(hfr_facility_id=lead_rows[0].get("hfr_facility_id"))
+			lead_projection = _unique_facility_projection(lead_rows, ["hfr_facility_id"])
+			facility = frappe._dict({**lead_projection, "mfl_code": mfl_code})
 	if not facility:
 		frappe.throw(_("Facility not found in your portfolio."), frappe.PermissionError)
+
+	if not facility.get("hfr_facility_id"):
+		lead_organizations = frappe.get_all(
+			"CRM Lead",
+			filters={"name": ["in", leads]},
+			fields=["organization"],
+			limit_page_length=0,
+			ignore_permissions=True,
+		) if leads else []
+		deal_organizations = frappe.get_all(
+			"CRM Deal",
+			filters={"name": ["in", deals]},
+			fields=["organization"],
+			limit_page_length=0,
+			ignore_permissions=True,
+		) if deals else []
+		customer_organizations = frappe.get_all(
+			"Customer",
+			filters={"name": ["in", customers]},
+			fields=["customer_name"],
+			limit_page_length=0,
+			ignore_permissions=True,
+		) if customers else []
+		registry_rows = _portal_hfr_registry_by_mfl(
+			[mfl_code],
+			[facility.get("organization")]
+			+ [row.get("organization") for row in lead_organizations]
+			+ [row.get("organization") for row in deal_organizations]
+			+ [row.get("customer_name") for row in customer_organizations]
+			+ customers,
+		)
+		registry_fids = {
+			frappe.utils.cstr(row.get("hfr_facility_id") or "").strip()
+			for row in registry_rows.values()
+			if frappe.utils.cstr(row.get("hfr_facility_id") or "").strip()
+		}
+		if len(registry_fids) == 1:
+			facility.hfr_facility_id = registry_fids.pop()
 
 	if not facility.get("hfr_facility_id"):
 		return {
@@ -420,7 +479,17 @@ def get_provisioning_status(mfl_code):
 				"message": _("External HMIS setup access is incomplete. Ask your administrator to finish the service credentials."),
 			}
 		status = _get_external_provisioning_status(external_url, external_key, external_secret, facility.hfr_facility_id)
-		if status.get("status") == "not_submitted":
+		if ensure_missing_draft and (status.get("status") == "unavailable" or status.get("has_error")):
+			frappe.log_error(
+				title="External HMIS provisioning status requires support",
+				message="fid=%s correlation_id=%s\n%s"
+				% (
+					facility.hfr_facility_id,
+					status.get("correlation_id") or "unknown",
+					status.get("error_details") or status.get("message") or "No diagnostic response returned.",
+				),
+			)
+		if ensure_missing_draft and status.get("status") == "not_submitted":
 			source = _get_external_provisioning_source(facility, deal_facility, mfl_code, deals)
 			payload, missing_fields = _build_external_provisioning_payload(source)
 			status = _auto_submit_external_provisioning(
@@ -432,6 +501,14 @@ def get_provisioning_status(mfl_code):
 				payload,
 				missing_fields,
 			)
+		status["fid"] = facility.hfr_facility_id
+		# The TA status API includes its deployment log and last error on a 200
+		# response. These can contain internal tracebacks, so only CRM System
+		# Managers receive them through this customer-portfolio endpoint.
+		if not frappe.has_role("System Manager"):
+			status.pop("error_details", None)
+			if isinstance(status.get("submission"), dict):
+				status["submission"].pop("error_details", None)
 		return status
 
 	if not settings.hfr_enabled:
@@ -559,7 +636,6 @@ def get_provisioning_status(mfl_code):
 	except requests.exceptions.RequestException as exc:
 		return _provisioning_unavailable("network", None, correlation_id)
 	except (ValueError, TypeError):
-		frappe.log_error(title="HMIS provisioning response invalid", message="The HIE response was not valid JSON.")
 		return _provisioning_unavailable("response", None, correlation_id)
 
 
@@ -577,8 +653,16 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 			"message": _("External HMIS setup must use a secure HTTPS address."),
 		}
 	url = base_url + "/api/method/hmis_setup.api.external_provisioning.get_provision_status"
+	correlation_id = frappe.generate_hash(length=16)
 	try:
-		response = requests.get(url, params={"fid": fid}, auth=(api_key, api_secret), headers={"Accept": "application/json"}, timeout=15)
+		response = requests.get(
+			url,
+			params={"fid": fid},
+			auth=(api_key, api_secret),
+			headers={"Accept": "application/json", "X-Correlation-Id": correlation_id},
+			timeout=15,
+		)
+		response_correlation_id = response.headers.get("X-Correlation-Id") or correlation_id
 		# Frappe maps ValidationError to HTTP 417; the setup service uses that
 		# for the documented "no Facility Setup found" and duplicate responses.
 		# Older/gateway implementations may return the same validation errors as 400.
@@ -594,6 +678,7 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 					"last_attempt": None,
 					"service_units": None,
 					"source": "external_setup",
+					"correlation_id": response_correlation_id,
 					"message": _("HMIS setup has not started for this facility."),
 				}
 			if "multiple facility setup" in message_lower:
@@ -604,20 +689,32 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 					"last_attempt": None,
 					"service_units": None,
 					"source": "external_setup",
+					"correlation_id": response_correlation_id,
 					"message": _("More than one setup record uses this facility ID. Contact the implementation team."),
 				}
-			return _external_provisioning_unavailable("bad_request", response.status_code)
+			return _external_provisioning_unavailable(
+				"bad_request", response.status_code, _external_error_details_for_response(response), response_correlation_id
+			)
 		if response.status_code in (401, 403):
-			failure = _gateway_error(response).get("message", "").casefold()
+			body = _gateway_error(response)
+			failure = body.get("message", "").casefold()
 			kind = "method_not_published" if "not whitelisted" in failure else "auth"
-			return _external_provisioning_unavailable(kind, response.status_code)
+			return _external_provisioning_unavailable(
+				kind, response.status_code, _external_error_details_for_response(response), response_correlation_id
+			)
 		if response.status_code == 404:
-			return _external_provisioning_unavailable("method_not_published", response.status_code)
+			body = _gateway_error(response)
+			return _external_provisioning_unavailable(
+				"method_not_published", response.status_code, _external_error_details_for_response(response), response_correlation_id
+			)
 		if response.status_code != 200:
-			return _external_provisioning_unavailable("service", response.status_code)
+			body = _gateway_error(response)
+			return _external_provisioning_unavailable(
+				"service", response.status_code, _external_error_details_for_response(response), response_correlation_id
+			)
 		payload = _gateway_data(response)
 		status = frappe.utils.cstr(payload.get("status") or "Unknown")
-		return {
+		result = {
 			"configured": True,
 			"status": status,
 			"progress": frappe.utils.flt(payload.get("progress")) if payload.get("progress") is not None else None,
@@ -627,60 +724,39 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 			"service_units_count": None,
 			"site_status": None,
 			"source": "external_setup",
+			"correlation_id": response_correlation_id,
 			"message": _("Status synced from the HMIS setup service. Deployment is reviewed and started by the implementation team."),
 			"service_units_message": _("The setup status API does not report configured service units."),
 		}
+		if status.casefold() == "error" or payload.get("error"):
+			error_details = _external_error_details(
+				response.status_code,
+				{"error": payload.get("error"), "log": payload.get("log")},
+			)
+			if frappe.has_role("System Manager"):
+				result["error_details"] = error_details
+		return result
 	except requests.exceptions.RequestException:
-		return _external_provisioning_unavailable("network", None)
+		return _external_provisioning_unavailable("network", None, correlation_id=correlation_id)
 	except (ValueError, TypeError):
-		return _external_provisioning_unavailable("response", None)
+		return _external_provisioning_unavailable("response", None, correlation_id=correlation_id)
 
 
 def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals):
 	"""Resolve only server-owned CRM data that can support a facility draft.
 
 	The accepted Opt-In signatory is the only approved administrator source. The
-	TA maps licence to the HFR licence number or registration number. Billing
-	model and expiry policy remain unresolved in the provisioning PRD.
+	TA maps licence to the HFR licence number or registration number. Token expiry
+	is 30 days after the CRM facility onboarding record was created.
 	"""
 	facility = frappe._dict(facility or {})
 	deal_facility = frappe._dict(deal_facility or {})
 	admin = {}
-	purchased_package = None
+	selected_package = None
 	if deals:
-		won_deals = frappe.get_all(
-			"CRM Deal",
-			filters={"name": ["in", deals], "status": "Won"},
-			pluck="name",
-			limit_page_length=0,
-			ignore_permissions=True,
-		)
-		if won_deals:
-			deal_meta = frappe.get_meta("CRM Deal Facility")
-			package_fields = ["parent"] + [
-				field for field in ("cx_token_package_item", "cx_token_package_quantity") if deal_meta.has_field(field)
-			]
-			package_rows = frappe.get_all(
-				"CRM Deal Facility",
-				filters={"parent": ["in", won_deals], "mfl_code": mfl_code},
-				fields=package_fields,
-				limit_page_length=0,
-				ignore_permissions=True,
-			)
-			if len(package_rows) == 1 and package_rows[0].get("cx_token_package_item"):
-				invoice_filters = {
-					"crm_token_facility_mfl": mfl_code,
-					"crm_token_package_item": package_rows[0]["cx_token_package_item"],
-					"docstatus": 1,
-					"outstanding_amount": 0,
-				}
-				if frappe.db.has_column("Sales Invoice", "crm_token_facility_mfl") and frappe.db.has_column("Sales Invoice", "crm_token_package_item"):
-					if frappe.db.exists("Sales Invoice", invoice_filters):
-						purchased_package = package_rows[0]
-		admin_deals = [purchased_package.get("parent")] if purchased_package else deals
 		rows = frappe.get_all(
 			"CRM Opt-In Submission",
-			filters={"deal": ["in", admin_deals], "status": "Processed"},
+			filters={"deal": ["in", deals], "status": "Processed"},
 			fields=["name", "deal", "raw_json", "facility_signatory_name", "facility_signatory_email", "facility_signatory_phone"],
 			limit_page_length=0,
 			ignore_permissions=True,
@@ -704,6 +780,18 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals):
 				"admin_email": matches[0].get("facility_signatory_email"),
 				"admin_mobile": matches[0].get("facility_signatory_phone"),
 			}
+	if deal_facility.get("cx_token_package_item"):
+		selected_package = deal_facility
+	onboarding_date = facility.get("onboarding_date") or deal_facility.get("creation") or facility.get("creation")
+	if onboarding_date:
+		try:
+			onboarding_date = frappe.utils.getdate(onboarding_date)
+		except (TypeError, ValueError):
+			onboarding_date = None
+	if not onboarding_date:
+		# A new lead may not have a CRM facility row yet. The first ensure request
+		# is then the start of its CRM onboarding timeline.
+		onboarding_date = frappe.utils.getdate(frappe.utils.nowdate())
 	return {
 		"fid": facility.get("hfr_facility_id"),
 		"licence": facility.get("license_number") or facility.get("registration_number"),
@@ -711,11 +799,16 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals):
 		"facility_level": facility.get("keph_level") or facility.get("facility_level"),
 		"county": facility.get("hfr_county"),
 		"sub_county": facility.get("hfr_sub_county"),
-		"tokens_awarded": purchased_package.get("cx_token_package_quantity") if purchased_package else None,
+		"tokens_awarded": (selected_package.get("cx_token_package_quantity") or 0) if selected_package else 0,
+		"token_expiry_date": _token_expiry_from_onboarding_date(onboarding_date),
+		"billing_model": "Token",
 		**admin,
-		# Billing model and expiry sources remain unresolved in PRD §12.
-		"deal_won_package_purchase_verified": bool(purchased_package),
 	}
+
+
+def _token_expiry_from_onboarding_date(onboarding_date):
+	"""Return the TA token expiry, 30 calendar days after CRM onboarding starts."""
+	return (frappe.utils.getdate(onboarding_date) + timedelta(days=30)).isoformat()
 
 
 def _build_external_provisioning_payload(source):
@@ -762,8 +855,6 @@ def _build_external_provisioning_payload(source):
 		)
 		if fieldname not in payload
 	]
-	if source.get("deal_won_package_purchase_verified") is not True:
-		missing.append("won deal with purchased facility package")
 	if payload.get("billing_model") == "License" and not payload.get("license_expiry_date"):
 		missing.append("license_expiry_date")
 
@@ -809,11 +900,10 @@ def _auto_submit_external_provisioning(base_url, api_key, api_secret, fid, statu
 def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, status, payload, missing_fields):
 	"""Create one draft after an authoritative missing-status check.
 
-	The FID lock serializes portal retries. Before every POST we GET status again;
-	ambiguous POST outcomes are remembered and never automatically reposted because
-	the TA endpoint does not implement idempotency. A retry after an ambiguous result
-	means status-check only. Support must verify the upstream record before clearing
-	the cached attempt state to permit a new POST.
+	The FID lock serializes portal retries. Before every POST we GET status again.
+	An ambiguous result is reconciled by the next explicit ensure: retry POST only
+	when that fresh status GET still confirms no draft. The TA endpoint has no
+	idempotency support, so this is the strongest available duplicate control.
 	"""
 	if missing_fields:
 		status["submission"] = {
@@ -855,20 +945,13 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 				"state": "error",
 				"retryable": False,
 				"message": _("The deployment service rejected these same facility details. Correct the contract or administrator data before refreshing."),
+				"error_details": frappe.cache().get_value(attempt_key + ":error_details"),
 			}
 			return status
-		if attempt in ("posting", "unknown", "accepted"):
-			status["submission"] = {
-				"state": "unknown",
-				"retryable": True,
-				"retry_mode": "status_check",
-				"message": _(
-					"The prior submission may have reached the deployment service. CRM checked again and found no visible draft, so it will not risk creating a duplicate. Ask support to verify the FID before retrying."
-				),
-			}
-			return status
+		# A fresh authoritative GET has already confirmed there is no draft. Do
+		# not let a stale `unknown` or `accepted` cache entry suppress creation:
+		# the caller explicitly requested ensure, so POST now and reconcile again.
 
-		frappe.cache().set_value(attempt_key, "posting", expires_in_sec=31536000)
 		url = base_url.rstrip("/") + "/api/method/hmis_setup.api.external_provisioning.provision_facility"
 		correlation_id = frappe.generate_hash(length=16)
 		try:
@@ -880,7 +963,6 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 				timeout=60,
 			)
 		except requests.exceptions.RequestException:
-			frappe.cache().set_value(attempt_key, "unknown", expires_in_sec=31536000)
 			status["submission"] = {
 				"state": "unknown",
 				"retryable": True,
@@ -892,12 +974,19 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 
 		if response.status_code not in (200, 202):
 			body = _gateway_error(response)
+			error_details = _external_error_details_for_response(response)
+			submission_correlation_id = response.headers.get("X-Correlation-Id") or correlation_id
+			frappe.log_error(
+				title="External HMIS provisioning submission failed",
+				message="http_status=%s correlation_id=%s\n%s"
+				% (response.status_code, submission_correlation_id, error_details),
+			)
 			if response.status_code >= 500 or response.status_code in (408, 429):
-				frappe.cache().set_value(attempt_key, "unknown", expires_in_sec=31536000)
 				state = "unknown"
 				retryable = True
 			else:
 				frappe.cache().set_value(attempt_key, "rejected:%s" % payload_fingerprint, expires_in_sec=31536000)
+				frappe.cache().set_value(attempt_key + ":error_details", error_details, expires_in_sec=31536000)
 				state = "error"
 				retryable = False
 			status["submission"] = {
@@ -905,13 +994,13 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 				"retryable": retryable,
 				"retry_mode": "status_check" if retryable else None,
 				"message": _external_submit_error(response.status_code, body),
-				"correlation_id": response.headers.get("X-Correlation-Id") or correlation_id,
+				"error_details": error_details,
+				"correlation_id": submission_correlation_id,
 			}
 			return status
 
 		body = _gateway_data(response)
 		if body.get("accepted") is not True:
-			frappe.cache().set_value(attempt_key, "unknown", expires_in_sec=31536000)
 			status["submission"] = {
 				"state": "unknown",
 				"retryable": True,
@@ -921,7 +1010,6 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 			}
 			return status
 
-		frappe.cache().set_value(attempt_key, "accepted", expires_in_sec=31536000)
 		refreshed = _get_external_provisioning_status(base_url, api_key, api_secret, fid)
 		if refreshed.get("status") == "not_submitted":
 			refreshed.update({"status": body.get("status") or "Draft", "progress": 0})
@@ -963,7 +1051,41 @@ def _external_submit_error(status_code, body):
 	return _("The deployment service rejected the request. Contact support with the status code {0}.").format(status_code)
 
 
-def _external_provisioning_unavailable(kind, status_code):
+def _external_error_details(status_code, body):
+	"""Keep a bounded upstream error response for support, with credentials redacted."""
+	sensitive_key = re.compile(r"password|secret|token|authorization|cookie|api[_-]?key|credential", re.I)
+	secret_value = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
+	sensitive_text = re.compile(
+		r'(?i)((?:"?)(?:password|secret|token|authorization|cookie|api[_-]?key|credential)(?:"?)\s*[:=]\s*"?)[^"\s,;&}]+'
+	)
+
+	def redact(value):
+		if isinstance(value, dict):
+			return {
+				str(key): "[REDACTED]" if sensitive_key.search(str(key)) else redact(item)
+				for key, item in value.items()
+			}
+		if isinstance(value, list):
+			return [redact(item) for item in value[:50]]
+		if isinstance(value, str):
+			value = secret_value.sub(r"\1[REDACTED]", value[:8000])
+			return sensitive_text.sub(r"\1[REDACTED]", value)
+		return value
+
+	details = {"http_status": int(status_code), "response": redact(body)}
+	return json.dumps(details, ensure_ascii=False, indent=2, default=str)[:12000]
+
+
+def _external_error_details_for_response(response):
+	"""Serialize the complete upstream error response, including non-JSON bodies."""
+	try:
+		body = response.json()
+	except (ValueError, TypeError):
+		body = {"response_text": getattr(response, "text", "")}
+	return _external_error_details(response.status_code, body)
+
+
+def _external_provisioning_unavailable(kind, status_code, error_details=None, correlation_id=None):
 	if kind == "method_not_published":
 		error_code = "method_not_published"
 		error_title = _("Connected, but status access is not enabled")
@@ -993,10 +1115,6 @@ def _external_provisioning_unavailable(kind, status_code):
 		error_title = _("The deployment service could not return status")
 		message = _("Try refreshing shortly. Your billing and facility records are unaffected.")
 		retryable = True
-	frappe.log_error(
-		title="External HMIS provisioning API unavailable",
-		message="kind=%s status=%s" % (kind, status_code or "unknown"),
-	)
 	return {
 		"configured": True,
 		"status": "unavailable",
@@ -1009,6 +1127,8 @@ def _external_provisioning_unavailable(kind, status_code):
 		"retryable": retryable,
 		"connection_reached": kind in ("method_not_published", "auth", "bad_request"),
 		"message": message,
+		"error_details": error_details,
+		"correlation_id": correlation_id,
 	}
 
 
@@ -1054,10 +1174,6 @@ def _provisioning_unavailable(kind, status_code, correlation_id=None):
 		error_title = _("Could not refresh implementation status")
 		message = _("Try refreshing shortly. Your billing and facility records are unaffected.")
 		retryable = True
-	frappe.log_error(
-		title="HMIS provisioning API unavailable",
-		message="kind=%s status=%s correlation_id=%s" % (kind, status_code or "unknown", correlation_id or "unknown"),
-	)
 	return {
 		"configured": True,
 		"status": "unavailable",
