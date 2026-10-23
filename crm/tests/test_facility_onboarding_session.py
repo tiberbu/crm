@@ -139,3 +139,32 @@ class TestSubmitWithoutNetwork(UnitTestCase):
 		finally:
 			if created:
 				frappe.db.rollback()
+
+
+class TestConflictCheckWithoutNetwork(UnitTestCase):
+	def _check(self, partner_id, public_network):
+		with (
+			patch.object(fo, "_session_or_error", return_value={"facilities": [{"facility_id": "FID-1"}]}),
+			patch.object(fo, "_public_network", return_value=public_network),
+			patch.object(fo, "_check_onboarding_conflicts", return_value={"outcome": "new"}) as conflicts,
+			patch.object(fo, "_evidence"),
+		):
+			result = fo.check_onboarding_conflicts("token", '["FID-1"]', partner_id)
+		return result, conflicts
+
+	def test_blank_network_id_is_checked_against_no_network(self):
+		# The pre-submit check rejected a blank Network ID with "The configured default
+		# Network ID is not available", so the Network-optional submit never ran.
+		result, conflicts = self._check("", None)
+
+		self.assertEqual(result["outcome"], "new")
+		self.assertEqual(conflicts.call_args.args[2], fo.NO_NETWORK_SLUG)
+
+	def test_network_id_is_checked_against_that_network(self):
+		_result, conflicts = self._check("623161", {"name": "net-a"})
+
+		self.assertEqual(conflicts.call_args.args[2], "net-a")
+
+	def test_unknown_network_id_is_still_rejected(self):
+		with self.assertRaises(frappe.ValidationError):
+			self._check("999999", None)
