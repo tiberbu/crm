@@ -408,6 +408,12 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertFalse(refreshed[0]["onboarding_eligible"])
 		self.assertEqual(refreshed[0]["facility_eligibility_reason"], "level_not_allowed")
 
+	def test_hfr_licence_and_registration_numbers_are_kept_for_hmis_setup(self):
+		facility = fo._facility_row({**FACILITIES[0], "license_number": " LIC-1 ", "registration_number": "REG-1"})
+
+		self.assertEqual(fo._facility_licence_values(facility), {"license_number": "LIC-1", "registration_number": "REG-1"})
+		self.assertEqual(fo._facility_licence_values(fo._facility_row(FACILITIES[0])), {})
+
 	def test_facility_level_whitelist_uses_trimmed_case_insensitive_exact_matches(self):
 		facility = fo._facility_row({**FACILITIES[0], "facility_level": "  LEVEL 3  "})
 

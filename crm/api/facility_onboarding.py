@@ -265,6 +265,16 @@ def _facility_row(row: dict[str, Any]) -> dict[str, Any]:
 		"sub_county": _text(row.get("sub_county")),
 		"owner_type": _text(row.get("facility_owner_type") or row.get("owner_type")),
 		"registration_number": _text(row.get("registration_number")),
+		"license_number": _text(row.get("license_number")),
+	}
+
+
+def _facility_licence_values(facility: dict[str, Any]) -> dict[str, str]:
+	# The HMIS setup payload needs the HFR licence or registration number.
+	return {
+		fieldname: _text(facility.get(fieldname))
+		for fieldname in ("license_number", "registration_number")
+		if _text(facility.get(fieldname))
 	}
 
 
@@ -1153,6 +1163,7 @@ def _upsert_facility_membership(
 				"keph_level": _text(facility.get("classification")) or "Other",
 			}
 		)
+	facility_doc.update(_facility_licence_values(facility))
 	facility_doc.flags.skip_invitation = True
 	if hasattr(facility_doc, "is_self_onboarded") or (hasattr(facility_doc, "meta") and facility_doc.meta.has_field("is_self_onboarded")):
 		facility_doc.is_self_onboarded = 1
@@ -2042,6 +2053,7 @@ def _deal_add_facility(deal, facility, package):
 		"facility_level": _text(facility.get("classification")),
 		"number_of_beds": frappe.utils.cint(facility.get("number_of_beds")),
 		"hfr_sync_status": "HFR Verified",
+		**_facility_licence_values(facility),
 	}
 	package_values = {
 		"cx_token_package_item": package["item_code"],
