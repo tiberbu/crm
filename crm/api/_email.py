@@ -124,7 +124,11 @@ def schedule_email_queue_redaction(queue, replacement=OTP_QUEUE_REDACTION):
 
 	def send_then_redact():
 		try:
-			queue_doc.send()
+			# Frappe 15 already sent a now=True email inside sendmail() and recorded
+			# "Sent" only in the database, so the in-memory queue_doc still looks
+			# unsent. Send from a fresh copy so a delivered email is never sent twice.
+			if frappe.db.get_value("Email Queue", queue_name, "status") in ("Not Sent", "Partially Sent"):
+				frappe.get_doc("Email Queue", queue_name).send()
 		finally:
 			redact()
 
