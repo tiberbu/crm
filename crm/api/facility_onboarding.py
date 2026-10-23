@@ -344,7 +344,9 @@ def _session(token: str) -> dict[str, Any] | None:
 	if not token:
 		return None
 	try:
-		value = frappe.cache().get_value(_session_key(token))
+		# expires=True skips the request-local cache. On Frappe 15, set_value with an
+		# expiry does not update that cache, so a request would not see its own save.
+		value = frappe.cache().get_value(_session_key(token), expires=True)
 		payload = frappe.parse_json(value) if value else None
 		if payload and payload.get("person_sealed"):
 			payload["person"] = frappe.parse_json(decrypt(payload.pop("person_sealed")))
@@ -371,6 +373,49 @@ def _save_session(token: str, payload: dict[str, Any]) -> None:
 	if "identity_number" in to_store:
 		to_store["identity_number_sealed"] = encrypt(to_store.pop("identity_number"))
 	frappe.cache().set_value(_session_key(token), json.dumps(to_store), expires_in_sec=SESSION_TTL_SECONDS)
+
+
+def _identity_challenge_key(identity_hash: str) -> str:
+	secret = _password_setting("optin_signing_key") or frappe.conf.get("encryption_key") or "crm"
+	digest = hmac.new(secret.encode(), ("challenge|" + identity_hash).encode(), hashlib.sha256).hexdigest()
+	return "crm_facility_onboarding_challenge:%s" % digest
+
+
+def _take_recent_challenge(identity_hash: str, person: dict[str, Any], lookup_valid: bool, now: int):
+	"""Return the OTP state of this identity's unverified challenge sent within the resend window.
+
+	The previous session is deleted and only its code state moves to the new session, so a
+	page reload does not send a second code and its token is never shared.
+	"""
+	key = _identity_challenge_key(identity_hash)
+	previous_token = frappe.cache().get_value(key, expires=True)
+	if not previous_token:
+		return None
+	previous = _session(previous_token)
+	frappe.cache().delete_value(key)
+	if (
+		not previous
+		or previous.get("verified")
+		or bool(previous.get("lookup_valid")) != lookup_valid
+		or (previous.get("person") or {}).get("email") != person.get("email")
+		or (previous.get("person") or {}).get("phone") != person.get("phone")
+		or now - int(previous.get("otp_sent_at") or 0) >= OTP_RESEND_SECONDS
+		or now >= int(previous.get("otp_expires_at") or 0)
+	):
+		return None
+	frappe.cache().delete_value(_session_key(previous_token))
+	return {
+		field: previous.get(field)
+		for field in (
+			"otp_hash",
+			"otp_attempts",
+			"otp_expires_at",
+			"otp_sent_at",
+			"resend_count",
+			"delivery",
+			"delivery_mask_decoy",
+		)
+	}
 
 
 def _session_or_error(token: str, *, verified: bool = False) -> dict[str, Any]:
@@ -538,6 +583,35 @@ def _public_network(partner_id: str) -> dict[str, Any] | None:
 		ignore_permissions=True,
 	)
 	return rows[0] if rows else None
+
+
+NO_NETWORK_SLUG = "no-network"
+
+
+def _no_network() -> dict[str, Any]:
+	"""Return the record that marks a self-onboarding request submitted without a Network.
+
+	It is disabled, so the public Network ID lookup can never select it. Memberships, Deals
+	and Leads point at it so staff can find these requests and link a Network later.
+	"""
+	if not frappe.db.exists("CRM Opt-In Network", NO_NETWORK_SLUG):
+		try:
+			frappe.get_doc(
+				{
+					"doctype": "CRM Opt-In Network",
+					"slug": NO_NETWORK_SLUG,
+					"display_name": "No Network",
+					"enabled": 0,
+				}
+			).insert(ignore_permissions=True)
+		except frappe.DuplicateEntryError:
+			pass
+	return frappe.db.get_value(
+		"CRM Opt-In Network",
+		NO_NETWORK_SLUG,
+		["name", "slug", "display_name", "logo_url", "primary_colour", "contact_email", "footer_legal_name"],
+		as_dict=True,
+	)
 
 
 def _token_packages() -> list[dict[str, Any]]:
@@ -910,26 +984,35 @@ def start_identity(identification_type: Any, identification_number: Any):
 		# HFR receives the identity only after OTP succeeds. Keep it encrypted in
 		# the opaque session until then, and never put facility rows in this state.
 		payload["identity_number"] = id_number
-	if lookup_valid:
-		payload["delivery"] = _send_otp(payload["person"], otp)
-		payload["delivery_mask_decoy"] = payload["delivery"]["status"] == "unavailable"
-	else:
-		payload["delivery_mask_decoy"] = True
-		channel = _preferred_channel()
-		payload["delivery"] = {
-			"channel": channel,
-			"masked_destination": _decoy_destination(identity_hash, channel),
-			"status": "unavailable",
-		}
-	_save_session(token, payload)
+	# Serialize starts for one identity so a reload or double submit sends one code.
+	with filelock("crm_facility_onboarding_identity_%s" % identity_hash[:24], timeout=60):
+		recent = _take_recent_challenge(identity_hash, payload["person"], lookup_valid, now)
+		if recent:
+			payload.update(recent)
+		elif lookup_valid:
+			payload["delivery"] = _send_otp(payload["person"], otp)
+			payload["delivery_mask_decoy"] = payload["delivery"]["status"] == "unavailable"
+		else:
+			payload["delivery_mask_decoy"] = True
+			channel = _preferred_channel()
+			payload["delivery"] = {
+				"channel": channel,
+				"masked_destination": _decoy_destination(identity_hash, channel),
+				"status": "unavailable",
+			}
+		_save_session(token, payload)
+		frappe.cache().set_value(
+			_identity_challenge_key(identity_hash), token, expires_in_sec=OTP_RESEND_SECONDS
+		)
 	_evidence(
 		"lookup",
 		token,
 		payload,
 		outcome="ok" if lookup_valid else "failed",
-		detail="contact resolved" if lookup_valid else ("CR/Afyangu: %s" % cr_failure),
+		detail=("contact resolved" if lookup_valid else ("CR/Afyangu: %s" % cr_failure))
+		+ ("; code from the previous request reused, none sent" if recent else ""),
 	)
-	if lookup_valid:
+	if lookup_valid and not recent:
 		_evidence(
 			"otp_sent",
 			token,
@@ -944,6 +1027,7 @@ def start_identity(identification_type: Any, identification_number: Any):
 		"data": {
 			"session_token": token,
 			"challenge_started": True,
+			"reused": bool(recent),
 			"delivery": _delivery_payload(payload, now),
 		},
 	}
@@ -1030,6 +1114,8 @@ def _verify_otp_locked(token: str, otp: Any):
 		frappe.throw(_("The verification code is incorrect or expired."), frappe.PermissionError)
 	session["verified"] = True
 	session["otp_hash"] = ""
+	# A later start for this identity must not end the verified session.
+	frappe.cache().delete_value(_identity_challenge_key(_text(session.get("identity_hash"))))
 	# Consume the challenge before any downstream HFR call. If the registry call
 	# is interrupted, the same OTP cannot be replayed to create duplicate evidence.
 	_save_session(token, session)
@@ -1537,7 +1623,7 @@ def submit_onboarding(
 	account_email = _validate_account_email(account_email, session)
 	partner_id = _text(partner_id)
 	partner = _public_network(partner_id)
-	if not partner:
+	if not partner and partner_id:
 		frappe.throw(_("That Network ID does not exist or is not available."), frappe.ValidationError)
 	selected = _parse_selected_ids(selected_facility_ids)
 	if not selected:
@@ -1568,6 +1654,10 @@ def submit_onboarding(
 		session = _session_or_error(token, verified=True)
 		terms_snapshot = _validate_self_onboarding_terms(session, accepted_terms_hash)
 		_validate_account_email(account_email, session)
+		if not partner:
+			# No Network ID and no default Network: proceed and record that explicitly.
+			partner = _no_network()
+			_evidence("lookup", token, session, outcome="ok", detail="no Network ID provided; recorded as No Network")
 		conflicts = _check_onboarding_conflicts(session, selected, partner["name"])
 		if conflicts["outcome"] != "new":
 			_evidence(
