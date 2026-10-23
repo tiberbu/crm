@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test'
 // No site, login session, or external service credentials are required.
 export default defineConfig({
   testDir: './e2e/regression',
-  testMatch: /facility-single-view\.spec\.ts/,
+  testMatch: /(facility-single-view|facility-onboarding-network)\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
   timeout: 60000,

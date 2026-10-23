@@ -28,6 +28,7 @@ export function previousStage(stage) {
   return PREVIOUS[stage] || null
 }
 
+// A Network is optional: without one the request is recorded as having no Network.
 export function canAdvance(stage, state) {
   if (stage === 'facilities') return state.selectedFacilityCount > 0
   if (stage === 'pricing') return Boolean(state.packageCode)
@@ -37,7 +38,6 @@ export function canAdvance(stage, state) {
       state.packageSelectionsComplete ?? Boolean(state.packageCode)
     return Boolean(
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
-      state.hasNetwork &&
       hasPackageSelections &&
       state.hasTerms &&
       state.termsAccepted,
