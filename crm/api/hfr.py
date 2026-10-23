@@ -505,7 +505,7 @@ def _get_provisioning_status(mfl_code, ensure_missing_draft):
 		# The TA status API includes its deployment log and last error on a 200
 		# response. These can contain internal tracebacks, so only CRM System
 		# Managers receive them through this customer-portfolio endpoint.
-		if not frappe.has_role("System Manager"):
+		if "System Manager" not in frappe.get_roles():
 			status.pop("error_details", None)
 			if isinstance(status.get("submission"), dict):
 				status["submission"].pop("error_details", None)
@@ -733,7 +733,7 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 				response.status_code,
 				{"error": payload.get("error"), "log": payload.get("log")},
 			)
-			if frappe.has_role("System Manager"):
+			if "System Manager" in frappe.get_roles():
 				result["error_details"] = error_details
 		return result
 	except requests.exceptions.RequestException:
