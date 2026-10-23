@@ -50,7 +50,7 @@ describe('onboardingSteps', () => {
     }
     expect(canAdvance('review', ready)).toBe(true)
     expect(canAdvance('review', { ...ready, termsAccepted: false })).toBe(false)
-    expect(canAdvance('review', { ...ready, hasNetwork: false })).toBe(false)
+    expect(canAdvance('review', { ...ready, hasNetwork: false })).toBe(true)
     expect(canAdvance('review', { ...ready, hasTerms: false })).toBe(false)
     expect(canAdvance('review', { ...ready, accountEmail: 'nope' })).toBe(false)
   })

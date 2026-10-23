@@ -481,7 +481,12 @@
               </h2>
               <p class="mx-auto mt-1.5 sm:mt-2 max-w-md text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-6">
                 {{
-                  delivery.masked_destination
+                  delivery.masked_destination && delivery.reused
+                    ? __('We already sent a 6-digit code by {0} to {1}. Enter that code; no new code was sent.', [
+                        deliveryChannelLabel,
+                        delivery.masked_destination,
+                      ])
+                    : delivery.masked_destination
                     ? __('A 6-digit code was sent by {0} to {1}.', [
                         deliveryChannelLabel,
                         delivery.masked_destination,
@@ -860,7 +865,7 @@
                       @input="onPartnerIdInput"
                     />
                     <p class="mt-1 text-[10px] text-ink-gray-5">
-                      {{ __('We’ll use the default Network if one is available.') }}
+                      {{ __('Leave it blank if you don’t have one. We’ll use the default Network if one is set up.') }}
                     </p>
                     <span
                       v-if="partnerId && partnerId.length !== 6"
@@ -1244,7 +1249,7 @@
                   </button>
                 </dt>
                 <dd class="text-left sm:text-right font-semibold text-ink-gray-9" data-testid="review-network">
-                  {{ catalog.network?.display_name || __('No Network resolved') }}
+                  {{ catalog.network?.display_name || __('No Network') }}
                 </dd>
               </div>
               <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-1.5 sm:gap-4 p-3.5 sm:p-4">
@@ -1311,21 +1316,21 @@
 
             <div
               v-if="!catalog.network?.name"
-              class="mt-5 rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-xs sm:text-sm leading-5 sm:leading-6 text-amber-900"
+              class="mt-5 rounded-xl border border-outline-gray-2 bg-surface-gray-1/60 p-4 text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-7"
               role="status"
-              data-testid="network-blocker"
+              data-testid="no-network-note"
             >
               <p>
                 {{
-                  __('We couldn’t find a Network for this request. Check the Network ID or contact support and we’ll help you continue.')
+                  __('You can submit without a Network. We’ll record that this request has no Network, and you can be linked to one later.')
                 }}
               </p>
               <button
                 type="button"
-                class="mt-2 font-bold underline underline-offset-4 text-amber-950"
+                class="mt-2 font-semibold underline underline-offset-4 text-ink-gray-8"
                 @click="stage = 'pricing'"
               >
-                {{ __('Review Network ID') }}
+                {{ __('Add a Network ID') }}
               </button>
             </div>
 
@@ -1440,8 +1445,12 @@
                 ? __(
                     'Your selected facilities are linked to your existing Customer Experience account. Sign in with your usual details to review your quote and next steps.',
                   )
-                : __(
+                : catalog.network?.name
+                ? __(
                     'Your Customer Experience account is ready, and your selected facilities are linked to the Network. Check your email for password setup instructions, then sign in to review your quote and next steps.',
+                  )
+                : __(
+                    'Your Customer Experience account is ready. Check your email for password setup instructions, then sign in to review your quote and next steps.',
                   )
             }}
           </p>
@@ -1622,10 +1631,8 @@ const totals = computed(() => {
 const reviewReady = computed(
   () =>
     Boolean(termsSnapshot.value?.content_hash) &&
-    Boolean(catalog.value.network?.name) &&
     canAdvance('review', {
       accountEmail: accountEmail.value,
-      hasNetwork: Boolean(catalog.value.network?.name),
       packageSelectionsComplete: allPackagesSelected.value,
       hasTerms: Boolean(termsSnapshot.value?.content_hash),
       termsAccepted: termsAccepted.value,
@@ -1914,7 +1921,8 @@ async function startIdentity() {
     otpError.value = ''
     hfrRetryPending.value = false
     hfrRetryExhausted.value = false
-    applyDelivery(data.delivery)
+    // A restart within the resend window reuses the code already sent.
+    applyDelivery({ ...data.delivery, reused: Boolean(data.reused) })
     stage.value = 'otp'
   } catch (error) {
     errorMessage.value =
