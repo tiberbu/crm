@@ -1591,14 +1591,11 @@ def check_onboarding_conflicts(session_token: Any, selected_facility_ids: Any, p
 	session = _session_or_error(token, verified=True)
 	selected = _parse_selected_ids(selected_facility_ids)
 	partner = _public_network(_text(partner_id))
-	if not partner:
-		message = (
-			_("That Network ID does not exist or is not available.")
-			if _text(partner_id)
-			else _("The configured default Network ID is not available.")
-		)
-		frappe.throw(message, frappe.ValidationError)
-	network = partner["name"]
+	if not partner and _text(partner_id):
+		frappe.throw(_("That Network ID does not exist or is not available."), frappe.ValidationError)
+	# No Network ID and no default Network: check against the No Network record that
+	# submit_onboarding will use, without creating it here.
+	network = partner["name"] if partner else NO_NETWORK_SLUG
 	result = _check_onboarding_conflicts(session, selected, network)
 	if result["outcome"] != "new":
 		_evidence("lookup", token, session, outcome="blocked", detail="conflict: " + result["outcome"])
