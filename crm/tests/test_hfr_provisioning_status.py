@@ -372,3 +372,21 @@ class TestExternalProvisioningStatus(UnitTestCase):
 		self.assertEqual(result["status"], "unavailable")
 		self.assertEqual(result["error_code"], "service_error")
 		self.assertTrue(result["retryable"])
+
+	@patch("crm.api.hfr.requests.get")
+	def test_setup_error_details_are_limited_to_system_managers(self, mock_get):
+		response = MagicMock()
+		response.status_code = 200
+		response.headers = {}
+		response.json.return_value = {
+			"message": {"status": "Error", "progress": 40, "error": "Deploy failed", "log": "Traceback ..."}
+		}
+		mock_get.return_value = response
+
+		for roles, expect_details in ((["System Manager"], True), (["Customer"], False)):
+			with self.subTest(roles=roles), patch("crm.api.hfr.frappe.get_roles", return_value=roles):
+				result = _get_external_provisioning_status(
+					"https://deploy.example.test", "service-key", "service-secret", "FID-99-TEST-1"
+				)
+				self.assertEqual(result["status"], "Error")
+				self.assertEqual("error_details" in result, expect_details)
