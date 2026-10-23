@@ -8,6 +8,7 @@ from crm.api.hfr import (
 	_auto_submit_external_provisioning,
 	_build_external_provisioning_payload,
 	_get_external_provisioning_status,
+	get_hfr_settings,
 	get_provisioning_status,
 	ensure_provisioning_draft,
 	_hfr_request,
@@ -390,3 +391,25 @@ class TestExternalProvisioningStatus(UnitTestCase):
 				)
 				self.assertEqual(result["status"], "Error")
 				self.assertEqual("error_details" in result, expect_details)
+
+	@patch("crm.api.hfr.frappe.has_permission", return_value=True)
+	@patch("crm.api.hfr.frappe.get_single")
+	def test_settings_load_when_a_password_was_never_saved(self, mock_get_single, _mock_permission):
+		# Frappe raises "Password not found" unless raise_exception=False. A failed load
+		# left the CRM settings page on its blank defaults, and saving it erased the
+		# credentials that were entered in Desk.
+		def get_password(fieldname, raise_exception=True):
+			if raise_exception:
+				raise frappe.ValidationError("Password not found")
+			return None
+
+		settings = MagicMock(hfr_enabled=1, hfr_url="https://hie.example.test", hfr_username="crm")
+		settings.get.return_value = None
+		settings.get_password.side_effect = get_password
+		mock_get_single.return_value = settings
+
+		response = get_hfr_settings()
+
+		self.assertEqual(response["hfr_url"], "https://hie.example.test")
+		self.assertFalse(response["external_provisioning_secret_configured"])
+		self.assertFalse(response["provisioning_status_configured"])

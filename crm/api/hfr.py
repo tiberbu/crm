@@ -266,15 +266,15 @@ def get_hfr_settings():
 		"provisioning_status_path": s.get("provisioning_status_path")
 			or "/v1/hmis/provisioning/facilities/{fid}/status",
 		"provisioning_status_configured": bool(
-			s.hfr_enabled and s.hfr_url and s.hfr_username and s.get_password("hfr_password")
+			s.hfr_enabled and s.hfr_url and s.hfr_username and s.get_password("hfr_password", raise_exception=False)
 		),
 		"external_provisioning_url": s.get("external_provisioning_url") or "",
 		"external_provisioning_key": s.get("external_provisioning_key") or "",
-		"external_provisioning_secret_configured": bool(s.get_password("external_provisioning_secret")),
+		"external_provisioning_secret_configured": bool(s.get_password("external_provisioning_secret", raise_exception=False)),
 		"external_provisioning_configured": bool(
 			s.get("external_provisioning_url")
 			and s.get("external_provisioning_key")
-			and s.get_password("external_provisioning_secret")
+			and s.get_password("external_provisioning_secret", raise_exception=False)
 		),
 	})
 	return response
@@ -525,7 +525,7 @@ def _get_provisioning_status(mfl_code, ensure_missing_draft):
 	path_template = frappe.utils.cstr(
 		settings.get("provisioning_status_path") or "/v1/hmis/provisioning/facilities/{fid}/status"
 	).strip()
-	if not (base_url and path_template and settings.get("hfr_username") and settings.get_password("hfr_password")):
+	if not (base_url and path_template and settings.get("hfr_username") and settings.get_password("hfr_password", raise_exception=False)):
 		return {
 			"configured": False,
 			"status": "not_configured",

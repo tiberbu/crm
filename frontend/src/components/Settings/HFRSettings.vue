@@ -21,7 +21,7 @@
           theme="orange"
         />
         <Button
-          v-if="isDirty"
+          v-if="isDirty && loaded"
           variant="solid"
           :label="__('Save Changes')"
           :loading="saving"
@@ -35,6 +35,20 @@
       class="flex flex-1 items-center justify-center"
     >
       <LoadingIndicator class="size-8" />
+    </div>
+
+    <!-- Never show (or save) the default form when the saved settings did not load:
+         saving it would overwrite the stored credentials with blanks. -->
+    <div
+      v-else-if="!loaded"
+      class="flex flex-1 flex-col items-center justify-center gap-3 px-2"
+    >
+      <ErrorMessage
+        :message="
+          __('HFR settings could not be loaded. Nothing has been changed.')
+        "
+      />
+      <Button :label="__('Retry')" @click="settings.reload()" />
     </div>
 
     <div v-else class="flex-1 overflow-y-auto flex flex-col">
@@ -201,6 +215,7 @@ import {
 } from 'frappe-ui'
 
 const isDirty = ref(false)
+const loaded = ref(false)
 const saving = ref(false)
 const saveError = ref('')
 
@@ -229,6 +244,7 @@ const settings = createResource({
     form.hfr_password = ''
     form.external_provisioning_secret = ''
     isDirty.value = false
+    loaded.value = true
   },
 })
 
@@ -254,6 +270,7 @@ function markDirty() {
 }
 
 function save() {
+  if (!loaded.value) return
   saving.value = true
   saveError.value = ''
   const payload = { ...form }
