@@ -1,13 +1,13 @@
 # Sprint Status
 # Project: tiberbu Express — CRM implementation
 # Tracking: Claude Code Studio
-# Updated: 2026-10-13
+# Updated: 2026-10-25
 
 summary:
-  total: 174
+  total: 179
   ready-for-dev: 32
   in-progress: 9
-  review: 103
+  review: 108
   done: 12
   cancelled: 7
   qa: 2
@@ -320,3 +320,13 @@ development_status:
   facility-cx-s3-9-portal-purchase-ui: review # [dev-story] CX-9 portal: package cards with VAT, Create/Resume order, Open orders with confirmation before Create invoice, invoices with overdue state and Pay now via initialize_portal_paystack_payment (bank-transfer fallback only when Paystack is unconfigured), return-from-Paystack verification limited to the user's own OIS, notices, busy states. Fixes: portal never showed open orders because _order_rows selected a non-existent valid_till field and the caller swallowed the error. PROOF: 7 portalOrderState vitest cases; 166/166 frontend tests pass; eslint clean; production vite build succeeds. Screenshots: see facility-cx-s3-11-ui-proof.
   facility-cx-s3-10-e2e-fixture-patch: review # [dev-story] CX-10 seed_cx_e2e_fixture patch registered under [post_model_sync]; runs only when site_config crm_enable_e2e_fixtures is set (absent = no-op); creates/reconciles only the CX-E2E-TOKEN item/price/package and cx-e2e-network, appends one package row, never edits other rows or sets an OTP/bypass. PROOF: 6/6 crm.tests.test_cx_e2e_fixture pass (disabled default, seeded set, repeat runs unchanged, existing rows untouched, catalog visibility, no OTP code); ruff clean. Needs a configured token Price List.
   facility-cx-s3-11-ui-proof: review # [qa] S2-6b: Playwright against the real production build with API/Paystack mocked, desktop 1440 and mobile 390, 8/8 pass, asserts no horizontal overflow on every screenshot (caught and fixed a 58px mobile overflow in the portal). Covers keyboard/paste OTP, masked delivery + SMS fallback, VAT review, back/edit, order resume, invoice confirmation, Pay now, return verification, foreign-OIS reference ignored, bank-transfer fallback. 30 screenshots: _bmad-output/implementation-artifacts/proof/cx-onboarding/. Run: cd frontend && ../node_modules/.bin/playwright test -c e2e/proof/cx.config.ts (needs a prior vite build). yarn is not installed here; npx vitest run (166 pass) and npx vite build were used.
+
+  # Chain: epic-hmis-provisioning — start HMIS setup at onboarding + implementation status revamp
+  # Plan: hmis-provisioning/planning-artifacts/hmis-provisioning-on-onboarding-2026-10-25.md (Party Mode review). PRD: docs/hmis-implementation-prd.md HIMS-09..12.
+  # Maintainer decisions 2026-10-25: deployment happens on a separate site, so CRM polls status every 5 min; typical setup time 1 h, editable; TA field list in docs/hmis-provisioning-status-api-requirements.md.
+  epic-hmis-provisioning: in-progress
+  hmis-09-s1-typical-setup-time-setting: review # [dev-story] CRM HFR Settings provisioning_typical_minutes (default 60, editable, 0 hides, clamped >= 0) in doctype, get/update_hfr_settings, HFRSettings.vue. PROOF: migrate on the test and dev sites OK; _typical_setup_minutes() -> 60 on the dev site.
+  hmis-10-s2-journey-normalization: review # [dev-story] crm/api/hfr.py _provisioning_journey: phase/steps/progress/estimate (TA ETA > progress extrapolation > typical)/site (https only)/poll on every status response; optional TA site/ETA fields read via aliases. PROOF: 12 journey cases in crm.tests.test_hmis_provisioning_journey.
+  hmis-11-s3-provision-at-onboarding: review # [dev-story] submit_onboarding queues crm.api.hfr.provision_onboarded_facility per MFL (after commit, job_id dedupe) running ensure as the portal user; failures logged, never block onboarding. PROOF: 4 unit cases; real RQ on the test site: rollback queues nothing, commit queues one job that a worker ran, failure logged not raised.
+  hmis-12-s4-implementation-ui-revamp: review # [dev-story] FacilitySingleView live site card (URL, Open HMIS, Copy link, sign-in steps), stepper + estimate + 5-minute read-only GET poll; TA "Approved" mapped; FacilityPortal unwrap() fix (root cause of "Not started / has not been checked"); onboarding success "HMIS setup started". PROOF: yarn build OK; vitest 209/209.
+  hmis-12-s5-regression-coverage: review # [qa] Playwright (playwright.facility.config.ts) 13/13 incl. real-envelope regression (verified failing on the old unwrap), live card, polling via page.clock, blocked, success screen started/deferred; python 57/57 (journey + test_hfr_provisioning_status + onboarding session); test_facility_onboarding 15 pre-existing failures identical with/without change. DEV SITE (migrated + restarted, no mocks): live proof (e2e/proof/hmis_live.config.ts) 5/5 real facilities (Deployed->live, Approved/Draft->queued with 1 h estimate and 5-min GET poll, missing licence->blocked); live self-onboarding with a synthetic identity: all calls 200, success screen "HMIS setup started", job ran on the real worker as the new portal user, blocked by CRM validation so no setup-service POST; test records and sessions removed.

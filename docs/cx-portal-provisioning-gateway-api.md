@@ -9,7 +9,7 @@
 | Method | CRM method | Purpose |
 |---|---|---|
 | GET | `crm.api.hfr.get_provisioning_status(mfl_code)` | Read status only. This endpoint never creates a draft. |
-| POST | `crm.api.hfr.ensure_provisioning_draft(mfl_code)` | Ensure a TA draft exists: read, create only on exact no-draft, then reload. Used by Single Facility initial load and retry. |
+| POST | `crm.api.hfr.ensure_provisioning_draft(mfl_code)` | Ensure a TA draft exists: read, create only on exact no-draft, then reload. Used by Single Facility initial load and retry, and by the background job queued when self-onboarding commits. |
 
 CRM first authorizes the signed-in user against the facility portfolio, resolves the facility by MFL and uses its HFR `facility_fid` as the deployment FID. A generic HIE ID is never used as a substitute. The browser cannot choose an arbitrary FID.
 
@@ -52,3 +52,53 @@ The upstream contract reports draft/provisioning status and may return `log`, `e
 CRM records the TA correlation ID and HTTP status in its Error Log. If TA returns only `Internal Server Error`, CRM cannot display a remote traceback that the response did not contain; use the correlation ID to locate the traceback in the TA site's Error Log.
 
 Creating a setup draft does not deploy the facility. A human still reviews and starts deployment in the TA tool.
+
+## Customer journey
+
+Both endpoints add `journey`, which the portal renders as-is:
+
+```json
+{
+  "phase": "deploying",
+  "headline": "Deploying your HMIS site",
+  "detail": "Your HMIS site is being deployed. …",
+  "steps": [
+    {"key": "request", "label": "Setup request received", "state": "done"},
+    {"key": "deploy", "label": "Deploying HMIS site", "state": "current"},
+    {"key": "configure", "label": "Configuring facility and administrator", "state": "upcoming"},
+    {"key": "live", "label": "Ready to sign in", "state": "upcoming"}
+  ],
+  "progress": 50,
+  "estimate": {"minutes": 10, "source": "progress", "overdue": false, "label": "About 10 min remaining, based on progress so far"},
+  "site": null,
+  "poll": true,
+  "checked_at": "2026-10-25T10:00:00"
+}
+```
+
+When `phase` is `live`, `site` is `{url, login_url, admin_email, instructions[]}`. `url` is `null` unless TA reported a safe `https://` address. The admin email comes from TA, or else from the verified CRM administrator contact.
+
+### Optional TA status fields CRM reads
+
+TA does not return these yet. CRM uses each one only when it is present:
+
+| Purpose | Accepted names |
+|---|---|
+| Site address | `site_url`, `site`, `site_name`, `url`, `domain` (a bare host gets `https://`) |
+| Sign-in page | `login_url` |
+| Admin username | `admin_username`, `admin_email`, `username` |
+| ETA | `eta_minutes`, `estimated_minutes_remaining`, `minutes_remaining` (number) or `estimated_completion`, `eta` (datetime) |
+| Deployment start | `started_at`, `deployment_started`, `deployment_started_at` (falls back to `last_attempt`) |
+
+**Estimate order:** a TA ETA; then extrapolation from `progress` and the elapsed time since the start; then the CRM **Typical HMIS Setup Time** setting.
+
+**Status words:**
+
+| Phase | TA status words |
+|---|---|
+| live | `Deployed`, `Live`, `Active`, `Completed`, `Ready`, `Provisioned` |
+| needs attention | `Error`, `Failed`, `Cancelled` |
+| queued | `Draft`, `Pending`, `Queued`, `Submitted`, `Scheduled` |
+| configuring | `Configuring`, `Setting Up`, `Post Deploy`, `Finalizing` |
+
+Any other status on an existing setup record is treated as deploying.
