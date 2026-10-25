@@ -39,7 +39,9 @@ def _accepted():
 	response = MagicMock()
 	response.status_code = 200
 	response.headers = {"X-Correlation-Id": "corr-om"}
-	response.json.return_value = {"message": {"accepted": True, "facility_setup": "SETUP-0001", "status": "Draft"}}
+	response.json.return_value = {
+		"message": {"accepted": True, "facility_setup": "SETUP-0001", "status": "Draft"}
+	}
 	return response
 
 
@@ -71,7 +73,10 @@ class TestApplyTokenSource(UnitTestCase):
 	def test_configured_purchase_url_wins(self):
 		payload = _payload()
 		_apply_token_source(
-			frappe._dict(hmis_token_source_openmeter=1, token_purchase_url=" https://shop.example.test/tokens "), payload
+			frappe._dict(
+				hmis_token_source_openmeter=1, token_purchase_url=" https://shop.example.test/tokens "
+			),
+			payload,
 		)
 		self.assertEqual(payload["token_purchase_url"], "https://shop.example.test/tokens")
 
@@ -88,7 +93,14 @@ class TestOpenMeterProvisioningSubmit(UnitTestCase):
 		payload = _payload()
 		payload.update(tokens_awarded=0, token_source="openmeter")
 		return payload, _auto_submit_external_provisioning(
-			"https://deploy.example.test", "key", "secret", FID, _not_submitted(), payload, [], metering=metering
+			"https://deploy.example.test",
+			"key",
+			"secret",
+			FID,
+			_not_submitted(),
+			payload,
+			[],
+			metering=metering,
 		)
 
 	def test_site_key_travels_only_in_the_request(self, mock_post, mock_status, mock_cache, _lock):
@@ -96,8 +108,9 @@ class TestOpenMeterProvisioningSubmit(UnitTestCase):
 		mock_status.side_effect = [_not_submitted(), {"configured": True, "status": "Draft", "progress": 0}]
 		key_hook = MagicMock(return_value=SITE_KEY)
 		metering = {"fid": FID, "package_tokens": 400, "token_source": "openmeter"}
-		with patch("crm.api.hfr.frappe.get_hooks", side_effect=_hooks("app.key_hook")), patch(
-			"crm.api.hfr.frappe.get_attr", return_value=key_hook
+		with (
+			patch("crm.api.hfr.frappe.get_hooks", side_effect=_hooks("app.key_hook")),
+			patch("crm.api.hfr.frappe.get_attr", return_value=key_hook),
 		):
 			payload, result = self._submit(mock_cache, metering)
 
@@ -121,20 +134,24 @@ class TestOpenMeterProvisioningSubmit(UnitTestCase):
 		mock_post.return_value = _accepted()
 		mock_status.side_effect = [_not_submitted(), {"configured": True, "status": "Draft", "progress": 0}]
 		key_hook = MagicMock(return_value=SITE_KEY)
-		with patch("crm.api.hfr.frappe.get_hooks", side_effect=_hooks("app.key_hook")), patch(
-			"crm.api.hfr.frappe.get_attr", return_value=key_hook
+		with (
+			patch("crm.api.hfr.frappe.get_hooks", side_effect=_hooks("app.key_hook")),
+			patch("crm.api.hfr.frappe.get_attr", return_value=key_hook),
 		):
 			self._submit(mock_cache, {"fid": FID, "token_source": "crm"})
 		key_hook.assert_not_called()
 		self.assertNotIn("metering_site_key", mock_post.call_args.kwargs["json"])
 
-	def test_accepted_submission_enqueues_the_submitted_hooks(self, mock_post, mock_status, mock_cache, _lock):
+	def test_accepted_submission_enqueues_the_submitted_hooks(
+		self, mock_post, mock_status, mock_cache, _lock
+	):
 		mock_post.return_value = _accepted()
 		mock_status.side_effect = [_not_submitted(), {"configured": True, "status": "Draft", "progress": 0}]
 		metering = {"fid": FID, "package_tokens": 400, "token_source": "crm"}
-		with patch("crm.api.hfr.frappe.get_hooks", side_effect=_hooks(submitted_hook="app.on_submitted")), patch(
-			"crm.api.hfr.frappe.enqueue"
-		) as enqueue:
+		with (
+			patch("crm.api.hfr.frappe.get_hooks", side_effect=_hooks(submitted_hook="app.on_submitted")),
+			patch("crm.api.hfr.frappe.enqueue") as enqueue,
+		):
 			self._submit(mock_cache, metering)
 		enqueue.assert_called_once_with(
 			"crm.api.hfr.run_hmis_provisioning_submitted_hooks",
@@ -150,15 +167,19 @@ class TestSubmittedHooks(UnitTestCase):
 		good = MagicMock()
 		hooks = {"crm_on_hmis_provisioning_submitted": ["app.bad", "app.good"]}
 		attrs = {"app.bad": MagicMock(side_effect=RuntimeError("boom")), "app.good": good}
-		with patch("crm.api.hfr.frappe.get_hooks", side_effect=lambda name, *a, **k: hooks.get(name, [])), patch(
-			"crm.api.hfr.frappe.get_attr", side_effect=attrs.get
-		), patch("crm.api.hfr.frappe.log_error") as log_error:
+		with (
+			patch("crm.api.hfr.frappe.get_hooks", side_effect=lambda name, *a, **k: hooks.get(name, [])),
+			patch("crm.api.hfr.frappe.get_attr", side_effect=attrs.get),
+			patch("crm.api.hfr.frappe.log_error") as log_error,
+		):
 			run_hmis_provisioning_submitted_hooks(FID, {"fid": FID})
 		good.assert_called_once_with(fid=FID, context={"fid": FID})
 		log_error.assert_called_once()
 
 	def test_site_keys_are_redacted_from_error_details(self):
-		details = _external_error_details(400, {"metering_site_key": SITE_KEY, "message": "rejected " + SITE_KEY})
+		details = _external_error_details(
+			400, {"metering_site_key": SITE_KEY, "message": "rejected " + SITE_KEY}
+		)
 		self.assertNotIn(SITE_KEY, details)
 		self.assertNotIn("s" * 43, details)
 
