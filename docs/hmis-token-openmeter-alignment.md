@@ -23,6 +23,18 @@ Tokens never expire. Only an exhausted balance stops clinical work.
 | CRM-T4 | Stamp `crm_token_facility_fid` beside `crm_token_facility_mfl` on token-purchase Quotation, Sales Order and Sales Invoice. | `crm/api/facility_onboarding.py`, `crm/api/customer_experience.py`, a new patch |
 | CRM-T5 | Phase 2, optional: CX portal balance card read through the mediator. Until then, keep the rule in `docs/cx-portal-ux-design-pattern.md` against calling package quantity a "token balance". | CX portal |
 
+## Implementation status
+
+| ID | Status |
+|---|---|
+| CRM-T1 | Done. `crm_on_hmis_provisioning_submitted` hooks run in a background job after every accepted submission. |
+| CRM-T2 | Done, behind **CRM HFR Settings → Use OpenMeter as the HMIS Token Source** (off by default). The site key comes from the `crm_issue_hmis_metering_site_key` hook. |
+| CRM-T3 | Done, behind the same setting. |
+| CRM-T4 | Done. A `validate` hook on Quotation, Sales Order and Sales Invoice fills the FID from the MFL when exactly one FID is recorded for it. Patch `add_token_facility_fid` adds the field and backfills it. |
+| CRM-T5 | Not started (phase 2). |
+
+Turn the setting on only after the mediator implements both hooks (OMM-32, OMM-33) and HMIS can pull its balance (HMIS-H1). With the setting on and no key hook, every new provisioning request is blocked with `missing_fields=["metering_site_key"]`.
+
 ## Data and migration impact
 
 - New custom field `crm_token_facility_fid` on Quotation, Sales Order and Sales Invoice; backfill from the facility's FID where the MFL maps to exactly one facility.
