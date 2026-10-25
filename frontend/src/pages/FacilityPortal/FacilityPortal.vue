@@ -611,8 +611,16 @@ const selectedPackageObj = computed(() => {
 
 // Executive KPIs
 const facilityCount = computed(() => allFacilities.value.length)
+
+// Live OpenMeter balance when the metering app reports one; otherwise the package size.
+function availableTokens(facility) {
+  const live = facility?.token_balance
+  if (live?.status === 'ok') return Number(live.balance) || 0
+  return Number(facility?.token_quantity) || 0
+}
+
 const totalTokenCount = computed(() =>
-  allFacilities.value.reduce((sum, fac) => sum + (fac.token_quantity || 0), 0),
+  allFacilities.value.reduce((sum, fac) => sum + availableTokens(fac), 0),
 )
 const liveFacilitiesCount = computed(
   () => allFacilities.value.filter((f) => f.go_live).length,
@@ -1836,7 +1844,7 @@ onUnmounted(() => {
                           <td class="py-3.5 px-4 text-right">
                             <span class="font-semibold text-cx-brand font-mono text-sm inline-flex items-center gap-1">
                               <span><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
-                              <span>{{ (facility.token_quantity || 0).toLocaleString() }}</span>
+                              <span>{{ availableTokens(facility).toLocaleString() }}</span>
                             </span>
                           </td>
                           <td class="py-3.5 px-4 text-right">
@@ -1959,7 +1967,7 @@ onUnmounted(() => {
                         <td class="py-3.5 px-4 text-right">
                           <span class="font-semibold text-cx-brand font-mono text-sm inline-flex items-center gap-1">
                             <span><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
-                            <span>{{ (facility.token_quantity || 0).toLocaleString() }}</span>
+                            <span>{{ availableTokens(facility).toLocaleString() }}</span>
                           </span>
                         </td>
 
@@ -2061,7 +2069,7 @@ onUnmounted(() => {
                           </div>
                           <div class="flex justify-between text-cx-ink-3">
                             <span>Token Runway:</span>
-                            <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
+                            <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ availableTokens(facility).toLocaleString() }} tokens</strong>
                           </div>
                           <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-cx-border-soft">
                             <span class="font-bold text-cx-warning-ink">Due Balance:</span>
@@ -2140,7 +2148,7 @@ onUnmounted(() => {
                       </div>
                       <div class="flex justify-between text-cx-ink-3">
                         <span>Token Runway:</span>
-                        <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (facility.token_quantity || 0).toLocaleString() }} tokens</strong>
+                        <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ availableTokens(facility).toLocaleString() }} tokens</strong>
                       </div>
                       <div v-if="facility.invoice_summary?.has_outstanding" class="flex justify-between items-center pt-1.5 border-t border-cx-border-soft">
                         <span class="font-bold text-cx-warning-ink">Due Balance:</span>
@@ -2349,7 +2357,7 @@ onUnmounted(() => {
                       </div>
                       <div class="flex justify-between text-cx-ink-3">
                         <span>Token Runway:</span>
-                        <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (fac.token_quantity || 0).toLocaleString() }} tokens</strong>
+                        <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ availableTokens(fac).toLocaleString() }} tokens</strong>
                       </div>
                       <div v-if="fac.invoice_summary?.has_outstanding" class="flex justify-between border-t border-cx-border-soft pt-1.5">
                         <span class="font-bold text-cx-warning-ink">Due Balance:</span>
@@ -3079,7 +3087,7 @@ onUnmounted(() => {
               :key="fac.mfl_code"
               :value="fac.mfl_code"
             >
-              {{ fac.facility_name }} (MFL: {{ fac.mfl_code }}) · {{ fac.token_quantity || 0 }} tokens
+              {{ fac.facility_name }} (MFL: {{ fac.mfl_code }}) · {{ availableTokens(fac).toLocaleString() }} tokens
             </option>
           </select>
         </div>
