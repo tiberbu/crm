@@ -33,6 +33,7 @@ from crm.api._email import (
 	schedule_email_queue_redaction,
 )
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref, record_event
+from crm.utils.token_facility import facility_fid_for_mfl
 
 try:
 	import jwt
@@ -2221,9 +2222,12 @@ def _link_documents(token, session, submission_name, facility, package):
 		quotations = [q for q in json.loads(raw or "[]") if frappe.db.exists("Quotation", q)]
 	except (TypeError, ValueError):
 		quotations = []
+	facility_fid = _text(facility.get("hfr_facility_id")) or facility_fid_for_mfl(facility.get("mfl_code"))
 	for quotation in quotations:
+		# set_value skips validate, so the FID is stamped here as well.
 		for fieldname, value in (
 			("crm_token_facility_mfl", _text(facility.get("mfl_code"))),
+			("crm_token_facility_fid", facility_fid),
 			("crm_token_package_item", package["item_code"]),
 		):
 			if frappe.db.has_column("Quotation", fieldname):

@@ -85,3 +85,4 @@ crm.patches.v1_0.seed_cx_e2e_fixture
 crm.patches.v1_0.add_facility_token_package_selection
 crm.patches.v1_0.seed_careverse_token_packages_v2
 crm.patches.v1_0.add_token_calculator_settings
+crm.patches.v1_0.add_token_facility_fid

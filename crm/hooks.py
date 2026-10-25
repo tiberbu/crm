@@ -242,6 +242,14 @@ doc_events = {
 		"before_validate": [
 			"crm.fcrm.doctype.erpnext_crm_settings.erpnext_crm_settings.create_customer_on_sales_order"
 		],
+		"validate": ["crm.utils.token_facility.stamp_facility_fid"],
+	},
+	# OpenMeter grants are keyed by FID, so token purchases carry it beside the MFL.
+	"Quotation": {
+		"validate": ["crm.utils.token_facility.stamp_facility_fid"],
+	},
+	"Sales Invoice": {
+		"validate": ["crm.utils.token_facility.stamp_facility_fid"],
 	},
 	"Item": {
 		"after_insert": ["crm.integrations.erpnext.item.after_insert"],
