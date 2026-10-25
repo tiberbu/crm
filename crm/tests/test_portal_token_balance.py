@@ -80,3 +80,59 @@ class TestOpenPurchaseKey(UnitTestCase):
 		a, b = self._invoices({"base": ("SINV-1", 1, 0), second: ("SINV-2", 1, 750)})
 		with a, b:
 			self.assertEqual(cx._open_purchase_key("base"), second)
+
+
+class TestMembershipFacilitiesInPortal(UnitTestCase):
+	"""A facility linked to the customer only through a membership must appear in the portal."""
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.rollback()
+
+	def test_membership_facility_is_listed(self):
+		from crm.api.website_redirect import _customer_portal_accounts
+
+		customer = frappe.get_doc(
+			{
+				"doctype": "Customer",
+				"customer_name": "Portal Membership Test Customer",
+				"customer_group": frappe.db.get_value("Customer Group", {"is_group": 0}) or "All Customer Groups",
+				"territory": frappe.db.get_value("Territory", {"is_group": 0}) or "All Territories",
+			}
+		).insert(ignore_permissions=True)
+		network = frappe.db.get_value("CRM Opt-In Network", {}) or frappe.get_doc(
+			{"doctype": "CRM Opt-In Network", "slug": "membership-test-network", "display_name": "Test", "enabled": 1}
+		).insert(ignore_permissions=True).name
+		frappe.get_doc(
+			{
+				"doctype": "CRM Pre-Qualified Facility",
+				"mfl_code": "PORTAL-TEST-1",
+				"facility_name": "Portal Membership Test Facility",
+				"keph_level": "Level 2",
+				"hfr_facility_id": FID,
+				"memberships": [
+					{
+						"network": network,
+						"status": "Active",
+						"customer": customer.name,
+						"contact_name": "Test Owner",
+						"contact_email": "owner@example.test",
+						"contact_phone": "+254700000001",
+					}
+				],
+			}
+		).insert(ignore_permissions=True)
+		user = "portal-membership-test@example.test"
+		if not frappe.db.exists("User", user):
+			frappe.get_doc({"doctype": "User", "email": user, "first_name": "Test", "user_type": "Website User"}).insert(
+				ignore_permissions=True
+			)
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Customer", "for_value": customer.name}).insert(
+			ignore_permissions=True
+		)
+
+		with patch("crm.api.website_redirect.frappe.get_hooks", side_effect=_hooks()):
+			accounts = _customer_portal_accounts(user)
+		facilities = [f for a in accounts for f in a["facilities"]]
+		self.assertEqual([f["mfl_code"] for f in facilities], ["PORTAL-TEST-1"])
+		self.assertEqual(facilities[0]["hfr_facility_id"], FID)

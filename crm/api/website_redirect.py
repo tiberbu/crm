@@ -1285,9 +1285,11 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 	facilities = frappe.get_all(
 		"CRM Pre-Qualified Facility",
 		filters={"name": ["in", parent_names]},
-		fields=available_fields(
+		# "name" is a standard column, not a DocType field, so available_fields() would drop it.
+		fields=["name"]
+		+ available_fields(
 			"CRM Pre-Qualified Facility",
-			["name", "mfl_code", "facility_name", "keph_level", "organization"] + list(hfr_detail_fields),
+			["mfl_code", "facility_name", "keph_level", "organization"] + list(hfr_detail_fields),
 		),
 		ignore_permissions=True,
 		limit_page_length=0,
