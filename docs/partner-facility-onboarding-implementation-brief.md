@@ -1,6 +1,6 @@
 # Facility Onboarding and Customer Experience — Implementation Brief
 
-**Customer-facing product:** Tiberbu Customer Experience (also: Tiberbu HMIS Customer Experience Portal)
+**Customer-facing product:** Tiberbu Express (formerly Tiberbu Customer Experience)
 **Implementation system:** Frappe app in `apps/crm`; the repository/app name is an implementation detail and must not appear in customer-facing copy
 **Reference only:** `careverse_hq` request and response shapes; no CRM import, cross-app call, or runtime dependency
 **Status:** Public Customer Experience entry, facility onboarding welcome/wizard, sign-in routing, and authenticated portal foundation stabilized; token purchase order-to-invoice flow remains the next story
@@ -25,7 +25,7 @@ purchase, invoice, or payment stories are complete.
 
 ### Customer-facing language
 
-- Use **Tiberbu Customer Experience** or **Tiberbu HMIS Customer Experience Portal**.
+- Use **Tiberbu Express** (renamed from Tiberbu Customer Experience on 2026-10-25).
 - The primary audience is facility owners and facility administrators.
 - Do not use the repository/app name, internal workspace terminology, or sales,
   pipeline, telephony, or staff-operations language in the facility-owner journey.
@@ -621,7 +621,7 @@ onboarding and authenticated portal pages use thin Frappe wrappers around the
 hashed Vite entries. The wrappers inject CSRF data and asset tags at request
 time; they are not generated-file copies.
 
-The authenticated customer-facing surface is named **Customer Experience** and is served at `/cx-portal`. The route name is implementation-facing; user-facing copy must say “Customer Experience”. Existing `/portal` links must redirect to `/cx-portal` during the transition.
+The authenticated customer-facing surface is named **Tiberbu Express** (formerly Customer Experience) and is served at `/cx-portal`. The route name is implementation-facing; user-facing copy must say “Tiberbu Express”. Existing `/portal` links must redirect to `/cx-portal` during the transition.
 
 The frontend displays package metadata and server-calculated values.
 
