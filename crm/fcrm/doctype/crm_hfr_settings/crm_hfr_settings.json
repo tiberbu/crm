@@ -19,7 +19,10 @@
   "external_provisioning_url",
   "external_provisioning_key",
   "external_provisioning_secret",
-  "provisioning_typical_minutes"
+  "provisioning_typical_minutes",
+  "token_metering_section",
+  "hmis_token_source_openmeter",
+  "token_purchase_url"
  ],
  "fields": [
   {
@@ -116,11 +119,31 @@
    "fieldtype": "Int",
    "label": "Typical HMIS Setup Time (minutes)",
    "non_negative": 1
+  },
+  {
+   "description": "Turn this on only after the OpenMeter Mediator app, the metering gateway and the HMIS balance pull are deployed. Until then HMIS keeps receiving its tokens in the provisioning payload.",
+   "fieldname": "token_metering_section",
+   "fieldtype": "Section Break",
+   "label": "HMIS Token Metering"
+  },
+  {
+   "default": "0",
+   "description": "New provisioning requests send token_source openmeter, tokens_awarded 0, a metering site key and the token purchase link. HMIS then reads its balance from OpenMeter, where CRM grants the tokens.",
+   "fieldname": "hmis_token_source_openmeter",
+   "fieldtype": "Check",
+   "label": "Use OpenMeter as the HMIS Token Source"
+  },
+  {
+   "depends_on": "hmis_token_source_openmeter",
+   "description": "Where HMIS sends users whose tokens have run out. Leave empty to use this site's CX portal.",
+   "fieldname": "token_purchase_url",
+   "fieldtype": "Data",
+   "label": "Token Purchase URL"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-25 09:00:00.000000",
+ "modified": "2026-10-25 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "FCRM",
  "name": "CRM HFR Settings",

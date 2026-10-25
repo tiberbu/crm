@@ -115,11 +115,13 @@ class TestExternalProvisioningStatus(UnitTestCase):
 		self.assertNotIn("token-value", details)
 		self.assertNotIn("raw-key", details)
 
+	# frappe.cache is mocked, so hook lookup (which reads through it) is stubbed too.
+	@patch("crm.api.hfr.frappe.get_hooks", return_value=[])
 	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
 	@patch("crm.api.hfr.frappe.cache")
 	@patch("crm.api.hfr._get_external_provisioning_status")
 	@patch("crm.api.hfr.requests.post")
-	def test_auto_submit_posts_basic_auth_then_reloads_status(self, mock_post, mock_status, mock_cache, _mock_lock):
+	def test_auto_submit_posts_basic_auth_then_reloads_status(self, mock_post, mock_status, mock_cache, _mock_lock, _mock_hooks):
 		cache = MagicMock()
 		cache.get_value.return_value = None
 		mock_cache.return_value = cache
@@ -155,12 +157,14 @@ class TestExternalProvisioningStatus(UnitTestCase):
 			timeout=60,
 		)
 
+	# frappe.cache is mocked, so hook lookup (which reads through it) is stubbed too.
+	@patch("crm.api.hfr.frappe.get_hooks", return_value=[])
 	@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
 	@patch("crm.api.hfr.frappe.cache")
 	@patch("crm.api.hfr._get_external_provisioning_status")
 	@patch("crm.api.hfr.requests.post")
 	def test_authoritative_no_draft_retries_after_prior_ambiguous_post(
-		self, mock_post, mock_status, mock_cache, _mock_lock
+		self, mock_post, mock_status, mock_cache, _mock_lock, _mock_hooks
 	):
 		cache = MagicMock()
 		cache.get_value.return_value = "unknown"
