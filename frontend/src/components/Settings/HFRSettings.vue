@@ -188,6 +188,13 @@
             <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Service API Secret') }}</label>
             <FormControl v-model="form.external_provisioning_secret" type="password" :placeholder="__('Leave blank to keep existing')" class="flex-1" @input="markDirty" />
           </div>
+          <div class="flex items-center gap-4">
+            <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Typical setup time (minutes)') }}</label>
+            <FormControl v-model="form.provisioning_typical_minutes" type="number" min="0" class="flex-1" @input="markDirty" />
+          </div>
+          <p class="text-p-sm text-ink-gray-5">
+            {{ __('Facility users see this as the usual wait while their HMIS site is set up, unless the setup service reports its own estimate. Set 0 to hide it.') }}
+          </p>
           <p class="text-p-sm text-ink-gray-5">
             {{ form.external_provisioning_configured ? __('Direct setup service credentials are configured and take precedence over HIE for status lookups.') : (form.external_provisioning_secret_configured ? __('A saved API secret exists. Save a base URL and API key to activate the direct setup service.') : __('Direct setup service credentials are not complete; status lookups use the HIE gateway fallback.')) }}
           </p>
@@ -234,6 +241,7 @@ const form = reactive({
   external_provisioning_secret: '',
   external_provisioning_secret_configured: false,
   external_provisioning_configured: false,
+  provisioning_typical_minutes: 60,
 })
 
 const settings = createResource({

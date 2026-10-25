@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import hashlib
 import hmac
+import math
 import re
 import time
 from datetime import date, timedelta
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import frappe
 import requests
@@ -276,6 +277,7 @@ def get_hfr_settings():
 			and s.get("external_provisioning_key")
 			and s.get_password("external_provisioning_secret", raise_exception=False)
 		),
+		"provisioning_typical_minutes": _typical_setup_minutes(s),
 	})
 	return response
 
@@ -301,6 +303,8 @@ def update_hfr_settings(settings):
 	s.external_provisioning_key = frappe.utils.cstr(settings.get("external_provisioning_key") or "").strip()
 	if settings.get("external_provisioning_secret"):
 		s.external_provisioning_secret = settings["external_provisioning_secret"]
+	if "provisioning_typical_minutes" in settings:
+		s.provisioning_typical_minutes = max(0, frappe.utils.cint(settings.get("provisioning_typical_minutes")))
 	s.save()
 	return {"success": True}
 
@@ -332,6 +336,241 @@ def _unique_facility_projection(rows, fields):
 	return projection
 
 
+_DEFAULT_TYPICAL_SETUP_MINUTES = 60
+# TA status strings are not an enumerated contract; match known wordings and treat
+# any other non-error status on an existing setup record as deployment in progress.
+_LIVE_STATUSES = {"deployed", "live", "active", "completed", "complete", "success", "successful", "ready", "provisioned"}
+_ERROR_STATUSES = {"error", "failed", "failure", "cancelled", "canceled"}
+_QUEUED_STATUSES = {"draft", "pending", "queued", "submitted", "scheduled", "awaiting deployment", "approved"}
+_CONFIGURING_STATUSES = {"configuring", "setting up", "post deploy", "finalizing", "finalising"}
+_JOURNEY_POLL_PHASES = {"preparing", "queued", "deploying", "configuring"}
+_JOURNEY_STEP_INDEX = {"preparing": 0, "queued": 1, "deploying": 1, "configuring": 2, "live": 4}
+
+
+def _typical_setup_minutes(settings=None):
+	"""Configured usual setup duration; 0 hides the typical estimate."""
+	value = (settings or frappe.get_single(_DOCTYPE)).get("provisioning_typical_minutes")
+	return _DEFAULT_TYPICAL_SETUP_MINUTES if value in (None, "") else max(0, frappe.utils.cint(value))
+
+
+def _reported_setup_details(payload):
+	"""Keep optional TA status fields the portal can show; ignore anything else."""
+	aliases = {
+		"site_url": ("site_url", "site", "site_name", "url", "domain"),
+		"login_url": ("login_url",),
+		"admin_username": ("admin_username", "admin_email", "username"),
+		"eta_minutes": ("eta_minutes", "estimated_minutes_remaining", "minutes_remaining"),
+		"estimated_completion": ("estimated_completion", "eta"),
+		"started_at": ("started_at", "deployment_started", "deployment_started_at"),
+	}
+	reported = {}
+	for key, names in aliases.items():
+		for name in names:
+			value = payload.get(name)
+			if isinstance(value, (int, float)) and not isinstance(value, bool) and key == "eta_minutes":
+				reported[key] = value
+				break
+			if isinstance(value, str) and value.strip():
+				reported[key] = value.strip()[:500]
+				break
+	return reported
+
+
+def _safe_site_url(value):
+	"""Return an https URL with a host and no embedded credentials, or None."""
+	value = frappe.utils.cstr(value or "").strip()
+	if not value:
+		return None
+	if "://" not in value and re.fullmatch(r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}(:\d+)?(/[^\s]*)?", value):
+		value = "https://" + value
+	parsed = urlparse(value)
+	if parsed.scheme != "https" or not parsed.hostname or "@" in parsed.netloc or re.search(r"\s", value):
+		return None
+	return value.rstrip("/")
+
+
+def _parse_status_time(value):
+	try:
+		return frappe.utils.get_datetime(value) if value else None
+	except Exception:
+		return None
+
+
+def _format_minutes(minutes):
+	minutes = max(1, int(minutes))
+	if minutes < 60:
+		return _("{0} min").format(minutes)
+	hours, rest = divmod(minutes, 60)
+	return _("{0} h {1} min").format(hours, rest) if rest else _("{0} h").format(hours)
+
+
+def _journey_status_key(status):
+	return " ".join(frappe.utils.cstr((status or {}).get("status") or "").replace("_", " ").replace("-", " ").casefold().split())
+
+
+def _journey_phase(status):
+	"""Map a raw CRM/TA status response to one customer-facing setup phase."""
+	status = status or {}
+	key = _journey_status_key(status)
+	submission = (status.get("submission") or {}).get("state")
+	if submission == "blocked":
+		return "blocked"
+	if submission == "error":
+		return "needs_attention"
+	if key in ("not linked", "not configured", "unavailable"):
+		return key.replace(" ", "_")
+	if key == "route not provisioned":
+		return "not_configured"
+	if key == "needs support" or key in _ERROR_STATUSES or status.get("has_error"):
+		return "needs_attention"
+	if key in _LIVE_STATUSES:
+		return "live"
+	if key == "not submitted" or submission == "unknown":
+		return "preparing"
+	if key in _QUEUED_STATUSES or not key:
+		return "queued"
+	if key in _CONFIGURING_STATUSES:
+		return "configuring"
+	return "deploying"
+
+
+def _journey_estimate(phase, status, typical_minutes, now):
+	"""Pick the best-supported wait estimate: TA ETA, then progress, then typical time."""
+	if phase not in _JOURNEY_POLL_PHASES:
+		return None
+	reported = status.get("reported") or {}
+	eta = reported.get("eta_minutes")
+	if isinstance(eta, (int, float)) and eta > 0:
+		minutes = math.ceil(eta)
+		return {"minutes": minutes, "source": "service", "overdue": False,
+			"label": _("About {0} remaining, reported by the setup service").format(_format_minutes(minutes))}
+	completion = _parse_status_time(reported.get("estimated_completion"))
+	if completion and completion > now:
+		minutes = math.ceil((completion - now).total_seconds() / 60)
+		return {"minutes": minutes, "source": "service", "overdue": False,
+			"label": _("About {0} remaining, reported by the setup service").format(_format_minutes(minutes))}
+	started = _parse_status_time(reported.get("started_at") or status.get("last_attempt"))
+	elapsed = (now - started).total_seconds() / 60 if started and started <= now else None
+	progress = status.get("progress")
+	if elapsed and isinstance(progress, (int, float)) and 0 < progress < 100:
+		minutes = math.ceil(elapsed * (100 - progress) / progress)
+		return {"minutes": minutes, "source": "progress", "overdue": False,
+			"label": _("About {0} remaining, based on progress so far").format(_format_minutes(minutes))}
+	if not typical_minutes:
+		return None
+	if elapsed is not None and elapsed >= typical_minutes:
+		return {"minutes": None, "source": "typical", "overdue": True,
+			"label": _("Taking longer than the usual {0}. This page keeps checking for you.").format(_format_minutes(typical_minutes))}
+	minutes = math.ceil(typical_minutes - elapsed) if elapsed is not None else typical_minutes
+	return {"minutes": minutes, "source": "typical", "overdue": False,
+		"label": _("Usually ready within about {0}").format(_format_minutes(minutes))}
+
+
+def _provisioning_journey(status, typical_minutes=_DEFAULT_TYPICAL_SETUP_MINUTES, admin_contact=None, now=None):
+	"""Normalize status into the setup journey the facility portal renders.
+
+	Pure: everything comes from the status response, settings and the verified
+	admin contact. Site and sign-in details are shown only when TA reports them.
+	"""
+	status = status or {}
+	now = now or frappe.utils.now_datetime()
+	phase = _journey_phase(status)
+	submission = status.get("submission") or {}
+	reported = status.get("reported") or {}
+	raw_status = frappe.utils.cstr(status.get("status") or "").strip()
+	copy = {
+		"preparing": (_("Preparing your HMIS setup request"),
+			_("Your facility details are being sent to the HMIS setup service. This usually takes under a minute.")),
+		"queued": (_("Setup request received"),
+			_("The HMIS setup service has your facility details. Deployment starts once the implementation team releases it; this page updates automatically.")),
+		"deploying": (_("Deploying your HMIS site"),
+			_("Your HMIS site is being deployed. You can keep using the portal; this page updates automatically.")),
+		"configuring": (_("Configuring your HMIS site"),
+			_("Deployment is finished. Facility settings and your administrator account are being configured.")),
+		"live": (_("Your HMIS site is ready"), _("Sign in with the facility administrator account below.")),
+		# The blocker itself (missing fields) is shown once, in the submission panel.
+		"blocked": (_("Setup needs information"),
+			_("CRM has not sent your setup request because some required facility details are missing.")),
+		"needs_attention": (_("Setup needs attention"), submission.get("message")
+			or _("The implementation team needs to review the latest deployment attempt. Contact Network Support if this does not change.")),
+		"unavailable": (status.get("error_title") or _("Status unavailable"), status.get("message")
+			or _("The setup service could not return the latest status. Try again shortly.")),
+		"not_linked": (_("HFR Facility ID needed"), status.get("message")
+			or _("A verified HFR Facility ID is required before HMIS setup can start.")),
+		"not_configured": (_("Setup tracking not connected"), status.get("message")
+			or _("HMIS setup tracking has not been connected yet.")),
+	}
+	headline, detail = copy[phase]
+	label = {
+		"preparing": _("Preparing setup"),
+		"queued": _("Request received"),
+		"deploying": _("Deploying"),
+		"configuring": _("Configuring"),
+		"live": _("Live"),
+		"blocked": _("Setup needs information"),
+		"needs_attention": _("Needs attention"),
+	}.get(phase)
+	if phase == "queued" and _journey_status_key(status) == "approved":
+		label = _("Approved")
+		headline = _("Approved for deployment")
+		detail = _("The implementation team has approved your setup. Deployment to your HMIS site starts next; this page checks again automatically.")
+	if phase == "deploying" and raw_status and _journey_status_key(status) not in ("deploying", "in progress", "provisioning"):
+		detail = _("The setup service reports “{0}”. This page updates automatically.").format(raw_status)
+
+	steps = []
+	if phase in _JOURNEY_STEP_INDEX or phase in ("blocked", "needs_attention"):
+		labels = (
+			("request", _("Setup request received")),
+			("deploy", _("Deploying HMIS site")),
+			("configure", _("Configuring facility and administrator")),
+			("live", _("Ready to sign in")),
+		)
+		current = _JOURNEY_STEP_INDEX.get(phase)
+		failed = None
+		if phase in ("blocked", "needs_attention"):
+			# A failure before TA holds a setup record is a request failure.
+			failed = 0 if submission.get("state") in ("blocked", "error") or _journey_status_key(status) == "not submitted" else 1
+		for index, (key, step_label) in enumerate(labels):
+			if failed is not None:
+				state = "done" if index < failed else "error" if index == failed else "upcoming"
+			else:
+				state = "done" if index < current else "current" if index == current else "upcoming"
+			steps.append({"key": key, "label": step_label, "state": state})
+
+	progress = status.get("progress")
+	progress = None if progress in (None, "") else max(0, min(100, round(frappe.utils.flt(progress))))
+	if phase == "live":
+		progress = 100
+	elif not progress:
+		# A 0% bar says nothing the steps do not.
+		progress = None
+
+	site = None
+	if phase == "live":
+		url = _safe_site_url(reported.get("site_url"))
+		login_url = _safe_site_url(reported.get("login_url")) or url
+		admin_email = reported.get("admin_username") or (admin_contact or {}).get("admin_email") or None
+		instructions = [
+			_("Open {0}").format(login_url) if login_url else _("Open the HMIS site link in the welcome email sent to your administrator."),
+			_("Sign in with {0}").format(admin_email) if admin_email else _("Sign in with your facility administrator email."),
+			_("First time signing in? Use the HMIS welcome email or “Forgot password” on the sign-in page to set your password."),
+		]
+		site = {"url": url, "login_url": login_url, "admin_email": admin_email, "instructions": instructions}
+
+	return {
+		"phase": phase,
+		"label": label,
+		"headline": headline,
+		"detail": detail,
+		"steps": steps,
+		"progress": progress,
+		"estimate": _journey_estimate(phase, status, typical_minutes, now),
+		"site": site,
+		"poll": phase in _JOURNEY_POLL_PHASES,
+		"checked_at": now.isoformat(timespec="seconds"),
+	}
+
+
 @frappe.whitelist(methods=["GET"])
 def get_provisioning_status(mfl_code):
 	"""Read deployment progress without creating or changing a setup record."""
@@ -344,7 +583,40 @@ def ensure_provisioning_draft(mfl_code):
 	return _get_provisioning_status(mfl_code, ensure_missing_draft=True)
 
 
+def provision_onboarded_facility(mfl_code, portal_user):
+	"""Background job: start HMIS setup for a facility as soon as onboarding commits.
+
+	Runs the same ensure command the Single Facility view sends, as the facility's
+	new portal user, so portfolio authorization, the per-FID lock and payload
+	validation are identical. Not whitelisted: only `submit_onboarding` enqueues it.
+	"""
+	previous_user = frappe.session.user
+	try:
+		frappe.set_user(portal_user)
+		result = _get_provisioning_status(mfl_code, ensure_missing_draft=True)
+		frappe.logger("crm.hmis_provisioning").info(
+			"onboarding ensure mfl=%s status=%s submission=%s"
+			% (mfl_code, result.get("status"), (result.get("submission") or {}).get("state"))
+		)
+		return {"status": result.get("status"), "phase": (result.get("journey") or {}).get("phase")}
+	except Exception:
+		# The facility view re-runs ensure on open, so a failed early start is recoverable.
+		frappe.log_error(title="HMIS provisioning after onboarding", message="mfl=%s" % mfl_code)
+	finally:
+		frappe.set_user(previous_user)
+
+
 def _get_provisioning_status(mfl_code, ensure_missing_draft):
+	"""Resolve facility status and attach the customer-facing setup journey."""
+	status = _resolve_provisioning_status(mfl_code, ensure_missing_draft)
+	admin_contact = None
+	if _journey_phase(status) == "live" and not (status.get("reported") or {}).get("admin_username"):
+		admin_contact = _portal_admin_contact(mfl_code)
+	status["journey"] = _provisioning_journey(status, _typical_setup_minutes(), admin_contact)
+	return status
+
+
+def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 	"""Resolve an authorized facility and read status, optionally ensuring a draft."""
 	user = frappe.session.user
 	if not user or user == "Guest":
@@ -632,6 +904,7 @@ def _get_provisioning_status(mfl_code, ensure_missing_draft):
 			"service_units_message": None if unit_count is not None else _("The HMIS setup status API does not report configured service units."),
 			"site_status": frappe.utils.cstr(payload.get("site_status") or payload.get("site_url_status") or "") or None,
 			"has_error": bool(payload.get("error")),
+			"reported": _reported_setup_details(payload),
 		}
 	except requests.exceptions.RequestException as exc:
 		return _provisioning_unavailable("network", None, correlation_id)
@@ -727,6 +1000,7 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 			"correlation_id": response_correlation_id,
 			"message": _("Status synced from the HMIS setup service. Deployment is reviewed and started by the implementation team."),
 			"service_units_message": _("The setup status API does not report configured service units."),
+			"reported": _reported_setup_details(payload),
 		}
 		if status.casefold() == "error" or payload.get("error"):
 			error_details = _external_error_details(
@@ -753,8 +1027,44 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, 
 	"""
 	facility = frappe._dict(facility or {})
 	deal_facility = frappe._dict(deal_facility or {})
-	admin = {}
 	selected_package = None
+	admin = _resolve_admin_contact(mfl_code, deals, customers)
+	licence = facility.get("license_number") or facility.get("registration_number")
+	if not licence and facility.get("hfr_facility_id"):
+		licence = _backfill_licence_from_hfr(facility.get("hfr_facility_id"), mfl_code, deals)
+	if deal_facility.get("cx_token_package_item"):
+		selected_package = deal_facility
+	onboarding_date = facility.get("onboarding_date") or deal_facility.get("creation") or facility.get("creation")
+	if onboarding_date:
+		try:
+			onboarding_date = frappe.utils.getdate(onboarding_date)
+		except (TypeError, ValueError):
+			onboarding_date = None
+	if not onboarding_date:
+		# A new lead may not have a CRM facility row yet. The first ensure request
+		# is then the start of its CRM onboarding timeline.
+		onboarding_date = frappe.utils.getdate(frappe.utils.nowdate())
+	return {
+		"fid": facility.get("hfr_facility_id"),
+		"licence": licence,
+		"facility_name": facility.get("facility_name"),
+		"facility_level": facility.get("keph_level") or facility.get("facility_level"),
+		"county": facility.get("hfr_county"),
+		"sub_county": facility.get("hfr_sub_county"),
+		"tokens_awarded": (selected_package.get("cx_token_package_quantity") or 0) if selected_package else 0,
+		"token_expiry_date": _token_expiry_from_onboarding_date(onboarding_date),
+		"billing_model": "Token",
+		**admin,
+	}
+
+
+def _resolve_admin_contact(mfl_code, deals, customers):
+	"""Return the one verified HMIS administrator contact for a facility, or {}.
+
+	The accepted Opt-In signatory wins; a self-onboarded facility (no Opt-In) uses
+	its OTP-verified owner. CRM never chooses between conflicting contacts.
+	"""
+	admin = {}
 	if deals:
 		rows = frappe.get_all(
 			"CRM Opt-In Submission",
@@ -784,33 +1094,17 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, 
 			}
 	if not any(admin.values()):
 		admin = _self_onboarded_owner_admin(mfl_code, customers)
-	licence = facility.get("license_number") or facility.get("registration_number")
-	if not licence and facility.get("hfr_facility_id"):
-		licence = _backfill_licence_from_hfr(facility.get("hfr_facility_id"), mfl_code, deals)
-	if deal_facility.get("cx_token_package_item"):
-		selected_package = deal_facility
-	onboarding_date = facility.get("onboarding_date") or deal_facility.get("creation") or facility.get("creation")
-	if onboarding_date:
-		try:
-			onboarding_date = frappe.utils.getdate(onboarding_date)
-		except (TypeError, ValueError):
-			onboarding_date = None
-	if not onboarding_date:
-		# A new lead may not have a CRM facility row yet. The first ensure request
-		# is then the start of its CRM onboarding timeline.
-		onboarding_date = frappe.utils.getdate(frappe.utils.nowdate())
-	return {
-		"fid": facility.get("hfr_facility_id"),
-		"licence": licence,
-		"facility_name": facility.get("facility_name"),
-		"facility_level": facility.get("keph_level") or facility.get("facility_level"),
-		"county": facility.get("hfr_county"),
-		"sub_county": facility.get("hfr_sub_county"),
-		"tokens_awarded": (selected_package.get("cx_token_package_quantity") or 0) if selected_package else 0,
-		"token_expiry_date": _token_expiry_from_onboarding_date(onboarding_date),
-		"billing_model": "Token",
-		**admin,
-	}
+	return admin
+
+
+def _portal_admin_contact(mfl_code):
+	"""Admin contact for the signed-in portal user's facility, used for sign-in steps."""
+	from crm.api.website_redirect import get_user_customer_names, get_user_deal_names
+
+	user = frappe.session.user
+	return _resolve_admin_contact(
+		frappe.utils.cstr(mfl_code or "").strip(), get_user_deal_names(user), get_user_customer_names(user)
+	)
 
 
 def _self_onboarded_owner_admin(mfl_code, customers):

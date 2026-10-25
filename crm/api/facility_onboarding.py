@@ -1986,6 +1986,10 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 	if existing_customer and final_portal_status not in {"failed", "blocked"}:
 		final_portal_status = "linked"
 
+	provisioning = _queue_hmis_provisioning(
+		portal_user, [_text(facility.get("mfl_code")) for facility in facilities]
+	)
+
 	return {
 		"success": True,
 		"data": {
@@ -1998,8 +2002,34 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 			"submissions": submissions,
 			"portal_status": final_portal_status,
 			"is_existing_identity": bool(existing_customer or final_portal_status == "linked"),
+			"provisioning": provisioning,
 		},
 	}
+
+
+def _queue_hmis_provisioning(portal_user: str, mfl_codes: list[str]) -> dict[str, Any]:
+	"""Start HMIS setup for each facility once this onboarding transaction commits.
+
+	The job runs the facility view's ensure command as the new portal user, so it
+	is safe to repeat: the facility view still ensures on open if this never runs.
+	"""
+	queued = []
+	for mfl_code in dict.fromkeys(code for code in mfl_codes if code):
+		try:
+			frappe.enqueue(
+				"crm.api.hfr.provision_onboarded_facility",
+				queue="default",
+				timeout=300,
+				enqueue_after_commit=True,
+				job_id="crm-hmis-provision:%s" % mfl_code,
+				deduplicate=True,
+				mfl_code=mfl_code,
+				portal_user=portal_user,
+			)
+			queued.append(mfl_code)
+		except Exception:
+			frappe.log_error(title="HMIS provisioning enqueue after onboarding", message="mfl=%s" % mfl_code)
+	return {"state": "started" if queued else "deferred", "facilities": queued}
 
 
 def _validate_network_contact(person: dict[str, Any]):

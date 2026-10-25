@@ -20,9 +20,12 @@ The required outcome is deterministic: when an authorized facility has a verifie
 5. **Payload provenance:** license/registration and facility details come from CRM’s HFR-linked facility record; onboarding stores the HFR licence/registration number, and when it is blank CRM fetches it from the HFR registry by FID and stores it before building the payload. Tokens come from the facility’s selected CRM token package and default to `0` if no quantity is selected. Administrator name, email and phone come from one processed Opt-In facility signatory that matches the facility MFL or, for a self-onboarded facility (which has no Opt-In), from its one OTP-verified owner contact on the customer’s facility membership (stakeholder answer Q-SEC-2: the verified owner is the default administrator). CRM never invents contact details.
 6. **Expiry:** `token_expiry_date` is the facility onboarding date plus 30 calendar days. CRM has no dedicated onboarding-date field today, so it uses the linked facility row’s CRM creation date. For a lead with no persisted facility row, the first ensure request is the onboarding start date. This policy is deterministic and surfaced in this document.
 7. **Validation is actionable:** CRM validates required TA fields and types before POST. If verified contact/license data is absent or ambiguous, it returns the precise missing field list and does not send a malformed request.
-8. **Draft is not deployment:** a successful POST creates a TA draft only. CRM never calls the deploy action.
+8. **Draft is not deployment:** a successful POST creates a TA draft only. CRM never calls the deploy action. Deployment runs on a separate site; CRM only watches for it (maintainer decision, 2026-10-25).
 9. **Retry after ambiguity:** CRM serializes per FID and rechecks TA status immediately before every POST. If a POST times out or returns 5xx, the next explicit ensure request first checks status. If TA still definitively says no draft, CRM retries POST. The TA API has no idempotency key and does not deduplicate; therefore true exactly-once semantics cannot be guaranteed across a lost response. The FID lock prevents concurrent CRM submissions, and GET reconciliation is the available duplicate control.
 10. **Visible failure evidence:** each outbound request carries a correlation ID. CRM Error Log stores bounded, redacted responses. System Managers can view available TA `error` and `log` fields. A generic TA 500 response cannot reveal the remote traceback; the correlation ID must be searched in the TA site Error Log.
+11. **Start at onboarding:** when self-onboarding commits, CRM queues one background ensure per facility (`enqueue_after_commit`, `job_id=crm-hmis-provision:<MFL>`, deduplicated). The job runs as the new portal user through the same ensure path, so authorization, locking and validation are unchanged. Opening the facility still runs ensure, so a job that never ran is recovered. A queueing failure never fails onboarding.
+12. **One customer-facing journey:** every status response carries `journey`, normalized server-side: phase, steps, progress, wait estimate, live site and whether to poll. The portal renders it without guessing. While setup is in progress, it re-reads status with the read-only GET **every 5 minutes**, to notice when the separate deployment site reports the facility as provisioned. Ensure (the write) runs only on open and on explicit retry.
+13. **Never invent site details:** the site URL, login URL, admin username and ETA are shown only when TA reports them. A site URL must be `https://`, with a host and no embedded credentials. When TA reports no ETA, the estimate comes from TA progress and elapsed time, then from **Typical HMIS Setup Time (minutes)** in CRM HFR Settings. That setting defaults to 60 minutes, is editable, and 0 hides the estimate. The UI says which source it used. The fields CRM needs from TA are listed in [`hmis-provisioning-status-api-requirements.md`](hmis-provisioning-status-api-requirements.md).
 
 ## 3. Architecture
 
@@ -89,6 +92,9 @@ sequenceDiagram
 |---|---|---|
 | GET | `crm.api.hfr.get_provisioning_status(mfl_code)` | Read status only. Never POSTs. |
 | POST | `crm.api.hfr.ensure_provisioning_draft(mfl_code)` | Resolve access and FID, GET TA status, POST only on exact no-draft, then reload. |
+| job | `crm.api.hfr.provision_onboarded_facility(mfl_code, portal_user)` | Not whitelisted. Queued by `submit_onboarding` after commit; runs ensure as the portal user. |
+
+Both RPCs return a `journey` object (see [`cx-portal-provisioning-gateway-api.md`](cx-portal-provisioning-gateway-api.md#customer-journey)).
 
 TA endpoints are `GET /api/method/hmis_setup.api.external_provisioning.get_provision_status?fid={FID}` and `POST /api/method/hmis_setup.api.external_provisioning.provision_facility` using the configured service user’s Basic API-key authentication. Credentials remain server-side.
 
@@ -158,6 +164,35 @@ TA endpoints are `GET /api/method/hmis_setup.api.external_provisioning.get_provi
 ## 7. Verification state
 
 The implementation is being verified against CRM unit coverage and the Single Facility Playwright regression. A synthetic authenticated TA GET previously confirmed that “No Facility Setup found” can arrive as HTTP 417 from Frappe; the adapter maps this exact response to `not_submitted`. Do not use a real facility POST as a probe: POST creates persistent TA state. A real POST should be verified only when an explicitly selected facility is confirmed to have no draft and its CRM payload is complete.
+
+### HIMS-09 — Typical setup time setting (implemented)
+
+- CRM HFR Settings has **Typical HMIS Setup Time (minutes)**, default 60 and editable. 0 hides the typical estimate, and negative values are stored as 0.
+
+### HIMS-10 — Normalized setup journey (implemented)
+
+- Status responses include `journey`: `phase` (`preparing`, `queued`, `deploying`, `configuring`, `live`, `blocked`, `needs_attention`, `unavailable`, `not_linked` or `not_configured`), the badge `label`, a four-step `steps` list, `progress`, `estimate`, `site`, `poll` and `checked_at`.
+- TA `Approved` (seen on the dev site) is shown as "Approved — approved for deployment", in the queued phase.
+- An unrecognized non-error status on an existing setup record is shown as in progress, naming the reported status.
+
+### HIMS-11 — Start provisioning at onboarding (implemented)
+
+- `submit_onboarding` returns `provisioning: {state: "started" | "deferred", facilities: [MFL…]}`. No job is queued for a rolled-back onboarding.
+
+### HIMS-12 — Implementation section and success screen (implemented)
+
+- The live state shows the site URL, **Open HMIS** (new tab, `noopener`), **Copy link**, and numbered sign-in steps naming the administrator email.
+- The in-progress state shows the stepper, progress bar and estimate. It polls the read-only status every 5 minutes while the tab is visible, and stops on live, blocked, attention or leaving the view. **Check status** checks immediately.
+- The onboarding success screen marks each facility "HMIS setup started" and explains that setup continues while the password is set. It says "started", never "ready".
+- Fixes the portal reading the status dict's `message` string as the response, which showed "Not started / Implementation status has not been checked" for every facility.
+
+### Maintainer decisions (2026-10-25)
+
+- **Deployment:** done by the provisioning team on a separate site. CRM creates the request and polls status every 5 minutes; it never deploys.
+- **Typical setup time:** 1 hour, editable in CRM HFR Settings.
+- **Status API additions:** the provisioning team will return what CRM needs. The list and the proposed response are in [`hmis-provisioning-status-api-requirements.md`](hmis-provisioning-status-api-requirements.md). Until then, the live card points to the administrator's welcome email instead of a link.
+
+Planning record: [`_bmad-output/hmis-provisioning/planning-artifacts/hmis-provisioning-on-onboarding-2026-10-25.md`](../_bmad-output/hmis-provisioning/planning-artifacts/hmis-provisioning-on-onboarding-2026-10-25.md).
 
 ## 8. Superseded document
 

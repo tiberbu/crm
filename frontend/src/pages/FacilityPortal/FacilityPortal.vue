@@ -583,8 +583,20 @@ function closeFacilityDrawer() {
 }
 
 async function ensureProvisioningDraft(mflCode) {
-	const response = await call('crm.api.hfr.ensure_provisioning_draft', { mfl_code: mflCode })
+  const response = await call('crm.api.hfr.ensure_provisioning_draft', { mfl_code: mflCode })
   return unwrap(response)
+}
+
+// Read-only status refresh used for polling. The endpoint only accepts GET, and
+// frappe-ui `call` always POSTs.
+async function getProvisioningStatus(mflCode) {
+  const query = new URLSearchParams({ mfl_code: mflCode })
+  const res = await fetch(`/api/method/crm.api.hfr.get_provisioning_status?${query}`, {
+    headers: { Accept: 'application/json', 'X-Frappe-Site-Name': window.location.hostname },
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?._error_message || body?.exception || 'Status refresh failed.')
+  return unwrap(body.message)
 }
 
 // Selected Package
@@ -985,11 +997,13 @@ function money(value, currency) {
   }).format(value || 0)
 }
 
+// `call` already returns the server's `message`. Some payloads (provisioning
+// status) carry their own human-readable `message` string, which is not data.
 function unwrap(response) {
   return (
     response?.message?.data ||
     response?.data ||
-    response?.message ||
+    (response?.message && typeof response.message === 'object' ? response.message : null) ||
     response ||
     {}
   )
@@ -1584,6 +1598,7 @@ onUnmounted(() => {
             :token-packages="context.token_packages"
             :default-currency="defaultCurrency"
             :ensure-provisioning-draft="ensureProvisioningDraft"
+            :get-provisioning-status="getProvisioningStatus"
             @back="closeFacilityDrawer"
             @open-top-up="openTopUpModal"
             @open-support="openNetworkSupportDrawer"

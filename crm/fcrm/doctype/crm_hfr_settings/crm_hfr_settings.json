@@ -18,7 +18,8 @@
   "external_provisioning_section",
   "external_provisioning_url",
   "external_provisioning_key",
-  "external_provisioning_secret"
+  "external_provisioning_secret",
+  "provisioning_typical_minutes"
  ],
  "fields": [
   {
@@ -107,11 +108,19 @@
     "fieldname": "external_provisioning_secret",
     "fieldtype": "Password",
     "label": "Service API Secret"
+  },
+  {
+   "default": "60",
+   "description": "Shown to facility users as the usual wait while their HMIS site is set up, when the setup service does not report an estimate. Set 0 to hide.",
+   "fieldname": "provisioning_typical_minutes",
+   "fieldtype": "Int",
+   "label": "Typical HMIS Setup Time (minutes)",
+   "non_negative": 1
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-08-01 00:00:00.000000",
+ "modified": "2026-10-25 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "FCRM",
  "name": "CRM HFR Settings",
