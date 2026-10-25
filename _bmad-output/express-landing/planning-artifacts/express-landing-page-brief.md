@@ -118,3 +118,50 @@ proof and a pricing table.
 5. Pricing shows the enabled catalogue packages, read-only, with prices excluding VAT.
 6. A contact message creates a Lead plus a note; invalid input is rejected; the sixth post in an hour gets a 429.
 7. Two or more phone numbers render as `tel:` links when configured.
+
+---
+
+# Round 3 — alignment and contact
+
+**Date:** 2026-10-25 · **Trigger:** maintainer review. The first screen did not line up with the sections below it, and the contact section needed work, starting with the contact details.
+
+## Findings (measured with Playwright at 1440px)
+
+- **Hero art:** it bled to the viewport edge, while every section below stopped at the 1160px container.
+- **Two-column splits:** the hero, lane and contact sections used three different splits. Their text columns were 532, 552 and 449px wide, and their second columns started at 744, 780 and 669px.
+- **Proof strip:** its dividers did not line up with the feature-card columns under it.
+- **Headline:** "today." was left alone on its own line.
+- **Spec breach:** the page re-declared blue-tinted greys (`#5f676d`, `#3f474d`, `#8b9096`) instead of the shared frappe-ui neutral tokens in `tiberbu-brand.css`.
+- **QA found:**
+  - The 40px nav and pricing buttons were under the 44px touch target.
+  - Button shadows hid the keyboard focus ring.
+  - Re-validating a field on blur shifted the layout, so the "Send message" click could miss.
+  - Nav anchors landed under the sticky header.
+
+## Panel decisions
+
+- **Sally (UX):**
+  - One layout system with tokens: `--container` 1160, `--gutter` 24/16, `--split-gap` 64, `--card-gap` 16, `--stack` 44.
+  - The hero, lane and contact sections share one `.split` (two equal columns), so every second column starts on the same line.
+  - The strip uses the feature grid's four columns.
+  - The hero art is contained to the page width.
+  - Headings use `text-wrap: balance`.
+- **Mary (BA):** Contact leads with calling: one "Call us" card with both numbers as large rows, each with its own Call button and the office hours. Email comes next, then a sign-in note for existing customers. The form gains a topic so sales can triage, and each step says what happens next. Nothing is promised that we can't keep: no response-time SLA.
+- **Winston (Architect):**
+  - The topic is validated server-side against a fixed list and stored in the note title. Unknown values fall back to the first topic.
+  - Phone numbers stay in CRM Opt-In Settings (site data).
+  - The page now aliases the shared stylesheet tokens instead of declaring its own.
+- **Quinn (QA):** An automated suite (`qa.cjs`, scratchpad) runs at 360 to 1920px and gates on:
+  - Shared left edge, second column and right edge, strip ↔ card columns, and the art inside the container.
+  - H1 at 36–48px and weight 600; nothing heavier than 600 and no uppercase.
+  - WCAG AA contrast and no tinted greys.
+  - 44px touch targets and a visible focus ring on every Tab stop.
+  - Anchors and images resolve; no console or network errors.
+  - Contact validation, focus management, success state and reduced motion.
+
+## Acceptance criteria (round 3)
+
+1. At ≥ 900px, all section text starts on one left edge, all second columns start on one line, and all content ends on one right edge, including the hero art.
+2. Proof-strip dividers align with the feature-card columns.
+3. The contact section lists both configured numbers with a Call button each; the form takes a topic and shows inline errors and a success state.
+4. The QA suite passes on the dev and test sites.

@@ -112,5 +112,5 @@ In Tiberbu Express, review your quote and follow the next action shown for each 
 The landing page at `/` is where facility owners first meet Tiberbu Express.
 
 - **Pricing** is a read-only preview of the same package catalogue used in onboarding. If no token price list is configured, the pricing section is hidden.
-- **Contact us** messages arrive in the CRM as a new Lead with the source **Website**. The message is saved as a note titled "Landing page enquiry", and the Lead goes to the **Default Lead Owner** from CRM Opt-In Settings. Each connection can send five messages an hour.
+- **Contact us** messages arrive in the CRM as a new Lead with the source **Website**. The visitor picks a topic (Getting started, Packages and pricing, Request a demo, Partnership or Something else). The message is saved as a note titled "Landing page enquiry: <topic>", and the Lead goes to the **Default Lead Owner** from CRM Opt-In Settings. Each connection can send five messages an hour.
 - **Contact details and the DHA certificate** are set in **CRM Opt-In Settings → Landing Page**: the certificate link, ID and expiry date, the phone numbers (one per line), the contact email and the contact hours. Leave a field empty to hide its block. The certificate card appears only when the certificate link is set.
