@@ -17,7 +17,7 @@
           </div>
           <div>
             <p class="text-xs sm:text-sm font-semibold tracking-tight text-ink-gray-9 leading-tight">
-              Tiberbu <span class="font-normal text-ink-gray-5 hidden xs:inline">Customer Experience</span>
+              Tiberbu <span class="font-normal text-ink-gray-5">Express</span>
             </p>
             <p class="text-[10px] sm:text-[11px] font-medium text-ink-gray-5 flex items-center gap-1.5 mt-0.5">
               <span class="inline-block size-1.5 rounded-full bg-emerald-500"></span>
@@ -75,7 +75,7 @@
           >
             {{
               __(
-                'Verify your details, choose the facilities and token package you need, review the terms and send your request. We’ll guide you through the next steps in Customer Experience.',
+                'Verify your details, choose the facilities and token package you need, review the terms and send your request. We’ll guide you through the next steps in Tiberbu Express.',
               )
             }}
           </p>
@@ -190,13 +190,13 @@
         </span>
         <h2 id="hmis-about-title" class="mt-3 text-xl font-semibold text-ink-gray-9">
           {{
-            __('A clear path from your facility details to Customer Experience')
+            __('A clear path from your facility details to Tiberbu Express')
           }}
         </h2>
         <p class="mt-2.5 max-w-3xl text-sm leading-6 text-ink-gray-6">
           {{
             __(
-              'Use this page to verify your details, choose facilities and token packages, and send your self-onboarding request. You can then follow your next steps in Customer Experience.',
+              'Use this page to verify your details, choose facilities and token packages, and send your self-onboarding request. You can then follow your next steps in Tiberbu Express.',
             )
           }}
         </p>
@@ -309,7 +309,7 @@
               href="/login?redirect-to=/cx-portal"
               data-testid="duplicate-signin"
               class="font-semibold text-rose-700 underline underline-offset-4 hover:text-rose-900"
-              >{{ __('Sign in to Customer Experience') }}</a
+              >{{ __('Sign in to Tiberbu Express') }}</a
             ><a
               v-if="registrationConflictDetected && supportEmail"
               :href="`mailto:${supportEmail}`"
@@ -1300,7 +1300,7 @@
               </div>
               <div v-if="termsAccepted" class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 p-3.5 sm:p-4">
                 <dt class="text-ink-gray-6 font-medium">
-                  {{ __('Customer Experience email') }}
+                  {{ __('Tiberbu Express email') }}
                 </dt>
                 <dd class="text-left sm:text-right font-semibold text-ink-gray-9 break-all" data-testid="verified-account-email">
                   {{ accountEmail }}
@@ -1374,7 +1374,7 @@
                 class="mt-3 rounded-xl bg-amber-100/70 p-3 text-xs leading-5 text-amber-900"
                 role="alert"
               >
-                {{ __('We couldn’t find an email address on your verified profile for Customer Experience access. Please contact support and we’ll help you continue.') }}
+                {{ __('We couldn’t find an email address on your verified profile for Tiberbu Express access. Please contact support and we’ll help you continue.') }}
               </p>
             </section>
 
@@ -1443,14 +1443,14 @@
             {{
               portalStatus === 'linked' || existingIdentityDetected
                 ? __(
-                    'Your selected facilities are linked to your existing Customer Experience account. Sign in with your usual details to review your quote and next steps.',
+                    'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your quote and next steps.',
                   )
                 : catalog.network?.name
                 ? __(
-                    'Your Customer Experience account is ready, and your selected facilities are linked to the Network. Check your email for password setup instructions, then sign in to review your quote and next steps.',
+                    'Your Tiberbu Express account is ready, and your selected facilities are linked to the Network. Check your email for password setup instructions, then sign in to review your quote and next steps.',
                   )
                 : __(
-                    'Your Customer Experience account is ready. Check your email for password setup instructions, then sign in to review your quote and next steps.',
+                    'Your Tiberbu Express account is ready. Check your email for password setup instructions, then sign in to review your quote and next steps.',
                   )
             }}
           </p>
@@ -1462,7 +1462,7 @@
             <span class="text-blue-600 font-bold shrink-0 text-sm sm:text-base leading-none">ℹ</span>
             <div class="leading-normal">
               <span class="font-semibold">{{ __('You’re all set') }}:</span>
-              {{ __('Your selected facilities have been added to your existing Customer Experience account.') }}
+              {{ __('Your selected facilities have been added to your existing Tiberbu Express account.') }}
             </div>
           </div>
           <p
@@ -1471,7 +1471,7 @@
             data-testid="success-account-email"
           >
             <span class="text-ink-gray-4">✉</span>
-            <span class="truncate">{{ __('Customer Experience login: {0}', [accountEmail]) }}</span>
+            <span class="truncate">{{ __('Tiberbu Express login: {0}', [accountEmail]) }}</span>
           </p>
           <div class="mx-auto mt-6 sm:mt-8 max-w-lg space-y-2.5 text-left">
             <div
@@ -1513,7 +1513,7 @@
             href="/login?redirect-to=/cx-portal"
             class="mt-8 sm:mt-9 inline-flex min-h-12 w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-[#bc1823] px-8 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#a3141d]"
           >
-            <span>{{ portalStatus === 'linked' || existingIdentityDetected ? __('Sign in to Customer Experience') : __('Go to sign in') }}</span>
+            <span>{{ portalStatus === 'linked' || existingIdentityDetected ? __('Sign in to Tiberbu Express') : __('Go to sign in') }}</span>
             <span class="text-base">→</span>
           </a>
         </section>
@@ -1815,7 +1815,7 @@ function packageMetadata(pkg) {
     features = [
       pkg.coverage_summary || __('Standard clinical operations'),
       __('Flexible token balance top-ups'),
-      __('Customer Experience Portal access'),
+      __('Tiberbu Express access'),
     ]
   }
 
@@ -1860,7 +1860,7 @@ const journey = [
   },
   {
     title: __('Follow your next steps'),
-    description: __('Sign in to Customer Experience to review your quote and follow the next action.'),
+    description: __('Sign in to Tiberbu Express to review your quote and follow the next action.'),
   },
 ]
 const progressSteps = computed(() =>

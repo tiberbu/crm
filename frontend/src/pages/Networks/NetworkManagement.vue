@@ -134,7 +134,7 @@
         <p class="mt-1 text-xs text-ink-gray-4">
           {{
             __(
-              'Create a network to configure Customer Experience, pricing, branding, coordinators, and signatories.',
+              'Create a network to configure Tiberbu Express, pricing, branding, coordinators, and signatories.',
             )
           }}
         </p>

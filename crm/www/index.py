@@ -1,4 +1,4 @@
-"""Public Tiberbu Customer Experience landing page.
+"""Public Tiberbu Express landing page.
 
 Guests see the facility-owner welcome page; logged-in users are routed to the
 experience permitted for their account.
@@ -13,6 +13,7 @@ this redirect actually runs for workspace-having users, closing a desk-fence byp
 import frappe
 from frappe import _
 
+from crm.api.landing import CONTACT_TOPICS, get_landing_settings, get_pricing_preview
 from crm.api.website_redirect import get_portal_route
 from crm.branding import apply_brand_context, get_configured_app_brand
 
@@ -29,12 +30,21 @@ def get_context(context):
 	context.no_cache = 1
 	context.no_header = True
 	context.no_breadcrumbs = True
-	context.title = _("Tiberbu Customer Experience")
+	context.title = _("Tiberbu Express — Onboard yourself and start sending claims")
 	apply_brand_context(context, brand, surface="splash")
 
-	context.cta_text = "Start Self-Onboarding"
+	context.cta_text = "Start onboarding"
 	context.cta_link = "/facility-onboarding"
-	context.cta_secondary_text = "Already have access? Sign in"
+	context.cta_secondary_text = "Already onboarded? Sign in"
 	context.cta_secondary_link = "/login?redirect-to=/cx-portal"
+
+	context.landing = get_landing_settings()
+	context.contact_topics = CONTACT_TOPICS
+	try:
+		context.plans = get_pricing_preview()
+	except Exception:
+		# The pricing preview is a hint; never let catalog problems take the landing page down.
+		frappe.log_error(title="Landing page pricing preview")
+		context.plans = []
 
 	return context

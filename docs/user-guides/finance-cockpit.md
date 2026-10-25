@@ -12,7 +12,7 @@
 > invitation-only Network Opt-In process. Public Self-Onboarding ends when the
 > owner accepts its Terms and submits a request; it has no signature or
 > signatory step. Do not wait for a Self-Onboarding signature before following
-> its next action in Customer Experience.
+> its next action in Tiberbu Express.
 
 ## Start with the right company and queue
 
@@ -48,7 +48,7 @@ Use the invoice list to identify open, overdue, partially paid, and settled bala
 - The due date, currency, tax, grand total, and outstanding balance.
 - Existing payment references or allocations.
 
-An open invoice is eligible for customer payment through the payment option shown in Customer Experience. The Cockpit is where Accounts reviews the native Sales Invoice and its accounting state. If no invoice exists, check the Network billing schedule and the handoff explanation first.
+An open invoice is eligible for customer payment through the payment option shown in Tiberbu Express. The Cockpit is where Accounts reviews the native Sales Invoice and its accounting state. If no invoice exists, check the Network billing schedule and the handoff explanation first.
 
 ## Record and allocate a receipt
 
@@ -84,7 +84,7 @@ Confirm the native Sales Invoice outstanding balance and submitted Payment Entry
 
 ## Stakeholder ownership
 
-CRM owns Network and Opt-In context, signatures, and commercial handoff references. ERPNext owns quotations, Sales Orders, Sales Invoices, and Payment Entries. The Finance Cockpit operates on those native records under ERPNext permissions. Customer Experience shows the facility owner's allowed billing view and payment options. The implementation service separately owns HMIS deployment state.
+CRM owns Network and Opt-In context, signatures, and commercial handoff references. ERPNext owns quotations, Sales Orders, Sales Invoices, and Payment Entries. The Finance Cockpit operates on those native records under ERPNext permissions. Tiberbu Express shows the facility owner's allowed billing view and payment options. The implementation service separately owns HMIS deployment state.
 
 Use **Administrator**, **Accounts User**, or **Accounts Manager** access as required by the Cockpit. A Sales role alone does not grant access to finance operations.
 
@@ -92,6 +92,6 @@ Use **Administrator**, **Accounts User**, or **Accounts Manager** access as requ
 
 **CRM → Accounts:** signed submission, customer, facility, Network, Deal, quotation/order links, and billing schedule context.
 
-**Accounts → Customer Experience:** posted invoice and allocated payment status for the facility owner to review.
+**Accounts → Tiberbu Express:** posted invoice and allocated payment status for the facility owner to review.
 
 **Accounts → CRM/Network:** source reference and explanation when a signed handoff, billing schedule, invoice, or customer identity needs correction.

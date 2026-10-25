@@ -57,15 +57,15 @@ RESOURCE_COPY = {
 		"required_roles": _("A CRM application role"),
 	},
 	"portal": {
-		"eyebrow": _("Customer Experience portal"),
+		"eyebrow": _("Tiberbu Express"),
 		"title": _("Portal access is unavailable"),
 		"message": _(
-			"This account is not linked to an active Customer Experience portal profile."
+			"This account is not linked to an active Tiberbu Express profile."
 		),
 		"next_step": _("Contact the organization that invited you to confirm your portal access."),
 		"home_label": _("Return to CRM"),
 		"home_route": "/crm",
-		"resource_label": _("Customer Experience portal"),
+		"resource_label": _("Tiberbu Express"),
 		"required_roles": _("An active portal invitation or profile"),
 	},
 }

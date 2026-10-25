@@ -1,4 +1,4 @@
-# Customer Experience (CX Portal) Guide
+# Tiberbu Express (CX Portal) Guide
 
 **Audience:** facility owners, facility office managers, and support teams\
 **Start at:** `/cx-portal`\

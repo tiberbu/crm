@@ -78,7 +78,7 @@
             <p
               class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
             >
-              {{ __('Customer Experience configuration') }}
+              {{ __('Tiberbu Express configuration') }}
             </p>
             <p class="mt-2 text-sm text-ink-gray-7">
               {{
@@ -372,7 +372,7 @@
             <p class="text-[11px] text-ink-gray-5">
               {{
                 __(
-                  'Choices are shown in Customer Experience; they are informational only.',
+                  'Choices are shown in Tiberbu Express; they are informational only.',
                 )
               }}
             </p>
@@ -805,7 +805,7 @@
                 {{ __('Invitation') }}
               </th>
               <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Customer Experience') }}
+                {{ __('Tiberbu Express') }}
               </th>
               <th class="px-4 py-2.5 text-right font-medium">
                 {{ __('Actions') }}
@@ -873,7 +873,7 @@
               </td>
               <td class="px-4 py-3">
                 <span v-if="isSelfOnboardingContact(row)" class="text-xs text-ink-gray-5">
-                  {{ __('Customer Experience access') }}
+                  {{ __('Tiberbu Express access') }}
                 </span>
                 <span
                   v-else
@@ -953,7 +953,7 @@
                     >{{
                       customerExperienceLink(row)?.linked
                         ? __('Sync CX access')
-                        : __('Invite to Customer Experience')
+                        : __('Invite to Tiberbu Express')
                     }}</Button
                   >
                   <Button
@@ -1246,7 +1246,7 @@
               v-if="editingFacility && isSelfOnboardingContact(editingFacility)"
               class="text-[11px] text-ink-gray-5"
             >
-              {{ __('This email is tied to the verified Customer Experience account.') }}
+              {{ __('This email is tied to the verified Tiberbu Express account.') }}
             </p>
           </div>
           <div class="flex flex-col gap-1">
@@ -1908,10 +1908,10 @@ async function inviteToCustomerExperience(row) {
     })
     toast.success(
       result?.status === 'linked'
-        ? __('Customer Experience access is already linked to {0}', [
+        ? __('Tiberbu Express access is already linked to {0}', [
             result?.user || membership.contact_email,
           ])
-        : __('Customer Experience invitation sent to {0}', [
+        : __('Tiberbu Express invitation sent to {0}', [
             membership.contact_email,
           ]),
     )
@@ -1920,7 +1920,7 @@ async function inviteToCustomerExperience(row) {
     toast.error(
       error?.messages?.[0] ??
         error?.message ??
-        __('Could not invite this facility to Customer Experience'),
+        __('Could not invite this facility to Tiberbu Express'),
     )
   } finally {
     invitingToCustomerExperience.value = null

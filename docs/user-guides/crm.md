@@ -17,7 +17,7 @@
 3. Check identity, facility, Network, package, and contact details.
 4. Complete the required facility and Network signature steps.
 5. Review the linked Deal and commercial documents.
-6. Hand eligible work to Accounts and confirm Customer Experience reflects the permitted status.
+6. Hand eligible work to Accounts and confirm Tiberbu Express reflects the permitted status.
 
 ## Prepare the Network
 
@@ -90,16 +90,16 @@ When the signed record is eligible, hand it to Accounts with the Opt-In submissi
 | Signature is pending | Identify the signer and resend or follow up through the existing signature workflow. |
 | Facility or owner data conflicts with the registry | Preserve the source value and route a registry correction. |
 | A signed submission has no accounting documents | Check the Network schedule and existing linked records, then hand off with references if eligible. |
-| Customer Experience displays stale or unavailable setup status | Keep CRM and billing records intact; route the setup-status issue to implementation support. |
+| Tiberbu Express displays stale or unavailable setup status | Keep CRM and billing records intact; route the setup-status issue to implementation support. |
 
 ## Stakeholder responsibilities
 
 CRM owns Network setup, Opt-In submissions, facility membership context, signature state, and commercial handoff references. HFR supplies authoritative registry facts. ERPNext owns quotations, Sales Orders, Sales Invoices, and Payment Entries. The implementation service owns HMIS deployment state and any site-health details it publishes.
 
-CRM staff should use only the records and workflow actions granted to their role. Customer Experience is the facility owner's permitted view; do not change CRM state to simulate an upstream result.
+CRM staff should use only the records and workflow actions granted to their role. Tiberbu Express is the facility owner's permitted view; do not change CRM state to simulate an upstream result.
 
 ## Handoff to Finance and the facility owner
 
 **CRM → Finance:** signed Opt-In and the linked customer, facility, Network, Deal, quotation, Sales Order, and schedule context. Accounts reviews eligibility and processes native accounting records.
 
-**CRM → Customer Experience:** the authorized facility and Network relationship plus the latest available customer-safe workflow state. The owner sees permitted invoices, payments, token orders, and implementation status from their facility view.
+**CRM → Tiberbu Express:** the authorized facility and Network relationship plus the latest available customer-safe workflow state. The owner sees permitted invoices, payments, token orders, and implementation status from their facility view.

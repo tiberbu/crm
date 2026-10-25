@@ -19,7 +19,7 @@ This guide uses **Alpha Community Clinic**, **Example Health Network**, and samp
 3. Choose the eligible facilities you want to onboard.
 4. Confirm the Network and select a package for each facility.
 5. Review the prices and terms, then submit your request.
-6. Sign in to Customer Experience to review your quote and follow the next steps.
+6. Sign in to Tiberbu Express to review your quote and follow the next steps.
 
 ## 1. Start and explore packages
 
@@ -27,7 +27,7 @@ Open the Self-Onboarding page. The optional sizing guide can help you compare pa
 
 ![Onboarding welcome and token sizing guide](images/onboarding-01-welcome.png)
 
-Select **Start your onboarding** when you’re ready. If you already have Customer Experience access, sign in to that account instead of starting another request.
+Select **Start your onboarding** when you’re ready. If you already have Tiberbu Express access, sign in to that account instead of starting another request.
 
 ## 2. Verify your details
 
@@ -69,7 +69,7 @@ Package quantities describe the package you selected. They are not a live token 
 
 ## 6. Review the terms and submit
 
-Check the Network, facilities, package for each facility, verified Customer Experience email, and total. Use **Edit** if you want to change your Network, facilities, or packages.
+Check the Network, facilities, package for each facility, verified Tiberbu Express email, and total. Use **Edit** if you want to change your Network, facilities, or packages.
 
 ![Review page showing Network, facility, selected package, terms, and VAT total](images/onboarding-07-review.png)
 
@@ -81,9 +81,9 @@ Select **Submit your request** once and wait for the confirmation. If the page i
 
 ![Onboarding submission confirmation](images/onboarding-08-submitted.png)
 
-Your selected facilities are linked to the Network and your Customer Experience account. If this is a new account, check your email for password setup instructions. If you already have an account, sign in with your usual details.
+Your selected facilities are linked to the Network and your Tiberbu Express account. If this is a new account, check your email for password setup instructions. If you already have an account, sign in with your usual details.
 
-In Customer Experience, review your quote and follow the next action shown for each facility. An order, invoice, payment, or activation step may follow when it is available. Sending the Self-Onboarding request does not itself issue an invoice, take payment, or make the facility live.
+In Tiberbu Express, review your quote and follow the next action shown for each facility. An order, invoice, payment, or activation step may follow when it is available. Sending the Self-Onboarding request does not itself issue an invoice, take payment, or make the facility live.
 
 ## If you need help
 
@@ -94,7 +94,7 @@ In Customer Experience, review your quote and follow the next action shown for e
 | Facility is missing or its details are wrong | Stop before submitting and contact support so the registry details can be checked. |
 | The wrong Network is shown | Do not submit. Review the six-digit Network ID or ask your Network contact to confirm it. |
 | Package or total is unexpected | Do not submit. Review the package and VAT breakdown, then contact your Network contact or support. |
-| No email is available for Customer Experience | Contact support to update or confirm the email on your verified profile. |
+| No email is available for Tiberbu Express | Contact support to update or confirm the email on your verified profile. |
 | You received an Opt-In invitation | Open the secure link in that invitation email. It is a separate Network process from Self-Onboarding. |
 | The request appears stuck | Wait for the page to respond. If you need help, contact support before starting another request. |
 
@@ -105,4 +105,12 @@ In Customer Experience, review your quote and follow the next action shown for e
 - The Health Facility Registry provides the facility details used for eligibility. Route corrections through the registry process; do not edit registry facts in the onboarding case.
 - Package choices and prices come from the configured catalogue. The facility owner can choose only from the options shown.
 - The owner’s request records their selected Network, facilities, packages, and acceptance of the Self-Onboarding terms. Do not describe that terms acceptance as a signature.
-- After submission, help the owner use Customer Experience to follow the quote and the next action shown for each facility.
+- After submission, help the owner use Tiberbu Express to follow the quote and the next action shown for each facility.
+
+## The public landing page
+
+The landing page at `/` is where facility owners first meet Tiberbu Express.
+
+- **Pricing** is a read-only preview of the same package catalogue used in onboarding. If no token price list is configured, the pricing section is hidden.
+- **Contact us** messages arrive in the CRM as a new Lead with the source **Website**. The visitor picks a topic (Getting started, Packages and pricing, Request a demo, Partnership or Something else). The message is saved as a note titled "Landing page enquiry: <topic>", and the Lead goes to the **Default Lead Owner** from CRM Opt-In Settings. Each connection can send five messages an hour.
+- **Contact details and the DHA certificate** are set in **CRM Opt-In Settings → Landing Page**: the certificate link, ID and expiry date, the phone numbers (one per line), the contact email and the contact hours. Leave a field empty to hide its block. The certificate card appears only when the certificate link is set.

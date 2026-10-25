@@ -505,10 +505,10 @@ describe('FacilityOnboardingLanding', () => {
 
     expect(host.textContent).toContain('Your request has been submitted')
     expect(host.textContent).toContain(
-      'Your selected facilities are linked to your existing Customer Experience account. Sign in with your usual details to review your quote and next steps.',
+      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your quote and next steps.',
     )
     expect(host.querySelector('[data-testid="linked-identity-note"]')).not.toBeNull()
-    expect(host.textContent).toContain('Sign in to Customer Experience')
+    expect(host.textContent).toContain('Sign in to Tiberbu Express')
   })
 
   it('continues submission and links account when conflict preflight returns outcome existing_identity', async () => {
@@ -588,10 +588,10 @@ describe('FacilityOnboardingLanding', () => {
 
     expect(host.textContent).toContain('Your request has been submitted')
     expect(host.textContent).toContain(
-      'Your selected facilities are linked to your existing Customer Experience account. Sign in with your usual details to review your quote and next steps.',
+      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your quote and next steps.',
     )
     expect(host.querySelector('[data-testid="linked-identity-note"]')).not.toBeNull()
-    expect(host.textContent).toContain('Sign in to Customer Experience')
+    expect(host.textContent).toContain('Sign in to Tiberbu Express')
   })
 
   it.each([
@@ -714,7 +714,7 @@ describe('FacilityOnboardingLanding', () => {
       if (_outcome === 'existing_identity' || submitConflict) {
         expect(
           host.querySelector('[data-testid="duplicate-signin"]')?.textContent,
-        ).toContain('Sign in to Customer Experience')
+        ).toContain('Sign in to Tiberbu Express')
         expect(
           host.querySelector('[data-testid="duplicate-support"]')?.textContent,
         ).toContain('Contact support')
