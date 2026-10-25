@@ -25,6 +25,7 @@ class TestLandingContact(IntegrationTestCase):
 			phone="+254 700 000 000",
 			organization="Example Clinic",
 			message="Hello <b>team</b>\nplease call me.",
+			topic="Request a demo",
 		)
 		frappe.set_user("Administrator")
 
@@ -37,7 +38,7 @@ class TestLandingContact(IntegrationTestCase):
 		note = frappe.get_all(
 			"FCRM Note", filters={"reference_docname": lead.name}, fields=["title", "content"]
 		)[0]
-		self.assertEqual(note.title, landing.NOTE_TITLE)
+		self.assertEqual(note.title, landing.NOTE_TITLE + ": Request a demo")
 		self.assertNotIn("<b>", note.content)
 		self.assertIn("&lt;b&gt;team&lt;/b&gt;<br>please call me.", note.content)
 
@@ -47,6 +48,12 @@ class TestLandingContact(IntegrationTestCase):
 		)
 		self.assertEqual(result, {"ok": True})
 		self.assertEqual(self._leads("bot@example.test"), [])
+
+	def test_unknown_topic_falls_back_to_the_first_topic(self):
+		landing.submit_contact(full_name="Juma", email="juma@example.test", message="hi", topic="<script>")
+		lead = self._leads("juma@example.test")[0]
+		title = frappe.db.get_value("FCRM Note", {"reference_docname": lead}, "title")
+		self.assertEqual(title, "%s: %s" % (landing.NOTE_TITLE, landing.CONTACT_TOPICS[0]))
 
 	def test_rejects_missing_or_invalid_fields(self):
 		cases = [

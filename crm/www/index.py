@@ -13,7 +13,7 @@ this redirect actually runs for workspace-having users, closing a desk-fence byp
 import frappe
 from frappe import _
 
-from crm.api.landing import get_landing_settings, get_pricing_preview
+from crm.api.landing import CONTACT_TOPICS, get_landing_settings, get_pricing_preview
 from crm.api.website_redirect import get_portal_route
 from crm.branding import apply_brand_context, get_configured_app_brand
 
@@ -39,6 +39,7 @@ def get_context(context):
 	context.cta_secondary_link = "/login?redirect-to=/cx-portal"
 
 	context.landing = get_landing_settings()
+	context.contact_topics = CONTACT_TOPICS
 	try:
 		context.plans = get_pricing_preview()
 	except Exception:

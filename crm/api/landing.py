@@ -7,6 +7,13 @@ from frappe.utils import cstr, escape_html, getdate, validate_email_address
 
 LEAD_SOURCE = "Website"
 NOTE_TITLE = "Landing page enquiry"
+CONTACT_TOPICS = (
+	"Getting started",
+	"Packages and pricing",
+	"Request a demo",
+	"Partnership",
+	"Something else",
+)
 MAX_MESSAGE = 2000
 PERIOD_UNITS = {"Monthly": "month", "Quarterly": "quarter", "Annual": "year"}
 
@@ -59,7 +66,9 @@ def get_pricing_preview() -> list[dict]:
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=5, seconds=60 * 60, methods="POST")
-def submit_contact(full_name=None, email=None, phone=None, organization=None, message=None, website=None):
+def submit_contact(
+	full_name=None, email=None, phone=None, organization=None, message=None, topic=None, website=None
+):
 	"""Turn a landing page enquiry into a CRM Lead with the message as a note."""
 	# Honeypot: real visitors never see this field, so a value means a bot.
 	if cstr(website).strip():
@@ -70,6 +79,9 @@ def submit_contact(full_name=None, email=None, phone=None, organization=None, me
 	phone = cstr(phone).strip()[:30]
 	organization = cstr(organization).strip()[:140]
 	message = cstr(message).strip()
+	topic = cstr(topic).strip()
+	if topic not in CONTACT_TOPICS:
+		topic = CONTACT_TOPICS[0]
 
 	if not full_name:
 		frappe.throw(_("Please tell us your name."))
@@ -98,7 +110,7 @@ def submit_contact(full_name=None, email=None, phone=None, organization=None, me
 	frappe.get_doc(
 		{
 			"doctype": "FCRM Note",
-			"title": NOTE_TITLE,
+			"title": "%s: %s" % (NOTE_TITLE, topic),
 			"content": "<p>%s</p>" % escape_html(message).replace("\n", "<br>"),
 			"reference_doctype": "CRM Lead",
 			"reference_docname": lead.name,
