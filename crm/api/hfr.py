@@ -764,6 +764,7 @@ def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 		if ensure_missing_draft and status.get("status") == "not_submitted":
 			source = _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, customers)
 			payload, missing_fields = _build_external_provisioning_payload(source)
+			metering = _apply_token_source(settings, payload)
 			status = _auto_submit_external_provisioning(
 				external_url,
 				external_key,
@@ -772,6 +773,7 @@ def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 				status,
 				payload,
 				missing_fields,
+				metering=metering,
 			)
 		status["fid"] = facility.hfr_facility_id
 		# The TA status API includes its deployment log and last error on a 200
@@ -1254,10 +1256,65 @@ def _build_external_provisioning_payload(source):
 	return payload, list(dict.fromkeys(missing))
 
 
-def _auto_submit_external_provisioning(base_url, api_key, api_secret, fid, status, payload, missing_fields):
+def _apply_token_source(settings, payload):
+	"""Set the HMIS token source on the payload and return the context the metering hooks receive.
+
+	With OpenMeter as the token source (openmeter_mediator ADR-003), CRM grants the
+	facility's tokens in OpenMeter under its FID and HMIS reads its balance there,
+	so the payload awards no tokens itself.
+	"""
+	context = {
+		"fid": payload.get("fid"),
+		"package_tokens": payload.get("tokens_awarded") or 0,
+		"token_source": "crm",
+	}
+	if not settings.get("hmis_token_source_openmeter"):
+		return context
+	context["token_source"] = "openmeter"
+	payload["token_source"] = "openmeter"
+	payload["tokens_awarded"] = 0
+	payload["token_purchase_url"] = frappe.utils.cstr(settings.get("token_purchase_url") or "").strip() or frappe.utils.get_url(
+		"/cx-portal"
+	)
+	return context
+
+
+def _issue_metering_site_key(fid, context):
+	"""Return the FID's metering site key from the crm_issue_hmis_metering_site_key hook.
+
+	CRM does not import the metering app. The key only travels in the outbound
+	request: it is never stored, cached, logged or returned to the portal.
+	"""
+	for method in frappe.get_hooks("crm_issue_hmis_metering_site_key"):
+		try:
+			key = frappe.get_attr(method)(fid=fid, context=dict(context))
+		except Exception:
+			frappe.log_error(
+				title="HMIS metering site key could not be issued",
+				message="fid=%s hook=%s\n%s" % (fid, method, frappe.get_traceback()),
+			)
+			continue
+		if isinstance(key, str) and key.strip():
+			return key.strip()
+	return ""
+
+
+def run_hmis_provisioning_submitted_hooks(fid, context=None):
+	"""Background job: tell installed apps that the setup service accepted this FID's provisioning."""
+	for method in frappe.get_hooks("crm_on_hmis_provisioning_submitted"):
+		try:
+			frappe.get_attr(method)(fid=fid, context=dict(context or {}))
+		except Exception:
+			frappe.log_error(
+				title="HMIS provisioning-submitted hook failed",
+				message="fid=%s hook=%s\n%s" % (fid, method, frappe.get_traceback()),
+			)
+
+
+def _auto_submit_external_provisioning(base_url, api_key, api_secret, fid, status, payload, missing_fields, metering=None):
 	try:
 		return _auto_submit_external_provisioning_impl(
-			base_url, api_key, api_secret, fid, status, payload, missing_fields
+			base_url, api_key, api_secret, fid, status, payload, missing_fields, metering=metering
 		)
 	except LockTimeoutError:
 		status["submission"] = {
@@ -1269,7 +1326,7 @@ def _auto_submit_external_provisioning(base_url, api_key, api_secret, fid, statu
 		return status
 
 
-def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, status, payload, missing_fields):
+def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, status, payload, missing_fields, metering=None):
 	"""Create one draft after an authoritative missing-status check.
 
 	The FID lock serializes portal retries. Before every POST we GET status again.
@@ -1324,13 +1381,30 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 		# not let a stale `unknown` or `accepted` cache entry suppress creation:
 		# the caller explicitly requested ensure, so POST now and reconcile again.
 
+		request_payload = payload
+		if (metering or {}).get("token_source") == "openmeter":
+			# Issued only once the fresh GET has confirmed no draft, so a key is not
+			# rotated on every status refresh. The fingerprint above excludes it.
+			site_key = _issue_metering_site_key(fid, metering)
+			if not site_key:
+				status["submission"] = {
+					"state": "blocked",
+					"retryable": False,
+					"missing_fields": ["metering_site_key"],
+					"message": _(
+						"OpenMeter is the HMIS token source, but no metering site key could be issued for this facility. Check the OpenMeter Mediator app, then refresh."
+					),
+				}
+				return status
+			request_payload = {**payload, "metering_site_key": site_key}
+
 		url = base_url.rstrip("/") + "/api/method/hmis_setup.api.external_provisioning.provision_facility"
 		correlation_id = frappe.generate_hash(length=16)
 		try:
 			response = requests.post(
 				url,
 				auth=(api_key, api_secret),
-				json=payload,
+				json=request_payload,
 				headers={"Accept": "application/json", "Content-Type": "application/json", "X-Correlation-Id": correlation_id},
 				timeout=60,
 			)
@@ -1382,6 +1456,15 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 			}
 			return status
 
+		if frappe.get_hooks("crm_on_hmis_provisioning_submitted"):
+			frappe.enqueue(
+				"crm.api.hfr.run_hmis_provisioning_submitted_hooks",
+				queue="short",
+				enqueue_after_commit=True,
+				fid=fid,
+				context=dict(metering or {"fid": fid}),
+			)
+
 		refreshed = _get_external_provisioning_status(base_url, api_key, api_secret, fid)
 		if refreshed.get("status") == "not_submitted":
 			refreshed.update({"status": body.get("status") or "Draft", "progress": 0})
@@ -1425,8 +1508,9 @@ def _external_submit_error(status_code, body):
 
 def _external_error_details(status_code, body):
 	"""Keep a bounded upstream error response for support, with credentials redacted."""
-	sensitive_key = re.compile(r"password|secret|token|authorization|cookie|api[_-]?key|credential", re.I)
+	sensitive_key = re.compile(r"password|secret|token|authorization|cookie|api[_-]?key|site[_-]?key|credential", re.I)
 	secret_value = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
+	site_key_value = re.compile(r"omk2\.[A-Za-z0-9._-]+")
 	sensitive_text = re.compile(
 		r'(?i)((?:"?)(?:password|secret|token|authorization|cookie|api[_-]?key|credential)(?:"?)\s*[:=]\s*"?)[^"\s,;&}]+'
 	)
@@ -1440,7 +1524,7 @@ def _external_error_details(status_code, body):
 		if isinstance(value, list):
 			return [redact(item) for item in value[:50]]
 		if isinstance(value, str):
-			value = secret_value.sub(r"\1[REDACTED]", value[:8000])
+			value = site_key_value.sub("[REDACTED]", secret_value.sub(r"\1[REDACTED]", value[:8000]))
 			return sensitive_text.sub(r"\1[REDACTED]", value)
 		return value
 

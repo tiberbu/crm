@@ -43,6 +43,18 @@ CRM supplies the TA-required `fid`, `licence`, `tokens_awarded`, `token_expiry_d
 - `token_expiry_date`: facility CRM onboarding date plus 30 calendar days. CRM uses the linked facility row creation date; a lead without a persisted facility row uses the first ensure request date.
 - Admin contact: one processed Opt-In facility signatory matching the MFL. CRM will not fabricate or arbitrarily choose a contact.
 
+### OpenMeter as the token source
+
+**CRM HFR Settings → Use OpenMeter as the HMIS Token Source** is off by default. When it is on (openmeter_mediator ADR-003), CRM grants the facility's tokens in OpenMeter under its FID, and HMIS reads its balance there. The request then changes:
+
+- `tokens_awarded` is `0`.
+- `token_source` is `openmeter`.
+- `token_purchase_url` is the configured Token Purchase URL, or this site's `/cx-portal`.
+- `metering_site_key` is the facility's `omk2.<FID>.<secret>` key. CRM gets it from the `crm_issue_hmis_metering_site_key` hook (provided by the OpenMeter Mediator app), only after the fresh status GET confirms no draft exists. The key is sent in this request only. CRM never stores, caches, logs or returns it, and redacts it from upstream error details. The setup service hands it to the site in the signed `update_license` push.
+- If no key can be issued, CRM returns `submission.state=blocked` with `missing_fields=["metering_site_key"]` and does not POST.
+
+After every accepted request, whatever the token source, CRM enqueues the `crm_on_hmis_provisioning_submitted` hooks after commit with `fid`, `token_source` and `package_tokens`. The mediator uses this to make the free-plan grant.
+
 If required HFR or administrator values are missing or ambiguous, CRM returns `submission.state=blocked` with exact field names and makes no malformed POST. No Won-deal or paid-invoice condition is used as an additional draft gate.
 
 ## Status and diagnostics

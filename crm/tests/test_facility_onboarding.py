@@ -1603,11 +1603,13 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 			patch.object(fo.frappe.db, "get_value", return_value='["QTN-1","QTN-2"]'),
 			patch.object(fo.frappe.db, "exists", return_value=True),
 			patch.object(fo.frappe.db, "set_value") as set_value,
+			patch.object(fo, "facility_fid_for_mfl", return_value="FID-99-TEST-1"),
 		):
 			fo._link_documents(token, self.store.get(token), "OIS-T1", facility, self.PACKAGE)
 		stamped = {(c.args[1], c.args[2], c.args[3]) for c in set_value.call_args_list}
 		self.assertIn(("QTN-1", "crm_token_package_item", "TOK-1"), stamped)
 		self.assertIn(("QTN-2", "crm_token_facility_mfl", "10001"), stamped)
+		self.assertIn(("QTN-2", "crm_token_facility_fid", facility.get("hfr_facility_id") or "FID-99-TEST-1"), stamped)
 		linked = {row.reference_name for row in self._evidence_rows(token) if row.event == "document_linked"}
 		self.assertEqual(linked, {"OIS-T1", "QTN-1", "QTN-2"})
 
