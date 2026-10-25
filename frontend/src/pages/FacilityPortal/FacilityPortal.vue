@@ -235,6 +235,7 @@ const allFacilities = computed(() => {
           token_package: fac.token_package || '',
           token_package_item_code: fac.token_package_item_code || '',
           token_quantity: Number(fac.token_quantity) || 0,
+          token_balance: fac.token_balance || null,
           package_price: fac.package_price,
           package_vat: fac.package_vat,
           package_gross_total: fac.package_gross_total,

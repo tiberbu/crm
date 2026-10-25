@@ -322,6 +322,21 @@ function pendingPaymentForInvoice(invoice) {
   }) || null
 }
 
+// Live balance from OpenMeter (crm_get_facility_token_balances); absent when metering is off.
+const liveBalance = computed(() => props.facility.token_balance || null)
+const liveBalanceText = computed(() => {
+  const entry = liveBalance.value
+  if (!entry) return ''
+  if (entry.status === 'ok') return Number(entry.balance || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })
+  return entry.status === 'not_metered' ? 'Not metered yet' : 'Unavailable'
+})
+const liveBalanceNote = computed(() => {
+  const entry = liveBalance.value
+  if (entry?.status !== 'ok') return 'Package tokens are shown below.'
+  const time = entry.as_of ? new Date(entry.as_of).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+  return time ? `Care Tokens · updated ${time}` : 'Care Tokens'
+})
+
 function reviewInvoice() {
   document.getElementById('facility-invoices')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
@@ -339,6 +354,11 @@ function reviewInvoice() {
         <p class="mt-1 text-sm text-cx-ink-3">{{ facility.keph_level }} <span v-if="facility.county">· {{ facility.county }}</span></p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
+        <div v-if="liveBalance" data-testid="facility-available-tokens" class="rounded-cx-sm border border-cx-border bg-cx-surface px-4 py-2 shadow-sm">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-cx-ink-3">Available tokens</p>
+          <p data-testid="facility-available-tokens-value" class="font-mono text-xl font-bold tracking-tight text-cx-brand">{{ liveBalanceText }}</p>
+          <p class="text-[11px] text-cx-ink-3">{{ liveBalanceNote }}</p>
+        </div>
         <button type="button" class="inline-flex items-center gap-2 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2.5 text-xs font-semibold text-cx-ink-2 shadow-sm transition hover:bg-cx-well" @click="emit('open-support', facility)">
           <CxIcon name="chat" class="size-4" /> Network support
         </button>

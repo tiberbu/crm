@@ -1632,7 +1632,30 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			"payments": [],
 		})
 
+	_attach_token_balances(accounts)
 	return accounts
+
+
+def _attach_token_balances(accounts: list[dict]) -> None:
+	"""Add each facility's live token balance from the metering app, keyed by FID.
+
+	The metering app answers through the crm_get_facility_token_balances hook, so CRM
+	does not import it. Without that app, facilities keep showing their package size.
+	"""
+	facilities = [facility for account in accounts for facility in account.get("facilities") or []]
+	fids = sorted({cstr(f.get("hfr_facility_id")).strip() for f in facilities if cstr(f.get("hfr_facility_id")).strip()})
+	if not fids:
+		return
+	balances = {}
+	for method in frappe.get_hooks("crm_get_facility_token_balances"):
+		try:
+			balances.update(frappe.get_attr(method)(fids) or {})
+		except Exception:
+			frappe.log_error(title="Facility token balances unavailable", message=frappe.get_traceback())
+	for facility in facilities:
+		entry = balances.get(cstr(facility.get("hfr_facility_id")).strip())
+		if entry:
+			facility["token_balance"] = entry
 
 
 @frappe.whitelist(methods=["GET", "POST"])
