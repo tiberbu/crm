@@ -47,12 +47,17 @@ const facility = {
   membership_status: 'Active',
 }
 
+// The real endpoint's envelope: frappe-ui `call` returns `message`, which is the
+// status dict itself and carries its own human-readable `message` string.
+const status = (data: Record<string, unknown>) => ({ json: { message: { message: 'Status synced.', ...data } } })
+
 async function openFacility(
   page: Page,
   statusHandler: (route: Route) => Promise<void>,
   selectedFacility = facility,
+  pollHandler?: (route: Route) => Promise<void>,
 ) {
-  const statusCalls: Array<{ method: string; mfl_code?: string }> = []
+  const statusCalls: Array<{ method: string; mfl_code?: string | null; http?: string }> = []
   await page.route('**/api/method/**', async (route) => {
     const method = route.request().url().split('/api/method/')[1].split('?')[0]
     const body = route.request().postDataJSON?.() || {}
@@ -82,6 +87,11 @@ async function openFacility(
       statusCalls.push({ method, mfl_code: body.mfl_code })
       return statusHandler(route)
     }
+    if (method === 'crm.api.hfr.get_provisioning_status') {
+      const mfl = new URL(route.request().url()).searchParams.get('mfl_code')
+      statusCalls.push({ method, mfl_code: mfl, http: route.request().method() })
+      return pollHandler ? pollHandler(route) : route.fulfill({ status: 500, json: {} })
+    }
     return route.fulfill({ json: { message: { data: {} } } })
   })
 
@@ -100,7 +110,7 @@ test('shows the saved HFR FID and offers a retry when status lookup temporarily 
         status: 503,
         json: { exc_type: 'Unavailable', message: 'Provisioning service temporarily unavailable.' },
       })
-    return route.fulfill({ json: { message: { data: { configured: true, status: 'deployed', progress: 100 } } } })
+    return route.fulfill(status({ configured: true, status: 'deployed', progress: 100 }))
   })
 
   await expect(page.getByText('FID-29-88776-5', { exact: true })).toBeVisible()
@@ -118,17 +128,14 @@ test('shows the saved HFR FID and offers a retry when status lookup temporarily 
 
 test('a status service mismatch names the FID the portal actually sent for resolution', async ({ page }) => {
   const statusCalls = await openFacility(page, async (route) =>
-    route.fulfill({
-      json: {
-        message: {
-          data: {
-            configured: false,
-            status: 'not_linked',
-            message: 'An HFR Facility ID is required to look up HMIS implementation status.',
-          },
-        },
-      },
-    }),
+    route.fulfill(
+      status({
+        configured: false,
+        status: 'not_linked',
+        message: 'An HFR Facility ID is required to look up HMIS implementation status.',
+        journey: { phase: 'not_linked', steps: [], poll: false },
+      }),
+    ),
   )
 
   await expect(page.getByText('FID-29-88776-5', { exact: true })).toBeVisible()
@@ -141,21 +148,17 @@ test('a status service mismatch names the FID the portal actually sent for resol
 test('shows the resolved FID, HTTP status, and correlation ID in deployment diagnostics', async ({ page }) => {
   const unlinkedFacility = { ...facility, facility_fid: '' }
   await openFacility(page, async (route) =>
-    route.fulfill({
-      json: {
-        message: {
-          data: {
-            configured: true,
-            fid: 'FID-29-88776-5',
-            status: 'unavailable',
-            error_title: 'The deployment service could not return status',
-            message: 'The status request failed.',
-            correlation_id: 'crm-ta-req-123',
-            error_details: '{\n  "http_status": 500,\n  "response": {\n    "response_text": "Internal Server Error"\n  }\n}',
-          },
-        },
-      },
-    }),
+    route.fulfill(
+      status({
+        configured: true,
+        fid: 'FID-29-88776-5',
+        status: 'unavailable',
+        error_title: 'The deployment service could not return status',
+        message: 'The status request failed.',
+        correlation_id: 'crm-ta-req-123',
+        error_details: '{\n  "http_status": 500,\n  "response": {\n    "response_text": "Internal Server Error"\n  }\n}',
+      }),
+    ),
     unlinkedFacility,
   )
 
@@ -168,4 +171,146 @@ test('shows the resolved FID, HTTP status, and correlation ID in deployment diag
   await expect(dialog).toContainText('FID-29-88776-5')
   await dialog.getByRole('button', { name: 'Close' }).click()
   await expect(dialog).toHaveCount(0)
+})
+
+test('a real status response is read as status, not as its message text', async ({ page }) => {
+  // Regression: unwrap() returned the dict's `message` string, so every facility
+  // showed "Not started / Implementation status has not been checked."
+  await openFacility(page, async (route) => route.fulfill(status({ configured: true, status: 'Draft', progress: 0 })))
+
+  await expect(page.getByText('Draft ready for review', { exact: true })).toBeVisible()
+  await expect(page.getByText('Implementation status has not been checked.')).toHaveCount(0)
+  await expect(page.getByText('Not started', { exact: true })).toHaveCount(0)
+})
+
+// Synthetic values on the reserved .test domain; never real sites or contacts.
+const SITE_URL = 'https://site.example.test'
+const ADMIN = 'admin@example.test'
+
+const steps = (current: number, failed = -1) =>
+  ['request', 'deploy', 'configure', 'live'].map((key, index) => ({
+    key,
+    label: ['Setup request received', 'Deploying HMIS site', 'Configuring facility and administrator', 'Ready to sign in'][index],
+    state: failed >= 0 ? (index < failed ? 'done' : index === failed ? 'error' : 'upcoming') : index < current ? 'done' : index === current ? 'current' : 'upcoming',
+  }))
+
+test('a provisioned site shows its URL and how to sign in', async ({ page }) => {
+  await openFacility(page, async (route) =>
+    route.fulfill(
+      status({
+        configured: true,
+        status: 'Deployed',
+        progress: 100,
+        journey: {
+          phase: 'live',
+          headline: 'Your HMIS site is ready',
+          detail: 'Sign in with the facility administrator account below.',
+          steps: steps(4),
+          progress: 100,
+          estimate: null,
+          poll: false,
+          checked_at: '2026-10-25T10:00:00',
+          site: {
+            url: SITE_URL,
+            login_url: SITE_URL,
+            admin_email: ADMIN,
+            instructions: [
+              `Open ${SITE_URL}`,
+              `Sign in with ${ADMIN}`,
+              'First time signing in? Use the HMIS welcome email or “Forgot password” on the sign-in page to set your password.',
+            ],
+          },
+        },
+      }),
+    ),
+  )
+
+  const card = page.getByTestId('hmis-live-site')
+  await expect(page.getByText('Live', { exact: true })).toBeVisible()
+  await expect(card).toContainText(SITE_URL)
+  await expect(card.getByText(`Sign in with ${ADMIN}`)).toBeVisible()
+  const open = card.getByRole('link', { name: /Open HMIS/ })
+  await expect(open).toHaveAttribute('href', SITE_URL)
+  await expect(open).toHaveAttribute('target', '_blank')
+  await expect(open).toHaveAttribute('rel', /noopener/)
+  await expect(page.getByTestId('hmis-setup-journey')).toHaveCount(0)
+  // A live site no longer asks for the go-live token allocation.
+  await expect(page.getByText('Go-live token allocation')).toHaveCount(0)
+})
+
+test('setup in progress shows the stepper and wait estimate, and polls read-only status until live', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-25T10:00:00') })
+  const deploying = {
+    configured: true,
+    status: 'Deploying',
+    progress: 50,
+    journey: {
+      phase: 'deploying',
+      headline: 'Deploying your HMIS site',
+      detail: 'Your HMIS site is being deployed. You can keep using the portal; this page updates automatically.',
+      steps: steps(1),
+      progress: 50,
+      estimate: { minutes: 10, source: 'progress', overdue: false, label: 'About 10 min remaining, based on progress so far' },
+      site: null,
+      poll: true,
+      checked_at: '2026-10-25T10:00:00',
+    },
+  }
+  const live = {
+    configured: true,
+    status: 'Deployed',
+    journey: { ...deploying.journey, phase: 'live', steps: steps(4), progress: 100, estimate: null, poll: false, site: { url: SITE_URL, login_url: SITE_URL, admin_email: ADMIN, instructions: [`Open ${SITE_URL}`, `Sign in with ${ADMIN}`] } },
+  }
+  const statusCalls = await openFacility(
+    page,
+    async (route) => route.fulfill(status(deploying)),
+    facility,
+    async (route) => route.fulfill(status(live)),
+  )
+
+  const journey = page.getByTestId('hmis-setup-journey')
+  await expect(page.getByText('Deploying', { exact: true })).toBeVisible()
+  await expect(journey).toContainText('Deploying your HMIS site')
+  await expect(page.getByTestId('hmis-setup-estimate')).toHaveText(/About 10 min remaining/)
+  await expect(journey.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
+  await expect(journey.locator('li[data-state="done"]')).toHaveCount(1)
+  await expect(journey.locator('li[data-state="current"]')).toContainText('Deploying HMIS site')
+  await expect(page.getByTestId('hmis-auto-refresh')).toHaveText(/every 5 minutes/)
+  expect(statusCalls.filter((call) => call.method.endsWith('get_provisioning_status'))).toHaveLength(0)
+
+  // Polls every 5 minutes; nothing is read before then.
+  await page.clock.fastForward('04:50')
+  expect(statusCalls.filter((call) => call.method.endsWith('get_provisioning_status'))).toHaveLength(0)
+  await page.clock.fastForward('00:15')
+  await expect(page.getByTestId('hmis-live-site')).toContainText(SITE_URL)
+  const polls = statusCalls.filter((call) => call.method.endsWith('get_provisioning_status'))
+  expect(polls).toEqual([{ method: 'crm.api.hfr.get_provisioning_status', mfl_code: '88776', http: 'GET' }])
+  // Polling is a read; it never re-sends the ensure (write) command.
+  expect(statusCalls.filter((call) => call.method.endsWith('ensure_provisioning_draft'))).toHaveLength(1)
+  await expect(page.getByTestId('hmis-auto-refresh')).toHaveCount(0)
+
+  await page.clock.fastForward('10:00')
+  expect(statusCalls.filter((call) => call.method.endsWith('get_provisioning_status'))).toHaveLength(1)
+})
+
+test('blocked setup says what is missing and does not poll', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-25T10:00:00') })
+  const message = 'Automatic setup could not start because approved CRM values are missing for: licence.'
+  const statusCalls = await openFacility(page, async (route) =>
+    route.fulfill(
+      status({
+        configured: true,
+        status: 'not_submitted',
+        submission: { state: 'blocked', retryable: false, missing_fields: ['licence'], message },
+        journey: { phase: 'blocked', headline: 'Setup needs information', detail: message, steps: steps(0, 0), progress: 0, estimate: null, site: null, poll: false },
+      }),
+    ),
+  )
+
+  await expect(page.getByText('Setup needs information', { exact: true })).toBeVisible()
+  await expect(page.getByText('Setup request not sent')).toBeVisible()
+  await expect(page.getByTestId('hmis-setup-journey').locator('li[data-state="error"]')).toContainText('Setup request received')
+  await expect(page.getByTestId('hmis-auto-refresh')).toHaveCount(0)
+  await page.clock.fastForward('10:00')
+  expect(statusCalls.filter((call) => call.method.endsWith('get_provisioning_status'))).toHaveLength(0)
 })

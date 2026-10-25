@@ -48,7 +48,10 @@ const ok = (route: Route, message: unknown) => route.fulfill({ json: { message }
 
 type Call = { method: string; body: Record<string, unknown> }
 
-async function mockOnboarding(page: Page, { startDelayMs = 0, reused = false } = {}) {
+async function mockOnboarding(
+  page: Page,
+  { startDelayMs = 0, reused = false, provisioning = undefined as Record<string, unknown> | undefined } = {},
+) {
   const calls: Call[] = []
   await page.route('**/api/method/crm.api.facility_onboarding.*', async (route) => {
     const method = route.request().url().split('?')[0].split('.').pop()!
@@ -113,6 +116,7 @@ async function mockOnboarding(page: Page, { startDelayMs = 0, reused = false } =
           outcome: 'new',
           portal_status: 'sent',
           submissions: [{ submission: 'DEAL-1', facility: 'Alpha Clinic', mfl_code: 'FID-1' }],
+          provisioning,
         },
       })
     return route.fulfill({ status: 404 })
@@ -196,4 +200,30 @@ test('submits with a Network ID once the terms are accepted', async ({ page }) =
 
   const submitted = calls.find((call) => call.method === 'submit_onboarding')
   expect(submitted?.body.partner_id).toBe(NETWORK_ID)
+})
+
+test('the success screen says HMIS setup has already started for each facility', async ({ page }) => {
+  await mockOnboarding(page, { provisioning: { state: 'started', facilities: ['FID-1'] } })
+  await reachReview(page)
+  await page.getByTestId('terms-acceptance').check()
+  await page.getByRole('button', { name: 'Submit your request' }).click()
+
+  await expect(page.getByText('Your request has been submitted')).toBeVisible()
+  await expect(page.getByTestId('success-hmis-setup-started')).toHaveText(/HMIS setup started/)
+  const note = page.getByTestId('success-hmis-setup-note')
+  await expect(note).toContainText('We have started setting up your HMIS site')
+  await expect(note).toContainText('keeps running while you set your password')
+  // "Started", never "ready": the site is not live yet.
+  await expect(note).not.toContainText(/ready/i)
+})
+
+test('the success screen does not claim setup started when it could not be queued', async ({ page }) => {
+  await mockOnboarding(page, { provisioning: { state: 'deferred', facilities: [] } })
+  await reachReview(page)
+  await page.getByTestId('terms-acceptance').check()
+  await page.getByRole('button', { name: 'Submit your request' }).click()
+
+  await expect(page.getByText('Your request has been submitted')).toBeVisible()
+  await expect(page.getByTestId('success-hmis-setup-started')).toHaveCount(0)
+  await expect(page.getByTestId('success-hmis-setup-note')).toHaveCount(0)
 })
