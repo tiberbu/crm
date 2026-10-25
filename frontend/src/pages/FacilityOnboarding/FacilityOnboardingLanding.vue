@@ -1480,10 +1480,34 @@
               class="flex items-center justify-between gap-3 rounded-xl border border-outline-gray-2 bg-surface-gray-1/70 px-3.5 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm shadow-sm"
             >
               <span class="font-semibold text-ink-gray-9 truncate">{{ item.facility }}</span>
-              <span class="rounded bg-white px-2 py-0.5 font-mono text-[11px] sm:text-xs font-semibold text-ink-gray-7 border border-outline-gray-2 shrink-0">
-                {{ item.mfl_code }}
+              <span class="flex shrink-0 items-center gap-2">
+                <span
+                  v-if="provisioningStartedFor(item.mfl_code)"
+                  class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
+                  data-testid="success-hmis-setup-started"
+                >
+                  <span class="size-1.5 animate-pulse rounded-full bg-emerald-600" />
+                  {{ __('HMIS setup started') }}
+                </span>
+                <span class="rounded bg-white px-2 py-0.5 font-mono text-[11px] sm:text-xs font-semibold text-ink-gray-7 border border-outline-gray-2">
+                  {{ item.mfl_code }}
+                </span>
               </span>
             </div>
+          </div>
+          <div
+            v-if="provisioningStarted.length"
+            class="mx-auto mt-4 max-w-lg rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 sm:p-3.5 text-left text-xs leading-normal text-emerald-900 shadow-xs"
+            data-testid="success-hmis-setup-note"
+          >
+            <p class="font-semibold">{{ __('We have started setting up your HMIS site') }}</p>
+            <p class="mt-1">
+              {{
+                __(
+                  'Setup keeps running while you set your password. After you sign in, open your facility to follow its progress and get your HMIS site link and sign-in details.',
+                )
+              }}
+            </p>
           </div>
           <a
             href="/login?redirect-to=/cx-portal"
@@ -1555,6 +1579,9 @@ const termsBusy = ref(false)
 const termsDialogOpen = ref(false)
 const submissions = ref([])
 const portalStatus = ref('')
+// HMIS setup is queued server-side as soon as onboarding commits.
+const provisioningStarted = ref([])
+const provisioningStartedFor = (mflCode) => provisioningStarted.value.includes(mflCode)
 const existingIdentityDetected = ref(false)
 const delivery = ref({})
 const resendIn = ref(0)
@@ -2283,6 +2310,8 @@ async function submit() {
       return
     }
     submissions.value = data.enrollments || data.submissions || []
+    provisioningStarted.value =
+      data.provisioning?.state === 'started' ? data.provisioning.facilities || [] : []
     if (data.portal_status) {
       portalStatus.value = data.portal_status
     }

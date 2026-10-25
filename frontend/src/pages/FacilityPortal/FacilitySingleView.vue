@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import CxIcon from './components/CxIcon.vue'
 
 const props = defineProps({
@@ -10,13 +10,45 @@ const props = defineProps({
   tokenPackages: { type: Array, default: () => [] },
   defaultCurrency: { type: String, default: 'KES' },
   ensureProvisioningDraft: { type: Function, required: true },
+  // Read-only refresh used while setup is in progress; never creates a draft.
+  getProvisioningStatus: { type: Function, default: null },
 })
 const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay'])
 const provisioning = ref(null)
 const provisioningBusy = ref(true)
 const provisioningError = ref('')
 const errorDetailsOpen = ref(false)
+const siteLinkCopied = ref(false)
 let statusRequestSequence = 0
+let pollTimer = null
+// Deployment happens on a separate site and takes tens of minutes; a 5-minute
+// read-only check is enough to notice when the site has been provisioned.
+const POLL_INTERVAL_MS = 5 * 60 * 1000
+// Phases whose setup journey the backend normalizes for display. Identity and
+// connection problems keep their own FID-specific guidance below.
+const JOURNEY_LABELS = {
+  preparing: 'Preparing setup',
+  queued: 'Request received',
+  deploying: 'Deploying',
+  configuring: 'Configuring',
+  live: 'Live',
+  blocked: 'Setup needs information',
+  needs_attention: 'Needs attention',
+}
+const journey = computed(() => {
+  const value = provisioning.value?.journey
+  return value && JOURNEY_LABELS[value.phase] ? value : null
+})
+const journeySteps = computed(() => journey.value?.steps || [])
+const liveSite = computed(() => journey.value?.phase === 'live' ? journey.value.site : null)
+const pollingActive = computed(() => Boolean(journey.value?.poll && props.getProvisioningStatus))
+const checkedAt = computed(() => {
+  const value = journey.value?.checked_at
+  const parsed = value ? new Date(value) : null
+  return parsed && !Number.isNaN(parsed.getTime())
+    ? parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : ''
+})
 
 const submissionErrorMessage = computed(() => {
   return provisioning.value?.submission?.state === 'error'
@@ -44,7 +76,47 @@ const submissionCreated = computed(() => provisioning.value?.submission?.state =
 const submissionAlreadyExists = computed(() => provisioning.value?.submission?.state === 'already_exists')
 const submissionUnknown = computed(() => provisioning.value?.submission?.state === 'unknown')
 
+function stopPolling() {
+  if (pollTimer) clearTimeout(pollTimer)
+  pollTimer = null
+}
+
+function schedulePoll() {
+  stopPolling()
+  if (!pollingActive.value) return
+  pollTimer = setTimeout(pollStatus, POLL_INTERVAL_MS)
+}
+
+// Silent refresh: keeps the last good state on failure and never flips the view
+// into its loading state, so the stepper does not flash every 30 seconds.
+async function pollStatus() {
+  const requestSequence = statusRequestSequence
+  const requestedMflCode = props.facility.mfl_code
+  if (document.hidden) return schedulePoll()
+  try {
+    const result = await props.getProvisioningStatus(requestedMflCode)
+    if (requestSequence === statusRequestSequence && result && typeof result === 'object' && result.status) {
+      provisioning.value = result
+    }
+  } catch {
+    // The next tick or a manual check retries.
+  } finally {
+    if (requestSequence === statusRequestSequence) schedulePoll()
+  }
+}
+
+async function copySiteLink() {
+  try {
+    await navigator.clipboard.writeText(liveSite.value?.url || '')
+    siteLinkCopied.value = true
+    setTimeout(() => { siteLinkCopied.value = false }, 2000)
+  } catch {
+    siteLinkCopied.value = false
+  }
+}
+
 async function loadStatus() {
+  stopPolling()
   const requestSequence = ++statusRequestSequence
   const requestedMflCode = props.facility.mfl_code
   provisioningBusy.value = true
@@ -58,10 +130,14 @@ async function loadStatus() {
       provisioningError.value = error?.messages?.[0] || error?.message || 'We could not refresh implementation status. Your facility and billing records are unchanged. Try again shortly.'
     }
   } finally {
-    if (requestSequence === statusRequestSequence) provisioningBusy.value = false
+    if (requestSequence === statusRequestSequence) {
+      provisioningBusy.value = false
+      schedulePoll()
+    }
   }
 }
 onMounted(loadStatus)
+onUnmounted(stopPolling)
 watch(() => props.facility.mfl_code, () => {
   provisioning.value = null
   loadStatus()
@@ -70,6 +146,7 @@ watch(() => props.facility.mfl_code, () => {
 const statusLabel = computed(() => {
   if (provisioningBusy.value && !provisioning.value) return 'Checking status'
   if (provisioningError.value && !provisioning.value) return 'Status unavailable'
+  if (journey.value) return journey.value.label || JOURNEY_LABELS[journey.value.phase]
   if (submissionBlockedMessage.value) return 'Setup needs information'
   if (submissionErrorMessage.value) return 'Setup request needs attention'
   if (submissionUnknown.value) return 'Checking setup request'
@@ -91,6 +168,13 @@ const statusLabel = computed(() => {
 const statusTone = computed(() => {
   if (provisioningBusy.value && !provisioning.value) return 'border-cx-brand-soft-border bg-cx-brand-soft text-cx-brand-ink'
   if (provisioningError.value && !provisioning.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  if (journey.value) {
+    const phase = journey.value.phase
+    if (phase === 'live') return 'border-cx-success-border bg-cx-success-soft text-cx-success-ink'
+    if (phase === 'needs_attention') return 'border-cx-danger-border bg-cx-danger-soft text-cx-danger-ink'
+    if (phase === 'blocked') return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+    return 'border-cx-brand-soft-border bg-cx-brand-soft text-cx-brand-ink'
+  }
   if (submissionBlockedMessage.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
   if (submissionErrorMessage.value) return 'border-cx-danger-border bg-cx-danger-soft text-cx-danger-ink'
   if (submissionUnknown.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
@@ -105,6 +189,7 @@ const statusTone = computed(() => {
 const statusGuidance = computed(() => {
   if (provisioningBusy.value && !provisioning.value) return 'Checking the setup service. If no setup exists, the service will prepare the request automatically when the facility is eligible.'
   if (provisioningError.value && !provisioning.value) return 'The latest status is not available right now. You can retry without affecting your facility or payments.'
+  if (journey.value?.detail) return journey.value.detail
   if (submissionBlockedMessage.value) return submissionBlockedMessage.value
   if (submissionErrorMessage.value) return submissionErrorMessage.value
   if (submissionUnknown.value) return provisioning.value.submission.message || 'The request response was unclear. We are checking whether a setup record was created before trying anything again.'
@@ -123,6 +208,7 @@ const statusGuidance = computed(() => {
 })
 
 const progressValue = computed(() => {
+  if (journey.value) return journey.value.progress ?? null
   if (provisioning.value?.progress == null || provisioning.value?.progress === '') return null
   const value = Number(provisioning.value?.progress)
   return Number.isFinite(value) ? Math.min(100, Math.max(0, Math.round(value))) : null
@@ -144,7 +230,7 @@ const errorHttpStatus = computed(() => {
   }
 })
 const errorCorrelationId = computed(() => provisioning.value?.submission?.correlation_id || provisioning.value?.correlation_id || '')
-const goLiveReady = computed(() => String(provisioning.value?.status || '').toLowerCase() === 'deployed')
+const goLiveReady = computed(() => journey.value?.phase === 'live' || String(provisioning.value?.status || '').toLowerCase() === 'deployed')
 const configuredPackage = computed(() => props.tokenPackages.find((pkg) => pkg.item_code === props.facility.token_package_item_code) || null)
 const selectedPackageTokens = computed(() => Number(props.facility.token_quantity || configuredPackage.value?.token_quantity || 0))
 const selectedPackageCost = computed(() => Number(props.facility.package_gross_total ?? configuredPackage.value?.gross_total ?? props.facility.package_price ?? configuredPackage.value?.price ?? 0))
@@ -308,7 +394,67 @@ function reviewInvoice() {
           </div>
           <button type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">{{ provisioningBusy ? 'Checking…' : 'Check again' }}</button>
         </div>
-        <div v-if="progressValue != null" class="mt-6 max-w-3xl">
+        <section v-if="liveSite" class="mt-5 max-w-3xl overflow-hidden rounded-cx-sm border border-cx-success-border bg-cx-success-soft/40" data-testid="hmis-live-site">
+          <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
+            <div class="flex min-w-0 items-center gap-3">
+              <span class="grid size-10 shrink-0 place-items-center rounded-full bg-cx-surface text-cx-success-ink shadow-sm"><CxIcon name="globe" class="size-5" /></span>
+              <div class="min-w-0">
+                <p class="text-[10px] font-semibold uppercase tracking-[0.13em] text-cx-success-ink">Your HMIS site</p>
+                <p v-if="liveSite.url" class="mt-0.5 break-all font-mono text-sm font-semibold text-cx-ink sm:text-base">{{ liveSite.url }}</p>
+                <p v-else class="mt-0.5 text-xs font-medium text-cx-ink-2">The site address is in the welcome email sent to your administrator.</p>
+              </div>
+            </div>
+            <div v-if="liveSite.url" class="flex flex-wrap items-center gap-2">
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-[11px] font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" @click="copySiteLink">
+                <CxIcon :name="siteLinkCopied ? 'check' : 'copy'" class="size-3.5" /> {{ siteLinkCopied ? 'Copied' : 'Copy link' }}
+              </button>
+              <a :href="liveSite.login_url || liveSite.url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-success px-3.5 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:opacity-90">
+                Open HMIS <CxIcon name="arrow-right" class="size-3.5" />
+              </a>
+            </div>
+          </div>
+          <div class="border-t border-cx-success-border/60 bg-cx-surface/70 px-4 py-3.5 sm:px-5">
+            <p class="text-[11px] font-semibold text-cx-ink">How to sign in</p>
+            <ol class="mt-2 space-y-1.5">
+              <li v-for="(step, index) in liveSite.instructions" :key="index" class="flex items-start gap-2.5 text-xs leading-relaxed text-cx-ink-2">
+                <span class="grid size-5 shrink-0 place-items-center rounded-full bg-cx-success-soft text-[10px] font-bold text-cx-success-ink">{{ index + 1 }}</span>
+                <span class="break-words">{{ step }}</span>
+              </li>
+            </ol>
+          </div>
+        </section>
+        <section v-else-if="journeySteps.length" class="mt-5 max-w-3xl rounded-cx-sm border border-cx-border-soft bg-cx-surface/80 p-4 sm:p-5" data-testid="hmis-setup-journey" aria-live="polite">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="text-xs font-bold text-cx-ink">{{ journey.poll ? journey.headline : 'Where setup stopped' }}</p>
+              <p v-if="journey.estimate" class="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium" :class="journey.estimate.overdue ? 'text-cx-warning-ink' : 'text-cx-ink-2'" data-testid="hmis-setup-estimate">
+                <CxIcon name="clock" class="size-3.5" /> {{ journey.estimate.label }}
+              </p>
+            </div>
+            <span v-if="progressValue != null" class="text-sm font-bold text-cx-ink">{{ progressValue }}%</span>
+          </div>
+          <div v-if="progressValue != null" class="mt-3 h-2 overflow-hidden rounded-full bg-cx-well" role="progressbar" :aria-valuenow="progressValue" aria-valuemin="0" aria-valuemax="100" aria-label="Reported deployment progress">
+            <div class="h-full rounded-full bg-cx-brand transition-all duration-500" :style="{ width: `${progressValue}%` }"></div>
+          </div>
+          <ol class="mt-4 grid gap-2 sm:grid-cols-4">
+            <li v-for="step in journeySteps" :key="step.key" class="flex items-center gap-2 sm:flex-col sm:items-start sm:gap-1.5" :data-state="step.state">
+              <span class="grid size-6 shrink-0 place-items-center rounded-full border text-[10px] font-bold"
+                :class="{
+                  'border-cx-success-border bg-cx-success-soft text-cx-success-ink': step.state === 'done',
+                  'border-cx-brand bg-cx-brand-soft text-cx-brand-ink': step.state === 'current',
+                  'border-cx-danger-border bg-cx-danger-soft text-cx-danger-ink': step.state === 'error',
+                  'border-cx-border bg-cx-well text-cx-ink-3': step.state === 'upcoming',
+                }">
+                <CxIcon v-if="step.state === 'done'" name="check" class="size-3.5" />
+                <CxIcon v-else-if="step.state === 'error'" name="alert" class="size-3.5" />
+                <span v-else-if="step.state === 'current'" class="size-2 animate-pulse rounded-full bg-cx-brand" />
+                <span v-else class="size-1.5 rounded-full bg-cx-ink-3/40" />
+              </span>
+              <span class="text-[11px] leading-snug" :class="step.state === 'upcoming' ? 'text-cx-ink-3' : 'font-semibold text-cx-ink'">{{ step.label }}</span>
+            </li>
+          </ol>
+        </section>
+        <div v-else-if="progressValue != null" class="mt-6 max-w-3xl">
           <div class="mb-2 flex items-center justify-between text-xs"><span class="font-semibold text-cx-ink-2">Reported deployment progress</span><strong class="text-sm text-cx-ink">{{ progressValue }}%</strong></div>
           <div class="h-2.5 overflow-hidden rounded-full bg-cx-well"><div class="h-full rounded-full bg-cx-brand transition-all duration-500" :style="{ width: `${progressValue}%` }"></div></div>
         </div>
@@ -323,6 +469,13 @@ function reviewInvoice() {
           <span class="text-cx-ink-3">Status source</span>
           <span class="font-medium text-cx-ink-2">{{ statusSource }}</span>
         </div>
+        <div v-if="checkedAt" class="flex items-baseline gap-2">
+          <span class="text-cx-ink-3">Last checked</span>
+          <span class="font-medium text-cx-ink-2">{{ checkedAt }}</span>
+        </div>
+        <span v-if="pollingActive" class="inline-flex items-center gap-1.5 text-[11px] font-medium text-cx-brand-ink" data-testid="hmis-auto-refresh">
+          <span class="size-1.5 animate-pulse rounded-full bg-cx-brand" /> Checks again every 5 minutes
+        </span>
       </div>
 
       <section class="cx-glass-panel mx-4 my-5 overflow-hidden rounded-cx border border-white/70 bg-cx-surface/65 shadow-cx sm:mx-6 sm:my-6 sm:backdrop-blur-xl">
@@ -371,16 +524,6 @@ function reviewInvoice() {
           <button type="button" class="text-[11px] font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
         </div>
       </section>
-
-      <div class="border-t border-cx-border-soft px-4 py-4 sm:px-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 class="text-sm font-semibold text-cx-ink">Provisioned HMIS details</h3>
-            <p class="mt-1 max-w-2xl text-xs leading-relaxed text-cx-ink-3">The published status API does not include service-unit configuration or a live site health check. These details will appear when the setup service exposes them.</p>
-          </div>
-          <span class="rounded-full border border-cx-border bg-cx-well px-2.5 py-1 text-[10px] font-medium text-cx-ink-3">Not reported by API</span>
-        </div>
-      </div>
 
       <div class="border-t border-cx-border-soft bg-cx-well/50 px-4 py-3 text-[11px] leading-relaxed text-cx-ink-3 sm:px-6">
         Facility identifiers: <span class="font-medium text-cx-ink-2">MFL {{ facility.mfl_code || '—' }}</span><span v-if="facility.registration_number"> · Registration {{ facility.registration_number }}</span><span v-if="facility.network"> · {{ facility.network }}</span>
