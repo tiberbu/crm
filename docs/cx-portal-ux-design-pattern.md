@@ -34,7 +34,7 @@ This pattern guides future customer experience screens for Kenyan health facilit
 - Describe M-Pesa Paybill as a manual payment followed by reference submission and verification. Do not promise instant settlement or fee treatment unless the payment service confirms it. Do not offer another payment action while a report is awaiting verification.
 - Treat zero-price packages as orders unless the backend confirms direct activation; do not promise that tokens are already active when only an order was created.
 - Align go-live setup and tokens in the Single Facility View. The setup request requires `tokens_awarded`; show the selected package quantity and price alongside the facility’s invoices and payment verification state.
-- Use “package allocation” or “tokens selected,” never “token balance,” when the API exposes package quantity but not remaining credits. The current status endpoint has no token-usage field.
+- Say “Available tokens” only for the live metering balance: a facility's `token_balance` with `status: ok`, read from OpenMeter through the `crm_get_facility_token_balances` hook. Without it, use “package allocation” or “tokens selected” and never “token balance”.
 - Offer free and paid token packages through the existing token-order and billing workflow. A free package still creates an order; a paid package creates an invoice. Do not imply either action submits or deploys HMIS provisioning.
 - Keep the setup submission state explicit: the current CX portal reads provisioning status and the setup team reviews/submits the draft. Do not label a selected package as an accepted `tokens_awarded` value until the provisioning request returns a successful draft response.
 
