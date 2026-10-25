@@ -2471,7 +2471,7 @@ def invite_facility_to_customer_experience(facility_name: Any, membership_name: 
 	_assert_network_access(membership.network)
 	if membership.status == "Declined":
 		frappe.throw(
-			_("A declined network contact cannot be invited to Customer Experience."), frappe.ValidationError
+			_("A declined network contact cannot be invited to Tiberbu Express."), frappe.ValidationError
 		)
 
 	recipient = frappe.utils.cstr(membership.contact_email or "").strip().lower()
@@ -2514,7 +2514,7 @@ def invite_facility_to_customer_experience(facility_name: Any, membership_name: 
 	]
 	failed = [result for result in results if result.get("status") in ("blocked", "failed")]
 	if failed:
-		frappe.throw(failed[0].get("reason") or _("The Customer Experience invitation could not be created."))
+		frappe.throw(failed[0].get("reason") or _("The Tiberbu Express invitation could not be created."))
 
 	users = list(dict.fromkeys(result.get("user") for result in results if result.get("user")))
 	status = "sent" if any(result.get("status") == "sent" for result in results) else "linked"

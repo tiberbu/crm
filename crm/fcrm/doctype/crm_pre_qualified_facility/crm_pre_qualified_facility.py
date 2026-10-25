@@ -145,7 +145,7 @@ def _send_membership_invitation(doc, membership):
 	slug = network.slug or membership.network
 	if is_self_onboarded_facility(doc):
 		portal_url = "{}/cx-portal".format(frappe.utils.get_url())
-		subject = "You've been added to {} — Log in to Customer Experience".format(network.display_name)
+		subject = "You've been added to {} — Log in to Tiberbu Express".format(network.display_name)
 		message = _cx_login_alert_html(
 			membership.contact_name,
 			network.display_name,
@@ -237,13 +237,13 @@ def _cx_login_alert_html(contact_name, network_name, facility_name, portal_url):
 <p>Your facility, <strong>{facility_name}</strong>, has been added to the <strong>{network_name}</strong> network on
 CareverseHIMS — Tiberbu's health information management platform.</p>
 
-<p>Since your facility is already onboarded, you can access your updated network details, token balance, and orders directly in Customer Experience.</p>
+<p>Since your facility is already onboarded, you can access your updated network details, token balance, and orders directly in Tiberbu Express.</p>
 
 <p style="margin: 24px 0;">
   <a href="{portal_url}"
      style="background:#0284c7;color:#fff;padding:12px 24px;border-radius:6px;
             text-decoration:none;font-weight:600;">
-    Log in to Customer Experience &rarr;
+    Log in to Tiberbu Express &rarr;
   </a>
 </p>
 

@@ -169,14 +169,14 @@ class TestCRMPreQualifiedFacility(UnitTestCase):
 		self.assertNotIn("You've been pre-qualified", subject)
 		self.assertNotIn("/facility-onboarding", message)
 
-		# MUST alert to login to Customer Experience
-		self.assertEqual(subject, "You've been added to Test Network — Log in to Customer Experience")
-		self.assertIn("Log in to Customer Experience", message)
+		# MUST alert to login to Tiberbu Express
+		self.assertEqual(subject, "You've been added to Test Network — Log in to Tiberbu Express")
+		self.assertIn("Log in to Tiberbu Express", message)
 		self.assertIn("https://crm.example.test/cx-portal", message)
 		self.assertIn("Nairobi Wellness Centre", message)
 		sendmail.assert_called_once_with(
 			recipients=["sam@example.com"],
-			subject="You've been added to Test Network — Log in to Customer Experience",
+			subject="You've been added to Test Network — Log in to Tiberbu Express",
 			message=message,
 			reference_doctype="CRM Pre-Qualified Facility",
 			reference_name="FAC-SELF-001",

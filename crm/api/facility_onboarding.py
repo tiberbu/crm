@@ -1682,13 +1682,13 @@ def _validate_account_email(value: Any, session: dict[str, Any] | None = None) -
 	requested_email = _text(value).lower()
 	if requested_email and requested_email != account_email:
 		frappe.throw(
-			_("Customer Experience access must use the email on your verified registry profile."),
+			_("Tiberbu Express access must use the email on your verified registry profile."),
 			frappe.ValidationError,
 		)
 	prior_account_email = _text((session or {}).get("customer_account_email")).lower()
 	if prior_account_email and prior_account_email != account_email:
 		frappe.throw(
-			_("Use the same Customer Experience email to resume this onboarding."),
+			_("Use the same Tiberbu Express email to resume this onboarding."),
 			frappe.ValidationError,
 		)
 
@@ -1714,7 +1714,7 @@ def _validate_account_email(value: Any, session: dict[str, Any] | None = None) -
 		).lower()
 		if prior_email and prior_email != account_email:
 			frappe.throw(
-				_("Use the same Customer Experience email to resume this onboarding."), frappe.ValidationError
+				_("Use the same Tiberbu Express email to resume this onboarding."), frappe.ValidationError
 			)
 	return account_email
 
