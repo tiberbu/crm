@@ -31,7 +31,12 @@ Tokens never expire. Only an exhausted balance stops clinical work.
 | CRM-T2 | Done, behind **CRM HFR Settings → Use OpenMeter as the HMIS Token Source** (off by default). The site key comes from the `crm_issue_hmis_metering_site_key` hook. |
 | CRM-T3 | Done, behind the same setting. |
 | CRM-T4 | Done. A `validate` hook on Quotation, Sales Order and Sales Invoice fills the FID from the MFL when exactly one FID is recorded for it. Patch `add_token_facility_fid` adds the field and backfills it. |
-| CRM-T5 | Not started (phase 2). |
+| CRM-T5 | Superseded by CRM-T6. |
+| CRM-T6 | Done (ADR-004). The CX portal shows each facility's live **Available tokens** from OpenMeter through the `crm_get_facility_token_balances` hook, on the facility page, its card and the dashboard total. Without a metering app it shows package sizes. |
+| CRM-T7 | Done. Buying the same package again in one period creates a new order and invoice once the earlier invoice is paid. |
+| CRM-T8 | Done. Playwright journey `e2e/metering/`: record the balance, order and invoice in the portal, pay cash in the Finance cockpit, approve as a second Accounts Manager, then see the new balance in the portal and at the gateway. |
+
+Also fixed: membership-linked facilities were missing from the CX portal, because the facility query dropped the `name` column.
 
 Turn the setting on only after the mediator implements both hooks (OMM-32, OMM-33) and HMIS can pull its balance (HMIS-H1). With the setting on and no key hook, every new provisioning request is blocked with `missing_fields=["metering_site_key"]`.
 

@@ -48,6 +48,14 @@ The single view puts facility identity, implementation, tokens, invoices, paymen
 
 When the page says **Not reported by API**, the connected implementation service did not provide that detail. It does not mean that the site is healthy, unhealthy, or fully configured.
 
+## Available tokens
+
+The facility page shows **Available tokens**: the facility's live balance in the token metering service, updated within about 30 seconds. It is the balance the facility's HMIS uses.
+
+- **Buying more:** use **Top up tokens**. Once the invoice is fully paid, and a cash or bank receipt has been approved by Finance, the tokens are added and the balance rises.
+- **Buying the same package again** in the same month creates a new order and invoice.
+- **When metering is unavailable,** the page shows the package size instead, and says so.
+
 ## Understand tokens and Go Live together
 
 A facility that is not yet live may need Go Live tokens before its implementation can proceed. The single-facility page connects the token selection and order to implementation status, while keeping each state visible:

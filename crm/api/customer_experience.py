@@ -82,6 +82,24 @@ def _purchase_key(submission, facility_mfl, package):
 	return hashlib.sha256(raw.encode()).hexdigest()[:40]
 
 
+def _open_purchase_key(base_key):
+	"""The key for this purchase: the period's key, or the next one once that purchase is paid.
+
+	Retrying an unpaid purchase still resumes its order and invoice, but a facility can buy
+	the same package again in the same period after paying for the first one.
+	"""
+	key = base_key
+	for attempt in range(2, 102):
+		invoice = _existing_document("Sales Invoice", key)
+		if not invoice:
+			return key
+		state = frappe.db.get_value("Sales Invoice", invoice, ["docstatus", "outstanding_amount"], as_dict=True)
+		if state.docstatus != 1 or flt(state.outstanding_amount) > 0:
+			return key
+		key = hashlib.sha256(f"{base_key}|{attempt}".encode()).hexdigest()[:40]
+	frappe.throw(_("This package was bought too many times this period. Contact support."), frappe.ValidationError)
+
+
 def _existing_document(doctype, key, **filters):
 	if not frappe.db.has_column(doctype, "crm_token_purchase_key"):
 		return None
@@ -202,9 +220,11 @@ def create_token_order(
 		submission = _submission(ois_number)
 		if not any(_text(row.get("mfl_code")) == facility_mfl for row in _snapshot_facilities(submission)):
 			frappe.throw(_("That facility is not part of this Opt-In Request."), frappe.PermissionError)
-		key = _purchase_key(submission, facility_mfl, package)
-		with filelock("crm_cx_order_%s" % key, timeout=60), _system_user():
-			source_quote = _initial_onboarding_quote(submission, facility_mfl, package)
+		base_key = _purchase_key(submission, facility_mfl, package)
+		with filelock("crm_cx_order_%s" % base_key, timeout=60), _system_user():
+			key = _open_purchase_key(base_key)
+			# Only the first purchase in a period can reuse the onboarding quotation.
+			source_quote = _initial_onboarding_quote(submission, facility_mfl, package) if key == base_key else None
 			return _create_or_resume_order(submission, facility_mfl, package, key, source_quote=source_quote)
 
 	cust_name = customer or ois_number
@@ -228,9 +248,9 @@ def create_token_order(
 		frappe.throw(_("That facility is not part of your account."), frappe.PermissionError)
 
 	raw_key = "|".join((cust_name, facility_mfl, package["item_code"], _period_key(package)))
-	key = hashlib.sha256(raw_key.encode()).hexdigest()[:40]
-	with filelock("crm_cx_order_%s" % key, timeout=60), _system_user():
-		return _create_or_resume_customer_order(cust_name, facility_mfl, package, key)
+	base_key = hashlib.sha256(raw_key.encode()).hexdigest()[:40]
+	with filelock("crm_cx_order_%s" % base_key, timeout=60), _system_user():
+		return _create_or_resume_customer_order(cust_name, facility_mfl, package, _open_purchase_key(base_key))
 
 
 def _create_or_resume_customer_order(customer, facility_mfl, package, key):

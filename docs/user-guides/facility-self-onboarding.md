@@ -65,7 +65,7 @@ Choose a package for each selected facility. Compare its token quantity, coverag
 
 ![Selected token package](images/onboarding-06-package-selected.png)
 
-Package quantities describe the package you selected. They are not a live token balance and do not mean your facility is already live.
+Package quantities describe the package you selected. They are not a live token balance and do not mean your facility is already live. After onboarding, the facility page in the CX portal shows the live **Available tokens**.
 
 ## 6. Review the terms and submit
 
