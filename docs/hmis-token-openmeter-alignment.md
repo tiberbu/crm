@@ -35,6 +35,7 @@ Tokens never expire. Only an exhausted balance stops clinical work.
 | CRM-T6 | Done (ADR-004). The CX portal shows each facility's live **Available tokens** from OpenMeter through the `crm_get_facility_token_balances` hook, on the facility page, its card and the dashboard total. Without a metering app it shows package sizes. |
 | CRM-T7 | Done. Buying the same package again in one period creates a new order and invoice once the earlier invoice is paid. |
 | CRM-T8 | Done. Playwright journey `e2e/metering/`: record the balance, order and invoice in the portal, pay cash in the Finance cockpit, approve as a second Accounts Manager, then see the new balance in the portal and at the gateway. |
+| CRM-T9 | Done in CRM and the mediator (OMM-38); needs the setup service's `update_metering_site_key` method (HMIS-H5). Facilities live before metering get their site key through the setup service: see "Site keys for existing HMIS sites" in `docs/cx-portal-provisioning-gateway-api.md`. Until HMIS-H5 ships, the Probe page's **Issue site key** hand-over stays the fallback. |
 
 Also fixed: membership-linked facilities were missing from the CX portal, because the facility query dropped the `name` column.
 

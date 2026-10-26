@@ -19,6 +19,7 @@ When all dedicated external setup settings are populated, CRM uses Frappe Basic 
 
 - `GET /api/method/hmis_setup.api.external_provisioning.get_provision_status?fid={FID}`
 - `POST /api/method/hmis_setup.api.external_provisioning.provision_facility`
+- `POST /api/method/hmis_setup.api.external_provisioning.update_metering_site_key` (requested from the setup service, see "Site keys for existing HMIS sites")
 
 Every call includes `Accept: application/json` and an `X-Correlation-Id`. Credentials remain server-side. If any external setting is present but the set is incomplete, CRM returns a configuration error and does not silently switch services. HIE status fallback remains read-only.
 
@@ -54,6 +55,17 @@ CRM supplies the TA-required `fid`, `licence`, `tokens_awarded`, `token_expiry_d
 - If no key can be issued, CRM returns `submission.state=blocked` with `missing_fields=["metering_site_key"]` and does not POST.
 
 After every accepted request, whatever the token source, CRM enqueues the `crm_on_hmis_provisioning_submitted` hooks after commit with `fid`, `token_source` and `package_tokens`. The mediator uses this to make the free-plan grant.
+
+### Site keys for existing HMIS sites
+
+A facility whose HMIS site was set up before metering never sends a provisioning request again, so it never receives a key that way. A System Manager runs **Site keys for existing facilities** on the OpenMeter Probe page, which calls `crm.api.hfr.deliver_metering_site_keys` and queues one background job. For each FID that the `crm_list_hmis_sites_needing_metering_key` hook returns, the job, under the same per-FID lock as provisioning:
+
+1. Reads status. `not_submitted` is skipped, because provisioning will carry the key. An unavailable status is a failure, and no key is issued.
+2. Gets a key from `crm_issue_hmis_metering_site_key` with `context.purpose = "existing_site"`. The mediator refuses if the facility already has a delivered key, and marks the free plan Skipped, because the facility's balance was awarded before metering.
+3. Sends `{"fid": "<FID>", "metering_site_key": "omk2.<FID>.<secret>"}` to `update_metering_site_key`. The setup service must reply 200 or 202 with `accepted: true`, after it queues the signed `update_license` push that stores the key on the site. Until the setup service publishes the method, the job reports HTTP 404 for each facility.
+4. On acceptance, calls the `crm_on_hmis_metering_site_key_delivered` hooks, and the mediator marks the key Pushed. Anything else leaves it Push pending, and the next run replaces it.
+
+The key travels as in provisioning: never stored, cached, logged or returned. Failures are written to the Error Log as `HMIS metering key not delivered: <FID>`, with upstream details redacted.
 
 If required HFR or administrator values are missing or ambiguous, CRM returns `submission.state=blocked` with exact field names and makes no malformed POST. No Won-deal or paid-invoice condition is used as an additional draft gate.
 

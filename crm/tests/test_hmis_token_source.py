@@ -9,6 +9,7 @@ from frappe.tests import UnitTestCase
 from crm.api.hfr import (
 	_apply_token_source,
 	_auto_submit_external_provisioning,
+	_deliver_existing_site_key,
 	_external_error_details,
 	run_hmis_provisioning_submitted_hooks,
 )
@@ -160,6 +161,67 @@ class TestOpenMeterProvisioningSubmit(UnitTestCase):
 			fid=FID,
 			context=metering,
 		)
+
+
+def _existing_site_hooks(key_hook, delivered_hook):
+	attrs = {"app.key_hook": key_hook, "app.on_delivered": delivered_hook}
+	hooks = _hooks("app.key_hook")
+	return (
+		lambda name, *args, **kwargs: ["app.on_delivered"] if name == "crm_on_hmis_metering_site_key_delivered" else hooks(name),
+		lambda method: attrs[method],
+	)
+
+
+@patch("crm.api.hfr.filelock", side_effect=lambda *args, **kwargs: nullcontext())
+@patch("crm.api.hfr._get_external_provisioning_status")
+@patch("crm.api.hfr.requests.post")
+class TestExistingSiteKeyDelivery(UnitTestCase):
+	def _deliver(self, key_hook, delivered_hook):
+		get_hooks, get_attr = _existing_site_hooks(key_hook, delivered_hook)
+		with (
+			patch("crm.api.hfr.frappe.get_hooks", side_effect=get_hooks),
+			patch("crm.api.hfr.frappe.get_attr", side_effect=get_attr),
+		):
+			return _deliver_existing_site_key("https://deploy.example.test", "key", "secret", FID)
+
+	def test_live_site_gets_its_key_through_the_setup_service(self, mock_post, mock_status, _lock):
+		mock_status.return_value = {"configured": True, "status": "Completed", "progress": 100}
+		mock_post.return_value = _accepted()
+		key_hook, delivered_hook = MagicMock(return_value=SITE_KEY), MagicMock()
+		result = self._deliver(key_hook, delivered_hook)
+
+		self.assertEqual(result, {"state": "delivered"})
+		key_hook.assert_called_once_with(fid=FID, context={"fid": FID, "purpose": "existing_site", "token_source": "openmeter"})
+		self.assertTrue(mock_post.call_args.args[0].endswith("external_provisioning.update_metering_site_key"))
+		self.assertEqual(mock_post.call_args.kwargs["json"], {"fid": FID, "metering_site_key": SITE_KEY})
+		delivered_hook.assert_called_once_with(fid=FID, context={"fid": FID})
+		self.assertNotIn(SITE_KEY, frappe.as_json(result))
+
+	def test_facility_without_a_site_is_left_to_provisioning(self, mock_post, mock_status, _lock):
+		mock_status.return_value = _not_submitted()
+		key_hook = MagicMock(return_value=SITE_KEY)
+		self.assertEqual(self._deliver(key_hook, MagicMock())["state"], "skipped")
+		key_hook.assert_not_called()
+		mock_post.assert_not_called()
+
+	def test_unavailable_status_issues_no_key(self, mock_post, mock_status, _lock):
+		mock_status.return_value = {"configured": True, "status": "unavailable"}
+		key_hook = MagicMock(return_value=SITE_KEY)
+		self.assertEqual(self._deliver(key_hook, MagicMock())["state"], "failed")
+		key_hook.assert_not_called()
+
+	def test_refused_push_is_not_marked_delivered(self, mock_post, mock_status, _lock):
+		mock_status.return_value = {"configured": True, "status": "Completed", "progress": 100}
+		refused = MagicMock(status_code=404, headers={})
+		refused.json.return_value = {"exc_type": "DoesNotExistError", "echo": SITE_KEY}
+		mock_post.return_value = refused
+		delivered_hook = MagicMock()
+		result = self._deliver(MagicMock(return_value=SITE_KEY), delivered_hook)
+
+		self.assertEqual(result["state"], "failed")
+		self.assertIn("update_metering_site_key", result["reason"])
+		self.assertNotIn(SITE_KEY, frappe.as_json(result))
+		delivered_hook.assert_not_called()
 
 
 class TestSubmittedHooks(UnitTestCase):
