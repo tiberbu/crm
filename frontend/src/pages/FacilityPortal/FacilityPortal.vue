@@ -136,6 +136,9 @@ const userProfile = ref({
   national_id: '',
   masked_national_id: '',
   national_id_verified: false,
+  identification_type: 'National ID',
+  hfr_owner_licence: '',
+  hfr_registration_number: '',
   organization: '',
   primary_network: '',
   facility_count: 0,
@@ -146,6 +149,8 @@ const profileForm = ref({
   national_id: '',
   mobile_no: '',
   full_name: '',
+  organization: '',
+  identification_type: 'National ID',
 })
 const profileSaving = ref(false)
 
@@ -764,11 +769,16 @@ async function loadUserProfile() {
     const res = await call('crm.api.customer_experience.get_user_profile')
     const data = unwrap(res)
     if (data && data.email) {
-      userProfile.value = data
+      userProfile.value = {
+        ...userProfile.value,
+        ...data,
+      }
       profileForm.value = {
         national_id: data.national_id || '',
         mobile_no: data.mobile_no || '',
         full_name: data.full_name || '',
+        organization: data.organization || '',
+        identification_type: data.identification_type || 'National ID',
       }
     }
   } catch (error) {
@@ -781,6 +791,8 @@ function openEditProfileModal() {
     national_id: userProfile.value.national_id || '',
     mobile_no: userProfile.value.mobile_no || '',
     full_name: userProfile.value.full_name || '',
+    organization: userProfile.value.organization || '',
+    identification_type: userProfile.value.identification_type || 'National ID',
   }
   profileModalOpen.value = true
 }
@@ -793,14 +805,20 @@ async function saveUserProfile() {
       national_id: profileForm.value.national_id,
       mobile_no: profileForm.value.mobile_no,
       full_name: profileForm.value.full_name,
+      organization: profileForm.value.organization,
+      identification_type: profileForm.value.identification_type,
     })
     const data = unwrap(res)
     if (data) {
-      userProfile.value = data
+      userProfile.value = {
+        ...userProfile.value,
+        ...data,
+      }
       profileModalOpen.value = false
+      await loadContext()
       notice.value = {
         tone: 'success',
-        text: 'Profile and National ID updated successfully!',
+        text: 'Profile and account details updated successfully!',
       }
     }
   } catch (error) {
@@ -2705,98 +2723,236 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <!-- VIEW F: MY PROFILE & IDENTIFICATION                            -->
           <!-- ============================================================== -->
-          <div v-if="activeView === 'profile'" class="space-y-6 max-w-4xl">
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <h1 class="text-4xl font-bold text-cx-ink tracking-tight leading-tight">My Profile & Identification</h1>
-                <p class="text-xs text-cx-ink-3 mt-0.5">Manage your National ID and contact details.</p>
+          <div v-if="activeView === 'profile'" class="space-y-6 max-w-5xl">
+            <!-- Profile Hero Header Banner -->
+            <div class="rounded-cx border border-cx-border bg-cx-surface p-6 shadow-cx flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div class="flex items-center gap-4">
+                <div class="relative flex-shrink-0">
+                  <div class="grid size-16 place-items-center rounded-full bg-cx-brand-soft text-cx-brand-ink text-xl font-bold shadow-sm border border-cx-brand-soft-border">
+                    {{ userInitials }}
+                  </div>
+                  <div
+                    v-if="userProfile.national_id_verified"
+                    class="absolute -bottom-1 -right-1 grid size-6 place-items-center rounded-full bg-cx-success text-white shadow-sm ring-2 ring-cx-surface"
+                    title="Verified Identity"
+                  >
+                    <CxIcon name="check" class="size-3.5 stroke-[2.5]" />
+                  </div>
+                </div>
+                <div class="space-y-1">
+                  <div class="flex flex-wrap items-center gap-2.5">
+                    <h1 class="text-2xl font-bold text-cx-ink tracking-tight">{{ userProfile.full_name || userDisplayName }}</h1>
+                    <span
+                      class="rounded-full px-2.5 py-0.5 text-[11px] font-semibold border inline-flex items-center gap-1"
+                      :class="userProfile.national_id_verified ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-well text-cx-ink-2 border-cx-border'"
+                    >
+                      <CxIcon :name="userProfile.national_id_verified ? 'shield-check' : 'user'" class="size-3" />
+                      {{ userProfile.national_id_verified ? 'Verified Facility Owner' : 'Account Holder' }}
+                    </span>
+                  </div>
+                  <p class="text-xs text-cx-ink-2 font-medium">
+                    {{ userProfile.organization || primaryOrganizationName }}
+                    <span v-if="userProfile.primary_network"> · {{ userProfile.primary_network }}</span>
+                  </p>
+                  <p class="text-[11px] font-mono text-cx-ink-3">
+                    {{ userProfile.email }}
+                    <span v-if="userProfile.mobile_no"> · {{ userProfile.mobile_no }}</span>
+                  </p>
+                </div>
               </div>
-              <button
-                type="button"
-                class="rounded-cx-sm bg-cx-brand px-4 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition inline-flex items-center gap-1.5 self-start sm:self-auto"
-                @click="openEditProfileModal()"
-              >
-                <span><CxIcon name="pencil" class="mr-1 inline-block size-4 align-[-0.15em]" />Edit Profile Details</span>
-              </button>
+
+              <div class="flex items-center gap-2.5 w-full md:w-auto">
+                <button
+                  type="button"
+                  class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong transition inline-flex items-center justify-center gap-1.5 flex-1 md:flex-initial"
+                  @click="openEditProfileModal()"
+                >
+                  <CxIcon name="pencil" class="size-3.5" />
+                  <span>Edit Profile Details</span>
+                </button>
+                <button
+                  type="button"
+                  class="rounded-cx-sm border border-cx-border bg-cx-surface px-4 py-2.5 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center justify-center gap-1.5 flex-1 md:flex-initial"
+                  @click="activeView = 'facilities'"
+                >
+                  <CxIcon name="hospital" class="size-3.5" />
+                  <span>View Facilities</span>
+                </button>
+              </div>
             </div>
 
             <!-- Profile Cards Grid -->
             <div class="grid gap-6 md:grid-cols-2">
-              <!-- Card 1: National Identification -->
+              <!-- Card 1: Official National KYC & Identity -->
               <div class="rounded-cx border border-cx-border bg-cx-surface p-6 shadow-cx space-y-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">National Identification</span>
+                <div class="flex items-center justify-between pb-3 border-b border-cx-border-soft">
+                  <div class="flex items-center gap-2">
+                    <span class="grid size-7 place-items-center rounded-cx-sm bg-cx-brand-soft text-cx-brand-ink">
+                      <CxIcon name="shield-check" class="size-4" />
+                    </span>
+                    <div>
+                      <span class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">KYC & Registry Identity</span>
+                      <span class="text-sm font-bold text-cx-ink">Official Verification</span>
+                    </div>
+                  </div>
                   <span
                     class="rounded-full px-2.5 py-0.5 text-[11px] font-semibold border"
                     :class="userProfile.national_id_verified ? 'bg-cx-success-soft text-cx-success-ink border-cx-success-border' : 'bg-cx-well text-cx-ink-2 border-cx-border'"
                   >
-                    {{ userProfile.national_id_verified ? 'Verified' : (userProfile.national_id ? 'On file' : 'Not added') }}
+                    {{ userProfile.national_id_verified ? 'Verified on Registry' : (userProfile.national_id ? 'On file' : 'Not added') }}
                   </span>
                 </div>
 
-                <div class="rounded-cx-sm bg-cx-well border border-cx-border p-4 space-y-2">
-                  <div class="text-xs text-cx-ink-3 font-medium">Kenyan National ID Number:</div>
-                  <div class="flex items-center justify-between">
-                    <span class="font-mono text-xl font-bold tracking-wider text-cx-ink">
-                      {{ showUnmaskedId ? (userProfile.national_id || 'Not on file') : (userProfile.masked_national_id || 'Not on file') }}
-                    </span>
-                    <button
-                      type="button"
-                      class="rounded-cx-sm border border-cx-border bg-cx-surface px-2.5 py-1 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center gap-1"
-                      @click="showUnmaskedId = !showUnmaskedId"
-                      :title="showUnmaskedId ? 'Mask National ID' : 'Reveal National ID'"
-                    >
-                      <span><CxIcon :name="showUnmaskedId ? 'shield-check' : 'eye'" class="mr-1 inline-block size-4 align-[-0.15em]" />{{ showUnmaskedId ? 'Mask' : 'Reveal' }}</span>
-                    </button>
+                <div class="space-y-3">
+                  <div class="rounded-cx-sm bg-cx-well border border-cx-border p-3.5 space-y-2">
+                    <div class="flex items-center justify-between text-xs text-cx-ink-3 font-medium">
+                      <span>{{ userProfile.identification_type || 'Kenyan National ID' }}</span>
+                      <span class="text-[10px] uppercase font-semibold text-cx-success-ink" v-if="userProfile.national_id_verified">
+                        Active Verification
+                      </span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="font-mono text-lg font-bold tracking-wider text-cx-ink">
+                        {{ showUnmaskedId ? (userProfile.national_id || 'Not on file') : (userProfile.masked_national_id || 'Not on file') }}
+                      </span>
+                      <button
+                        type="button"
+                        class="rounded-cx-sm border border-cx-border bg-cx-surface px-2.5 py-1 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well transition inline-flex items-center gap-1"
+                        @click="showUnmaskedId = !showUnmaskedId"
+                        :title="showUnmaskedId ? 'Mask National ID' : 'Reveal National ID'"
+                      >
+                        <CxIcon :name="showUnmaskedId ? 'eye-off' : 'eye'" class="size-3.5" />
+                        <span>{{ showUnmaskedId ? 'Mask' : 'Reveal' }}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2.5 text-xs">
+                    <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3">
+                      <span class="text-cx-ink-3 block text-[11px] font-medium">Registry Source</span>
+                      <strong class="text-cx-ink block font-semibold mt-0.5 truncate" title="Client Registry / IPRS">IPRS & Client Registry</strong>
+                    </div>
+                    <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3">
+                      <span class="text-cx-ink-3 block text-[11px] font-medium">HFR Licence Reference</span>
+                      <strong class="text-cx-ink block font-semibold mt-0.5 truncate" :title="userProfile.hfr_owner_licence || userProfile.hfr_registration_number || 'Registry Linked'">
+                        {{ userProfile.hfr_owner_licence || userProfile.hfr_registration_number || 'Linked on File' }}
+                      </strong>
+                    </div>
                   </div>
                 </div>
 
-                <p class="text-xs text-cx-ink-3 leading-relaxed">
-                  Your National ID supports ownership checks when linking facilities. Manage it here; registry search is available from Facilities.
-                </p>
+                <div class="rounded-cx-sm border border-cx-success-border bg-cx-success-soft/60 p-3 text-xs leading-relaxed text-cx-success-ink flex items-start gap-2">
+                  <CxIcon name="check-circle" class="size-4 shrink-0 mt-0.5" />
+                  <span>This verified identity is authorized to administer and provision connected facilities on the Health Facility Registry.</span>
+                </div>
 
-                <div class="pt-2 border-t border-cx-border-soft">
+                <div class="pt-2 border-t border-cx-border-soft flex items-center justify-between">
                   <button
                     type="button"
-                    class="text-xs font-semibold text-cx-ink-3 hover:text-cx-ink"
+                    class="text-xs font-semibold text-cx-brand hover:underline"
                     @click="openEditProfileModal()"
                   >
-                    Change ID Number
+                    Update Identification Number →
                   </button>
                 </div>
               </div>
 
               <!-- Card 2: Legal Organization & Identity -->
               <div class="rounded-cx border border-cx-border bg-cx-surface p-6 shadow-cx space-y-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Enterprise Entity</span>
+                <div class="flex items-center justify-between pb-3 border-b border-cx-border-soft">
+                  <div class="flex items-center gap-2">
+                    <span class="grid size-7 place-items-center rounded-cx-sm bg-cx-brand-soft text-cx-brand-ink">
+                      <CxIcon name="hospital" class="size-4" />
+                    </span>
+                    <div>
+                      <span class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3 block">Organization & Account</span>
+                      <span class="text-sm font-bold text-cx-ink">Enterprise Details</span>
+                    </div>
+                  </div>
                   <span class="rounded-full bg-cx-brand-soft text-cx-brand-ink border border-cx-brand-soft-border px-2.5 py-0.5 text-[11px] font-semibold">
                     Primary Account
                   </span>
                 </div>
 
                 <div class="space-y-3 text-xs">
-                  <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3 space-y-1">
-                    <span class="text-cx-ink-3 font-medium block">Parent Legal Organization</span>
-                    <strong class="font-semibold text-sm text-cx-ink block">{{ primaryOrganizationName }}</strong>
+                  <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3.5 space-y-1">
+                    <span class="text-cx-ink-3 font-medium block text-[11px]">Parent Legal Organization / Customer</span>
+                    <div class="flex items-center justify-between">
+                      <strong class="font-bold text-base text-cx-ink block">{{ userProfile.organization || primaryOrganizationName }}</strong>
+                      <button
+                        type="button"
+                        class="text-[11px] font-semibold text-cx-brand hover:underline"
+                        @click="openEditProfileModal()"
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </div>
 
                   <div class="grid grid-cols-2 gap-2 text-xs">
-                    <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-2.5">
-                      <span class="text-cx-ink-3 block text-[11px]">Primary Network</span>
-                      <strong class="text-cx-ink block truncate">{{ userProfile.primary_network || 'CareVerse Partner Network' }}</strong>
+                    <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3">
+                      <span class="text-cx-ink-3 block text-[11px] font-medium">Primary Network</span>
+                      <strong class="text-cx-ink block font-semibold truncate mt-0.5">{{ userProfile.primary_network || 'CareVerse Partner Network' }}</strong>
                     </div>
-                    <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-2.5">
-                      <span class="text-cx-ink-3 block text-[11px]">Managed Clinics</span>
-                      <strong class="text-cx-ink block">{{ allFacilities.length }} facilities</strong>
+                    <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3">
+                      <span class="text-cx-ink-3 block text-[11px] font-medium">Managed Facilities</span>
+                      <strong class="text-cx-ink block font-semibold mt-0.5">{{ allFacilities.length }} connected</strong>
                     </div>
                   </div>
 
-                  <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3 space-y-1">
-                    <span class="text-cx-ink-3 font-medium block">Account contact</span>
-                    <strong class="text-cx-ink block">{{ userProfile.full_name || context.user }}</strong>
-                    <span class="text-cx-ink-3 font-mono text-[11px] block">{{ userProfile.email }}</span>
-                    <span class="text-cx-ink-3 font-mono text-[11px] block">Phone: {{ userProfile.mobile_no || 'Not set' }}</span>
+                  <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3.5 space-y-1.5">
+                    <span class="text-cx-ink-3 font-medium block text-[11px]">Account Contact & Communications</span>
+                    <strong class="text-cx-ink block font-semibold text-sm">{{ userProfile.full_name || context.user }}</strong>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-cx-ink-2">
+                      <span class="inline-flex items-center gap-1 font-mono text-[11px]">
+                        <CxIcon name="inbox" class="size-3 text-cx-ink-3" />
+                        {{ userProfile.email }}
+                      </span>
+                      <span class="inline-flex items-center gap-1 font-mono text-[11px]">
+                        <CxIcon name="phone" class="size-3 text-cx-ink-3" />
+                        {{ userProfile.mobile_no || 'Phone not set' }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Connected Facilities Portfolio Strip -->
+            <div class="rounded-cx border border-cx-border bg-cx-surface p-6 shadow-cx space-y-4">
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <h3 class="text-base font-bold text-cx-ink">Connected Facility Portfolio</h3>
+                  <p class="text-xs text-cx-ink-3">Facilities linked to this verified identity across all networks.</p>
+                </div>
+                <button
+                  type="button"
+                  class="text-xs font-semibold text-cx-brand hover:underline inline-flex items-center gap-1"
+                  @click="activeView = 'facilities'"
+                >
+                  <span>View all facilities ({{ allFacilities.length }})</span>
+                  <CxIcon name="arrow-right" class="size-3.5" />
+                </button>
+              </div>
+
+              <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div
+                  v-for="facility in allFacilities.slice(0, 6)"
+                  :key="facility.mfl_code || facility.facility_name"
+                  class="rounded-cx-sm border border-cx-border bg-cx-well p-3.5 space-y-2 hover:border-cx-brand transition cursor-pointer"
+                  @click="openFacilityDetail(facility)"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <h4 class="text-xs font-bold text-cx-ink truncate">{{ facility.facility_name }}</h4>
+                    <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-cx-surface text-cx-ink-2 border border-cx-border-soft">
+                      {{ facility.keph_level }}
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between text-[11px] text-cx-ink-3">
+                    <span v-if="facility.mfl_code" class="font-mono">MFL: {{ facility.mfl_code }}</span>
+                    <span class="font-medium text-cx-success-ink" v-if="facility.token_balance">
+                      {{ facility.token_balance.balance_formatted || (facility.token_balance.balance + ' tokens') }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -3312,44 +3468,76 @@ onUnmounted(() => {
       </div>
     </Dialog>
 
-    <!-- MODAL 5: EDIT PROFILE & NATIONAL ID -->
+    <!-- MODAL 5: EDIT PROFILE & SETTINGS -->
     <Dialog
       v-model:open="profileModalOpen"
-      :title="__('Edit Profile & National ID')"
+      :title="__('Edit Profile & Account Settings')"
       size="xl"
     >
       <div class="p-1 space-y-4">
         <div>
           <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
-            Full Name
+            Full Legal Name (Account Holder)
           </label>
           <input
             type="text"
             v-model="profileForm.full_name"
-            placeholder="e.g. Salim Mwaura"
+            placeholder="e.g. Dr. Amina Otieno"
             class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
           />
-        </div>
-
-        <div>
-          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
-            Kenyan National ID Number
-          </label>
-          <input
-            type="text"
-            v-model="profileForm.national_id"
-            placeholder="6 to 10 digit National ID"
-            maxlength="10"
-            class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-mono font-semibold text-cx-ink focus:outline-none focus:border-cx-brand"
-          />
           <p class="text-[11px] text-cx-ink-3 mt-1">
-            Used to securely query and auto-discover facilities licensed under your ownership in the official Health Facility Registry.
+            The legal individual account holder whose credentials manage this facility portfolio.
           </p>
         </div>
 
         <div>
           <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
-            Mobile Number
+            Legal Organization / Practice Name
+          </label>
+          <input
+            type="text"
+            v-model="profileForm.organization"
+            placeholder="e.g. Nairobi Healthcare Group"
+            class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
+          />
+          <p class="text-[11px] text-cx-ink-3 mt-1">
+            Display name for your practice or group across invoices and customer records.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
+              Identification Document
+            </label>
+            <input
+              type="text"
+              v-model="profileForm.identification_type"
+              placeholder="e.g. National ID"
+              class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
+              Identification Number
+            </label>
+            <input
+              type="text"
+              v-model="profileForm.national_id"
+              placeholder="6 to 10 digit National ID"
+              maxlength="10"
+              class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-mono font-semibold text-cx-ink focus:outline-none focus:border-cx-brand"
+            />
+          </div>
+        </div>
+        <p class="text-[11px] text-cx-ink-3">
+          Used to securely verify ownership and auto-discover facilities licensed under your profile in the official Health Facility Registry.
+        </p>
+
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2 mb-1.5">
+            Verified Mobile Phone
           </label>
           <input
             type="tel"
@@ -3357,6 +3545,9 @@ onUnmounted(() => {
             placeholder="e.g. 0712345678"
             class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
           />
+          <p class="text-[11px] text-cx-ink-3 mt-1">
+            Primary mobile number for SMS OTP security checks and token top-up confirmations.
+          </p>
         </div>
 
         <div class="pt-4 border-t border-cx-border-soft flex items-center justify-end gap-3">

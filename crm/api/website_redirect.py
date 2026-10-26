@@ -624,8 +624,19 @@ def get_user_facility_names(user: str | None = None) -> list[str]:
 	return [cstr(row.get("for_value")) for row in rows if row.get("for_value")]
 
 
-def ensure_website_user_for_customer(customer, email=None, display_name=None):
-	"""Link any active login, or create a Website User, with one Customer-scoped grant."""
+def ensure_website_user_for_customer(
+	customer,
+	email=None,
+	display_name=None,
+	*,
+	national_id=None,
+	mobile_no=None,
+	identification_type=None,
+	national_id_verified=False,
+	hfr_owner_licence=None,
+	hfr_registration_number=None,
+):
+	"""Link any active login, or create a Website User, with one Customer-scoped grant and verified KYC."""
 	customer = cstr(customer or "").strip()
 	requested_email = cstr(email or "").strip().lower()
 	if not customer or not frappe.db.exists("Customer", customer):
@@ -633,26 +644,89 @@ def ensure_website_user_for_customer(customer, email=None, display_name=None):
 	if not requested_email or frappe.utils.validate_email_address(requested_email).strip().lower() != requested_email:
 		return {"status": "blocked", "reason": "No valid portal email is available"}
 
+	if display_name:
+		name_parts = cstr(display_name).strip().split(None, 1)
+		first_name = name_parts[0]
+		last_name = name_parts[1] if len(name_parts) > 1 else ""
+	else:
+		first_name = requested_email.split("@")[0]
+		last_name = ""
+
 	user_name = frappe.db.get_value("User", {"email": requested_email}, "name")
 	created = False
 	if user_name:
 		user = frappe.get_doc("User", user_name)
 		if not user.enabled:
 			return {"status": "blocked", "reason": "User account is disabled"}
+		user_modified = False
+		if display_name and (not user.first_name or user.first_name == requested_email.split("@")[0]):
+			user.first_name = first_name
+			user.last_name = last_name
+			user.full_name = cstr(display_name).strip()
+			user_modified = True
+		if mobile_no and not user.mobile_no:
+			user.mobile_no = cstr(mobile_no).strip()
+			user.phone = cstr(mobile_no).strip()
+			user_modified = True
+		if national_id and (not user.get("national_id") or not user.get("national_id_verified")):
+			if frappe.db.has_column("User", "national_id"):
+				user.set("national_id", cstr(national_id).strip())
+			if frappe.db.has_column("User", "national_id_verified"):
+				user.set("national_id_verified", 1 if national_id_verified else 0)
+			user_modified = True
+		if identification_type and frappe.db.has_column("User", "identification_type") and not user.get("identification_type"):
+			user.set("identification_type", cstr(identification_type).strip())
+			user_modified = True
+		if hfr_owner_licence and frappe.db.has_column("User", "hfr_owner_licence") and not user.get("hfr_owner_licence"):
+			user.set("hfr_owner_licence", cstr(hfr_owner_licence).strip())
+			user_modified = True
+		if hfr_registration_number and frappe.db.has_column("User", "hfr_registration_number") and not user.get("hfr_registration_number"):
+			user.set("hfr_registration_number", cstr(hfr_registration_number).strip())
+			user_modified = True
+		if user_modified:
+			user.flags.ignore_password_policy = True
+			user.save(ignore_permissions=True)
 	else:
 		user = frappe.new_doc("User")
 		user.update({
 			"email": requested_email,
-			"first_name": cstr(display_name or requested_email.split("@")[0]),
+			"first_name": first_name,
+			"last_name": last_name,
+			"full_name": cstr(display_name).strip() if display_name else first_name,
 			"user_type": "Website User",
 			"enabled": 1,
 			"send_welcome_email": 0,
 			"redirect_url": PORTAL_ROUTE,
 		})
+		if mobile_no:
+			user.mobile_no = cstr(mobile_no).strip()
+			user.phone = cstr(mobile_no).strip()
+		if national_id and frappe.db.has_column("User", "national_id"):
+			user.set("national_id", cstr(national_id).strip())
+		if national_id_verified and frappe.db.has_column("User", "national_id_verified"):
+			user.set("national_id_verified", 1)
+		if identification_type and frappe.db.has_column("User", "identification_type"):
+			user.set("identification_type", cstr(identification_type).strip())
+		if hfr_owner_licence and frappe.db.has_column("User", "hfr_owner_licence"):
+			user.set("hfr_owner_licence", cstr(hfr_owner_licence).strip())
+		if hfr_registration_number and frappe.db.has_column("User", "hfr_registration_number"):
+			user.set("hfr_registration_number", cstr(hfr_registration_number).strip())
 		user.flags.ignore_password_policy = True
 		user.insert(ignore_permissions=True)
 		user_name = user.name
 		created = True
+
+	if customer and frappe.db.exists("Customer", customer):
+		cust_doc = frappe.get_doc("Customer", customer)
+		cust_modified = False
+		if mobile_no and not cust_doc.mobile_no:
+			cust_doc.mobile_no = cstr(mobile_no).strip()
+			cust_modified = True
+		if requested_email and not cust_doc.email_id:
+			cust_doc.email_id = requested_email
+			cust_modified = True
+		if cust_modified:
+			cust_doc.save(ignore_permissions=True)
 
 	try:
 		# Keep an existing System User's normal Desk/CRM redirect unchanged.
