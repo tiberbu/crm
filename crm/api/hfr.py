@@ -1311,6 +1311,128 @@ def run_hmis_provisioning_submitted_hooks(fid, context=None):
 			)
 
 
+_EXISTING_SITE_KEY_JOB = "crm-hmis-existing-site-key-delivery"
+
+
+@frappe.whitelist(methods=["POST"])
+def deliver_metering_site_keys():
+	"""Queue metering site-key delivery to facilities whose HMIS site predates metering.
+
+	New facilities get their key in the provisioning request. An existing site never
+	sends that request again, so the setup service pushes the key to it in a signed
+	`update_license` instead (openmeter_mediator OMM-38).
+	"""
+	frappe.only_for("System Manager")
+	if not _external_provisioning_credentials():
+		frappe.throw(_("Finish the external HMIS setup service credentials in CRM HFR Settings first."))
+	if not frappe.get_hooks("crm_list_hmis_sites_needing_metering_key"):
+		frappe.throw(_("No metering app is installed to issue site keys."))
+	frappe.enqueue(
+		"crm.api.hfr.run_existing_site_key_delivery",
+		queue="long",
+		timeout=3600,
+		job_id=_EXISTING_SITE_KEY_JOB,
+		deduplicate=True,
+		enqueue_after_commit=True,
+	)
+	return {"job_id": _EXISTING_SITE_KEY_JOB}
+
+
+def _external_provisioning_credentials():
+	settings = frappe.get_single(_DOCTYPE)
+	base_url = frappe.utils.cstr(settings.get("external_provisioning_url") or "").strip().rstrip("/")
+	api_key = frappe.utils.cstr(settings.get("external_provisioning_key") or "").strip()
+	api_secret = settings.get_password("external_provisioning_secret") if settings.get("external_provisioning_secret") else ""
+	if base_url.startswith("https://") and api_key and api_secret:
+		return base_url, api_key, api_secret
+	return None
+
+
+def run_existing_site_key_delivery():
+	"""Background job: deliver a site key to every existing HMIS site that has none."""
+	credentials = _external_provisioning_credentials()
+	if not credentials:
+		return {}
+	fids = []
+	for method in frappe.get_hooks("crm_list_hmis_sites_needing_metering_key"):
+		try:
+			fids.extend(frappe.get_attr(method)(context={"purpose": "existing_site"}) or [])
+		except Exception:
+			frappe.log_error(title="HMIS metering key list hook failed", message="hook=%s\n%s" % (method, frappe.get_traceback()))
+	results = {"delivered": [], "skipped": [], "failed": []}
+	for fid in dict.fromkeys(frappe.utils.cstr(fid).strip() for fid in fids if fid):
+		try:
+			outcome = _deliver_existing_site_key(*credentials, fid)
+		except LockTimeoutError:
+			outcome = {"state": "failed", "reason": "Another provisioning step for this facility is running."}
+		frappe.db.commit()
+		results[outcome["state"]].append({"fid": fid, "reason": outcome.get("reason")})
+		if outcome["state"] == "failed":
+			frappe.log_error(
+				title="HMIS metering key not delivered: %s" % fid,
+				message="%s\n%s" % (outcome.get("reason"), outcome.get("error_details") or ""),
+			)
+	frappe.logger("crm.hmis_provisioning").info(
+		"existing-site key delivery delivered=%s skipped=%s failed=%s"
+		% (len(results["delivered"]), len(results["skipped"]), len(results["failed"]))
+	)
+	return results
+
+
+def _deliver_existing_site_key(base_url, api_key, api_secret, fid):
+	"""Issue a key for one existing HMIS site and have the setup service push it there.
+
+	Holds the provisioning lock for the FID, so it never races a new provisioning
+	request. The key only travels in the outbound request, as in provisioning.
+	"""
+	lock_key = hashlib.sha256(frappe.utils.cstr(fid).encode()).hexdigest()[:32]
+	with filelock("crm_external_provisioning_%s" % lock_key, timeout=60):
+		status = _get_external_provisioning_status(base_url, api_key, api_secret, fid)
+		state = status.get("status")
+		if state == "not_submitted":
+			return {"state": "skipped", "reason": "No HMIS site yet; provisioning will carry the key."}
+		if not status.get("configured") or state in ("unavailable", "needs_support", "not_configured"):
+			return {"state": "failed", "reason": "HMIS setup status unavailable (%s)." % state}
+
+		site_key = _issue_metering_site_key(fid, {"fid": fid, "purpose": "existing_site", "token_source": "openmeter"})
+		if not site_key:
+			return {"state": "failed", "reason": "No site key was issued; see the metering app's error log entry."}
+
+		url = base_url + "/api/method/hmis_setup.api.external_provisioning.update_metering_site_key"
+		correlation_id = frappe.generate_hash(length=16)
+		try:
+			response = requests.post(
+				url,
+				auth=(api_key, api_secret),
+				json={"fid": fid, "metering_site_key": site_key},
+				headers={"Accept": "application/json", "Content-Type": "application/json", "X-Correlation-Id": correlation_id},
+				timeout=60,
+			)
+		except requests.exceptions.RequestException:
+			return {"state": "failed", "reason": "The setup service did not answer (correlation %s)." % correlation_id}
+		if response.status_code not in (200, 202):
+			reason = "The setup service refused the key (HTTP %s)." % response.status_code
+			if response.status_code == 404:
+				reason = "The setup service does not offer update_metering_site_key yet (HTTP 404)."
+			return {"state": "failed", "reason": reason, "error_details": _external_error_details_for_response(response)}
+		try:
+			accepted = _gateway_data(response).get("accepted") is True
+		except ValueError:
+			accepted = False
+		if not accepted:
+			return {"state": "failed", "reason": "The setup service did not confirm the key (correlation %s)." % correlation_id}
+
+	for method in frappe.get_hooks("crm_on_hmis_metering_site_key_delivered"):
+		try:
+			frappe.get_attr(method)(fid=fid, context={"fid": fid})
+		except Exception:
+			frappe.log_error(
+				title="HMIS metering key delivered hook failed",
+				message="fid=%s hook=%s\n%s" % (fid, method, frappe.get_traceback()),
+			)
+	return {"state": "delivered"}
+
+
 def _auto_submit_external_provisioning(base_url, api_key, api_secret, fid, status, payload, missing_fields, metering=None):
 	try:
 		return _auto_submit_external_provisioning_impl(
