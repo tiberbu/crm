@@ -898,17 +898,55 @@ def get_user_profile():
 
 	user_doc = frappe.get_doc("User", user)
 	national_id = _text(user_doc.get("national_id") or "").strip()
+	identification_type = _text(user_doc.get("identification_type") or "National ID").strip()
+	national_id_verified = bool(
+		user_doc.get("national_id_verified")
+		if frappe.db.has_column("User", "national_id_verified")
+		else False
+	)
+	hfr_owner_licence = _text(user_doc.get("hfr_owner_licence") or "").strip()
+	hfr_registration_number = _text(user_doc.get("hfr_registration_number") or "").strip()
 
 	from crm.api.website_redirect import get_user_customer_names
 	customer_names = get_user_customer_names(user)
 	customer = customer_names[0] if customer_names else None
+
+	# If National ID or KYC details are not on the User doc, check linked Deal/Lead
+	if not national_id:
+		deal_filters = {}
+		if customer:
+			deal_filters["cx_customer"] = customer
+		else:
+			from crm.api.website_redirect import get_user_deal_names
+			deal_names = get_user_deal_names(user)
+			if deal_names:
+				deal_filters["name"] = ["in", deal_names]
+		if deal_filters and frappe.db.has_column("CRM Deal", "cx_onboarding_identity_ref"):
+			identity_ref = frappe.db.get_value(
+				"CRM Deal",
+				deal_filters,
+				"cx_onboarding_identity_ref",
+			)
+			if identity_ref and ":" in identity_ref:
+				raw_parts = identity_ref.split(":", 1)
+				raw_type = raw_parts[0]
+				raw_num = raw_parts[1]
+				national_id = raw_num.strip()
+				identification_type = raw_type.replace("_", " ").title() or "National ID"
+				national_id_verified = True
+				if frappe.db.has_column("User", "national_id"):
+					user_doc.db_set("national_id", national_id, update_modified=False)
+				if frappe.db.has_column("User", "national_id_verified"):
+					user_doc.db_set("national_id_verified", 1, update_modified=False)
+				if frappe.db.has_column("User", "identification_type"):
+					user_doc.db_set("identification_type", identification_type, update_modified=False)
 
 	org_name = ""
 	network_name = "CareVerse Partner Network"
 	facility_count = 0
 
 	if customer:
-		customer_doc = frappe.db.get_value("Customer", customer, ["customer_name", "customer_type"], as_dict=True) or {}
+		customer_doc = frappe.db.get_value("Customer", customer, ["customer_name", "customer_type", "mobile_no"], as_dict=True) or {}
 		org_name = customer_doc.get("customer_name") or customer
 
 		deals = frappe.get_all("CRM Deal", filters={"cx_customer": customer}, fields=["name", "organization", "optin_network"], limit=5)
@@ -942,6 +980,11 @@ def get_user_profile():
 
 	full_name = user_doc.full_name or f"{user_doc.first_name} {user_doc.last_name or ''}".strip()
 	mobile_no = user_doc.mobile_no or user_doc.phone or ""
+	if not mobile_no and customer:
+		cust_phone = frappe.db.get_value("Customer", customer, "mobile_no")
+		if cust_phone:
+			mobile_no = cust_phone
+			user_doc.db_set("mobile_no", mobile_no, update_modified=False)
 
 	return {
 		"success": True,
@@ -952,12 +995,13 @@ def get_user_profile():
 			"mobile_no": mobile_no,
 			"national_id": national_id,
 			"masked_national_id": _mask_national_id(national_id) if national_id else "",
-			"national_id_verified": bool(
-				frappe.db.get_value("User", user, "national_id_verified")
-				if frappe.db.has_column("User", "national_id_verified")
-				else False
-			),
+			"national_id_verified": national_id_verified,
+			"identification_type": identification_type or "National ID",
+			"hfr_owner_licence": hfr_owner_licence,
+			"hfr_registration_number": hfr_registration_number,
 			"organization": org_name or full_name or "Healthcare Practice",
+			"customer_name": org_name or full_name,
+			"customer_id": customer or "",
 			"primary_network": network_name,
 			"facility_count": facility_count,
 		},
@@ -965,8 +1009,14 @@ def get_user_profile():
 
 
 @frappe.whitelist(methods=["POST"])
-def update_user_profile(national_id: Any = None, mobile_no: Any = None, full_name: Any = None):
-	"""Update user contact and National ID on file."""
+def update_user_profile(
+	national_id: Any = None,
+	mobile_no: Any = None,
+	full_name: Any = None,
+	organization: Any = None,
+	identification_type: Any = None,
+):
+	"""Update user contact, KYC, and linked Customer name on file."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		frappe.throw(_("Please sign in to update your profile."), frappe.PermissionError)
@@ -990,10 +1040,18 @@ def update_user_profile(national_id: Any = None, mobile_no: Any = None, full_nam
 				}]
 			})
 		updates["national_id"] = cleaned_id
+		if frappe.db.has_column("User", "national_id_verified"):
+			updates["national_id_verified"] = 1 if cleaned_id else 0
+
+	if identification_type is not None and frappe.db.has_column("User", "identification_type"):
+		updates["identification_type"] = _text(identification_type).strip() or "National ID"
 
 	if mobile_no is not None:
-		updates["mobile_no"] = _text(mobile_no).strip()
+		cleaned_phone = _text(mobile_no).strip()
+		updates["mobile_no"] = cleaned_phone
+		updates["phone"] = cleaned_phone
 
+	raw_name = ""
 	if full_name is not None and _text(full_name).strip():
 		raw_name = _text(full_name).strip()
 		parts = raw_name.split(None, 1)
@@ -1003,8 +1061,28 @@ def update_user_profile(national_id: Any = None, mobile_no: Any = None, full_nam
 
 	if updates:
 		user_doc.db_set(updates)
-		if not getattr(frappe.flags, "in_test", False):
-			frappe.db.commit()
+
+	# Update linked Customer records
+	from crm.api.website_redirect import get_user_customer_names
+	customer_names = get_user_customer_names(user)
+	new_org_name = _text(organization).strip() if organization is not None else ""
+	target_customer_name = new_org_name or raw_name
+
+	for cust_name in customer_names:
+		if frappe.db.exists("Customer", cust_name):
+			cust_doc = frappe.get_doc("Customer", cust_name)
+			cust_modified = False
+			if target_customer_name and target_customer_name != cust_doc.customer_name:
+				cust_doc.customer_name = target_customer_name
+				cust_modified = True
+			if mobile_no is not None and _text(mobile_no).strip() != (cust_doc.mobile_no or ""):
+				cust_doc.mobile_no = _text(mobile_no).strip()
+				cust_modified = True
+			if cust_modified:
+				cust_doc.save(ignore_permissions=True)
+
+	if not getattr(frappe.flags, "in_test", False):
+		frappe.db.commit()
 
 	return get_user_profile()
 
