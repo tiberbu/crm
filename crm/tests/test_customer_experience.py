@@ -215,14 +215,73 @@ class TestTokenPurchaseChain(IntegrationTestCase):
 		profile = cx.get_user_profile()["data"]
 		self.assertEqual(profile["email"], OWNER)
 
-		updated = cx.update_user_profile(national_id="28472910", mobile_no="0712345678", full_name="Updated Test Name")["data"]
+		# Create a customer linked to the owner user
+		cust = frappe.get_doc({
+			"doctype": "Customer",
+			"customer_name": "Original Person Name",
+			"customer_type": "Company",
+		}).insert(ignore_permissions=True)
+		perm = frappe.get_doc({
+			"doctype": "User Permission",
+			"user": OWNER,
+			"allow": "Customer",
+			"for_value": cust.name,
+		}).insert(ignore_permissions=True)
+
+		updated = cx.update_user_profile(
+			national_id="28472910",
+			mobile_no="0712345678",
+			full_name="Updated Test Name",
+			organization="Amina Healthcare Group",
+		)["data"]
 		self.assertEqual(updated["national_id"], "28472910")
 		self.assertEqual(updated["masked_national_id"], "28••••10")
 		self.assertEqual(updated["mobile_no"], "0712345678")
 		self.assertEqual(updated["full_name"], "Updated Test Name")
+		self.assertEqual(updated["organization"], "Amina Healthcare Group")
+		self.assertTrue(updated["national_id_verified"])
+
+		# Verify the customer record in DB was updated with the new organization name
+		self.assertEqual(frappe.db.get_value("Customer", cust.name, "customer_name"), "Amina Healthcare Group")
+		self.assertEqual(frappe.db.get_value("Customer", cust.name, "mobile_no"), "0712345678")
 
 		with self.assertRaises(frappe.ValidationError):
 			cx.update_user_profile(national_id="invalid-id")
+
+	def test_ensure_website_user_persists_kyc_and_contact(self):
+		from crm.api.website_redirect import ensure_website_user_for_customer
+
+		user_email = "cx-kyc-verify@example.com"
+		if frappe.db.exists("User", user_email):
+			frappe.delete_doc("User", user_email, force=1)
+
+		cust = frappe.get_doc({
+			"doctype": "Customer",
+			"customer_name": "Dr. Verification Customer",
+			"customer_type": "Company",
+		}).insert(ignore_permissions=True)
+
+		with patch("frappe.core.doctype.user.user.User._reset_password"):
+			res = ensure_website_user_for_customer(
+				cust.name,
+				email=user_email,
+				display_name="Dr. Verification Customer",
+				national_id="29481923",
+				mobile_no="0722112233",
+				identification_type="National ID",
+				national_id_verified=True,
+				hfr_owner_licence="LIC-99881",
+				hfr_registration_number="REG-44332",
+			)
+			self.assertEqual(res["status"], "sent")
+			user_doc = frappe.get_doc("User", user_email)
+			self.assertEqual(user_doc.national_id, "29481923")
+			self.assertTrue(user_doc.national_id_verified)
+			self.assertEqual(user_doc.mobile_no, "0722112233")
+			self.assertEqual(user_doc.first_name, "Dr.")
+			self.assertEqual(user_doc.last_name, "Verification Customer")
+			self.assertEqual(user_doc.hfr_owner_licence, "LIC-99881")
+			self.assertEqual(user_doc.hfr_registration_number, "REG-44332")
 
 	def test_lookup_facilities_by_owner_id(self):
 		with patch.object(cx, "_hfr_facilities_for_owner") as mock_hfr:

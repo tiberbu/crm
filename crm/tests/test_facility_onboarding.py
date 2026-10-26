@@ -1382,6 +1382,36 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(submit_result["data"]["portal_status"], "linked")
 		self.assertTrue(submit_result["data"].get("is_existing_identity"))
 
+	def test_onboarding_customer_named_after_verified_person_and_persists_kyc(self):
+		self._submit_env()
+		token = self._verified_token()
+		terms = self._accepted_terms(token)
+		submit_result = fo.submit_onboarding(
+			token,
+			"123456",
+			'["FID-1"]',
+			"TOK-1",
+			"owner@example.com",
+			1,
+			terms["content_hash"],
+		)
+		self.assertTrue(submit_result["success"])
+
+		customer_name = submit_result["data"]["customer"]
+		self.assertEqual(customer_name, "Amina Otieno")
+		customer_doc = frappe.get_doc("Customer", customer_name)
+		self.assertEqual(customer_doc.customer_name, "Amina Otieno")
+
+		# Verify KYC and person name was passed to portal access creation
+		fo._ensure_customer_experience_access.assert_called()
+		call_kwargs = fo._ensure_customer_experience_access.call_args.kwargs
+		call_args = fo._ensure_customer_experience_access.call_args.args
+		self.assertEqual(call_args[0], "Amina Otieno")
+		self.assertEqual(call_args[2], "Amina Otieno")
+		self.assertEqual(call_kwargs["national_id"], ID_NUMBER)
+		self.assertTrue(call_kwargs["national_id_verified"])
+		self.assertEqual(call_kwargs["mobile_no"], PERSON["phone"])
+
 	def test_legacy_identity_without_reference_is_not_claimed_but_facility_conflict_blocks(self):
 		self._submit_env()
 		self.ois["OIS-LEGACY"] = {
