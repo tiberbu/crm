@@ -1853,7 +1853,10 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 		)
 
 	from crm.api.quotes import _ensure_customer
-	customer_target = _text(facilities[0].get("facility_name")) if facilities else account_email
+	person_name = " ".join(
+		part for part in (_text(person.get("first_name")), _text(person.get("last_name"))) if part
+	).strip()
+	customer_target = person_name or account_email
 	existing_customer = _resolve_existing_customer(session, account_email)
 	customer = existing_customer or _ensure_customer(customer_target, commit=False)
 	if not customer:
@@ -1966,7 +1969,13 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 	portal_result = _ensure_customer_experience_access(
 		customer,
 		account_email,
-		"%s %s" % (person.get("first_name", ""), person.get("last_name", "")),
+		person_name or account_email.split("@")[0],
+		national_id=session.get("identity_number") or (session.get("person") or {}).get("national_id"),
+		mobile_no=person.get("phone"),
+		identification_type=session.get("id_type") or "National ID",
+		national_id_verified=bool(session.get("verified")),
+		hfr_owner_licence=session.get("hfr_licence") or session.get("hfr_owner_licence"),
+		hfr_registration_number=session.get("hfr_registration_number"),
 	)
 	if portal_result.get("status") in {"failed", "blocked"}:
 		ref_deal = created_deals[0] if created_deals else ""
@@ -2083,7 +2092,10 @@ def _resume_or_create_customer_deal(
 		if not _text(deal.get("cx_customer") or deal.get("erpnext_customer")):
 			from crm.api.quotes import _ensure_customer
 
-			cust = customer or _ensure_customer(_text(deal.organization or facility.get("facility_name")), commit=False)
+			person_name = " ".join(
+				part for part in (_text(person.get("first_name")), _text(person.get("last_name"))) if part
+			).strip()
+			cust = customer or _ensure_customer(person_name or account_email or _text(deal.organization or facility.get("facility_name")), commit=False)
 			if deal.meta.has_field("cx_customer"):
 				deal.cx_customer = cust
 			if deal.meta.has_field("erpnext_customer"):
@@ -2143,7 +2155,10 @@ def _resume_or_create_customer_deal(
 			deal.cx_onboarding_identity_ref = identity_ref
 		if deal.meta.has_field("cx_onboarding_package_item") and package and frappe.db.exists("Item", package.get("item_code")):
 			deal.cx_onboarding_package_item = package["item_code"]
-		cust = customer or _ensure_customer(_text(lead.organization), commit=False)
+		person_name = " ".join(
+			part for part in (_text(person.get("first_name")), _text(person.get("last_name"))) if part
+		).strip()
+		cust = customer or _ensure_customer(person_name or account_email or _text(lead.organization), commit=False)
 		if deal.meta.has_field("cx_customer"):
 			deal.cx_customer = cust
 		elif frappe.db.has_column("CRM Deal", "cx_customer"):
@@ -2206,11 +2221,32 @@ def _deal_add_facility(deal, facility, package):
 	deal.save(ignore_permissions=True)
 
 
-def _ensure_customer_experience_access(customer, account_email, display_name):
+def _ensure_customer_experience_access(
+	customer,
+	account_email,
+	display_name,
+	*,
+	national_id=None,
+	mobile_no=None,
+	identification_type=None,
+	national_id_verified=False,
+	hfr_owner_licence=None,
+	hfr_registration_number=None,
+):
 	"""Create the Website User and exact Customer-scoped permission for new enrollment."""
 	from crm.api.website_redirect import ensure_website_user_for_customer
 
-	return ensure_website_user_for_customer(customer, email=account_email, display_name=display_name)
+	return ensure_website_user_for_customer(
+		customer,
+		email=account_email,
+		display_name=display_name,
+		national_id=national_id,
+		mobile_no=mobile_no,
+		identification_type=identification_type,
+		national_id_verified=national_id_verified,
+		hfr_owner_licence=hfr_owner_licence,
+		hfr_registration_number=hfr_registration_number,
+	)
 
 
 def _link_documents(token, session, submission_name, facility, package):
