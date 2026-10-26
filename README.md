@@ -96,6 +96,14 @@ Tiberbu Express (formerly Customer Experience), and Finance Cockpit are collecte
 own guide, with user steps, stakeholder controls, screenshots, and handoff
 ownership.
 
+### Tiberbu Partner Portal APIs
+
+Partner Portal endpoints for custom Year 1–5 pricing negotiation, facility pricing lookup,
+and the Deal-Won Opt-In onboarding journey with automated contract invitation emails are documented in:
+- [`Partner Portal Opt-In & Custom Pricing APIs`](docs/partner-portal-optin-apis.md)
+- Implementation package: `crm/partner_portal/`
+- Test suite: `crm/tests/test_partner_portal.py`
+
 ### Under the Hood
 
 - [Frappe Framework](https://github.com/frappe/frappe): A full-stack web application framework.
