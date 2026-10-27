@@ -58,6 +58,10 @@ class TestValueExpressCatalog(IntegrationTestCase):
 		frappe.get_doc(
 			{"doctype": "Item Price", "item_code": FIXED_ITEM, "price_list": price_list, "price_list_rate": 15000, "selling": 1}
 		).insert(ignore_permissions=True)
+		# Only this test's Fixed and Custom rows count, whatever the site already has (rolled back).
+		for row in settings.token_packages:
+			if row.plan != "Flex":
+				row.enabled = 0
 		common = {"description": "Test", "coverage_summary": "Test", "billing_period": "Monthly", "enabled": 1}
 		settings.append(
 			"token_packages",
@@ -139,3 +143,16 @@ class TestValueExpressCatalog(IntegrationTestCase):
 		with patch("frappe.sendmail") as sendmail:
 			submit_contact(full_name="Esi Test", email="esi@example.test", message="Hi")
 		sendmail.assert_not_called()
+
+	def test_landing_offer_lists_flex_cards_fixed_levels_and_custom(self):
+		from crm.api.landing import get_value_express_offer
+
+		offer = get_value_express_offer()
+		self.assertEqual([c["price"] for c in offer["flex"]], sorted(c["price"] for c in offer["flex"]))
+		self.assertEqual(offer["from_price"], offer["flex"][0]["price"])
+		fixed = next(f for f in offer["fixed"] if f["item_code"] == FIXED_ITEM)
+		self.assertEqual((fixed["label"], fixed["price"]), ("Level 2", 15000))
+		self.assertEqual(offer["calculator"]["fixed"]["Level 2"], 15000)
+		self.assertEqual(offer["custom"]["item_code"], CUSTOM_ITEM)
+		# Value Express is outpatient: inpatient-only service points are not priced.
+		self.assertTrue(all("opd" in (p.get("applies_to") or ["opd"]) for p in offer["calculator"]["service_points"]))

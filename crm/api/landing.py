@@ -11,6 +11,7 @@ CONTACT_TOPICS = (
 	"Getting started",
 	"Packages and pricing",
 	"Request a demo",
+	"CareverseHIMS Advanced & Enterprise",
 	"Partnership",
 	"Something else",
 )
@@ -60,6 +61,77 @@ def get_pricing_preview() -> list[dict]:
 			}
 		)
 	return plans
+
+
+def get_value_express_offer() -> dict:
+	"""Everything the Value Express landing page prices: Flex cards, Fixed tiers, Custom and the calculator."""
+	from crm.api.facility_onboarding import _calculator_config, _catalog_packages, _custom_offer
+	from crm.utils import value_express as vx
+	from crm.utils.token_bonus import WELCOME_BONUS, bonus_settings
+
+	flex = [p for p in _catalog_packages() if p.get("price_ex_vat")]
+	tiers = vx.flex_tiers(flex)
+	base_rate = tiers[0]["rate"] if tiers else 0
+	cards = []
+	for package in sorted(flex, key=lambda p: p["price_ex_vat"]):
+		try:
+			metrics = frappe.parse_json(package.get("coverage_metrics") or "{}") or {}
+		except Exception:
+			metrics = {}
+		rate = vx.per_token_rate(package)
+		extra = round((base_rate / rate - 1) * 100) if rate and base_rate else 0
+		cards.append(
+			{
+				"item_code": package["item_code"],
+				"name": package.get("display_name") or package["item_code"],
+				"description": package.get("description") or "",
+				"price": package["price_ex_vat"],
+				"currency": package.get("currency") or "KES",
+				"tokens": int(package.get("token_quantity") or 0),
+				# The business publishes journeys per package; tokens ÷ 40 otherwise.
+				"journeys": cstr(metrics.get("journeys")) or vx.journeys(package.get("token_quantity")),
+				"rate": rate,
+				"more_percent": extra if extra > 0 else 0,
+				"recommended": "popular" in cstr(metrics.get("badge")).lower(),
+			}
+		)
+	fixed = []
+	for package in sorted(_catalog_packages((vx.FIXED,)), key=lambda p: p.get("price_ex_vat") or 0):
+		levels = vx.levels_of(package)
+		fixed.append(
+			{
+				"item_code": package["item_code"],
+				"label": levels[0] if levels else package.get("display_name"),
+				"levels": levels,
+				"price": package.get("price_ex_vat") or 0,
+				"currency": package.get("currency") or "KES",
+			}
+		)
+	calculator = _calculator_config()
+	return {
+		"flex": cards,
+		"fixed": fixed,
+		"custom": _custom_offer(flex),
+		"from_price": cards[0]["price"] if cards else 0,
+		"currency": cards[0]["currency"] if cards else "KES",
+		"welcome_bonus": bonus_settings()[WELCOME_BONUS],
+		"access_tokens": int(calculator.get("monthly_platform_fee") or 0),
+		"bill_value_per_token": float(calculator.get("bill_value_per_token") or 0),
+		"min_tokens": vx.DEFAULT_MIN_TOKENS,
+		"calculator": {
+			"access": int(calculator.get("monthly_platform_fee") or 0),
+			"bill_value_per_token": float(calculator.get("bill_value_per_token") or 0),
+			"avg_bill": float(calculator.get("default_avg_bill") or 0),
+			"operating_days": int(calculator.get("default_operating_days") or 0),
+			# Value Express is outpatient: inpatient-only service points are not charged.
+			"service_points": [
+				point for point in calculator.get("service_points") or [] if "opd" in (point.get("applies_to") or ["opd"])
+			],
+			"presets": calculator.get("presets") or [],
+			"packages": [{"name": c["name"], "price": c["price"], "tokens": c["tokens"], "item_code": c["item_code"]} for c in cards],
+			"fixed": {f["label"]: f["price"] for f in fixed},
+		},
+	}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

@@ -2,617 +2,536 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title or 'Tiberbu Express' }}</title>
-    <meta name="description" content="Onboard your facility yourself and start sending claims today with Tiberbu Express, powered by the DHA-certified Tiberbu CareVerse HMIS.">
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ title }}</title>
+    <meta name="description" content="CareverseHIMS Value Express: a simple, affordable HIMS package for Level 2 and Level 3 outpatient facilities. Guided self-onboarding, SHA eClaims, free virtual training and support.">
     <link rel="icon" type="image/svg+xml" href="{{ favicon or '/assets/crm/images/tiberbu-mark.svg' }}">
-    <link rel="stylesheet" href="/assets/crm/css/tiberbu-brand.css">
-    <style>
-        :root {
-            --brand: {{ brand_primary or '#bc1823' }};
-            --brand-dark: {{ brand_primary_dark or '#a3141d' }};
-            /* Neutrals, lines, status and focus come from tiberbu-brand.css; these only alias them. */
-            --brand-soft: var(--brand-tint-07);
-            --soft: var(--surface-2);
-            --ok: var(--success);
-            --ok-soft: var(--success-bg);
-            /* One layout system for every section: 1160px container, 24px gutters, 64px between halves. */
-            --container: 1160px;
-            --gutter: 24px;
-            --split-gap: 64px;
-            --card-gap: 16px;
-            --stack: 44px;
-        }
-        *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-        html { scroll-behavior:smooth; }
-        body { color:var(--ink); background:#fff; font-family:var(--font); line-height:1.5; -webkit-font-smoothing:antialiased; }
-        a { color:inherit; text-decoration:none; }
-        [hidden] { display:none !important; }
-        /* Nav anchors land below the sticky header instead of under it. */
-        section[id] { scroll-margin-top:72px; }
-        :where(a,button,input,select,textarea,[tabindex]):focus-visible { outline:3px solid var(--brand-ring); outline-offset:2px; }
-        .wrap { max-width:var(--container); margin:0 auto; padding:0 var(--gutter); }
-        .icon { width:20px; height:20px; flex:none; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
-        .careverse { white-space:nowrap; }
-        .careverse img { height:1.05em; width:auto; margin-right:.3em; vertical-align:-.18em; }
-
-        /* Type follows the www typography spec: headings semibold (600 max), tight line height, sentence case. */
-        h1, h2, h3 { font-weight:600; color:var(--ink); text-wrap:balance; }
-        .split { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--split-gap); align-items:center; }
-
-        .nav { position:sticky; top:0; z-index:10; background:rgba(255,255,255,.9); backdrop-filter:blur(14px); border-bottom:1px solid var(--line); }
-        .nav-inner { display:flex; align-items:center; justify-content:space-between; min-height:66px; gap:16px; }
-        .brand { display:flex; align-items:center; gap:10px; font-size:16px; font-weight:600; letter-spacing:-.01em; white-space:nowrap; }
-        .brand img { width:32px; height:32px; border-radius:8px; }
-        .brand em { color:var(--brand); font-style:normal; }
-        .nav-actions { display:flex; align-items:center; gap:22px; }
-        .nav-link { color:var(--muted); font-size:14px; font-weight:500; white-space:nowrap; }
-        .nav-link:hover { color:var(--ink); }
-
-        .btn { display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:50px; padding:0 24px; border:0; border-radius:12px; color:#fff; background:var(--brand); box-shadow:0 12px 28px rgba(188,24,35,.22); font:600 16px var(--font); white-space:nowrap; cursor:pointer; transition:background .15s, transform .15s; }
-        .btn:hover { background:var(--brand-dark); transform:translateY(-1px); }
-        .btn[disabled] { opacity:.6; cursor:progress; transform:none; }
-        .btn-sm { min-height:44px; padding:0 16px; border-radius:10px; font-size:14px; box-shadow:none; }
-        .btn .arrow { transition:transform .15s; }
-        .btn:hover .arrow { transform:translateX(3px); }
-
-        .eyebrow { display:inline-flex; align-items:center; gap:8px; color:var(--brand); font-size:13px; font-weight:600; }
-        .eyebrow::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--brand); }
-
-        /* Hero */
-        /* The background carries the devices on the right and fades to white under the copy. */
-        .hero { position:relative; overflow:hidden; display:flex; align-items:center; min-height:clamp(520px,40vw,620px); padding:clamp(48px,6vw,80px) 0; background:linear-gradient(180deg,#fff 0%,var(--soft) 100%); }
-        .hero > .wrap { position:relative; z-index:1; width:100%; }
-        /* Contained to the page width so the hero's right edge matches every section below. */
-        .hero-art { position:absolute; z-index:0; top:50%; right:max(var(--gutter), calc((100% - var(--container)) / 2 + var(--gutter))); width:min(58vw,720px); aspect-ratio:16/9; transform:translateY(-50%); background:url('/assets/crm/images/express-hero-bg-1600.jpg') center / cover no-repeat; background-image:image-set(url('/assets/crm/images/express-hero-bg-1600.jpg') 1x, url('/assets/crm/images/express-hero-bg.jpg') 2x);
-            -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 16%), linear-gradient(180deg,transparent 0,#000 10%,#000 90%,transparent 100%); -webkit-mask-composite:source-in;
-            mask-image:linear-gradient(90deg,transparent 0,#000 16%), linear-gradient(180deg,transparent 0,#000 10%,#000 90%,transparent 100%); mask-composite:intersect; }
-
-        .hero-media { display:none; }
-        h1 { margin-top:18px; font-size:clamp(2.25rem,4.2vw,3rem); line-height:1.15; letter-spacing:-.02em; }
-        h1 .line { display:block; }
-        h1 .accent { color:var(--brand); }
-        .lead { max-width:560px; margin-top:20px; color:var(--muted); font-size:clamp(1.05rem,1.5vw,1.15rem); line-height:1.6; }
-        .cta-row { display:flex; align-items:center; flex-wrap:wrap; gap:14px 22px; margin-top:32px; }
-        .btn-outline { color:var(--ink); background:#fff; border:1.5px solid var(--line); box-shadow:none; }
-        .btn-outline:hover { color:var(--brand); background:var(--brand-soft); border-color:var(--brand); }
-        .link-secondary { display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:15px; font-weight:500; }
-        .link-secondary:hover { color:var(--ink); }
-        .proof { display:flex; flex-wrap:wrap; gap:10px 22px; margin-top:28px; list-style:none; }
-        .proof li { display:flex; align-items:center; gap:8px; color:var(--ink-soft); font-size:14px; font-weight:500; }
-        .proof li::before { content:'✓'; display:grid; place-items:center; width:20px; height:20px; border-radius:50%; color:var(--ok); background:var(--ok-soft); font-size:11px; font-weight:600; }
-
-        /* DHA certification card: the proof sits next to the promise. */
-        .cert { position:relative; padding:28px; border:1px solid var(--line); border-radius:22px; background:#fff; box-shadow:0 30px 70px rgba(23,23,23,.1); }
-        /* In the hero the card is compact and sits over the bottom-left of the devices. */
-        .hero .cert { align-self:end; justify-self:start; width:min(100%,320px); margin-bottom:-36px; padding:18px 20px; background:rgba(255,255,255,.94); backdrop-filter:blur(10px); box-shadow:0 24px 60px rgba(23,23,23,.16); }
-        .hero .cert-seal { width:40px; height:40px; border-radius:12px; }
-        .hero .cert-seal .icon { width:22px; height:22px; }
-        .hero .cert h2 { margin-top:12px; font-size:17px; }
-        .hero .cert > p { font-size:13.5px; }
-        .hero .cert dl { gap:10px; margin-top:14px; padding-top:14px; }
-        .hero .cert dd { font-size:14px; }
-        .hero .cert-link { margin-top:14px; font-size:14px; }
-        .cert-seal { display:grid; place-items:center; width:52px; height:52px; border-radius:16px; color:var(--ok); background:var(--ok-soft); }
-        .cert-seal .icon { width:28px; height:28px; }
-        .cert h2 { margin-top:18px; font-size:20px; line-height:1.25; letter-spacing:-.01em; }
-        .cert > p { margin-top:8px; color:var(--muted); font-size:14.5px; }
-        .cert dl { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:20px; padding-top:20px; border-top:1px solid var(--line); }
-        .cert dt { color:var(--muted); font-size:12.5px; }
-        .cert dd { margin-top:2px; font-size:15px; font-weight:600; }
-        .cert .score { color:var(--ok); }
-        .cert-link { display:inline-flex; align-items:center; gap:8px; margin-top:22px; color:var(--brand); font-size:14.5px; font-weight:600; }
-        .cert-link:hover { color:var(--brand-dark); text-decoration:underline; text-underline-offset:4px; }
-
-        /* Proof strip */
-        .strip { border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:#fff; }
-        /* Same four columns as the feature cards, so the dividers line up with the card edges below. */
-        .strip ul { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); column-gap:var(--card-gap); list-style:none; }
-        .strip li { padding:24px 0 24px 22px; border-left:1px solid var(--line); }
-        .strip li:first-child { border-left:0; padding-left:0; }
-        .strip strong { display:block; font-size:22px; font-weight:600; letter-spacing:-.02em; }
-        .strip span { display:block; margin-top:2px; color:var(--muted); font-size:13.5px; }
-
-        .section { padding:clamp(64px,9vw,96px) 0; }
-        .section-heading { max-width:640px; }
-        .section-heading h2 { margin-top:12px; font-size:clamp(1.75rem,3vw,2.25rem); line-height:1.2; letter-spacing:-.02em; }
-        .section-heading p { margin-top:12px; color:var(--muted); font-size:16px; line-height:1.6; }
-
-        /* Features */
-        .features { display:grid; grid-template-columns:repeat(4,1fr); gap:var(--card-gap); margin-top:var(--stack); list-style:none; }
-        .feature { padding:24px 22px; border:1px solid var(--line); border-radius:18px; background:#fff; transition:border-color .15s, box-shadow .15s, transform .15s; }
-        .feature:hover { border-color:rgba(188,24,35,.3); box-shadow:0 18px 40px rgba(23,23,23,.07); transform:translateY(-2px); }
-        .feature-icon { display:grid; place-items:center; width:42px; height:42px; border-radius:12px; color:var(--brand); background:var(--brand-soft); }
-        .feature h3 { margin-top:18px; font-size:16.5px; line-height:1.3; letter-spacing:-.01em; }
-        .feature p { margin-top:6px; color:var(--muted); font-size:14.5px; line-height:1.55; }
-        .feature.highlight { color:#fff; background:var(--ink); border-color:var(--ink); }
-        .feature.highlight h3 { color:#fff; }
-        .feature.highlight p { color:rgba(255,255,255,.72); }
-        .feature.highlight .feature-icon { color:#fff; background:rgba(255,255,255,.12); }
-
-        /* Express lane: the journey drawn as a track that ends in a submitted claim. */
-        .lane-band { background:var(--soft); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
-        .lane-copy .needs { margin-top:22px; color:var(--muted); font-size:14.5px; }
-        .lane-copy .needs strong { color:var(--ink); font-weight:600; }
-        .lane-copy .btn { margin-top:28px; }
-        .lane { position:relative; padding:28px 26px 26px; border-radius:24px; color:#fff; background:#171717; box-shadow:0 30px 70px rgba(23,23,23,.22); }
-        .lane-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-        .lane-title { font-size:14px; font-weight:600; color:rgba(255,255,255,.7); }
-        .lane-badge { padding:4px 10px; border-radius:999px; background:rgba(255,255,255,.1); font-size:12px; font-weight:500; color:rgba(255,255,255,.85); }
-        .stops { position:relative; display:grid; gap:20px; margin-top:24px; list-style:none; }
-        .stops::before { content:''; position:absolute; left:15px; top:16px; bottom:16px; width:2px; background:rgba(255,255,255,.14); }
-        .stops::after { content:''; position:absolute; left:15px; top:16px; width:2px; height:calc(100% - 32px); background:linear-gradient(var(--brand),#f05a64); transform-origin:top; transform:scaleY(0); }
-        .lane.in-view .stops::after { animation:fill 2.4s .3s cubic-bezier(.4,0,.2,1) both; }
-        .stop { position:relative; z-index:1; display:flex; align-items:flex-start; gap:14px; }
-        .lane.in-view .stop { animation:rise .5s both; }
-        .lane.in-view .stop:nth-child(2) { animation-delay:.7s; } .lane.in-view .stop:nth-child(3) { animation-delay:1.3s; } .lane.in-view .stop:nth-child(4) { animation-delay:1.9s; }
-        .dot { display:grid; flex:0 0 32px; place-items:center; width:32px; height:32px; border-radius:50%; border:2px solid var(--brand); background:#171717; color:#fff; font-size:13px; font-weight:600; }
-        .stop strong { display:block; font-size:15px; font-weight:600; }
-        .stop div span { display:block; margin-top:2px; color:rgba(255,255,255,.62); font-size:13px; line-height:1.5; }
-        .claim { display:flex; align-items:center; gap:14px; margin-top:24px; padding:16px; border-radius:16px; color:var(--ink); background:#fff; }
-        .lane.in-view .claim { animation:rise .6s 2.5s both; }
-        .claim-icon { display:grid; flex:0 0 40px; place-items:center; width:40px; height:40px; border-radius:12px; background:var(--ok-soft); color:var(--ok); font-size:18px; font-weight:600; }
-        .claim strong { display:block; font-size:15px; font-weight:600; }
-        .claim div span { display:block; color:var(--muted); font-size:13px; }
-        .claim .status { margin-left:auto; padding:5px 10px; border-radius:999px; background:var(--ok-soft); color:var(--ok); font-size:12px; font-weight:600; white-space:nowrap; }
-        @keyframes fill { from { transform:scaleY(0); } to { transform:scaleY(1); } }
-        @keyframes rise { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
-
-        /* Pricing preview (read-only) */
-        /* As many columns as published packages (up to 4), so three plans fill the row. */
-        .plans { display:grid; grid-template-columns:repeat(var(--plan-count,4),minmax(0,1fr)); gap:var(--card-gap); margin-top:var(--stack); list-style:none; }
-        .plan { display:flex; flex-direction:column; padding:26px 24px; border:1px solid var(--line); border-radius:18px; background:#fff; }
-        .plan.featured { border-color:var(--brand); box-shadow:0 22px 50px rgba(188,24,35,.12); }
-        .plan-top { display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
-        .plan h3 { font-size:18px; letter-spacing:-.01em; }
-        .plan-badge { padding:3px 9px; border-radius:999px; background:var(--brand-soft); color:var(--brand); font-size:12px; font-weight:600; white-space:nowrap; }
-        .plan .audience { min-height:2.9em; margin-top:4px; color:var(--muted); font-size:13.5px; }
-        .plan .price { margin-top:18px; white-space:nowrap; font-size:30px; font-weight:600; letter-spacing:-.02em; }
-        .plan .price small { color:var(--muted); font-size:14px; font-weight:500; letter-spacing:0; }
-        .plan .tokens { margin-top:2px; color:var(--brand); font-size:14px; font-weight:600; }
-        .plan .vat { color:var(--muted); font-size:12.5px; }
-        .plan ul { display:grid; gap:8px; margin-top:18px; padding-top:18px; border-top:1px solid var(--line); list-style:none; }
-        .plan li { display:flex; gap:8px; color:var(--ink-soft); font-size:14px; line-height:1.45; }
-        .plan li::before { content:'✓'; color:var(--ok); font-weight:600; }
-        .plans-note { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-top:28px; color:var(--muted); font-size:14.5px; }
-
-        /* Contact: same split as the hero and lane; call options left, message form right. */
-        .contact-band { background:var(--soft); border-top:1px solid var(--line); }
-        .contact-grid { align-items:start; margin-top:var(--stack); }
-        .contact-info { display:grid; gap:var(--card-gap); }
-        .contact-card { padding:24px; border:1px solid var(--line); border-radius:var(--radius); background:#fff; }
-        .contact-card-head { display:flex; align-items:center; gap:14px; }
-        .contact-card-head h3 { font-size:17px; line-height:1.3; }
-        .contact-card-head p { color:var(--muted); font-size:13.5px; }
-        .channel-icon { display:grid; flex:0 0 44px; place-items:center; width:44px; height:44px; border-radius:12px; color:var(--brand); background:var(--brand-soft); }
-        .phones { display:grid; gap:10px; margin-top:18px; list-style:none; }
-        .phone-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 12px 12px 16px; border:1px solid var(--line); border-radius:var(--radius-sm); }
-        .phone-row strong { font-size:18px; font-weight:600; letter-spacing:.01em; font-variant-numeric:tabular-nums; }
-        .call-btn { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 16px; border-radius:10px; color:var(--brand); background:var(--brand-soft); font-size:14px; font-weight:600; white-space:nowrap; transition:background .15s, color .15s; }
-        .call-btn:hover { color:#fff; background:var(--brand); }
-        .email-link { display:inline-block; margin-top:16px; color:var(--ink); font-size:16px; font-weight:600; word-break:break-word; }
-        .email-link:hover { color:var(--brand); }
-        .contact-note { color:var(--muted); font-size:14px; }
-        .contact-note a { color:var(--ink); font-weight:600; text-decoration:underline; text-underline-offset:3px; }
-        .form { padding:28px; border:1px solid var(--line); border-radius:var(--radius); background:#fff; box-shadow:0 22px 50px rgba(23,23,23,.06); }
-        .form h3 { font-size:18px; }
-        .form-intro { margin-top:4px; color:var(--muted); font-size:14px; }
-        .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:22px; }
-        .field { display:grid; gap:6px; align-content:start; }
-        .field.full { grid-column:1 / -1; }
-        .field label { font-size:13.5px; font-weight:600; }
-        .field label .req { color:var(--brand); }
-        .field label small { color:var(--muted); font-weight:400; }
-        .field input, .field select, .field textarea { width:100%; min-height:46px; padding:11px 14px; border:1px solid var(--outline-gray-2); border-radius:10px; background:#fff; color:var(--ink); font:400 15px var(--font); }
-        .field select { appearance:none; padding-right:40px; background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%23575757' stroke-width='1.6'%3E%3Cpath d='m1 1.5 5 5 5-5'/%3E%3C/svg%3E") right 14px center / 12px 8px no-repeat; }
-        .field textarea { min-height:128px; resize:vertical; }
-        .field input:hover, .field select:hover, .field textarea:hover { border-color:var(--faint); }
-        .field input:focus, .field select:focus, .field textarea:focus { border-color:var(--brand); outline:none; box-shadow:var(--focus); }
-        .form-done:focus { outline:none; }
-        .field [aria-invalid="true"] { border-color:var(--error); }
-        .field-error { color:var(--error); font-size:13px; }
-        .field-hint { color:var(--muted); font-size:12.5px; text-align:right; font-variant-numeric:tabular-nums; }
-        .hp { position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden; }
-        .form-foot { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px 18px; margin-top:22px; }
-        .privacy { color:var(--muted); font-size:13px; }
-        .form-status { margin-top:14px; padding:12px 14px; border-radius:10px; font-size:14px; }
-        .form-status:empty { display:none; }
-        .form-status.err { color:var(--error); background:var(--error-bg); }
-        .form-done { display:grid; justify-items:start; gap:10px; padding:8px 0; }
-        .form-done .done-icon { display:grid; place-items:center; width:48px; height:48px; border-radius:14px; color:var(--ok); background:var(--ok-soft); }
-        .form-done h3 { font-size:20px; }
-        .form-done p { color:var(--muted); font-size:15px; }
-        .link-btn { padding:0; border:0; background:none; color:var(--brand); font:600 14.5px var(--font); cursor:pointer; text-decoration:underline; text-underline-offset:3px; min-height:44px; }
-
-        .cta-band { padding:clamp(64px,9vw,96px) 0; color:#fff; background:#171717; text-align:center; }
-        .cta-band h2 { max-width:720px; margin:0 auto; color:#fff; font-size:clamp(1.9rem,3.6vw,2.6rem); line-height:1.15; letter-spacing:-.02em; }
-        .cta-band p { max-width:560px; margin:14px auto 30px; color:rgba(255,255,255,.7); font-size:16px; }
-        .cta-band .invite { display:block; margin-top:22px; color:rgba(255,255,255,.7); font-size:14px; }
-        .cta-band .invite a { color:#fff; font-weight:600; text-decoration:underline; text-underline-offset:4px; }
-
-        .footer { padding:28px 0; color:var(--muted); font-size:13px; }
-        .footer-inner { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
-        .footer-links { display:flex; flex-wrap:wrap; gap:18px; }
-        .footer a { color:var(--muted); font-weight:500; }
-        .footer a:hover { color:var(--ink); }
-
-        @media (max-width:1000px) { .features,.plans { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-        @media (max-width:900px) {
-            .hero { display:block; min-height:0; }
-            .hero-art { display:none; }
-            .hero-media { display:block; width:100%; max-width:100%; aspect-ratio:16/11; border-radius:18px; background:url('/assets/crm/images/express-hero-bg-1600.jpg') 92% center / cover no-repeat; }
-            .hero .cert { width:100%; margin:0; justify-self:stretch; }
-            .split { grid-template-columns:minmax(0,1fr); gap:var(--stack); }
-            .strip ul { grid-template-columns:repeat(2,minmax(0,1fr)); }
-            .strip li:nth-child(3) { border-left:0; padding-left:0; }
-            .strip li:nth-child(n+3) { border-top:1px solid var(--line); }
-            .nav-anchor { display:none; }
-        }
-        @media (max-width:600px) {
-            :root { --gutter:16px; }
-            .nav-link { display:none; }
-            .btn { width:100%; } .btn-sm { width:auto; }
-            .features,.plans,.form-grid { grid-template-columns:minmax(0,1fr); }
-            .cert,.form { padding:22px 18px; }
-            .lane { padding:22px 18px; }
-            .strip li { padding:18px 0 18px 14px; }
-            .strip strong { font-size:19px; }
-        }
-        @media (prefers-reduced-motion:reduce) {
-            html { scroll-behavior:auto; }
-            *,*::before,*::after { animation:none !important; transition-duration:.001ms !important; }
-            .stops::after { transform:none; }
-        }
-    </style>
+    <link rel="preload" href="/assets/crm/fonts/value-express/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/assets/crm/fonts/value-express/source-sans-3-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/assets/crm/css/value-express.css">
+    <link rel="stylesheet" href="/assets/crm/css/value-express-landing.css">
 </head>
-<body>
-    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-        <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3Z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/></symbol>
-        <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></symbol>
-        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/></symbol>
-        <symbol id="i-link" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="m8.2 10.8 7.6-3.6M8.2 13.2l7.6 3.6"/></symbol>
-        <symbol id="i-steth" viewBox="0 0 24 24"><path d="M6 3v6a4 4 0 0 0 8 0V3"/><path d="M10 13v2a5 5 0 0 0 10 0v-1.5"/><circle cx="20" cy="11.5" r="2"/></symbol>
-        <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></symbol>
-        <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><path d="M8 16v-4M12 16V8M16 16v-6"/></symbol>
-        <symbol id="i-devices" viewBox="0 0 24 24"><rect x="2.5" y="4" width="14" height="10" rx="1.5"/><path d="M1.5 17h16"/><rect x="17" y="9" width="5.5" height="11" rx="1.2"/></symbol>
-        <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="m5.6 5.6 3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9"/></symbol>
-        <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 3.5h3.2l1.6 4.2-2.2 1.4a11 11 0 0 0 5.3 5.3l1.4-2.2 4.2 1.6V17a2.5 2.5 0 0 1-2.5 2.5A15 15 0 0 1 2.5 6 2.5 2.5 0 0 1 5 3.5Z"/></symbol>
-        <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></symbol>
-        <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
-        <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4.5A1.5 1.5 0 0 1 16.5 20h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/></symbol>
-    </svg>
+{%- set cur = offer.currency or 'KES' -%}
+{%- set fixed = offer.fixed or [] -%}
+{%- set flex = offer.flex or [] -%}
+<body class="vx">
 
-    <nav class="nav" aria-label="Main">
-        <div class="wrap nav-inner">
-            <a class="brand" href="/">
-                {% if brand_logo %}<img src="{{ brand_logo }}" alt="">{% endif %}
-                <span>Tiberbu <em>Express</em></span>
-            </a>
-            <div class="nav-actions">
-                <a class="nav-link nav-anchor" href="#features">Features</a>
-                {% if plans %}<a class="nav-link nav-anchor" href="#pricing">Pricing</a>{% endif %}
-                <a class="nav-link nav-anchor" href="#contact">Contact</a>
-                <a class="nav-link" href="{{ cta_secondary_link }}">Sign in</a>
-                <a class="btn btn-sm" href="{{ cta_link }}">{{ cta_text }}</a>
-            </div>
+<header class="site"><div class="wrap">
+  <a class="lockup" href="#top" aria-label="Tiberbu CareverseHIMS Value Express">{% with clip_id = "tbclip-head" %}{% include "templates/includes/value_express/wordmark.html" %}{% endwith %}<span class="prod">CareverseHIMS<b>Value Express</b></span></a>
+  <nav class="top" aria-label="Sections">
+    <a href="#how">How it works</a><a href="#benefits">Benefits</a><a href="#fit">Is it for me?</a><a href="#plans">Plans</a><a href="#flex">Flex tokens</a><a href="#calculator">Calculator</a><a href="#contact">Support</a>
+  </nav>
+  <a class="signin" href="{{ signin_link }}">Sign in</a>
+  <a class="btn primary small" href="{{ onboarding_url }}" data-testid="header-get-started">Get started</a>
+</div></header>
+
+<main id="top">
+<section class="hero"><div class="wrap">
+  <div class="hero-grid">
+    <div class="stack" style="gap:22px">
+      <span class="eyebrow"><span class="secno">01</span>Tiberbu CareverseHIMS Value Express</span>
+      <h1>Get digital. Get SHA ready. <span class="accent">Go live within hours.</span></h1>
+      <p class="lede">A simple, affordable CareverseHIMS package designed for Level 2 and Level 3 outpatient facilities.</p>
+      <p class="lede" style="margin-top:-8px">Get started quickly with guided self-onboarding, SHA eClaims capabilities, free virtual training and dedicated onboarding support.</p>
+      <div class="ctas">
+        <a class="btn primary" href="{{ onboarding_url }}" data-testid="hero-get-started">Get started</a>
+        <a class="btn ghost" href="#how">See how it works</a>
+      </div>
+    </div>
+    <figure style="margin:0">
+      <div class="app" role="img" aria-label="Illustration of the CareverseHIMS dashboard: today's patients, bills and SHA claims, and the patient queue">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>CareverseHIMS · Example Medical Centre</span><b class="tk">2,689 tokens</b></div>
+        <div class="body" aria-hidden="true">
+          <div class="side"><span class="on">Dashboard</span><span>Registration</span><span>Consultation</span><span>Laboratory</span><span>Pharmacy</span><span>Billing</span><span>SHA claims</span></div>
+          <div class="main">
+            <h4>Today</h4>
+            <div class="kpis"><div><small>Patients</small><b>18</b></div><div><small>Billed</small><b>27,400</b></div><div><small>SHA claims</small><b>6 sent</b></div></div>
+            <h4>Patient queue</h4>
+            <table><tbody>
+              <tr><td>OP-0143 · Consultation</td><td><span class="st">With clinician</span></td></tr>
+              <tr><td>OP-0144 · Laboratory</td><td><span class="st ok">Results ready</span></td></tr>
+              <tr><td>OP-0145 · Pharmacy</td><td><span class="st">Dispensing</span></td></tr>
+              <tr><td>OP-0146 · Billing</td><td><span class="st ok">SHA claim sent</span></td></tr>
+            </tbody></table>
+          </div>
         </div>
-    </nav>
+      </div>
+      <figcaption class="appcap">Illustration of the CareverseHIMS dashboard</figcaption>
+    </figure>
+  </div>
 
-    <header class="hero">
-        <div class="hero-art" aria-hidden="true"></div>
-        <div class="wrap split hero-grid">
-            <div>
-                <p class="eyebrow">Self-service onboarding for health facilities</p>
-                <h1><span class="line">Onboard yourself.</span> <span class="line accent">Start sending claims today.</span></h1>
-                <p class="lead">Tiberbu Express takes your facility from registry verification to a working HMIS in one guided journey. No sales call, no paperwork to sign.</p>
-                <div class="cta-row">
-                    <a class="btn" href="{{ cta_link }}">{{ cta_text }} <span class="arrow" aria-hidden="true">→</span></a>
-                    <a class="btn btn-outline" href="#contact" data-testid="hero-contact">Contact us</a>
-                    <a class="link-secondary" href="{{ cta_secondary_link }}">{{ cta_secondary_text }} <span aria-hidden="true">→</span></a>
-                </div>
-                <ul class="proof" aria-label="What to expect">
-                    <li>Registry-verified ownership</li>
-                    <li>No signatures needed</li>
-                    <li>Pay only for the package you choose</li>
-                </ul>
-            </div>
-            <div class="hero-media" aria-hidden="true"></div>
-            {% if landing.certificate_url %}
-            <aside class="cert" aria-labelledby="cert-title">
-                <span class="cert-seal"><svg class="icon"><use href="#i-shield"/></svg></span>
-                <h2 id="cert-title">Certified by the Digital Health Agency</h2>
-                <p><span class="careverse"><img src="/assets/crm/images/tiberbu-wordmark.png" alt="Tiberbu"> CareVerse</span> holds full DHA certification as an HMIS.</p>
-                <dl>
-                    <div><dt>Field test score</dt><dd class="score">100% · 22 of 22</dd></div>
-                    {% if landing.certificate_valid_until %}<div><dt>Valid until</dt><dd>{{ landing.certificate_valid_until }}</dd></div>{% endif %}
-                </dl>
-                <a class="cert-link" href="{{ landing.certificate_url }}" target="_blank" rel="noopener"{% if landing.certificate_id %} title="Certificate {{ landing.certificate_id }}"{% endif %}>Verify on the DHA registry <svg class="icon" style="width:16px;height:16px"><use href="#i-ext"/></svg></a>
-            </aside>
-            {% endif %}
-        </div>
-    </header>
+  {% if offer.from_price %}
+  <div class="pricebar">
+    <div class="from"><small>CareverseHIMS Value Express</small>from {{ cur }} {{ amount(offer.from_price) }}</div>
+    <p><strong>Pay as you use. Your tokens don't expire while your account remains active.</strong>Get started with CareverseHIMS without committing to a fixed monthly subscription. Prepay, use the system as your facility operates, monitor your balance and top up whenever you need more.</p>
+    <a class="btn primary" href="{{ onboarding_url }}?plan=flex">Get started</a>
+  </div>
+  {% endif %}
+  <div class="badges">
+    <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4"/><rect x="3" y="4" width="18" height="16" rx="3"/></svg>SHA eClaims Ready</div>
+    <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.6 10.6l6.8-3.2M8.6 13.4l6.8 3.2"/></svg>{% if landing.certificate_url %}<a class="badge-link" href="{{ landing.certificate_url }}" target="_blank" rel="noopener"{% if landing.certificate_id %} title="Certificate {{ landing.certificate_id }}"{% endif %}>DHA HIE Compliant</a>{% else %}<span>DHA HIE Compliant</span>{% endif %}</div>
+    <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Go Live Within Hours</div>
+    <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="2" y="14" width="5" height="6" rx="2"/><rect x="17" y="14" width="5" height="6" rx="2"/></svg>24/7 Remote Support</div>
+  </div>
+</div></section>
 
-    <section class="strip" aria-label="At a glance">
-        <ul class="wrap">
-            <li><strong>100%</strong><span>DHA certification field test</span></li>
-            <li><strong>eClaims</strong><span>Compliant claim submission</span></li>
-            <li><strong>FHIR HL7</strong><span>DHA HIE interoperable</span></li>
-            <li><strong>Level 2 to 6</strong><span>Facility tiers supported</span></li>
-        </ul>
-    </section>
+<section class="band alt" id="how"><div class="wrap">
+  <span class="eyebrow"><span class="secno">02</span>Go live within hours</span>
+  <h2 style="margin-top:10px">From enquiry to live in four simple steps</h2>
+  <div class="steps">
+    <div class="step"><div class="n">01</div><h3>Register</h3><p>Create your facility account.</p></div>
+    <div class="step"><div class="n">02</div><h3>Configure</h3><p>Add your facility information, services and users.</p></div>
+    <div class="step"><div class="n">03</div><h3>Train</h3><p>Join free virtual CareverseHIMS training.</p></div>
+    <div class="step"><div class="n">04</div><h3>Go live</h3><p>Start operating digitally and submitting SHA claims.</p></div>
+  </div>
+  <p class="nolist">No lengthy procurement. No complex implementation. No weeks of waiting.</p>
+  <p style="color:var(--ink-2);font-size:.88rem;margin-top:8px">Go-live timing depends on successful facility verification, payment, configuration and user readiness.</p>
+</div></section>
 
-    <main>
-        <section class="section" id="features" aria-labelledby="features-title">
-            <div class="wrap">
-                <div class="section-heading">
-                    <p class="eyebrow">Powered by <span class="careverse"><img src="/assets/crm/images/tiberbu-wordmark.png" alt="Tiberbu"> CareVerse</span></p>
-                    <h2 id="features-title">Everything a modern facility runs on, certified and secure</h2>
-                    <p>One cloud platform for clinical care, claims and operations, built to Kenya's national digital health standards.</p>
-                </div>
-                <ul class="features">
-                    <li class="feature highlight"><span class="feature-icon"><svg class="icon"><use href="#i-receipt"/></svg></span><h3>Claims, built in</h3><p>Submit claims accurately and in line with payer reimbursement rules, for faster processing and fewer rejections.</p></li>
-                    <li class="feature"><span class="feature-icon"><svg class="icon"><use href="#i-shield"/></svg></span><h3>Compliance you can verify</h3><p>DHA-certified HMIS and compliant with DHA Health Information Exchange standards.</p></li>
-                    <li class="feature"><span class="feature-icon"><svg class="icon"><use href="#i-lock"/></svg></span><h3>Secure by design</h3><p>Strong access controls, consent-driven data sharing and secure cloud hosting backed by cybersecurity services.</p></li>
-                    <li class="feature"><span class="feature-icon"><svg class="icon"><use href="#i-link"/></svg></span><h3>Interoperable</h3><p>Built on FHIR HL7 for real-time exchange with Health Information Exchanges and other systems.</p></li>
-                    <li class="feature"><span class="feature-icon"><svg class="icon"><use href="#i-steth"/></svg></span><h3>Complete clinical suite</h3><p>Patient management, clinical alerts, laboratory, medication and billing in one place.</p></li>
-                    <li class="feature"><span class="feature-icon"><svg class="icon"><use href="#i-layers"/></svg></span><h3>Integrated ERP</h3><p>Human resources, inventory, accounting and resource planning without a second system.</p></li>
-                    <li class="feature"><span class="feature-icon"><svg class="icon"><use href="#i-chart"/></svg></span><h3>Real-time insights</h3><p>Clinical and operational data the moment you need it, for evidence-based decisions.</p></li>
-                    <li class="feature"><span class="feature-icon"><svg class="icon"><use href="#i-devices"/></svg></span><h3>Any device, with support</h3><p>Cloud-based and mobile-ready, with training, onboarding and ongoing technical support.</p></li>
-                </ul>
-            </div>
-        </section>
+<section class="band" id="benefits"><div class="wrap">
+  <span class="eyebrow"><span class="secno">03</span>What you get</span>
+  <h2 style="margin-top:10px">What Value Express gives your facility</h2>
+  <div class="vgrid">
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg></div><h3>Run your facility digitally</h3><p>Manage registration, consultations, billing, pharmacy, clinical information and day-to-day facility operations from one system.</p></div>
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5M9 14l2 2 4-4"/></svg></div><h3>Submit SHA claims</h3><p>Capture the required information and prepare and submit SHA eClaims digitally.</p></div>
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg></div><h3>Get connected</h3><p>Use a platform designed to support Kenya's national digital health interoperability environment.</p></div>
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div><h3>Know how your facility is performing</h3><p>Give facility owners greater visibility over patients, services, revenue, claims and operational activity.</p></div>
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z"/></svg></div><h3>Get continuous support</h3><p>Receive onboarding assistance, recurring virtual training and 24/7 remote support.</p></div>
+  </div>
+</div></section>
 
-        <section class="section lane-band" aria-labelledby="lane-title">
-            <div class="wrap split lane-grid">
-                <div class="lane-copy section-heading">
-                    <p class="eyebrow">Self-service, start to finish</p>
-                    <h2 id="lane-title">Your express lane to the first claim</h2>
-                    <p>No sales call and nothing to sign. You verify, choose and go live at your own pace.</p>
-                    <p class="needs">You'll need <strong>your ID number</strong>, <strong>your registered phone or email</strong> and <strong>a facility in the national registry</strong>.</p>
-                    <a class="btn" href="{{ cta_link }}">{{ cta_text }} <span class="arrow" aria-hidden="true">→</span></a>
-                </div>
-                <aside class="lane" aria-label="Your journey with Tiberbu Express">
-                    <div class="lane-head">
-                        <span class="lane-title">Your express lane</span>
-                        <span class="lane-badge">Self-service</span>
-                    </div>
-                    <ol class="stops">
-                        <li class="stop"><span class="dot">1</span><div><strong>Verify your identity</strong><span>Checked against the national registry.</span></div></li>
-                        <li class="stop"><span class="dot">2</span><div><strong>Pick your facilities</strong><span>Choose one or more facilities you own.</span></div></li>
-                        <li class="stop"><span class="dot">3</span><div><strong>Choose a package</strong><span>Price and VAT shown before you pay.</span></div></li>
-                        <li class="stop"><span class="dot">4</span><div><strong>Go live on your HMIS</strong><span>Set up for you once you're onboarded.</span></div></li>
-                    </ol>
-                    <div class="claim" aria-hidden="true">
-                        <span class="claim-icon">✓</span>
-                        <div><strong>Claim</strong><span>Sent from your facility</span></div>
-                        <span class="status">Submitted</span>
-                    </div>
-                </aside>
-            </div>
-        </section>
+<section class="band alt" id="fit"><div class="wrap">
+  <span class="eyebrow"><span class="secno">04</span>Is this package for me?</span>
+  <h2 style="margin-top:10px">Value Express is built for you if…</h2>
+  <div class="fit">
+    <ul class="checks">
+      <li>You operate a Level 2 or Level 3 outpatient facility</li>
+      <li>You need to digitise your facility quickly</li>
+      <li>You want to start submitting SHA claims</li>
+      <li>You do not want a lengthy HIMS implementation project</li>
+      <li>You need an affordable starting point</li>
+      <li>You want training and support included</li>
+    </ul>
+    <div class="enquiry">
+      <span class="tag" style="align-self:flex-start">Inpatient facilities</span>
+      <h3>Running a larger hospital?</h3>
+      <p style="color:var(--ink-2)">Inpatient hospitals, multi-facility groups and facilities with theatre, complex workflows or extensive integrations are better served by CareverseHIMS Advanced or Enterprise. Tell us about your facility and our team will assess the right fit.</p>
+      <a href="#contact" data-topic="CareverseHIMS Advanced &amp; Enterprise" data-testid="enterprise-enquiry">Submit an enquiry for CareverseHIMS Advanced &amp; Enterprise →</a>
+    </div>
+  </div>
+</div></section>
 
-        {% if plans %}
-        <section class="section" id="pricing" aria-labelledby="pricing-title">
-            <div class="wrap">
-                <div class="section-heading">
-                    <p class="eyebrow">Pricing</p>
-                    <h2 id="pricing-title">Plans that grow with your patient volume</h2>
-                    <p>Each package buys a set number of Care Tokens that your facility uses as it works. You pick and confirm yours during onboarding.</p>
-                </div>
-                <ul class="plans" style="--plan-count:{{ [plans|length, 4]|min }}">
-                    {% for plan in plans %}
-                    <li class="plan{% if 'popular' in (plan.badge or '')|lower %} featured{% endif %}">
-                        <div class="plan-top">{% if plan.badge %}<span class="plan-badge">{{ plan.badge }}</span>{% endif %}<h3>{{ plan.name }}</h3></div>
-                        {% if plan.audience %}<p class="audience">{{ plan.audience }}</p>{% endif %}
-                        {% if plan.price %}
-                        <p class="price">{{ plan.currency }} {{ plan.price }}</p>
-                        <p class="vat">Excludes {{ plan.vat_label }}</p>
-                        {% else %}
-                        <p class="price">Free</p>
-                        <p class="vat">No payment needed</p>
-                        {% endif %}
-                        {% if plan.tokens and plan.tokens != "0" %}<p class="tokens">{{ plan.tokens }} Care Tokens</p>{% endif %}
-                        {% if plan.features %}
-                        <ul>{% for item in plan.features %}<li>{{ item }}</li>{% endfor %}</ul>
-                        {% elif plan.description %}
-                        <ul><li>{{ plan.description }}</li></ul>
-                        {% endif %}
-                    </li>
-                    {% endfor %}
-                </ul>
-                <div class="plans-note">
-                    <span>Prices are for a single facility. The final amount, with VAT, is shown before you pay.</span>
-                    <a class="btn btn-sm" href="{{ cta_link }}">{{ cta_text }} <span class="arrow" aria-hidden="true">→</span></a>
-                </div>
-            </div>
-        </section>
-        {% endif %}
+<section class="band" id="plans"><div class="wrap">
+  <span class="eyebrow"><span class="secno">05</span>Pricing</span>
+  <h2 style="margin-top:10px">Choose how you want to pay</h2>
+  <p class="lede" style="margin-top:12px">{% if fixed %}Both plans include the Value Express platform, SHA eClaims, virtual training and remote support. The difference is how you pay.{% else %}Value Express Flex includes the platform, SHA eClaims, virtual training and remote support. You pay for what you use.{% endif %}</p>
+  <div class="plans{% if not fixed %} single{% endif %}" style="margin-top:28px">
+    {% if fixed %}
+    <article class="plan" data-testid="plan-fixed">
+      <div class="name"><small>Value Express Fixed</small>Predictable monthly cost</div>
+      <div class="tiers">{% for tier in fixed %}<div><span>{{ tier.label }}</span><b>{{ tier.currency }} {{ amount(tier.price) }}</b><span>per month</span></div>{% endfor %}</div>
+      <p style="color:var(--ink-2)">Best for facilities looking for predictable monthly costs, with no token balances to monitor and no top-ups to make.</p>
+      <ul><li>Full Value Express platform access</li><li>SHA eClaims capabilities</li><li>Guided self-onboarding and activation support</li><li>Recurring virtual CareverseHIMS training</li><li>Continuous remote support</li><li>Predictable monthly spend</li></ul>
+      <div class="flow"><span>Subscribe</span><i>→</i><span>Activate CareverseHIMS</span><i>→</i><span>Use the platform</span><i>→</i><span>Pay the same monthly subscription</span></div>
+      <a class="btn ghost" href="{{ onboarding_url }}?plan=fixed">Get started</a>
+    </article>
+    {% endif %}
+    <article class="plan flex" data-testid="plan-flex">
+      <div class="name"><small>Value Express Flex</small>Pay as you use</div>
+      {% if offer.from_price %}<div class="big">From {{ cur }} {{ amount(offer.from_price) }} <small>in tokens</small></div>{% endif %}
+      <p style="color:var(--ink-2)">Pay according to how you use CareverseHIMS.</p>
+      <ul><li>Lower starting commitment</li><li>Payment aligned to actual activity</li><li>Same CareverseHIMS platform</li>{% if fixed %}<li>Move to Fixed as usage grows</li>{% endif %}</ul>
+      <div class="flow"><span>Buy Careverse Tokens</span><i>→</i><span>Use CareverseHIMS</span><i>→</i><span>Top up when required</span></div>
+      <a class="btn primary" href="{{ onboarding_url }}?plan=flex">Get started</a>
+    </article>
+  </div>
+  <p class="estimate">Not sure which fits? <a href="#calculator">Estimate your usage and costs →</a></p>
 
-        <section class="section contact-band" id="contact" aria-labelledby="contact-title">
-            <div class="wrap">
-                <div class="section-heading">
-                    <p class="eyebrow">Contact us</p>
-                    <h2 id="contact-title">Questions before you start? Talk to us.</h2>
-                    <p>Our team helps facilities with onboarding, packages and going live. Call us during office hours, or send a message and we'll get back to you.</p>
-                </div>
-                <div class="split contact-grid">
-                    <div class="contact-info">
-                        {% if landing.phones %}
-                        <div class="contact-card">
-                            <div class="contact-card-head">
-                                <span class="channel-icon"><svg class="icon"><use href="#i-phone"/></svg></span>
-                                <div><h3>Call us</h3>{% if landing.hours %}<p>{{ landing.hours }}</p>{% endif %}</div>
-                            </div>
-                            <ul class="phones">
-                                {% for phone in landing.phones %}
-                                <li class="phone-row"><strong>{{ phone.label }}</strong><a class="call-btn" href="tel:{{ phone.tel }}" aria-label="Call {{ phone.label }}"><svg class="icon" style="width:16px;height:16px"><use href="#i-phone"/></svg>Call</a></li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                        {% endif %}
-                        {% if landing.email %}
-                        <div class="contact-card">
-                            <div class="contact-card-head">
-                                <span class="channel-icon"><svg class="icon"><use href="#i-mail"/></svg></span>
-                                <div><h3>Email us</h3><p>Write any time and we'll reply by email.</p></div>
-                            </div>
-                            <a class="email-link" href="mailto:{{ landing.email }}">{{ landing.email }}</a>
-                        </div>
-                        {% endif %}
-                        <p class="contact-note">Already onboarded? <a href="{{ cta_secondary_link }}">Sign in to Tiberbu Express</a> to follow your facility.</p>
-                    </div>
-                    <div class="form" id="contact-panel">
-                        <form id="contact-form" novalidate aria-labelledby="form-title">
-                            <h3 id="form-title">Send us a message</h3>
-                            <p class="form-intro">Fields marked <span style="color:var(--brand)">*</span> are required.</p>
-                            <div class="form-grid">
-                                <div class="field"><label for="c-name">Full name <span class="req" aria-hidden="true">*</span></label><input id="c-name" name="full_name" autocomplete="name" required maxlength="140" aria-describedby="c-name-err"><p class="field-error" id="c-name-err" hidden></p></div>
-                                <div class="field"><label for="c-email">Email <span class="req" aria-hidden="true">*</span></label><input id="c-email" name="email" type="email" autocomplete="email" required maxlength="140" aria-describedby="c-email-err"><p class="field-error" id="c-email-err" hidden></p></div>
-                                <div class="field"><label for="c-phone">Phone <small>(optional)</small></label><input id="c-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" inputmode="tel"></div>
-                                <div class="field"><label for="c-org">Facility or organisation <small>(optional)</small></label><input id="c-org" name="organization" autocomplete="organization" maxlength="140"></div>
-                                <div class="field full"><label for="c-topic">What is it about?</label>
-                                    <select id="c-topic" name="topic">
-                                        {% for topic in contact_topics %}<option value="{{ topic }}">{{ topic }}</option>{% endfor %}
-                                    </select>
-                                </div>
-                                <div class="field full"><label for="c-msg">How can we help? <span class="req" aria-hidden="true">*</span></label><textarea id="c-msg" name="message" required maxlength="2000" aria-describedby="c-msg-err c-msg-count"></textarea><p class="field-error" id="c-msg-err" hidden></p><p class="field-hint" id="c-msg-count" aria-live="off">0 / 2000</p></div>
-                                <div class="hp" aria-hidden="true"><label for="c-web">Website</label><input id="c-web" name="website" tabindex="-1" autocomplete="off"></div>
-                            </div>
-                            <div class="form-foot">
-                                <p class="privacy">We use these details only to reply to you.</p>
-                                <button class="btn" type="submit">Send message</button>
-                            </div>
-                            <p class="form-status" id="contact-status" role="alert"></p>
-                        </form>
-                        <div class="form-done" id="contact-done" hidden tabindex="-1">
-                            <span class="done-icon"><svg class="icon" style="width:26px;height:26px"><use href="#i-check"/></svg></span>
-                            <h3>Thank you, your message is with our team.</h3>
-                            <p>We'll get back to you by email or phone.</p>
-                            <button class="link-btn" type="button" id="contact-again">Send another message</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
+  {% if fixed %}
+  <h3 style="margin-top:44px">Compare Fixed and Flex</h3>
+  <div class="tablewrap"><table class="cmp">
+    <thead><tr><th scope="col"></th><th scope="col">Value Express Fixed</th><th scope="col">Value Express Flex</th></tr></thead>
+    <tbody>
+      <tr><td>Starting price</td><td class="mono">{{ fixed[0].currency }} {{ amount(fixed[0].price) }}/month</td><td class="mono">{{ cur }} {{ amount(offer.from_price) }}</td></tr>
+      <tr><td>Model</td><td>Fixed monthly</td><td>Pay as you use</td></tr>
+      <tr><td>Billing</td><td>Monthly subscription</td><td>Prepaid tokens</td></tr>
+      <tr><td>Best for</td><td>Predictable or higher usage</td><td>Smaller or variable volumes</td></tr>
+      <tr><td>Top-ups</td><td>Not normally required</td><td>Required when your token balance runs low</td></tr>
+      <tr><td>Packages</td><td>{% for tier in fixed %}{{ tier.label }}{% if not loop.last %}{% if loop.revindex == 2 %} and {% else %}, {% endif %}{% endif %}{% endfor %}</td><td>{% for card in flex %}{{ card.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if offer.custom %} and Custom{% endif %}</td></tr>
+      <tr><td>Platform access</td><td>Included</td><td>Included while sufficiently funded</td></tr>
+      <tr><td>Cost predictability</td><td>Fixed</td><td>Depends on usage</td></tr>
+      <tr><td>CareverseHIMS</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+      <tr><td>SHA eClaims</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+      <tr><td>Virtual training</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+      <tr><td>Remote support</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+    </tbody>
+  </table></div>
 
-        <section class="cta-band" aria-labelledby="cta-title">
-            <div class="wrap">
-                <h2 id="cta-title">Your first claim is one onboarding away.</h2>
-                <p>Start now and set up your facility on Tiberbu Express today.</p>
-                <a class="btn" href="{{ cta_link }}">{{ cta_text }} <span class="arrow" aria-hidden="true">→</span></a>
-                <span class="invite">Invited by a Network? <a href="/opt-in">Continue with Network Opt-In</a></span>
-            </div>
-        </section>
-    </main>
+  <div class="choose">
+    <div><h3>Choose Fixed if…</h3><ul class="checks"><li>Your usage is predictable or consistently higher</li><li>You want a fixed monthly operating cost</li><li>You don't want to monitor token balances</li><li>You prefer straightforward monthly budgeting</li><li>Your Flex spend is approaching the Fixed price</li></ul></div>
+    <div><h3>Choose Flex if…</h3><ul class="checks"><li>You want the lowest possible entry point</li><li>Your patient volumes are low or variable</li><li>You want payment linked to usage</li><li>You are beginning your digital journey</li><li>You prefer to scale gradually</li></ul></div>
+  </div>
+  <div class="journey"><span class="lbl">Recommended journey</span><div class="flow"><span>Start on Flex</span><i>→</i><span>Grow usage</span><i>→</i><span>Move to Fixed when it becomes more economical</span></div></div>
+  {% endif %}
+</div></section>
 
-    <footer class="footer">
-        <div class="wrap footer-inner">
-            <span>© Tiberbu Express · Powered by <span class="careverse"><img src="/assets/crm/images/tiberbu-wordmark.png" alt="Tiberbu"> CareVerse</span></span>
-            <div class="footer-links">
-                {% if landing.certificate_url %}<a href="{{ landing.certificate_url }}" target="_blank" rel="noopener">DHA certificate</a>{% endif %}
-                <a href="#contact">Contact</a>
-                <a href="/login?redirect-to=/crm">Staff access</a>
-            </div>
-        </div>
-    </footer>
+<section class="band tint" id="flex"><div class="wrap">
+  <div class="flexhead">
+    <div><span class="eyebrow"><span class="secno">06</span>CareverseHIMS Value Express Flex</span><h2 style="margin-top:10px">Start small. Pay as you use. Grow at your own pace.</h2></div>
+    <div class="stack"><p class="lede">Value Express Flex gives outpatient facilities access to CareverseHIMS through a simple prepaid token model.</p>
+    <p style="color:var(--ink-2)">Instead of committing to a fixed monthly subscription, your facility buys Careverse Tokens in advance and uses them as transactions are completed. Purchased tokens do not expire while your account remains active, and you can top up whenever you need more.</p></div>
+  </div>
 
-    <script>
-        (function () {
-            // Play the express lane animation when it scrolls into view.
-            var lane = document.querySelector('.lane');
-            if (lane && 'IntersectionObserver' in window) {
-                var io = new IntersectionObserver(function (entries) {
-                    if (entries[0].isIntersecting) { lane.classList.add('in-view'); io.disconnect(); }
-                }, { threshold: 0.35 });
-                io.observe(lane);
-            } else if (lane) {
-                lane.classList.add('in-view');
-            }
+  <nav class="pills" aria-label="Flex topics"><a href="#flex-how">Getting tokens</a><a href="#flex-usage">Token usage</a><a href="#flex-packages">Packages</a><a href="#flex-rules">Token rules</a></nav>
+  <div class="why">
+    <div><h3>Low entry cost</h3><p>Start with an affordable prepaid package rather than a large upfront system commitment.</p></div>
+    <div><h3>Pay for actual activity</h3><p>Tokens are consumed as your facility uses applicable services.</p></div>
+    <div><h3>No token expiry</h3><p>Purchased tokens remain available for as long as your customer account remains active.</p></div>
+    <div><h3>Top up anytime</h3><p>Add tokens whenever you need them, from a minimum top-up of {{ amount(offer.min_tokens or 1000) }} tokens.</p></div>
+    <div><h3>Complete visibility</h3><p>Track your available token balance and manage consumption as your facility grows.</p></div>
+    <div><h3>{% if fixed %}Grow into Fixed{% else %}Grow at your pace{% endif %}</h3><p>{% if fixed %}Keep topping up as you grow, or move to Value Express Fixed for predictable monthly spend.{% else %}Keep topping up as your facility grows, at the package rate that suits your volume.{% endif %}</p></div>
+  </div>
 
-            var form = document.getElementById('contact-form');
-            if (!form) return;
-            var status = document.getElementById('contact-status');
-            var done = document.getElementById('contact-done');
-            var message = form.elements.message;
-            var counter = document.getElementById('c-msg-count');
-            var updateCount = function () { counter.textContent = message.value.length + ' / 2000'; };
-            message.addEventListener('input', updateCount);
+  <div class="sub" id="flex-how"><h3>Getting tokens</h3>
+    <div class="how">
+      <div><b>1</b><h3>Choose &amp; pay</h3><p>Select your prepaid Value Express token package and make payment.</p></div>
+      <div><b>2</b><h3>Get your tokens</h3><p>Once payment is confirmed, the tokens are credited to your CareverseHIMS account.</p></div>
+      <div><b>3</b><h3>Use CareverseHIMS</h3><p>Tokens are deducted automatically as eligible transactions are completed.</p></div>
+      <div><b>4</b><h3>Top up &amp; keep going</h3><p>Monitor your balance and top up when required. Full access continues while you have enough tokens.</p></div>
+    </div>
+  </div>
 
-            var setError = function (input, text) {
-                var error = document.getElementById(input.id + '-err');
-                input.setAttribute('aria-invalid', text ? 'true' : 'false');
-                if (error) { error.textContent = text || ''; error.hidden = !text; }
-            };
-            var rules = {
-                full_name: function (v) { return v ? '' : 'Enter your name.'; },
-                email: function (v, input) { return !v ? 'Enter your email address.' : (input.checkValidity() ? '' : 'Enter an email address like name@example.com.'); },
-                message: function (v) { return v ? '' : 'Tell us how we can help.'; }
-            };
-            var check = function (name) {
-                var input = form.elements[name];
-                var text = rules[name](input.value.trim(), input);
-                setError(input, text);
-                return text;
-            };
-            var validate = function () {
-                var first = null;
-                Object.keys(rules).forEach(function (name) { if (check(name) && !first) first = form.elements[name]; });
-                return first;
-            };
-            // Clear an error as soon as it is fixed, while typing, so the layout is settled before the next click.
-            Object.keys(rules).forEach(function (name) {
-                form.elements[name].addEventListener('input', function () {
-                    if (form.elements[name].getAttribute('aria-invalid') === 'true') check(name);
-                });
-            });
+  <div class="sub" id="flex-usage"><h3>How your tokens are used</h3>
+    <div class="usage">
+      <div><span class="tag" style="align-self:flex-start">1 · System access</span><div class="rate">{{ amount(offer.access_tokens) }} tokens<br>per funded month</div><p>A fixed system access charge is deducted at the beginning of each month in which the account is funded. It keeps your facility's access to the Value Express platform and its capabilities.</p></div>
+      <div><span class="tag" style="align-self:flex-start">2 · Service usage</span><div class="rate">Per completed<br>transaction</div><p>Tokens are deducted when an applicable transaction is completed at a service point, based on the published token schedule.</p><div class="formula">{% for point in (offer.calculator.service_points or []) %}{{ point.name.split(' (')[0].split(' /')[0] }} {{ point.tokens }}{% if not loop.last %} · {% endif %}{% endfor %}</div></div>
+      <div><span class="tag" style="align-self:flex-start">3 · Patient bill</span><div class="rate">1 token per<br>{{ cur }} {{ amount(offer.bill_value_per_token) }} billed</div><p>An additional charge based on the patient's total bill.</p><div class="formula">Bill tokens = total bill ÷ {{ amount(offer.bill_value_per_token) }}, rounded up</div></div>
+    </div>
+    <p class="both">Where a transaction attracts both a service-point charge and a patient-bill charge, both deductions apply.</p>
+    <div class="ledgerrow">
+      <div class="stack"><h3>What this looks like on your balance</h3><p>Every deduction appears on your token statement, with what was charged and why. This is a facility's first day on Flex Growth.</p><p>The system access charge comes off first. Service points and the patient bill follow as work is completed.</p></div>
+      <aside class="ledger" aria-label="Example token ledger">
+        <div class="lh"><b>Token balance · Flex Growth</b><span class="tag">Example</span></div>
+        <ol>
+          <li><span>Growth package purchased<small>KES 15,000 · 2,800 tokens</small></span><span class="amt plus">+2,800</span></li>
+          <li><span>First-purchase bonus<small>One-time welcome tokens</small></span><span class="amt plus">+400</span></li>
+          <li><span>System access, November<small>Deducted on the 1st of each funded month</small></span><span class="amt minus">−500</span></li>
+          <li><span>Consultation completed<small>Service point</small></span><span class="amt minus">−3</span></li>
+          <li><span>Laboratory order completed<small>Service point</small></span><span class="amt minus">−6</span></li>
+          <li><span>Patient bill KES 1,400<small>1 token per KES 750, rounded up</small></span><span class="amt minus">−2</span></li>
+        </ol>
+        <div class="bal"><span>Available balance</span><b>2,689</b></div>
+      </aside>
+    </div>
+  </div>
 
-            form.addEventListener('submit', function (event) {
-                event.preventDefault();
-                status.textContent = '';
-                status.className = 'form-status';
-                var invalid = validate();
-                if (invalid) { invalid.focus(); return; }
-                var button = form.querySelector('button[type=submit]');
-                button.disabled = true;
-                button.textContent = 'Sending…';
-                fetch('/api/method/crm.api.landing.submit_contact', {
-                    method: 'POST',
-                    headers: { 'Accept': 'application/json' },
-                    body: new FormData(form)
-                }).then(function (response) {
-                    return response.json().catch(function () { return {}; }).then(function (body) {
-                        if (!response.ok) {
-                            var text = response.status === 429
-                                ? 'Too many messages from this connection. Please call us instead.'
-                                : 'We could not send your message. Check the details or call us.';
-                            try {
-                                var server = JSON.parse(JSON.parse(body._server_messages || '[]')[0] || '{}').message;
-                                if (server && response.status === 417) text = server;
-                            } catch (e) {}
-                            throw new Error(text);
-                        }
-                    });
-                }).then(function () {
-                    form.reset();
-                    updateCount();
-                    form.hidden = true;
-                    done.hidden = false;
-                    done.focus();
-                }).catch(function (error) {
-                    status.textContent = error.message;
-                    status.classList.add('err');
-                }).finally(function () {
-                    button.disabled = false;
-                    button.textContent = 'Send message';
-                });
-            });
-            document.getElementById('contact-again').addEventListener('click', function () {
-                done.hidden = true;
-                form.hidden = false;
-                form.elements.full_name.focus();
-            });
-        })();
-    </script>
+  {% if flex or offer.custom %}
+  <div class="sub" id="flex-packages"><h3>Simple prepaid packages</h3>
+    <div class="pkgs">
+      {% for card in flex %}
+      <div class="pkg{% if card.recommended %} rec{% endif %}" data-testid="flex-package">{% if card.recommended %}<span class="rectag">Recommended</span>{% endif %}<div class="k">Value Express Flex<b>{{ card.name }}</b></div><p>{{ card.description }}</p><div class="p">{{ card.currency }} {{ amount(card.price) }}</div><dl><dt>Tokens</dt><dd>{{ amount(card.tokens) }}</dd><dt>Approx. patient journeys*</dt><dd>{{ card.journeys }}</dd><dt>Price per token</dt><dd>{{ card.currency }} {{ "%.2f"|format(card.rate) }}</dd></dl>{% if card.more_percent %}<span class="more">Includes {{ card.more_percent }}% more tokens</span>{% endif %}{% if offer.welcome_bonus %}<span class="bonus">+{{ amount(offer.welcome_bonus) }} bonus tokens on first purchase</span>{% endif %}<a href="{{ onboarding_url }}?plan=flex&amp;package={{ card.item_code|urlencode }}">Get started →</a></div>
+      {% endfor %}
+      {% if offer.custom %}
+      <div class="pkg" data-testid="custom-package"><div class="k">Value Express Flex<b>{{ offer.custom.display_name }}</b></div><p>Set your own amount. Tokens are worked out at the rate of the package your amount reaches.</p>
+        <label class="lbl" for="cu-kes">Your amount ({{ offer.custom.currency }})</label><input class="cuin" id="cu-kes" type="number" min="{{ offer.custom.min_amount|int }}" step="500" value="{{ (offer.custom.min_amount|int) + 1000 }}" inputmode="numeric" aria-describedby="cu-err">
+        <dl><dt>Tokens</dt><dd id="cu-t">—</dd><dt>Approx. patient journeys*</dt><dd id="cu-j">—</dd><dt>Price per token</dt><dd id="cu-r">—</dd><dt>You pay</dt><dd id="cu-c">—</dd></dl>
+        <span class="more" id="cu-tier"></span><span class="cuerr" id="cu-err" hidden>Minimum {{ offer.custom.currency }} {{ amount(offer.custom.min_amount) }} ({{ amount(offer.custom.min_tokens) }} tokens).</span>
+        <a id="cu-go" href="{{ onboarding_url }}?plan=custom">Get started →</a></div>
+      {% endif %}
+    </div>
+  </div>
+  <p class="disclaim" style="margin-top:16px">Prices exclude VAT. *Patient journey estimates are indicative only. Actual token use depends on completed service-point transactions and patient-bill value.{% if offer.welcome_bonus %} First-purchase offer: {% for card in flex %}{{ card.name }}{% if not loop.last %}{% if loop.revindex == 2 %} and {% else %}, {% endif %}{% endif %}{% endfor %} currently include {{ amount(offer.welcome_bonus) }} bonus tokens on the first purchase, subject to the applicable offer and terms.{% endif %}</p>
+  {% endif %}
+
+  <div class="sub">
+    <div class="alert" role="note"><b>When your balance reaches zero</b><p>System access is limited until more tokens are credited. Full access resumes as soon as you top up, so top up before your balance runs out.</p></div>
+    <details class="rules" id="flex-rules"><summary>All token rules (12)</summary>
+      <ol class="rulelist">
+        <li><b>Prepaid.</b> Tokens are credited to the customer account once payment has been confirmed.</li>
+        <li><b>Monthly system access.</b> A fixed {{ amount(offer.access_tokens) }}-token system access charge is deducted at the beginning of each funded month.</li>
+        <li><b>No expiry.</b> Purchased tokens do not expire while the customer account remains active.</li>
+        <li><b>Transaction usage.</b> Service-point tokens are deducted for each applicable completed transaction according to the prevailing token schedule.</li>
+        <li><b>Patient billing.</b> An additional 1 token per {{ cur }} {{ amount(offer.bill_value_per_token) }} of the total patient bill, rounded up, applies.</li>
+        <li><b>Cumulative usage.</b> Where an encounter attracts both a service-point charge and a patient-bill charge, both deductions apply.</li>
+        <li><b>Insufficient balance.</b> When the token balance reaches zero or becomes negative, system access is limited until more tokens are credited.</li>
+        <li><b>Easy reactivation.</b> Full system access resumes once enough tokens have been credited.</li>
+        <li><b>Top-ups.</b> Top up at any time at the prevailing package or agreed commercial rate, with a minimum top-up of {{ amount(offer.min_tokens or 1000) }} tokens.</li>
+        <li><b>OPD protection.</b> OPD-only facilities are not charged tokens for inpatient admissions or medical/surgical procedures.</li>
+        <li><b>Pricing.</b> All prices are in Kenya Shillings (KES). Statutory taxes are added where required.</li>
+        <li><b>Commercial protection.</b> Token allocations and service applicability may only be varied through a written commercial agreement.</li>
+      </ol>
+    </details>
+  </div>
+</div></section>
+
+<section class="band" id="calculator"><div class="wrap">
+  <span class="eyebrow"><span class="secno">07</span>CareverseHIMS Value Express Token Calculator</span>
+  <h2 style="margin-top:10px">Know what you need. Pay for what you use.</h2>
+  <p class="lede" style="margin-top:12px">Enter a few details about your facility to estimate your monthly token use and see which starting package fits.</p>
+  <div class="howcalc">
+    <div><b>1. Tell us about your facility</b>Select your facility level and expected monthly activity.</div>
+    <div><b>2. Estimate your usage</b>We work out the Careverse Tokens your services would use.</div>
+    <div><b>3. See your recommended package</b>Your monthly token need and a Flex starting package{% if fixed %}, compared with Fixed{% endif %}.</div>
+    <div><b>4. Get started</b>Buy your package. Tokens are credited once payment is confirmed.</div>
+  </div>
+
+  <div class="calc">
+    <form class="panel stack" id="calcForm" style="gap:18px" onsubmit="return false">
+      {% if offer.calculator.presets %}
+      <div class="field"><span class="lbl">Start from a typical facility</span>
+        <div class="presets" role="group" aria-label="Typical facilities">{% for preset in offer.calculator.presets %}<button type="button" data-preset="{{ loop.index0 }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ preset.label }}<small>{% if preset.description %}{{ preset.description }}{% else %}About {{ preset.daily_patients }} patients a day{% endif %}</small></button>{% endfor %}</div></div>
+      {% endif %}
+      <div class="field"><span class="lbl">Facility level</span>
+        <div class="seg" role="group" aria-label="Facility level"><button type="button" data-level="Level 2" aria-pressed="true">Level 2</button><button type="button" data-level="Level 3" aria-pressed="false">Level 3</button></div></div>
+      <div class="row2">
+        <div class="field"><label for="c-ppd">Patients per day</label><input id="c-ppd" type="number" min="1" max="500" value="10" inputmode="numeric"></div>
+        <div class="field"><label for="c-days">Operating days / month</label><input id="c-days" type="number" min="1" max="31" value="{{ offer.calculator.operating_days or 24 }}" inputmode="numeric"></div>
+      </div>
+      <div class="field"><label for="c-bill">Average patient bill ({{ cur }})</label><input id="c-bill" type="number" min="0" step="50" value="{{ (offer.calculator.avg_bill or 1500)|int }}" inputmode="numeric"></div>
+      <details class="tune"><summary>Fine-tune the services your patients use</summary>
+        <p class="hint">Share of patients who use each service. Leave these as they are if you're not sure.</p>
+        <div class="mix" id="mix"></div></details>
+    </form>
+
+    <div class="panel result" aria-live="polite">
+      <span class="lbl">Estimated monthly need</span>
+      <div class="total"><b id="r-total" class="mono">0</b><span>tokens / month</span></div>
+      <div class="bars" id="r-bars"></div>
+      <div class="legend" id="r-legend"></div>
+      <div class="cmpcost{% if not fixed %} single{% endif %}">
+        <div id="r-flexbox"><span class="lbl">Flex</span><b id="r-flex">—</b><small id="r-flexnote"></small></div>
+        {% if fixed %}<div id="r-fixbox"><span class="lbl">Fixed</span><b id="r-fix">—</b><small id="r-fixnote">Same amount every month</small></div>{% endif %}
+      </div>
+      <div class="verdict"><b id="r-verdict"></b><p id="r-why" style="margin-top:6px;opacity:.9;font-size:.93rem"></p></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px"><a class="btn primary" id="r-go" href="{{ onboarding_url }}">Get started</a><a class="btn ghost" href="#contact">Ask our team</a><small class="gonote" id="r-gonote"></small></div>
+      <p class="disclaim">Estimates use the current token schedule and are indicative only. Actual use depends on completed service-point transactions and patient bill values. Prices exclude VAT.</p>
+    </div>
+  </div>
+</div></section>
+
+<section class="band alt" id="contact"><div class="wrap contact">
+  <div class="stack">
+    <span class="eyebrow"><span class="secno">08</span>Need guided onboarding support?</span>
+    <h2>Talk to the Value Express team</h2>
+    <p class="lede">Our team helps facilities with onboarding, packages and going live.{% if landing.phones %} Call us{% if landing.hours %} during office hours{% endif %}, or send a message and we'll get back to you.{% else %} Send a message and we'll get back to you.{% endif %}</p>
+    {% if landing.phones or landing.hours or landing.email %}
+    <div class="panel" style="padding:18px" data-testid="contact-details">
+      {% if landing.phones %}<span class="lbl">Call us</span><ul class="call" style="list-style:none;padding:0;margin:4px 0 0">{% for phone in landing.phones %}<li><a class="mono" href="tel:{{ phone.tel }}">{{ phone.label }}</a></li>{% endfor %}</ul>{% endif %}
+      {% if landing.hours %}<span class="lbl" style="display:block;margin-top:12px">Office hours</span><p style="margin-top:4px">{{ landing.hours }}</p>{% endif %}
+      {% if landing.email %}<span class="lbl" style="display:block;margin-top:12px">Email</span><p style="margin-top:4px"><a href="mailto:{{ landing.email }}">{{ landing.email }}</a></p>{% endif %}
+      <span class="lbl" style="display:block;margin-top:12px">Remote support</span><p style="margin-top:4px">24/7 for live facilities</p>
+    </div>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <form class="cform" id="contactForm" novalidate>
+      <div class="row2">
+        <div class="field"><label for="f-name">Your name</label><input id="f-name" name="full_name" required autocomplete="name" maxlength="140" aria-describedby="f-name-err"><p class="field-error" id="f-name-err" hidden></p></div>
+        <div class="field"><label for="f-phone">Phone number <small>(optional)</small></label><input id="f-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" placeholder="07XX XXX XXX"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="f-email">Email</label><input id="f-email" name="email" type="email" required autocomplete="email" maxlength="140" aria-describedby="f-email-err"><p class="field-error" id="f-email-err" hidden></p></div>
+        <div class="field"><label for="f-fac">Facility name <small>(optional)</small></label><input id="f-fac" name="organization" autocomplete="organization" maxlength="140"></div>
+      </div>
+      <div class="field"><label for="f-topic">How can we help?</label>
+        <select id="f-topic" name="topic">{% for topic in contact_topics %}<option value="{{ topic }}">{{ topic }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="f-msg">Message</label><textarea id="f-msg" name="message" rows="4" required maxlength="2000" aria-describedby="f-msg-err"></textarea><p class="field-error" id="f-msg-err" hidden></p></div>
+      <div class="hp" aria-hidden="true"><label for="f-web">Website</label><input id="f-web" name="website" tabindex="-1" autocomplete="off"></div>
+      <button class="btn primary" type="submit" style="justify-self:start">Send message</button>
+      <p class="status" id="contact-status" role="alert"></p>
+    </form>
+    <div class="done" id="contact-done" hidden tabindex="-1">Thank you, your message is with our team. We'll get back to you by email or phone. <button class="btn link" type="button" id="contact-again">Send another message</button></div>
+  </div>
+</div></section>
+</main>
+
+<section id="terms" style="padding-block:36px"><div class="wrap"><details class="rules"><summary>Commercial notes and terms</summary><ol class="rulelist">
+  <li>Prices and package allocations are subject to the applicable quotation, order form or onboarding record.</li>
+  <li>Applicable statutory taxes are added where required.</li>
+  <li>Token schedules, transaction applicability and promotional bonuses may only be varied through published terms or a written commercial agreement.</li>
+  <li>Go-live timing depends on successful facility verification, payment, configuration and user readiness.</li>
+  <li>The exact scope of DHA HIE connectivity and SHA eClaims functionality is subject to applicable national interfaces, accreditation requirements and platform availability.</li>
+  <li>The full Terms and Conditions are shown, and must be accepted, before you submit your onboarding request.</li>
+</ol></details></div></section>
+<footer><div class="wrap"><span class="lockup" style="color:var(--navy)">{% with clip_id = "tbclip-foot" %}{% include "templates/includes/value_express/wordmark.html" %}{% endwith %}</span><span>CareverseHIMS Value Express · Prices in {{ cur }}, excluding VAT</span><span class="footlinks">{% if landing.certificate_url %}<a href="{{ landing.certificate_url }}" target="_blank" rel="noopener">DHA certificate</a>{% endif %}<a href="/opt-in">Network Opt-In</a><a href="{{ signin_link }}">Sign in</a><a href="/login?redirect-to=/crm">Staff access</a></span></div></footer>
+
+<script type="application/json" id="vx-offer">{{ {"calculator": offer.calculator, "custom": offer.custom, "onboarding": onboarding_url, "currency": cur} | tojson }}</script>
+<script>
+(function(){
+  var data = JSON.parse(document.getElementById('vx-offer').textContent);
+  var C = data.calculator || {}, ONB = data.onboarding, CUR = data.currency;
+  var fmt = function(n){ return Math.round(n).toLocaleString('en-KE'); };
+  var $ = function(id){ return document.getElementById(id); };
+  var COLORS = ['var(--navy)','#7a8aa8','#e3912b','#2f9e8f','#8e63d6','#c95c8a','#5b8fd6','#9a7b4f'];
+
+  // ---- deep links into collapsed blocks open them
+  var opener = {'#terms':'#terms details','#flex-rules':'#flex-rules'}[location.hash];
+  if (opener) document.querySelector(opener).open = true;
+
+  // ---- calculator: the published token schedule, the Flex packages and the Fixed fee by level
+  var SP = (C.service_points || []).map(function(p, i){
+    return {id: p.id, name: p.name, tokens: +p.tokens || 0, freq: Math.round((+p.default_frequency || 0) * 100), always: (+p.default_frequency || 0) >= 1, c: COLORS[i % COLORS.length]};
+  });
+  var PKGS = (C.packages || []).slice().sort(function(a, b){ return a.price - b.price; });
+  var FIXED = C.fixed || {};
+  var ACCESS = +C.access || 0, PER_BILL = +C.bill_value_per_token || 1;
+  var level = 'Level 2';
+  var mix = $('mix');
+  var setLevel = function(l){ level = l; document.querySelectorAll('[data-level]').forEach(function(x){ x.setAttribute('aria-pressed', x.dataset.level === l); }); };
+  var clearPreset = function(){ document.querySelectorAll('[data-preset]').forEach(function(x){ x.setAttribute('aria-pressed', 'false'); }); };
+  SP.forEach(function(s){
+    if (s.always) return;
+    var d = document.createElement('div'); d.className = 'm';
+    d.innerHTML = '<label for="mx-' + s.id + '"></label><input id="mx-' + s.id + '" type="range" min="0" max="100" step="5"><output for="mx-' + s.id + '"></output>';
+    d.querySelector('label').textContent = s.name;
+    var small = document.createElement('small'); small.textContent = s.tokens + ' tokens each'; d.querySelector('label').appendChild(small);
+    mix.appendChild(d);
+    s.el = d.querySelector('input'); s.out = d.querySelector('output');
+    s.el.value = s.freq; s.out.textContent = s.freq + '%';
+    s.el.addEventListener('input', function(){ s.freq = +s.el.value; s.out.textContent = s.el.value + '%'; clearPreset(); calc(); });
+  });
+  function applyPreset(i){
+    var p = (C.presets || [])[i]; if (!p) return;
+    setLevel(p.facility_level || (p.facility_type === 'ipd' ? 'Level 3' : 'Level 2'));
+    $('c-ppd').value = p.daily_patients || 10;
+    $('c-days').value = p.operating_days || C.operating_days || 24;
+    $('c-bill').value = p.avg_bill || C.avg_bill || 1500;
+    document.querySelectorAll('[data-preset]').forEach(function(x){ x.setAttribute('aria-pressed', +x.dataset.preset === +i); });
+    calc();
+  }
+  document.querySelectorAll('[data-preset]').forEach(function(b){ b.onclick = function(){ applyPreset(b.dataset.preset); }; });
+  document.querySelectorAll('[data-level]').forEach(function(b){ b.onclick = function(){ setLevel(b.dataset.level); clearPreset(); calc(); }; });
+  ['c-ppd','c-days','c-bill'].forEach(function(id){ $(id).addEventListener('input', function(){ clearPreset(); calc(); }); });
+
+  function calc(){
+    if (!PKGS.length) return;
+    var ppd = Math.max(0, +$('c-ppd').value || 0);
+    var days = Math.min(31, Math.max(0, +$('c-days').value || 0));
+    var bill = Math.max(0, +$('c-bill').value || 0);
+    var patients = ppd * days;
+    var parts = SP.map(function(s){ return {name: s.name, c: s.c, v: patients * s.tokens * s.freq / 100}; });
+    var billTok = patients * Math.ceil(bill / PER_BILL);
+    var used = parts.reduce(function(a, p){ return a + p.v; }, 0) + billTok;
+    var total = Math.ceil(used + ACCESS);
+    $('r-total').textContent = fmt(total);
+    var segs = [{name: 'System access', v: ACCESS, c: 'var(--red)'}].concat(parts.filter(function(p){ return p.v > 0; }), [{name: 'Patient bill', v: billTok, c: '#b8a24a'}]);
+    $('r-bars').innerHTML = ''; $('r-legend').innerHTML = '';
+    segs.forEach(function(s){
+      var bar = document.createElement('span'); bar.style.width = (s.v / total * 100).toFixed(2) + '%'; bar.style.background = s.c; bar.title = s.name + ': ' + fmt(s.v); $('r-bars').appendChild(bar);
+      var key = document.createElement('span'); var dot = document.createElement('i'); dot.style.background = s.c; key.appendChild(dot); key.appendChild(document.createTextNode(s.name + ' ' + fmt(s.v))); $('r-legend').appendChild(key);
+    });
+    // Flex: price the month at the rate of the smallest package that covers it (the largest package above that).
+    var pkg = PKGS.filter(function(p){ return p.tokens >= total; })[0] || PKGS[PKGS.length - 1];
+    var rate = pkg.price / pkg.tokens, flexCost = total * rate, fixCost = FIXED[level];
+    var months = pkg.tokens / total, biggest = PKGS[PKGS.length - 1];
+    $('r-flex').textContent = CUR + ' ' + fmt(flexCost) + '/mo';
+    $('r-flexnote').textContent = total <= biggest.tokens
+      ? pkg.name + ' (' + fmt(pkg.tokens) + ' tokens, ' + CUR + ' ' + fmt(pkg.price) + ') lasts about ' + (months >= 1 ? months.toFixed(1) + ' months' : Math.round(months * days) + ' operating days')
+      : 'More than ' + biggest.name + ' covers. ' + biggest.name + ' plus top-ups at ' + CUR + ' ' + rate.toFixed(2) + '/token';
+    var perPatient = used / (patients || 1);
+    var flexWins = !fixCost || flexCost < fixCost;
+    var near = fixCost && flexWins && flexCost >= 0.85 * fixCost;
+    if ($('r-fix')) {
+      $('r-fix').textContent = fixCost ? CUR + ' ' + fmt(fixCost) + '/mo' : '—';
+      $('r-fixnote').textContent = level + ' · same amount every month';
+      $('r-flexbox').classList.toggle('win', flexWins);
+      $('r-fixbox').classList.toggle('win', !flexWins);
+    }
+    var bigRate = biggest.price / biggest.tokens;
+    var be = fixCost ? ((fixCost / bigRate) - ACCESS) / (perPatient || 1) / (days || 1) : 0;
+    $('r-verdict').textContent = !flexWins ? 'Value Express Fixed costs less for you' : near ? 'Flex ' + pkg.name + " works, but you're close to the Fixed price" : 'Start with Value Express Flex ' + pkg.name;
+    $('r-why').textContent = !flexWins
+      ? 'At about ' + perPatient.toFixed(1) + ' tokens per patient, Flex would cost more than ' + CUR + ' ' + fmt(fixCost) + ' a month. Fixed is cheaper above roughly ' + Math.max(1, Math.round(be)) + ' patients a day, with no balances to monitor or top-ups to make.'
+      : near
+      ? 'Your estimated Flex spend is within 15% of the ' + level + ' Fixed fee of ' + CUR + ' ' + fmt(fixCost) + '. If your volumes are steady, Fixed gives you the same cost every month with no top-ups.'
+      : 'Each patient uses about ' + perPatient.toFixed(1) + ' tokens, plus ' + fmt(ACCESS) + ' tokens a month for system access.' + (fixCost ? ' That costs less than the ' + level + ' Fixed fee.' : '');
+    // carry the result into onboarding
+    $('r-go').href = flexWins ? ONB + '?plan=flex&package=' + encodeURIComponent(pkg.item_code) : ONB + '?plan=fixed';
+    $('r-gonote').textContent = 'Opens onboarding with Value Express ' + (flexWins ? 'Flex ' + pkg.name : 'Fixed') + ' preselected.';
+  }
+  if ((C.presets || []).length) applyPreset(0); else calc();
+
+  // ---- Custom: priced at the published rate of the highest package the amount reaches
+  var CU = data.custom, cuIn = $('cu-kes');
+  function custom(){
+    var kes = Math.max(0, Math.floor(+cuIn.value || 0));
+    var tiers = CU.tiers, tier = tiers[0];
+    tiers.forEach(function(t){ if (kes >= t.from_amount) tier = t; });
+    // Whole cents so the tokens match the server's rounding.
+    var tokens = Math.floor(Math.round(kes * 100) / Math.round(tier.rate * 100)), bad = tokens < CU.min_tokens;
+    cuIn.setAttribute('aria-invalid', bad); $('cu-err').hidden = !bad;
+    $('cu-t').textContent = bad ? '—' : fmt(tokens);
+    $('cu-j').textContent = bad ? '—' : fmt(Math.floor(tokens / 40));
+    $('cu-r').textContent = CU.currency + ' ' + tier.rate.toFixed(2);
+    $('cu-c').textContent = bad ? '—' : CU.currency + ' ' + (tokens * tier.rate).toLocaleString('en-KE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    $('cu-tier').textContent = tier.name + ' rate · no first-purchase bonus';
+    var go = $('cu-go'); go.href = ONB + '?plan=custom&amount=' + kes;
+    if (bad) { go.setAttribute('aria-disabled', 'true'); go.style.pointerEvents = 'none'; go.style.opacity = .5; }
+    else { go.removeAttribute('aria-disabled'); go.style.pointerEvents = ''; go.style.opacity = ''; }
+  }
+  if (CU && cuIn) { cuIn.addEventListener('input', custom); custom(); }
+
+  // ---- section nav: highlight the section in view and show reading progress
+  var nav = document.querySelector('nav.top'), hdr = document.querySelector('header.site');
+  var links = Array.prototype.slice.call(nav.querySelectorAll('a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+  var last = null;
+  var onScroll = function(){
+    var y = window.scrollY + 140, cur = null;
+    secs.forEach(function(s){ if (s.getBoundingClientRect().top + window.scrollY <= y) cur = s; });
+    var id = cur ? '#' + cur.id : null;
+    if (id !== last) {
+      last = id;
+      links.forEach(function(a){ a.classList.toggle('on', a.getAttribute('href') === id); });
+      var on = links.filter(function(a){ return a.classList.contains('on'); })[0];
+      if (on && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = on.offsetLeft - nav.offsetLeft - 16;
+    }
+    var h = document.documentElement.scrollHeight - window.innerHeight;
+    hdr.style.setProperty('--p', (h > 0 ? Math.min(100, window.scrollY / h * 100) : 0) + '%');
+  };
+  window.addEventListener('scroll', onScroll, {passive: true}); onScroll();
+
+  // ---- contact form: creates a CRM Lead and emails the Value Express team
+  var form = $('contactForm'), status = $('contact-status'), done = $('contact-done');
+  var topic = $('f-topic');
+  document.querySelectorAll('[data-topic]').forEach(function(a){ a.addEventListener('click', function(){ topic.value = a.dataset.topic; }); });
+  var rules = {
+    full_name: function(v){ return v ? '' : 'Enter your name.'; },
+    email: function(v, input){ return !v ? 'Enter your email address.' : (input.checkValidity() ? '' : 'Enter an email address like name@example.com.'); },
+    message: function(v){ return v ? '' : 'Tell us how we can help.'; }
+  };
+  var check = function(name){
+    var input = form.elements[name], text = rules[name](input.value.trim(), input), error = $(input.id + '-err');
+    input.setAttribute('aria-invalid', text ? 'true' : 'false');
+    if (error) { error.textContent = text; error.hidden = !text; }
+    return text;
+  };
+  Object.keys(rules).forEach(function(name){
+    form.elements[name].addEventListener('input', function(){ if (form.elements[name].getAttribute('aria-invalid') === 'true') check(name); });
+  });
+  form.addEventListener('submit', function(event){
+    event.preventDefault();
+    status.textContent = ''; status.className = 'status';
+    var first = null;
+    Object.keys(rules).forEach(function(name){ if (check(name) && !first) first = form.elements[name]; });
+    if (first) { first.focus(); return; }
+    var button = form.querySelector('button[type=submit]');
+    button.disabled = true; button.textContent = 'Sending…';
+    fetch('/api/method/crm.api.landing.submit_contact', {method: 'POST', headers: {'Accept': 'application/json'}, body: new FormData(form)})
+      .then(function(response){
+        return response.json().catch(function(){ return {}; }).then(function(body){
+          if (response.ok) return;
+          var text = response.status === 429 ? 'Too many messages from this connection. Please call us instead.' : 'We could not send your message. Check the details or call us.';
+          try { var server = JSON.parse(JSON.parse(body._server_messages || '[]')[0] || '{}').message; if (server && response.status === 417) text = server; } catch (e) {}
+          throw new Error(text);
+        });
+      })
+      .then(function(){ form.reset(); form.hidden = true; done.hidden = false; done.focus(); })
+      .catch(function(error){ status.textContent = error.message; status.classList.add('err'); })
+      .finally(function(){ button.disabled = false; button.textContent = 'Send message'; });
+  });
+  $('contact-again').addEventListener('click', function(){ done.hidden = true; form.hidden = false; form.elements.full_name.focus(); });
+})();
+</script>
 </body>
 </html>
