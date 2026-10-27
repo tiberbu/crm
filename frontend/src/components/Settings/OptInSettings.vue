@@ -151,6 +151,28 @@
               "
               @update:modelValue="markDirty"
             />
+            <FormControl
+              v-model="form.welcome_bonus_tokens"
+              :label="__('First-purchase bonus tokens')"
+              type="number"
+              :description="
+                __(
+                  'Complimentary tokens added once per facility to its first paid package. 0 turns the bonus off.',
+                )
+              "
+              @update:modelValue="markDirty"
+            />
+            <FormControl
+              v-model="form.partner_coupon_tokens"
+              :label="__('Partner Coupon tokens')"
+              type="number"
+              :description="
+                __(
+                  'Complimentary tokens for a facility onboarded with a Partner Coupon, added once to a paid package. 0 turns it off.',
+                )
+              "
+              @update:modelValue="markDirty"
+            />
           </div>
         </div>
         <div
@@ -609,6 +631,8 @@ const form = reactive({
   self_onboarding_allowed_facility_levels: '',
   token_sales_order_validity_days: 30,
   token_invoice_due_days: 30,
+  welcome_bonus_tokens: 0,
+  partner_coupon_tokens: 0,
   token_packages: [],
 })
 

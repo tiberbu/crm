@@ -705,6 +705,8 @@ def get_optin_settings():
 		or "",
 		"token_sales_order_validity_days": int(settings.get("token_sales_order_validity_days") or 30),
 		"token_invoice_due_days": int(settings.get("token_invoice_due_days") or 30),
+		"welcome_bonus_tokens": frappe.utils.cint(settings.get("welcome_bonus_tokens")),
+		"partner_coupon_tokens": frappe.utils.cint(settings.get("partner_coupon_tokens")),
 		"token_packages": token_packages,
 	}
 
@@ -743,6 +745,19 @@ def update_optin_settings(settings: Any):
 	)
 	token_sales_order_validity_days = int(settings.get("token_sales_order_validity_days") or 30)
 	token_invoice_due_days = int(settings.get("token_invoice_due_days") or 30)
+	bonus_tokens = {}
+	for fieldname, label in (
+		("welcome_bonus_tokens", _("First-purchase bonus tokens")),
+		("partner_coupon_tokens", _("Partner Coupon tokens")),
+	):
+		if fieldname not in settings:
+			continue
+		try:
+			bonus_tokens[fieldname] = int(settings.get(fieldname) or 0)
+		except (TypeError, ValueError):
+			bonus_tokens[fieldname] = -1
+		if not 0 <= bonus_tokens[fieldname] <= 1_000_000:
+			frappe.throw(_("{0} must be a whole number from 0 to 1,000,000.").format(label))
 	token_packages = settings.get("token_packages") or []
 	if tiberbu_signing_requirement not in ("All must sign", "At least one must sign"):
 		frappe.throw(_("Choose whether all Tiberbu signatories or at least one must sign."))
@@ -885,6 +900,9 @@ def update_optin_settings(settings: Any):
 		doc.self_onboarding_allowed_facility_levels = allowed_facility_levels
 	if frappe.get_meta("CRM Opt-In Settings").has_field("token_price_list"):
 		doc.token_sales_order_validity_days = token_sales_order_validity_days
+		for fieldname, value in bonus_tokens.items():
+			if doc.meta.has_field(fieldname):
+				doc.set(fieldname, value)
 		doc.token_invoice_due_days = token_invoice_due_days
 		doc.set("token_packages", normalized_token_packages)
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
