@@ -160,19 +160,52 @@ no screen shows an MFL code without the Facility ID (the Health Facility Registr
 | Desk · Organization, Lead, Deal facility rows; HFR search panel | MFL only | Facility ID chip beside MFL |
 | Desk · Pre-qualified facilities table, Network detail facility rows | MFL only | Facility ID (API now returns `hfr_facility_id`; search matches it) |
 
-Left MFL-only on purpose, because these screens don't have a Facility ID to show:
-- **Desk, input-only:** Network detail "add facility" form and CSV import preview. The MFL code
-  is what is typed in or uploaded, before any registry match.
-- **Opt-in invite screens:** facility selection and review. They work from the network's
-  invite records, which don't carry a FID.
-- **Desk · Deal quoting tab:** facility rows come from the quote, which doesn't carry a FID.
-- **Desk · Opt-in submissions:** the facility MFL column and its "Duplicate MFL" badge.
-- **Finance cockpit setup form:** the `mfl_code` field.
-
-Adding the Facility ID to these needs backend data changes, so they are left as a follow-up.
-`FacilityDrawer.vue` was not changed because nothing renders it.
+The screens first left MFL-only are covered by Addendum 2 below.
 
 ### Results
 - Python `crm.tests.test_optin_admin`: 37 passed. Vitest: 220 passed. Build passes.
 - Playwright `e2e/onboarding-ux`: 4 passed (adds Facility ID checks: table header, row FID, page
   header, onboarding cards and search). `frontend/e2e/regression`: 13 passed.
+
+## Addendum 2: Facility ID in every workflow, pricing summaries as checklists (2026-10-27)
+
+Maintainer rule: **the Facility ID is expected in every CRM workflow.** No screen may show an MFL
+code alone, and nothing is deferred to a follow-up.
+
+- **D11 One source of the Facility ID for MFL-only records.** `crm.utils.facility_ids.facility_ids_by_mfl`
+  reads it from the pre-qualified facility register, where HFR lookups, CSV imports and
+  onboarding store it.
+  - APIs that build facility payloads add `hfr_facility_id` themselves: the opt-in OTP
+    verification, the stored opt-in submission, the CSV import preview and `lookup_hfr`.
+  - Screens that read stored documents directly (Deal quoting tab, opt-in submissions and
+    dashboard, finance documents) use `crm.api.facility_ids.get_facility_ids`, through the
+    `useFacilityIds` composable.
+- **D12 Security (Vex).** `get_facility_ids` is for signed-in System Users only (guests and
+  website users are refused) and accepts at most 500 codes per call. The guest opt-in flow
+  gets Facility IDs only from its own OTP-verified response, not from this endpoint.
+- **D13 Capturing the Facility ID.**
+  - The Network detail "add facility" form shows a read-only Facility ID that Lookup HFR fills in.
+  - `save_facility` stores it, and a blank value never clears a stored one.
+  - The CSV import accepts an optional `hfr_facility_id` column, now included in the template.
+  - The finance setup form for a pre-qualified facility has a Facility ID field.
+- **D14 Pricing summaries (Sally).** Package summaries on Plans & Pricing show as a checklist,
+  one sentence per line (`summaryLines`).
+  - Decimal points such as "KES 6.00/token" do not split a line.
+  - The closing full stop is dropped.
+  - An inline "•" reads as a comma, so a line does not wrap on a bullet.
+
+### Screens added in this round
+Opt-in invite steps (facility selection, pricing, review, success); the portal's opt-in
+requests; the Deal quoting tab (column renamed to "Facility ID"); the opt-in submissions list;
+the opt-in dashboard; finance document facility links; the Network detail add form and CSV
+preview (column renamed to "Facility ID"); the finance setup form; the unused portal drawer.
+
+Code that still uses MFL codes without showing them is internal matching only: `StepTerms`,
+`useHfrSearch` and `portalOrderState`.
+
+### Results
+- Python `test_facility_ids` (4 new) and `test_optin_admin`: 41 passed.
+- Opt-in and portal suites: the same 4 failures before and after this change, none new.
+- Vitest: 221 passed. Build passes.
+- Playwright `e2e/onboarding-ux`: 4 passed, including the checklist check (more than one line per
+  card, no line holding two sentences, no trailing full stop). `frontend/e2e/regression`: 13 passed.
