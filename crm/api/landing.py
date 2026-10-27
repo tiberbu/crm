@@ -115,4 +115,36 @@ def submit_contact(
 		}
 	).insert(ignore_permissions=True)
 
+	_notify_team(lead.name, full_name, email, phone, organization, topic, message)
 	return {"ok": True}
+
+
+def _notify_team(lead, full_name, email, phone, organization, topic, message):
+	"""Email the enquiry to the Contact Email in CRM Opt-In Settings, when one is set."""
+	recipient = cstr(frappe.db.get_single_value("CRM Opt-In Settings", "landing_contact_email")).strip()
+	if not recipient or not validate_email_address(recipient):
+		return
+	rows = (
+		(_("Name"), full_name),
+		(_("Email"), email),
+		(_("Phone"), phone),
+		(_("Facility or organisation"), organization),
+		(_("Topic"), topic),
+	)
+	details = "".join(
+		"<tr><th align='left'>%s</th><td>%s</td></tr>" % (escape_html(label), escape_html(value))
+		for label, value in rows
+		if value
+	)
+	try:
+		frappe.sendmail(
+			recipients=[recipient],
+			reply_to=email,
+			subject=_("Website enquiry: {0} ({1})").format(topic, full_name),
+			message="<table>%s</table><p>%s</p>" % (details, escape_html(message).replace("\n", "<br>")),
+			reference_doctype="CRM Lead",
+			reference_name=lead,
+		)
+	except Exception:
+		# The Lead and its note already hold the enquiry; a missing mail setup must not lose it.
+		frappe.log_error(title="Landing enquiry email", message="lead=%s" % lead)
