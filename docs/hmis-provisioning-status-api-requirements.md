@@ -67,11 +67,10 @@ If any OpenMeter step fails, CRM does not send the POST. The portal shows setup 
 | `billing_model` | `Token` | `License` is not sent today |
 | `auto_deploy` | Always `true` | D2 |
 | `token_source` | `"openmeter"` | Token-based plans |
-| `token_purchase_url` | CRM HFR Settings → Token Purchase URL, else CRM's CX portal | Token-based plans |
 | `metering_site_key` | Issued by the metering app in step 1 above | Token-based plans; format `omk2.<FID>.<secret>` |
 | `facility_name`, `facility_level`, `county`, `sub_county` | HFR facility data | Optional, sent when known |
 
-CRM does **not** send `tokens_awarded` or `token_expiry_date` (D1).
+CRM does **not** send `tokens_awarded`, `token_expiry_date` or a token purchase link (D1). Tokens are bought in the CRM CX portal only.
 
 CRM blocks the request itself if any field it must send is missing or invalid, and shows which ones.
 
@@ -84,8 +83,7 @@ The setup service must:
 1. Accept a `billing_model: "Token"` request without `tokens_awarded` and `token_expiry_date`.
 2. Create no local token balance and no token expiry. Tokens do not expire; only an exhausted balance stops clinical work.
 3. Deliver `metering_site_key` to the new site in the signed `update_license` push, so the site reaches OpenMeter at first boot.
-4. Store `token_purchase_url` on the site. HMIS shows it when tokens run out. Purchases happen in the CRM CX portal, not in HMIS.
-5. Reject a token-based request without `metering_site_key`, naming the field.
+4. Reject a token-based request without `metering_site_key`, naming the field.
 
 ### 2.4 Responses CRM handles
 
@@ -235,7 +233,7 @@ CRM `develop` does not yet do the following:
 
 | # | Change | Today on develop |
 |---|---|---|
-| CRM-P1 | Stop sending `tokens_awarded` and `token_expiry_date` for token-based plans | Sends the package quantity and onboarding + 30 days, unless the OpenMeter setting is on (then `tokens_awarded: 0`) |
+| CRM-P1 | Stop sending `tokens_awarded`, `token_expiry_date` and `token_purchase_url` for token-based plans | Sends the package quantity and onboarding + 30 days; with the OpenMeter setting on, sends `tokens_awarded: 0` and `token_purchase_url` |
 | CRM-P2 | Make OpenMeter the only token source for token-based plans | Behind CRM HFR Settings → Use OpenMeter as the HMIS Token Source, off by default |
 | CRM-P3 | Grant the free plan in OpenMeter before the POST, and block the POST if it fails | The site key is issued before the POST; the free plan is granted by a hook after acceptance |
 | CRM-P4 | Send `auto_deploy: true` | Not sent |
@@ -246,7 +244,7 @@ CRM already reads S1–S3, S8–S10 and the `status` words in §4.
 
 ## 9. Rollout order
 
-1. The setup service accepts token-based requests without `tokens_awarded` and `token_expiry_date`, and accepts `token_source`, `token_purchase_url`, `metering_site_key` and `auto_deploy` (§2).
+1. The setup service accepts token-based requests without `tokens_awarded` and `token_expiry_date`, and accepts `token_source`, `metering_site_key` and `auto_deploy` (§2).
 2. The metering app's hooks (OMM-32, OMM-33) and HMIS's balance pull from OpenMeter (HMIS-H1) are live.
 3. CRM ships CRM-P1 to CRM-P5. Sending the new payload before step 1 would make the setup service reject every request for the missing token fields.
 4. Status fields (§4, §5) and CRM-P6 follow one at a time, in either order.
