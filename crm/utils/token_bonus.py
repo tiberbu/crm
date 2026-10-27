@@ -92,11 +92,23 @@ def eligible_bonuses(customer: str, facility_mfl: str, exclude_order: str | None
 	return lines
 
 
+def _earns_bonus(package_item: str | None) -> bool:
+	"""Bonus tokens come with the Flex packages only, not a Custom amount or a Fixed fee."""
+	plan = frappe.db.get_value(
+		"CRM Token Package",
+		{"parenttype": "CRM Opt-In Settings", "item_code": cstr(package_item).strip()},
+		"plan",
+	)
+	return (plan or "Flex") == "Flex"
+
+
 def apply_bonus_lines(order) -> list[dict]:
 	"""Replace the order's complimentary lines with the ones the facility is eligible for now."""
 	if not _installed():
 		return []
 	order.set("items", [row for row in order.items if not row.get("crm_bonus_type")])
+	if not _earns_bonus(order.get("crm_token_package_item")):
+		return []
 	bonuses = eligible_bonuses(order.customer, order.get("crm_token_facility_mfl"), exclude_order=order.name)
 	if not bonuses:
 		return []

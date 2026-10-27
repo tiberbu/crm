@@ -2,7 +2,7 @@ import { expect, Locator, Page, test } from "@playwright/test";
 
 /**
  * Package cards fill the content width: one column per package (up to four), no empty
- * column and no orphaned last card. Checked on the home page, the Express package step
+ * column and no orphaned last card. Checked on the home page Flex packages, the onboarding package step
  * (identity, OTP and catalog calls are mocked; the page and its CSS are real), and, when
  * E2E_OWNER_PASSWORD is set, the CX portal pricing view.
  */
@@ -64,28 +64,27 @@ for (const width of WIDTHS) {
 
     test("home page pricing cards span the content width", async ({ page }) => {
       await page.goto("/");
-      const grid = page.locator("#pricing ul.plans");
+      const grid = page.locator("#flex-packages .pkgs");
       test.skip(!(await grid.count()), "No token packages are published on this site");
       await grid.scrollIntoViewIfNeeded();
-      await expectRowSpansGrid(grid, grid.locator("> li.plan"), width);
+      await expectRowSpansGrid(grid, grid.locator("> .pkg"), width);
     });
 
     test("Express package cards span the content width", async ({ page }) => {
       await mockExpress(page);
       await page.goto("/facility-onboarding");
-      const submit = page.locator('form button:not([type="button"])').last();
-      await page.getByRole("button", { name: /Start your onboarding/ }).first().click();
       await page.getByPlaceholder("Enter your ID number").fill("12345678");
-      await page.getByRole("button", { name: /Find my facilities/ }).click();
+      await page.getByRole("button", { name: /Verify & Find My Facility/ }).click();
+      const submit = page.getByRole("button", { name: "Verify code" });
       const digits = page.locator('form input[inputmode="numeric"]');
       await expect(digits).toHaveCount(6);
       for (const [index, digit] of [..."123456"].entries()) await digits.nth(index).fill(digit);
       await submit.click();
       await page.locator('form input[type="checkbox"]').first().check();
-      await page.getByRole("button", { name: /Continue to packages/ }).click();
+      await page.getByRole("button", { name: /Continue to Packages/ }).click();
       const grid = page.getByTestId("package-grid");
-      await expect(grid.locator("> article")).toHaveCount(PACKAGES.length);
-      await expectRowSpansGrid(grid, grid.locator("> article"), width);
+      await expect(grid.locator("> .pkg")).toHaveCount(PACKAGES.length);
+      await expectRowSpansGrid(grid, grid.locator("> .pkg"), width);
       await page.screenshot({ path: test.info().outputPath(`express-${width}.png`), fullPage: false });
     });
 

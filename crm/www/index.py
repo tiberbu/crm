@@ -1,6 +1,6 @@
-"""Public Tiberbu Express landing page.
+"""Public CareverseHIMS Value Express landing page.
 
-Guests see the facility-owner welcome page; logged-in users are routed to the
+Guests see the Value Express sales page; logged-in users are routed to the
 experience permitted for their account.
 
 Root-resolution note: `home_page = "index"` alone is NOT enough — Frappe's
@@ -13,11 +13,17 @@ this redirect actually runs for workspace-having users, closing a desk-fence byp
 import frappe
 from frappe import _
 
-from crm.api.landing import CONTACT_TOPICS, get_landing_settings, get_pricing_preview
+from crm.api.landing import CONTACT_TOPICS, get_landing_settings, get_value_express_offer
 from crm.api.website_redirect import get_portal_route
 from crm.branding import apply_brand_context, get_configured_app_brand
 
 no_cache = True
+
+ONBOARDING = "/facility-onboarding"
+
+
+def _amount(value) -> str:
+	return "{:,.0f}".format(float(value or 0))
 
 
 def get_context(context):
@@ -30,21 +36,18 @@ def get_context(context):
 	context.no_cache = 1
 	context.no_header = True
 	context.no_breadcrumbs = True
-	context.title = _("Tiberbu Express — Onboard yourself and start sending claims")
+	context.title = _("CareverseHIMS Value Express: get digital, get SHA ready")
 	apply_brand_context(context, brand, surface="splash")
 
-	context.cta_text = "Start onboarding"
-	context.cta_link = "/facility-onboarding"
-	context.cta_secondary_text = "Already onboarded? Sign in"
-	context.cta_secondary_link = "/login?redirect-to=/cx-portal"
-
+	context.onboarding_url = ONBOARDING
+	context.signin_link = "/login?redirect-to=/cx-portal"
 	context.landing = get_landing_settings()
 	context.contact_topics = CONTACT_TOPICS
+	context.amount = _amount
 	try:
-		context.plans = get_pricing_preview()
+		context.offer = get_value_express_offer()
 	except Exception:
-		# The pricing preview is a hint; never let catalog problems take the landing page down.
-		frappe.log_error(title="Landing page pricing preview")
-		context.plans = []
-
+		# Prices are a hint here; never let catalogue problems take the landing page down.
+		frappe.log_error(title="Landing page Value Express offer")
+		context.offer = {"flex": [], "fixed": [], "custom": None, "from_price": 0, "currency": "KES", "calculator": {}}
 	return context

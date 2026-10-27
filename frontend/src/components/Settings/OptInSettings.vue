@@ -248,7 +248,7 @@
               <input
                 v-model="pkg.token_quantity"
                 type="number"
-                min="1"
+                :min="pkg.plan === 'Fixed' ? 0 : 1"
                 class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
                 @input="markDirty"
               />
@@ -296,6 +296,24 @@
                 type="select"
                 @update:modelValue="markDirty"
               />
+              <FormControl
+                v-model="pkg.plan"
+                :label="__('Value Express plan')"
+                :options="planOptions"
+                type="select"
+                @update:modelValue="markDirty"
+              />
+              <textarea
+                v-if="pkg.plan === 'Fixed'"
+                v-model="pkg.facility_levels"
+                :aria-label="__('Facility levels')"
+                :placeholder="__('Facility levels this Fixed fee applies to, one per line (for example Level 3B)')"
+                class="min-h-20 w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 md:col-span-2 dark:bg-surface-gray-2"
+                @input="markDirty"
+              />
+              <p v-else-if="pkg.plan === 'Custom'" class="text-xs text-ink-gray-5 md:col-span-2">
+                {{ __('Facilities enter their own amount; it is priced at the Flex package rates. Set Tokens to 1.') }}
+              </p>
             </div>
           </div>
           <div
@@ -720,6 +738,11 @@ const billingPeriodOptions = [
   { label: __('Quarterly'), value: 'Quarterly' },
   { label: __('Annual'), value: 'Annual' },
 ]
+const planOptions = [
+  { label: __('Flex: prepaid token package'), value: 'Flex' },
+  { label: __('Fixed: monthly fee by facility level'), value: 'Fixed' },
+  { label: __('Custom: facility enters an amount'), value: 'Custom' },
+]
 const optionalServicesPriceListOptions = computed(() => [
   { label: __('Use Standard Selling / configured default'), value: '' },
   ...(optionalServicesPriceListsResource.data ?? []),
@@ -769,6 +792,8 @@ function addTokenPackage() {
     item_code: '',
     display_name: '',
     description: '',
+    plan: 'Flex',
+    facility_levels: '',
     token_quantity: 1,
     billing_period: 'Monthly',
     coverage_summary: '',

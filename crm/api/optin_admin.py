@@ -668,6 +668,8 @@ def get_optin_settings():
 			{
 				"item_code": frappe.utils.cstr(row.get("item_code") or "").strip(),
 				"display_name": frappe.utils.cstr(row.get("display_name") or "").strip(),
+				"plan": frappe.utils.cstr(row.get("plan") or "Flex").strip(),
+				"facility_levels": frappe.utils.cstr(row.get("facility_levels") or "").strip(),
 				"description": frappe.utils.cstr(row.get("description") or "").strip(),
 				"token_quantity": int(row.get("token_quantity") or 0),
 				"billing_period": frappe.utils.cstr(row.get("billing_period") or "Monthly").strip(),
@@ -825,8 +827,15 @@ def update_optin_settings(settings: Any):
 			token_quantity = 0
 		if not all((item_code, display_name, description, coverage_summary)):
 			frappe.throw(_("Each token package needs an item, name, description, and coverage summary."))
-		if token_quantity < 1:
+		plan = frappe.utils.cstr(row.get("plan") or "Flex").strip()
+		facility_levels = frappe.utils.cstr(row.get("facility_levels") or "").strip()
+		if plan not in ("Flex", "Fixed", "Custom"):
+			frappe.throw(_("Choose Flex, Fixed or Custom as the package plan."))
+		# A Fixed fee buys platform access, not tokens.
+		if token_quantity < 1 and plan != "Fixed":
 			frappe.throw(_("Each token package must contain at least one token."))
+		if plan == "Fixed" and not facility_levels:
+			frappe.throw(_("A Fixed package needs the facility levels it applies to."))
 		if billing_period not in ("Monthly", "Quarterly", "Annual"):
 			frappe.throw(_("Choose a valid token package billing period."))
 		if item_code in seen_token_items:
@@ -843,6 +852,8 @@ def update_optin_settings(settings: Any):
 			{
 				"item_code": item_code,
 				"display_name": display_name,
+				"plan": plan,
+				"facility_levels": facility_levels if plan == "Fixed" else "",
 				"description": description,
 				"token_quantity": token_quantity,
 				"billing_period": billing_period,

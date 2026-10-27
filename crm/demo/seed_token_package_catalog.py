@@ -165,3 +165,76 @@ def _ensure_item_price(package, price_list):
 			"uom": "Nos",
 		}
 	).insert(ignore_permissions=True)
+
+
+# Value Express Fixed (monthly, by facility level, no tokens) and Custom (any amount at the Flex rates).
+VALUE_EXPRESS_PACKAGES = [
+	{
+		"item_code": "CV-FIXED-L2",
+		"item_name": "Value Express Fixed - Level 2",
+		"rate": 15000,
+		"plan": "Fixed",
+		"facility_levels": "Level 2",
+		"token_quantity": 0,
+		"display_name": "Value Express Fixed - Level 2",
+		"description": "One predictable monthly fee for a Level 2 facility, with no token balance to monitor.",
+	},
+	{
+		"item_code": "CV-FIXED-L3",
+		"item_name": "Value Express Fixed - Level 3",
+		"rate": 18000,
+		"plan": "Fixed",
+		"facility_levels": "Level 3\nLevel 3A\nLevel 3B\nLevel 3C",
+		"token_quantity": 0,
+		"display_name": "Value Express Fixed - Level 3",
+		"description": "One predictable monthly fee for a Level 3 facility, with no token balance to monitor.",
+	},
+	{
+		"item_code": "CV-TOKEN-CUSTOM",
+		"item_name": "Value Express Flex - Custom tokens",
+		"rate": None,
+		"plan": "Custom",
+		"facility_levels": "",
+		"token_quantity": 1,
+		"display_name": "Custom",
+		"description": "Set your own amount. Tokens are worked out at the rate of the package your amount reaches.",
+	},
+]
+
+
+# Datasheet wording for the Flex cards (dev sites; production text is maintained in settings).
+FLEX_DESCRIPTIONS = {
+	"CV-TOKEN-STARTER": "Best for small and lower-volume outpatient facilities starting their digital journey.",
+	"CV-TOKEN-GROWTH": "Best for facilities with increasing patient volumes and higher CareverseHIMS usage.",
+	"CV-TOKEN-SCALE": "Best for facilities with high patient volumes and higher CareverseHIMS usage.",
+}
+
+
+def run_value_express():
+	"""Add or update the Fixed and Custom rows without touching the Flex packages.
+
+	bench --site <dev site> execute "crm.demo.seed_token_package_catalog.run_value_express"
+	"""
+	if "erpnext" not in frappe.get_installed_apps():
+		frappe.throw(_("ERPNext is required to seed the token catalogue."))
+	settings = frappe.get_single("CRM Opt-In Settings")
+	price_list = frappe.get_doc("Price List", settings.token_price_list or _ensure_price_list().name)
+	for package in VALUE_EXPRESS_PACKAGES:
+		_ensure_item(package)
+		if package["rate"] is not None:
+			_ensure_item_price(package, price_list)
+		values = {
+			key: package[key] for key in ("display_name", "plan", "facility_levels", "token_quantity", "description")
+		}
+		values.update(billing_period="Monthly", coverage_summary=package["description"], enabled=1)
+		row = next((r for r in settings.token_packages if r.item_code == package["item_code"]), None)
+		if row:
+			row.update(values)
+		else:
+			settings.append("token_packages", {"item_code": package["item_code"], **values})
+	for row in settings.token_packages:
+		if row.item_code in FLEX_DESCRIPTIONS:
+			row.description = FLEX_DESCRIPTIONS[row.item_code]
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	return [row.item_code for row in settings.token_packages if row.plan != "Flex"]

@@ -18,7 +18,7 @@
         inputmode="numeric"
         pattern="[0-9]*"
         :maxlength="index === 0 && !digits.length ? length : 1"
-        class="size-10 sm:size-14 rounded-lg border bg-surface-white text-center text-lg sm:text-xl font-semibold text-ink-gray-9 outline-none transition focus:border-[#bc1823] focus:ring-2 focus:ring-[#bc1823]/30 disabled:opacity-50"
+        class="size-10 sm:size-14 rounded-lg border bg-surface-white text-center text-lg sm:text-xl font-semibold text-ink-gray-9 outline-none transition focus:border-[#303b51] focus:ring-2 focus:ring-[#303b51]/25 disabled:opacity-50"
         :class="error ? 'border-outline-red-2' : 'border-outline-gray-3'"
         @input="onInput(index, $event)"
         @keydown="onKeydown(index, $event)"
