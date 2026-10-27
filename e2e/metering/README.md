@@ -27,3 +27,25 @@ npx playwright test --config e2e/metering/playwright.config.ts
 ```
 
 Each run buys a package with a real invoice and cash Payment Entry on the synthetic customer. After a key rotation, the gateway accepts the new key within 5 minutes, or straight away after a gateway restart.
+
+## Express draft order journey
+
+`express_draft_order.spec.ts` checks that an Express package is credited only after its invoice is paid:
+the facility starts at 0 tokens with a draft order, the client reviews it (billing address, KRA PIN,
+one-time or recurring) and generates the invoice, finance records and approves a cash payment, and the
+portal and gateway then show the package's tokens.
+
+Each run needs a fresh synthetic facility. Create one after the fixture above:
+
+```bash
+bench --site <site> execute crm.tests.e2e_express_fixture.setup \
+  --kwargs '{"run_id": "<unique alphanumeric>", "key_file": "/secure/express_site_key"}'
+```
+
+It prints the facility's MFL, name and draft order. Pass them with the metering variables:
+
+```bash
+E2E_EXPRESS_MFL=... E2E_EXPRESS_FACILITY="..." E2E_EXPRESS_ORDER=... E2E_EXPRESS_PACKAGE_TOKENS=1000 \
+E2E_EXPRESS_SITE_KEY="$(cat /secure/express_site_key)" \
+npx playwright test --config e2e/metering/playwright.config.ts express_draft_order
+```
