@@ -654,7 +654,7 @@
           <input
             v-model="facilitySearch"
             class="h-8 w-48 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            :placeholder="__('Name, MFL or organization')"
+            :placeholder="__('Name, Facility ID, MFL or organization')"
             @keyup.enter="applyContactFilters"
           />
         </label>
@@ -824,7 +824,10 @@
                 </p>
                 <p class="mt-0.5 text-xs text-ink-gray-5">
                   {{ row.organization || row.facility_name }} ·
-                  {{ row.mfl_code }}
+                  <template v-if="row.hfr_facility_id"
+                    >{{ __('Facility ID') }} {{ row.hfr_facility_id }} ·
+                  </template>
+                  MFL {{ row.mfl_code }}
                 </p>
                 <p class="mt-0.5 text-xs text-ink-gray-5">
                   {{ facilityContractScheduleLabel(row) }}

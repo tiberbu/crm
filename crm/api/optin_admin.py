@@ -261,6 +261,7 @@ def list_networks(
 			facility_or_filters = [
 				["facility_name", "like", facility_like],
 				["mfl_code", "like", facility_like],
+				["hfr_facility_id", "like", facility_like],
 				["organization", "like", facility_like],
 			]
 		facilities = frappe.get_list(
@@ -1800,6 +1801,7 @@ def list_facilities(
 		facility_or_filters = [
 			["facility_name", "like", facility_like],
 			["mfl_code", "like", facility_like],
+			["hfr_facility_id", "like", facility_like],
 			["organization", "like", facility_like],
 		]
 
@@ -1822,7 +1824,7 @@ def list_facilities(
 		for row in frappe.get_list(
 			"CRM Pre-Qualified Facility",
 			filters={"name": ["in", page_names]},
-			fields=["name", "mfl_code", "facility_name", "organization", "keph_level"],
+			fields=["name", "mfl_code", "hfr_facility_id", "facility_name", "organization", "keph_level"],
 			ignore_permissions=True,  # SYSTEM-INTERNAL
 		)
 	}
@@ -1861,6 +1863,7 @@ def list_facilities(
 			{
 				"name": fac.name,
 				"mfl_code": fac.mfl_code,
+				"hfr_facility_id": fac.hfr_facility_id or "",
 				"facility_name": fac.facility_name,
 				"organization": fac.organization or fac.facility_name,
 				"keph_level": fac.keph_level,

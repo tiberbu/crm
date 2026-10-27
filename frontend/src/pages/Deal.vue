@@ -353,6 +353,12 @@
                   }}</span>
                   <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     <span
+                      v-if="row.hfr_facility_id"
+                      class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6 rounded px-1.5 py-0.5"
+                    >
+                      {{ __('Facility ID') }} {{ row.hfr_facility_id }}
+                    </span>
+                    <span
                       v-if="row.mfl_code"
                       class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6 rounded px-1.5 py-0.5"
                     >
@@ -486,6 +492,7 @@
                 {{ row.facility_name }}
               </p>
               <p class="mt-0.5 text-xs text-ink-gray-5">
+                <span v-if="row.hfr_facility_id">{{ __('Facility ID') }} {{ row.hfr_facility_id }} · </span>
                 <span v-if="row.mfl_code">MFL {{ row.mfl_code }}</span>
                 <span v-if="row.mfl_code && row.hfr_county"> · </span>
                 <span v-if="row.hfr_county">{{ row.hfr_county }}</span>

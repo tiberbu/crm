@@ -238,6 +238,12 @@
                 }}</span>
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span
+                    v-if="row.hfr_facility_id"
+                    class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6 rounded px-1.5 py-0.5"
+                  >
+                    {{ __('Facility ID') }} {{ row.hfr_facility_id }}
+                  </span>
+                  <span
                     v-if="row.mfl_code"
                     class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6 rounded px-1.5 py-0.5"
                   >

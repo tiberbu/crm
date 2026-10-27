@@ -66,7 +66,7 @@
         >
           <tr>
             <th class="px-5 py-2.5 text-left font-medium">
-              {{ __('MFL Code') }}
+              {{ __('Facility ID') }}
             </th>
             <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Facility Name') }}
@@ -88,8 +88,12 @@
             :key="row.name"
             class="transition-colors hover:bg-surface-gray-1"
           >
-            <td class="px-5 py-3 font-mono text-xs font-medium text-ink-gray-9">
-              {{ row.mfl_code }}
+            <td class="px-5 py-3 font-mono text-xs">
+              <span v-if="row.hfr_facility_id" class="font-medium text-ink-gray-9">{{
+                row.hfr_facility_id
+              }}</span>
+              <span v-else class="italic text-ink-gray-5">{{ __('Not linked yet') }}</span>
+              <span class="block text-ink-gray-5">MFL {{ row.mfl_code }}</span>
             </td>
             <td class="px-4 py-3 text-ink-gray-7">{{ row.facility_name }}</td>
             <td class="px-4 py-3 text-xs text-ink-gray-6">
