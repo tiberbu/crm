@@ -5,6 +5,7 @@ import { call, createResource, Dialog } from 'frappe-ui'
 import TokenCalculator from '@/components/TokenCalculator.vue'
 import FacilitySingleView from './FacilitySingleView.vue'
 import OptInRequests from './OptInRequests.vue'
+import { compactPackageGridClass, packageGridClass } from '@/utils/cardGrid'
 import {
   facilityLabel,
   findOpenOrder,
@@ -2558,12 +2559,16 @@ onUnmounted(() => {
                 CareVerse Token Plans & Capacity
               </h1>
               <p class="text-sm text-cx-ink-3 mt-2 leading-relaxed">
-                Compare the current Care Token packages for your facility. Each package shows its price and billing period; token use depends on your HMIS activity.
+                Compare the current Care Token packages for your facility. Each package shows its price and the Care Tokens it buys; token use depends on your HMIS activity.
               </p>
             </div>
 
-            <!-- Top 4 Minimalist Pricing Cards (GitHub Style) -->
-            <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <!-- Pricing cards: one column per package (up to four) so the row spans the page -->
+            <div
+              class="grid gap-6"
+              :class="packageGridClass(context.token_packages?.length)"
+              data-testid="portal-package-grid"
+            >
               <article
                 v-for="pkg in context.token_packages"
                 :key="pkg.item_code"
@@ -3371,7 +3376,7 @@ onUnmounted(() => {
 
         <div class="space-y-2">
           <span class="text-xs font-semibold uppercase text-cx-ink-2 block">{{ topUpMode === 'free' ? 'Select a free token package' : topUpMode === 'paid' ? 'Select a paid token package' : 'Select package' }}</span>
-          <div class="grid gap-3 sm:grid-cols-2">
+          <div class="grid gap-3" :class="compactPackageGridClass(visibleTopUpPackages.length)">
             <button
               v-for="pkg in visibleTopUpPackages"
               :key="pkg.item_code"

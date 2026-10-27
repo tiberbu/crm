@@ -896,11 +896,12 @@
             <!-- Skeleton Loaders -->
             <div
               v-if="catalogBusy"
-              class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+              class="mt-6 grid gap-4"
+              :class="packageGridClass(SKELETON_PACKAGE_COUNT)"
               aria-hidden="true"
             >
               <div
-                v-for="placeholder in 4"
+                v-for="placeholder in SKELETON_PACKAGE_COUNT"
                 :key="placeholder"
                 class="animate-pulse rounded-2xl border border-outline-gray-2 bg-surface-gray-1 p-5 min-h-[360px]"
               >
@@ -961,7 +962,11 @@
               :data-testid="activePricingFacility ? `facility-package-${activePricingFacility.facility_id}` : undefined"
               class="mt-4"
             >
-              <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
+              <div
+                class="grid gap-4 items-stretch"
+                :class="packageGridClass(catalog.packages.length)"
+                data-testid="package-grid"
+              >
                 <article
                   v-for="item in catalog.packages"
                   :key="`${activePricingFacility?.facility_id}-${item.item_code}`"
@@ -1548,6 +1553,10 @@ import {
   shouldClearOtpAfterVerificationError,
   stepStatus,
 } from '@/utils/onboardingSteps'
+import { packageGridClass } from '@/utils/cardGrid'
+
+// Matches the published catalogue, so loading does not shift the layout.
+const SKELETON_PACKAGE_COUNT = 3
 
 const props = defineProps({
   networkSlug: { type: String, default: '' },
