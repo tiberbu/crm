@@ -121,7 +121,8 @@ class TestSubmitWithoutNetwork(UnitTestCase):
 		_conflicts, no_network, _evidence, submit = self._submit("623161", {"name": "net-a"})
 
 		no_network.assert_not_called()
-		self.assertEqual(submit.call_args.args[1], {"name": "net-a"})
+		# A typed Partner ID is a Partner Coupon: the facility earns coupon tokens.
+		self.assertEqual(submit.call_args.args[1], {"name": "net-a", "partner_coupon": True})
 
 	def test_unknown_network_id_is_still_rejected(self):
 		with self.assertRaises(frappe.ValidationError):

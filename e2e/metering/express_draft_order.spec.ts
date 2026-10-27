@@ -8,20 +8,23 @@ import { env, gatewayBalance, payInvoiceInCash, portalBalance, signedIn } from "
  * Needs crm.tests.e2e_express_fixture.setup for this run (a fresh synthetic facility whose
  * provisioning deferred the package grant and whose draft order exists), and these variables
  * besides the metering journey's: E2E_EXPRESS_MFL, E2E_EXPRESS_FACILITY, E2E_EXPRESS_ORDER,
- * E2E_EXPRESS_SITE_KEY, E2E_EXPRESS_PACKAGE_TOKENS.
+ * E2E_EXPRESS_SITE_KEY, E2E_EXPRESS_PACKAGE_TOKENS, E2E_EXPRESS_EXPECTED_TOKENS (package plus the
+ * first-purchase bonus and Partner Coupon lines on the order) and E2E_EXPRESS_BONUS_LINES.
  *
  * 1. The portal shows the draft order to review and 0 tokens; the gateway reports 0.
  * 2. Pricing cards carry no billing period.
  * 3. The client reviews the order, adds a billing address (or reuses one) and the KRA PIN,
  *    keeps it one-time, and generates the invoice. Still 0 tokens.
  * 4. Finance records the cash payment and a second Accounts Manager approves it.
- * 5. The portal and the gateway show the package's tokens from OpenMeter.
+ * 5. The portal and the gateway show the bought plus the complimentary tokens from OpenMeter.
  */
 
 const MFL = env("E2E_EXPRESS_MFL");
 const FACILITY = env("E2E_EXPRESS_FACILITY");
 const ORDER = env("E2E_EXPRESS_ORDER");
 const PACKAGE_TOKENS = Number(env("E2E_EXPRESS_PACKAGE_TOKENS", "1000"));
+const EXPECTED_TOKENS = Number(env("E2E_EXPRESS_EXPECTED_TOKENS", String(PACKAGE_TOKENS)));
+const BONUS_LINES = Number(env("E2E_EXPRESS_BONUS_LINES", "0"));
 const CUSTOMER = env("E2E_CUSTOMER", "E2E Metering Facility Owner");
 const KRA_PIN = "P051234567Q";
 
@@ -67,6 +70,16 @@ test("an Express package is credited only after its reviewed order's invoice is 
     await owner.getByTestId(`review-order-${ORDER}`).click();
     const dialog = owner.getByTestId("order-review");
     await expect(dialog.getByTestId("order-review-total")).toHaveText(/\d/);
+    // Complimentary tokens are separate lines at no charge; the total pays for the package only.
+    await expect(dialog.getByTestId("order-review-bonus")).toHaveCount(BONUS_LINES);
+    for (const line of await dialog.getByTestId("order-review-bonus").all()) {
+      await expect(line).toContainText("Free");
+    }
+    if (BONUS_LINES) {
+      await expect(dialog.getByTestId("order-review-tokens")).toContainText(
+        `You pay for ${PACKAGE_TOKENS.toLocaleString("en-US")} tokens and receive ${EXPECTED_TOKENS.toLocaleString("en-US")}`,
+      );
+    }
     const confirm = dialog.getByRole("button", { name: "Confirm order & generate invoice" });
     await expect(confirm).toBeDisabled();
 
@@ -103,14 +116,14 @@ test("an Express package is credited only after its reviewed order's invoice is 
     await payInvoiceInCash(browser, CUSTOMER, invoice, testInfo);
   });
 
-  await test.step("The portal and the gateway show the paid package's tokens from OpenMeter", async () => {
+  await test.step("The portal and the gateway show the bought and complimentary tokens from OpenMeter", async () => {
     await expect
       .poll(() => portalBalance(owner, MFL, FACILITY), {
         timeout: 180_000,
         intervals: [5_000, 10_000],
       })
-      .toBe(PACKAGE_TOKENS);
-    expect((await gatewayBalance(gateway)).balance).toBe(PACKAGE_TOKENS);
+      .toBe(EXPECTED_TOKENS);
+    expect((await gatewayBalance(gateway)).balance).toBe(EXPECTED_TOKENS);
     await testInfo.attach("5-tokens-after-payment", {
       body: await owner.screenshot(),
       contentType: "image/png",

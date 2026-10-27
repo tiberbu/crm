@@ -21,6 +21,7 @@ from frappe.utils.synchronization import filelock
 from crm.api.facility_onboarding import _calculator_config, _hfr_facilities_for_owner, _token_packages
 from crm.api.website_redirect import get_user_customer_names, get_user_ois_numbers, require_portal_user
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref, record_event
+from crm.utils.token_bonus import apply_bonus_lines
 
 
 def _text(value):
@@ -344,6 +345,7 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key, submi
 			setattr(sales_order, fieldname, value)
 	sales_order.set_missing_values()
 	_restore_rate(sales_order, price)
+	apply_bonus_lines(sales_order)
 	_apply_order_tax_template(sales_order, quotation)
 	sales_order.insert(ignore_mandatory=True, ignore_permissions=True)
 	if submit_order:
@@ -429,9 +431,10 @@ def get_draft_order(sales_order: Any):
 			"total_taxes_and_charges": flt(doc.total_taxes_and_charges),
 			"grand_total": flt(doc.grand_total),
 			"items": [
-				{"item_code": row.item_code, "item_name": row.item_name, "description": row.description, "qty": flt(row.qty), "rate": flt(row.rate), "amount": flt(row.amount)}
+				{"item_code": row.item_code, "item_name": row.item_name, "description": row.description, "qty": flt(row.qty), "rate": flt(row.rate), "amount": flt(row.amount), "bonus_type": _text(row.get("crm_bonus_type")), "bonus_tokens": int(row.get("crm_bonus_tokens") or 0)}
 				for row in doc.items
 			],
+			"package_tokens": int((_package(doc.get("crm_token_package_item")) or {}).get("token_quantity") or 0),
 			"taxes": [{"description": row.description, "rate": flt(row.rate), "tax_amount": flt(row.tax_amount)} for row in doc.taxes or []],
 			"facility_mfl": _text(doc.get("crm_token_facility_mfl")),
 			"package_item": _text(doc.get("crm_token_package_item")),
@@ -551,6 +554,8 @@ def _confirm_order(doc, pin, frequency, recurrence_period, billing_address, new_
 		for row in doc.items:
 			row.delivery_date = doc.delivery_date
 		doc.set("payment_schedule", [])
+	# Eligibility may have changed since the draft was raised (another order confirmed first).
+	apply_bonus_lines(doc)
 	doc.flags.ignore_permissions = True  # SYSTEM-INTERNAL: the portal user owns this order
 	doc.save()
 	doc.submit()
@@ -771,6 +776,8 @@ def _create_or_resume_order(submission, facility_mfl, package, key, source_quote
 def _restore_rate(document, price):
 	# set_missing_values can re-resolve a current list price; the catalog price is authoritative.
 	for row in document.items or []:
+		if row.get("crm_bonus_type"):
+			continue
 		row.price_list_rate = price
 		row.rate = price
 		row.discount_percentage = 0
@@ -1023,9 +1030,15 @@ def add_facility_from_hfr(
 
 		if not membership_exists:
 			user_doc = frappe.db.get_value("User", user, ["full_name", "mobile_no"], as_dict=True) or {}
+			coupon = (
+				{"partner_coupon": 1}
+				if _text(partner_id) and frappe.get_meta("CRM Facility Membership").has_field("partner_coupon")
+				else {}
+			)
 			fac_doc.append(
 				"memberships",
 				{
+					**coupon,
 					"network": partner.get("name"),
 					"customer": customer,
 					"status": "Active",
