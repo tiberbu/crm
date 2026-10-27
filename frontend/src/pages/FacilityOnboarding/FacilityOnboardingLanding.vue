@@ -841,7 +841,7 @@
               <!-- Micro Info & Referral Line -->
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 text-[11px] text-ink-gray-5 pt-0.5">
                 <p>
-                  {{ __('Choose a monthly token package for this facility. Package prices, VAT and totals are shown before you continue.') }}
+                  {{ __('Choose a token package for this facility. Package prices, VAT and totals are shown before you continue.') }}
                 </p>
                 <details class="group relative self-start sm:self-auto">
                   <summary class="cursor-pointer font-medium text-ink-gray-6 hover:text-ink-gray-9 transition select-none flex items-center gap-1">
@@ -995,7 +995,7 @@
                           {{ money(item.price_ex_vat ?? item.price ?? 0, item.currency) }}
                         </span>
                         <span class="text-xs text-ink-gray-5 font-semibold">
-                          {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Zero commitment') : __('/ mo (excl. VAT)') }}
+                          {{ Number(item.price_ex_vat ?? item.price ?? 0) === 0 ? __('Zero commitment') : __('excl. VAT') }}
                         </span>
                       </div>
                       <p class="mt-0.5 text-[11px] text-ink-gray-5 font-medium truncate">
@@ -1105,7 +1105,7 @@
                         <th class="py-2.5 pr-4">{{ __('Facility') }}</th>
                         <th class="py-2.5 px-4">{{ __('Package') }}</th>
                         <th class="py-2.5 px-4 text-center">{{ __('Tokens') }}</th>
-                        <th class="py-2.5 pl-4 text-right">{{ __('Monthly Cost (excl. VAT)') }}</th>
+                        <th class="py-2.5 pl-4 text-right">{{ __('Package Price (excl. VAT)') }}</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-outline-gray-1">
@@ -1166,7 +1166,7 @@
                     <tfoot v-if="totals" class="border-t-2 border-outline-gray-2 font-semibold text-ink-gray-9">
                       <tr>
                         <td colspan="2" class="py-2.5 pr-4 text-xs font-bold uppercase tracking-wider text-ink-gray-6">
-                          {{ __('Combined monthly total') }}
+                          {{ __('Combined total') }}
                         </td>
                         <td class="py-2.5 px-4 text-center">
                           🪙 {{ chosenFacilities.reduce((sum, f) => sum + (selectedPackageFor(f.facility_id)?.token_quantity || 0), 0).toLocaleString() }}
@@ -1443,14 +1443,14 @@
             {{
               portalStatus === 'linked' || existingIdentityDetected
                 ? __(
-                    'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your quote and next steps.',
+                    'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your draft order and pay its invoice. Tokens are added once payment is received.',
                   )
                 : catalog.network?.name
                 ? __(
-                    'Your Tiberbu Express account is ready, and your selected facilities are linked to the Network. Check your email for password setup instructions, then sign in to review your quote and next steps.',
+                    'Your Tiberbu Express account is ready, and your selected facilities are linked to the Network. Check your email for password setup instructions, then sign in to review your draft order and pay its invoice. Tokens are added once payment is received.',
                   )
                 : __(
-                    'Your Tiberbu Express account is ready. Check your email for password setup instructions, then sign in to review your quote and next steps.',
+                    'Your Tiberbu Express account is ready. Check your email for password setup instructions, then sign in to review your draft order and pay its invoice. Tokens are added once payment is received.',
                   )
             }}
           </p>
@@ -1860,7 +1860,7 @@ const journey = [
   },
   {
     title: __('Follow your next steps'),
-    description: __('Sign in to Tiberbu Express to review your quote and follow the next action.'),
+    description: __('Sign in to Tiberbu Express to review your draft order, add your billing details and pay its invoice. Your tokens are added once payment is received.'),
   },
 ]
 const progressSteps = computed(() =>

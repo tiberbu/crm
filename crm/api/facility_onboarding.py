@@ -1796,6 +1796,28 @@ def _create_initial_deal_quote(deal, customer, facility, package):
 		return None
 
 
+def _create_express_draft_order(customer, facility, package, quote_name):
+	"""Raise the facility's draft token order; no tokens are granted until its invoice is paid."""
+	from crm.api.customer_experience import _package, create_express_draft_order
+
+	frappe.db.savepoint("express_draft_order")
+	try:
+		catalog_package = _package(package.get("item_code"))
+		if not catalog_package:
+			return None
+		result = create_express_draft_order(
+			customer, _text(facility.get("mfl_code")), catalog_package, source_quote=quote_name
+		)
+		return result["data"]["sales_order"]
+	except Exception:
+		frappe.db.rollback(save_point="express_draft_order")
+		# The portal's Buy tokens action still raises an order if this one is missing.
+		frappe.log_error(
+			title="Express draft token order", message="mfl=%s" % _text(facility.get("mfl_code"))
+		)
+		return None
+
+
 def _resolve_existing_customer(session: dict[str, Any] | None, account_email: str | None) -> str | None:
 	"""Find an existing Customer for this verified identity or account email to skip duplicate identity creation."""
 	identity_ref = _text((session or {}).get("identity_ref"))
@@ -1900,7 +1922,8 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 		submitted[facility_id] = deal.name
 		deals.append(deal)
 		created_deals.append(deal.name)
-		_create_initial_deal_quote(deal, customer, facility, pkg)
+		quote_name = _create_initial_deal_quote(deal, customer, facility, pkg)
+		_create_express_draft_order(customer, facility, pkg, quote_name)
 		facility_doc_names.append(facility_doc.name)
 		if is_resumed:
 			_evidence(

@@ -142,8 +142,8 @@ function money(value, currency) {
           <h3 class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Token capacity</h3>
           <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-4">
             <div class="flex items-baseline gap-2">
-              <span class="font-mono text-2xl font-bold tracking-tight text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (facility.token_quantity || 0).toLocaleString() }}</span>
-              <span class="text-xs font-semibold text-cx-ink-3">Care Tokens</span>
+              <span class="font-mono text-2xl font-bold tracking-tight text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (facility.token_balance?.status === 'ok' ? Number(facility.token_balance.balance) || 0 : 0).toLocaleString() }}</span>
+              <span class="text-xs font-semibold text-cx-ink-3">Care Tokens available</span>
             </div>
             <p class="mt-1 text-[11px] text-cx-ink-3">
               Plan: <strong class="text-cx-ink">{{ facility.token_package || 'No active plan' }}</strong>

@@ -617,11 +617,11 @@ const selectedPackageObj = computed(() => {
 // Executive KPIs
 const facilityCount = computed(() => allFacilities.value.length)
 
-// Live OpenMeter balance when the metering app reports one; otherwise the package size.
+// Live OpenMeter balance only: a package's tokens count once its invoice is paid and granted.
 function availableTokens(facility) {
   const live = facility?.token_balance
   if (live?.status === 'ok') return Number(live.balance) || 0
-  return Number(facility?.token_quantity) || 0
+  return 0
 }
 
 const totalTokenCount = computed(() =>
@@ -1176,6 +1176,97 @@ async function createInvoice(order) {
     }
   } finally {
     busyId.value = ''
+  }
+}
+
+// Draft order review: billing address, KRA PIN and frequency before the invoice is raised.
+const draftOrders = computed(() => allOrders.value.filter((order) => order.is_draft))
+const orderReviewOpen = ref(false)
+const orderReview = ref(null)
+const orderReviewBusy = ref(false)
+const orderReviewError = ref('')
+const reviewForm = ref(emptyReviewForm())
+const KRA_PIN_PATTERN = /^[A-Z]\d{9}[A-Z]$/
+
+function emptyReviewForm() {
+  return {
+    billing_address: '',
+    address_line1: '',
+    address_line2: '',
+    city: '',
+    county: '',
+    postal_code: '',
+    kra_pin: '',
+    frequency: 'One-time',
+    recurrence_period: 'Monthly',
+  }
+}
+
+const reviewKraPin = computed(() => reviewForm.value.kra_pin.replace(/\s+/g, '').toUpperCase())
+const reviewProblems = computed(() => {
+  const form = reviewForm.value
+  const problems = []
+  if (!KRA_PIN_PATTERN.test(reviewKraPin.value)) problems.push('Enter a valid KRA PIN, for example A123456789Z.')
+  if (!form.billing_address && !(form.address_line1.trim() && form.city.trim())) {
+    problems.push('Choose a saved billing address, or enter the street address and town.')
+  }
+  return problems
+})
+
+async function openOrderReview(order) {
+  orderReview.value = null
+  orderReviewError.value = ''
+  reviewForm.value = emptyReviewForm()
+  orderReviewOpen.value = true
+  try {
+    const data = unwrap(
+      await call('crm.api.customer_experience.get_draft_order', { sales_order: order.name }),
+    )
+    orderReview.value = data
+    reviewForm.value.kra_pin = data.kra_pin || ''
+    reviewForm.value.billing_address = data.billing_address || data.addresses?.[0]?.name || ''
+    reviewForm.value.frequency = data.frequency || 'One-time'
+    reviewForm.value.recurrence_period = data.recurrence_period || 'Monthly'
+  } catch (error) {
+    orderReviewError.value = error?.messages?.[0] || 'We could not load this order.'
+  }
+}
+
+async function confirmOrderReview() {
+  if (!orderReview.value || reviewProblems.value.length) return
+  const form = reviewForm.value
+  orderReviewBusy.value = true
+  orderReviewError.value = ''
+  try {
+    const params = {
+      sales_order: orderReview.value.name,
+      kra_pin: reviewKraPin.value,
+      frequency: form.frequency,
+      recurrence_period: form.frequency === 'Recurring' ? form.recurrence_period : '',
+    }
+    if (form.billing_address) {
+      params.billing_address = form.billing_address
+    } else {
+      params.new_address = JSON.stringify({
+        address_line1: form.address_line1,
+        address_line2: form.address_line2,
+        city: form.city,
+        county: form.county,
+        postal_code: form.postal_code,
+      })
+    }
+    const data = unwrap(await call('crm.api.customer_experience.confirm_draft_order', params))
+    orderReviewOpen.value = false
+    await refreshContext()
+    activeView.value = 'billing'
+    notice.value = {
+      tone: 'success',
+      text: `Order ${data.sales_order} confirmed and invoice ${data.invoice} generated. Pay it below; your tokens are added once payment is received.`,
+    }
+  } catch (error) {
+    orderReviewError.value = error?.messages?.[0] || 'We could not confirm this order.'
+  } finally {
+    orderReviewBusy.value = false
   }
 }
 
@@ -2206,6 +2297,25 @@ onUnmounted(() => {
           <!-- VIEW B: DASHBOARD / EXECUTIVE RUNWAY OVERVIEW                   -->
           <!-- ============================================================== -->
           <div v-if="activeView === 'dashboard'" class="space-y-6">
+            <div
+              v-if="draftOrders.length"
+              data-testid="draft-orders-banner"
+              class="flex flex-col gap-3 rounded-cx border border-cx-warning-border bg-cx-warning-soft p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div class="min-w-0">
+                <p class="text-xs font-semibold text-cx-warning-ink">
+                  {{ draftOrders.length === 1 ? 'A token order is waiting for your review' : `${draftOrders.length} token orders are waiting for your review` }}
+                </p>
+                <p class="mt-0.5 text-[11px] text-cx-ink-2">Confirm your billing details and generate the invoice. Your facility's tokens are added once the invoice is paid.</p>
+              </div>
+              <button
+                type="button"
+                class="shrink-0 rounded-cx-sm bg-cx-ink px-3 py-2 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition"
+                @click="openOrderReview(draftOrders[0])"
+              >
+                Review order
+              </button>
+            </div>
             <!-- Organization identity band: the legal parent entity owns the account -->
             <div class="cx-glass-panel rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
               <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -2375,7 +2485,7 @@ onUnmounted(() => {
                       </div>
                       <div class="flex justify-between text-cx-ink-3">
                         <span>Token Runway:</span>
-                        <strong class="text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ availableTokens(fac).toLocaleString() }} tokens</strong>
+                        <strong class="text-cx-brand" :data-testid="`facility-tokens-${fac.mfl_code}`"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ availableTokens(fac).toLocaleString() }} tokens</strong>
                       </div>
                       <div v-if="fac.invoice_summary?.has_outstanding" class="flex justify-between border-t border-cx-border-soft pt-1.5">
                         <span class="font-bold text-cx-warning-ink">Due Balance:</span>
@@ -2407,6 +2517,7 @@ onUnmounted(() => {
                       <button
                         type="button"
                         class="rounded-cx-sm border border-cx-border bg-cx-surface px-2.5 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well"
+                        :data-testid="`facility-details-${fac.mfl_code}`"
                         @click="openFacilityDrawer(fac)"
                       >
                         Details →
@@ -2481,7 +2592,6 @@ onUnmounted(() => {
                       <span class="text-4xl font-bold text-cx-ink leading-tight">
                         {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'KES 0' : money(pkg.price_ex_vat ?? pkg.price, pkg.currency) }}
                       </span>
-                      <span class="text-xs text-cx-ink-3 font-medium">/ {{ String(pkg.billing_period || 'Monthly').toLowerCase() }}</span>
                     </div>
                     <span class="text-[11px] text-cx-ink-4 block mt-0.5">
                       {{ Number(pkg.gross_total) > 0 ? `${money(pkg.gross_total, pkg.currency)} incl. ${pkg.vat_label || 'VAT'}` : 'No charge' }}
@@ -2636,7 +2746,8 @@ onUnmounted(() => {
 
             <!-- Orders awaiting invoice -->
             <div v-if="allOrders.length" class="space-y-3 pt-6 border-t border-cx-border">
-              <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Pending Token Orders</h2>
+              <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Token Orders</h2>
+              <p class="text-xs text-cx-ink-3">Review a draft order, confirm your billing details and generate its invoice. Tokens are added when the invoice is paid.</p>
               <div class="space-y-3">
                 <article
                   v-for="order in allOrders"
@@ -2645,10 +2756,20 @@ onUnmounted(() => {
                 >
                   <div>
                     <span class="font-semibold text-xs text-cx-ink">{{ packageLabel(order.crm_token_package_item, context.token_packages) }}</span>
+                    <span v-if="order.is_draft" class="ml-2 rounded-full border border-cx-warning-border bg-cx-warning-soft px-2 py-0.5 text-[11px] font-semibold text-cx-warning-ink">Draft · needs review</span>
                     <span class="text-xs text-cx-ink-3 ml-2">For {{ facilityLabel(order.crm_token_facility_mfl, allFacilities) }} · Order #{{ order.name }}</span>
                   </div>
                   <div class="flex items-center gap-3">
                     <span class="text-xs font-semibold text-cx-ink">{{ money(order.grand_total, order.currency) }}</span>
+                    <button
+                      v-if="order.is_draft"
+                      type="button"
+                      :data-testid="`review-order-${order.name}`"
+                      class="rounded-cx-sm bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong transition cursor-pointer"
+                      @click="openOrderReview(order)"
+                    >
+                      Review order
+                    </button>
                     <button
                       v-if="order.can_create_invoice"
                       type="button"
@@ -2950,8 +3071,8 @@ onUnmounted(() => {
                   </div>
                   <div class="flex items-center justify-between text-[11px] text-cx-ink-3">
                     <span v-if="facility.mfl_code" class="font-mono">MFL: {{ facility.mfl_code }}</span>
-                    <span class="font-medium text-cx-success-ink" v-if="facility.token_balance">
-                      {{ facility.token_balance.balance_formatted || (facility.token_balance.balance + ' tokens') }}
+                    <span class="font-medium text-cx-success-ink" data-testid="facility-card-tokens">
+                      {{ availableTokens(facility).toLocaleString() }} tokens
                     </span>
                   </div>
                 </div>
@@ -3275,7 +3396,7 @@ onUnmounted(() => {
                 <p class="mt-1 text-[11px] text-cx-ink-3 leading-normal">{{ pkg.coverage_summary || pkg.description }}</p>
               </div>
               <div class="mt-3 pt-2 border-t border-cx-border-soft flex items-center justify-between text-[11px]">
-                <span class="text-cx-ink-4">{{ Number(pkg.gross_total) > 0 ? `${String(pkg.billing_period || 'Monthly').toLowerCase()} · incl. ${pkg.vat_label || 'VAT'}` : 'No charge' }}</span>
+                <span class="text-cx-ink-4">{{ Number(pkg.gross_total) > 0 ? `incl. ${pkg.vat_label || 'VAT'}` : 'No charge' }}</span>
                 <span class="font-semibold" :class="selectedTopUpPackageCode === pkg.item_code ? 'text-cx-brand' : 'text-cx-ink-4'">
                   {{ selectedTopUpPackageCode === pkg.item_code ? 'Selected ✓' : 'Select' }}
                 </span>
@@ -3295,6 +3416,115 @@ onUnmounted(() => {
             @click="executeTopUp()"
           >
             {{ purchaseBusy ? 'Generating Order…' : 'Confirm Order →' }}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+
+    <!-- MODAL: DRAFT ORDER REVIEW -->
+    <Dialog v-model:open="orderReviewOpen" :title="orderReview ? `Review order ${orderReview.name}` : 'Review order'" size="2xl">
+      <div class="p-1 space-y-5" data-testid="order-review">
+        <p v-if="!orderReview && !orderReviewError" class="text-xs text-cx-ink-3">Loading order…</p>
+        <template v-if="orderReview">
+          <div class="rounded-cx-sm border border-cx-border bg-cx-well p-4 space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-semibold text-cx-ink">{{ packageLabel(orderReview.package_item, context.token_packages) }}</span>
+              <span class="text-cx-ink-3">For {{ facilityLabel(orderReview.facility_mfl, allFacilities) }}</span>
+            </div>
+            <div v-for="row in orderReview.items" :key="row.item_code" class="flex items-center justify-between text-xs text-cx-ink-2">
+              <span>{{ row.item_name || row.item_code }} × {{ row.qty }}</span>
+              <span>{{ money(row.amount, orderReview.currency) }}</span>
+            </div>
+            <div v-for="tax in orderReview.taxes" :key="tax.description" class="flex items-center justify-between text-xs text-cx-ink-3">
+              <span>{{ tax.description }}</span>
+              <span>{{ money(tax.tax_amount, orderReview.currency) }}</span>
+            </div>
+            <div class="flex items-center justify-between border-t border-cx-border-soft pt-2 text-sm font-bold text-cx-ink">
+              <span>Total</span>
+              <span data-testid="order-review-total">{{ money(orderReview.grand_total, orderReview.currency) }}</span>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2" for="review-kra-pin">KRA PIN</label>
+            <input
+              id="review-kra-pin"
+              v-model="reviewForm.kra_pin"
+              type="text"
+              autocomplete="off"
+              placeholder="A123456789Z"
+              class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 font-mono text-sm uppercase text-cx-ink focus:border-cx-brand"
+            />
+            <p class="text-[11px] text-cx-ink-3">Required for the eTIMS tax invoice. Saved to your account for later orders.</p>
+          </div>
+
+          <div class="space-y-2">
+            <span class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2">Billing address</span>
+            <select
+              v-if="orderReview.addresses.length"
+              v-model="reviewForm.billing_address"
+              aria-label="Billing address"
+              class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm text-cx-ink focus:border-cx-brand"
+            >
+              <option v-for="address in orderReview.addresses" :key="address.name" :value="address.name">
+                {{ [address.address_line1, address.city, address.state].filter(Boolean).join(', ') }}
+              </option>
+              <option value="">Add a new billing address…</option>
+            </select>
+            <div v-if="!reviewForm.billing_address" class="grid gap-2 sm:grid-cols-2">
+              <input v-model="reviewForm.address_line1" aria-label="Street address" placeholder="Street address / building" class="sm:col-span-2 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm text-cx-ink focus:border-cx-brand" />
+              <input v-model="reviewForm.address_line2" aria-label="Address line 2" placeholder="P.O. Box / floor (optional)" class="sm:col-span-2 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm text-cx-ink focus:border-cx-brand" />
+              <input v-model="reviewForm.city" aria-label="Town" placeholder="Town" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm text-cx-ink focus:border-cx-brand" />
+              <input v-model="reviewForm.county" aria-label="County" placeholder="County (optional)" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm text-cx-ink focus:border-cx-brand" />
+              <input v-model="reviewForm.postal_code" aria-label="Postal code" placeholder="Postal code (optional)" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm text-cx-ink focus:border-cx-brand" />
+            </div>
+          </div>
+
+          <fieldset class="space-y-2">
+            <legend class="block text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-2">Order type</legend>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <label
+                v-for="option in [{ value: 'One-time', hint: 'Buy these tokens once.' }, { value: 'Recurring', hint: 'A new draft order is prepared for you each period.' }]"
+                :key="option.value"
+                class="flex cursor-pointer items-start gap-2 rounded-cx-sm border p-3 text-xs"
+                :class="reviewForm.frequency === option.value ? 'border-cx-brand bg-cx-brand-soft' : 'border-cx-border bg-cx-surface'"
+              >
+                <input v-model="reviewForm.frequency" type="radio" name="order-frequency" :value="option.value" class="mt-0.5" />
+                <span>
+                  <span class="block font-semibold text-cx-ink">{{ option.value }}</span>
+                  <span class="text-cx-ink-3">{{ option.hint }}</span>
+                </span>
+              </label>
+            </div>
+            <select
+              v-if="reviewForm.frequency === 'Recurring'"
+              v-model="reviewForm.recurrence_period"
+              aria-label="Repeat every"
+              class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-sm text-cx-ink focus:border-cx-brand"
+            >
+              <option value="Monthly">Every month</option>
+              <option value="Quarterly">Every quarter</option>
+              <option value="Yearly">Every year</option>
+            </select>
+          </fieldset>
+
+          <ul v-if="reviewProblems.length" class="space-y-1 text-[11px] text-cx-ink-3">
+            <li v-for="problem in reviewProblems" :key="problem">• {{ problem }}</li>
+          </ul>
+        </template>
+        <p v-if="orderReviewError" class="rounded-cx-sm border border-cx-danger-border bg-cx-danger-soft p-3 text-xs text-cx-danger-ink">{{ orderReviewError }}</p>
+
+        <div class="pt-4 border-t border-cx-border-soft flex items-center justify-end gap-3">
+          <button type="button" class="rounded-cx-sm border border-cx-border px-4 py-2 text-xs font-semibold text-cx-ink-3 hover:bg-cx-well" @click="orderReviewOpen = false">
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="rounded-cx-sm bg-cx-brand px-5 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong disabled:opacity-50"
+            :disabled="orderReviewBusy || !orderReview || reviewProblems.length > 0"
+            @click="confirmOrderReview()"
+          >
+            {{ orderReviewBusy ? 'Generating invoice…' : 'Confirm order & generate invoice' }}
           </button>
         </div>
       </div>

@@ -326,13 +326,14 @@ function pendingPaymentForInvoice(invoice) {
 const liveBalance = computed(() => props.facility.token_balance || null)
 const liveBalanceText = computed(() => {
   const entry = liveBalance.value
-  if (!entry) return ''
+  // No metering site yet means nothing has been paid for and granted.
+  if (!entry || entry.status === 'not_metered') return '0'
   if (entry.status === 'ok') return Number(entry.balance || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })
-  return entry.status === 'not_metered' ? 'Not metered yet' : 'Unavailable'
+  return 'Unavailable'
 })
 const liveBalanceNote = computed(() => {
   const entry = liveBalance.value
-  if (entry?.status !== 'ok') return 'Package tokens are shown below.'
+  if (entry?.status !== 'ok') return 'Tokens are added when the package invoice is paid.'
   const time = entry.as_of ? new Date(entry.as_of).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
   return time ? `Care Tokens · updated ${time}` : 'Care Tokens'
 })
