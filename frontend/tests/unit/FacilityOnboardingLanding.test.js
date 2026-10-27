@@ -505,7 +505,7 @@ describe('FacilityOnboardingLanding', () => {
 
     expect(host.textContent).toContain('Your request has been submitted')
     expect(host.textContent).toContain(
-      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your quote and next steps.',
+      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your draft order and pay its invoice. Tokens are added once payment is received.',
     )
     expect(host.querySelector('[data-testid="linked-identity-note"]')).not.toBeNull()
     expect(host.textContent).toContain('Sign in to Tiberbu Express')
@@ -588,7 +588,7 @@ describe('FacilityOnboardingLanding', () => {
 
     expect(host.textContent).toContain('Your request has been submitted')
     expect(host.textContent).toContain(
-      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your quote and next steps.',
+      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your draft order and pay its invoice. Tokens are added once payment is received.',
     )
     expect(host.querySelector('[data-testid="linked-identity-note"]')).not.toBeNull()
     expect(host.textContent).toContain('Sign in to Tiberbu Express')
