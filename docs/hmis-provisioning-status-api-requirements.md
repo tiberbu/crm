@@ -13,19 +13,24 @@
 
 | # | Decision | Effect |
 |---|---|---|
-| D1 | A facility on a token-based plan gets its token balance from OpenMeter only. CRM sends no token amount and no token expiry. | §2.3 |
+| D1 | Every facility gets its token balance from OpenMeter only. CRM sends no token amount, token expiry, billing model or token source. | §2.2, §2.3 |
 | D2 | CRM sends `auto_deploy: true`. Deployment starts without a manual review step. | §2.1 |
-| D3 | `site_url` is the facility's own HMIS address, not a shared instance address. | §4 |
-| D4 | For a token-based plan, CRM sets the facility up in OpenMeter first. Provisioning is sent only after that succeeds. | §2.1 |
+| D3 | `site_url` is the facility's own HMIS address, not a shared instance address. Each site hosts one facility, because a site holds one metering key. | §4 |
+| D4 | CRM creates the facility in OpenMeter and issues its site key before the POST. If that fails, nothing is sent. | §2.1 |
+| D5 | No tokens before payment. Nothing is granted at provisioning; every token, including bonus and coupon tokens, comes from a paid token invoice. | §2.3 |
+| D6 | CRM sends the metering gateway address with the site key, so a new site can reach the gateway at first boot without manual setup. | §2.2, §3 |
+| D7 | A site that holds a metering site key is in OpenMeter mode. There is no separate `token_source` flag. | §2.3 |
+| D8 | CRM sends no token purchase link, and HMIS shows none. Tokens are bought in the CRM CX portal only. | §2.2 |
 
 ## What changed since version 1
 
 | Change | Source | Effect on the setup service |
 |---|---|---|
-| OpenMeter is the token balance authority | `8068b6a2`, D1 | No token amount or expiry in the POST; new metering fields (§2.3) |
+| OpenMeter is the token balance authority | `8068b6a2`, D1, D7 | No token fields in the POST; the site key and gateway address are added (§2) |
 | Existing sites get a metering site key | `4822df5b` | New endpoint `update_metering_site_key` (§3) |
+| Paid packages are granted on payment | `93231e76`, D5 | Nothing is granted at provisioning |
 | Deployment starts automatically | D2 | CRM sends `auto_deploy: true` |
-| OpenMeter set up before provisioning | D4 | The POST always carries a valid site key for token-based plans |
+| OpenMeter set up before provisioning | D4, D6 | Every POST carries a valid site key and the gateway address |
 | Status-endpoint fields | none | Version 1 requirements stand, now numbered S1–S17, plus D3 (§4) |
 
 Version 1 described only `get_provision_status`. It did not describe the POST, its token fields, the site-key endpoint, or the error strings CRM parses. Sections 2, 3 and 5 add them.
@@ -47,13 +52,13 @@ Version 1 described only `get_provision_status`. It did not describe the POST, i
 
 CRM sends the request when onboarding commits, and again if the user opens the facility before a setup exists. Before each POST, CRM holds a per-FID lock and re-reads status. It only posts when that read confirms no setup.
 
-For a token-based plan, CRM first sets the facility up in OpenMeter (D4):
+CRM first sets the facility up in OpenMeter (D4):
 
-1. Issue the facility's metering site key.
-2. Grant the facility's free plan in OpenMeter, by FID.
-3. Only then send the POST, with `auto_deploy: true` (D2).
+1. Create and sync the facility in OpenMeter, keyed by FID. No tokens are granted (D5).
+2. Issue the facility's metering site key. Issuing a key revokes any earlier key for that FID.
+3. Only then send the POST, with the key, the gateway address and `auto_deploy: true` (D2).
 
-If any OpenMeter step fails, CRM does not send the POST. The portal shows setup as blocked, and CRM retries on the next attempt. The setup service therefore never receives a token-based request without a usable site key.
+If any OpenMeter step fails, CRM does not send the POST. The portal shows setup as blocked, and CRM retries on the next attempt. The setup service therefore never receives a request without a usable site key.
 
 ### 2.2 Fields CRM sends
 
@@ -64,26 +69,26 @@ If any OpenMeter step fails, CRM does not send the POST. The portal shows setup 
 | `admin_email` | Verified facility signatory, else self-onboarded owner | lowercased, contains `@` |
 | `admin_name` | Same source | non-empty |
 | `admin_mobile` | Same source | non-empty |
-| `billing_model` | `Token` | `License` is not sent today |
 | `auto_deploy` | Always `true` | D2 |
-| `token_source` | `"openmeter"` | Token-based plans |
-| `metering_site_key` | Issued by the metering app in step 1 above | Token-based plans; format `omk2.<FID>.<secret>` |
+| `metering_site_key` | Issued by the metering app in step 2 above | Always; format `omk2.<FID>.<secret>`; secret |
+| `metering_gateway_url` | Metering gateway address configured in CRM (D6) | Always; absolute `https://` URL with no credentials; not secret |
 | `facility_name`, `facility_level`, `county`, `sub_county` | HFR facility data | Optional, sent when known |
 
-CRM does **not** send `tokens_awarded`, `token_expiry_date` or a token purchase link (D1). Tokens are bought in the CRM CX portal only.
+CRM does **not** send `tokens_awarded`, `token_expiry_date`, `billing_model`, `token_source` (D1, D7) or a token purchase link (D8). v2.1 of the setup service already ignores the first three.
 
 CRM blocks the request itself if any field it must send is missing or invalid, and shows which ones.
 
-### 2.3 Tokens on a token-based plan
+### 2.3 Tokens and metering
 
-OpenMeter is the only token balance authority (OpenMeter ADR-003). CRM grants tokens in OpenMeter by FID: the free plan before provisioning, and each paid package when its invoice is paid. HMIS reads the balance from OpenMeter.
+OpenMeter is the only token balance authority (OpenMeter ADR-003). CRM grants tokens in OpenMeter by FID, and only when a token invoice is paid (D5). A new site therefore starts at 0 tokens until its first payment. HMIS reads its balance through the metering gateway, never from the setup service.
 
 The setup service must:
 
-1. Accept a `billing_model: "Token"` request without `tokens_awarded` and `token_expiry_date`.
-2. Create no local token balance and no token expiry. Tokens do not expire; only an exhausted balance stops clinical work.
-3. Deliver `metering_site_key` to the new site in the signed `update_license` push, so the site reaches OpenMeter at first boot.
-4. Reject a token-based request without `metering_site_key`, naming the field.
+1. Create no local token balance and no token expiry. Tokens do not expire; only an exhausted balance stops clinical work.
+2. Deliver `metering_site_key` and `metering_gateway_url` to the new site in the signed `update_license` push. The site stores the key in a Password field and puts itself in OpenMeter mode (D7).
+3. Reject a request without `metering_site_key` or `metering_gateway_url`, naming the field.
+4. On a duplicate-FID request, replace the stored key and gateway address with the ones in the request. If the site is already deployed, push them again. CRM revokes the previous key whenever it issues a new one, so keeping the old key would leave the site with a dead key.
+5. In the Verification Pass, call the gateway `ping` with the site's key. Fail the deployment with `error_code: "SITE_KEY_NOT_DELIVERED"` unless the reply is `active` for the same FID.
 
 ### 2.4 Responses CRM handles
 
@@ -100,8 +105,9 @@ The setup service must:
 
 For HMIS sites set up before metering. They never send a provisioning request again, so they never receive a key through §2.
 
-- Request: `{"fid": "<FID>", "metering_site_key": "omk2.<FID>.<secret>"}`
-- Expected: 200 or 202 with `accepted: true`, after the signed `update_license` push that stores the key is queued.
+- Request: `{"fid": "<FID>", "metering_site_key": "omk2.<FID>.<secret>", "metering_gateway_url": "https://<gateway host>/ingest/v1/"}`
+- Expected: 200 or 202 with `accepted: true`, after the signed `update_license` push that stores the key and gateway address is queued.
+- The site switches to OpenMeter mode when it stores the key (D7).
 - CRM treats HTTP 404 as "the setup service does not offer this method yet", and anything else as a failure to retry on the next run.
 - CRM calls it one FID at a time, under the same per-FID lock as provisioning.
 
@@ -132,6 +138,7 @@ CRM polls every 5 minutes while setup is in progress. Version 1's requirements s
 Rules:
 
 - **Facility address (D3).** `site_url` and `login_url` open the facility's own HMIS site. An address shared by several facilities does not meet S1.
+- **One facility per site (D3).** A site holds one metering site key, which carries one FID. The metering gateway identifies the facility from that key. Several facilities on one site would share one key and one balance.
 - **Top level.** CRM reads fields from the top level of `message`. Nested blocks such as `login` or `target` may stay, but S1–S3 must also appear at the top level.
 - **Ready means signable.** Return `status: "deployed"` only once the administrator can sign in. If the site is up but the owner login failed, return `failed` with `error_code: "OWNER_LOGIN_FAILED"`.
 - **Timestamps.** Every time field is ISO-8601 with a timezone offset. Today `last_attempt` is a naive local string.
@@ -169,7 +176,7 @@ CRM detects these by matching message text in a 400 or 417 response. Both need a
 ## 6. Security requirements
 
 1. **No credentials in any response.** Do not return passwords, reset tokens or site keys in `get_provision_status` or any other response CRM receives. CRM never shows, stores or logs credentials. First sign-in uses the welcome email or "Forgot password", reported through S4.
-2. **Site key.** `metering_site_key` travels in the request body only. Do not log it, return it, or include it in error messages. Deliver it to the site only in the signed `update_license` push.
+2. **Site key.** `metering_site_key` travels in the request body only. Do not log it, return it, or include it in error messages. Deliver it to the site only in the signed `update_license` push. Store it encrypted on the setup site, never in a JSON field or the deployment log. `metering_gateway_url` is not secret, but it must be `https://` and carry no credentials.
 3. **Masking.** `credentials_sent_to` is masked, for example `a***@d***.org`.
 4. **Errors.** Error text returned to CRM contains no stack traces, internal hostnames or secrets.
 5. **Transport.** HTTPS only. API key pairs can be rotated without a CRM release.
@@ -233,18 +240,28 @@ CRM `develop` does not yet do the following:
 
 | # | Change | Today on develop |
 |---|---|---|
-| CRM-P1 | Stop sending `tokens_awarded`, `token_expiry_date` and `token_purchase_url` for token-based plans | Sends the package quantity and onboarding + 30 days; with the OpenMeter setting on, sends `tokens_awarded: 0` and `token_purchase_url` |
-| CRM-P2 | Make OpenMeter the only token source for token-based plans | Behind CRM HFR Settings → Use OpenMeter as the HMIS Token Source, off by default |
-| CRM-P3 | Grant the free plan in OpenMeter before the POST, and block the POST if it fails | The site key is issued before the POST; the free plan is granted by a hook after acceptance |
+| CRM-P1 | Stop sending `tokens_awarded`, `token_expiry_date`, `billing_model`, `token_source` and `token_purchase_url` | Sends the package quantity, onboarding + 30 days and `billing_model: Token`; with the OpenMeter setting on, also `tokens_awarded: 0`, `token_source` and `token_purchase_url` |
+| CRM-P2 | Make OpenMeter the only token source: always issue a site key, and block the POST without one | Behind CRM HFR Settings → Use OpenMeter as the HMIS Token Source, off by default |
+| CRM-P3 | Grant nothing at provisioning (D5) | Paid packages are deferred to their invoice; a zero-priced package is still granted when the setup service accepts |
 | CRM-P4 | Send `auto_deploy: true` | Not sent |
 | CRM-P5 | Change portal copy that says the implementation team reviews and starts deployment | Shown on the status card |
 | CRM-P6 | Read S4, S5, S7, S11–S17, `not_found` and `DUPLICATE_SETUP` | Not read |
+| CRM-P7 | Send `metering_gateway_url` in `provision_facility` and `update_metering_site_key` (D6) | No gateway address is configured anywhere in CRM or the metering app |
 
 CRM already reads S1–S3, S8–S10 and the `status` words in §4.
 
+### Outside CRM
+
+| # | Owner | Change |
+|---|---|---|
+| X1 | Metering app | Add a Metering Gateway URL setting and expose it to CRM through a hook. ADR-002 lists it under OMM-23, but it is not in the code. |
+| X2 | Metering app | Remove the zero-priced package grant at provisioning (its express paid-tokens plan, D2) |
+| X3 | Metering app | Update the HMIS ingest contract: the gateway address arrives through provisioning (D6); OpenMeter mode is set by holding a key, not by `token_source` (D7); the out-of-tokens message has no purchase link (D8) |
+| X4 | HMIS | HMIS-H2 switches on key presence (D7). HMIS-H3 shows no purchase link (D8). |
+
 ## 9. Rollout order
 
-1. The setup service accepts token-based requests without `tokens_awarded` and `token_expiry_date`, and accepts `token_source`, `metering_site_key` and `auto_deploy` (§2).
-2. The metering app's hooks (OMM-32, OMM-33) and HMIS's balance pull from OpenMeter (HMIS-H1) are live.
-3. CRM ships CRM-P1 to CRM-P5. Sending the new payload before step 1 would make the setup service reject every request for the missing token fields.
+1. The setup service accepts `metering_site_key`, `metering_gateway_url` and `auto_deploy`, delivers the key and address in `update_license`, and implements §2.3 (§2, §3).
+2. The metering app ships X1 to X3; HMIS ships HMIS-H1 (balance pull) and X4.
+3. CRM ships CRM-P1 to CRM-P5 and CRM-P7. Steps 1 and 2 must be live first, or new sites cannot reach the gateway.
 4. Status fields (§4, §5) and CRM-P6 follow one at a time, in either order.
