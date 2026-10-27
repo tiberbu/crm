@@ -13,3 +13,13 @@ export function pricePerToken(pkg) {
   const tokens = Number(pkg?.token_quantity || 0)
   return price > 0 && tokens > 0 ? price / tokens : null
 }
+
+// A package summary as one line per sentence, for a checklist instead of a paragraph. Decimal
+// points ("KES 6.00/token") are not sentence ends; the closing full stop is dropped, and an
+// inline "•" separator reads as a comma so a line does not wrap on a bullet.
+export function summaryLines(text) {
+  return String(text || '')
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9~(+])/)
+    .map((line) => line.trim().replace(/\s*•\s*/g, ', ').replace(/\.$/, ''))
+    .filter(Boolean)
+}

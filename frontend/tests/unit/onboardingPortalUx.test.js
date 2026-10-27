@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { facilityPage, filterFacilities } from '@/utils/facilityPager'
-import { partnerName, pricePerToken } from '@/utils/portalPartner'
+import { partnerName, pricePerToken, summaryLines } from '@/utils/portalPartner'
 import { facilityId } from '@/utils/facilityId'
 import { termsDocument, termsFileName } from '@/utils/termsDownload'
 
@@ -75,5 +75,24 @@ describe('facilityId', () => {
     expect(facilityId({ facility_id: 'FID-00-TEST-04' })).toBe('FID-00-TEST-04')
     expect(facilityId({ mfl_code: '12345', facility_id: '12345' })).toBe('')
     expect(facilityId(null)).toBe('')
+  })
+})
+
+describe('summaryLines', () => {
+  it('puts each sentence of a package summary on its own line', () => {
+    expect(
+      summaryLines(
+        '2,800 tokens (includes 300 bonus tokens • +12% yield). Effective rate KES 5.36/token. Designed for ~70 full clinical encounters or ~200 outpatient visits.',
+      ),
+    ).toEqual([
+      '2,800 tokens (includes 300 bonus tokens, +12% yield)',
+      'Effective rate KES 5.36/token',
+      'Designed for ~70 full clinical encounters or ~200 outpatient visits',
+    ])
+    expect(summaryLines('1,000 tokens at KES 6.00/token base rate. Designed for small facilities.')).toEqual([
+      '1,000 tokens at KES 6.00/token base rate',
+      'Designed for small facilities',
+    ])
+    expect(summaryLines('')).toEqual([])
   })
 })

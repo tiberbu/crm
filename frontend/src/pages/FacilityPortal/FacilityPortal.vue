@@ -6,7 +6,7 @@ import TokenCalculator from '@/components/TokenCalculator.vue'
 import FacilitySingleView from './FacilitySingleView.vue'
 import OptInRequests from './OptInRequests.vue'
 import { compactPackageGridClass, packageGridClass } from '@/utils/cardGrid'
-import { partnerName, pricePerToken } from '@/utils/portalPartner'
+import { partnerName, pricePerToken, summaryLines } from '@/utils/portalPartner'
 import { facilityId } from '@/utils/facilityId'
 import {
   facilityLabel,
@@ -719,6 +719,7 @@ const optinRequests = computed(() => {
       facilities: (ois.progress?.facilities || []).map((f) => ({
         name: f.facility_name,
         mfl_code: f.mfl_code,
+        facility_id: facilityId(f),
       })),
       package: ois.progress?.package || null,
       open_orders: (ois.open_orders || []).length,
@@ -2638,13 +2639,17 @@ onUnmounted(() => {
                   </p>
                 </div>
 
-                <!-- Short plain-language summary, the same height on every card -->
-                <p
-                  class="mt-4 line-clamp-3 min-h-[3.75rem] text-xs leading-5 text-cx-ink-3"
-                  :title="pkg.coverage_summary || pkg.description"
-                >
-                  {{ pkg.coverage_summary || pkg.description }}
-                </p>
+                <!-- Summary as a checklist: one sentence per line -->
+                <ul class="mt-4 space-y-2.5 border-t border-cx-border-soft pt-4" data-testid="portal-package-summary">
+                  <li
+                    v-for="line in summaryLines(pkg.coverage_summary || pkg.description)"
+                    :key="line"
+                    class="flex items-start gap-2 text-xs leading-5 text-cx-ink-2"
+                  >
+                    <CxIcon name="check" class="mt-0.5 size-4 shrink-0 text-cx-success" />
+                    <span>{{ line }}</span>
+                  </li>
+                </ul>
 
                 <div class="mt-auto pt-5">
                   <button

@@ -103,6 +103,16 @@ test.describe("facility portal", () => {
     await expect(grid).toContainText("KES");
     await expect(grid).not.toContainText("Ksh");
     await expect(grid).toContainText("per token");
+
+    // Summaries read as a checklist: one sentence per line, no run-on paragraph.
+    for (let index = 0; index < count; index++) {
+      const lines = cards.nth(index).getByTestId("portal-package-summary").locator("li");
+      expect(await lines.count()).toBeGreaterThan(1);
+      for (const text of await lines.allInnerTexts()) {
+        expect(text.trim()).not.toMatch(/\.\s+\S/);
+        expect(text.trim()).not.toMatch(/\.$/);
+      }
+    }
   });
 
   test("a facility without a partner shows none, and its page has orders to pay and billing details", async ({
