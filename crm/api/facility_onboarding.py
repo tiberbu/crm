@@ -427,8 +427,15 @@ def _session_or_error(token: str, *, verified: bool = False) -> dict[str, Any]:
 
 
 def _mask_email(value: str) -> str:
+	"""Keep the first and last characters of the local part, like the phone mask keeps both ends.
+
+	Local parts of one or two characters keep only the first, so none is shown in full.
+	"""
 	local, _, domain = _text(value).partition("@")
-	return (local[:1] + "***@" + domain) if domain else "***"
+	if not domain:
+		return "***"
+	tail = local[-1:] if len(local) > 2 else ""
+	return local[:1] + "***" + tail + "@" + domain
 
 
 def _mask_phone(value: str) -> str:
@@ -460,8 +467,10 @@ def _decoy_destination(identity_hash: str, channel: str) -> str:
 	digest = _otp_hash("decoy|%s|%s" % (channel, identity_hash))
 	if channel == "sms":
 		return "254******%02d" % (int(digest[4:8], 16) % 100)
-	letter = "abcdefghijklmnopqrstuvwxyz"[int(digest[:2], 16) % 26]
-	return "%s***@%s" % (letter, _DECOY_DOMAINS[int(digest[2:4], 16) % len(_DECOY_DOMAINS)])
+	letters = "abcdefghijklmnopqrstuvwxyz"
+	# Same shape as _mask_email, so a decoy cannot be told apart from a real address.
+	first, last = letters[int(digest[:2], 16) % 26], letters[int(digest[8:10], 16) % 26]
+	return "%s***%s@%s" % (first, last, _DECOY_DOMAINS[int(digest[2:4], 16) % len(_DECOY_DOMAINS)])
 
 
 def _send_otp(person: dict[str, Any], otp: str) -> dict[str, str]:
