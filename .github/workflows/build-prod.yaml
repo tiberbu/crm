@@ -31,6 +31,14 @@ jobs:
         run: |
           PREV_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
           PREV_VERSION=${PREV_VERSION#v}
+
+          # git describe can resolve to malformed tags (e.g. a tag literally named "v").
+          # In that case fall back to the highest vX.Y.Z tag in the repository.
+          if ! [[ $PREV_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            PREV_VERSION=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -1)
+            PREV_VERSION=${PREV_VERSION#v}
+          fi
+
           MAJOR=$(echo $PREV_VERSION | cut -d. -f1)
           MINOR=$(echo $PREV_VERSION | cut -d. -f2)
           PATCH=$(echo $PREV_VERSION | cut -d. -f3)
@@ -40,6 +48,12 @@ jobs:
             PATCH=$((PATCH + 1))
             NEW_VERSION="$MAJOR.$MINOR.$PATCH"
           done
+
+          # Safety net: never attempt to push an invalid tag name
+          if ! [[ $NEW_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: could not derive a valid version number from tags" >&2
+            exit 1
+          fi
 
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $NEW_VERSION"
@@ -120,9 +134,9 @@ jobs:
         run: |
           echo "## Build Triggered" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Target Repo:** \`tiberbu/custom_containers_uat\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Apps Branch:** \`${{ steps.apps-branch.outputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Target Repo:** `tiberbu/custom_containers_uat`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** `${{ env.IMAGE_NAME }}`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** `${{ steps.version.outputs.version }}`" >> $GITHUB_STEP_SUMMARY
+          echo "**Apps Branch:** `${{ steps.apps-branch.outputs.branch }}`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Monitor build progress in: https://github.com/tiberbu/custom_containers_uat/actions" >> $GITHUB_STEP_SUMMARY
