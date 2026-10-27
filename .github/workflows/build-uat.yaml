@@ -16,6 +16,7 @@ env:
   NODEJS_VERSION: "22.11.0"
   DOCKERFILE: images/custom/Containerfile
 
+
 jobs:
   trigger-build:
     runs-on: ubuntu-latest
