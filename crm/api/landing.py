@@ -15,9 +15,6 @@ CONTACT_TOPICS = (
 	"Something else",
 )
 MAX_MESSAGE = 2000
-PERIOD_UNITS = {"Monthly": "month", "Quarterly": "quarter", "Annual": "year"}
-
-
 def get_landing_settings() -> dict:
 	"""Contact and certification details maintained in CRM Opt-In Settings."""
 	settings = frappe.get_single("CRM Opt-In Settings")
@@ -58,7 +55,8 @@ def get_pricing_preview() -> list[dict]:
 				"price": "{:,.0f}".format(package["price_ex_vat"]) if package.get("price_ex_vat") else "",
 				"currency": package.get("currency") or "KES",
 				"vat_label": package.get("vat_label") or "VAT",
-				"period": PERIOD_UNITS.get(package.get("billing_period"), "month"),
+				# A package buys a number of tokens, not a period of service.
+				"tokens": "{:,}".format(int(package.get("token_quantity") or 0)),
 			}
 		)
 	return plans
