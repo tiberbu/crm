@@ -88,3 +88,4 @@ crm.patches.v1_0.add_token_calculator_settings
 crm.patches.v1_0.add_token_facility_fid
 crm.patches.v1_0.add_user_kyc_fields
 crm.patches.v1_0.add_token_order_frequency_fields
+crm.patches.v1_0.add_token_bonus_and_partner_coupon

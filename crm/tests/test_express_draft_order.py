@@ -174,3 +174,72 @@ class TestExpressDraftOrder(IntegrationTestCase):
 		self.assertIsNone(_create_express_draft_order(self.customer, facility, {"item_code": "NO-SUCH-PACKAGE"}, None))
 		with patch.object(cx, "create_express_draft_order", side_effect=frappe.ValidationError("boom")):
 			self.assertIsNone(_create_express_draft_order(self.customer, facility, {"item_code": self.package["item_code"]}, None))
+
+
+class TestTokenBonuses(TestExpressDraftOrder):
+	"""First-purchase bonus and Partner Coupon lines on Express orders."""
+
+	def setUp(self):
+		frappe.db.set_single_value("CRM Opt-In Settings", {"welcome_bonus_tokens": 400, "partner_coupon_tokens": 150})
+		frappe.clear_document_cache("CRM Opt-In Settings", "CRM Opt-In Settings")
+		self.addCleanup(frappe.clear_document_cache, "CRM Opt-In Settings", "CRM Opt-In Settings")
+		super().setUp()
+		if not frappe.db.has_column("Sales Order Item", "crm_bonus_type"):
+			self.skipTest("Run bench migrate: token bonus fields are missing")
+
+	def _bonus_rows(self, order):
+		return {
+			row.crm_bonus_type: (row.crm_bonus_tokens, row.rate)
+			for row in frappe.get_doc("Sales Order", order).items
+			if row.crm_bonus_type
+		}
+
+	def _coupon_facility(self, mfl):
+		network = frappe.db.get_value("CRM Opt-In Network", {}, "name") or frappe.get_doc(
+			{"doctype": "CRM Opt-In Network", "slug": "express-coupon-test", "display_name": "Coupon Test Network", "partner_id": "909092", "enabled": 1}
+		).insert(ignore_permissions=True).name
+		frappe.get_doc(
+			{
+				"doctype": "CRM Pre-Qualified Facility",
+				"mfl_code": mfl,
+				"facility_name": "Coupon Clinic %s" % mfl,
+				"keph_level": "Level 2",
+				"memberships": [{"network": network, "customer": self.customer, "status": "Active", "partner_coupon": 1, "contact_name": "Owner", "contact_email": OWNER, "contact_phone": "+254700000000"}],
+			}
+		).insert(ignore_permissions=True)
+
+	def test_first_order_carries_a_zero_rated_welcome_bonus(self):
+		order = frappe.get_doc("Sales Order", self.order)
+		self.assertEqual(self._bonus_rows(self.order), {"Welcome Bonus": (400, 0)})
+		self.assertEqual(order.net_total, self.package["price"])
+
+	def test_partner_coupon_facility_gets_both_and_the_invoice_shows_them(self):
+		self._coupon_facility("90013")
+		order = cx.create_express_draft_order(self.customer, "90013", self.package)["data"]["sales_order"]
+		self.assertEqual(self._bonus_rows(order), {"Welcome Bonus": (400, 0), "Partner Coupon": (150, 0)})
+		self.order = order
+		invoice = frappe.get_doc("Sales Invoice", self._confirm()["invoice"])
+		lines = {row.crm_bonus_type: row.crm_bonus_tokens for row in invoice.items if row.crm_bonus_type}
+		self.assertEqual(lines, {"Welcome Bonus": 400, "Partner Coupon": 150})
+		self.assertEqual(invoice.net_total, self.package["price"])
+
+	def test_bonus_goes_to_the_first_confirmed_order_only(self):
+		frappe.set_user("Administrator")
+		with patch.object(cx, "_period_key", return_value="2099-01"):
+			second = cx.create_express_draft_order(self.customer, MFL, self.package)["data"]["sales_order"]
+		self.assertIn("Welcome Bonus", self._bonus_rows(second))
+		self._confirm()
+		frappe.set_user(OWNER)
+		cx.confirm_draft_order(second, kra_pin=KRA_PIN, billing_address=frappe.db.get_value("Sales Order", self.order, "customer_address"))
+		self.assertEqual(self._bonus_rows(second), {})
+		frappe.set_user("Administrator")
+		with patch.object(cx, "_period_key", return_value="2099-02"):
+			third = cx.create_express_draft_order(self.customer, MFL, self.package)["data"]["sales_order"]
+		self.assertEqual(self._bonus_rows(third), {})
+
+	def test_no_coupon_without_the_flag_and_nothing_when_set_to_zero(self):
+		self.assertNotIn("Partner Coupon", self._bonus_rows(self.order))
+		frappe.db.set_single_value("CRM Opt-In Settings", "welcome_bonus_tokens", 0)
+		frappe.clear_document_cache("CRM Opt-In Settings", "CRM Opt-In Settings")
+		self._confirm()
+		self.assertEqual(self._bonus_rows(self.order), {})

@@ -1743,7 +1743,7 @@ class TestFacilityOnboardingCatalog(UnitTestCase):
 
 	def test_invalid_nonblank_partner_id_never_falls_back_to_default_network(self):
 		with patch.object(fo, "_public_network", return_value=None):
-			with self.assertRaisesRegex(frappe.ValidationError, "Network ID"):
+			with self.assertRaisesRegex(frappe.ValidationError, "Partner Coupon"):
 				fo.get_catalog("12345x")
 
 	def test_invalid_vat_configuration_is_reported_generically(self):
