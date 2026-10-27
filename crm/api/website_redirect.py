@@ -19,6 +19,8 @@ import frappe
 from frappe import _
 from frappe.utils import cstr
 
+from crm.api.facility_onboarding import NO_NETWORK_SLUG
+
 
 PORTAL_ROUTE = "/cx-portal"
 CRM_LOGIN_MARKER = "crm_login"
@@ -973,8 +975,16 @@ def require_portal_user() -> list[str]:
 	return get_user_ois_numbers(user)
 
 
+def _partner_label(network_name: str) -> str:
+	"""The partner's display name, or "" when the facility has no partner."""
+	if not network_name or network_name == NO_NETWORK_SLUG:
+		return ""
+	return cstr(frappe.db.get_value("CRM Opt-In Network", network_name, "display_name") or network_name)
+
+
 def _portal_network(network_name: str) -> dict:
-	if not network_name:
+	# Self-onboarding without a Partner Coupon records the sentinel network; it is not a partner.
+	if not network_name or network_name == NO_NETWORK_SLUG:
 		return {}
 	cache = getattr(frappe.local, "_cx_portal_network_cache", None)
 	if cache is None:
@@ -1511,7 +1521,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				or package.get("hfr_facility_id")
 				or "",
 				"keph_level": cstr(facility.get("keph_level") or ""),
-				"network": frappe.db.get_value("CRM Opt-In Network", membership.get("network"), "display_name") if membership.get("network") else (primary_deal.get("optin_network") if primary_deal else None) or "CareVerse Partner Network",
+				"network": _partner_label(membership.get("network") or (primary_deal.get("optin_network") if primary_deal else "")),
 				"network_support": _portal_network(membership.get("network") or (primary_deal.get("optin_network") if primary_deal else "")),
 				"membership_status": cstr(membership.get("status") or "Active"),
 				"go_live": bool(frappe.utils.cint(membership.get("go_live"))),
@@ -1562,7 +1572,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 					or registry_facility([deal_organization_by_name.get(d.get("name")), customer_legal_name, customer], mfl_raw).get("hfr_facility_id")
 					or "",
 					"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
-					"network": d.get("optin_network") or "CareVerse Partner Network",
+					"network": _partner_label(d.get("optin_network")),
 					"network_support": _portal_network(d.get("optin_network")),
 					"membership_status": "Active",
 					"go_live": True,
@@ -1594,7 +1604,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			"deal": primary_deal.get("name") if primary_deal else "",
 			"deals": [d.get("name") for d in cust_deals if d.get("name")],
 			"organization": org_name,
-			"network": (primary_deal.get("optin_network") if primary_deal else None) or "CareVerse Partner Network",
+			"network": _partner_label(primary_deal.get("optin_network") if primary_deal else ""),
 			"source": primary_deal.get("cx_onboarding_source") if primary_deal else "Customer",
 			"selected_package": primary_deal.get("cx_onboarding_package_item") if primary_deal else None,
 			"facilities": rows,
@@ -1621,7 +1631,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				or registry_facility([deal_organization_by_name.get(d_name), deal_doc.get("organization")], df.get("mfl_code")).get("hfr_facility_id")
 				or "",
 				"keph_level": cstr(df.get("facility_level") or "Level 2 Dispensary"),
-				"network": deal_doc.get("optin_network") or "CareVerse Partner Network",
+				"network": _partner_label(deal_doc.get("optin_network")),
 				"network_support": _portal_network(deal_doc.get("optin_network")),
 				"membership_status": "Active",
 				"go_live": True,
@@ -1643,7 +1653,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			"deal": d_name,
 			"deals": [d_name],
 			"organization": deal_doc.get("organization") or f"Deal {d_name}",
-			"network": deal_doc.get("optin_network") or "CareVerse Partner Network",
+			"network": _partner_label(deal_doc.get("optin_network")),
 			"source": deal_doc.get("cx_onboarding_source") or "CRM Deal",
 			"selected_package": None,
 			"facilities": fac_rows,
@@ -1679,7 +1689,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 				).get("hfr_facility_id")
 				or "",
 				"keph_level": cstr(lf.get("facility_level") or "Level 2 Dispensary"),
-				"network": lead_doc.get("optin_network") or "CareVerse Partner Network",
+				"network": _partner_label(lead_doc.get("optin_network")),
 				"network_support": _portal_network(lead_doc.get("optin_network")),
 				"membership_status": "Lead Inquiry",
 				"go_live": False,
@@ -1702,7 +1712,7 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			"deal": "",
 			"deals": [],
 			"organization": lead_doc.get("organization") or f"Lead {l_name}",
-			"network": lead_doc.get("optin_network") or "CareVerse Partner Network",
+			"network": _partner_label(lead_doc.get("optin_network")),
 			"source": "CRM Lead",
 			"selected_package": None,
 			"facilities": fac_rows,
