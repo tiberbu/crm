@@ -85,6 +85,8 @@ def _period_key(package, today=None):
 		return "%d" % today.year
 	if period == "Quarterly":
 		return "%d-Q%d" % (today.year, (today.month - 1) // 3 + 1)
+	if period == "Semi-annual":
+		return "%d-H%d" % (today.year, (today.month - 1) // 6 + 1)
 	return "%d-%02d" % (today.year, today.month)
 
 

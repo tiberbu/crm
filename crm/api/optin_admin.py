@@ -676,6 +676,7 @@ def get_optin_settings():
 				"coverage_summary": frappe.utils.cstr(row.get("coverage_summary") or "").strip(),
 				"coverage_metrics": frappe.utils.cstr(row.get("coverage_metrics") or "").strip(),
 				"enabled": int(row.get("enabled") or 0),
+				"status": frappe.utils.cstr(row.get("status") or "").strip(),
 			}
 			for row in (settings.get("token_packages") or [])
 		]
@@ -762,6 +763,8 @@ def update_optin_settings(settings: Any):
 			bonus_tokens[fieldname] = -1
 		if not 0 <= bonus_tokens[fieldname] <= 1_000_000:
 			frappe.throw(_("{0} must be a whole number from 0 to 1,000,000.").format(label))
+	# Settings › Packages owns the catalogue; an Opt-In save only replaces it when it sends it.
+	packages_sent = "token_packages" in settings
 	token_packages = settings.get("token_packages") or []
 	if tiberbu_signing_requirement not in ("All must sign", "At least one must sign"):
 		frappe.throw(_("Choose whether all Tiberbu signatories or at least one must sign."))
@@ -836,7 +839,7 @@ def update_optin_settings(settings: Any):
 			frappe.throw(_("Each token package must contain at least one token."))
 		if plan == "Fixed" and not facility_levels:
 			frappe.throw(_("A Fixed package needs the facility levels it applies to."))
-		if billing_period not in ("Monthly", "Quarterly", "Annual"):
+		if billing_period not in ("Monthly", "Quarterly", "Semi-annual", "Annual"):
 			frappe.throw(_("Choose a valid token package billing period."))
 		if item_code in seen_token_items:
 			frappe.throw(_("Each token service item may appear only once in the catalogue."))
@@ -860,6 +863,7 @@ def update_optin_settings(settings: Any):
 				"coverage_summary": coverage_summary,
 				"coverage_metrics": coverage_metrics,
 				"enabled": int(bool(row.get("enabled", 1))),
+				**({"status": row["status"]} if row.get("status") in ("Active", "Disabled", "Discontinued") else {}),
 			}
 		)
 	if normalized_token_packages and not token_price_list:
@@ -917,7 +921,8 @@ def update_optin_settings(settings: Any):
 			if doc.meta.has_field(fieldname):
 				doc.set(fieldname, value)
 		doc.token_invoice_due_days = token_invoice_due_days
-		doc.set("token_packages", normalized_token_packages)
+		if packages_sent:
+			doc.set("token_packages", normalized_token_packages)
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 
