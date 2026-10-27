@@ -253,9 +253,22 @@ def create_token_order(
 		return _create_or_resume_customer_order(cust_name, facility_mfl, package, _open_purchase_key(base_key))
 
 
-def _create_or_resume_customer_order(customer, facility_mfl, package, key):
+def _create_or_resume_customer_order(customer, facility_mfl, package, key, submit_order=True, source_quote=None):
+	"""Create or resume a customer's token order; Express onboarding leaves it as a draft for review.
+
+	``source_quote`` is the onboarding Quotation, reused (and submitted) instead of raising a second one.
+	"""
 	order_name = _existing_document("Sales Order", key)
 	quotation_name = _existing_document("Quotation", key)
+	if not order_name and not quotation_name and source_quote:
+		for fieldname, value in (
+			("crm_token_purchase_key", key),
+			("crm_token_facility_mfl", facility_mfl),
+			("crm_token_package_item", package["item_code"]),
+		):
+			if frappe.db.has_column("Quotation", fieldname):
+				frappe.db.set_value("Quotation", source_quote, fieldname, value, update_modified=False)
+		quotation_name = source_quote
 	if order_name:
 		return {
 			"success": True,
@@ -286,6 +299,8 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key):
 	if quotation_name:
 		quotation = frappe.get_doc("Quotation", quotation_name)
 		if quotation.docstatus == 0:
+			quotation.flags.ignore_permissions = True
+			quotation.flags.ignore_mandatory = True
 			quotation.submit()
 	else:
 		price_list = package.get("price_list")
@@ -331,12 +346,235 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key):
 	_restore_rate(sales_order, price)
 	_apply_order_tax_template(sales_order, quotation)
 	sales_order.insert(ignore_mandatory=True, ignore_permissions=True)
-	sales_order.submit()
+	if submit_order:
+		sales_order.submit()
 	_record_link("Sales Order", sales_order.name)
 	return {
 		"success": True,
 		"data": {"quotation": quotation.name, "sales_order": sales_order.name, "idempotent": False},
 	}
+
+
+def create_express_draft_order(customer, facility_mfl, package, source_quote=None):
+	"""Raise the draft Sales Order for a facility's preselected Express package (no login needed).
+
+	Runs inside the public onboarding submit. The client reviews it in the portal, adds the
+	billing details, and confirms it; tokens are granted only once its invoice is paid.
+	"""
+	raw_key = "|".join((customer, facility_mfl, package["item_code"], _period_key(package)))
+	base_key = hashlib.sha256(raw_key.encode()).hexdigest()[:40]
+	with filelock("crm_cx_order_%s" % base_key, timeout=60), _system_user():
+		return _create_or_resume_customer_order(
+			customer,
+			facility_mfl,
+			package,
+			_open_purchase_key(base_key),
+			submit_order=False,
+			source_quote=source_quote,
+		)
+
+
+KRA_PIN_PATTERN = re.compile(r"^[A-Z]\d{9}[A-Z]$")
+ORDER_FREQUENCIES = ("One-time", "Recurring")
+RECURRENCE_PERIODS = ("Monthly", "Quarterly", "Yearly")
+
+
+def _portal_draft_order(sales_order):
+	"""The portal user's own draft token order, or a permission error."""
+	require_portal_user()
+	name = _text(sales_order)
+	order = frappe.db.get_value("Sales Order", name, ["name", "customer", "docstatus"], as_dict=True) if name else None
+	if not order or _text(order.customer) not in get_user_customer_names():
+		frappe.throw(_("That order is not linked to your account."), frappe.PermissionError)
+	return order
+
+
+def _billing_addresses(customer):
+	"""Saved addresses linked to the customer, billing ones first."""
+	names = frappe.get_all(
+		"Dynamic Link",
+		filters={"link_doctype": "Customer", "link_name": customer, "parenttype": "Address"},
+		pluck="parent",
+		ignore_permissions=True,
+	)
+	if not names:
+		return []
+	rows = frappe.get_all(
+		"Address",
+		filters={"name": ["in", names], "disabled": 0},
+		fields=["name", "address_title", "address_type", "address_line1", "address_line2", "city", "state", "pincode", "country", "email_id", "phone", "is_primary_address"],
+		order_by="is_primary_address desc, modified desc",
+		ignore_permissions=True,
+	)
+	rows.sort(key=lambda row: row.address_type != "Billing")
+	return rows
+
+
+@frappe.whitelist(methods=["GET", "POST"])
+def get_draft_order(sales_order: Any):
+	"""What the client reviews before confirming a token order: lines, totals and billing details."""
+	order = _portal_draft_order(sales_order)
+	doc = frappe.get_doc("Sales Order", order.name)
+	return {
+		"success": True,
+		"data": {
+			"name": doc.name,
+			"is_draft": doc.docstatus == 0,
+			"status": doc.status,
+			"customer": doc.customer,
+			"customer_name": doc.customer_name,
+			"transaction_date": str(doc.transaction_date or ""),
+			"currency": doc.currency,
+			"net_total": flt(doc.net_total),
+			"total_taxes_and_charges": flt(doc.total_taxes_and_charges),
+			"grand_total": flt(doc.grand_total),
+			"items": [
+				{"item_code": row.item_code, "item_name": row.item_name, "description": row.description, "qty": flt(row.qty), "rate": flt(row.rate), "amount": flt(row.amount)}
+				for row in doc.items
+			],
+			"taxes": [{"description": row.description, "rate": flt(row.rate), "tax_amount": flt(row.tax_amount)} for row in doc.taxes or []],
+			"facility_mfl": _text(doc.get("crm_token_facility_mfl")),
+			"package_item": _text(doc.get("crm_token_package_item")),
+			"billing_address": _text(doc.customer_address),
+			"addresses": _billing_addresses(doc.customer),
+			"kra_pin": _text(frappe.db.get_value("Customer", doc.customer, "tax_id")),
+			"frequency": _text(doc.get("crm_order_frequency")) or "One-time",
+			"recurrence_period": _text(doc.get("crm_recurrence_period")),
+		},
+	}
+
+
+def _clean_kra_pin(value):
+	pin = re.sub(r"\s+", "", _text(value)).upper()
+	if not KRA_PIN_PATTERN.match(pin):
+		frappe.throw(
+			_("Enter a valid KRA PIN: a letter, nine digits and a letter (for example A123456789Z)."),
+			frappe.ValidationError,
+		)
+	return pin
+
+
+def _billing_address_for(customer, billing_address, new_address):
+	"""The chosen saved address, or a new Billing address linked to the customer."""
+	billing_address = _text(billing_address)
+	if billing_address:
+		if billing_address not in {row.name for row in _billing_addresses(customer)}:
+			frappe.throw(_("That billing address is not linked to your account."), frappe.PermissionError)
+		return billing_address
+	if isinstance(new_address, str):
+		try:
+			new_address = json.loads(new_address or "{}")
+		except ValueError:
+			new_address = {}
+	new_address = new_address if isinstance(new_address, dict) else {}
+	line1 = _text(new_address.get("address_line1"))
+	city = _text(new_address.get("city"))
+	if not line1 or not city:
+		frappe.throw(_("Choose a saved billing address, or enter the street address and town."), frappe.ValidationError)
+	address = frappe.get_doc(
+		{
+			"doctype": "Address",
+			"address_title": _text(new_address.get("address_title")) or frappe.db.get_value("Customer", customer, "customer_name") or customer,
+			"address_type": "Billing",
+			"address_line1": line1,
+			"address_line2": _text(new_address.get("address_line2")),
+			"city": city,
+			"state": _text(new_address.get("county")),
+			"pincode": _text(new_address.get("postal_code")),
+			"country": _text(new_address.get("country")) or "Kenya",
+			"email_id": _text(new_address.get("email_id")),
+			"phone": _text(new_address.get("phone")),
+			"is_primary_address": 0 if _billing_addresses(customer) else 1,
+			"links": [{"link_doctype": "Customer", "link_name": customer}],
+		}
+	)
+	address.insert(ignore_permissions=True)  # SYSTEM-INTERNAL: linked to the user's own Customer
+	_record_link("Address", address.name)
+	return address.name
+
+
+@frappe.whitelist(methods=["POST"])
+def confirm_draft_order(
+	sales_order: Any,
+	kra_pin: Any = None,
+	frequency: Any = "One-time",
+	recurrence_period: Any = None,
+	billing_address: Any = None,
+	new_address: Any = None,
+):
+	"""Confirm a reviewed draft token order: save billing details, submit it and raise its invoice."""
+	order = _portal_draft_order(sales_order)
+	frequency = _text(frequency) or "One-time"
+	recurrence_period = _text(recurrence_period)
+	if frequency not in ORDER_FREQUENCIES:
+		frappe.throw(_("Choose whether the order is one-time or recurring."), frappe.ValidationError)
+	if frequency == "Recurring" and recurrence_period not in RECURRENCE_PERIODS:
+		frappe.throw(_("Choose how often a recurring order repeats."), frappe.ValidationError)
+	pin = _clean_kra_pin(kra_pin)
+	with (
+		filelock("crm_cx_invoice_%s" % hashlib.sha256(order.name.encode()).hexdigest()[:32], timeout=60),
+		_system_user(),
+	):
+		doc = frappe.get_doc("Sales Order", order.name)
+		if doc.docstatus == 0:
+			_confirm_order(doc, pin, frequency, recurrence_period, billing_address, new_address)
+		elif doc.docstatus != 1:
+			frappe.throw(_("This order was cancelled."), frappe.ValidationError)
+		fields = ["name", "crm_token_purchase_key", "docstatus", "status", "customer"]
+		if frappe.db.has_column("Sales Order", "crm_optin_submission"):
+			fields.append("crm_optin_submission")
+		payment = _start_or_resume_payment(frappe.db.get_value("Sales Order", doc.name, fields, as_dict=True))
+		payment["data"]["sales_order"] = doc.name
+		payment["data"]["auto_repeat"] = _text(frappe.db.get_value("Sales Order", doc.name, "auto_repeat"))
+		return payment
+
+
+def _confirm_order(doc, pin, frequency, recurrence_period, billing_address, new_address):
+	from frappe.contacts.doctype.address.address import get_address_display
+
+	if _text(frappe.db.get_value("Customer", doc.customer, "tax_id")) != pin:
+		frappe.db.set_value("Customer", doc.customer, "tax_id", pin)
+	address = _billing_address_for(doc.customer, billing_address, new_address)
+	doc.customer_address = address
+	doc.address_display = get_address_display(address)
+	doc.tax_id = pin
+	doc.crm_order_frequency = frequency
+	doc.crm_recurrence_period = recurrence_period if frequency == "Recurring" else ""
+	if not _text(doc.get("crm_token_purchase_key")):
+		# Auto-repeated orders copy no key (no_copy); invoice idempotency needs one.
+		doc.crm_token_purchase_key = hashlib.sha256(("order|" + doc.name).encode()).hexdigest()[:40]
+	today = frappe.utils.today()
+	if frappe.utils.getdate(doc.transaction_date) < frappe.utils.getdate(today):
+		validity = int(frappe.get_single("CRM Opt-In Settings").get("token_sales_order_validity_days") or 30)
+		doc.transaction_date = today
+		doc.delivery_date = frappe.utils.add_days(today, validity)
+		for row in doc.items:
+			row.delivery_date = doc.delivery_date
+		doc.set("payment_schedule", [])
+	doc.flags.ignore_permissions = True  # SYSTEM-INTERNAL: the portal user owns this order
+	doc.save()
+	doc.submit()
+	_record_link("Sales Order", doc.name)
+	if frequency == "Recurring":
+		_schedule_recurring_order(doc, recurrence_period)
+
+
+def _schedule_recurring_order(doc, period):
+	"""Repeat the order each period as a new draft the client reviews again (never auto-submitted)."""
+	months = {"Monthly": 1, "Quarterly": 3, "Yearly": 12}[period]
+	auto_repeat = frappe.get_doc(
+		{
+			"doctype": "Auto Repeat",
+			"reference_doctype": "Sales Order",
+			"reference_document": doc.name,
+			"frequency": period,
+			"start_date": frappe.utils.add_months(doc.transaction_date, months),
+			"submit_on_creation": 0,
+		}
+	)
+	auto_repeat.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+	_record_link("Auto Repeat", auto_repeat.name)
+	return auto_repeat.name
 
 
 def create_initial_token_order(submission_name, facility_mfl, package_item_code):

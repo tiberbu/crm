@@ -1106,13 +1106,15 @@ def _customer_orders(customer: str) -> list[dict]:
 		"grand_total",
 		"currency",
 		"status",
+		"docstatus",
 	]
-	for col in ("crm_token_facility_mfl", "crm_token_package_item"):
+	for col in ("crm_token_facility_mfl", "crm_token_package_item", "crm_order_frequency", "crm_recurrence_period"):
 		if frappe.db.has_column("Sales Order", col):
 			fields.append(col)
+	# Drafts are Express orders (and recurring repeats) waiting for the client's review.
 	orders = frappe.get_list(
 		"Sales Order",
-		filters={"customer": customer, "docstatus": 1, "per_billed": ["<", 100]},
+		filters={"customer": customer, "docstatus": ["in", [0, 1]], "per_billed": ["<", 100]},
 		fields=fields,
 		order_by="creation desc",
 		limit_page_length=200,
@@ -1120,7 +1122,8 @@ def _customer_orders(customer: str) -> list[dict]:
 	)
 	for order in orders:
 		order["customer"] = customer
-		order["can_create_invoice"] = cstr(order.get("status") or "").strip().casefold() not in {"closed", "on hold", "cancelled"}
+		order["is_draft"] = order.pop("docstatus") == 0
+		order["can_create_invoice"] = not order["is_draft"] and cstr(order.get("status") or "").strip().casefold() not in {"closed", "on hold", "cancelled"}
 	return orders
 
 
