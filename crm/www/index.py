@@ -29,7 +29,7 @@ ONBOARDING = "/facility-onboarding"
 def _css_version() -> str:
 	"""A content hash for the stylesheet links: the CDN caches /assets for a year, so a changed
 	file needs a new URL to reach visitors."""
-	digest = hashlib.sha1()
+	digest = hashlib.sha256()
 	for name in ("value-express.css", "value-express-landing.css"):
 		with open(frappe.get_app_path("crm", "public", "css", name), "rb") as css:
 			digest.update(css.read())
