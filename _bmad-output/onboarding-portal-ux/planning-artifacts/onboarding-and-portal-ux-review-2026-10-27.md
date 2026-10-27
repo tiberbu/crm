@@ -135,3 +135,44 @@ on order until one is paid for.
 B6 was confirmed by code trace rather than screenshot: none of the existing synthetic facilities
 had the `no-network` record at baseline. The post-implementation check uses a synthetic facility
 onboarded without a coupon.
+
+## Addendum: Facility ID beside every MFL code (2026-10-27)
+
+Request: rename the portal Facilities table's "MFL Code" column to "Facility ID", and make sure
+no screen shows an MFL code without the Facility ID (the Health Facility Registry FID).
+
+- **D9 Facility ID is the registry FID**, read by `facilityId()` from `hfr_facility_id`,
+  `facility_fid`, `fid` or `facility_id`, and only when the value looks like an FID. An MFL code is
+  never shown in its place. A facility not yet in the registry shows "Not linked yet".
+- **D10 MFL stays visible beneath the Facility ID.** Owners and staff still quote MFL codes, so
+  each screen shows both, with the Facility ID first. Search boxes match either one.
+
+### Screen audit
+
+| Screen | Before | After |
+|---|---|---|
+| Portal · Facilities table (list and grouped) | "MFL Code" column | "Facility ID" column (copyable FID, MFL beneath) |
+| Portal · Facilities grid, Dashboard cards, Profile list, Network Support drawer, top-up picker, link-facility notice | MFL only | Facility ID and MFL |
+| Portal · Find and link facility (registry search) | FID on some results only | Facility ID on all results that have one; search option renamed "Facility ID" |
+| Portal · Facility page | FID in profile panel only | Facility ID in the header, the profile panel and the identifiers line |
+| Portal · facility search | Name only | Name, Facility ID or MFL |
+| Onboarding · Choose facilities, Packages | MFL only | Facility ID and MFL; search by either |
+| Desk · Organization, Lead, Deal facility rows; HFR search panel | MFL only | Facility ID chip beside MFL |
+| Desk · Pre-qualified facilities table, Network detail facility rows | MFL only | Facility ID (API now returns `hfr_facility_id`; search matches it) |
+
+Left MFL-only on purpose, because these screens don't have a Facility ID to show:
+- **Desk, input-only:** Network detail "add facility" form and CSV import preview. The MFL code
+  is what is typed in or uploaded, before any registry match.
+- **Opt-in invite screens:** facility selection and review. They work from the network's
+  invite records, which don't carry a FID.
+- **Desk · Deal quoting tab:** facility rows come from the quote, which doesn't carry a FID.
+- **Desk · Opt-in submissions:** the facility MFL column and its "Duplicate MFL" badge.
+- **Finance cockpit setup form:** the `mfl_code` field.
+
+Adding the Facility ID to these needs backend data changes, so they are left as a follow-up.
+`FacilityDrawer.vue` was not changed because nothing renders it.
+
+### Results
+- Python `crm.tests.test_optin_admin`: 37 passed. Vitest: 220 passed. Build passes.
+- Playwright `e2e/onboarding-ux`: 4 passed (adds Facility ID checks: table header, row FID, page
+  header, onboarding cards and search). `frontend/e2e/regression`: 13 passed.
