@@ -260,3 +260,4 @@ section[id]{scroll-margin-top:72px}
 .footlinks a{color:var(--ink-2)}
 header.site .signin{margin-left:4px}
 @media (max-width:1080px){header.site .signin{margin-left:auto}header.site .signin+.btn{margin-left:0}}
+@media (min-width:901px){.pkgs{grid-template-columns:repeat(var(--cards,4),1fr)}}

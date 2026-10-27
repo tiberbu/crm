@@ -227,7 +227,7 @@
 
   {% if flex or offer.custom %}
   <div class="sub" id="flex-packages"><h3>Simple prepaid packages</h3>
-    <div class="pkgs">
+    <div class="pkgs" style="--cards:{{ flex|length + (1 if offer.custom else 0) }}">
       {% for card in flex %}
       <div class="pkg{% if card.recommended %} rec{% endif %}" data-testid="flex-package">{% if card.recommended %}<span class="rectag">Recommended</span>{% endif %}<div class="k">Value Express Flex<b>{{ card.name }}</b></div><p>{{ card.description }}</p><div class="p">{{ card.currency }} {{ amount(card.price) }}</div><dl><dt>Tokens</dt><dd>{{ amount(card.tokens) }}</dd><dt>Approx. patient journeys*</dt><dd>{{ card.journeys }}</dd><dt>Price per token</dt><dd>{{ card.currency }} {{ "%.2f"|format(card.rate) }}</dd></dl>{% if card.more_percent %}<span class="more">Includes {{ card.more_percent }}% more tokens</span>{% endif %}{% if offer.welcome_bonus %}<span class="bonus">+{{ amount(offer.welcome_bonus) }} bonus tokens on first purchase</span>{% endif %}<a href="{{ onboarding_url }}?plan=flex&amp;package={{ card.item_code|urlencode }}">Get started →</a></div>
       {% endfor %}

@@ -307,7 +307,7 @@
                   <span class="n">−{{ accessTokens.toLocaleString() }}</span>
                   <p><b>{{ __('{0} tokens a month for system access.', [accessTokens.toLocaleString()]) }}</b> {{ __('This is deducted from your balance at the start of each funded month, before service-point and patient-bill tokens. Each card shows what is left for services in your first month.') }}</p>
                 </div>
-                <div class="pkgs" data-testid="package-grid">
+                <div class="pkgs" data-testid="package-grid" :style="{ '--cards': (catalog.packages?.length || 0) + (customOffer ? 1 : 0) }">
                   <div v-for="pkg in catalog.packages" :key="pkg.item_code" class="pkg" :class="{ sel: flexChoice[activeId] === pkg.item_code }">
                     <span v-if="recommendedKey === pkg.item_code" class="rec">{{ carried?.package === pkg.item_code ? __('Recommended for you') : __('Recommended') }}</span>
                     <span class="nm">{{ pkg.display_name || pkg.item_code }}</span>

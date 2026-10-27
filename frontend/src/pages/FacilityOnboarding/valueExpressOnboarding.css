@@ -152,7 +152,7 @@ header.site .help{margin-left:auto;font-weight:600;font-size:.9rem}
 .resend button{font-size:.9rem}
 .hintline{font-size:.85rem;color:var(--ink-2)}
 .rv .chg{font:600 .85rem var(--f-body);margin-left:6px}
-.pkgs{grid-template-columns:repeat(4,1fr)}
+.pkgs{grid-template-columns:repeat(var(--cards,4),1fr)}
 @media (max-width:1000px){.pkgs{grid-template-columns:1fr 1fr}}
 @media (max-width:560px){.pkgs{grid-template-columns:1fr}}
 .cuin{font:700 1.1rem var(--f-mono);color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;margin-top:4px}
