@@ -1,3 +1,5 @@
+import { randomUUID } from "crypto";
+
 import { expect, Page } from "@playwright/test";
 
 /**
@@ -27,9 +29,11 @@ export function syntheticFacilities(count: number) {
 
 export async function mockOnboardingApi(page: Page, facilityCount: number) {
   const identity = { full_name: "Synthetic Person", email: "s***n@example.test", phone: "071******00" };
-  const answers: Record<string, unknown> = {
+  // Only these endpoints are answered; any other method goes to the site. A Map matches its own
+  // keys only, never inherited ones such as "constructor".
+  const answers = new Map<string, unknown>(Object.entries({
     start_identity: {
-      session_token: "synthetic-session",
+      session_token: randomUUID(),
       identity,
       delivery: { channel: "sms", masked_destination: identity.phone, status: "sent", resend_after: 60 },
     },
@@ -45,11 +49,11 @@ export async function mockOnboardingApi(page: Page, facilityCount: number) {
       content_hash: "0".repeat(64),
     },
     check_onboarding_conflicts: { conflicts: [] },
-  };
+  }));
   await page.route(/\/api\/method\/crm\.api\.facility_onboarding\.(\w+)/, async (route, request) => {
-    const method = /facility_onboarding\.(\w+)/.exec(request.url())![1];
-    if (!(method in answers)) return route.continue();
-    await route.fulfill({ json: { message: answers[method] } });
+    const method = new URL(request.url()).pathname.split(".").pop() || "";
+    if (!answers.has(method)) return route.continue();
+    await route.fulfill({ json: { message: answers.get(method) } });
   });
 }
 

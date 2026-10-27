@@ -1,5 +1,3 @@
-import { readFileSync } from "fs";
-
 import { expect, test } from "@playwright/test";
 
 import { env, signedIn } from "../metering/journey";
@@ -62,7 +60,11 @@ test.describe("self-onboarding", () => {
       page.getByTestId("terms-download").click(),
     ]);
     expect(download.suggestedFilename()).toBe("synthetic-onboarding-terms.html");
-    const saved = readFileSync(await download.path(), "utf8");
+    expect(download.suggestedFilename()).not.toMatch(/[\\/]/);
+    // Read the download as a stream, so no file path is involved.
+    const chunks: Buffer[] = [];
+    for await (const chunk of await download.createReadStream()) chunks.push(Buffer.from(chunk));
+    const saved = Buffer.concat(chunks).toString("utf8");
     expect(saved).toContain(`<title>${SYNTHETIC_TERMS}</title>`);
     expect(saved).toContain("Synthetic terms used by the UI checks.");
     expect(saved).toContain("default-src 'none'");
