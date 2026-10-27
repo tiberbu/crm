@@ -49,6 +49,7 @@
 <script setup>
 import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
 import LucideNetwork from '~icons/lucide/network'
+import LucidePackage from '~icons/lucide/package'
 import MonitorCogIcon from '~icons/lucide/monitor-cog'
 import LucideTextCursorInput from '~icons/lucide/text-cursor-input'
 import SlidersIcon from '@/components/Icons/SlidersIcon.vue'
@@ -82,6 +83,7 @@ import EmailConfig from '@/components/Settings/EmailConfig.vue'
 import SESSettings from '@/components/Settings/SESSettings.vue'
 import HFRSettings from '@/components/Settings/HFRSettings.vue'
 import OptInSettings from '@/components/Settings/OptInSettings.vue'
+import PackageCatalogue from '@/components/Settings/PackageCatalogue.vue'
 import Icon from '@/components/Icon.vue'
 import { usersStore } from '@/stores/users'
 import {
@@ -149,6 +151,11 @@ const tabs = computed(() => {
           label: __('Calendar'),
           icon: CalendarIcon,
           component: markRaw(CalendarSettings),
+        },
+        {
+          label: __('Packages'),
+          icon: LucidePackage,
+          component: markRaw(PackageCatalogue),
         },
       ],
       condition: () => isManager(),
