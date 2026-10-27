@@ -28,9 +28,9 @@ test.describe("self-onboarding", () => {
     await expect(page.getByTestId("facility-pager-status")).toHaveText("Showing 11–20 of 25");
     await cards.first().check();
     await page.getByRole("button", { name: /Next/ }).click();
-    await expect(cards).toHaveCount(5);
-    // The last facility is already set up and cannot be chosen.
-    await expect(cards.last()).toBeDisabled();
+    // The last facility is already set up: it shows a lock instead of a checkbox.
+    await expect(cards).toHaveCount(4);
+    await expect(page.getByTestId("facility-already-onboarded")).toHaveCount(1);
 
     await page.getByTestId("facility-search").fill("Clinic 01");
     await expect(cards).toHaveCount(1);
