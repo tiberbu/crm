@@ -416,7 +416,7 @@ function money(val, currency = 'KES') {
                 {{ money(recommendedPackage.price_ex_vat ?? recommendedPackage.price, recommendedPackage.currency) }}
               </span>
               <span class="text-xs text-ink-gray-5 font-medium block">
-                {{ __('excl. VAT / month') }}
+                {{ __('excl. VAT') }}
               </span>
             </div>
           </div>

@@ -96,6 +96,7 @@ class TestLandingContent(IntegrationTestCase):
 				"currency": "KES",
 				"vat_label": "VAT (16%)",
 				"billing_period": "Monthly",
+				"token_quantity": 2800,
 			},
 			{
 				"item_code": "PKG-FREE",
@@ -107,7 +108,8 @@ class TestLandingContent(IntegrationTestCase):
 		with patch("crm.api.facility_onboarding._catalog_packages", return_value=catalog):
 			plans = landing.get_pricing_preview()
 		self.assertEqual(plans[0]["price"], "15,000")
-		self.assertEqual(plans[0]["period"], "month")
+		self.assertEqual(plans[0]["tokens"], "2,800")
+		self.assertNotIn("period", plans[0])
 		self.assertEqual((plans[0]["badge"], plans[0]["features"]), ("Popular", ["a", "b"]))
 		self.assertEqual(plans[1]["price"], "")
 		self.assertEqual(plans[1]["features"], [])
