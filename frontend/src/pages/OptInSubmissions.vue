@@ -202,7 +202,9 @@
                   v-if="row.facility_mfl_code"
                   class="text-xs text-ink-gray-5"
                 >
-                  {{ row.facility_mfl_code }}
+                  {{ __('Facility ID') }}
+                  {{ facilityIdFor(row.facility_mfl_code) || __('not linked yet') }}
+                  · MFL {{ row.facility_mfl_code }}
                 </span>
                 <span
                   v-if="row.facility_count > 1"
@@ -558,6 +560,7 @@ import { createResource, Button, Dialog, toast } from 'frappe-ui'
 import { useStorage } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { sessionStore } from '@/stores/session'
+import { useFacilityIds } from '@/composables/useFacilityIds'
 
 const router = useRouter()
 const route = useRoute()
@@ -623,6 +626,7 @@ const filtersResource = createResource({
 })
 
 const rows = computed(() => listResource.data?.rows ?? [])
+const { facilityIdFor } = useFacilityIds(() => rows.value.map((row) => row.facility_mfl_code))
 const total = computed(() => listResource.data?.total ?? 0)
 const filterNetworks = computed(() => filtersResource.data?.networks ?? [])
 const filterFacilityLevels = computed(

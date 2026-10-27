@@ -84,7 +84,7 @@
           <thead class="bg-surface-gray-1 text-ink-gray-5">
             <tr>
               <th class="px-3 py-2 text-left font-medium">
-                {{ __('MFL Code') }}
+                {{ __('Facility ID') }}
               </th>
               <th class="px-3 py-2 text-left font-medium">
                 {{ __('Facility Name') }}
@@ -101,7 +101,11 @@
               class="even:bg-surface-gray-1"
             >
               <td class="px-3 py-2 font-mono text-ink-gray-7">
-                {{ f.mfl_code }}
+                <span v-if="facilityId(f) || facilityIdFor(f.mfl_code)">{{
+                  facilityId(f) || facilityIdFor(f.mfl_code)
+                }}</span>
+                <span v-else class="italic text-ink-gray-5">{{ __('Not linked yet') }}</span>
+                <span class="block text-xs text-ink-gray-5">MFL {{ f.mfl_code }}</span>
               </td>
               <td class="px-3 py-2 text-ink-gray-8">{{ f.facility_name }}</td>
               <td class="px-3 py-2 text-ink-gray-6">{{ f.keph_level }}</td>
@@ -121,6 +125,10 @@
           <div
             class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-gray-5"
           >
+            <span class="font-mono"
+              >{{ __('Facility ID') }}
+              {{ facilityId(f) || facilityIdFor(f.mfl_code) || __('not linked yet') }}</span
+            >
             <span v-if="f.mfl_code" class="font-mono"
               >MFL {{ f.mfl_code }}</span
             >
@@ -1174,6 +1182,8 @@ import { createResource, Button, Dialog, FormControl, toast } from 'frappe-ui'
 import ContractingPanel from './ContractingPanel.vue'
 import QuotePanel from './QuotePanel.vue'
 import { copyToClipboard } from '@/utils'
+import { facilityId } from '@/utils/facilityId'
+import { useFacilityIds } from '@/composables/useFacilityIds'
 
 const props = defineProps({
   dealId: { type: String, required: true },
@@ -1255,6 +1265,7 @@ const oisRawJson = computed(() => {
 
 const oisContact = computed(() => oisRawJson.value?.contact ?? null)
 const oisFacilities = computed(() => oisRawJson.value?.facilities ?? [])
+const { facilityIdFor } = useFacilityIds(() => oisFacilities.value.map((f) => f.mfl_code))
 const oisPricingPlans = computed(() => oisRawJson.value?.pricing_plans ?? [])
 
 function quoteContractScheduleSummary(quote, index) {

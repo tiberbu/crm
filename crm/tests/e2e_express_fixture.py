@@ -33,6 +33,7 @@ def setup(
 	from openmeter_mediator.tests import e2e_fixture as base
 
 	from crm.api.customer_experience import _package, create_express_draft_order
+	from crm.api.facility_onboarding import _no_network
 
 	run_id = frappe.utils.cstr(run_id).strip()
 	if not run_id.isalnum():
@@ -45,7 +46,8 @@ def setup(
 		frappe.db.set_single_value("CRM Opt-In Settings", "partner_coupon_tokens", int(partner_coupon_tokens))
 		frappe.clear_document_cache("CRM Opt-In Settings", "CRM Opt-In Settings")
 	customer = base._ensure_customer()
-	network = base._ensure_network()
+	# Without a Partner Coupon, self-onboarding records the No Network record, as here.
+	network = base._ensure_network() if partner_coupon else _no_network()["name"]
 	mfl, fid = f"E2E-X{run_id}", f"FID-00-E2EX-{run_id}"
 	facility = frappe.get_doc(
 		{

@@ -362,7 +362,7 @@
                   {{ fac.facility_name }}
                 </p>
                 <p class="text-xs text-gray-400 dark:text-gray-500">
-                  {{ fac.mfl_code }}
+                  Facility ID {{ pricedFacilityId(fac) || 'not linked yet' }} · MFL {{ fac.mfl_code }}
                 </p>
               </td>
               <td class="px-4 py-3">
@@ -479,6 +479,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useOptInStore } from './useOptInStore.js'
+import { facilityId } from '@/utils/facilityId'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
@@ -488,6 +489,10 @@ const props = defineProps({
 const emit = defineEmits(['continue', 'back'])
 
 const store = useOptInStore()
+// Priced rows carry only the MFL code; the Facility ID comes with the verified facility list.
+function pricedFacilityId(fac) {
+  return facilityId(fac) || facilityId(store.selectedFacilities.find((row) => row.mfl_code === fac.mfl_code))
+}
 const loading = ref(false)
 const errorMsg = ref('')
 const pricing = ref(store.pricing || null)

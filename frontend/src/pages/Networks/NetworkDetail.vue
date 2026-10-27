@@ -654,7 +654,7 @@
           <input
             v-model="facilitySearch"
             class="h-8 w-48 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-            :placeholder="__('Name, MFL or organization')"
+            :placeholder="__('Name, Facility ID, MFL or organization')"
             @keyup.enter="applyContactFilters"
           />
         </label>
@@ -824,7 +824,10 @@
                 </p>
                 <p class="mt-0.5 text-xs text-ink-gray-5">
                   {{ row.organization || row.facility_name }} ·
-                  {{ row.mfl_code }}
+                  <template v-if="row.hfr_facility_id"
+                    >{{ __('Facility ID') }} {{ row.hfr_facility_id }} ·
+                  </template>
+                  MFL {{ row.mfl_code }}
                 </p>
                 <p class="mt-0.5 text-xs text-ink-gray-5">
                   {{ facilityContractScheduleLabel(row) }}
@@ -1176,6 +1179,18 @@
             <span v-else>{{ __('Lookup HFR') }}</span>
           </button>
           <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-ink-gray-6">{{
+              __('Facility ID')
+            }}</label>
+            <input
+              :value="form.hfr_facility_id || __('Filled in by Lookup HFR')"
+              type="text"
+              readonly
+              data-testid="network-facility-id"
+              class="w-48 rounded border border-outline-gray-2 bg-surface-gray-1 px-3 py-1.5 font-mono text-sm text-ink-gray-7 dark:bg-surface-gray-2 dark:text-ink-gray-4"
+            />
+          </div>
+          <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6"
               >{{ __('Facility Name') }}
               <span class="text-red-600">*</span></label
@@ -1407,7 +1422,7 @@
               <tr>
                 <th class="px-3 py-2 text-left font-medium">{{ __('Row') }}</th>
                 <th class="px-3 py-2 text-left font-medium">
-                  {{ __('MFL Code') }}
+                  {{ __('Facility ID') }}
                 </th>
                 <th class="px-3 py-2 text-left font-medium">
                   {{ __('Facility Name') }}
@@ -1434,7 +1449,11 @@
               >
                 <td class="px-3 py-2 text-ink-gray-6">{{ r.row }}</td>
                 <td class="px-3 py-2 font-mono text-ink-gray-9">
-                  {{ r.mfl_code }}
+                  <span v-if="r.hfr_facility_id">{{ r.hfr_facility_id }}</span>
+                  <span v-else class="italic text-ink-gray-5">{{
+                    __('Not linked yet')
+                  }}</span>
+                  <span class="block text-ink-gray-5">MFL {{ r.mfl_code }}</span>
                 </td>
                 <td class="px-3 py-2 text-ink-gray-7">{{ r.facility_name }}</td>
                 <td class="px-3 py-2 text-ink-gray-7">
@@ -2058,6 +2077,7 @@ const hfrLoading = ref(false)
 
 const form = reactive({
   mfl_code: '',
+  hfr_facility_id: '',
   facility_name: '',
   organization: '',
   keph_level: '',
@@ -2104,6 +2124,7 @@ function clearFacilityScheduleOverride(year) {
 
 function resetForm() {
   form.mfl_code = ''
+  form.hfr_facility_id = ''
   form.facility_name = ''
   form.organization = ''
   form.keph_level = ''
@@ -2126,6 +2147,7 @@ function editContact(row) {
   const m = networkMembership(row) ?? {}
   Object.assign(form, {
     mfl_code: row.mfl_code ?? '',
+    hfr_facility_id: row.hfr_facility_id ?? '',
     facility_name: row.facility_name ?? '',
     organization: row.organization ?? row.facility_name ?? '',
     keph_level: row.keph_level ?? '',
@@ -2155,6 +2177,7 @@ async function lookupHFR() {
   try {
     const result = await hfrResource.submit({ mfl_code: form.mfl_code.trim() })
     if (result) {
+      form.hfr_facility_id = result.hfr_facility_id || form.hfr_facility_id
       form.facility_name = result.facility_name ?? form.facility_name
       form.keph_level = result.keph_level ?? form.keph_level
       defaultOrganizationFromFacility()
@@ -2220,6 +2243,7 @@ async function saveContact() {
   }
   const data = {
     mfl_code: form.mfl_code,
+    hfr_facility_id: form.hfr_facility_id,
     facility_name: form.facility_name,
     organization: form.organization,
     keph_level: form.keph_level,

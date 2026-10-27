@@ -349,6 +349,15 @@ class TestTokenPurchaseChain(IntegrationTestCase):
 		self.assertEqual(acc["facilities"][0]["facility_name"], "Desk Demo Clinic")
 		self.assertEqual(acc["facilities"][0]["mfl_code"], "88776")
 
+	def test_portal_shows_no_partner_for_the_no_network_record(self):
+		from crm.api.facility_onboarding import NO_NETWORK_SLUG, _no_network
+		from crm.api.website_redirect import _partner_label, _portal_network
+
+		_no_network()
+		self.assertEqual(_partner_label(NO_NETWORK_SLUG), "")
+		self.assertEqual(_partner_label(""), "")
+		self.assertEqual(_portal_network(NO_NETWORK_SLUG), {})
+
 	@patch("crm.api.website_redirect.frappe.get_all")
 	def test_portal_hfr_fallback_is_scoped_to_authorized_org_and_mfl(self, mock_get_all):
 		from crm.api.website_redirect import _portal_hfr_registry_by_mfl

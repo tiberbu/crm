@@ -22,6 +22,7 @@ from frappe.utils.jinja import get_jenv
 from jinja2.exceptions import TemplateSyntaxError
 
 from crm.api._email import branded_email_html, create_transactional_communication
+from crm.utils.facility_ids import facility_ids_by_mfl
 from crm.utils.optin_bundles import membership_price_lists, normalize_price_lists
 from crm.utils.onboarding_source import (
 	NETWORK_OPTIN_CONTACT_SOURCE,
@@ -261,6 +262,7 @@ def list_networks(
 			facility_or_filters = [
 				["facility_name", "like", facility_like],
 				["mfl_code", "like", facility_like],
+				["hfr_facility_id", "like", facility_like],
 				["organization", "like", facility_like],
 			]
 		facilities = frappe.get_list(
@@ -1800,6 +1802,7 @@ def list_facilities(
 		facility_or_filters = [
 			["facility_name", "like", facility_like],
 			["mfl_code", "like", facility_like],
+			["hfr_facility_id", "like", facility_like],
 			["organization", "like", facility_like],
 		]
 
@@ -1822,7 +1825,7 @@ def list_facilities(
 		for row in frappe.get_list(
 			"CRM Pre-Qualified Facility",
 			filters={"name": ["in", page_names]},
-			fields=["name", "mfl_code", "facility_name", "organization", "keph_level"],
+			fields=["name", "mfl_code", "hfr_facility_id", "facility_name", "organization", "keph_level"],
 			ignore_permissions=True,  # SYSTEM-INTERNAL
 		)
 	}
@@ -1861,6 +1864,7 @@ def list_facilities(
 			{
 				"name": fac.name,
 				"mfl_code": fac.mfl_code,
+				"hfr_facility_id": fac.hfr_facility_id or "",
 				"facility_name": fac.facility_name,
 				"organization": fac.organization or fac.facility_name,
 				"keph_level": fac.keph_level,
@@ -1972,6 +1976,10 @@ def save_facility(data: Any):
 				)
 
 	doc.mfl_code = mfl_code or doc.mfl_code
+	# The Facility ID comes from the HFR lookup or the CSV; a blank value never clears a stored one.
+	hfr_facility_id = frappe.utils.cstr(data.get("hfr_facility_id") or "").strip()
+	if hfr_facility_id:
+		doc.hfr_facility_id = hfr_facility_id
 	doc.facility_name = frappe.utils.cstr(data.get("facility_name") or doc.facility_name or "")
 	if "organization" in data:
 		doc.organization = frappe.utils.cstr(data.get("organization") or "").strip()
@@ -2170,7 +2178,7 @@ def lookup_hfr(mfl_code: Any):
 	"""
 	Look up a facility in the Health Facility Registry by MFL code.
 	Delegates to crm.api.hfr.search_facility which reads CRM HFR Settings
-	(hfr_url, hfr_fetch_path, JWT credentials). Returns {mfl_code, facility_name, keph_level}.
+	(hfr_url, hfr_fetch_path, JWT credentials). Returns {mfl_code, hfr_facility_id, facility_name, keph_level}.
 	"""
 	mfl_code = frappe.utils.cstr(mfl_code).strip()
 	if not mfl_code:
@@ -2191,6 +2199,7 @@ def lookup_hfr(mfl_code: Any):
 
 	return {
 		"mfl_code": hit.get("mfl_code") or mfl_code,
+		"hfr_facility_id": frappe.utils.cstr(hit.get("fid")).strip(),
 		"facility_name": hit.get("name") or "",
 		"keph_level": keph_level,
 	}
@@ -2275,6 +2284,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		preview = {
 			"row": idx,
 			"mfl_code": mfl_code,
+			"hfr_facility_id": row.get("hfr_facility_id", ""),
 			"facility_name": facility_name,
 			"organization": row.get("organization", ""),
 			"price_list_override": price_list_override,
@@ -2327,6 +2337,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 				save_facility(
 					{
 						"mfl_code": mfl_code,
+						"hfr_facility_id": preview["hfr_facility_id"],
 						"facility_name": facility_name,
 						"organization": organization,
 						"keph_level": keph_level or "Level 3",
@@ -2352,6 +2363,11 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 			imported += 1
 		preview_rows.append(preview)
 
+	# Rows without a Facility ID column show the one already on record for their MFL code.
+	known_ids = facility_ids_by_mfl(row["mfl_code"] for row in preview_rows if not row["hfr_facility_id"])
+	for row in preview_rows:
+		row["hfr_facility_id"] = row["hfr_facility_id"] or known_ids.get(row["mfl_code"], "")
+
 	return {
 		"imported": imported,
 		"valid_count": imported,
@@ -2365,7 +2381,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 @frappe.whitelist()
 def csv_template():
 	"""Return the CSV template as a string for download."""
-	return "mfl_code,facility_name,organization,price_list_override,keph_level,contact_name,contact_email,contact_phone\n22999,Example Hospital,Example Hospital Group,,Level 4,Jane Wanjiku,jane@hospital.co.ke,0722000000\n"
+	return "mfl_code,hfr_facility_id,facility_name,organization,price_list_override,keph_level,contact_name,contact_email,contact_phone\n22999,FID-00-22999-1,Example Hospital,Example Hospital Group,,Level 4,Jane Example,jane@example.test,0700000000\n"
 
 
 def _processed_ois_for_facility(network, mfl_code):

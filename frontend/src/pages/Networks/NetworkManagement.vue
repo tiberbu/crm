@@ -80,7 +80,7 @@
         <input
           v-model="facility"
           class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3 sm:w-44"
-          :placeholder="__('Name, MFL or organization')"
+          :placeholder="__('Name, Facility ID, MFL or organization')"
           @keyup.enter="applyFilters"
           @input="scheduleSearch"
         />

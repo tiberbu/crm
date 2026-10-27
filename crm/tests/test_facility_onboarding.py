@@ -549,11 +549,19 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 	def test_email_is_the_default_channel(self):
 		delivery = self._start()["delivery"]
 		self.assertEqual(delivery["channel"], "email")
-		self.assertEqual(delivery["masked_destination"], "o***@example.com")
+		self.assertEqual(delivery["masked_destination"], "o***r@example.com")
 		self.assertNotIn("owner@example.com", delivery["masked_destination"])
 		self.assertEqual(delivery["status"], "sent")
 		self.assertEqual(len(self.sent), 1)
 		self.assertEqual(self.sms, [])
+
+	def test_email_mask_keeps_first_and_last_characters_of_the_local_part(self):
+		self.assertEqual(fo._mask_email("owner@example.test"), "o***r@example.test")
+		self.assertEqual(fo._mask_email("abc@example.test"), "a***c@example.test")
+		# Short local parts are never shown in full.
+		self.assertEqual(fo._mask_email("ab@example.test"), "a***@example.test")
+		self.assertEqual(fo._mask_email("a@example.test"), "a***@example.test")
+		self.assertEqual(fo._mask_email("not-an-email"), "***")
 
 	def test_email_uses_careverse_transactional_layout_and_unique_safe_subject(self):
 		self._start()
@@ -615,12 +623,12 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		delivery = started["delivery"]
 		self.assertEqual(delivery["status"], "unavailable")
 		self.assertEqual(delivery["channel"], "email")
-		self.assertRegex(delivery["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
+		self.assertRegex(delivery["masked_destination"], r"^[a-z]\*\*\*[a-z]@[a-z.]+$")
 		self.assertNotIn("owner@example.com", repr(self.log_error.call_args_list))
 		unknown = self._start("87654321")["delivery"]
 		for field in ("channel", "status", "resend_after"):
 			self.assertEqual(delivery[field], unknown[field])
-		self.assertRegex(unknown["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
+		self.assertRegex(unknown["masked_destination"], r"^[a-z]\*\*\*[a-z]@[a-z.]+$")
 		token = started["session_token"]
 		self.email_fails = False
 		self.assertEqual(fo.resend_otp(token)["data"]["delivery"]["status"], "sent")
@@ -634,11 +642,11 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(set(first["delivery"]), set(real["delivery"]))
 		self.assertEqual(first["delivery"]["channel"], "email")
 		self.assertEqual(first["delivery"]["status"], "unavailable")
-		self.assertRegex(first["delivery"]["masked_destination"], r"^[a-z]\*\*\*@[a-z.]+$")
+		self.assertRegex(first["delivery"]["masked_destination"], r"^[a-z]\*\*\*[a-z]@[a-z.]+$")
 		self.assertEqual(first["delivery"]["masked_destination"], second["delivery"]["masked_destination"])
 		self.assertEqual(first["delivery"]["channel"], real["delivery"]["channel"])
 		self.assertEqual(real["delivery"]["status"], "sent")
-		self.assertEqual(real["delivery"]["masked_destination"], "o***@example.com")
+		self.assertEqual(real["delivery"]["masked_destination"], "o***r@example.com")
 
 	def test_nothing_sensitive_is_disclosed_before_verification(self):
 		data = self._start()

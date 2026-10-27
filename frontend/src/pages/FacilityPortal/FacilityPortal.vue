@@ -6,6 +6,8 @@ import TokenCalculator from '@/components/TokenCalculator.vue'
 import FacilitySingleView from './FacilitySingleView.vue'
 import OptInRequests from './OptInRequests.vue'
 import { compactPackageGridClass, packageGridClass } from '@/utils/cardGrid'
+import { partnerName, pricePerToken, summaryLines } from '@/utils/portalPartner'
+import { facilityId } from '@/utils/facilityId'
 import {
   facilityLabel,
   findOpenOrder,
@@ -232,7 +234,7 @@ const allFacilities = computed(() => {
           mfl_code: mfl,
           keph_level: fac.keph_level || 'Level 2 Dispensary',
           network_support: fac.network_support || null,
-          network: fac.network_support?.display_name || fac.network || account.network || 'CareVerse Partner Network',
+          network: partnerName(fac.network_support?.display_name || fac.network || account.network),
           membership_status: fac.membership_status || 'Active',
           go_live: Boolean(fac.go_live),
           deal: fac.deal || account.deal || '',
@@ -265,7 +267,7 @@ const allFacilities = computed(() => {
           mfl_code: mfl,
           keph_level: fac.keph_level || 'Level 2 Dispensary',
           network_support: fac.network_support || submission.network || null,
-          network: submission.network?.display_name || submission.network_slug || 'CareVerse Partner Network',
+          network: partnerName(submission.network?.display_name || submission.network_slug),
           membership_status: fac.membership_status || 'Active',
           go_live: Boolean(fac.network_contact?.go_live),
           deal: '',
@@ -315,8 +317,10 @@ const filteredFacilities = computed(() => {
     // Search query matching
     const q = searchQuery.value.trim().toLowerCase()
     if (q) {
-      const matchName = fac.facility_name.toLowerCase().includes(q)
-      if (!matchName) return false
+      const matches = [fac.facility_name, facilityId(fac), fac.mfl_code].some((value) =>
+        String(value || '').toLowerCase().includes(q),
+      )
+      if (!matches) return false
     }
 
     // Status filter
@@ -354,11 +358,12 @@ function resetFacilityFilters() {
   selectedNetworkFilter.value = 'all'
 }
 
-// Facilities grouped by partner network
+// Facilities grouped by partner network; facilities without one are grouped last.
+const NO_PARTNER_GROUP = 'Without a partner'
 const facilitiesByNetwork = computed(() => {
   const map = new Map()
   for (const fac of filteredFacilities.value) {
-    const net = fac.network || 'CareVerse Partner Network'
+    const net = fac.network || NO_PARTNER_GROUP
     if (!map.has(net)) {
       map.set(net, [])
     }
@@ -372,7 +377,7 @@ const facilitiesByNetwork = computed(() => {
       count: facilities.length,
     })
   }
-  return result
+  return result.sort((a, b) => Number(a.network === NO_PARTNER_GROUP) - Number(b.network === NO_PARTNER_GROUP))
 })
 
 // User Display Identity for top right avatar
@@ -504,7 +509,7 @@ const supportDrawerFacility = computed(
   () => allFacilities.value.find((f) => String(f.mfl_code) === String(supportFacilityMfl.value)) || null,
 )
 const primaryNetworkName = computed(() =>
-  allFacilities.value[0]?.network || userProfile.value.primary_network || 'CareVerse Partner Network',
+  allFacilities.value.find((facility) => facility.network)?.network || partnerName(userProfile.value.primary_network),
 )
 const networkSupportGroups = computed(() => {
   const groups = new Map()
@@ -707,13 +712,14 @@ const optinRequests = computed(() => {
     return {
       name: ois.name,
       status: ois.status || 'Submitted',
-      network: ois.network || ois.network_slug || 'CareVerse Partner Network',
+      network: partnerName(ois.network || ois.network_slug) || 'Self-onboarding',
       signatory: ois.facility_signatory_name || '',
       source: ois.onboarding_source || '',
       contract: ois.contract || '',
       facilities: (ois.progress?.facilities || []).map((f) => ({
         name: f.facility_name,
         mfl_code: f.mfl_code,
+        facility_id: facilityId(f),
       })),
       package: ois.progress?.package || null,
       open_orders: (ois.open_orders || []).length,
@@ -1017,12 +1023,19 @@ async function submitMpesaPayment() {
   }
 }
 
-function money(value, currency) {
+// Currency codes ("KES 6,000"), matching the package catalogue and onboarding.
+function money(value, currency, fractionDigits = 0) {
   return new Intl.NumberFormat('en-KE', {
     style: 'currency',
     currency: currency || defaultCurrency.value || 'KES',
-    maximumFractionDigits: 0,
+    currencyDisplay: 'code',
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(value || 0)
+}
+
+function isFreePackage(pkg) {
+  return Number(pkg?.price_ex_vat ?? pkg?.price ?? 0) === 0
 }
 
 // `call` already returns the server's `message`. Some payloads (provisioning
@@ -1097,7 +1110,7 @@ async function linkHfrCandidate(candidate) {
     addFacilityModalOpen.value = false
     notice.value = {
       tone: 'success',
-      text: `Facility "${payload.facility_name}" (MFL: ${payload.mfl_code}) was linked to your enterprise account successfully!`,
+      text: `Facility "${payload.facility_name}" (${facilityId(payload) || facilityId(candidate) ? `Facility ID ${facilityId(payload) || facilityId(candidate)} · ` : ''}MFL ${payload.mfl_code}) was linked to your enterprise account successfully!`,
     }
 
     await refreshContext()
@@ -1262,7 +1275,8 @@ async function confirmOrderReview() {
     const data = unwrap(await call('crm.api.customer_experience.confirm_draft_order', params))
     orderReviewOpen.value = false
     await refreshContext()
-    activeView.value = 'billing'
+    // Reviewed from a facility page: stay there, where the new invoice shows with its payment button.
+    if (activeView.value !== 'facility_detail') activeView.value = 'billing'
     notice.value = {
       tone: 'success',
       text: `Order ${data.sales_order} confirmed and invoice ${data.invoice} generated. Pay it below; your tokens are added once payment is received.`,
@@ -1588,8 +1602,8 @@ onUnmounted(() => {
               ref="globalSearchRef"
               type="text"
               v-model="searchQuery"
-              placeholder="Search your facilities by name"
-              aria-label="Search your facilities by name"
+              placeholder="Search by facility name, Facility ID or MFL code"
+              aria-label="Search by facility name, Facility ID or MFL code"
               class="w-full rounded-cx-sm bg-cx-well border border-cx-border pl-9 pr-9 sm:pr-12 py-2 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:bg-cx-surface focus:border-cx-brand focus:outline-none focus:ring-2 focus:ring-cx-brand-soft transition"
               @input="onGlobalSearchInput"
             />
@@ -1721,10 +1735,14 @@ onUnmounted(() => {
             :default-currency="defaultCurrency"
             :ensure-provisioning-draft="ensureProvisioningDraft"
             :get-provisioning-status="getProvisioningStatus"
+            :busy-order="busyId"
             @back="closeFacilityDrawer"
             @open-top-up="openTopUpModal"
             @open-support="openNetworkSupportDrawer"
             @pay="openMpesaModal"
+            @review-order="openOrderReview"
+            @create-invoice="createInvoice"
+            @open-billing="activeView = 'billing'"
           />
           <!-- ============================================================== -->
           <!-- VIEW A: FACILITIES TABLE (Exact match to screenshot structure) -->
@@ -1890,7 +1908,7 @@ onUnmounted(() => {
                         <tr class="border-b border-cx-border bg-cx-band text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">
                           <th class="py-3 px-4">Facility Name</th>
                           <th class="py-3 px-4">KEPH Level</th>
-                          <th class="py-3 px-4">MFL Code</th>
+                          <th class="py-3 px-4">Facility ID</th>
                           <th class="py-3 px-4">Go-live readiness</th>
                           <th class="py-3 px-4">Plan & Recent Purchase</th>
                           <th class="py-3 px-4 text-right">Care Tokens</th>
@@ -1917,7 +1935,7 @@ onUnmounted(() => {
                               >
                                 {{ facility.facility_name }}
                               </button>
-                                <span class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-cx-border-soft">
+                                <span v-if="facility.network" class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-cx-border-soft" data-testid="facility-partner">
                                   <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                                   <span>{{ facility.network }}</span>
                                 </span>
@@ -1931,13 +1949,18 @@ onUnmounted(() => {
                           </td>
                           <td class="py-3.5 px-4">
                             <button
+                              v-if="facilityId(facility)"
                               type="button"
-                              class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer"
-                              @click="copyMfl(facility.mfl_code)"
+                              class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer whitespace-nowrap"
+                              :title="`Copy Facility ID ${facilityId(facility)}`"
+                              data-testid="facility-id"
+                              @click="copyMfl(facilityId(facility))"
                             >
-                              <span>{{ facility.mfl_code }}</span>
-                              <CxIcon :name="copiedMfl === facility.mfl_code ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
+                              <span>{{ facilityId(facility) }}</span>
+                              <CxIcon :name="copiedMfl === facilityId(facility) ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
                             </button>
+                            <span v-else class="text-[11px] italic text-cx-ink-3" data-testid="facility-id">Not linked yet</span>
+                            <p v-if="facility.mfl_code" class="mt-1 font-mono text-[11px] text-cx-ink-3">MFL {{ facility.mfl_code }}</p>
                           </td>
                           <td class="py-3.5 px-4">
                             <span
@@ -1998,7 +2021,7 @@ onUnmounted(() => {
                       <tr class="border-b border-cx-border bg-cx-band text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">
                         <th class="py-3 px-4">Facility & Network</th>
                         <th class="py-3 px-4">KEPH Level</th>
-                        <th class="py-3 px-4">MFL Code</th>
+                        <th class="py-3 px-4">Facility ID</th>
                         <th class="py-3 px-4">Go-live readiness</th>
                         <th class="py-3 px-4">Plan & Recent Purchase</th>
                         <th class="py-3 px-4 text-right">Care Tokens</th>
@@ -2026,7 +2049,7 @@ onUnmounted(() => {
                               >
                                 {{ facility.facility_name }}
                               </button>
-                              <span class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-cx-border-soft">
+                              <span v-if="facility.network" class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-0.5 border border-cx-border-soft" data-testid="facility-partner">
                                 <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                                 <span>{{ facility.network }}</span>
                               </span>
@@ -2041,16 +2064,21 @@ onUnmounted(() => {
                           </span>
                         </td>
 
-                        <!-- MFL Code -->
+                        <!-- Facility ID (HFR FID), with the MFL code beneath -->
                         <td class="py-3.5 px-4">
                           <button
+                            v-if="facilityId(facility)"
                             type="button"
-                            class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer"
-                            @click="copyMfl(facility.mfl_code)"
+                            class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer whitespace-nowrap"
+                            :title="`Copy Facility ID ${facilityId(facility)}`"
+                            data-testid="facility-id"
+                            @click="copyMfl(facilityId(facility))"
                           >
-                            <span>{{ facility.mfl_code }}</span>
-                            <CxIcon :name="copiedMfl === facility.mfl_code ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
+                            <span>{{ facilityId(facility) }}</span>
+                            <CxIcon :name="copiedMfl === facilityId(facility) ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
                           </button>
+                          <span v-else class="text-[11px] italic text-cx-ink-3" data-testid="facility-id">Not linked yet</span>
+                          <p v-if="facility.mfl_code" class="mt-1 font-mono text-[11px] text-cx-ink-3">MFL {{ facility.mfl_code }}</p>
                         </td>
 
                         <!-- Status Badge -->
@@ -2157,8 +2185,8 @@ onUnmounted(() => {
                     >
                       {{ facility.facility_name }}
                     </button>
-                            <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
-                            <span class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-cx-border-soft">
+                            <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · Facility ID {{ facilityId(facility) || 'not linked yet' }} · MFL {{ facility.mfl_code }}</p>
+                            <span v-if="facility.network" class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-cx-border-soft" data-testid="facility-partner">
                               <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                               <span>{{ facility.network }}</span>
                             </span>
@@ -2236,8 +2264,8 @@ onUnmounted(() => {
                     >
                       {{ facility.facility_name }}
                     </button>
-                        <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
-                        <span class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-cx-border-soft">
+                        <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · Facility ID {{ facilityId(facility) || 'not linked yet' }} · MFL {{ facility.mfl_code }}</p>
+                        <span v-if="facility.network" class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-cx-border-soft" data-testid="facility-partner">
                           <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                           <span>{{ facility.network }}</span>
                         </span>
@@ -2327,7 +2355,7 @@ onUnmounted(() => {
                   <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Your Organization</span>
                   <h1 class="mt-0.5 truncate text-4xl font-bold tracking-tight text-cx-ink leading-tight">{{ primaryOrganizationName }}</h1>
                   <div class="mt-2 flex flex-wrap items-center gap-2">
-                    <span class="inline-flex items-center gap-1 rounded-cx-sm border border-cx-border bg-cx-well px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2">
+                    <span v-if="primaryNetworkName" class="inline-flex items-center gap-1 rounded-cx-sm border border-cx-border bg-cx-well px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2">
                       <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                       <span>{{ primaryNetworkName }}</span>
                     </span>
@@ -2464,8 +2492,8 @@ onUnmounted(() => {
                         >
                           {{ fac.facility_name }}
                         </button>
-                        <p class="mt-0.5 text-xs text-cx-ink-3">{{ fac.keph_level }} · MFL: {{ fac.mfl_code }}</p>
-                        <span class="mt-1 inline-flex items-center gap-1 rounded-cx-sm border border-cx-border-soft bg-cx-well px-1.5 py-0.5 text-[11px] font-medium text-cx-ink-2">
+                        <p class="mt-0.5 text-xs text-cx-ink-3">{{ fac.keph_level }} · Facility ID {{ facilityId(fac) || 'not linked yet' }} · MFL {{ fac.mfl_code }}</p>
+                        <span v-if="fac.network" class="mt-1 inline-flex items-center gap-1 rounded-cx-sm border border-cx-border-soft bg-cx-well px-1.5 py-0.5 text-[11px] font-medium text-cx-ink-2" data-testid="facility-partner">
                           <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                           <span>{{ fac.network }}</span>
                         </span>
@@ -2575,52 +2603,61 @@ onUnmounted(() => {
               <article
                 v-for="pkg in context.token_packages"
                 :key="pkg.item_code"
-                class="rounded-cx border border-cx-border bg-cx-surface p-6 shadow-cx flex flex-col justify-between transition hover:border-cx-border hover:shadow-cx"
+                class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-6 shadow-cx transition hover:shadow-cx"
+                data-testid="portal-package-card"
               >
-                <div>
-                  <!-- Tier Header -->
-                  <div class="flex items-center justify-between">
-                    <h3 class="font-bold text-lg text-cx-ink">{{ pkg.display_name }}</h3>
-                    <span
-                      v-if="Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0"
-                      class="rounded-full bg-cx-well text-cx-ink-2 px-2 py-0.5 text-[11px] font-semibold"
-                    >
-                      Free Trial
-                    </span>
-                  </div>
-
-                  <!-- Short plain-language description -->
-                  <p class="text-xs text-cx-ink-3 mt-2 min-h-10 leading-normal">
-                    {{ pkg.coverage_summary || pkg.description }}
-                  </p>
-
-                  <!-- Price -->
-                  <div class="mt-4 pt-4 border-t border-cx-border-soft">
-                    <div class="flex items-baseline gap-1">
-                      <span class="text-4xl font-bold text-cx-ink leading-tight">
-                        {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'KES 0' : money(pkg.price_ex_vat ?? pkg.price, pkg.currency) }}
-                      </span>
-                    </div>
-                    <span class="text-[11px] text-cx-ink-4 block mt-0.5">
-                      {{ Number(pkg.gross_total) > 0 ? `${money(pkg.gross_total, pkg.currency)} incl. ${pkg.vat_label || 'VAT'}` : 'No charge' }}
-                    </span>
-                  </div>
-
-                  <!-- Token Quantity Pill -->
-                  <div class="mt-4 inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-brand-soft border border-cx-brand-soft-border px-3 py-1.5 text-xs font-semibold text-cx-brand">
-                    <span><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
-                    <span>{{ Number(pkg.token_quantity || 0).toLocaleString() }} Care Tokens</span>
-                  </div>
+                <div class="flex h-7 items-center justify-between gap-2">
+                  <h3 class="truncate text-lg font-bold text-cx-ink">{{ pkg.display_name }}</h3>
+                  <span
+                    v-if="isFreePackage(pkg)"
+                    class="shrink-0 rounded-full bg-cx-well px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2"
+                  >
+                    Free Trial
+                  </span>
                 </div>
 
-                <!-- CTA Button -->
-                <div class="mt-6 pt-4 border-t border-cx-border-soft">
+                <!-- What the package buys: the headline -->
+                <p class="mt-4 flex items-center gap-2 text-cx-brand" data-testid="portal-package-tokens">
+                  <CxIcon name="coins" class="size-5 shrink-0" />
+                  <span class="text-2xl font-bold tracking-tight">{{ Number(pkg.token_quantity || 0).toLocaleString() }}</span>
+                  <span class="text-sm font-semibold">Care Tokens</span>
+                </p>
+
+                <!-- Price -->
+                <div class="mt-4 border-t border-cx-border-soft pt-4" data-testid="portal-package-price">
+                  <p class="flex items-baseline gap-1.5">
+                    <span class="text-3xl font-bold leading-tight text-cx-ink">{{ money(pkg.price_ex_vat ?? pkg.price, pkg.currency) }}</span>
+                    <span class="text-xs font-semibold text-cx-ink-3">{{ isFreePackage(pkg) ? 'no charge' : 'excl. VAT' }}</span>
+                  </p>
+                  <p class="mt-1 h-4 text-[11px] text-cx-ink-3">
+                    <template v-if="!isFreePackage(pkg)">
+                      {{ pkg.vat_label || 'VAT' }} {{ money(pkg.vat_amount, pkg.currency) }} · Total {{ money(pkg.gross_total, pkg.currency) }}
+                    </template>
+                  </p>
+                  <p class="mt-1 h-4 text-[11px] font-semibold text-cx-ink-2">
+                    <template v-if="pricePerToken(pkg)">{{ money(pricePerToken(pkg), pkg.currency, 2) }} per token</template>
+                  </p>
+                </div>
+
+                <!-- Summary as a checklist: one sentence per line -->
+                <ul class="mt-4 space-y-2.5 border-t border-cx-border-soft pt-4" data-testid="portal-package-summary">
+                  <li
+                    v-for="line in summaryLines(pkg.coverage_summary || pkg.description)"
+                    :key="line"
+                    class="flex items-start gap-2 text-xs leading-5 text-cx-ink-2"
+                  >
+                    <CxIcon name="check" class="mt-0.5 size-4 shrink-0 text-cx-success" />
+                    <span>{{ line }}</span>
+                  </li>
+                </ul>
+
+                <div class="mt-auto pt-5">
                   <button
                     type="button"
-                    class="w-full rounded-cx-sm bg-cx-brand py-2.5 px-4 text-xs font-semibold text-cx-contrast transition shadow-cx text-center hover:bg-cx-brand-strong"
+                    class="w-full rounded-cx-sm bg-cx-brand px-4 py-2.5 text-center text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-brand-strong"
                     @click="selectPlanFromPricingTab(pkg)"
                   >
-                    {{ Number(pkg.price_ex_vat ?? pkg.price ?? 0) === 0 ? 'Choose free package' : `Choose ${pkg.display_name}` }}
+                    {{ isFreePackage(pkg) ? 'Choose free package' : `Choose ${pkg.display_name}` }}
                   </button>
                 </div>
               </article>
@@ -2881,7 +2918,7 @@ onUnmounted(() => {
                   </div>
                   <p class="text-xs text-cx-ink-2 font-medium">
                     {{ userProfile.organization || primaryOrganizationName }}
-                    <span v-if="userProfile.primary_network"> · {{ userProfile.primary_network }}</span>
+                    <span v-if="partnerName(userProfile.primary_network)"> · {{ partnerName(userProfile.primary_network) }}</span>
                   </p>
                   <p class="text-[11px] font-mono text-cx-ink-3">
                     {{ userProfile.email }}
@@ -3021,7 +3058,7 @@ onUnmounted(() => {
                   <div class="grid grid-cols-2 gap-2 text-xs">
                     <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3">
                       <span class="text-cx-ink-3 block text-[11px] font-medium">Primary Network</span>
-                      <strong class="text-cx-ink block font-semibold truncate mt-0.5">{{ userProfile.primary_network || 'CareVerse Partner Network' }}</strong>
+                      <strong class="text-cx-ink block font-semibold truncate mt-0.5">{{ partnerName(userProfile.primary_network) || 'Not linked to a partner' }}</strong>
                     </div>
                     <div class="rounded-cx-sm bg-cx-well border border-cx-border-soft p-3">
                       <span class="text-cx-ink-3 block text-[11px] font-medium">Managed Facilities</span>
@@ -3078,7 +3115,8 @@ onUnmounted(() => {
                     </span>
                   </div>
                   <div class="flex items-center justify-between text-[11px] text-cx-ink-3">
-                    <span v-if="facility.mfl_code" class="font-mono">MFL: {{ facility.mfl_code }}</span>
+                    <span v-if="facilityId(facility)" class="font-mono">Facility ID {{ facilityId(facility) }}</span>
+                    <span v-if="facility.mfl_code" class="font-mono">MFL {{ facility.mfl_code }}</span>
                     <span class="font-medium text-cx-success-ink" data-testid="facility-card-tokens">
                       {{ availableTokens(facility).toLocaleString() }} tokens
                     </span>
@@ -3122,7 +3160,7 @@ onUnmounted(() => {
                 <div v-if="supportDrawerFacility" class="rounded-cx border border-cx-brand-soft-border bg-cx-brand-soft/70 p-4">
                   <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-brand-ink">Facility you’re viewing</p>
                   <p class="mt-1 text-sm font-bold text-cx-ink">{{ supportDrawerFacility.facility_name }}</p>
-                  <p class="mt-1 text-xs text-cx-ink-2">{{ supportDrawerFacility.network }}<span v-if="supportDrawerFacility.mfl_code"> · MFL {{ supportDrawerFacility.mfl_code }}</span></p>
+                  <p class="mt-1 text-xs text-cx-ink-2">{{ supportDrawerFacility.network }}<span v-if="facilityId(supportDrawerFacility)"> · Facility ID {{ facilityId(supportDrawerFacility) }}</span><span v-if="supportDrawerFacility.mfl_code"> · MFL {{ supportDrawerFacility.mfl_code }}</span></p>
                 </div>
 
                 <article v-for="network in networkSupportGroups" :key="network.key" class="rounded-cx border border-cx-border bg-cx-surface/80 p-5 shadow-cx">
@@ -3268,7 +3306,7 @@ onUnmounted(() => {
                 <div>
                   <p class="text-xs font-semibold text-cx-ink">{{ candidate.name }}</p>
                   <p class="mt-1 text-[11px] text-cx-ink-3">MFL {{ candidate.mfl_code }} · {{ candidate.level || 'Facility' }} · {{ candidate.county }}{{ candidate.subcounty ? ` / ${candidate.subcounty}` : '' }}</p>
-                  <p class="mt-1 text-[11px] text-cx-ink-3">{{ candidate.facility_fid ? `HFR FID ${candidate.facility_fid}` : 'Deployment FID will be resolved from the MFL code' }}</p>
+                  <p class="mt-1 text-[11px] text-cx-ink-3">{{ candidate.facility_fid ? `Facility ID ${candidate.facility_fid}` : 'Facility ID will be resolved from the MFL code' }}</p>
                 </div>
                 <span v-if="candidate.already_linked || facilityAlreadyLinked(candidate)" class="shrink-0 rounded-full bg-cx-success-soft px-2.5 py-1 text-[11px] font-semibold text-cx-success-ink">In your portfolio</span>
                 <button v-else type="button" class="shrink-0 rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover disabled:opacity-50" :disabled="hfrLinkBusy" @click="linkHfrCandidate(candidate)">
@@ -3291,7 +3329,7 @@ onUnmounted(() => {
               class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2"
             >
               <option value="mfl_code">MFL Code</option>
-              <option value="facility_fid">FID</option>
+              <option value="facility_fid">Facility ID</option>
               <option value="registration_number">Registration #</option>
             </select>
             <input
@@ -3325,7 +3363,7 @@ onUnmounted(() => {
             >
               <div>
                 <span class="font-semibold text-xs text-cx-ink block">{{ cand.name }}</span>
-                <span class="text-[11px] text-cx-ink-3">MFL {{ cand.mfl_code }} · {{ cand.level || 'Facility' }} · {{ cand.county || 'County unavailable' }} · {{ cand.owner_type || 'Registry record' }}</span>
+                <span class="text-[11px] text-cx-ink-3"><template v-if="facilityId(cand)">Facility ID {{ facilityId(cand) }} · </template>MFL {{ cand.mfl_code }} · {{ cand.level || 'Facility' }} · {{ cand.county || 'County unavailable' }} · {{ cand.owner_type || 'Registry record' }}</span>
               </div>
               <span v-if="facilityAlreadyLinked(cand)" class="shrink-0 rounded-full bg-cx-success-soft px-2.5 py-1 text-[11px] font-semibold text-cx-success-ink">In your portfolio</span>
               <button v-else
@@ -3372,7 +3410,7 @@ onUnmounted(() => {
               :key="fac.mfl_code"
               :value="fac.mfl_code"
             >
-              {{ fac.facility_name }} (MFL: {{ fac.mfl_code }}) · {{ availableTokens(fac).toLocaleString() }} tokens
+              {{ fac.facility_name }} ({{ facilityId(fac) ? `Facility ID ${facilityId(fac)} · ` : '' }}MFL {{ fac.mfl_code }}) · {{ availableTokens(fac).toLocaleString() }} tokens
             </option>
           </select>
         </div>

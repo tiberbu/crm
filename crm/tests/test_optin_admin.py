@@ -227,6 +227,7 @@ class TestOptInFacilityCsvImport(UnitTestCase):
 		save_facility.assert_called_once_with(
 			{
 				"mfl_code": "1001",
+				"hfr_facility_id": "",
 				"facility_name": "First Clinic",
 				"organization": "Health Group",
 				"keph_level": "Level 3",
@@ -1116,6 +1117,7 @@ class TestOptInFacilityList(UnitTestCase):
 			{
 				"name": "FAC-0001",
 				"mfl_code": "1001",
+				"hfr_facility_id": "FID-00-TEST-1001",
 				"facility_name": "First Clinic",
 				"organization": "Health Group",
 				"keph_level": "Level 3",
@@ -1139,6 +1141,7 @@ class TestOptInFacilityList(UnitTestCase):
 
 		self.assertEqual(result["total"], 1)
 		self.assertEqual(result["rows"][0]["name"], "FAC-0001")
+		self.assertEqual(result["rows"][0]["hfr_facility_id"], "FID-00-TEST-1001")
 		self.assertTrue(result["rows"][0]["memberships"][0]["go_live"])
 		self.assertEqual(
 			result["rows"][0]["memberships"][0]["progress"],
@@ -1201,6 +1204,7 @@ class TestOptInFacilityList(UnitTestCase):
 		self.assertEqual(facility_call["filters"]["keph_level"], "Level 3")
 		self.assertEqual(facility_call["filters"]["organization"], ["like", "%Health%"])
 		self.assertEqual(facility_call["or_filters"][0], ["facility_name", "like", "%First%"])
+		self.assertIn(["hfr_facility_id", "like", "%First%"], facility_call["or_filters"])
 		self.assertEqual(result["total"], 1)
 		self.assertEqual(result["rows"][0]["memberships"][0]["invite_status"], "Not Sent")
 		self.assertEqual(

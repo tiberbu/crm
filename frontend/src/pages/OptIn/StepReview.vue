@@ -384,7 +384,7 @@
               {{ fac.facility_name }}
             </p>
             <p class="text-xs text-gray-400 dark:text-gray-500">
-              MFL: {{ fac.mfl_code }}
+              Facility ID {{ facilityId(fac) || 'not linked yet' }} · MFL {{ fac.mfl_code }}
             </p>
           </div>
           <span
@@ -541,6 +541,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useOptInStore } from './useOptInStore.js'
+import { facilityId } from '@/utils/facilityId'
 
 const emit = defineEmits([
   'continue',

@@ -140,7 +140,7 @@ async function reachReview(page: Page, networkId = '') {
   await page.getByRole('button', { name: 'Continue to packages' }).click()
   await expect(page.getByRole('heading', { name: 'Choose packages' })).toBeVisible()
   if (networkId) {
-    await page.getByText('Were you referred by a Network?').click()
+    await page.getByTestId('partner-coupon-toggle').click()
     await page.getByPlaceholder('123456').fill(networkId)
   }
   const choose = page
@@ -177,8 +177,8 @@ test('submits without a Network ID once the terms are accepted', async ({ page }
   await reachReview(page)
 
   await expect(page.getByTestId('network-blocker')).toHaveCount(0)
-  await expect(page.getByTestId('review-network')).toContainText('No Network')
-  await expect(page.getByTestId('no-network-note')).toBeVisible()
+  await expect(page.getByTestId('review-partner-coupon')).toContainText('Not applied')
+  await expect(page.getByTestId('no-partner-coupon-note')).toBeVisible()
   await page.getByTestId('terms-acceptance').check()
   const submit = page.getByRole('button', { name: 'Submit your request' })
   await expect(submit).toBeEnabled()
@@ -193,7 +193,8 @@ test('submits with a Network ID once the terms are accepted', async ({ page }) =
   const calls = await mockOnboarding(page)
   await reachReview(page, NETWORK_ID)
 
-  await expect(page.getByTestId('review-network')).toContainText('Example Health Network')
+  await expect(page.getByTestId('review-partner-coupon')).toContainText(NETWORK_ID)
+  await expect(page.getByTestId('review-partner-coupon')).toContainText('Example Health Network')
   await page.getByTestId('terms-acceptance').check()
   await page.getByRole('button', { name: 'Submit your request' }).click()
   await expect(page.getByText('Your request has been submitted')).toBeVisible()

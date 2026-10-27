@@ -19,7 +19,7 @@
         v-model="localQuery"
         type="text"
         class="w-full rounded-lg border border-outline-gray-2 bg-surface-white dark:bg-surface-gray-2 pl-9 pr-9 py-2 text-p-sm text-ink-gray-8 placeholder:text-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
-        :placeholder="__('MFL code, FID, or registration number...')"
+        :placeholder="__('Facility ID, MFL code or registration number...')"
         autocomplete="off"
         @input="onInput"
         @keydown.enter.prevent="triggerSearch"
@@ -90,6 +90,12 @@
           }}</span>
           <div class="flex items-center gap-1.5 flex-wrap">
             <span
+              v-if="r.fid"
+              class="inline-flex items-center rounded px-1.5 py-0.5 text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6"
+            >
+              {{ __('Facility ID') }} {{ r.fid }}
+            </span>
+            <span
               v-if="r.mfl_code"
               class="inline-flex items-center rounded px-1.5 py-0.5 text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6"
             >
@@ -154,6 +160,7 @@
             row.facility_name
           }}</span>
           <span class="text-p-xs text-ink-gray-5">
+            <span v-if="row.hfr_facility_id">{{ __('Facility ID') }} {{ row.hfr_facility_id }} · </span>
             <span v-if="row.mfl_code">MFL {{ row.mfl_code }} · </span>
             {{ row.hfr_county }}
             <span v-if="row.facility_owner_type">

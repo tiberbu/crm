@@ -152,6 +152,24 @@ class TestExpressDraftOrder(IntegrationTestCase):
 		self.assertTrue(key)
 		self.assertEqual(frappe.db.get_value("Sales Invoice", data["invoice"], "crm_token_purchase_key"), key)
 
+	def test_billing_profile_shows_the_owner_their_billing_details(self):
+		frappe.db.set_value("Customer", self.customer, "tax_id", KRA_PIN)
+		address = frappe.get_doc(
+			{"doctype": "Address", "address_title": "Clinic", "address_type": "Billing", "address_line1": "1 Clinic Rd", "city": "Nairobi", "country": "Kenya", "links": [{"link_doctype": "Customer", "link_name": self.customer}]}
+		).insert(ignore_permissions=True)
+		frappe.set_user(OWNER)
+		profile = cx.get_billing_profile(self.customer)["data"]
+		self.assertEqual(profile["customer_name"], "Express Draft Test Customer")
+		self.assertEqual(profile["kra_pin"], KRA_PIN)
+		self.assertEqual([row.name for row in profile["addresses"]], [address.name])
+
+	def test_billing_profile_of_another_customer_is_refused(self):
+		frappe.set_user(OTHER)
+		with self.assertRaises(frappe.PermissionError):
+			cx.get_billing_profile(self.customer)
+		with self.assertRaises(frappe.PermissionError):
+			cx.get_billing_profile("")
+
 	def test_another_customer_cannot_review_or_confirm(self):
 		frappe.set_user(OTHER)
 		with self.assertRaises(frappe.PermissionError):

@@ -125,7 +125,7 @@
           {{ facility.facility_name }}
         </p>
         <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
-          MFL: {{ facility.mfl_code }}
+          Facility ID {{ facilityId(facility) || 'not linked yet' }} · MFL {{ facility.mfl_code }}
         </p>
         <label v-if="!facility.already_quoted" class="mt-3 block text-xs font-medium text-gray-600 dark:text-gray-300" @click.stop>
           Rebate Supplier (optional)
@@ -209,6 +209,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useOptInStore } from './useOptInStore.js'
+import { facilityId } from '@/utils/facilityId'
 
 const props = defineProps({
   facilities: { type: Array, default: () => [] },

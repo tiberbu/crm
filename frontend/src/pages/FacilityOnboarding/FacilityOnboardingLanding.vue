@@ -629,9 +629,38 @@
                 )
               }}
             </p>
+            <div
+              v-if="facilities.length > FACILITY_PAGE_SIZE"
+              class="mt-5 sm:mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+            >
+              <label class="relative block w-full sm:max-w-xs">
+                <span class="sr-only">{{ __('Search facilities') }}</span>
+                <svg class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-gray-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
+                </svg>
+                <input
+                  v-model="facilitySearch"
+                  type="search"
+                  autocomplete="off"
+                  data-testid="facility-search"
+                  class="block w-full rounded-xl border border-outline-gray-2 bg-white py-2.5 pl-9 pr-3 text-base sm:text-sm text-ink-gray-9 placeholder:text-ink-gray-5 shadow-sm focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
+                  :placeholder="__('Search by facility name, Facility ID or MFL code')"
+                />
+              </label>
+              <p class="text-xs font-semibold text-ink-gray-7" data-testid="facility-selected-count" aria-live="polite">
+                {{ __('{0} of {1} selected', [selectedFacilities.length, facilities.length]) }}
+              </p>
+            </div>
+            <p
+              v-if="facilities.length && !facilityPageView.total"
+              class="mt-4 rounded-xl border border-outline-gray-2 bg-surface-gray-1 p-4 text-xs sm:text-sm text-ink-gray-7"
+              role="status"
+            >
+              {{ __('No facilities match “{0}”.', [facilitySearch.trim()]) }}
+            </p>
             <div class="mt-5 sm:mt-6 space-y-3 sm:space-y-3.5">
               <label
-                v-for="facility in facilities"
+                v-for="facility in facilityPageView.items"
                 :key="facility.facility_id"
                 class="flex gap-3 sm:gap-4 rounded-xl sm:rounded-2xl border p-3.5 sm:p-5 transition-all"
                 :class="
@@ -668,8 +697,15 @@
                     <span class="text-ink-gray-4">·</span>
                     <span class="text-ink-gray-7">{{ facility.classification || __('Classification pending') }}</span>
                     <span class="text-ink-gray-4">·</span>
-                    <span class="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] sm:text-[11px] font-bold text-ink-gray-9 border border-outline-gray-3">
-                      {{ facility.mfl_code }}
+                    <span
+                      v-if="facilityId(facility)"
+                      class="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] sm:text-[11px] font-bold text-ink-gray-9 border border-outline-gray-3"
+                      data-testid="onboarding-facility-id"
+                    >
+                      {{ __('Facility ID {0}', [facilityId(facility)]) }}
+                    </span>
+                    <span class="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] sm:text-[11px] font-semibold text-ink-gray-7 border border-outline-gray-3">
+                      {{ __('MFL {0}', [facility.mfl_code]) }}
                     </span>
                   </div>
                   <span
@@ -702,6 +738,32 @@
                 </div>
               </label>
             </div>
+            <nav
+              v-if="facilityPageView.pages > 1"
+              class="mt-5 flex items-center justify-between gap-3 text-xs sm:text-sm"
+              :aria-label="__('Facility pages')"
+              data-testid="facility-pager"
+            >
+              <button
+                type="button"
+                class="rounded-xl border border-outline-gray-2 bg-white px-3.5 py-2 font-semibold text-ink-gray-8 shadow-sm hover:bg-surface-gray-1 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="facilityPageView.page <= 1"
+                @click="facilityPageNumber = facilityPageView.page - 1"
+              >
+                ← {{ __('Previous') }}
+              </button>
+              <span class="text-ink-gray-7" data-testid="facility-pager-status">
+                {{ __('Showing {0}–{1} of {2}', [facilityPageView.from, facilityPageView.to, facilityPageView.total]) }}
+              </span>
+              <button
+                type="button"
+                class="rounded-xl border border-outline-gray-2 bg-white px-3.5 py-2 font-semibold text-ink-gray-8 shadow-sm hover:bg-surface-gray-1 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="facilityPageView.page >= facilityPageView.pages"
+                @click="facilityPageNumber = facilityPageView.page + 1"
+              >
+                {{ __('Next') }} →
+              </button>
+            </nav>
           </div>
           <button
             :disabled="!selectedFacilities.length"
@@ -713,6 +775,11 @@
             "
           >
             <span>{{ __('Continue to packages') }}</span>
+            <span
+              v-if="selectedFacilities.length"
+              class="rounded-full bg-white/20 px-2 py-0.5 text-xs"
+              data-testid="facility-continue-count"
+            >{{ selectedFacilities.length }}</span>
             <span class="text-base">→</span>
           </button>
         </form>
@@ -756,7 +823,7 @@
                   >
                     <span>🏥</span>
                     <span class="font-bold text-ink-gray-9">{{ activePricingFacility.facility_name || activePricingFacility.mfl_code }}</span>
-                    <span class="text-ink-gray-5 font-normal">({{ activePricingFacility.classification || activePricingFacility.facility_level || __('Facility') }}<span v-if="activePricingFacility.mfl_code"> · MFL {{ activePricingFacility.mfl_code }}</span>)</span>
+                    <span class="text-ink-gray-5 font-normal">({{ activePricingFacility.classification || activePricingFacility.facility_level || __('Facility') }}<span v-if="facilityId(activePricingFacility)"> · {{ __('Facility ID') }} {{ facilityId(activePricingFacility) }}</span><span v-if="activePricingFacility.mfl_code"> · MFL {{ activePricingFacility.mfl_code }}</span>)</span>
                   </div>
 
                   <!-- Multi-Facility Tabs Strip -->
@@ -1286,7 +1353,7 @@
                 <p class="mt-0.5 text-xs text-ink-gray-5">
                   {{
                     __(
-                      'Review your facilities, Network and packages. Then accept the terms and send your request.',
+                      'Review your facilities, Partner Coupon and packages. Then accept the terms and send your request.',
                     )
                   }}
                 </p>
@@ -1296,7 +1363,7 @@
             <dl class="mt-5 sm:mt-7 divide-y divide-outline-gray-2 rounded-xl border border-outline-gray-2 bg-surface-gray-1/50 text-xs sm:text-sm">
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 p-3.5 sm:p-4">
                 <dt class="text-ink-gray-6 font-medium flex items-center justify-between sm:justify-start">
-                  <span>{{ __('Network') }}</span>
+                  <span>{{ __('Partner Coupon') }}</span>
                   <button
                     type="button"
                     class="ml-2 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
@@ -1305,8 +1372,12 @@
                     {{ __('Edit') }}
                   </button>
                 </dt>
-                <dd class="text-left sm:text-right font-semibold text-ink-gray-9" data-testid="review-network">
-                  {{ catalog.network?.display_name || __('No Network') }}
+                <dd class="text-left sm:text-right font-semibold text-ink-gray-9" data-testid="review-partner-coupon">
+                  <template v-if="catalog.network?.name && partnerId">
+                    <span class="font-mono">{{ partnerId }}</span>
+                    <span v-if="catalog.network.display_name" class="block text-xs font-normal text-ink-gray-5 mt-0.5">{{ catalog.network.display_name }}</span>
+                  </template>
+                  <span v-else class="font-medium text-ink-gray-6">{{ __('Not applied') }}</span>
                 </dd>
               </div>
               <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-1.5 sm:gap-4 p-3.5 sm:p-4">
@@ -1375,11 +1446,11 @@
               v-if="!catalog.network?.name"
               class="mt-5 rounded-xl border border-outline-gray-2 bg-surface-gray-1/60 p-4 text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-7"
               role="status"
-              data-testid="no-network-note"
+              data-testid="no-partner-coupon-note"
             >
               <p>
                 {{
-                  __('You can submit without a Network. We’ll record that this request has no Network, and you can be linked to one later.')
+                  __('No Partner Coupon applied. You can submit without one; if a partner referred you, your facilities can be linked to them later.')
                 }}
               </p>
               <button
@@ -1387,7 +1458,7 @@
                 class="mt-2 font-semibold underline underline-offset-4 text-ink-gray-8"
                 @click="stage = 'pricing'"
               >
-                {{ __('Add a Network ID') }}
+                {{ __('Add a Partner Coupon') }}
               </button>
             </div>
 
@@ -1400,15 +1471,29 @@
                 <h2 id="review-terms-title" class="text-xs sm:text-sm font-semibold text-ink-gray-9">
                   {{ termsSnapshot?.document || __('Terms and Conditions') }}
                 </h2>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
-                  aria-haspopup="dialog"
-                  @click="termsDialogOpen = true"
-                >
-                  <span>{{ __('Read the complete Terms') }}</span>
-                  <span>↗</span>
-                </button>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 text-xs font-semibold text-[#bc1823] underline underline-offset-4 hover:text-[#a3141d]"
+                    aria-haspopup="dialog"
+                    @click="termsDialogOpen = true"
+                  >
+                    <span>{{ __('Read the complete Terms') }}</span>
+                    <span>↗</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-outline-gray-2 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink-gray-8 shadow-sm hover:bg-surface-gray-1 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="!termsSnapshot?.rendered_html"
+                    data-testid="terms-download"
+                    @click="downloadTerms"
+                  >
+                    <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    <span>{{ __('Download Terms') }}</span>
+                  </button>
+                </div>
               </div>
               <label class="mt-4 flex items-start gap-3 text-xs sm:text-sm leading-5 sm:leading-6 text-ink-gray-8 cursor-pointer">
                 <input
@@ -1606,6 +1691,9 @@ import {
   stepStatus,
 } from '@/utils/onboardingSteps'
 import { packageGridClass } from '@/utils/cardGrid'
+import { FACILITY_PAGE_SIZE, facilityPage, filterFacilities } from '@/utils/facilityPager'
+import { facilityId } from '@/utils/facilityId'
+import { termsDocument, termsFileName } from '@/utils/termsDownload'
 
 // Matches the published catalogue, so loading does not shift the layout.
 const SKELETON_PACKAGE_COUNT = 3
@@ -1624,6 +1712,14 @@ const sessionToken = ref('')
 const identityType = ref('national_id')
 const identityNumber = ref('')
 const identityPreview = ref({})
+const facilitySearch = ref('')
+const facilityPageNumber = ref(1)
+const facilityPageView = computed(() =>
+  facilityPage(filterFacilities(facilities.value, facilitySearch.value), facilityPageNumber.value),
+)
+watch(facilitySearch, () => {
+  facilityPageNumber.value = 1
+})
 const otp = ref('')
 const facilities = ref([])
 const selectedFacilities = ref([])
@@ -2144,6 +2240,8 @@ function acceptFacilities(data) {
   identityPreview.value = data.identity || identityPreview.value
   accountEmail.value = data.account_email || ''
   facilities.value = data.facilities || []
+  facilitySearch.value = ''
+  facilityPageNumber.value = 1
   hfrRetryPending.value = false
   hfrRetryExhausted.value = false
   stage.value = 'facilities'
@@ -2276,6 +2374,17 @@ function onPartnerIdInput(event) {
   catalog.value = { network: null, packages: [] }
   packageSelections.value = {}
   if (!nextPartnerId || nextPartnerId.length === 6) loadCatalog(true)
+}
+function downloadTerms() {
+  if (!termsSnapshot.value?.rendered_html) return
+  const savedOn = new Date().toLocaleDateString(undefined, { dateStyle: 'long' })
+  const blob = new Blob([termsDocument(termsSnapshot.value, savedOn)], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = termsFileName(termsSnapshot.value.document)
+  link.click()
+  URL.revokeObjectURL(url)
 }
 async function loadSelfOnboardingTerms() {
   errorMessage.value = ''

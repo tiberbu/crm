@@ -280,9 +280,9 @@
                     v-if="facility.available"
                     :href="contextHref('CRM Pre-Qualified Facility', facility.name)"
                     class="rounded-md border border-outline-gray-1 px-2.5 py-1.5 text-sm text-ink-gray-7 underline underline-offset-2"
-                  >{{ facility.label }}<span v-if="facility.mfl_code" class="ml-1 text-xs text-ink-gray-5">· {{ facility.mfl_code }}</span></a>
+                  >{{ facility.label }}<span v-if="facility.mfl_code" class="ml-1 text-xs text-ink-gray-5">· Facility ID {{ facilityIdFor(facility.mfl_code) || 'not linked yet' }} · MFL {{ facility.mfl_code }}</span></a>
                   <span v-else class="rounded-md border border-outline-gray-1 px-2.5 py-1.5 text-sm text-ink-gray-7">
-                    {{ facility.label }}<span v-if="facility.mfl_code" class="ml-1 text-xs text-ink-gray-5">· {{ facility.mfl_code }}</span><span class="ml-1 text-xs text-ink-gray-5">· record unavailable</span>
+                    {{ facility.label }}<span v-if="facility.mfl_code" class="ml-1 text-xs text-ink-gray-5">· Facility ID {{ facilityIdFor(facility.mfl_code) || 'not linked yet' }} · MFL {{ facility.mfl_code }}</span><span class="ml-1 text-xs text-ink-gray-5">· record unavailable</span>
                   </span>
                 </template>
               </div>
@@ -584,6 +584,7 @@ import LineItemsGrid from './LineItemsGrid.vue'
 import FcIcon from './FcIcon.vue'
 import SendDocumentDialog from './SendDocumentDialog.vue'
 import { useCrud, readableError } from '../../composables/useCrud.js'
+import { useFacilityIds } from '@/composables/useFacilityIds'
 import { useCurrency } from '../../composables/useCurrency.js'
 import { useBoot } from '../../composables/useBoot.js'
 import { useCompanyContext } from '../../composables/useCompanyContext.js'
@@ -636,6 +637,7 @@ const paymentHistory = ref([])
 const paymentHistoryLoading = ref(false)
 const paymentHistoryError = ref('')
 const quotationContext = ref(null)
+const { facilityIdFor } = useFacilityIds(() => quotationContext.value?.facilities?.map((facility) => facility.mfl_code))
 const quotationContextLoading = ref(false)
 const quotationContextError = ref('')
 const showSendDialog = ref(false)
