@@ -202,6 +202,14 @@ VALUE_EXPRESS_PACKAGES = [
 ]
 
 
+# Datasheet wording for the Flex cards (dev sites; production text is maintained in settings).
+FLEX_DESCRIPTIONS = {
+	"CV-TOKEN-STARTER": "Best for small and lower-volume outpatient facilities starting their digital journey.",
+	"CV-TOKEN-GROWTH": "Best for facilities with increasing patient volumes and higher CareverseHIMS usage.",
+	"CV-TOKEN-SCALE": "Best for facilities with high patient volumes and higher CareverseHIMS usage.",
+}
+
+
 def run_value_express():
 	"""Add or update the Fixed and Custom rows without touching the Flex packages.
 
@@ -224,6 +232,9 @@ def run_value_express():
 			row.update(values)
 		else:
 			settings.append("token_packages", {"item_code": package["item_code"], **values})
+	for row in settings.token_packages:
+		if row.item_code in FLEX_DESCRIPTIONS:
+			row.description = FLEX_DESCRIPTIONS[row.item_code]
 	settings.save(ignore_permissions=True)
 	frappe.db.commit()
 	return [row.item_code for row in settings.token_packages if row.plan != "Flex"]
