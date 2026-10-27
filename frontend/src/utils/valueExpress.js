@@ -39,20 +39,33 @@ export function customQuote(amount, offer) {
   const tiers = offer?.tiers || []
   const minTokens = Number(offer?.min_tokens) || 1000
   const value = Math.max(0, Math.floor(Number(amount) || 0))
-  if (!tiers.length) return { ok: false, amount: value, tokens: 0, rate: 0, tier: '', charge: 0 }
+  if (!tiers.length)
+    return { ok: false, amount: value, tokens: 0, rate: 0, tier: '', charge: 0 }
   let tier = tiers[0]
-  for (const candidate of tiers) if (value >= candidate.from_amount) tier = candidate
+  for (const candidate of tiers)
+    if (value >= candidate.from_amount) tier = candidate
   // Whole cents, so the count matches the server's decimal arithmetic.
   const tokens = Math.floor((value * 100) / Math.round(tier.rate * 100))
   const charge = Math.round(tokens * tier.rate * 100) / 100
-  return { ok: tokens >= minTokens, amount: value, tokens, rate: tier.rate, tier: tier.name, charge }
+  return {
+    ok: tokens >= minTokens,
+    amount: value,
+    tokens,
+    rate: tier.rate,
+    tier: tier.name,
+    charge,
+  }
 }
 
 // The Fixed package whose levels include the facility's registry level.
 export function fixedForLevel(level, fixedPackages) {
   const key = levelKey(level)
   if (!key) return null
-  return (fixedPackages || []).find((pkg) => (pkg.facility_levels || []).some((item) => levelKey(item) === key)) || null
+  return (
+    (fixedPackages || []).find((pkg) =>
+      (pkg.facility_levels || []).some((item) => levelKey(item) === key),
+    ) || null
+  )
 }
 
 // "Get started" on the landing page carries ?plan=flex&package=CODE, ?plan=fixed or ?plan=custom&amount=N.
@@ -64,11 +77,40 @@ export function parseCarriedChoice(search) {
     const amount = Math.floor(Number(params.get('amount')) || 0)
     return { plan: 'flex', package: CUSTOM, amount: amount > 0 ? amount : null }
   }
-  if (plan === 'flex') return { plan: 'flex', package: params.get('package') || null }
+  if (plan === 'flex')
+    return { plan: 'flex', package: params.get('package') || null }
   return null
 }
 
 // Tokens left for services in the first funded month.
 export function monthOneTokens(tokens, bonus, access) {
-  return Math.max(0, (Number(tokens) || 0) + (Number(bonus) || 0) - (Number(access) || 0))
+  return Math.max(
+    0,
+    (Number(tokens) || 0) + (Number(bonus) || 0) - (Number(access) || 0),
+  )
+}
+
+const PERIOD_UNITS = {
+  Monthly: 'month',
+  Quarterly: 'quarter',
+  'Semi-annual': 'half-year',
+  Annual: 'year',
+}
+export const PERIOD_MONTHS = {
+  Monthly: 1,
+  Quarterly: 3,
+  'Semi-annual': 6,
+  Annual: 12,
+}
+
+// "per month", "per quarter", "per half-year" or "per year" for a billing period.
+export function periodLabel(period) {
+  return `per ${PERIOD_UNITS[period] || 'month'}`
+}
+
+// Columns for a card grid: at most `most` a row, rows as even as possible (5 → 3+2, 7 → 4+3).
+export function gridColumns(count, most = 4) {
+  const n = Math.max(0, Math.floor(Number(count) || 0))
+  if (n <= most) return Math.max(n, 1)
+  return Math.ceil(n / Math.ceil(n / most))
 }
