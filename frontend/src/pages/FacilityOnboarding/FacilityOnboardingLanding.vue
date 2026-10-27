@@ -644,7 +644,7 @@
                   autocomplete="off"
                   data-testid="facility-search"
                   class="block w-full rounded-xl border border-outline-gray-2 bg-white py-2.5 pl-9 pr-3 text-base sm:text-sm text-ink-gray-9 placeholder:text-ink-gray-5 shadow-sm focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
-                  :placeholder="__('Search by facility name or MFL code')"
+                  :placeholder="__('Search by facility name, Facility ID or MFL code')"
                 />
               </label>
               <p class="text-xs font-semibold text-ink-gray-7" data-testid="facility-selected-count" aria-live="polite">
@@ -697,8 +697,15 @@
                     <span class="text-ink-gray-4">·</span>
                     <span class="text-ink-gray-7">{{ facility.classification || __('Classification pending') }}</span>
                     <span class="text-ink-gray-4">·</span>
-                    <span class="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] sm:text-[11px] font-bold text-ink-gray-9 border border-outline-gray-3">
-                      {{ facility.mfl_code }}
+                    <span
+                      v-if="facilityId(facility)"
+                      class="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] sm:text-[11px] font-bold text-ink-gray-9 border border-outline-gray-3"
+                      data-testid="onboarding-facility-id"
+                    >
+                      {{ __('Facility ID {0}', [facilityId(facility)]) }}
+                    </span>
+                    <span class="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] sm:text-[11px] font-semibold text-ink-gray-7 border border-outline-gray-3">
+                      {{ __('MFL {0}', [facility.mfl_code]) }}
                     </span>
                   </div>
                   <span
@@ -816,7 +823,7 @@
                   >
                     <span>🏥</span>
                     <span class="font-bold text-ink-gray-9">{{ activePricingFacility.facility_name || activePricingFacility.mfl_code }}</span>
-                    <span class="text-ink-gray-5 font-normal">({{ activePricingFacility.classification || activePricingFacility.facility_level || __('Facility') }}<span v-if="activePricingFacility.mfl_code"> · MFL {{ activePricingFacility.mfl_code }}</span>)</span>
+                    <span class="text-ink-gray-5 font-normal">({{ activePricingFacility.classification || activePricingFacility.facility_level || __('Facility') }}<span v-if="facilityId(activePricingFacility)"> · {{ __('Facility ID') }} {{ facilityId(activePricingFacility) }}</span><span v-if="activePricingFacility.mfl_code"> · MFL {{ activePricingFacility.mfl_code }}</span>)</span>
                   </div>
 
                   <!-- Multi-Facility Tabs Strip -->
@@ -1685,6 +1692,7 @@ import {
 } from '@/utils/onboardingSteps'
 import { packageGridClass } from '@/utils/cardGrid'
 import { FACILITY_PAGE_SIZE, facilityPage, filterFacilities } from '@/utils/facilityPager'
+import { facilityId } from '@/utils/facilityId'
 import { termsDocument, termsFileName } from '@/utils/termsDownload'
 
 // Matches the published catalogue, so loading does not shift the layout.

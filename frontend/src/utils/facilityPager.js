@@ -1,3 +1,5 @@
+import { facilityId } from './facilityId'
+
 // Client-side search and paging for the onboarding facility list. The verified session returns
 // every facility at once; paging only limits how many cards are on screen.
 export const FACILITY_PAGE_SIZE = 10
@@ -6,7 +8,7 @@ export function filterFacilities(facilities, query) {
   const needle = String(query || '').trim().toLowerCase()
   if (!needle) return facilities || []
   return (facilities || []).filter((facility) =>
-    [facility.facility_name, facility.mfl_code].some((value) =>
+    [facility.facility_name, facilityId(facility), facility.mfl_code].some((value) =>
       String(value || '').toLowerCase().includes(needle),
     ),
   )

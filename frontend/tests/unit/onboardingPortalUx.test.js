@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { facilityPage, filterFacilities } from '@/utils/facilityPager'
 import { partnerName, pricePerToken } from '@/utils/portalPartner'
+import { facilityId } from '@/utils/facilityId'
 import { termsDocument, termsFileName } from '@/utils/termsDownload'
 
 const facilities = Array.from({ length: 25 }, (_, index) => ({
@@ -63,5 +64,16 @@ describe('terms download', () => {
   it('names the file after the document', () => {
     expect(termsFileName('Self Onboarding Terms v2')).toBe('self-onboarding-terms-v2.html')
     expect(termsFileName('')).toBe('terms-and-conditions.html')
+  })
+})
+
+describe('facilityId', () => {
+  it('reads the registry ID from any of its field names, never the MFL code', () => {
+    expect(facilityId({ hfr_facility_id: 'FID-00-TEST-01', mfl_code: '12345' })).toBe('FID-00-TEST-01')
+    expect(facilityId({ facility_fid: ' FID-00-TEST-02 ' })).toBe('FID-00-TEST-02')
+    expect(facilityId({ fid: 'FID-00-TEST-03' })).toBe('FID-00-TEST-03')
+    expect(facilityId({ facility_id: 'FID-00-TEST-04' })).toBe('FID-00-TEST-04')
+    expect(facilityId({ mfl_code: '12345', facility_id: '12345' })).toBe('')
+    expect(facilityId(null)).toBe('')
   })
 })

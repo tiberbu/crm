@@ -7,6 +7,7 @@ import FacilitySingleView from './FacilitySingleView.vue'
 import OptInRequests from './OptInRequests.vue'
 import { compactPackageGridClass, packageGridClass } from '@/utils/cardGrid'
 import { partnerName, pricePerToken } from '@/utils/portalPartner'
+import { facilityId } from '@/utils/facilityId'
 import {
   facilityLabel,
   findOpenOrder,
@@ -316,8 +317,10 @@ const filteredFacilities = computed(() => {
     // Search query matching
     const q = searchQuery.value.trim().toLowerCase()
     if (q) {
-      const matchName = fac.facility_name.toLowerCase().includes(q)
-      if (!matchName) return false
+      const matches = [fac.facility_name, facilityId(fac), fac.mfl_code].some((value) =>
+        String(value || '').toLowerCase().includes(q),
+      )
+      if (!matches) return false
     }
 
     // Status filter
@@ -1106,7 +1109,7 @@ async function linkHfrCandidate(candidate) {
     addFacilityModalOpen.value = false
     notice.value = {
       tone: 'success',
-      text: `Facility "${payload.facility_name}" (MFL: ${payload.mfl_code}) was linked to your enterprise account successfully!`,
+      text: `Facility "${payload.facility_name}" (${facilityId(payload) || facilityId(candidate) ? `Facility ID ${facilityId(payload) || facilityId(candidate)} · ` : ''}MFL ${payload.mfl_code}) was linked to your enterprise account successfully!`,
     }
 
     await refreshContext()
@@ -1598,8 +1601,8 @@ onUnmounted(() => {
               ref="globalSearchRef"
               type="text"
               v-model="searchQuery"
-              placeholder="Search your facilities by name"
-              aria-label="Search your facilities by name"
+              placeholder="Search by facility name, Facility ID or MFL code"
+              aria-label="Search by facility name, Facility ID or MFL code"
               class="w-full rounded-cx-sm bg-cx-well border border-cx-border pl-9 pr-9 sm:pr-12 py-2 text-xs font-medium text-cx-ink placeholder:text-cx-ink-4 focus:bg-cx-surface focus:border-cx-brand focus:outline-none focus:ring-2 focus:ring-cx-brand-soft transition"
               @input="onGlobalSearchInput"
             />
@@ -1904,7 +1907,7 @@ onUnmounted(() => {
                         <tr class="border-b border-cx-border bg-cx-band text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">
                           <th class="py-3 px-4">Facility Name</th>
                           <th class="py-3 px-4">KEPH Level</th>
-                          <th class="py-3 px-4">MFL Code</th>
+                          <th class="py-3 px-4">Facility ID</th>
                           <th class="py-3 px-4">Go-live readiness</th>
                           <th class="py-3 px-4">Plan & Recent Purchase</th>
                           <th class="py-3 px-4 text-right">Care Tokens</th>
@@ -1945,13 +1948,18 @@ onUnmounted(() => {
                           </td>
                           <td class="py-3.5 px-4">
                             <button
+                              v-if="facilityId(facility)"
                               type="button"
-                              class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer"
-                              @click="copyMfl(facility.mfl_code)"
+                              class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer whitespace-nowrap"
+                              :title="`Copy Facility ID ${facilityId(facility)}`"
+                              data-testid="facility-id"
+                              @click="copyMfl(facilityId(facility))"
                             >
-                              <span>{{ facility.mfl_code }}</span>
-                              <CxIcon :name="copiedMfl === facility.mfl_code ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
+                              <span>{{ facilityId(facility) }}</span>
+                              <CxIcon :name="copiedMfl === facilityId(facility) ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
                             </button>
+                            <span v-else class="text-[11px] italic text-cx-ink-3" data-testid="facility-id">Not linked yet</span>
+                            <p v-if="facility.mfl_code" class="mt-1 font-mono text-[11px] text-cx-ink-3">MFL {{ facility.mfl_code }}</p>
                           </td>
                           <td class="py-3.5 px-4">
                             <span
@@ -2012,7 +2020,7 @@ onUnmounted(() => {
                       <tr class="border-b border-cx-border bg-cx-band text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">
                         <th class="py-3 px-4">Facility & Network</th>
                         <th class="py-3 px-4">KEPH Level</th>
-                        <th class="py-3 px-4">MFL Code</th>
+                        <th class="py-3 px-4">Facility ID</th>
                         <th class="py-3 px-4">Go-live readiness</th>
                         <th class="py-3 px-4">Plan & Recent Purchase</th>
                         <th class="py-3 px-4 text-right">Care Tokens</th>
@@ -2055,16 +2063,21 @@ onUnmounted(() => {
                           </span>
                         </td>
 
-                        <!-- MFL Code -->
+                        <!-- Facility ID (HFR FID), with the MFL code beneath -->
                         <td class="py-3.5 px-4">
                           <button
+                            v-if="facilityId(facility)"
                             type="button"
-                            class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer"
-                            @click="copyMfl(facility.mfl_code)"
+                            class="font-mono text-xs font-semibold text-cx-ink-2 hover:text-cx-brand inline-flex items-center gap-1.5 bg-cx-well px-2 py-0.5 rounded-cx-sm border border-cx-border-soft cursor-pointer whitespace-nowrap"
+                            :title="`Copy Facility ID ${facilityId(facility)}`"
+                            data-testid="facility-id"
+                            @click="copyMfl(facilityId(facility))"
                           >
-                            <span>{{ facility.mfl_code }}</span>
-                            <CxIcon :name="copiedMfl === facility.mfl_code ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
+                            <span>{{ facilityId(facility) }}</span>
+                            <CxIcon :name="copiedMfl === facilityId(facility) ? 'check' : 'copy'" class="size-3.5 text-cx-ink-3" />
                           </button>
+                          <span v-else class="text-[11px] italic text-cx-ink-3" data-testid="facility-id">Not linked yet</span>
+                          <p v-if="facility.mfl_code" class="mt-1 font-mono text-[11px] text-cx-ink-3">MFL {{ facility.mfl_code }}</p>
                         </td>
 
                         <!-- Status Badge -->
@@ -2171,7 +2184,7 @@ onUnmounted(() => {
                     >
                       {{ facility.facility_name }}
                     </button>
-                            <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
+                            <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · Facility ID {{ facilityId(facility) || 'not linked yet' }} · MFL {{ facility.mfl_code }}</p>
                             <span v-if="facility.network" class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-cx-border-soft" data-testid="facility-partner">
                               <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                               <span>{{ facility.network }}</span>
@@ -2250,7 +2263,7 @@ onUnmounted(() => {
                     >
                       {{ facility.facility_name }}
                     </button>
-                        <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · MFL: {{ facility.mfl_code }}</p>
+                        <p class="text-xs text-cx-ink-3 mt-0.5">{{ facility.keph_level }} · Facility ID {{ facilityId(facility) || 'not linked yet' }} · MFL {{ facility.mfl_code }}</p>
                         <span v-if="facility.network" class="inline-flex items-center gap-1 rounded-cx-sm bg-cx-well text-cx-ink-2 px-1.5 py-0.5 text-[11px] font-medium mt-1 border border-cx-border-soft" data-testid="facility-partner">
                           <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                           <span>{{ facility.network }}</span>
@@ -2478,7 +2491,7 @@ onUnmounted(() => {
                         >
                           {{ fac.facility_name }}
                         </button>
-                        <p class="mt-0.5 text-xs text-cx-ink-3">{{ fac.keph_level }} · MFL: {{ fac.mfl_code }}</p>
+                        <p class="mt-0.5 text-xs text-cx-ink-3">{{ fac.keph_level }} · Facility ID {{ facilityId(fac) || 'not linked yet' }} · MFL {{ fac.mfl_code }}</p>
                         <span v-if="fac.network" class="mt-1 inline-flex items-center gap-1 rounded-cx-sm border border-cx-border-soft bg-cx-well px-1.5 py-0.5 text-[11px] font-medium text-cx-ink-2" data-testid="facility-partner">
                           <span><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /></span>
                           <span>{{ fac.network }}</span>
@@ -3097,7 +3110,8 @@ onUnmounted(() => {
                     </span>
                   </div>
                   <div class="flex items-center justify-between text-[11px] text-cx-ink-3">
-                    <span v-if="facility.mfl_code" class="font-mono">MFL: {{ facility.mfl_code }}</span>
+                    <span v-if="facilityId(facility)" class="font-mono">Facility ID {{ facilityId(facility) }}</span>
+                    <span v-if="facility.mfl_code" class="font-mono">MFL {{ facility.mfl_code }}</span>
                     <span class="font-medium text-cx-success-ink" data-testid="facility-card-tokens">
                       {{ availableTokens(facility).toLocaleString() }} tokens
                     </span>
@@ -3141,7 +3155,7 @@ onUnmounted(() => {
                 <div v-if="supportDrawerFacility" class="rounded-cx border border-cx-brand-soft-border bg-cx-brand-soft/70 p-4">
                   <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-brand-ink">Facility you’re viewing</p>
                   <p class="mt-1 text-sm font-bold text-cx-ink">{{ supportDrawerFacility.facility_name }}</p>
-                  <p class="mt-1 text-xs text-cx-ink-2">{{ supportDrawerFacility.network }}<span v-if="supportDrawerFacility.mfl_code"> · MFL {{ supportDrawerFacility.mfl_code }}</span></p>
+                  <p class="mt-1 text-xs text-cx-ink-2">{{ supportDrawerFacility.network }}<span v-if="facilityId(supportDrawerFacility)"> · Facility ID {{ facilityId(supportDrawerFacility) }}</span><span v-if="supportDrawerFacility.mfl_code"> · MFL {{ supportDrawerFacility.mfl_code }}</span></p>
                 </div>
 
                 <article v-for="network in networkSupportGroups" :key="network.key" class="rounded-cx border border-cx-border bg-cx-surface/80 p-5 shadow-cx">
@@ -3287,7 +3301,7 @@ onUnmounted(() => {
                 <div>
                   <p class="text-xs font-semibold text-cx-ink">{{ candidate.name }}</p>
                   <p class="mt-1 text-[11px] text-cx-ink-3">MFL {{ candidate.mfl_code }} · {{ candidate.level || 'Facility' }} · {{ candidate.county }}{{ candidate.subcounty ? ` / ${candidate.subcounty}` : '' }}</p>
-                  <p class="mt-1 text-[11px] text-cx-ink-3">{{ candidate.facility_fid ? `HFR FID ${candidate.facility_fid}` : 'Deployment FID will be resolved from the MFL code' }}</p>
+                  <p class="mt-1 text-[11px] text-cx-ink-3">{{ candidate.facility_fid ? `Facility ID ${candidate.facility_fid}` : 'Facility ID will be resolved from the MFL code' }}</p>
                 </div>
                 <span v-if="candidate.already_linked || facilityAlreadyLinked(candidate)" class="shrink-0 rounded-full bg-cx-success-soft px-2.5 py-1 text-[11px] font-semibold text-cx-success-ink">In your portfolio</span>
                 <button v-else type="button" class="shrink-0 rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover disabled:opacity-50" :disabled="hfrLinkBusy" @click="linkHfrCandidate(candidate)">
@@ -3310,7 +3324,7 @@ onUnmounted(() => {
               class="w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2"
             >
               <option value="mfl_code">MFL Code</option>
-              <option value="facility_fid">FID</option>
+              <option value="facility_fid">Facility ID</option>
               <option value="registration_number">Registration #</option>
             </select>
             <input
@@ -3344,7 +3358,7 @@ onUnmounted(() => {
             >
               <div>
                 <span class="font-semibold text-xs text-cx-ink block">{{ cand.name }}</span>
-                <span class="text-[11px] text-cx-ink-3">MFL {{ cand.mfl_code }} · {{ cand.level || 'Facility' }} · {{ cand.county || 'County unavailable' }} · {{ cand.owner_type || 'Registry record' }}</span>
+                <span class="text-[11px] text-cx-ink-3"><template v-if="facilityId(cand)">Facility ID {{ facilityId(cand) }} · </template>MFL {{ cand.mfl_code }} · {{ cand.level || 'Facility' }} · {{ cand.county || 'County unavailable' }} · {{ cand.owner_type || 'Registry record' }}</span>
               </div>
               <span v-if="facilityAlreadyLinked(cand)" class="shrink-0 rounded-full bg-cx-success-soft px-2.5 py-1 text-[11px] font-semibold text-cx-success-ink">In your portfolio</span>
               <button v-else
@@ -3391,7 +3405,7 @@ onUnmounted(() => {
               :key="fac.mfl_code"
               :value="fac.mfl_code"
             >
-              {{ fac.facility_name }} (MFL: {{ fac.mfl_code }}) · {{ availableTokens(fac).toLocaleString() }} tokens
+              {{ fac.facility_name }} ({{ facilityId(fac) ? `Facility ID ${facilityId(fac)} · ` : '' }}MFL {{ fac.mfl_code }}) · {{ availableTokens(fac).toLocaleString() }} tokens
             </option>
           </select>
         </div>

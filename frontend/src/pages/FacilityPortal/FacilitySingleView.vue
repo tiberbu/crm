@@ -407,6 +407,7 @@ function reviewInvoice() {
         <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-cx-ink-3">Facility portfolio</p>
         <h1 class="mt-1 text-3xl font-bold tracking-tight text-cx-ink">{{ facility.facility_name }}</h1>
         <p class="mt-1 text-sm text-cx-ink-3">{{ facility.keph_level }} <span v-if="facility.county">· {{ facility.county }}</span></p>
+        <p class="mt-1 font-mono text-xs text-cx-ink-3" data-testid="facility-header-ids">Facility ID {{ deploymentFid || 'not linked yet' }}<span v-if="facility.mfl_code"> · MFL {{ facility.mfl_code }}</span></p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button type="button" class="inline-flex items-center gap-2 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2.5 text-xs font-semibold text-cx-ink-2 shadow-sm transition hover:bg-cx-well" @click="emit('open-support', facility)">
@@ -589,9 +590,9 @@ function reviewInvoice() {
 
         <div class="grid gap-px border-y border-white/60 bg-cx-border-soft/70 sm:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.6fr)]">
           <div class="bg-cx-brand-soft/45 px-4 py-4 sm:px-6 sm:py-5">
-            <p class="text-[10px] font-semibold uppercase tracking-[0.13em] text-cx-ink-3">Deployment Facility ID · FID</p>
+            <p class="text-[10px] font-semibold uppercase tracking-[0.13em] text-cx-ink-3">Facility ID</p>
             <p v-if="deploymentFid" class="mt-1.5 break-all font-mono text-xl font-semibold tracking-tight text-cx-ink sm:text-2xl">{{ deploymentFid }}</p>
-            <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to an HFR FID</p>
+            <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to the Health Facility Registry yet</p>
           </div>
           <div class="bg-cx-surface/65 px-4 py-4 sm:px-6 sm:py-5">
             <p class="text-[10px] font-semibold uppercase tracking-[0.13em] text-cx-ink-3">MFL code</p>
@@ -620,7 +621,7 @@ function reviewInvoice() {
       </section>
 
       <div class="border-t border-cx-border-soft bg-cx-well/50 px-4 py-3 text-[11px] leading-relaxed text-cx-ink-3 sm:px-6">
-        Facility identifiers: <span class="font-medium text-cx-ink-2">MFL {{ facility.mfl_code || '—' }}</span><span v-if="facility.registration_number"> · Registration {{ facility.registration_number }}</span><span v-if="facility.network"> · Partner {{ facility.network }}</span>
+        Facility identifiers: <span class="font-medium text-cx-ink-2">Facility ID {{ deploymentFid || 'not linked yet' }}</span> · <span class="font-medium text-cx-ink-2">MFL {{ facility.mfl_code || '—' }}</span><span v-if="facility.registration_number"> · Registration {{ facility.registration_number }}</span><span v-if="facility.network"> · Partner {{ facility.network }}</span>
       </div>
 
       <section v-if="!goLiveReady" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
@@ -796,7 +797,7 @@ function reviewInvoice() {
               <h2 id="hmis-error-details-title" class="text-sm font-bold text-slate-900">Deployment service diagnostics</h2>
               <span v-if="errorHttpStatus" class="rounded-full bg-red-50 px-2 py-0.5 font-mono text-[10px] font-semibold text-red-700">HTTP {{ errorHttpStatus }}</span>
             </div>
-            <p class="mt-1 text-[11px] text-slate-600">MFL {{ facility.mfl_code }} · FID {{ deploymentFid || 'not linked' }}</p>
+            <p class="mt-1 text-[11px] text-slate-600">Facility ID {{ deploymentFid || 'not linked' }} · MFL {{ facility.mfl_code }}</p>
             <p v-if="errorCorrelationId" class="mt-1 break-all font-mono text-[10px] text-slate-500">Correlation ID: {{ errorCorrelationId }}</p>
           </div>
           <button type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" @click="errorDetailsOpen = false">Close</button>
