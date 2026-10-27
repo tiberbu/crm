@@ -1187,18 +1187,24 @@ def retry_hfr(session_token: Any):
 # nosemgrep: guest-whitelisted-method -- only public package metadata is returned after strict six-digit Network validation.
 @frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
 def get_catalog(partner_id: Any = None):
+	from crm.utils.token_bonus import PARTNER_COUPON, WELCOME_BONUS, bonus_settings
+
 	partner_id = _text(partner_id)
 	partner = _public_network(partner_id)
 	if partner_id and not partner:
 		frappe.throw(
-			_("That Network ID is not available. Check the six digits and try again."), frappe.ValidationError
+			_("That Partner Coupon is not available. Check the six digits and try again."), frappe.ValidationError
 		)
+	bonuses = bonus_settings()
 	return {
 		"success": True,
 		"data": {
 			"network": partner or {},
 			"packages": _catalog_packages(),
 			"calculator_config": _calculator_config(),
+			"welcome_bonus_tokens": bonuses[WELCOME_BONUS],
+			# Only a coupon the client entered earns tokens, never the default Network.
+			"partner_coupon_tokens": bonuses[PARTNER_COUPON] if partner_id else 0,
 		},
 	}
 
@@ -1232,8 +1238,9 @@ def _catalog_packages() -> list[dict[str, Any]]:
 
 
 def _upsert_facility_membership(
-	facility: dict[str, Any], network: str, person: dict[str, Any], *, customer: str
+	facility: dict[str, Any], network: str, person: dict[str, Any], *, customer: str, partner_coupon: bool = False
 ):
+	coupon = {"partner_coupon": 1} if partner_coupon and frappe.get_meta("CRM Facility Membership").has_field("partner_coupon") else {}
 	mfl = _text(facility.get("mfl_code"))
 	row = frappe.db.get_value("CRM Pre-Qualified Facility", {"mfl_code": mfl}, "name")
 	if row:
@@ -1265,6 +1272,7 @@ def _upsert_facility_membership(
 			row_item.contact_name = "%s %s" % (person.get("first_name", ""), person.get("last_name", ""))
 			row_item.contact_email = person["email"]
 			row_item.contact_phone = person.get("phone", "")
+			row_item.update(coupon)
 			facility_doc.save(ignore_permissions=True)
 			return facility_doc
 	if not frappe.get_meta("CRM Facility Membership").has_field("customer"):
@@ -1278,6 +1286,7 @@ def _upsert_facility_membership(
 			"contact_name": "%s %s" % (person.get("first_name", ""), person.get("last_name", "")),
 			"contact_email": person["email"],
 			"contact_phone": person.get("phone", ""),
+			**coupon,
 		},
 	)
 	facility_doc.save(ignore_permissions=True)
@@ -1622,7 +1631,10 @@ def submit_onboarding(
 	partner_id = _text(partner_id)
 	partner = _public_network(partner_id)
 	if not partner and partner_id:
-		frappe.throw(_("That Network ID does not exist or is not available."), frappe.ValidationError)
+		frappe.throw(_("That Partner Coupon does not exist or is not available."), frappe.ValidationError)
+	if partner and partner_id:
+		# Typed by the client (not the default Network): the facility earns Partner Coupon tokens.
+		partner = {**partner, "partner_coupon": True}
 	selected = _parse_selected_ids(selected_facility_ids)
 	if not selected:
 		frappe.throw(_("Select at least one facility to continue."), frappe.ValidationError)
@@ -1893,7 +1905,9 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 	for facility in facilities:
 		facility_id = _text(facility.get("facility_id"))
 		pkg = packages_by_facility[facility_id]
-		facility_doc = _upsert_facility_membership(facility, partner["name"], person, customer=customer)
+		facility_doc = _upsert_facility_membership(
+			facility, partner["name"], person, customer=customer, partner_coupon=bool(partner.get("partner_coupon"))
+		)
 		deal = _resume_or_create_customer_deal(
 			session=session,
 			partner=partner,
