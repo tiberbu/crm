@@ -197,3 +197,5 @@ header.site .help{margin-left:auto;font-weight:600;font-size:.9rem}
 .rv-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 24px;margin:18px 0 0;padding:14px 16px;border:1px solid var(--line);border-radius:12px;font-size:.92rem}
 .rv-meta dt{color:var(--ink-2);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em}
 .rv-meta dd{margin:2px 0 0;font-weight:600;word-break:break-all}
+.vx .sumbar .wrap{max-width:1100px}
+.vx .fac input[type="checkbox"],.vx .agree input[type="checkbox"]{color:var(--sel);border-radius:4px}

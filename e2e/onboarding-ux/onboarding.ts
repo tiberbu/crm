@@ -59,19 +59,19 @@ export async function mockOnboardingApi(page: Page, facilityCount: number) {
 
 export async function reachFacilitiesStep(page: Page) {
   await page.goto("/facility-onboarding");
-  await page.getByRole("button", { name: /Get started|Start|Onboard/i }).first().click();
-  await page.locator("form input").first().fill("12345678");
-  await page.locator("form button[type=submit], form button:not([type])").last().click();
+  await page.getByPlaceholder("Enter your ID number").fill("12345678");
+  await page.getByRole("button", { name: /Verify & Find My Facility/ }).click();
   await page.getByLabel(/1 \/ 6/).click();
   await page.keyboard.type("123456");
   await page.locator("form button:not([type]), form button[type=submit]").first().click().catch(() => {});
-  await expect(page.getByText("Select facilities to onboard")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Select the facility you want to onboard" })).toBeVisible();
 }
 
 export async function reachReviewStep(page: Page) {
   await page.getByTestId("facility-select-checkbox").first().check();
-  await page.getByRole("button", { name: /Continue to packages/ }).click();
+  await page.getByRole("button", { name: /Continue to Packages/ }).click();
   await expect(page.getByTestId("package-grid")).toBeVisible();
-  await page.getByRole("button", { name: /Review your choices/ }).click();
+  await page.getByTestId("package-grid").locator(".pkg > .btn").first().click();
+  await page.locator(".sumbar").getByRole("button", { name: /Continue to Review/ }).click();
   await expect(page.getByTestId("self-onboarding-terms")).toBeVisible();
 }

@@ -1,23 +1,19 @@
 import { expect, test } from "@playwright/test";
 
-test("the hero offers Contact us, which scrolls to the contact section", async ({ page }) => {
+test("the hero's See how it works scrolls to the four steps", async ({ page }) => {
   await page.goto("/");
-  const contact = page.getByTestId("hero-contact");
-  await expect(contact).toBeVisible();
-  await contact.click();
-  await expect(page).toHaveURL(/#contact$/);
-  await expect(page.getByRole("heading", { name: /Questions before you start/ })).toBeInViewport();
+  await page.getByRole("link", { name: "See how it works" }).click();
+  await expect(page).toHaveURL(/#how$/);
+  await expect(page.getByRole("heading", { name: /From enquiry to live in four simple steps/ })).toBeInViewport();
 });
 
-test("pricing cards show a price and its Care Tokens, with no billing period", async ({ page }) => {
+test("Flex package cards show a price and their tokens, with no billing period", async ({ page }) => {
   await page.goto("/");
-  const pricing = page.locator("#pricing");
-  test.skip(!(await pricing.count()), "No token packages are published on this site");
-  const plans = pricing.locator("li.plan");
-  await expect(plans.first()).toBeVisible();
-  for (const plan of await plans.all()) {
-    await expect(plan.locator(".tokens")).toHaveText(/^[\d,]+ Care Tokens$/);
+  const cards = page.getByTestId("flex-package");
+  test.skip(!(await cards.count()), "No token packages are published on this site");
+  for (const card of await cards.all()) {
+    await expect(card.locator(".p")).toHaveText(/^KES [\d,]+$/);
+    await expect(card.locator("dl")).toContainText(/Tokens\s*[\d,]+/);
   }
-  await expect(pricing).not.toContainText(/\/\s*(month|quarter|year|mo)\b/i);
-  await expect(pricing).not.toContainText(/each month/i);
+  await expect(page.locator("#flex-packages")).not.toContainText(/\/\s*(month|quarter|year|mo)\b/i);
 });
