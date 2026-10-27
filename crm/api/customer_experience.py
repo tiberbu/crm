@@ -447,6 +447,24 @@ def get_draft_order(sales_order: Any):
 	}
 
 
+@frappe.whitelist(methods=["GET", "POST"])
+def get_billing_profile(customer: Any):
+	"""Who a facility's invoices are billed to: the customer, its KRA PIN and saved addresses."""
+	require_portal_user()
+	name = _text(customer)
+	if not name or name not in get_user_customer_names():
+		frappe.throw(_("That billing account is not linked to your account."), frappe.PermissionError)
+	return {
+		"success": True,
+		"data": {
+			"customer": name,
+			"customer_name": _text(frappe.db.get_value("Customer", name, "customer_name")) or name,
+			"kra_pin": _text(frappe.db.get_value("Customer", name, "tax_id")),
+			"addresses": _billing_addresses(name),
+		},
+	}
+
+
 def _clean_kra_pin(value):
 	pin = re.sub(r"\s+", "", _text(value)).upper()
 	if not KRA_PIN_PATTERN.match(pin):
