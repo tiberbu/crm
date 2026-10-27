@@ -20,6 +20,9 @@ test.describe("self-onboarding", () => {
   test("the facility list is paged and searchable, and keeps selections", async ({ page }) => {
     const cards = page.getByTestId("facility-select-checkbox");
     await expect(cards).toHaveCount(10);
+    // Every facility shows its Facility ID beside the MFL code, and can be found by it.
+    await expect(page.getByTestId("onboarding-facility-id")).toHaveCount(10);
+    await expect(page.getByTestId("onboarding-facility-id").first()).toHaveText("Facility ID FID-00-TEST-01");
     await expect(page.getByTestId("facility-pager-status")).toHaveText("Showing 1–10 of 25");
 
     await cards.first().check();
@@ -35,7 +38,8 @@ test.describe("self-onboarding", () => {
     await expect(cards).toHaveCount(1);
     await expect(cards.first()).toBeChecked();
     await expect(page.getByTestId("facility-pager")).toHaveCount(0);
-    await page.getByTestId("facility-search").fill("TEST-11");
+    await page.getByTestId("facility-search").fill("FID-00-TEST-11");
+    await expect(cards).toHaveCount(1);
     await expect(cards.first()).toBeChecked();
     await page.getByTestId("facility-search").fill("");
 
@@ -108,8 +112,13 @@ test.describe("facility portal", () => {
     await owner.setViewportSize({ width: 1440, height: 1000 });
     await owner.goto("/cx-portal");
     await owner.getByRole("button", { name: /^Facilities/ }).first().click();
+    const table = owner.locator("table").first();
+    await expect(table.locator("th", { hasText: "Facility ID" })).toBeVisible();
+    await expect(table.locator("th", { hasText: /MFL Code/i })).toHaveCount(0);
     const row = owner.locator("tr", { hasText: NO_PARTNER_MFL });
     await expect(row).toBeVisible();
+    await expect(row.getByTestId("facility-id")).toHaveText(/^FID-/);
+    await expect(row).toContainText(`MFL ${NO_PARTNER_MFL}`);
     await expect(row.getByTestId("facility-partner")).toHaveCount(0);
     await expect(owner.locator("main")).not.toContainText("No Network");
     // A facility onboarded with a Partner Coupon still shows its partner.
@@ -117,6 +126,7 @@ test.describe("facility portal", () => {
 
     await row.getByRole("button", { name: NO_PARTNER_FACILITY }).click();
     await expect(owner.getByRole("heading", { level: 1, name: NO_PARTNER_FACILITY })).toBeVisible();
+    await expect(owner.getByTestId("facility-header-ids")).toHaveText(new RegExp(`^Facility ID FID-.* · MFL ${NO_PARTNER_MFL}$`));
     await expect(owner.locator("main")).not.toContainText("No Network");
     await expect(owner.getByTestId("facility-partner-card")).toHaveCount(0);
 
