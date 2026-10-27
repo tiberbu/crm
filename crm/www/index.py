@@ -10,6 +10,9 @@ Root-resolution note: `home_page = "index"` alone is NOT enough — Frappe's
 this redirect actually runs for workspace-having users, closing a desk-fence bypass.
 """
 
+import hashlib
+from functools import lru_cache
+
 import frappe
 from frappe import _
 
@@ -20,6 +23,17 @@ from crm.branding import apply_brand_context, get_configured_app_brand
 no_cache = True
 
 ONBOARDING = "/facility-onboarding"
+
+
+@lru_cache(maxsize=1)
+def _css_version() -> str:
+	"""A content hash for the stylesheet links: the CDN caches /assets for a year, so a changed
+	file needs a new URL to reach visitors."""
+	digest = hashlib.sha1()
+	for name in ("value-express.css", "value-express-landing.css"):
+		with open(frappe.get_app_path("crm", "public", "css", name), "rb") as css:
+			digest.update(css.read())
+	return digest.hexdigest()[:10]
 
 
 def _amount(value) -> str:
@@ -44,6 +58,7 @@ def get_context(context):
 	context.landing = get_landing_settings()
 	context.contact_topics = CONTACT_TOPICS
 	context.amount = _amount
+	context.css_version = _css_version()
 	try:
 		context.offer = get_value_express_offer()
 	except Exception:
