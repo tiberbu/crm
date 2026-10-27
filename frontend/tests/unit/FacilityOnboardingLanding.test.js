@@ -84,14 +84,20 @@ async function submitOtp(host) {
   await submitForm(form)
 }
 
-async function goToReview(host) {
-  host.querySelector('button').click()
+async function choosePackage(host) {
+  const select = host.querySelector('[data-testid="package-grid"] .pkg > .btn')
+  expect(select).toBeTruthy()
+  select.click()
   await nextTick()
+}
+
+async function goToReview(host) {
   await submitIdentity(host)
   await submitOtp(host)
   await checkInput(host.querySelector('input[type="checkbox"]'))
   await submitForm(host.querySelector('form'))
   await settle()
+  await choosePackage(host)
   await submitForm(host.querySelector('form'))
   const reviewForm = host.querySelector('form')
   await checkInput(reviewForm.querySelector('[data-testid="terms-acceptance"]'))
@@ -163,12 +169,6 @@ describe('FacilityOnboardingLanding', () => {
     app.mount(host)
     mountedApps.push(app)
 
-    const startButton = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent.includes('Start your onboarding'),
-    )
-    startButton.click()
-    await nextTick()
-
     await submitIdentity(host)
     expect(call.mock.calls[0][0]).toContain('start_identity')
     expect(host.textContent).toContain('text message')
@@ -188,22 +188,16 @@ describe('FacilityOnboardingLanding', () => {
     expect(host.textContent).toContain('Alpha Clinic')
     expect(host.textContent).toContain('Unapproved Clinic')
     expect(host.textContent).toContain(
-      'This facility’s level isn’t currently eligible for online onboarding.',
+      'Value Express is for Level 2 and Level 3 outpatient facilities, so this one can’t be selected.',
     )
     expect(host.textContent).toContain('Facility without a level')
     expect(host.textContent).toContain(
       'We couldn’t confirm this facility’s level in the registry',
     )
-    expect(host.querySelectorAll('input[type="checkbox"]')[0].disabled).toBe(
-      false,
-    )
-    expect(host.querySelectorAll('input[type="checkbox"]')[1].disabled).toBe(
-      true,
-    )
-    expect(host.querySelectorAll('input[type="checkbox"]')[2].disabled).toBe(
-      true,
-    )
-    expect(host.textContent).toContain('Verified identity')
+    // Facilities that cannot be onboarded show a lock instead of a checkbox.
+    expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
+    expect(host.querySelectorAll('.fac[aria-disabled="true"]')).toHaveLength(2)
+    expect(host.querySelector('[aria-label="Verified identity"]')).toBeTruthy()
     expect(host.textContent).toContain('Amina Otieno')
     expect(host.textContent).toContain('a***@example.test')
     expect(call.mock.calls.map(([method]) => method.split('.').at(-1))).toEqual(
@@ -247,17 +241,11 @@ describe('FacilityOnboardingLanding', () => {
     app.mount(host)
     mountedApps.push(app)
 
-    const startButton = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent.includes('Start your onboarding'),
-    )
-    startButton.click()
-    await nextTick()
-
     await submitIdentity(host)
     await submitOtp(host)
 
     expect(host.textContent).toContain('Alpha Clinic')
-    expect(host.textContent).toContain('Verified identity')
+    expect(host.querySelector('[aria-label="Verified identity"]')).toBeTruthy()
     expect(host.textContent).toContain('Amina Otieno')
     expect(call.mock.calls.map(([method]) => method.split('.').at(-1))).toEqual(
       ['start_identity', 'verify_otp', 'retry_hfr'],
@@ -285,12 +273,6 @@ describe('FacilityOnboardingLanding', () => {
     app.config.globalProperties.__ = globalThis.__
     app.mount(host)
     mountedApps.push(app)
-
-    const startButton = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent.includes('Start your onboarding'),
-    )
-    startButton.click()
-    await nextTick()
     await submitIdentity(host)
     await submitOtp(host)
 
@@ -363,9 +345,6 @@ describe('FacilityOnboardingLanding', () => {
     app.config.globalProperties.__ = globalThis.__
     app.mount(host)
     mountedApps.push(app)
-
-    host.querySelector('button').click()
-    await nextTick()
     await submitIdentity(host)
     await submitOtp(host)
 
@@ -374,6 +353,8 @@ describe('FacilityOnboardingLanding', () => {
     await submitForm(host.querySelector('form'))
 
     await settle()
+
+    await choosePackage(host)
     await submitForm(host.querySelector('form'))
 
     expect(call.mock.calls[3][0]).toContain('get_self_onboarding_terms')
@@ -382,8 +363,8 @@ describe('FacilityOnboardingLanding', () => {
     )
     expect(termsPanel.textContent).toContain('Self-Onboarding Terms')
     const reviewForm = host.querySelector('form')
-    const termsLink = [...reviewForm.querySelectorAll('button')].find((button) =>
-      button.textContent.includes('Read the complete Terms'),
+    const termsLink = [...reviewForm.querySelectorAll('a')].find((link) =>
+      link.textContent.includes('Value Express terms'),
     )
     expect(termsLink.getAttribute('aria-haspopup')).toBe('dialog')
     termsLink.click()
@@ -505,7 +486,7 @@ describe('FacilityOnboardingLanding', () => {
 
     expect(host.textContent).toContain('Your request has been submitted')
     expect(host.textContent).toContain(
-      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your draft order and pay its invoice. Tokens are added once payment is received.',
+      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your draft order and pay its invoice. Tokens or your subscription start once payment is received.',
     )
     expect(host.querySelector('[data-testid="linked-identity-note"]')).not.toBeNull()
     expect(host.textContent).toContain('Sign in to Tiberbu Express')
@@ -588,7 +569,7 @@ describe('FacilityOnboardingLanding', () => {
 
     expect(host.textContent).toContain('Your request has been submitted')
     expect(host.textContent).toContain(
-      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your draft order and pay its invoice. Tokens are added once payment is received.',
+      'Your selected facilities are linked to your existing Tiberbu Express account. Sign in with your usual details to review your draft order and pay its invoice. Tokens or your subscription start once payment is received.',
     )
     expect(host.querySelector('[data-testid="linked-identity-note"]')).not.toBeNull()
     expect(host.textContent).toContain('Sign in to Tiberbu Express')
@@ -738,7 +719,7 @@ describe('FacilityOnboardingLanding', () => {
     },
   )
 
-  it('preselects Starter, shows the first-purchase bonus, and the Partner Coupon popover closes', async () => {
+  it('preselects nothing, shows the first-purchase bonus, and the Partner Coupon popover closes', async () => {
     const packages = [
       { item_code: 'CV-TOKEN-GROWTH', display_name: 'Growth', price: 15000, token_quantity: 2800 },
       { item_code: 'CV-TOKEN-STARTER', display_name: 'Starter', price: 6000, token_quantity: 1000 },
@@ -778,28 +759,27 @@ describe('FacilityOnboardingLanding', () => {
     app.config.globalProperties.__ = globalThis.__
     app.mount(host)
     mountedApps.push(app)
-
-    host.querySelector('button').click()
-    await nextTick()
     await submitIdentity(host)
     await submitOtp(host)
-    const checkbox = host.querySelector('[data-testid="facility-select-checkbox"]')
-    expect(checkbox.className).toContain('border-2')
-    await checkInput(checkbox)
+    await checkInput(host.querySelector('[data-testid="facility-select-checkbox"]'))
     await submitForm(host.querySelector('form'))
     await settle()
 
-    const starter = host.querySelector('input[type="radio"][value="CV-TOKEN-STARTER"]')
-    expect(starter.checked).toBe(true)
+    // No package is chosen for the facility until the owner picks one, and the bar says why.
+    expect(host.querySelector('.pkg.sel')).toBeNull()
     const continueButton = host.querySelector('form button:not([type="button"])')
+    expect(continueButton.disabled).toBe(true)
+    expect(host.querySelector('.hintline').textContent).toContain('Choose a package to continue.')
+    const firstName = host.querySelector('[data-testid="package-grid"] .pkg .nm').textContent
+    await choosePackage(host)
+    expect(host.querySelector('.pkg.sel .nm').textContent).toBe(firstName)
     expect(continueButton.disabled).toBe(false)
     expect(host.querySelector('[data-testid="package-bonus"]').textContent).toContain(
       '+400 bonus tokens on your first purchase',
     )
 
     const toggle = host.querySelector('[data-testid="partner-coupon-toggle"]')
-    expect(toggle.textContent).toContain('Enter Partner Coupon')
-    expect(host.textContent).not.toContain('Were you referred by a Network?')
+    expect(toggle.textContent).toContain('Have a Partner Coupon?')
     toggle.click()
     await nextTick()
     expect(host.querySelector('#partner-coupon-panel')).not.toBeNull()
@@ -814,7 +794,8 @@ describe('FacilityOnboardingLanding', () => {
     expect(call.mock.calls.at(-1)[1]).toMatchObject({ partner_id: '909091' })
     expect(host.querySelector('[data-testid="partner-coupon-applied"]').textContent).toContain('+150')
     expect(host.querySelector('[data-testid="package-bonus"]').textContent).toContain('+150 Partner Coupon tokens')
-    expect(host.querySelector('input[type="radio"][value="CV-TOKEN-STARTER"]').checked).toBe(true)
+    // The choice survives reloading the catalogue for the coupon.
+    expect(host.querySelector('.pkg.sel .nm').textContent).toBe(firstName)
     host.querySelector('[data-testid="partner-coupon-close"]').click()
     await nextTick()
     expect(host.querySelector('#partner-coupon-panel')).toBeNull()
