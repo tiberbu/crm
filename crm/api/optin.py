@@ -45,6 +45,7 @@ from crm.api._email import (
 	create_transactional_communication,
 	schedule_email_queue_redaction,
 )
+from crm.utils.facility_ids import facility_ids_by_mfl
 from crm.utils.jinja import render_terms_template
 from crm.utils.optin_bundles import (
 	billing_schedule,
@@ -881,9 +882,11 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 		"authorised_signatory_acceptance" if signatory_mode == "self" else "signatory_nomination"
 	)
 	payload["witness"] = {"name": witness_name, "email": witness_email, "phone": witness_phone}
+	facility_ids = facility_ids_by_mfl(row.get("mfl_code") for row in pricing)
 	payload["facilities"] = [
 		{
 			"mfl_code": row.get("mfl_code"),
+			"hfr_facility_id": facility_ids.get(frappe.utils.cstr(row.get("mfl_code")).strip(), ""),
 			"facility_name": row.get("facility_name"),
 			"keph_level": row.get("keph_level"),
 			"rebate_supplier": requested_suppliers.get(
@@ -1445,9 +1448,11 @@ def verify_otp(email: Any, network_slug: Any, otp: Any, deal_invitation: Any = N
 		_deal_invitation_facilities(invitation) if invitation else _get_all_memberships(email, network_slug)
 	)
 	quoted_map = {} if invitation else _get_quoted_facility_map([r.mfl_code for r in all_records])
+	facility_ids = facility_ids_by_mfl(r.mfl_code for r in all_records)
 	facilities = [
 		{
 			"mfl_code": r.mfl_code,
+			"hfr_facility_id": facility_ids.get(frappe.utils.cstr(r.mfl_code).strip(), ""),
 			"facility_name": r.facility_name,
 			"keph_level": r.keph_level,
 			"already_quoted": bool(quoted_map.get(r.mfl_code)),

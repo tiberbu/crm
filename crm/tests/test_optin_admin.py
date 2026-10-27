@@ -227,6 +227,7 @@ class TestOptInFacilityCsvImport(UnitTestCase):
 		save_facility.assert_called_once_with(
 			{
 				"mfl_code": "1001",
+				"hfr_facility_id": "",
 				"facility_name": "First Clinic",
 				"organization": "Health Group",
 				"keph_level": "Level 3",
