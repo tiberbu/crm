@@ -1202,6 +1202,9 @@ function emptyReviewForm() {
   }
 }
 
+const reviewBonusTokens = computed(() =>
+  (orderReview.value?.items || []).reduce((sum, row) => sum + (Number(row.bonus_tokens) || 0), 0),
+)
 const reviewKraPin = computed(() => reviewForm.value.kra_pin.replace(/\s+/g, '').toUpperCase())
 const reviewProblems = computed(() => {
   const form = reviewForm.value
@@ -3431,9 +3434,15 @@ onUnmounted(() => {
               <span class="font-semibold text-cx-ink">{{ packageLabel(orderReview.package_item, context.token_packages) }}</span>
               <span class="text-cx-ink-3">For {{ facilityLabel(orderReview.facility_mfl, allFacilities) }}</span>
             </div>
-            <div v-for="row in orderReview.items" :key="row.item_code" class="flex items-center justify-between text-xs text-cx-ink-2">
-              <span>{{ row.item_name || row.item_code }} × {{ row.qty }}</span>
-              <span>{{ money(row.amount, orderReview.currency) }}</span>
+            <div
+              v-for="(row, index) in orderReview.items"
+              :key="`${row.item_code}-${index}`"
+              class="flex items-start justify-between gap-3 text-xs"
+              :class="row.bonus_type ? 'text-cx-success-ink' : 'text-cx-ink-2'"
+              :data-testid="row.bonus_type ? 'order-review-bonus' : 'order-review-line'"
+            >
+              <span>{{ row.bonus_type ? row.description : `${row.item_name || row.item_code} × ${row.qty}` }}</span>
+              <span class="shrink-0 font-semibold">{{ row.bonus_type ? 'Free' : money(row.amount, orderReview.currency) }}</span>
             </div>
             <div v-for="tax in orderReview.taxes" :key="tax.description" class="flex items-center justify-between text-xs text-cx-ink-3">
               <span>{{ tax.description }}</span>
@@ -3443,6 +3452,10 @@ onUnmounted(() => {
               <span>Total</span>
               <span data-testid="order-review-total">{{ money(orderReview.grand_total, orderReview.currency) }}</span>
             </div>
+            <p v-if="reviewBonusTokens && orderReview.package_tokens" data-testid="order-review-tokens" class="text-[11px] text-cx-ink-3">
+              You pay for {{ orderReview.package_tokens.toLocaleString() }} tokens and receive
+              {{ (orderReview.package_tokens + reviewBonusTokens).toLocaleString() }} once the invoice is paid.
+            </p>
           </div>
 
           <div class="space-y-2">
