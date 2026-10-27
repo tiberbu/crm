@@ -289,7 +289,7 @@
                   <span>
                     {{
                       activeFixed
-                        ? __('One predictable monthly fee. {0} per month for your {1} facility.', [money(activeFixed.price_ex_vat, activeFixed.currency), activePricingFacility.facility_level])
+                        ? __('One predictable fixed fee. {0} {1} for your {2} facility.', [money(activeFixed.price_ex_vat, activeFixed.currency), __(periodLabel(activeFixed.billing_period)), activePricingFacility.facility_level])
                         : __('Not offered for this facility’s level.')
                     }}
                   </span>
@@ -307,7 +307,7 @@
                   <span class="n">−{{ accessTokens.toLocaleString() }}</span>
                   <p><b>{{ __('{0} tokens a month for system access.', [accessTokens.toLocaleString()]) }}</b> {{ __('This is deducted from your balance at the start of each funded month, before service-point and patient-bill tokens. Each card shows what is left for services in your first month.') }}</p>
                 </div>
-                <div class="pkgs" data-testid="package-grid" :style="{ '--cards': (catalog.packages?.length || 0) + (customOffer ? 1 : 0) }">
+                <div class="pkgs" data-testid="package-grid" :style="{ '--cols': gridColumns((catalog.packages?.length || 0) + (customOffer ? 1 : 0)) }">
                   <div v-for="pkg in catalog.packages" :key="pkg.item_code" class="pkg" :class="{ sel: flexChoice[activeId] === pkg.item_code }">
                     <span v-if="recommendedKey === pkg.item_code" class="rec">{{ carried?.package === pkg.item_code ? __('Recommended for you') : __('Recommended') }}</span>
                     <span class="nm">{{ pkg.display_name || pkg.item_code }}</span>
@@ -356,11 +356,11 @@
               <div v-else class="fixed">
                 <h2 style="margin-top: 28px">{{ __('Value Express Fixed') }}</h2>
                 <p class="muted" style="margin-top: 6px">{{ __('Value Express Fixed gives your facility CareverseHIMS Value Express through a straightforward monthly subscription. It suits facilities that value cost predictability and don’t want to monitor token balances or make top-ups. The fee depends on your facility’s level.') }}</p>
-                <div class="tiers">
+                <div class="tiers" :style="{ '--cols': gridColumns(catalog.fixed_packages?.length || 0, 3) }">
                   <button v-for="pkg in catalog.fixed_packages" :key="pkg.item_code" type="button" class="tier" :aria-pressed="activeFixed?.item_code === pkg.item_code" :disabled="activeFixed?.item_code !== pkg.item_code" data-testid="fixed-tier">
                     <span class="lbl">{{ pkg.facility_levels?.[0] || pkg.display_name }} {{ __('facility') }}</span>
                     <b>{{ money(pkg.price_ex_vat, pkg.currency) }}</b>
-                    <span class="muted">{{ __('per month, excluding {0}', [pkg.vat_label || 'VAT']) }}</span>
+                    <span class="muted">{{ __('{0}, excluding {1}', [__(periodLabel(pkg.billing_period)), pkg.vat_label || 'VAT']) }}</span>
                     <span style="font-size: 0.85rem; color: var(--ink-2)">{{ activeFixed?.item_code === pkg.item_code ? __('Matches your facility level') : __('Not your facility’s level') }}</span>
                   </button>
                 </div>
@@ -524,10 +524,12 @@ import {
   CUSTOM,
   customQuote,
   fixedForLevel,
+  gridColumns,
   journeys,
   monthOneTokens,
   morePercent,
   parseCarriedChoice,
+  periodLabel,
   perTokenRate,
 } from '@/utils/valueExpress'
 
@@ -772,7 +774,7 @@ function reviewPlan(id) {
   const pkg = selectedPackageFor(id)
   if (!pkg) return { title: '', detail: '' }
   if ((planSelections.value[id] || 'flex') === 'fixed') {
-    return { title: __('Value Express Fixed, {0}', [pkg.facility_levels?.[0] || pkg.display_name]), detail: __('Billed monthly') }
+    return { title: __('Value Express Fixed, {0}', [pkg.facility_levels?.[0] || pkg.display_name]), detail: __('Billed {0}', [__(periodLabel(pkg.billing_period))]) }
   }
   const access = accessTokens.value ? ` · ${__('{0} tokens/month system access', [accessTokens.value.toLocaleString()])}` : ''
   if (pkg.custom) {

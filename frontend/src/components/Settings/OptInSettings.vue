@@ -175,163 +175,16 @@
             />
           </div>
         </div>
-        <div
-          class="mt-5 max-w-5xl overflow-hidden rounded-xl border border-outline-gray-2 bg-surface-white shadow-sm dark:bg-surface-gray-1"
+        <p
+          class="mt-5 text-sm text-ink-gray-6"
+          data-testid="optin-packages-moved"
         >
-          <div
-            class="hidden grid-cols-[1.2fr_1fr_5rem_7rem_2.5rem] gap-3 border-b border-outline-gray-2 bg-surface-gray-1/80 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-gray-5 md:grid dark:bg-surface-gray-2"
-          >
-            <span>{{ __('Service item') }}</span
-            ><span>{{ __('Facility-facing name') }}</span
-            ><span>{{ __('Tokens') }}</span
-            ><span>{{ __('Enabled') }}</span
-            ><span />
-          </div>
-          <div
-            v-if="!form.token_packages.length"
-            class="px-4 py-8 text-center text-sm text-ink-gray-5"
-          >
-            <p class="font-medium text-ink-gray-7">
-              {{ __('No token packages configured') }}
-            </p>
-            <p class="mt-1 text-xs text-ink-gray-5">
-              {{
-                __(
-                  'Add service items to publish facility-friendly token choices.',
-                )
-              }}
-            </p>
-          </div>
-          <div
-            v-for="(pkg, index) in form.token_packages"
-            :key="pkg._key || index"
-            class="grid grid-cols-1 gap-3 border-b border-outline-gray-2 px-4 py-4 last:border-b-0 md:grid-cols-[1.2fr_1fr_5rem_7rem_2.5rem] md:items-start md:gap-3 md:px-3 md:py-3"
-          >
-            <div>
-              <span
-                class="mb-1 block text-xs font-medium text-ink-gray-5 md:hidden"
-                >{{ __('Service item') }}</span
-              >
-              <select
-                v-model="pkg.item_code"
-                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
-                @change="markDirty"
-              >
-                <option value="">{{ __('Select item') }}</option>
-                <option
-                  v-for="item in tokenItemOptions"
-                  :key="item.value"
-                  :value="item.value"
-                >
-                  {{ item.label }}
-                </option>
-              </select>
-            </div>
-            <div>
-              <span
-                class="mb-1 block text-xs font-medium text-ink-gray-5 md:hidden"
-                >{{ __('Facility-facing name') }}</span
-              >
-              <input
-                v-model="pkg.display_name"
-                type="text"
-                :placeholder="__('e.g. Core care operations')"
-                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
-                @input="markDirty"
-              />
-            </div>
-            <div>
-              <span
-                class="mb-1 block text-xs font-medium text-ink-gray-5 md:hidden"
-                >{{ __('Tokens') }}</span
-              >
-              <input
-                v-model="pkg.token_quantity"
-                type="number"
-                :min="pkg.plan === 'Fixed' ? 0 : 1"
-                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
-                @input="markDirty"
-              />
-            </div>
-            <div class="flex items-center gap-2 pt-2">
-              <input
-                v-model="pkg.enabled"
-                type="checkbox"
-                class="rounded border-outline-gray-3"
-                @change="markDirty"
-              />
-              <span class="text-sm text-ink-gray-7">{{ __('Published') }}</span>
-            </div>
-            <div class="flex justify-end md:justify-center">
-              <button
-                type="button"
-                class="grid size-8 place-items-center rounded-lg text-lg text-ink-gray-5 transition hover:bg-surface-gray-2 hover:text-ink-red-5 focus:outline-none focus:ring-2 focus:ring-outline-gray-2 dark:hover:bg-surface-gray-3"
-                :aria-label="__('Remove package')"
-                @click="removeTokenPackage(index)"
-              >
-                ×
-              </button>
-            </div>
-            <div class="md:col-span-5 grid gap-3 md:grid-cols-3">
-              <textarea
-                v-model="pkg.description"
-                :placeholder="__('Facility-facing description')"
-                class="min-h-20 w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
-                @input="markDirty"
-              />
-              <textarea
-                v-model="pkg.coverage_summary"
-                :placeholder="
-                  __(
-                    'Coverage summary, for example 100 laboratory transactions per month',
-                  )
-                "
-                class="min-h-20 w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
-                @input="markDirty"
-              />
-              <FormControl
-                v-model="pkg.billing_period"
-                :label="__('Billing period')"
-                :options="billingPeriodOptions"
-                type="select"
-                @update:modelValue="markDirty"
-              />
-              <FormControl
-                v-model="pkg.plan"
-                :label="__('Value Express plan')"
-                :options="planOptions"
-                type="select"
-                @update:modelValue="markDirty"
-              />
-              <textarea
-                v-if="pkg.plan === 'Fixed'"
-                v-model="pkg.facility_levels"
-                :aria-label="__('Facility levels')"
-                :placeholder="__('Facility levels this Fixed fee applies to, one per line (for example Level 3B)')"
-                class="min-h-20 w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 md:col-span-2 dark:bg-surface-gray-2"
-                @input="markDirty"
-              />
-              <p v-else-if="pkg.plan === 'Custom'" class="text-xs text-ink-gray-5 md:col-span-2">
-                {{ __('Facilities enter their own amount; it is priced at the Flex package rates. Set Tokens to 1.') }}
-              </p>
-            </div>
-          </div>
-          <div
-            class="flex items-center justify-between border-t border-outline-gray-2 bg-surface-gray-1/80 px-4 py-3 dark:bg-surface-gray-2"
-          >
-            <span class="text-xs text-ink-gray-5">{{
-              __(
-                'Use Item Price for rates. Do not enter VAT-inclusive prices here.',
-              )
-            }}</span>
-            <Button
-              variant="subtle"
-              size="sm"
-              :label="__('Add package')"
-              @click="addTokenPackage"
-            />
-          </div>
-        </div>
+          {{
+            __(
+              'Packages, their prices and their status are managed in Settings › Packages.',
+            )
+          }}
+        </p>
       </section>
 
       <div class="border-t border-outline-elevation-2" />
@@ -651,24 +504,22 @@ const form = reactive({
   token_invoice_due_days: 30,
   welcome_bonus_tokens: 0,
   partner_coupon_tokens: 0,
-  token_packages: [],
 })
 
 const settingsResource = createResource({
   url: 'crm.api.optin_admin.get_optin_settings',
   auto: true,
   onSuccess(data) {
-    Object.assign(form, data)
+    // Settings › Packages owns the catalogue; never send it back from here.
+    const settings = { ...data }
+    delete settings.token_packages
+    Object.assign(form, settings)
     form.tiberbu_contacts = (data.tiberbu_contacts ?? []).map(
       (contact, index) => ({
         ...contact,
         _key: `${contact.role}-${contact.email}-${index}`,
       }),
     )
-    form.token_packages = (data.token_packages ?? []).map((pkg, index) => ({
-      ...pkg,
-      _key: `${pkg.item_code}-${index}`,
-    }))
     dirty.value = false
   },
 })
@@ -679,17 +530,6 @@ const priceListsResource = createResource({
 const tokenPriceListsResource = createResource({
   url: 'crm.api.optin_admin.list_selling_price_lists',
   auto: true,
-})
-const tokenItemsResource = createResource({
-  url: 'frappe.client.get_list',
-  auto: true,
-  makeParams: () => ({
-    doctype: 'Item',
-    fields: ['name', 'item_name'],
-    filters: { disabled: 0, is_sales_item: 1 },
-    order_by: 'item_name asc',
-    limit_page_length: 0,
-  }),
 })
 const termsResource = createResource({
   url: 'crm.api.optin_admin.list_optin_terms',
@@ -727,22 +567,6 @@ const tokenPriceListOptions = computed(() => [
   { label: __('Select a token selling Price List'), value: '' },
   ...(tokenPriceListsResource.data ?? []),
 ])
-const tokenItemOptions = computed(() =>
-  (tokenItemsResource.data ?? []).map((item) => ({
-    label: item.item_name ? `${item.item_name} (${item.name})` : item.name,
-    value: item.name,
-  })),
-)
-const billingPeriodOptions = [
-  { label: __('Monthly'), value: 'Monthly' },
-  { label: __('Quarterly'), value: 'Quarterly' },
-  { label: __('Annual'), value: 'Annual' },
-]
-const planOptions = [
-  { label: __('Flex: prepaid token package'), value: 'Flex' },
-  { label: __('Fixed: monthly fee by facility level'), value: 'Fixed' },
-  { label: __('Custom: facility enters an amount'), value: 'Custom' },
-]
 const optionalServicesPriceListOptions = computed(() => [
   { label: __('Use Standard Selling / configured default'), value: '' },
   ...(optionalServicesPriceListsResource.data ?? []),
@@ -783,28 +607,6 @@ function addContact() {
 
 function removeContact(index) {
   form.tiberbu_contacts.splice(index, 1)
-  markDirty()
-}
-
-function addTokenPackage() {
-  form.token_packages.push({
-    _key: `new-token-${Date.now()}-${form.token_packages.length}`,
-    item_code: '',
-    display_name: '',
-    description: '',
-    plan: 'Flex',
-    facility_levels: '',
-    token_quantity: 1,
-    billing_period: 'Monthly',
-    coverage_summary: '',
-    coverage_metrics: '',
-    enabled: 1,
-  })
-  markDirty()
-}
-
-function removeTokenPackage(index) {
-  form.token_packages.splice(index, 1)
   markDirty()
 }
 
