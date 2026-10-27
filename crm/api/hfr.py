@@ -764,7 +764,9 @@ def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 		if ensure_missing_draft and status.get("status") == "not_submitted":
 			source = _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, customers)
 			payload, missing_fields = _build_external_provisioning_payload(source)
-			metering = _apply_token_source(settings, payload)
+			metering = _apply_token_source(
+				settings, payload, package_item=(deal_facility or {}).get("cx_token_package_item")
+			)
 			status = _auto_submit_external_provisioning(
 				external_url,
 				external_key,
@@ -1256,17 +1258,19 @@ def _build_external_provisioning_payload(source):
 	return payload, list(dict.fromkeys(missing))
 
 
-def _apply_token_source(settings, payload):
+def _apply_token_source(settings, payload, package_item=None):
 	"""Set the HMIS token source on the payload and return the context the metering hooks receive.
 
 	With OpenMeter as the token source (openmeter_mediator ADR-003), CRM grants the
 	facility's tokens in OpenMeter under its FID and HMIS reads its balance there,
-	so the payload awards no tokens itself.
+	so the payload awards no tokens itself. A paid package is granted when its
+	invoice is paid, never at provisioning, so the context defers it.
 	"""
 	context = {
 		"fid": payload.get("fid"),
 		"package_tokens": payload.get("tokens_awarded") or 0,
 		"token_source": "crm",
+		"defer_package_grant": _is_paid_package(package_item),
 	}
 	if not settings.get("hmis_token_source_openmeter"):
 		return context
@@ -1277,6 +1281,17 @@ def _apply_token_source(settings, payload):
 		"/cx-portal"
 	)
 	return context
+
+
+def _is_paid_package(package_item):
+	"""True unless the facility's package is in the catalog at no charge (a free trial)."""
+	from crm.api.facility_onboarding import _token_packages
+
+	package_item = frappe.utils.cstr(package_item or "").strip()
+	if not package_item:
+		return True
+	package = next((row for row in _token_packages() if row["item_code"] == package_item), None)
+	return not package or frappe.utils.flt(package.get("price")) > 0
 
 
 def _issue_metering_site_key(fid, context):

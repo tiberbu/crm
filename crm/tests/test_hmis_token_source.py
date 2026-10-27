@@ -59,7 +59,22 @@ class TestApplyTokenSource(UnitTestCase):
 		payload = _payload()
 		context = _apply_token_source(frappe._dict(), payload)
 		self.assertEqual(payload, _payload())
-		self.assertEqual(context, {"fid": FID, "package_tokens": 400, "token_source": "crm"})
+		self.assertEqual(
+			context, {"fid": FID, "package_tokens": 400, "token_source": "crm", "defer_package_grant": True}
+		)
+
+	def test_paid_packages_defer_their_grant_to_the_invoice(self):
+		catalog = [
+			{"item_code": "CV-TOKEN-FREE", "price": 0},
+			{"item_code": "CV-TOKEN-STARTER", "price": 6000},
+		]
+		with patch("crm.api.facility_onboarding._token_packages", return_value=catalog):
+			free = _apply_token_source(frappe._dict(), _payload(), package_item="CV-TOKEN-FREE")
+			paid = _apply_token_source(frappe._dict(), _payload(), package_item="CV-TOKEN-STARTER")
+			unknown = _apply_token_source(frappe._dict(), _payload(), package_item="CV-TOKEN-RETIRED")
+		self.assertFalse(free["defer_package_grant"])
+		self.assertTrue(paid["defer_package_grant"])
+		self.assertTrue(unknown["defer_package_grant"])
 
 	def test_openmeter_awards_no_tokens_in_the_payload(self):
 		payload = _payload()
