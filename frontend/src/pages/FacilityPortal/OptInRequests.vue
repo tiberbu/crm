@@ -72,7 +72,7 @@ const pageDescription = computed(() => {
             class="flex items-center justify-between rounded-cx-sm border border-cx-border-soft bg-cx-well px-3 py-2 text-xs"
           >
             <span class="truncate font-semibold text-cx-ink"><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /> {{ fac.name }}</span>
-            <span class="ml-2 shrink-0 font-mono text-[11px] text-cx-ink-3">{{ fac.mfl_code }}</span>
+            <span class="ml-2 shrink-0 font-mono text-[11px] text-cx-ink-3">Facility ID {{ fac.facility_id || 'not linked yet' }} · MFL {{ fac.mfl_code }}</span>
           </div>
         </div>
 

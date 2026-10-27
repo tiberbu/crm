@@ -1,6 +1,7 @@
 <script setup>
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import CxIcon from './components/CxIcon.vue'
+import { facilityId } from '@/utils/facilityId'
 import { invoiceStatus, packageLabel } from '@/utils/portalOrderState'
 
 const props = defineProps({
@@ -105,6 +106,10 @@ function money(value, currency) {
           <div class="flex items-center justify-between">
             <span class="font-medium text-cx-ink-3">KEPH Level</span>
             <span class="font-bold text-cx-ink">{{ facility.keph_level }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="font-medium text-cx-ink-3">Facility ID</span>
+            <span class="font-mono font-semibold text-cx-ink">{{ facilityId(facility) || 'Not linked yet' }}</span>
           </div>
           <div class="flex items-center justify-between">
             <span class="font-medium text-cx-ink-3">MFL Code</span>

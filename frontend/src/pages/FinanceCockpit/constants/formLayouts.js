@@ -1240,6 +1240,7 @@ Object.assign(FORM_LAYOUTS, {
   ]),
   'CRM Pre-Qualified Facility': setupFields('Facility details', [
     setupField('facility_name', 'Facility Name', 'data', null, true),
+    setupField('hfr_facility_id', 'Facility ID'),
     setupField('mfl_code', 'MFL Code'),
     setupField('keph_level', 'KEPH Level'),
     setupField('county', 'County'),

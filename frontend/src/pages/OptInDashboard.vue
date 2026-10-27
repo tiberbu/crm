@@ -497,7 +497,11 @@
                 </p>
                 <p class="mt-0.5 truncate text-xs text-ink-gray-5">
                   {{ row.network }} · {{ row.level }}
-                  <template v-if="row.mfl_code"> · {{ row.mfl_code }}</template>
+                  <template v-if="row.mfl_code">
+                    · {{ __('Facility ID') }}
+                    {{ facilityIdFor(row.mfl_code) || __('not linked yet') }} · MFL
+                    {{ row.mfl_code }}</template
+                  >
                 </p>
               </div>
               <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
@@ -860,6 +864,7 @@ import FileSignature from '~icons/lucide/file-signature'
 import RefreshCw from '~icons/lucide/refresh-cw'
 import TrendingUp from '~icons/lucide/trending-up'
 import G2Chart from '@/components/OptInDashboard/G2Chart.vue'
+import { useFacilityIds } from '@/composables/useFacilityIds'
 
 const router = useRouter()
 const period = ref('30d')
@@ -916,6 +921,7 @@ const emptyDashboard = {
   facility_leaderboard: [],
 }
 const dashboard = computed(() => dashboardResource.data ?? emptyDashboard)
+const { facilityIdFor } = useFacilityIds(() => dashboard.value.facility_progress?.map((row) => row.mfl_code))
 const networkOptions = computed(
   () => dashboardResource.data?.network_options ?? [],
 )
