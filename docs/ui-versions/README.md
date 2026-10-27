@@ -6,7 +6,7 @@ an older UI can be inspected or brought back without digging through history.
 | Version | Tag | Commit | Status | Summary |
 |---|---|---|---|---|
 | v1 | `ui/value-express/v1-legacy` | `0e5901b7` | Superseded by v2 | "Tiberbu Express" landing page and the original token-package onboarding wizard |
-| v2 | (this branch, tagged on release) | — | In review | CareverseHIMS Value Express redesign: Flex, Fixed and Custom plans |
+| v2 | tag on release (`ui/value-express/v2`) | — | In review | CareverseHIMS Value Express redesign: Flex, Fixed and Custom plans; spec in `_bmad-output/value-express-redesign/` |
 
 ## v1: what the tag covers
 
