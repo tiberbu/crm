@@ -35,6 +35,8 @@ A per-FID lock and a second status GET immediately before POST serialize concurr
 
 ## Payload rules
 
+> **Agreed change (2026-10-27):** the rules below describe CRM `develop` today. The agreed contract is in [`hmis-provisioning-status-api-requirements.md`](hmis-provisioning-status-api-requirements.md) (version 2): CRM will send no `tokens_awarded`, `token_expiry_date`, `billing_model`, `token_source` or `token_purchase_url`; it will always send `metering_site_key` and `metering_gateway_url`, plus `auto_deploy: true`; and nothing is granted at provisioning. CRM changes CRM-P1 to CRM-P7 in that spec apply the change.
+
 CRM supplies the TA-required `fid`, `licence`, `tokens_awarded`, `token_expiry_date`, `admin_email`, `admin_name`, `billing_model` and `admin_mobile` fields, plus available facility description/location fields.
 
 - `fid`: verified HFR Facility ID.
@@ -54,7 +56,7 @@ CRM supplies the TA-required `fid`, `licence`, `tokens_awarded`, `token_expiry_d
 - `metering_site_key` is the facility's `omk2.<FID>.<secret>` key. CRM gets it from the `crm_issue_hmis_metering_site_key` hook (provided by the OpenMeter Mediator app), only after the fresh status GET confirms no draft exists. The key is sent in this request only. CRM never stores, caches, logs or returns it, and redacts it from upstream error details. The setup service hands it to the site in the signed `update_license` push.
 - If no key can be issued, CRM returns `submission.state=blocked` with `missing_fields=["metering_site_key"]` and does not POST.
 
-After every accepted request, whatever the token source, CRM enqueues the `crm_on_hmis_provisioning_submitted` hooks after commit with `fid`, `token_source` and `package_tokens`. The mediator uses this to make the free-plan grant.
+After every accepted request, whatever the token source, CRM enqueues the `crm_on_hmis_provisioning_submitted` hooks after commit with `fid`, `token_source` and `package_tokens`. The mediator uses this to make the free-plan grant. Under version 2 of the contract no tokens are granted at provisioning (D5); every token comes from a paid token invoice.
 
 ### Site keys for existing HMIS sites
 
@@ -62,7 +64,7 @@ A facility whose HMIS site was set up before metering never sends a provisioning
 
 1. Reads status. `not_submitted` is skipped, because provisioning will carry the key. An unavailable status is a failure, and no key is issued.
 2. Gets a key from `crm_issue_hmis_metering_site_key` with `context.purpose = "existing_site"`. The mediator refuses if the facility already has a delivered key, and marks the free plan Skipped, because the facility's balance was awarded before metering.
-3. Sends `{"fid": "<FID>", "metering_site_key": "omk2.<FID>.<secret>"}` to `update_metering_site_key`. The setup service must reply 200 or 202 with `accepted: true`, after it queues the signed `update_license` push that stores the key on the site. Until the setup service publishes the method, the job reports HTTP 404 for each facility.
+3. Sends `{"fid": "<FID>", "metering_site_key": "omk2.<FID>.<secret>"}` to `update_metering_site_key`. Version 2 of the contract adds `metering_gateway_url` to this request (CRM-P7). The setup service must reply 200 or 202 with `accepted: true`, after it queues the signed `update_license` push that stores the key on the site. Until the setup service publishes the method, the job reports HTTP 404 for each facility.
 4. On acceptance, calls the `crm_on_hmis_metering_site_key_delivered` hooks, and the mediator marks the key Pushed. Anything else leaves it Push pending, and the next run replaces it.
 
 The key travels as in provisioning: never stored, cached, logged or returned. Failures are written to the Error Log as `HMIS metering key not delivered: <FID>`, with upstream details redacted.

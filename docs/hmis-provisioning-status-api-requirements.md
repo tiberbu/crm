@@ -242,7 +242,7 @@ CRM `develop` does not yet do the following:
 |---|---|---|
 | CRM-P1 | Stop sending `tokens_awarded`, `token_expiry_date`, `billing_model`, `token_source` and `token_purchase_url` | Sends the package quantity, onboarding + 30 days and `billing_model: Token`; with the OpenMeter setting on, also `tokens_awarded: 0`, `token_source` and `token_purchase_url` |
 | CRM-P2 | Make OpenMeter the only token source: always issue a site key, and block the POST without one | Behind CRM HFR Settings → Use OpenMeter as the HMIS Token Source, off by default |
-| CRM-P3 | Grant nothing at provisioning (D5) | Paid packages are deferred to their invoice; a zero-priced package is still granted when the setup service accepts |
+| CRM-P3 | Grant nothing at provisioning (D5) | Paid packages are deferred to their invoice. The Free Trial package is retired (patch `add_token_bonus_and_partner_coupon`), but any zero-priced package is still granted when the setup service accepts |
 | CRM-P4 | Send `auto_deploy: true` | Not sent |
 | CRM-P5 | Change portal copy that says the implementation team reviews and starts deployment | Shown on the status card |
 | CRM-P6 | Read S4, S5, S7, S11–S17, `not_found` and `DUPLICATE_SETUP` | Not read |
@@ -255,7 +255,7 @@ CRM already reads S1–S3, S8–S10 and the `status` words in §4.
 | # | Owner | Change |
 |---|---|---|
 | X1 | Metering app | Add a Metering Gateway URL setting and expose it to CRM through a hook. ADR-002 lists it under OMM-23, but it is not in the code. |
-| X2 | Metering app | Remove the zero-priced package grant at provisioning (its express paid-tokens plan, D2) |
+| X2 | Metering app | Remove the zero-priced package grant at provisioning (express paid-tokens plan, D2) |
 | X3 | Metering app | Update the HMIS ingest contract: the gateway address arrives through provisioning (D6); OpenMeter mode is set by holding a key, not by `token_source` (D7); the out-of-tokens message has no purchase link (D8) |
 | X4 | HMIS | HMIS-H2 switches on key presence (D7). HMIS-H3 shows no purchase link (D8). |
 

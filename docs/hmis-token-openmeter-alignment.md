@@ -4,6 +4,15 @@
 
 CRM becomes the only place tokens are granted. Grants live in OpenMeter, keyed by the facility FID. HMIS pulls its balance from OpenMeter and no longer receives token loads from CRM's provisioning payload or Admin Central.
 
+## Changes agreed on 2026-10-27
+
+The HMIS setup service contract, version 2 ([`hmis-provisioning-status-api-requirements.md`](hmis-provisioning-status-api-requirements.md)), supersedes parts of this plan:
+
+- **CRM-T2, CRM-T3:** CRM stops sending `token_source`, `token_purchase_url`, `tokens_awarded`, `token_expiry_date` and `billing_model` (CRM-P1). A site that holds a metering site key is in OpenMeter mode, and HMIS shows no purchase link when tokens run out.
+- **Gateway address:** CRM sends `metering_gateway_url` with the site key, in provisioning and in `update_metering_site_key` (CRM-P7). The metering app needs a Metering Gateway URL setting (X1).
+- **Flow step 1:** no free plan is granted at provisioning. No tokens are granted before payment (CRM-P3, X2).
+- **The setting:** OpenMeter becomes the only token source, so the setting stops being optional (CRM-P2).
+
 ## Flow
 
 1. CRM submits HMIS provisioning (`crm/api/hfr.py`, `_auto_submit_external_provisioning_impl`). On HTTP 200/202 it calls the `crm_on_hmis_provisioning_submitted` hook. The `openmeter_mediator` app grants the free plan for that FID and issues the site key.
