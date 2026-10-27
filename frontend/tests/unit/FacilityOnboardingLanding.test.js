@@ -737,4 +737,87 @@ describe('FacilityOnboardingLanding', () => {
       }
     },
   )
+
+  it('preselects Starter, shows the first-purchase bonus, and the Partner Coupon popover closes', async () => {
+    const packages = [
+      { item_code: 'CV-TOKEN-GROWTH', display_name: 'Growth', price: 15000, token_quantity: 2800 },
+      { item_code: 'CV-TOKEN-STARTER', display_name: 'Starter', price: 6000, token_quantity: 1000 },
+      { item_code: 'CV-TOKEN-SCALE', display_name: 'Scale', price: 30000, token_quantity: 6250 },
+    ]
+    call
+      .mockResolvedValueOnce({
+        message: { data: { session_token: 'opaque-session', delivery: { status: 'sent', resend_after: 60 } } },
+      })
+      .mockResolvedValueOnce({
+        message: {
+          data: {
+            state: 'ready',
+            identity: { full_name: 'Amina Otieno' },
+            account_email: 'sam@example.com',
+            facilities: [{ facility_id: 'FID-1', facility_name: 'Alpha Clinic', onboarding_eligible: true }],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        message: { data: { network: {}, packages, welcome_bonus_tokens: 400, partner_coupon_tokens: 0 } },
+      })
+      .mockResolvedValueOnce({
+        message: {
+          data: {
+            network: { name: 'NET-A', display_name: 'Network A' },
+            packages,
+            welcome_bonus_tokens: 400,
+            partner_coupon_tokens: 150,
+          },
+        },
+      })
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(FacilityOnboardingLanding)
+    app.config.globalProperties.__ = globalThis.__
+    app.mount(host)
+    mountedApps.push(app)
+
+    host.querySelector('button').click()
+    await nextTick()
+    await submitIdentity(host)
+    await submitOtp(host)
+    const checkbox = host.querySelector('[data-testid="facility-select-checkbox"]')
+    expect(checkbox.className).toContain('border-2')
+    await checkInput(checkbox)
+    await submitForm(host.querySelector('form'))
+    await settle()
+
+    const starter = host.querySelector('input[type="radio"][value="CV-TOKEN-STARTER"]')
+    expect(starter.checked).toBe(true)
+    const continueButton = host.querySelector('form button:not([type="button"])')
+    expect(continueButton.disabled).toBe(false)
+    expect(host.querySelector('[data-testid="package-bonus"]').textContent).toContain(
+      '+400 bonus tokens on your first purchase',
+    )
+
+    const toggle = host.querySelector('[data-testid="partner-coupon-toggle"]')
+    expect(toggle.textContent).toContain('Enter Partner Coupon')
+    expect(host.textContent).not.toContain('Were you referred by a Network?')
+    toggle.click()
+    await nextTick()
+    expect(host.querySelector('#partner-coupon-panel')).not.toBeNull()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    expect(host.querySelector('#partner-coupon-panel')).toBeNull()
+
+    toggle.click()
+    await nextTick()
+    await enterInput(host.querySelector('#partner-coupon-input'), '909091')
+    await settle()
+    expect(call.mock.calls.at(-1)[1]).toMatchObject({ partner_id: '909091' })
+    expect(host.querySelector('[data-testid="partner-coupon-applied"]').textContent).toContain('+150')
+    expect(host.querySelector('[data-testid="package-bonus"]').textContent).toContain('+150 Partner Coupon tokens')
+    expect(host.querySelector('input[type="radio"][value="CV-TOKEN-STARTER"]').checked).toBe(true)
+    host.querySelector('[data-testid="partner-coupon-close"]').click()
+    await nextTick()
+    expect(host.querySelector('#partner-coupon-panel')).toBeNull()
+    expect(toggle.textContent).toContain('Partner Coupon: 909091')
+  })
 })

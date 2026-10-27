@@ -359,7 +359,7 @@
               <div class="relative mt-2">
                 <select
                   v-model="identityType"
-                  class="block w-full rounded-xl border border-outline-gray-2 bg-white px-3.5 sm:px-4 py-2.5 sm:py-3 text-base sm:text-sm font-medium text-ink-gray-9 shadow-sm transition focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/10"
+                  class="block w-full rounded-xl border-2 border-gray-400 bg-white px-3.5 sm:px-4 py-2.5 sm:py-3 text-base sm:text-sm font-semibold text-ink-gray-9 shadow-sm transition hover:border-gray-500 focus:border-[#bc1823] focus:outline-none focus:ring-4 focus:ring-[#bc1823]/15"
                 >
                   <option value="national_id">{{ __('National ID') }}</option>
                   <option value="passport">{{ __('Passport') }}</option>
@@ -648,7 +648,8 @@
                   :value="facility.facility_id"
                   :aria-label="__('Select :facility', { facility: facility.facility_name || facility.mfl_code })"
                   :disabled="facility.onboarding_eligible !== true || facility.onboarding_blocked"
-                  class="mt-0.5 sm:mt-1 size-5 shrink-0 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  data-testid="facility-select-checkbox"
+                  class="mt-0.5 sm:mt-1 size-5 shrink-0 cursor-pointer rounded border-2 border-gray-500 bg-white text-[#bc1823] accent-[#bc1823] checked:border-[#bc1823] focus:ring-2 focus:ring-[#bc1823]/40 focus:ring-offset-1 disabled:cursor-not-allowed disabled:border-gray-300 disabled:opacity-60"
                 />
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2">
@@ -843,29 +844,57 @@
                 <p>
                   {{ __('Choose a token package for this facility. Package prices, VAT and totals are shown before you continue.') }}
                 </p>
-                <details class="group relative self-start sm:self-auto">
-                  <summary class="cursor-pointer font-medium text-ink-gray-6 hover:text-ink-gray-9 transition select-none flex items-center gap-1">
-                    <span v-if="partnerId" class="text-[#bc1823] font-mono font-bold">Network ID: {{ partnerId }}</span>
-                    <span v-else class="underline underline-offset-2">{{ __('Were you referred by a Network?') }}</span>
-                  </summary>
-                  <div class="absolute right-0 top-5 z-20 w-[calc(100vw-3rem)] max-w-xs sm:w-72 rounded-xl border border-outline-gray-2 bg-white p-3 shadow-xl text-left">
-                    <label class="block text-[11px] font-bold uppercase tracking-wider text-ink-gray-7 mb-1">
-                      {{ __('Network ID (6 digits)') }}
-                    </label>
+                <div ref="couponPanelRef" class="relative self-start sm:self-auto">
+                  <button
+                    ref="couponToggleRef"
+                    type="button"
+                    data-testid="partner-coupon-toggle"
+                    :aria-expanded="couponOpen"
+                    aria-controls="partner-coupon-panel"
+                    class="font-semibold text-ink-gray-7 hover:text-ink-gray-9 transition select-none flex items-center gap-1"
+                    @click="couponOpen ? closeCoupon() : openCoupon()"
+                  >
+                    <span v-if="partnerId" class="text-[#bc1823] font-mono font-bold">{{ __('Partner Coupon') }}: {{ partnerId }}</span>
+                    <span v-else class="underline underline-offset-2">{{ __('Enter Partner Coupon') }}</span>
+                  </button>
+                  <div
+                    v-if="couponOpen"
+                    id="partner-coupon-panel"
+                    role="dialog"
+                    :aria-label="__('Enter Partner Coupon')"
+                    class="absolute right-0 top-6 z-20 w-[calc(100vw-3rem)] max-w-xs sm:w-72 rounded-xl border border-outline-gray-3 bg-white p-3 shadow-xl text-left"
+                  >
+                    <div class="mb-1 flex items-center justify-between gap-2">
+                      <label for="partner-coupon-input" class="block text-[11px] font-bold uppercase tracking-wider text-ink-gray-7">
+                        {{ __('Partner Coupon (6 digits)') }}
+                      </label>
+                      <button
+                        type="button"
+                        data-testid="partner-coupon-close"
+                        :aria-label="__('Close')"
+                        class="flex size-6 items-center justify-center rounded-md text-sm font-bold text-ink-gray-6 hover:bg-surface-gray-2 hover:text-ink-gray-9"
+                        @click="closeCoupon"
+                      >
+                        ✕
+                      </button>
+                    </div>
                     <input
+                      id="partner-coupon-input"
+                      ref="couponInputRef"
                       :value="partnerId"
                       inputmode="numeric"
                       autocomplete="off"
                       maxlength="6"
                       pattern="[0-9]{6}"
                       :aria-invalid="Boolean(partnerId && partnerId.length !== 6)"
-                      :title="__('Enter the six-digit ID shared by your Network contact, or leave it blank if you do not have one.')"
+                      :title="__('Enter the six-digit Partner Coupon shared by your Network partner, or leave it blank if you do not have one.')"
                       placeholder="123456"
-                      class="block w-full rounded-lg border border-outline-gray-3 bg-white px-2.5 py-1.5 font-mono text-base sm:text-xs shadow-xs focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/10"
+                      class="block w-full rounded-lg border border-outline-gray-3 bg-white px-2.5 py-1.5 font-mono text-base sm:text-xs shadow-xs focus:border-[#bc1823] focus:outline-none focus:ring-2 focus:ring-[#bc1823]/20"
                       @input="onPartnerIdInput"
+                      @keydown.enter.prevent="closeCoupon"
                     />
                     <p class="mt-1 text-[10px] text-ink-gray-5">
-                      {{ __('Leave it blank if you don’t have one. We’ll use the default Network if one is set up.') }}
+                      {{ __('Leave it blank if you don’t have one.') }}
                     </p>
                     <span
                       v-if="partnerId && partnerId.length !== 6"
@@ -873,8 +902,22 @@
                     >
                       ⚠️ {{ __('Enter all six digits, or clear the field to leave it blank.') }}
                     </span>
+                    <p
+                      v-if="couponApplied"
+                      data-testid="partner-coupon-applied"
+                      class="mt-1.5 text-[11px] font-semibold text-emerald-700"
+                    >
+                      ✓ {{ __('Partner Coupon applied') }}: +{{ couponTokens.toLocaleString() }} {{ __('bonus tokens per facility with your first purchase') }}
+                    </p>
+                    <button
+                      type="button"
+                      class="mt-2.5 w-full rounded-lg bg-[#bc1823] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#a3141d]"
+                      @click="closeCoupon"
+                    >
+                      {{ __('Done') }}
+                    </button>
                   </div>
-                </details>
+                </div>
               </div>
             </div>
 
@@ -935,7 +978,7 @@
               role="status"
               data-testid="catalog-partner-incomplete"
             >
-              {{ __('Enter all six digits to see this Network’s packages, or leave the field blank to use the default Network if available.') }}
+              {{ __('Enter all six digits of your Partner Coupon, or clear it to continue without one.') }}
             </div>
 
             <!-- Empty Catalog State -->
@@ -1032,6 +1075,15 @@
                         {{ packageMetadata(item).capacityLabel }}
                       </p>
                     </div>
+
+                    <!-- Row 4b: Complimentary tokens on the facility's first purchase -->
+                    <p
+                      v-if="bonusLine"
+                      data-testid="package-bonus"
+                      class="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold leading-snug text-emerald-800"
+                    >
+                      🎁 {{ bonusLine }}
+                    </p>
 
                     <!-- Row 5: 3 Clean Features (Symmetrical min-h-[80px]) -->
                     <div class="mt-2.5 pt-2.5 border-t border-outline-gray-1 min-h-[72px] sm:min-h-[80px]">
@@ -1359,7 +1411,7 @@
                   required
                   :disabled="!termsSnapshot?.content_hash"
                   type="checkbox"
-                  class="mt-0.5 sm:mt-1 size-5 rounded border-outline-gray-2 text-[#bc1823] accent-[#bc1823] focus:ring-[#bc1823]/20"
+                  class="mt-0.5 sm:mt-1 size-5 shrink-0 cursor-pointer rounded border-2 border-gray-500 bg-white text-[#bc1823] accent-[#bc1823] checked:border-[#bc1823] focus:ring-2 focus:ring-[#bc1823]/40 focus:ring-offset-1 disabled:cursor-not-allowed disabled:border-gray-300"
                   data-testid="terms-acceptance"
                 />
                 <span class="font-medium">
@@ -1534,7 +1586,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { call, Dialog } from 'frappe-ui'
 import OtpCodeInput from '@/components/FacilityOnboarding/OtpCodeInput.vue'
 import TokenCalculator from '@/components/TokenCalculator.vue'
@@ -1567,6 +1619,10 @@ const otp = ref('')
 const facilities = ref([])
 const selectedFacilities = ref([])
 const partnerId = ref('')
+const couponOpen = ref(false)
+const couponPanelRef = ref(null)
+const couponToggleRef = ref(null)
+const couponInputRef = ref(null)
 const catalog = ref({ network: null, packages: [] })
 const packageSelections = ref({})
 const activePricingFacilityId = ref('')
@@ -1627,6 +1683,65 @@ watch(
   },
   { immediate: true },
 )
+// Complimentary tokens the server will add to each facility's first paid package.
+const welcomeBonusTokens = computed(() => Number(catalog.value.welcome_bonus_tokens) || 0)
+const couponTokens = computed(() => Number(catalog.value.partner_coupon_tokens) || 0)
+const couponApplied = computed(
+  () =>
+    partnerId.value.length === 6 &&
+    couponTokens.value > 0 &&
+    !catalogBusy.value &&
+    !catalogError.value &&
+    Boolean(catalog.value.network?.name),
+)
+const bonusLine = computed(() => {
+  const parts = []
+  if (welcomeBonusTokens.value) {
+    parts.push(`+${welcomeBonusTokens.value.toLocaleString()} ${__('bonus tokens on your first purchase')}`)
+  }
+  if (couponApplied.value) {
+    parts.push(`+${couponTokens.value.toLocaleString()} ${__('Partner Coupon tokens')}`)
+  }
+  return parts.join(' · ')
+})
+
+function openCoupon() {
+  couponOpen.value = true
+  nextTick(() => couponInputRef.value?.focus())
+}
+function closeCoupon() {
+  if (!couponOpen.value) return
+  couponOpen.value = false
+  nextTick(() => couponToggleRef.value?.focus())
+}
+function onCouponKeydown(event) {
+  if (event.key === 'Escape') closeCoupon()
+}
+function onCouponPointerDown(event) {
+  if (couponPanelRef.value && !couponPanelRef.value.contains(event.target)) closeCoupon()
+}
+watch(couponOpen, (open) => {
+  if (typeof document === 'undefined') return
+  const method = open ? 'addEventListener' : 'removeEventListener'
+  document[method]('keydown', onCouponKeydown)
+  document[method]('pointerdown', onCouponPointerDown)
+})
+onBeforeUnmount(() => {
+  if (typeof document === 'undefined') return
+  document.removeEventListener('keydown', onCouponKeydown)
+  document.removeEventListener('pointerdown', onCouponPointerDown)
+})
+
+// Starter is preselected so Continue is available at once; any package can still be chosen.
+function defaultPackageCode() {
+  const packages = catalog.value.packages || []
+  const preferred =
+    packages.find((item) => item.item_code === landingPreselectedPackageCode.value) ||
+    packages.find((item) => /STARTER/i.test(`${item.item_code} ${item.display_name || ''}`)) ||
+    [...packages].sort((a, b) => Number(a.price ?? 0) - Number(b.price ?? 0))[0]
+  return preferred?.item_code || ''
+}
+
 const allPackagesSelected = computed(
   () =>
     chosenFacilities.value.length > 0 &&
@@ -2099,7 +2214,7 @@ async function loadCatalog(force = false) {
           (item) => item.item_code === packageSelections.value[facilityId],
         )
           ? packageSelections.value[facilityId]
-          : '',
+          : defaultPackageCode(),
       ]),
     )
     return true
@@ -2123,7 +2238,7 @@ async function loadCatalog(force = false) {
           (item) => item.item_code === previousCode,
         )
           ? previousCode
-          : (catalog.value.packages?.length === 1 ? catalog.value.packages[0].item_code : '')
+          : defaultPackageCode()
         return [facilityId, packageCode]
       }),
     )
@@ -2133,7 +2248,7 @@ async function loadCatalog(force = false) {
     catalog.value = { network: null, packages: [] }
     loadedCatalogPartnerId = null
     catalogError.value =
-      error?.messages?.[0] || __('We couldn’t find that Network. Check the six-digit ID or ask your Network contact for help.')
+      error?.messages?.[0] || __('We couldn’t find that Partner Coupon. Check the six digits or ask your Network partner for help.')
     return false
   } finally {
     if (requestId === catalogRequestId) catalogBusy.value = false
