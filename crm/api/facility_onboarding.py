@@ -33,6 +33,7 @@ from crm.api._email import (
 	schedule_email_queue_redaction,
 )
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref, record_event
+from crm.utils import value_express
 from crm.utils.token_facility import facility_fid_for_mfl
 
 try:
@@ -625,6 +626,12 @@ def _no_network() -> dict[str, Any]:
 
 
 def _token_packages() -> list[dict[str, Any]]:
+	"""The Flex token packages: what the portal sells and what older clients list."""
+	return _package_rows((value_express.FLEX,))
+
+
+def _package_rows(plans: tuple[str, ...]) -> list[dict[str, Any]]:
+	"""Enabled catalogue rows of the given Value Express plans, priced from the token price list."""
 	settings = frappe.get_single("CRM Opt-In Settings")
 	price_list = _text(settings.get("token_price_list"))
 	if not price_list:
@@ -632,7 +639,8 @@ def _token_packages() -> list[dict[str, Any]]:
 	packages = []
 	for row in settings.get("token_packages") or []:
 		item_code = _text(row.get("item_code"))
-		if not item_code or not int(row.get("enabled") or 0):
+		plan = value_express.plan_of(row)
+		if not item_code or not int(row.get("enabled") or 0) or plan not in plans:
 			continue
 		price = frappe.db.get_value(
 			"Item Price",
@@ -640,19 +648,22 @@ def _token_packages() -> list[dict[str, Any]]:
 			["price_list_rate", "currency"],
 			as_dict=True,
 		)
-		if not price:
+		# A Custom row is priced per purchase from the Flex rates, so it needs no list price.
+		if not price and plan != value_express.CUSTOM:
 			continue
 		packages.append(
 			{
 				"item_code": item_code,
 				"display_name": _text(row.get("display_name")),
+				"plan": plan,
+				"facility_levels": value_express.levels_of(row),
 				"description": _text(row.get("description")),
 				"coverage_summary": _text(row.get("coverage_summary")),
 				"coverage_metrics": row.get("coverage_metrics") or "",
 				"token_quantity": int(row.get("token_quantity") or 0),
 				"billing_period": _text(row.get("billing_period")) or "Monthly",
-				"price": float(price.get("price_list_rate") or 0),
-				"currency": _text(price.get("currency")) or "KES",
+				"price": float((price or {}).get("price_list_rate") or 0),
+				"currency": _text((price or {}).get("currency")) or "KES",
 				"price_list": price_list,
 			}
 		)
@@ -1205,11 +1216,14 @@ def get_catalog(partner_id: Any = None):
 			_("That Partner Coupon is not available. Check the six digits and try again."), frappe.ValidationError
 		)
 	bonuses = bonus_settings()
+	packages = _catalog_packages()
 	return {
 		"success": True,
 		"data": {
 			"network": partner or {},
-			"packages": _catalog_packages(),
+			"packages": packages,
+			"fixed_packages": _catalog_packages((value_express.FIXED,)),
+			"custom_offer": _custom_offer(packages),
 			"calculator_config": _calculator_config(),
 			"welcome_bonus_tokens": bonuses[WELCOME_BONUS],
 			# Only a coupon the client entered earns tokens, never the default Network.
@@ -1218,13 +1232,31 @@ def get_catalog(partner_id: Any = None):
 	}
 
 
-def _catalog_packages() -> list[dict[str, Any]]:
+def _custom_offer(flex_packages: list[dict[str, Any]]) -> dict[str, Any] | None:
+	"""What a facility needs to price its own amount, or None when Custom is not offered."""
+	row = next(iter(_package_rows((value_express.CUSTOM,))), None)
+	tiers = value_express.flex_tiers(flex_packages)
+	if not row or not tiers:
+		return None
+	return {
+		"item_code": row["item_code"],
+		"display_name": row["display_name"] or "Custom",
+		"description": row["description"],
+		"currency": flex_packages[0].get("currency") or "KES",
+		"min_tokens": value_express.DEFAULT_MIN_TOKENS,
+		"min_amount": value_express.custom_min_amount(tiers),
+		"tiers": tiers,
+	}
+
+
+def _catalog_packages(plans: tuple[str, ...] = (value_express.FLEX,)) -> list[dict[str, Any]]:
 	"""Public package view: server-resolved ex-VAT, VAT and gross, without internal pricing records."""
 	from crm.utils.quotation_tax import calculate_vat_totals
 
 	packages = []
 	try:
-		for package in _token_packages():
+		rows = _token_packages() if plans == (value_express.FLEX,) else _package_rows(plans)
+		for package in rows:
 			totals = calculate_vat_totals(package["price"])
 			public = {key: value for key, value in package.items() if key != "price_list"}
 			public.update(
@@ -1317,9 +1349,16 @@ def _parse_selected_ids(selected_facility_ids: Any) -> set[str]:
 
 
 def _packages_for_facilities(
-	selected_ids: set[str], facility_package_items: Any, legacy_package_item_code: Any = None
+	selected_ids: set[str],
+	facility_package_items: Any,
+	legacy_package_item_code: Any = None,
+	facilities: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
-	"""Resolve one server-catalog package per selected facility."""
+	"""Resolve one server-catalog package per selected facility.
+
+	A choice is a Flex item code, a Fixed item code (checked against the facility's
+	level) or {"custom_amount": n}, re-priced here from the Flex rates.
+	"""
 	try:
 		mapping = (
 			json.loads(facility_package_items)
@@ -1337,10 +1376,25 @@ def _packages_for_facilities(
 			_("Refresh this page and choose a token package for each facility before submitting."),
 			frappe.ValidationError,
 		)
-	packages = {row["item_code"]: row for row in _catalog_packages()}
+	flex = _catalog_packages()
+	packages = {row["item_code"]: row for row in flex}
+	fixed = {row["item_code"]: row for row in _catalog_packages((value_express.FIXED,))}
+	levels = {_text(row.get("facility_id")): row.get("facility_level") for row in facilities or []}
 	resolved = {}
 	for facility_id in selected_ids:
-		item_code = _text(mapping.get(facility_id))
+		choice = mapping.get(facility_id)
+		if isinstance(choice, dict):
+			resolved[facility_id] = _custom_package(choice.get("custom_amount"), flex)
+			continue
+		item_code = _text(choice)
+		if item_code in fixed:
+			if value_express.fixed_package_for_level(levels.get(facility_id), [fixed[item_code]]) is None:
+				frappe.throw(
+					_("Value Express Fixed is priced by facility level. Choose the Fixed fee for this facility's level."),
+					frappe.ValidationError,
+				)
+			resolved[facility_id] = fixed[item_code]
+			continue
 		if item_code not in packages:
 			frappe.throw(
 				_("One or more selected token packages are no longer available. Review your choices and try again."),
@@ -1348,6 +1402,47 @@ def _packages_for_facilities(
 			)
 		resolved[facility_id] = packages[item_code]
 	return resolved
+
+
+def _custom_package(amount: Any, flex: list[dict[str, Any]]) -> dict[str, Any]:
+	"""A one-off Custom package: tokens at the Flex rate the amount reaches, invoiced per token."""
+	offer = _custom_offer(flex)
+	row = next(iter(_package_rows((value_express.CUSTOM,))), None)
+	if not offer or not row:
+		frappe.throw(_("Custom amounts are not available right now. Choose a package instead."), frappe.ValidationError)
+	quote = value_express.custom_quote(amount, offer["tiers"], offer["min_tokens"])
+	if not quote["ok"]:
+		frappe.throw(
+			_("Enter at least {0} {1} for a Custom amount.").format(
+				offer["currency"], "{:,.0f}".format(offer["min_amount"])
+			),
+			frappe.ValidationError,
+		)
+	return {
+		**row,
+		"display_name": "%s (%s tokens)" % (row["display_name"] or "Custom", "{:,}".format(quote["tokens"])),
+		"description": "Value Express Flex Custom: %s Care Tokens at %s %.2f per token (%s rate)"
+		% ("{:,}".format(quote["tokens"]), row["currency"], quote["rate"], quote["tier"]),
+		"token_quantity": quote["tokens"],
+		# Invoiced per token: OpenMeter grants the row's 1 token × qty.
+		"qty": quote["tokens"],
+		"rate": quote["rate"],
+		"price": quote["charge"],
+		**_vat_view(quote["charge"]),
+	}
+
+
+def _vat_view(price: float) -> dict[str, Any]:
+	from crm.utils.quotation_tax import calculate_vat_totals
+
+	totals = calculate_vat_totals(price)
+	return {
+		"price_ex_vat": totals.net_total,
+		"vat_amount": totals.vat_amount,
+		"gross_total": totals.grand_total,
+		"vat_rate": totals.vat_rate,
+		"vat_label": totals.vat_label,
+	}
 
 
 def _ois_contains_facility(raw_json: Any, mfl_code: str) -> bool:
@@ -1662,7 +1757,7 @@ def submit_onboarding(
 			_("One or more facilities are no longer available in this session."), frappe.ValidationError
 		)
 	packages_by_facility = _packages_for_facilities(
-		selected, facility_package_items, package_item_code
+		selected, facility_package_items, package_item_code, facilities
 	)
 
 	identity_ref = _text(session.get("identity_ref"))
@@ -1788,13 +1883,15 @@ def _create_initial_deal_quote(deal, customer, facility, package):
 				f"Promotional Service Delivery Liability: KES {liability_val:,.2f} (evaluated at KES 6.00/token baseline). "
 				"Customer Net Payable: KES 0.00."
 			)
+		# A Custom package is invoiced per token (qty = tokens); the others are one unit.
+		unit_rate = float(package.get("rate") or price)
 		quote.append(
 			"items",
 			{
 				"item_code": package["item_code"],
-				"qty": 1,
-				"price_list_rate": price,
-				"rate": price,
+				"qty": int(package.get("qty") or 1),
+				"price_list_rate": unit_rate,
+				"rate": unit_rate,
 				"description": description,
 			},
 		)
@@ -1819,11 +1916,11 @@ def _create_initial_deal_quote(deal, customer, facility, package):
 
 def _create_express_draft_order(customer, facility, package, quote_name):
 	"""Raise the facility's draft token order; no tokens are granted until its invoice is paid."""
-	from crm.api.customer_experience import _package, create_express_draft_order
+	from crm.api.customer_experience import create_express_draft_order
 
 	frappe.db.savepoint("express_draft_order")
 	try:
-		catalog_package = _package(package.get("item_code"))
+		catalog_package = _order_package(package)
 		if not catalog_package:
 			return None
 		result = create_express_draft_order(
@@ -1837,6 +1934,19 @@ def _create_express_draft_order(customer, facility, package, quote_name):
 			title="Express draft token order", message="mfl=%s" % _text(facility.get("mfl_code"))
 		)
 		return None
+
+
+def _order_package(package: dict[str, Any]) -> dict[str, Any] | None:
+	"""The priced catalogue row a draft order is raised from (Custom carries its own qty and rate)."""
+	from crm.api.customer_experience import _package
+
+	plan = package.get("plan")
+	if plan == value_express.CUSTOM:
+		return package
+	if plan == value_express.FIXED:
+		item_code = package.get("item_code")
+		return next((row for row in _package_rows((value_express.FIXED,)) if row["item_code"] == item_code), None)
+	return _package(package.get("item_code"))
 
 
 def _resolve_existing_customer(session: dict[str, Any] | None, account_email: str | None) -> str | None:

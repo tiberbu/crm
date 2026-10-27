@@ -49,6 +49,17 @@ def _package(item_code):
 	return next((row for row in _token_packages() if row["item_code"] == item_code), None)
 
 
+def _order_tokens(doc):
+	"""Tokens a token order buys: each package line's tokens per unit × qty (a Custom line is 1 × tokens)."""
+	per_unit = {
+		_text(row.item_code): int(row.token_quantity or 0)
+		for row in frappe.get_single("CRM Opt-In Settings").get("token_packages") or []
+	}
+	return sum(
+		per_unit.get(_text(row.item_code), 0) * int(row.qty or 0) for row in doc.items if not row.get("crm_bonus_type")
+	)
+
+
 def _customer(submission):
 	organization = ""
 	if submission.deal and frappe.db.exists("CRM Deal", submission.deal):
@@ -290,11 +301,13 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key, submi
 		"crm_token_facility_mfl": facility_mfl,
 		"crm_token_package_item": package["item_code"],
 	}
+	# A Custom package is invoiced per token (qty = tokens); the others are one unit.
+	unit_rate = float(package.get("rate") or price)
 	item = {
 		"item_code": package["item_code"],
-		"qty": 1,
-		"price_list_rate": price,
-		"rate": price,
+		"qty": int(package.get("qty") or 1),
+		"price_list_rate": unit_rate,
+		"rate": unit_rate,
 		"description": package["description"],
 	}
 	if quotation_name:
@@ -327,7 +340,7 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key, submi
 		quotation.flags.ignore_mandatory = True
 		quotation.flags.ignore_permissions = True
 		quotation.set_missing_values()
-		_restore_rate(quotation, price)
+		_restore_rate(quotation, unit_rate)
 		apply_quotation_taxes(quotation)
 		quotation.insert(ignore_mandatory=True, ignore_permissions=True)
 		quotation.submit()
@@ -344,7 +357,7 @@ def _create_or_resume_customer_order(customer, facility_mfl, package, key, submi
 		if frappe.db.has_column("Sales Order", fieldname):
 			setattr(sales_order, fieldname, value)
 	sales_order.set_missing_values()
-	_restore_rate(sales_order, price)
+	_restore_rate(sales_order, unit_rate)
 	apply_bonus_lines(sales_order)
 	_apply_order_tax_template(sales_order, quotation)
 	sales_order.insert(ignore_mandatory=True, ignore_permissions=True)
@@ -434,7 +447,7 @@ def get_draft_order(sales_order: Any):
 				{"item_code": row.item_code, "item_name": row.item_name, "description": row.description, "qty": flt(row.qty), "rate": flt(row.rate), "amount": flt(row.amount), "bonus_type": _text(row.get("crm_bonus_type")), "bonus_tokens": int(row.get("crm_bonus_tokens") or 0)}
 				for row in doc.items
 			],
-			"package_tokens": int((_package(doc.get("crm_token_package_item")) or {}).get("token_quantity") or 0),
+			"package_tokens": _order_tokens(doc),
 			"taxes": [{"description": row.description, "rate": flt(row.rate), "tax_amount": flt(row.tax_amount)} for row in doc.taxes or []],
 			"facility_mfl": _text(doc.get("crm_token_facility_mfl")),
 			"package_item": _text(doc.get("crm_token_package_item")),
@@ -704,11 +717,13 @@ def _create_or_resume_order(submission, facility_mfl, package, key, source_quote
 			f"Promotional Service Delivery Liability: KES {liability_val:,.2f} (evaluated at KES 6.00/token baseline). "
 			"Customer Net Payable: KES 0.00."
 		)
+	# A Custom package is invoiced per token (qty = tokens); the others are one unit.
+	unit_rate = float(package.get("rate") or price)
 	item = {
 		"item_code": package["item_code"],
-		"qty": 1,
-		"price_list_rate": price,
-		"rate": price,
+		"qty": int(package.get("qty") or 1),
+		"price_list_rate": unit_rate,
+		"rate": unit_rate,
 		"description": description,
 	}
 	if quotation_name:
@@ -743,7 +758,7 @@ def _create_or_resume_order(submission, facility_mfl, package, key, source_quote
 		quotation.flags.ignore_mandatory = True
 		quotation.flags.ignore_permissions = True  # SYSTEM-INTERNAL: server-priced portal purchase
 		quotation.set_missing_values()
-		_restore_rate(quotation, price)
+		_restore_rate(quotation, unit_rate)
 		apply_quotation_taxes(quotation)
 		quotation.insert(ignore_permissions=True, ignore_mandatory=True)  # SYSTEM-INTERNAL
 		_record_link("Quotation", quotation.name)
@@ -769,7 +784,7 @@ def _create_or_resume_order(submission, facility_mfl, package, key, source_quote
 	sales_order.flags.ignore_mandatory = True
 	sales_order.flags.ignore_permissions = True  # SYSTEM-INTERNAL
 	sales_order.set_missing_values()
-	_restore_rate(sales_order, price)
+	_restore_rate(sales_order, unit_rate)
 	_apply_order_tax_template(sales_order, quotation)
 	sales_order.calculate_taxes_and_totals()
 	sales_order.set("payment_schedule", [])
