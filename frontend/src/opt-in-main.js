@@ -8,9 +8,12 @@ import OptInWizard from './pages/OptIn/OptInWizard.vue'
 import translationPlugin from './translation'
 
 const el = document.getElementById('optin-app')
-const networkSlug = el && el.dataset.network ? el.dataset.network : ''
-const dealInvitation =
-  new URLSearchParams(window.location.search).get('deal_invitation') || ''
+const params = new URLSearchParams(window.location.search)
+const rawDatasetNetwork = el && el.dataset.network ? el.dataset.network.trim() : ''
+const datasetNetwork = rawDatasetNetwork.startsWith('{{') ? '' : rawDatasetNetwork
+const networkSlug = datasetNetwork || params.get('network') || ''
+const dealInvitation = params.get('deal_invitation') || ''
+
 
 const pinia = createPinia()
 const app = createApp(OptInWizard, { networkSlug, dealInvitation })

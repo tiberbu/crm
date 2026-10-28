@@ -157,8 +157,10 @@ def configure_facility_pricing(
 			},
 		)
 
+	facility_doc.flags.skip_invitation = True
 	facility_doc.save(ignore_permissions=True)
 	frappe.db.commit()
+
 
 	response = {
 		"success": True,

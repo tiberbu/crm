@@ -235,7 +235,8 @@ class TestPartnerPortal(UnitTestCase):
 		self.assertEqual(res["membership"]["contact_email"], contact_email)
 		self.assertEqual(res["membership"]["contact_name"], contact_person)
 		self.assertTrue(res["invitation_url"].startswith(frappe.utils.get_url()))
-		self.assertIn("facility-onboarding", res["invitation_url"])
+		self.assertIn("/opt-in?", res["invitation_url"])
+		self.assertNotIn("facility-onboarding", res["invitation_url"])
 		self.assertIn(self.test_network_slug, res["invitation_url"])
 
 		# Verify email dispatch was attempted / recorded
