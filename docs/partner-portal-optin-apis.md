@@ -294,7 +294,7 @@ Adds a facility under the partner network with custom Year 1–5 pricing and imm
       "invite_sent_at": "2026-10-26 21:00:00",
       "invite_email_queue": "EMQ-00219"
     },
-    "invitation_url": "https://crm.tiberbu.app/facility-onboarding?network=bahari-health&facility=St.+Luke+Comprehensive+Hospital",
+    "invitation_url": "https://crm.tiberbu.app/opt-in?network=bahari-health&facility=St.+Luke+Comprehensive+Hospital",
     "price_lists": {
       "1": "Custom - 29841 - Year 1",
       "2": "Custom - 29841 - Year 2",
@@ -314,7 +314,7 @@ Adds a facility under the partner network with custom Year 1–5 pricing and imm
 ## Downstream Signature Flow
 
 Upon receiving the invitation email, the facility contact follows this path:
-1. Contact clicks the link in email: `/facility-onboarding?network=<slug>&facility=<facility_name>`.
+1. Contact clicks the link in email: `/opt-in?network=<slug>&facility=<facility_name>`.
 2. Requests one-time passcode (OTP) delivered to their verified email/phone.
 3. Enters OTP to authenticate and access their facility profile.
 4. Reviews the negotiated Year 1–5 rates (pulled directly from `price_list_overrides_json`).

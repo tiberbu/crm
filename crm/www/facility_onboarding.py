@@ -1,8 +1,8 @@
-"""Guest-facing facility invitation landing page.
+"""Guest-facing Value Express self-facility onboarding shell (`/facility-onboarding`).
 
-The page is intentionally a thin shell around the compiled Vue entry. The
-landing surface explains the invitation and hands off to the existing Opt-In
-wizard; it does not create a second enrollment flow.
+Serves the public self-service facility onboarding wizard (identity verification,
+HFR facility lookup, Value Express package selection, and Tiberbu Express account
+provisioning). Partner-invited Network Opt-In contract journeys use `/opt-in` instead.
 """
 
 import os

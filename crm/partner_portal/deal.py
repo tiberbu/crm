@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from urllib.parse import urlencode
 
 import frappe
 from frappe import _
@@ -26,6 +25,8 @@ from crm.partner_portal.utils import (
 	resolve_or_create_facility,
 	store_idempotency,
 )
+from crm.utils.onboarding_source import build_network_optin_invitation_url
+
 
 
 @frappe.whitelist(methods=["POST"])
@@ -126,6 +127,10 @@ def deal_won(
 				mem.contact_phone = phone_val
 			mem.price_list_override = price_lists_dict.get("1") or ""
 			mem.price_list_overrides_json = json.dumps(price_lists_dict, separators=(",", ":"))
+			# Deal-Won enrolls the facility in the Network Opt-In contract journey,
+			# never the customer-linked Self-Onboarding token journey.
+			if hasattr(mem, "customer") or (isinstance(mem, dict) and "customer" in mem):
+				mem.customer = None
 			if mem.status != "Opted In":
 				mem.status = "Active"
 			break
@@ -144,6 +149,7 @@ def deal_won(
 			},
 		)
 
+	facility_doc.flags.skip_invitation = True
 	facility_doc.save(ignore_permissions=True)
 	frappe.db.commit()
 
@@ -160,6 +166,7 @@ def deal_won(
 
 	if should_send:
 		try:
+			facility_doc.flags.force_optin_invitation = True
 			_send_membership_invitation(facility_doc, active_membership)
 			email_dispatched = True
 		except Exception as err:
@@ -170,8 +177,8 @@ def deal_won(
 			)
 
 	slug = getattr(network_doc, "slug", "") or network_doc.name
-	invitation_query = urlencode({"network": slug, "facility": facility_doc.facility_name})
-	invitation_url = f"{frappe.utils.get_url()}/facility-onboarding?{invitation_query}"
+	invitation_url = build_network_optin_invitation_url(slug, facility_doc.facility_name)
+
 
 	response = {
 		"success": True,
