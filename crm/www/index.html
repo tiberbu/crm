@@ -279,7 +279,7 @@
     <form class="panel stack" id="calcForm" style="gap:18px" onsubmit="return false">
       {% if offer.calculator.presets %}
       <div class="field"><span class="lbl">Start from a typical facility</span>
-        <div class="presets" role="group" aria-label="Typical facilities">{% for preset in offer.calculator.presets %}<button type="button" data-preset="{{ loop.index0 }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ preset.label }}<small>{% if preset.description %}{{ preset.description }}{% else %}About {{ preset.daily_patients }} patients a day{% endif %}</small></button>{% endfor %}</div></div>
+        <div class="presets" role="group" aria-label="Typical facilities">{% for preset in offer.calculator.presets %}<button type="button" data-preset="{{ loop.index0 }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ preset.label }}<small>{{ preset.description or 'A steady everyday practice' }}</small></button>{% endfor %}</div></div>
       {% endif %}
       <div class="field"><span class="lbl">Facility level</span>
         <div class="seg" role="group" aria-label="Facility level"><button type="button" data-level="Level 2" aria-pressed="true">Level 2</button><button type="button" data-level="Level 3" aria-pressed="false">Level 3</button></div></div>

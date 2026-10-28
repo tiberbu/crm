@@ -268,9 +268,7 @@ function money(val, currency = 'KES') {
               ></span>
             </div>
             <span class="mt-1 text-ink-gray-6 text-xs leading-relaxed">{{ preset.description }}</span>
-            <span class="mt-2.5 font-mono text-[11px] text-[#bc1823] font-semibold">
-              ~{{ preset.daily_patients }} {{ __('pts/day') }} · {{ preset.facility_type.toUpperCase() }}
-            </span>
+            <span class="mt-2.5 font-mono text-[11px] text-[#bc1823] font-semibold">{{ preset.facility_type.toUpperCase() }}</span>
           </button>
         </div>
       </div>
