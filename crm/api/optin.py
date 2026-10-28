@@ -513,6 +513,9 @@ def _get_membership(email, network_slug):
 		mem = mem_rows[0]
 	if not mem:
 		return None
+	# Skip rows with blank parent — they can't be resolved to a facility
+	if not mem.parent:
+		return None
 	# Fetch facility facts from parent
 	fac_rows = frappe.get_list(
 		"CRM Pre-Qualified Facility",
