@@ -98,6 +98,7 @@ def _row_view(row, prices: dict, sold: dict, currency: str) -> dict:
 		"description": cstr(row.description),
 		"coverage_summary": cstr(row.coverage_summary),
 		"journeys": cstr(metrics.get("journeys")),
+		"audience": cstr(metrics.get("audience")),
 		"popular": "popular" in cstr(metrics.get("badge")).lower(),
 		"discontinued_on": cstr(row.get("discontinued_on")),
 		"sold_orders": sold.get(row.item_code, 0),

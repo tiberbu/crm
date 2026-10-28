@@ -89,8 +89,8 @@ def get_value_express_offer() -> dict:
 				"price": package["price_ex_vat"],
 				"currency": package.get("currency") or "KES",
 				"tokens": int(package.get("token_quantity") or 0),
-				# The business publishes journeys per package; tokens ÷ 40 otherwise.
-				"journeys": cstr(metrics.get("journeys")) or vx.journeys(package.get("token_quantity")),
+				# Qualitative fit line (replaces the numeric patient-journey estimate).
+				"suitability": metrics.get("audience") or "",
 				"rate": rate,
 				"more_percent": extra if extra > 0 else 0,
 				"recommended": "popular" in cstr(metrics.get("badge")).lower(),

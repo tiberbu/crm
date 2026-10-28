@@ -316,7 +316,7 @@
                     <span class="vat">{{ __('excluding {0}', [pkg.vat_label || 'VAT']) }}</span>
                     <dl>
                       <dt>{{ __('Tokens') }}</dt><dd>{{ Number(pkg.token_quantity || 0).toLocaleString() }}</dd>
-                      <dt>{{ __('Approx. patient journeys*') }}</dt><dd>{{ journeys(pkg.token_quantity) }}</dd>
+                      <dt>{{ __('Suits') }}</dt><dd>{{ pkg.audience || '—' }}</dd>
                       <dt>{{ __('Price per token') }}</dt><dd>{{ currencyOf(pkg) }} {{ perTokenRate(pkg).toFixed(2) }}</dd>
                     </dl>
                     <span v-if="morePercent(pkg, catalog.packages)" class="more">{{ __('Includes {0}% more tokens', [morePercent(pkg, catalog.packages)]) }}</span>
@@ -337,7 +337,7 @@
                     <span id="custom-amount-help" :class="activeCustomQuote.ok ? 'vat' : 'cuerr'">{{ activeCustomQuote.ok ? __('excluding VAT · minimum {0}', [money(customOffer.min_amount, customOffer.currency)]) : __('Minimum {0} ({1} tokens).', [money(customOffer.min_amount, customOffer.currency), Number(customOffer.min_tokens).toLocaleString()]) }}</span>
                     <dl>
                       <dt>{{ __('Tokens') }}</dt><dd>{{ activeCustomQuote.ok ? activeCustomQuote.tokens.toLocaleString() : '—' }}</dd>
-                      <dt>{{ __('Approx. patient journeys*') }}</dt><dd>{{ activeCustomQuote.ok ? journeys(activeCustomQuote.tokens) : '—' }}</dd>
+                      <dt>{{ __('Suits') }}</dt><dd>{{ __('Any size — set your own amount') }}</dd>
                       <dt>{{ __('Price per token') }}</dt><dd>{{ customOffer.currency }} {{ activeCustomQuote.rate.toFixed(2) }}</dd>
                       <dt>{{ __('You pay') }}</dt><dd>{{ activeCustomQuote.ok ? money(activeCustomQuote.charge, customOffer.currency, 2) : '—' }}</dd>
                     </dl>
@@ -350,7 +350,7 @@
                     </button>
                   </div>
                 </div>
-                <p class="foot">{{ __('*Patient journey estimates are indicative only. Actual token use depends on completed service-point transactions and patient-bill value. First-purchase bonus tokens apply to the listed packages, not Custom, subject to the applicable offer and terms.') }}</p>
+                <p class="foot">{{ __('Token use depends on completed service-point transactions and patient-bill value. First-purchase bonus tokens apply to the listed packages, not Custom, subject to the applicable offer and terms.') }}</p>
               </div>
 
               <div v-else class="fixed">
