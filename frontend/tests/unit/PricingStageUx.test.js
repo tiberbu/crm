@@ -139,7 +139,7 @@ describe('Value Express package step', () => {
     expect(growth.textContent).toContain('70')
     expect(growth.textContent).toContain('KES 5.36')
     expect(growth.textContent).toContain('Includes 12% more tokens')
-    expect(growth.querySelector('.rec').textContent).toBe('Recommended')
+    expect(growth.querySelector('.rec').textContent).toBe('Popular')
     expect(growth.textContent).toContain('2,700')
     expect(host.textContent).not.toMatch(/\{\d\}/)
     expect(host.querySelector('.factabs')).toBeNull()
