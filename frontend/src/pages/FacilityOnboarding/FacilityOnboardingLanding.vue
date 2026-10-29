@@ -309,7 +309,7 @@
                 </div>
                 <div class="pkgs" data-testid="package-grid" :style="{ '--cols': gridColumns((catalog.packages?.length || 0) + (customOffer ? 1 : 0)) }">
                   <div v-for="pkg in catalog.packages" :key="pkg.item_code" class="pkg" :class="{ sel: flexChoice[activeId] === pkg.item_code }">
-                    <span v-if="recommendedKey === pkg.item_code" class="rec">{{ carried?.package === pkg.item_code ? __('Recommended for you') : __('Recommended') }}</span>
+                    <span v-if="recommendedKey === pkg.item_code" class="rec">{{ carried?.package === pkg.item_code ? __('Popular choice for you') : __('Popular') }}</span>
                     <span class="nm">{{ pkg.display_name || pkg.item_code }}</span>
                     <span class="bf">{{ pkg.description }}</span>
                     <span class="pr">{{ money(priceOf(pkg), pkg.currency) }}</span>
@@ -329,7 +329,7 @@
                     </button>
                   </div>
                   <div v-if="customOffer" class="pkg" :class="{ sel: flexChoice[activeId] === CUSTOM }" data-testid="custom-package">
-                    <span v-if="recommendedKey === CUSTOM" class="rec">{{ __('Recommended for you') }}</span>
+                    <span v-if="recommendedKey === CUSTOM" class="rec">{{ __('Popular choice for you') }}</span>
                     <span class="nm">{{ customOffer.display_name || __('Custom') }}</span>
                     <span class="bf">{{ __('Set your own amount. Tokens are worked out at the rate of the package your amount reaches.') }}</span>
                     <label class="lbl" for="custom-amount" style="margin-top: 6px">{{ __('Your amount ({0})', [customOffer.currency]) }}</label>

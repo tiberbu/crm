@@ -73,7 +73,7 @@ test("a Custom amount is carried, priced and submitted for the server to re-pric
   await toPackages(page, ["Synthetic Clinic A"]);
   const custom = page.getByTestId("custom-package");
   test.skip(!(await custom.count()), "Custom is not offered on this site");
-  await expect(custom.locator(".rec")).toHaveText("Recommended for you");
+  await expect(custom.locator(".rec")).toHaveText("Popular choice for you");
   await expect(custom).toContainText("1,166");
   await custom.locator("#custom-amount").fill("5000");
   await expect(page.locator(".sumbar button.primary")).toBeDisabled();
