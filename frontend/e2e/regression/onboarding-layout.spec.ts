@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { expect, test, type Page } from '@playwright/test'
@@ -117,7 +118,8 @@ async function startOnboarding(page: Page) {
       (route.request().postDataJSON?.() as Record<string, unknown>) || {}
     const answers: Record<string, unknown> = {
       start_identity: {
-        session_token: 'session-1',
+        // A throwaway per-run value: the mocked API accepts any session.
+        session_token: randomUUID(),
         identity,
         delivery: {
           channel: 'sms',
