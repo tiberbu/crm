@@ -3,7 +3,6 @@ from frappe.model.document import Document
 
 from crm.utils.onboarding_source import (
 	build_network_optin_invitation_url,
-	is_network_optin_membership,
 	is_self_onboarding_contact,
 )
 
@@ -185,27 +184,27 @@ def _ensure_self_onboarded_facility_cx_access(doc, membership):
 		frappe.log_error(frappe.get_traceback(), "CRMPreQualifiedFacility: CX access provisioning failed")
 
 
-def _should_send_self_onboarded_cx_alert(doc, membership) -> bool:
-	"""Return True if this membership invitation should alert an already self-onboarded CX user
-	rather than sending a Network Opt-In contract invitation.
+def _should_send_self_onboarded_cx_alert(membership, express: bool = False) -> bool:
+	"""Return True when this invitation is a Tiberbu Express login alert, not an Opt-In invitation.
+
+	The row decides: a customer-linked (Self-Onboarding) row gets the Express alert, a row
+	without a Customer gets the Network Opt-In contract invitation, even when the facility
+	has also self-onboarded. Only the explicit "Invite to Tiberbu Express" action overrides it.
 	"""
-	doc_flags = (doc.get("flags") if isinstance(doc, dict) else getattr(doc, "flags", None)) or {}
-	mem_flags = (membership.get("flags") if isinstance(membership, dict) else getattr(membership, "flags", None)) or {}
-	if doc_flags.get("force_optin_invitation") or mem_flags.get("force_optin_invitation"):
-		return False
-	if is_network_optin_membership(membership):
-		return False
-	return is_self_onboarding_contact(membership) or is_self_onboarded_facility(doc)
+	return express or is_self_onboarding_contact(membership)
 
 
-def _send_membership_invitation(doc, membership):
-	"""Send and track a branded invitation for one active network membership."""
+def _send_membership_invitation(doc, membership, *, express: bool = False):
+	"""Send and track a branded invitation for one active network membership.
+
+	``express`` sends the Tiberbu Express login alert instead of the Opt-In invitation.
+	"""
 	if not _can_invite(membership):
 		frappe.throw("Only active memberships with a contact email can be invited.")
 
 	network = frappe.get_doc("CRM Opt-In Network", membership.network)
 	slug = network.slug or membership.network
-	if _should_send_self_onboarded_cx_alert(doc, membership):
+	if _should_send_self_onboarded_cx_alert(membership, express):
 		portal_url = "{}/cx-portal".format(frappe.utils.get_url())
 		subject = "You've been added to {} — Log in to Tiberbu Express".format(network.display_name)
 		message = _cx_login_alert_html(
@@ -224,7 +223,6 @@ def _send_membership_invitation(doc, membership):
 			doc.facility_name,
 			invitation_url,
 		)
-
 
 	queue = frappe.sendmail(
 		recipients=[membership.contact_email],

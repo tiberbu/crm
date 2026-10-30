@@ -207,96 +207,74 @@ class TestOptInInvitationAccess(UnitTestCase):
 			update_modified=False,
 		)
 
-	def test_contact_with_customer_can_request_optin_otp_when_no_pure_network_contact_exists(self):
-		self_contact = frappe._dict(
+	def test_partner_coupon_contact_cannot_request_optin_otp(self):
+		# A Self-Onboarding (Partner Coupon) row never opens the Network Opt-In contract journey.
+		coupon_contact = frappe._dict(
 			{
-				"name": "MEM-CUSTOMER",
+				"name": "MEM-COUPON",
 				"parent": "FAC-1",
-				"contact_name": "Salim Ruru",
+				"contact_name": "Coupon Buyer",
 				"contact_phone": "+254700000000",
-				"contact_email": "salim@example.com",
-				"customer": "ZUHRI MEDICARE LIMITED",
-				"price_list_override": "",
-				"price_list_overrides_json": "",
+				"contact_email": "buyer@example.test",
+				"customer": "CUST-COUPON",
 				"otp_expiry": None,
 				"otp_attempts": 0,
 			}
 		)
+		with (
+			patch("crm.api.optin.frappe.db.has_column", return_value=True),
+			patch("crm.api.optin.frappe.get_list", side_effect=[[coupon_contact]]),
+		):
+			res = _get_membership("buyer@example.test", "network-a")
+
+		self.assertIsNone(res)
+
+	def test_same_email_uses_the_optin_row_beside_a_partner_coupon_row(self):
+		coupon_contact = frappe._dict(
+			{"name": "MEM-COUPON", "parent": "FAC-1", "customer": "CUST-COUPON", "contact_name": "Contact"}
+		)
+		optin_contact = frappe._dict(
+			{"name": "MEM-OPTIN", "parent": "FAC-1", "customer": "", "contact_name": "Contact"}
+		)
 		facility = frappe._dict(
-			{
-				"name": "FAC-1",
-				"mfl_code": "120942",
-				"facility_name": "A.P. Embakasi",
-				"keph_level": "Level 2",
-			}
+			{"name": "FAC-1", "mfl_code": "99001", "facility_name": "Synthetic Clinic", "keph_level": "Level 2"}
 		)
 		with (
 			patch("crm.api.optin.frappe.db.has_column", return_value=True),
 			patch(
 				"crm.api.optin.frappe.get_list",
-				side_effect=[[self_contact], [facility]],
+				side_effect=[[coupon_contact, optin_contact], [facility]],
 			),
 		):
-			res = _get_membership("salim@example.com", "network-a")
+			res = _get_membership("contact@example.test", "network-a")
 
-		self.assertIsNotNone(res)
-		self.assertEqual(res.membership_name, "MEM-CUSTOMER")
-		self.assertEqual(res.facility_name, "A.P. Embakasi")
+		self.assertEqual(res.membership_name, "MEM-OPTIN")
 
-	def test_all_memberships_returns_customer_linked_facilities_when_no_other_network_rows(self):
-		self_contact = frappe._dict(
-			{
-				"name": "MEM-CUSTOMER",
-				"parent": "FAC-1",
-				"customer": "ZUHRI MEDICARE LIMITED",
-				"price_list_override": "",
-				"price_list_overrides_json": "",
-			}
-		)
-		facility = frappe._dict(
-			{
-				"name": "FAC-1",
-				"mfl_code": "120942",
-				"facility_name": "A.P. Embakasi",
-				"keph_level": "Level 2",
-			}
-		)
+	def test_all_memberships_excludes_partner_coupon_only_facilities(self):
+		coupon_contact = frappe._dict({"name": "MEM-COUPON", "parent": "FAC-1", "customer": "CUST-COUPON"})
 		with (
 			patch("crm.api.optin.frappe.db.has_column", return_value=True),
-			patch(
-				"crm.api.optin.frappe.get_list",
-				side_effect=[[self_contact], [facility]],
-			),
+			patch("crm.api.optin.frappe.get_list", side_effect=[[coupon_contact]]),
 		):
-			res = _get_all_memberships("salim@example.com", "network-a")
+			res = _get_all_memberships("buyer@example.test", "network-a")
 
-		self.assertEqual(len(res), 1)
-		self.assertEqual(res[0].name, "FAC-1")
-		self.assertEqual(res[0].mfl_code, "120942")
+		self.assertEqual(res, [])
 
-	def test_optin_completion_marks_customer_linked_membership_if_it_is_the_only_membership(self):
+	def test_optin_completion_leaves_a_lone_partner_coupon_row_alone(self):
 		with (
 			patch("crm.api.optin.frappe.db.has_column", return_value=True),
 			patch(
 				"crm.api.optin.frappe.get_list",
 				side_effect=[
 					[frappe._dict({"name": "FAC-1"})],
-					[
-						frappe._dict({"name": "MEM-CUSTOMER", "customer": "CUST-1"}),
-					],
+					[frappe._dict({"name": "MEM-COUPON", "customer": "CUST-1"})],
 				],
 			),
 			patch("crm.api.optin.frappe.db.set_value") as set_value,
 		):
 			_mark_opted_in_facilities("network-a", [{"mfl_code": "10001"}])
 
-		set_value.assert_called_once_with(
-			"CRM Facility Membership",
-			"MEM-CUSTOMER",
-			"status",
-			"Opted In",
-			update_modified=False,
-		)
+		set_value.assert_not_called()
 
 	def test_deal_optin_email_keeps_the_signed_invitation_link(self):
 		deal = frappe._dict(
