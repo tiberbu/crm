@@ -123,7 +123,8 @@ async function advanceToPricing(host, facilitiesList, catalog = {}) {
 }
 
 const byText = (host, selector, text) => [...host.querySelectorAll(selector)].find((el) => el.textContent.includes(text))
-const sumbarButton = (host) => host.querySelector('.sumbar button')
+const sumbarButton = (host) => host.querySelector('.sumbar button.primary')
+const sumbarOrContinue = (host) => host.querySelector('form button:not([type="button"])')
 
 describe('Value Express package step', () => {
   afterEach(() => window.history.replaceState(null, '', '/'))
@@ -145,6 +146,39 @@ describe('Value Express package step', () => {
     expect(host.querySelector('.factabs')).toBeNull()
     expect(sumbarButton(host).disabled).toBe(true)
     expect(host.querySelector('.hintline').textContent).toBe('Choose a package to continue.')
+  })
+
+  it('shows a Suits line only when the package has one, and explains Custom rounding', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    await advanceToPricing(host, FACILITIES.slice(0, 1), {
+      packages: [{ ...FLEX[0], audience: 'For small OPD clinics' }, FLEX[1], FLEX[2]],
+    })
+    expect(byText(host, '[data-testid="package-grid"] .pkg', 'Starter').textContent).toContain('SuitsFor small OPD clinics')
+    expect(byText(host, '[data-testid="package-grid"] .pkg', 'Scale').textContent).not.toContain('Suits')
+    expect(host.textContent).not.toContain('—Price per token')
+
+    await enterInput(host.querySelector('#custom-amount'), '7000')
+    expect(host.querySelector('[data-testid="custom-charge"]').textContent).toBe('KES 6,996.00')
+    expect(host.querySelector('[data-testid="custom-rounding"]').textContent).toContain('1,166 whole tokens at KES 6.00 each')
+    await enterInput(host.querySelector('#custom-amount'), '7200')
+    expect(host.querySelector('[data-testid="custom-rounding"]')).toBeNull()
+  })
+
+  it('goes back to the Facility step from the Back button and the stepper', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    await advanceToPricing(host, FACILITIES.slice(0, 1))
+    host.querySelector('[data-testid="pricing-back"]').click()
+    await nextTick()
+    expect(host.querySelector('[data-testid="package-grid"]')).toBeNull()
+    expect(host.querySelector('input[type="checkbox"]:checked')).toBeTruthy()
+    sumbarOrContinue(host)?.click()
+    await settle()
+    host.querySelector('[data-testid="step-facilities"]').click()
+    await nextTick()
+    expect(host.querySelector('[data-testid="package-grid"]')).toBeNull()
+    expect(host.querySelector('[data-testid="step-identity"]')).toBeNull()
   })
 
   it('moves to the next facility once one is set', async () => {

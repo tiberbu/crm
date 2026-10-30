@@ -1056,6 +1056,40 @@ class TestFacilityOnboardingOtpFlow(IntegrationTestCase):
 		self.assertEqual(self.ois, {})
 		fo._upsert_facility_membership.assert_not_called()
 
+	def test_terms_pricing_shows_the_reviewed_amounts(self):
+		session = {"facilities": [
+			{"facility_id": "FID-1", "facility_name": "Alpha <Clinic>"},
+			{"facility_id": "FID-2", "facility_name": "Beta Dispensary"},
+		]}
+		packages = {
+			"FID-1": {"plan": "Flex", "display_name": "Scale", "price_ex_vat": 30000, "vat_amount": 4800, "gross_total": 34800, "currency": "KES"},
+			"FID-2": {"plan": "Fixed", "display_name": "Fixed L2", "price_ex_vat": 15000, "vat_amount": 2400, "gross_total": 17400, "currency": "KES", "billing_period": "Monthly"},
+		}
+		key = fo._selection_key(["FID-1", "FID-2"], {"FID-1": "SCALE", "FID-2": "FIXED-L2"})
+		with patch.object(fo, "_packages_for_facilities", return_value=packages):
+			pricing = fo._terms_pricing(session, key)
+		self.assertIn("Alpha &lt;Clinic&gt;", pricing["pricing_table"])
+		self.assertIn("34,800.00", pricing["pricing_table"])
+		totals = pricing["contract_totals"]
+		self.assertEqual(totals.selected_term_exclusive_vat_display, "45,000.00")
+		self.assertEqual(totals.selected_term_inclusive_vat_display, "52,200.00")
+		self.assertEqual(totals.monthly_inclusive_vat_display, "17,400.00")
+
+		with patch.object(fo, "_packages_for_facilities", return_value={"FID-1": packages["FID-1"]}):
+			flex_only = fo._terms_pricing(session, fo._selection_key(["FID-1"], {"FID-1": "SCALE"}))
+		self.assertIn("prepaid", flex_only["contract_totals"].monthly_exclusive_vat_display)
+		self.assertNotIn("To be confirmed", flex_only["pricing_table"])
+
+	def test_submit_requires_the_package_choices_shown_in_the_terms(self):
+		self._submit_env()
+		token = self._verified_token()
+		with patch.object(fo, "_terms_pricing", return_value={}):
+			terms = fo.get_self_onboarding_terms(token, '["FID-1"]', '{"FID-1": "TOK-1"}')
+			with self.assertRaises(frappe.ValidationError) as raised:
+				fo.submit_onboarding(token, "123456", '["FID-1"]', "", "owner@example.com", 1, terms["content_hash"], '{"FID-1": "TOK-2"}')
+		self.assertIn("package choices changed", str(raised.exception))
+		self.assertEqual(self.ois, {})
+
 	def test_submit_rejects_invalid_account_email_before_creating_records(self):
 		self._submit_env()
 		token = self._verified_token()
