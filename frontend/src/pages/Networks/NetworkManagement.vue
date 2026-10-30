@@ -158,6 +158,9 @@
             <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Opt-in') }}
             </th>
+            <th class="px-3 py-2.5 text-right font-medium">
+              {{ __('Contacts') }}
+            </th>
             <th class="px-4 py-2.5 text-left font-medium">
               {{ __('Contact Email') }}
             </th>
@@ -197,6 +200,9 @@
                   ])
                 }}
               </p>
+            </td>
+            <td class="px-3 py-3 text-right text-xs font-medium tabular-nums text-ink-gray-6">
+              {{ row.contact_count || 0 }}
             </td>
             <td class="px-4 py-3 text-xs text-ink-gray-6">
               {{ row.contact_email || '—' }}
