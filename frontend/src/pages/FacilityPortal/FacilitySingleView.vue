@@ -404,8 +404,8 @@ function reviewInvoice() {
         </button>
         <p class="text-xs font-semibold text-cx-ink-3">Facility portfolio</p>
         <h1 class="mt-1 text-4xl font-semibold tracking-tight text-cx-ink">{{ facility.facility_name }}</h1>
-        <p class="mt-1 text-sm text-cx-ink-3">{{ facility.keph_level }} <span v-if="facility.county">· {{ facility.county }}</span></p>
-        <p class="mt-1 font-mono text-xs text-cx-ink-3" data-testid="facility-header-ids">Facility ID {{ deploymentFid || 'not linked yet' }}<span v-if="facility.mfl_code"> · MFL {{ facility.mfl_code }}</span></p>
+        <p class="mt-1 text-sm font-medium text-cx-ink-2">{{ facility.keph_level }} <span v-if="facility.county">· {{ facility.county }}</span></p>
+        <p class="mt-1 text-sm text-cx-ink-2" data-testid="facility-header-ids">Facility ID <span class="font-mono font-semibold text-cx-ink">{{ deploymentFid || 'not linked yet' }}</span><span v-if="facility.mfl_code"> · MFL <span class="font-mono font-semibold text-cx-ink">{{ facility.mfl_code }}</span></span></p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button type="button" class="inline-flex items-center gap-2 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2.5 text-xs font-semibold text-cx-ink-2 shadow-sm transition hover:bg-cx-well" @click="emit('open-support', facility)">
@@ -422,22 +422,22 @@ function reviewInvoice() {
       <article data-testid="facility-available-tokens" class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
         <p class="flex items-center gap-1.5 text-xs font-semibold text-cx-ink-3"><CxIcon name="coins" class="size-4" /> Available tokens</p>
         <p data-testid="facility-available-tokens-value" class="mt-2 text-3xl font-semibold tracking-tight text-cx-brand">{{ liveBalanceText }}</p>
-        <p class="mt-auto pt-1 text-xs text-cx-ink-3">{{ liveBalanceNote }}</p>
+        <p class="mt-auto pt-1 text-xs text-cx-ink-2">{{ liveBalanceNote }}</p>
       </article>
       <article data-testid="facility-current-package" class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
         <p class="text-xs font-semibold text-cx-ink-3">Current package</p>
         <p class="mt-2 line-clamp-2 break-words text-2xl font-semibold leading-snug tracking-tight text-cx-ink" :title="facility.token_package || orderedPackage || ''">{{ facility.token_package || orderedPackage || 'None yet' }}</p>
-        <p class="mt-auto pt-1 text-xs text-cx-ink-3">{{ facility.token_package ? (facility.token_quantity ? `${Number(facility.token_quantity).toLocaleString()} Care Tokens per package` : 'Active package') : orderedPackage ? 'Ordered · tokens are added once paid' : 'Choose a package to get started' }}</p>
+        <p class="mt-auto pt-1 text-xs text-cx-ink-2">{{ facility.token_package ? (facility.token_quantity ? `${Number(facility.token_quantity).toLocaleString()} Care Tokens per package` : 'Active package') : orderedPackage ? 'Ordered · tokens are added once paid' : 'Choose a package to get started' }}</p>
       </article>
       <article data-testid="facility-amount-due" class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
         <p class="text-xs font-semibold text-cx-ink-3">Amount to pay</p>
         <p class="mt-2 text-3xl font-semibold tracking-tight text-cx-ink">{{ money(amountDue) }}</p>
-        <p class="mt-auto pt-1 text-xs" :class="draftOrders.length ? 'font-semibold text-cx-warning-ink' : 'text-cx-ink-3'">{{ amountDueNote }}</p>
+        <p class="mt-auto pt-1 text-xs" :class="draftOrders.length ? 'font-semibold text-cx-warning-ink' : 'text-cx-ink-2'">{{ amountDueNote }}</p>
       </article>
       <article v-if="facility.network" data-testid="facility-partner-card" class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
         <p class="flex items-center gap-1.5 text-xs font-semibold text-cx-ink-3"><CxIcon name="globe" class="size-4" /> Partner</p>
         <p class="mt-2 line-clamp-2 break-words text-2xl font-semibold leading-snug tracking-tight text-cx-ink" :title="facility.network">{{ facility.network }}</p>
-        <p class="mt-auto pt-1 text-xs text-cx-ink-3">Your onboarding partner</p>
+        <p class="mt-auto pt-1 text-xs text-cx-ink-2">Your onboarding partner</p>
       </article>
     </div>
 
@@ -463,7 +463,7 @@ function reviewInvoice() {
           <div class="min-w-0 flex-1 space-y-2">
             <p class="text-xs font-semibold text-cx-brand-ink">Checking status and preparing setup if needed</p>
             <div class="h-2 w-3/4 animate-pulse rounded-full bg-cx-brand/15" />
-            <p class="text-xs text-cx-ink-3">This can take a few seconds. You can continue reviewing facility details.</p>
+            <p class="text-xs text-cx-ink-2">This can take a few seconds. You can continue reviewing facility details.</p>
           </div>
         </div>
         <div v-else-if="setupUnavailable" class="cx-glass-panel mt-5 flex max-w-3xl items-start gap-3 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/70 p-4" role="alert">
@@ -474,8 +474,8 @@ function reviewInvoice() {
               <span v-if="setupConnectionReached" class="rounded-full border border-cx-success-border bg-cx-success-soft px-2 py-0.5 text-[11px] font-semibold text-cx-success-ink">Service reached</span>
             </div>
             <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">{{ setupAlertMessage }}</p>
-            <p v-if="provisioning?.error_code === 'method_not_published'" class="mt-2 text-xs leading-relaxed text-cx-ink-3">Your portal reached the deployment service, but its status method is not published for portal access yet. Token selection and billing information below remain available.</p>
-            <p v-if="submissionUnknown" class="mt-2 text-xs leading-relaxed text-cx-ink-3">The next check will look for an existing setup before any further submission is considered.</p>
+            <p v-if="provisioning?.error_code === 'method_not_published'" class="mt-2 text-xs leading-relaxed text-cx-ink-2">Your portal reached the deployment service, but its status method is not published for portal access yet. Token selection and billing information below remain available.</p>
+            <p v-if="submissionUnknown" class="mt-2 text-xs leading-relaxed text-cx-ink-2">The next check will look for an existing setup before any further submission is considered.</p>
             <button v-if="errorDetails" type="button" class="mt-3 text-xs font-semibold text-cx-brand underline-offset-2 hover:underline" @click="errorDetailsOpen = true">View deployment diagnostics</button>
           </div>
           <button v-if="canRetryStatusCheck" type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">Retry check</button>
@@ -485,7 +485,7 @@ function reviewInvoice() {
           <div class="min-w-0 flex-1">
             <p class="text-xs font-semibold text-cx-ink">Setup request not sent</p>
             <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">{{ submissionBlockedMessage }}</p>
-            <p class="mt-2 text-xs leading-relaxed text-cx-ink-3">Update the missing facility or billing information, then check again. This check did not create a setup draft.</p>
+            <p class="mt-2 text-xs leading-relaxed text-cx-ink-2">Update the missing facility or billing information, then check again. This check did not create a setup draft.</p>
           </div>
           <button type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">{{ provisioningBusy ? 'Checking…' : 'Check again' }}</button>
         </div>
@@ -557,16 +557,16 @@ function reviewInvoice() {
 
       <div class="flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-cx-border-soft bg-cx-surface px-5 py-3.5 text-xs sm:px-7">
         <div class="flex items-baseline gap-2">
-          <span class="text-cx-ink-3">Last attempt</span>
-          <span class="font-medium text-cx-ink-2">{{ provisioning?.last_attempt || 'None recorded' }}</span>
+          <span class="text-cx-ink-2">Last attempt</span>
+          <span class="font-medium text-cx-ink">{{ provisioning?.last_attempt || 'None recorded' }}</span>
         </div>
         <div class="flex items-baseline gap-2">
-          <span class="text-cx-ink-3">Status source</span>
-          <span class="font-medium text-cx-ink-2">{{ statusSource }}</span>
+          <span class="text-cx-ink-2">Status source</span>
+          <span class="font-medium text-cx-ink">{{ statusSource }}</span>
         </div>
         <div v-if="checkedAt" class="flex items-baseline gap-2">
-          <span class="text-cx-ink-3">Last checked</span>
-          <span class="font-medium text-cx-ink-2">{{ checkedAt }}</span>
+          <span class="text-cx-ink-2">Last checked</span>
+          <span class="font-medium text-cx-ink">{{ checkedAt }}</span>
         </div>
         <span v-if="pollingActive" class="inline-flex items-center gap-1.5 text-xs font-medium text-cx-brand-ink" data-testid="hmis-auto-refresh">
           <span class="size-1.5 animate-pulse rounded-full bg-cx-brand" /> Checks again every 5 minutes
@@ -576,7 +576,7 @@ function reviewInvoice() {
       <section class="cx-glass-panel mx-4 my-5 overflow-hidden rounded-cx border border-white/70 bg-cx-surface shadow-cx sm:mx-6 sm:my-6 sm:backdrop-blur-xl">
         <header class="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-6">
           <div>
-            <p class="text-xs font-semibold text-cx-brand">Health Facility Registry</p>
+            <p class="text-xs font-semibold text-cx-ink-3">Health Facility Registry</p>
             <h3 class="mt-1 text-lg font-semibold text-cx-ink">Facility profile</h3>
           </div>
           <div class="flex items-center gap-2">
@@ -584,14 +584,14 @@ function reviewInvoice() {
               <span class="size-1.5 rounded-full" :class="facility.hfr_sync_status === 'HFR Verified' ? 'bg-cx-success-ink' : 'bg-cx-warning-ink'" />
               {{ facility.hfr_sync_status }}
             </span>
-            <span v-if="facility.hfr_last_synced" class="text-xs text-cx-ink-3">Synced {{ facility.hfr_last_synced }}</span>
+            <span v-if="facility.hfr_last_synced" class="text-xs text-cx-ink-2">Synced {{ facility.hfr_last_synced }}</span>
           </div>
         </header>
 
         <div class="grid gap-px border-y border-white/60 bg-cx-border-soft/70 sm:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.6fr)]">
           <div class="bg-cx-brand-soft/45 px-4 py-4 sm:px-6 sm:py-5">
             <p class="text-xs font-semibold text-cx-ink-3">Facility ID</p>
-            <p v-if="deploymentFid" class="mt-1.5 break-all font-mono text-xl font-semibold tracking-tight text-cx-ink sm:text-2xl">{{ deploymentFid }}</p>
+            <p v-if="deploymentFid" class="mt-1.5 break-all font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ deploymentFid }}</p>
             <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to the Health Facility Registry yet</p>
           </div>
           <div class="bg-cx-surface px-4 py-4 sm:px-6 sm:py-5">
@@ -606,10 +606,10 @@ function reviewInvoice() {
             <dl v-if="group.items.length" class="divide-y divide-cx-border-soft/80">
               <div v-for="item in group.items" :key="item.label" class="flex items-start justify-between gap-3 py-2 first:pt-1 last:pb-1">
                 <dt class="text-xs leading-relaxed text-cx-ink-3">{{ item.label }}</dt>
-                <dd class="max-w-[60%] break-words text-right text-xs font-medium leading-relaxed text-cx-ink-2">{{ item.value }}</dd>
+                <dd class="max-w-[60%] break-words text-right text-xs font-medium leading-relaxed text-cx-ink">{{ item.value }}</dd>
               </div>
             </dl>
-            <p v-else class="text-xs leading-relaxed text-cx-ink-3">No details recorded</p>
+            <p v-else class="text-xs leading-relaxed text-cx-ink-2">No details recorded</p>
           </section>
         </div>
         <div v-if="!deploymentFid || (facility.hfr_sync_status && facility.hfr_sync_status !== 'HFR Verified')" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6">
@@ -620,9 +620,6 @@ function reviewInvoice() {
         </div>
       </section>
 
-      <div class="border-t border-cx-border-soft bg-cx-well px-4 py-3 text-xs leading-relaxed text-cx-ink-3 sm:px-6">
-        Facility identifiers: <span class="font-medium text-cx-ink-2">Facility ID {{ deploymentFid || 'not linked yet' }}</span> · <span class="font-medium text-cx-ink-2">MFL {{ facility.mfl_code || '—' }}</span><span v-if="facility.registration_number"> · Registration {{ facility.registration_number }}</span><span v-if="facility.network"> · Partner {{ facility.network }}</span>
-      </div>
 
       <section v-if="!goLiveReady" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
@@ -645,9 +642,9 @@ function reviewInvoice() {
             <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-cx-success-soft text-cx-success-ink"><CxIcon name="check" class="size-4" /></span>
             <div>
               <p class="text-xs font-semibold text-cx-ink">Package selection is on file</p>
-              <p class="mt-0.5 text-xs leading-relaxed text-cx-ink-3">This is the package quantity on file, not a live remaining-token balance or confirmation that setup has received this quantity. The status API does not report token usage.</p>
+              <p class="mt-0.5 text-xs leading-relaxed text-cx-ink-2">This is the package quantity on file, not a live remaining-token balance or confirmation that setup has received this quantity. The status API does not report token usage.</p>
               <p v-if="facilityPaymentPending" class="mt-1 text-xs font-semibold text-cx-warning-ink">A facility payment is awaiting verification. Wait for confirmation before paying that invoice again.</p>
-              <p v-else-if="facilityOutstandingInvoice" class="mt-1 text-xs text-cx-ink-3">This facility has an outstanding invoice below. Review its status before ordering more tokens.</p>
+              <p v-else-if="facilityOutstandingInvoice" class="mt-1 text-xs text-cx-ink-2">This facility has an outstanding invoice below. Review its status before ordering more tokens.</p>
             </div>
           </div>
           <button v-if="facilityOutstandingInvoice && !facilityPaymentPending" type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well" @click="reviewInvoice">Review invoice</button>
@@ -669,13 +666,13 @@ function reviewInvoice() {
           </button>
         </div>
         <div v-else-if="paidPackages.length" class="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p class="text-xs leading-relaxed text-cx-ink-3">The portal can create token orders and show their invoices. The go-live setup request itself is reviewed by the implementation team.</p>
+          <p class="text-xs leading-relaxed text-cx-ink-2">The portal can create token orders and show their invoices. The go-live setup request itself is reviewed by the implementation team.</p>
           <button type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well" @click="emit('open-top-up', facility, 'paid')">Buy more tokens</button>
         </div>
       </section>
 
       <div class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-well px-4 py-3 sm:px-6">
-        <p class="text-xs text-cx-ink-3">Need help with go-live or token allocation?</p>
+        <p class="text-xs text-cx-ink-2">Need help with go-live or token allocation?</p>
         <button type="button" class="inline-flex items-center gap-1.5 text-xs font-semibold text-cx-brand hover:underline" @click="emit('open-support', facility)">
           Contact Network Support <CxIcon name="chevron-right" class="size-3.5" />
         </button>
@@ -685,12 +682,12 @@ function reviewInvoice() {
     <div class="grid gap-5 xl:grid-cols-2">
       <section id="facility-invoices" class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
         <div class="mb-4 flex items-center justify-between"><h2 class="text-lg font-semibold text-cx-ink">Invoices</h2><span class="rounded-full bg-cx-well px-2.5 py-1 text-[11px] font-semibold text-cx-ink-2">{{ invoices.length }}</span></div>
-        <div v-if="!invoices.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-3">No outstanding invoices are linked to this facility.</div>
+        <div v-if="!invoices.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">No outstanding invoices are linked to this facility.</div>
         <div v-else class="divide-y divide-cx-border-soft">
           <div v-for="invoice in invoices" :key="invoice.name" class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0">
             <div>
               <p class="text-xs font-semibold text-cx-ink">{{ invoice.invoice_number || invoice.name }}</p>
-              <p class="mt-1 text-xs text-cx-ink-3">Due {{ invoice.due_date || 'on receipt' }} · {{ pendingPaymentForInvoice(invoice) ? 'Payment verification pending' : invoiceStatus(invoice) }}</p>
+              <p class="mt-1 text-xs text-cx-ink-2">Due {{ invoice.due_date || 'on receipt' }} · {{ pendingPaymentForInvoice(invoice) ? 'Payment verification pending' : invoiceStatus(invoice) }}</p>
               <p v-if="pendingPaymentForInvoice(invoice)" class="mt-1 text-xs font-semibold text-cx-warning-ink">
                 M-Pesa report {{ pendingPaymentForInvoice(invoice).reference_no || pendingPaymentForInvoice(invoice).name }} is awaiting verification. Please wait before paying again.
               </p>
@@ -705,12 +702,12 @@ function reviewInvoice() {
       </section>
       <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
         <div class="mb-4 flex items-center justify-between"><h2 class="text-lg font-semibold text-cx-ink">Payment history</h2><span class="rounded-full bg-cx-well px-2.5 py-1 text-[11px] font-semibold text-cx-ink-2">{{ payments.length }}</span></div>
-        <div v-if="!payments.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-3">No payments have been matched to this facility’s invoices.</div>
+        <div v-if="!payments.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">No payments have been matched to this facility’s invoices.</div>
         <div v-else class="divide-y divide-cx-border-soft">
           <div v-for="payment in payments" :key="`${payment.name}-${payment.invoice || ''}`" class="flex items-center justify-between gap-3 py-3 first:pt-0">
             <div>
               <p class="text-xs font-semibold text-cx-ink">{{ payment.mode_of_payment }} · {{ payment.reference_no || payment.name }}</p>
-              <p class="mt-1 text-xs text-cx-ink-3">{{ payment.posting_date }}<span v-if="payment.invoice"> · Invoice {{ payment.invoice }}</span></p>
+              <p class="mt-1 text-xs text-cx-ink-2">{{ payment.posting_date }}<span v-if="payment.invoice"> · Invoice {{ payment.invoice }}</span></p>
               <span class="mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold" :class="payment.status === 'Pending Verification' ? 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink' : 'border-cx-success-border bg-cx-success-soft text-cx-success-ink'">{{ payment.status || 'Recorded' }}</span>
             </div>
             <strong class="shrink-0 text-sm text-cx-ink">{{ money(payment.amount) }}</strong>
@@ -719,13 +716,13 @@ function reviewInvoice() {
       </section>
       <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx xl:col-span-2">
         <div class="mb-4 flex items-center justify-between"><h2 class="text-lg font-semibold text-cx-ink">Token orders</h2><span class="rounded-full bg-cx-well px-2.5 py-1 text-[11px] font-semibold text-cx-ink-2">{{ orders.length }}</span></div>
-        <div v-if="!orders.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-3">No open orders are linked to this facility.</div>
+        <div v-if="!orders.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">No open orders are linked to this facility.</div>
         <div v-else class="grid gap-3 sm:grid-cols-2">
           <article v-for="order in orders" :key="order.name" class="flex flex-col gap-3 rounded-cx-sm border p-4" :class="order.is_draft ? 'border-cx-warning-border bg-cx-warning-soft/30' : 'border-cx-border-soft'" :data-testid="`facility-order-${order.name}`">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="text-sm font-semibold text-cx-ink">{{ packageName(order.crm_token_package_item) }}</p>
-                <p class="mt-1 text-xs text-cx-ink-3">Order {{ order.name }} · {{ order.transaction_date }}</p>
+                <p class="mt-1 text-xs text-cx-ink-2">Order {{ order.name }} · {{ order.transaction_date }}</p>
               </div>
               <span v-if="order.is_draft" class="shrink-0 rounded-full border border-cx-warning-border bg-cx-warning-soft px-2 py-0.5 text-[11px] font-semibold text-cx-warning-ink">Needs review</span>
               <span v-else class="shrink-0 rounded-full border border-cx-border bg-cx-well px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2">{{ order.status }}</span>
@@ -751,7 +748,7 @@ function reviewInvoice() {
                 {{ busyOrder === order.name ? 'Generating…' : 'Generate invoice' }}
               </button>
             </div>
-            <p v-if="order.is_draft" class="text-xs leading-relaxed text-cx-ink-3">Confirm your billing details to raise the invoice, then pay by M-Pesa or card. Tokens are added once payment is received.</p>
+            <p v-if="order.is_draft" class="text-xs leading-relaxed text-cx-ink-2">Confirm your billing details to raise the invoice, then pay by M-Pesa or card. Tokens are added once payment is received.</p>
           </article>
         </div>
       </section>
@@ -762,28 +759,29 @@ function reviewInvoice() {
             Billing &amp; Invoices <CxIcon name="chevron-right" class="size-3.5" />
           </button>
         </div>
-        <div v-if="billingState === 'loading'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-3" aria-busy="true">Loading billing details…</div>
-        <div v-else-if="billingState === 'none'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-3">Billing details appear here once this facility has a billing account.</div>
+        <div v-if="billingState === 'loading'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2" aria-busy="true">Loading billing details…</div>
+        <div v-else-if="billingState === 'none'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">Billing details appear here once this facility has a billing account.</div>
         <div v-else-if="billingState === 'error'" class="flex flex-wrap items-center justify-between gap-2 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/60 p-4 text-xs text-cx-warning-ink" role="alert">
           <span>We could not load the billing details.</span>
           <button type="button" class="font-semibold underline" @click="loadBilling">Try again</button>
         </div>
-        <dl v-else-if="billing" class="grid gap-4 text-xs sm:grid-cols-3">
+        <dl v-else-if="billing" class="grid gap-4 sm:grid-cols-3">
           <div class="rounded-cx-sm border border-cx-border-soft p-4">
             <dt class="text-xs font-semibold text-cx-ink-3">Billed to</dt>
-            <dd class="mt-1 text-sm font-semibold text-cx-ink" data-testid="billing-customer">{{ billing.customer_name }}</dd>
+            <dd v-if="billing.customer_name" class="mt-1 break-words text-sm font-semibold text-cx-ink" data-testid="billing-customer">{{ billing.customer_name }}</dd>
+            <dd v-else class="mt-1 text-sm text-cx-ink-2" data-testid="billing-customer">Added when you review your first order</dd>
           </div>
           <div class="rounded-cx-sm border border-cx-border-soft p-4">
             <dt class="text-xs font-semibold text-cx-ink-3">KRA PIN</dt>
             <dd v-if="billing.kra_pin" class="mt-1 font-mono text-sm font-semibold text-cx-ink">{{ billing.kra_pin }}</dd>
-            <dd v-else class="mt-1 text-cx-ink-3">Added when you review your first order</dd>
+            <dd v-else class="mt-1 text-sm text-cx-ink-2">Added when you review your first order</dd>
           </div>
           <div class="rounded-cx-sm border border-cx-border-soft p-4">
             <dt class="text-xs font-semibold text-cx-ink-3">Billing address</dt>
-            <dd v-if="billingAddressLines.length" class="mt-1 leading-relaxed text-cx-ink-2">
+            <dd v-if="billingAddressLines.length" class="mt-1 text-sm font-semibold leading-snug text-cx-ink">
               <span v-for="line in billingAddressLines" :key="line" class="block">{{ line }}</span>
             </dd>
-            <dd v-else class="mt-1 text-cx-ink-3">Added when you review your first order</dd>
+            <dd v-else class="mt-1 text-sm text-cx-ink-2">Added when you review your first order</dd>
           </div>
         </dl>
       </section>
