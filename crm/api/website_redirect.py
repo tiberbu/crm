@@ -1273,8 +1273,11 @@ def _facility_invoice_history(customer: str, facility_mfl: str) -> list[dict]:
 		}
 		for row in rows
 	]
-def _customer_portal_accounts(user: str) -> list[dict]:
-	"""Project Customer, Deal, and Lead-linked facilities, orders, invoices, and payments granted to this user."""
+def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[dict]:
+	"""Project Customer, Deal, and Lead-linked facilities, orders, invoices, and payments granted to this user.
+
+	``include_balances=False`` skips the live metering lookup, for callers that only need the facility list.
+	"""
 	hfr_detail_fields = (
 		"hfr_facility_id", "registration_number", "facility_type", "facility_category",
 		"facility_owner", "facility_owner_type", "regulatory_body", "board_registration_number",
@@ -1721,8 +1724,26 @@ def _customer_portal_accounts(user: str) -> list[dict]:
 			"payments": [],
 		})
 
-	_attach_token_balances(accounts)
+	if include_balances:
+		_attach_token_balances(accounts)
 	return accounts
+
+
+def fetch_facility_token_balances(fids) -> dict[str, dict]:
+	"""Map each FID to its live balance entry from the metering app's crm_get_facility_token_balances hook.
+
+	Returns {} when no metering app is installed or no FID is given.
+	"""
+	fids = sorted({cstr(fid).strip() for fid in fids if cstr(fid).strip()})
+	balances = {}
+	if not fids:
+		return balances
+	for method in frappe.get_hooks("crm_get_facility_token_balances"):
+		try:
+			balances.update(frappe.get_attr(method)(fids) or {})
+		except Exception:
+			frappe.log_error(title="Facility token balances unavailable", message=frappe.get_traceback())
+	return balances
 
 
 def _attach_token_balances(accounts: list[dict]) -> None:
@@ -1732,15 +1753,7 @@ def _attach_token_balances(accounts: list[dict]) -> None:
 	does not import it. Without that app, facilities keep showing their package size.
 	"""
 	facilities = [facility for account in accounts for facility in account.get("facilities") or []]
-	fids = sorted({cstr(f.get("hfr_facility_id")).strip() for f in facilities if cstr(f.get("hfr_facility_id")).strip()})
-	if not fids:
-		return
-	balances = {}
-	for method in frappe.get_hooks("crm_get_facility_token_balances"):
-		try:
-			balances.update(frappe.get_attr(method)(fids) or {})
-		except Exception:
-			frappe.log_error(title="Facility token balances unavailable", message=frappe.get_traceback())
+	balances = fetch_facility_token_balances(f.get("hfr_facility_id") for f in facilities)
 	for facility in facilities:
 		entry = balances.get(cstr(facility.get("hfr_facility_id")).strip())
 		if entry:
