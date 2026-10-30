@@ -91,3 +91,4 @@ crm.patches.v1_0.add_token_order_frequency_fields
 crm.patches.v1_0.add_token_bonus_and_partner_coupon
 crm.patches.v1_0.backfill_token_package_status
 crm.patches.v1_0.heal_orphaned_facility_memberships
+crm.patches.v1_0.split_mixed_journey_memberships
