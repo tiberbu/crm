@@ -6,9 +6,11 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from crm.api.optin_admin import (
+	_apply_token_calculator,
 	_customer_experience_link,
 	_get_negotiated_price_list,
 	_normalize_facility_level_allowlist,
+	_normalize_token_calculator,
 	_validate_opted_in_price_list_override,
 	create_sellable_item,
 	duplicate_negotiated_price_list,
@@ -74,6 +76,56 @@ class TestSelfOnboardingFacilityLevelSettings(UnitTestCase):
 			update_optin_settings({})
 
 		self.assertEqual(doc.self_onboarding_allowed_facility_levels, "Level 2\nLevel 3B\nLevel 3C")
+
+
+class TestTokenCalculatorSettings(UnitTestCase):
+	def _payload(self, **values):
+		return {
+			"monthly_platform_fee": "500",
+			"bill_value_per_token": 750,
+			"service_points": [
+				{"id": "consultation", "name": "Consultation visit", "tokens": "6", "default_frequency": 1, "applies_to": ["opd", "ipd"], "_key": "x"},
+				{"name": "Program visit", "tokens": 0, "default_frequency": "0.05", "applies_to": ["ipd", "other"]},
+			],
+			**values,
+		}
+
+	def test_rates_are_validated_and_new_services_get_an_id(self):
+		calculator = _normalize_token_calculator(self._payload())
+		self.assertEqual((calculator["monthly_platform_fee"], calculator["bill_value_per_token"]), (500, 750))
+		self.assertEqual(
+			calculator["service_points"][0],
+			{"id": "consultation", "name": "Consultation visit", "tokens": 6, "default_frequency": 1.0, "applies_to": ["opd", "ipd"]},
+		)
+		self.assertEqual(calculator["service_points"][1]["id"], "program_visit")
+		self.assertEqual(calculator["service_points"][1]["applies_to"], ["ipd"])
+
+	def test_invalid_rates_are_rejected(self):
+		for payload in (
+			self._payload(monthly_platform_fee=-1),
+			self._payload(bill_value_per_token=0),
+			self._payload(bill_value_per_token="12.5"),
+			self._payload(service_points=[{"name": "", "tokens": 1, "default_frequency": 1, "applies_to": ["opd"]}]),
+			self._payload(service_points=[{"name": "Lab", "tokens": 1, "default_frequency": 1, "applies_to": []}]),
+			self._payload(service_points=[{"name": "Lab", "tokens": 1.5, "default_frequency": 1, "applies_to": ["opd"]}]),
+			self._payload(service_points=[{"name": "Lab", "tokens": 1, "default_frequency": 1, "applies_to": ["opd"]}] * 2),
+		):
+			with self.subTest(payload=payload), self.assertRaises(frappe.ValidationError):
+				_normalize_token_calculator(payload)
+
+	def test_save_keeps_presets_and_service_descriptions(self):
+		stored = {
+			"presets": [{"id": "solo"}],
+			"service_points": [{"id": "consultation", "name": "Old", "tokens": 3, "description": "Kept"}],
+		}
+		doc = frappe._dict(token_calc_parameters_json=json.dumps(stored))
+		_apply_token_calculator(doc, _normalize_token_calculator(self._payload()))
+		saved = json.loads(doc.token_calc_parameters_json)
+		self.assertEqual((doc.token_calc_monthly_platform_fee, doc.token_calc_bill_value_per_token), (500, 750))
+		self.assertEqual(saved["presets"], [{"id": "solo"}])
+		self.assertEqual(saved["service_points"][0]["description"], "Kept")
+		self.assertEqual(saved["service_points"][0]["tokens"], 6)
+		self.assertEqual([point["id"] for point in saved["service_points"]], ["consultation", "program_visit"])
 
 
 class TestCustomerExperienceNetworkContactInvitation(UnitTestCase):

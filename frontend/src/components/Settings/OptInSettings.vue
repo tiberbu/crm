@@ -188,6 +188,129 @@
       </section>
 
       <div class="border-t border-outline-elevation-2" />
+      <section class="py-5" data-testid="optin-token-calculator">
+        <h3 class="text-sm font-semibold text-ink-gray-8">
+          {{ __('Token usage rates') }}
+        </h3>
+        <p class="mt-1 max-w-3xl text-sm text-ink-gray-5">
+          {{
+            __(
+              'The token calculator on the landing and onboarding pages estimates monthly usage from these rates.',
+            )
+          }}
+        </p>
+        <div class="mt-4 grid max-w-3xl gap-4 md:grid-cols-2">
+          <FormControl
+            v-model="form.token_calculator.monthly_platform_fee"
+            :label="__('Monthly system access fee (tokens)')"
+            type="number"
+            :description="
+              __('Deducted once at the start of each funded month.')
+            "
+            @update:modelValue="markDirty"
+          />
+          <FormControl
+            v-model="form.token_calculator.bill_value_per_token"
+            :label="__('Bill value per token (KES)')"
+            type="number"
+            :description="
+              __(
+                'One token per this much of the final patient bill, rounded up.',
+              )
+            "
+            @update:modelValue="markDirty"
+          />
+        </div>
+        <div
+          class="mt-4 w-full max-w-5xl overflow-hidden rounded-xl border border-outline-gray-2 bg-surface-white shadow-sm dark:bg-surface-gray-1"
+        >
+          <div
+            class="hidden grid-cols-[1.6fr_6rem_7rem_8rem_2.5rem] gap-3 border-b border-outline-gray-2 bg-surface-gray-1/80 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-gray-5 md:grid dark:bg-surface-gray-2"
+          >
+            <span>{{ __('Service') }}</span
+            ><span>{{ __('Tokens') }}</span
+            ><span>{{ __('Uses per patient') }}</span
+            ><span>{{ __('Charged for') }}</span
+            ><span />
+          </div>
+          <p
+            v-if="!form.token_calculator.service_points.length"
+            class="px-4 py-6 text-center text-sm text-ink-gray-5"
+          >
+            {{ __('No services yet. Only the bill value is estimated.') }}
+          </p>
+          <div
+            v-for="(point, index) in form.token_calculator.service_points"
+            :key="point._key"
+            class="grid grid-cols-1 gap-3 border-b border-outline-gray-2 px-4 py-4 last:border-b-0 md:grid-cols-[1.6fr_6rem_7rem_8rem_2.5rem] md:items-center md:gap-3 md:px-3 md:py-2.5"
+          >
+            <input
+              v-model="point.name"
+              type="text"
+              :aria-label="__('Service name')"
+              :placeholder="__('Service name')"
+              class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none transition placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
+              @input="markDirty"
+            />
+            <input
+              v-model="point.tokens"
+              type="number"
+              min="0"
+              step="1"
+              :aria-label="__('Tokens for {0}', [point.name])"
+              class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none transition placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
+              @input="markDirty"
+            />
+            <input
+              v-model="point.default_frequency"
+              type="number"
+              min="0"
+              step="0.05"
+              :aria-label="__('Uses per patient for {0}', [point.name])"
+              class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-8 shadow-sm outline-none transition placeholder:text-ink-gray-4 focus:border-outline-gray-3 focus:ring-2 focus:ring-outline-gray-2 dark:bg-surface-gray-2"
+              @input="markDirty"
+            />
+            <div class="flex items-center gap-3 text-sm text-ink-gray-7">
+              <label
+                v-for="scope in ['opd', 'ipd']"
+                :key="scope"
+                class="flex items-center gap-1.5"
+              >
+                <input
+                  v-model="point.applies_to"
+                  type="checkbox"
+                  :value="scope"
+                  @change="markDirty"
+                />
+                {{ scope.toUpperCase() }}
+              </label>
+            </div>
+            <div class="flex justify-end md:justify-center">
+              <button
+                type="button"
+                class="grid size-8 place-items-center rounded-lg text-lg text-ink-gray-5 transition hover:bg-surface-gray-2 hover:text-ink-red-5 focus:outline-none focus:ring-2 focus:ring-outline-gray-2 dark:hover:bg-surface-gray-3"
+                :aria-label="__('Remove service')"
+                :title="__('Remove service')"
+                @click="removeServicePoint(index)"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+          <div
+            class="flex justify-end border-t border-outline-gray-2 bg-surface-gray-1/80 px-4 py-3 dark:bg-surface-gray-2"
+          >
+            <Button
+              variant="subtle"
+              size="sm"
+              :label="__('Add service')"
+              @click="addServicePoint"
+            />
+          </div>
+        </div>
+      </section>
+
+      <div class="border-t border-outline-elevation-2" />
       <section class="py-5">
         <div class="flex items-center justify-between gap-3">
           <div>
@@ -504,7 +627,13 @@ const form = reactive({
   token_invoice_due_days: 30,
   welcome_bonus_tokens: 0,
   partner_coupon_tokens: 0,
+  token_calculator: {
+    monthly_platform_fee: 0,
+    bill_value_per_token: 0,
+    service_points: [],
+  },
 })
+let serviceKey = 0
 
 const settingsResource = createResource({
   url: 'crm.api.optin_admin.get_optin_settings',
@@ -514,6 +643,13 @@ const settingsResource = createResource({
     const settings = { ...data }
     delete settings.token_packages
     Object.assign(form, settings)
+    form.token_calculator = {
+      monthly_platform_fee: data.token_calculator?.monthly_platform_fee ?? 0,
+      bill_value_per_token: data.token_calculator?.bill_value_per_token ?? 0,
+      service_points: (data.token_calculator?.service_points ?? []).map(
+        (point) => ({ ...point, _key: `service-${serviceKey++}` }),
+      ),
+    }
     form.tiberbu_contacts = (data.tiberbu_contacts ?? []).map(
       (contact, index) => ({
         ...contact,
@@ -610,6 +746,23 @@ function removeContact(index) {
   markDirty()
 }
 
+function addServicePoint() {
+  form.token_calculator.service_points.push({
+    _key: `service-${serviceKey++}`,
+    id: '',
+    name: '',
+    tokens: 0,
+    default_frequency: 0.1,
+    applies_to: ['opd', 'ipd'],
+  })
+  markDirty()
+}
+
+function removeServicePoint(index) {
+  form.token_calculator.service_points.splice(index, 1)
+  markDirty()
+}
+
 function markDirty() {
   dirty.value = true
   saveError.value = ''
@@ -619,6 +772,7 @@ async function save() {
   saving.value = true
   saveError.value = ''
   try {
+    // The server keeps only the known service fields, so the row _key needs no stripping.
     await saveResource.submit({ settings: { ...form } })
     dirty.value = false
     toast.success(__('Opt-In settings saved'))

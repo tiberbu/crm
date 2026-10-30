@@ -14,6 +14,7 @@ import io
 import json
 import math
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import frappe
@@ -712,8 +713,105 @@ def get_optin_settings():
 		"token_invoice_due_days": int(settings.get("token_invoice_due_days") or 30),
 		"welcome_bonus_tokens": frappe.utils.cint(settings.get("welcome_bonus_tokens")),
 		"partner_coupon_tokens": frappe.utils.cint(settings.get("partner_coupon_tokens")),
+		"token_calculator": _token_calculator_view(),
 		"token_packages": token_packages,
 	}
+
+
+def _token_calculator_view() -> dict[str, Any]:
+	"""The usage rates the token calculator estimates with: monthly fee, bill value and service tokens."""
+	from crm.api.facility_onboarding import _calculator_config
+
+	config = _calculator_config()
+	return {
+		"monthly_platform_fee": frappe.utils.cint(config.get("monthly_platform_fee")),
+		"bill_value_per_token": frappe.utils.flt(config.get("bill_value_per_token")),
+		"service_points": [
+			{
+				"id": frappe.utils.cstr(point.get("id")),
+				"name": frappe.utils.cstr(point.get("name")),
+				"tokens": frappe.utils.cint(point.get("tokens")),
+				"default_frequency": frappe.utils.flt(point.get("default_frequency")),
+				"applies_to": [scope for scope in point.get("applies_to") or [] if scope in ("opd", "ipd")],
+			}
+			for point in config.get("service_points") or []
+			if isinstance(point, dict)
+		],
+	}
+
+
+def _whole_number(value: Any, label: str, low: int, high: int) -> int:
+	try:
+		number = Decimal(str(value if value not in (None, "") else "x"))
+	except InvalidOperation:
+		number = None
+	if number is None or number != number.to_integral_value() or not low <= number <= high:
+		frappe.throw(_("{0} must be a whole number from {1} to {2}.").format(label, f"{low:,}", f"{high:,}"))
+	return int(number)
+
+
+def _normalize_token_calculator(payload: Any) -> dict[str, Any]:
+	"""Validate the calculator rates from Settings › Opt-In Process."""
+	if not isinstance(payload, dict):
+		frappe.throw(_("Token calculator settings must be an object."))
+	fee = _whole_number(payload.get("monthly_platform_fee"), _("Monthly system access fee (tokens)"), 0, 1_000_000)
+	bill_value = _whole_number(payload.get("bill_value_per_token"), _("Bill value per token (KES)"), 1, 1_000_000)
+	points = payload.get("service_points")
+	if not isinstance(points, list) or any(not isinstance(point, dict) for point in points):
+		frappe.throw(_("Service tokens must be a list of services."))
+	normalized, seen = [], set()
+	for point in points:
+		name = frappe.utils.cstr(point.get("name")).strip()
+		if not name:
+			frappe.throw(_("Each service needs a name."))
+		point_id = frappe.utils.cstr(point.get("id")).strip() or frappe.scrub(name)
+		if point_id in seen:
+			frappe.throw(_("{0} is listed twice.").format(name))
+		seen.add(point_id)
+		applies_to = [scope for scope in ("opd", "ipd") if scope in (point.get("applies_to") or [])]
+		if not applies_to:
+			frappe.throw(_("{0}: choose OPD, IPD or both.").format(name))
+		try:
+			frequency = Decimal(str(point.get("default_frequency") if point.get("default_frequency") not in (None, "") else "x"))
+		except InvalidOperation:
+			frequency = None
+		if frequency is None or not 0 <= frequency <= 10:
+			frappe.throw(_("{0}: uses per patient must be a number from 0 to 10.").format(name))
+		normalized.append(
+			{
+				"id": point_id,
+				"name": name,
+				"tokens": _whole_number(point.get("tokens"), _("{0} tokens").format(name), 0, 10_000),
+				"default_frequency": float(frequency),
+				"applies_to": applies_to,
+			}
+		)
+	return {"monthly_platform_fee": fee, "bill_value_per_token": bill_value, "service_points": normalized}
+
+
+def _apply_token_calculator(doc, calculator: dict[str, Any]):
+	"""Store the fee and bill value in their fields and the services in the calculator JSON.
+
+	Presets and each service's description stay as they were.
+	"""
+	from crm.api.facility_onboarding import _default_calculator_config
+
+	try:
+		stored = json.loads(doc.get("token_calc_parameters_json") or "{}")
+	except ValueError:
+		stored = {}
+	if not isinstance(stored, dict):
+		stored = {}
+	stored = {**_default_calculator_config(), **stored}
+	previous = {
+		point.get("id"): point for point in stored.get("service_points") or [] if isinstance(point, dict)
+	}
+	stored["service_points"] = [{**previous.get(point["id"], {}), **point} for point in calculator["service_points"]]
+	stored["monthly_platform_fee"] = calculator["monthly_platform_fee"]
+	stored["bill_value_per_token"] = float(calculator["bill_value_per_token"])
+	doc.token_calc_monthly_platform_fee = calculator["monthly_platform_fee"]
+	doc.token_calc_bill_value_per_token = calculator["bill_value_per_token"]
+	doc.token_calc_parameters_json = json.dumps(stored, indent=2)
 
 
 @frappe.whitelist()
@@ -763,6 +861,9 @@ def update_optin_settings(settings: Any):
 			bonus_tokens[fieldname] = -1
 		if not 0 <= bonus_tokens[fieldname] <= 1_000_000:
 			frappe.throw(_("{0} must be a whole number from 0 to 1,000,000.").format(label))
+	token_calculator = (
+		_normalize_token_calculator(settings.get("token_calculator")) if "token_calculator" in settings else None
+	)
 	# Settings › Packages owns the catalogue; an Opt-In save only replaces it when it sends it.
 	packages_sent = "token_packages" in settings
 	token_packages = settings.get("token_packages") or []
@@ -923,6 +1024,8 @@ def update_optin_settings(settings: Any):
 		doc.token_invoice_due_days = token_invoice_due_days
 		if packages_sent:
 			doc.set("token_packages", normalized_token_packages)
+	if token_calculator is not None and doc.meta.has_field("token_calc_parameters_json"):
+		_apply_token_calculator(doc, token_calculator)
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 
