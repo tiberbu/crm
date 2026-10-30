@@ -238,7 +238,9 @@ def _resolve_leaf_tree_node(doctype, configured_name, group_field, parent_field,
 	if configured_name and frappe.db.get_value(doctype, configured_name, "is_group") == 0:
 		return configured_name
 
-	leaves = frappe.get_list(
+	# System-internal lookup: callers include Guest self-onboarding, which has no
+	# read permission on Customer Group / Territory.
+	leaves = frappe.get_all(
 		doctype,
 		filters={"is_group": 0},
 		fields=["name"],
