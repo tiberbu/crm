@@ -122,6 +122,41 @@ class TestOptInInvitationAccess(UnitTestCase):
 
 		self.assertEqual(result.membership_name, "MEM-NETWORK")
 
+	def test_membership_lookup_accepts_opted_in_contacts(self):
+		"""Re-sent opt-in links must keep working after a contact has opted in."""
+		row = frappe._dict(
+			{
+				"name": "MEM-OPTED",
+				"parent": "FAC-1",
+				"contact_name": "Opted In Contact",
+				"contact_phone": "",
+				"customer": "",
+			}
+		)
+		facility = frappe._dict(
+			{
+				"name": "FAC-1",
+				"mfl_code": "10001",
+				"facility_name": "Opted In Clinic",
+				"keph_level": "Level 2",
+			}
+		)
+		captured_filters = []
+
+		def fake_get_list(doctype, filters=None, fields=None, **kwargs):
+			captured_filters.append(filters)
+			return [row] if len(captured_filters) == 1 else [facility]
+
+		with (
+			patch("crm.api.optin.frappe.db.has_column", return_value=False),
+			patch("crm.api.optin.frappe.get_list", side_effect=fake_get_list),
+		):
+			result = _get_membership("opted@example.com", "network-a")
+
+		self.assertIsNotNone(result)
+		self.assertEqual(result.membership_name, "MEM-OPTED")
+		self.assertEqual(captured_filters[0]["status"], ["in", ["Active", "Opted In"]])
+
 	def test_self_onboarding_contacts_are_not_returned_as_optin_facilities(self):
 		with (
 			patch("crm.api.optin.frappe.db.has_column", return_value=True),

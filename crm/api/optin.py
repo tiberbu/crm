@@ -474,8 +474,11 @@ def _get_partner_logos(network_name):
 
 def _get_membership(email, network_slug):
 	"""
-	Return the first Active CRM Facility Membership for this email+network,
-	with its parent facility facts. Returns None if not found.
+	Return the first qualifying CRM Facility Membership for this email+network
+	(with its parent facility facts). A contact qualifies while Active (pre-
+	opt-in) and once Opted In — re-sent opt-in links must keep working for
+	contacts who already completed the flow. Declined contacts never qualify.
+	Returns None if not found.
 	"""
 	email = frappe.utils.cstr(email).strip().lower()
 	network_slug = frappe.utils.cstr(network_slug).strip()
@@ -496,7 +499,7 @@ def _get_membership(email, network_slug):
 		filters={
 			"contact_email": email,
 			"network": network_slug,
-			"status": "Active",
+			"status": ["in", ["Active", "Opted In"]],
 		},
 		fields=membership_fields,
 		limit_page_length=0,
@@ -546,7 +549,8 @@ def _get_membership(email, network_slug):
 
 
 def _get_all_memberships(email, network_slug):
-	"""Return all Active facilities for this email+network as a list of dicts."""
+	"""Return all qualifying facilities (Active or Opted In) for this
+	email+network as a list of dicts."""
 	email = frappe.utils.cstr(email).strip().lower()
 	network_slug = frappe.utils.cstr(network_slug).strip()
 
@@ -566,7 +570,7 @@ def _get_all_memberships(email, network_slug):
 		filters={
 			"contact_email": email,
 			"network": network_slug,
-			"status": "Active",
+			"status": ["in", ["Active", "Opted In"]],
 		},
 		fields=membership_fields,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
