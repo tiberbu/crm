@@ -25,7 +25,10 @@ from crm.partner_portal.utils import (
 	resolve_or_create_facility,
 	store_idempotency,
 )
-from crm.utils.onboarding_source import build_network_optin_invitation_url
+from crm.utils.onboarding_source import (
+	build_network_optin_invitation_url,
+	is_network_optin_membership,
+)
 
 
 
@@ -119,7 +122,9 @@ def deal_won(
 	# Locate or append membership under this network
 	membership_row = None
 	for mem in facility_doc.memberships or []:
-		if mem.network == network_doc.name:
+		# Only the facility's Network Opt-In row; a Self-Onboarding (Partner Coupon) row in the
+		# same network belongs to the customer and is never rewritten here.
+		if mem.network == network_doc.name and is_network_optin_membership(mem):
 			membership_row = mem
 			mem.contact_name = name_val
 			mem.contact_email = email_val
@@ -127,10 +132,6 @@ def deal_won(
 				mem.contact_phone = phone_val
 			mem.price_list_override = price_lists_dict.get("1") or ""
 			mem.price_list_overrides_json = json.dumps(price_lists_dict, separators=(",", ":"))
-			# Deal-Won enrolls the facility in the Network Opt-In contract journey,
-			# never the customer-linked Self-Onboarding token journey.
-			if hasattr(mem, "customer") or (isinstance(mem, dict) and "customer" in mem):
-				mem.customer = None
 			if mem.status != "Opted In":
 				mem.status = "Active"
 			break
@@ -155,7 +156,14 @@ def deal_won(
 
 	# Reload facility doc to get assigned membership name and persisted state
 	facility_doc.reload()
-	active_membership = next((m for m in facility_doc.memberships if m.network == network_doc.name), None)
+	active_membership = next(
+		(
+			m
+			for m in facility_doc.memberships
+			if m.network == network_doc.name and is_network_optin_membership(m)
+		),
+		None,
+	)
 	if not active_membership:
 		active_membership = membership_row
 
@@ -166,7 +174,6 @@ def deal_won(
 
 	if should_send:
 		try:
-			facility_doc.flags.force_optin_invitation = True
 			_send_membership_invitation(facility_doc, active_membership)
 			email_dispatched = True
 		except Exception as err:
@@ -178,7 +185,6 @@ def deal_won(
 
 	slug = getattr(network_doc, "slug", "") or network_doc.name
 	invitation_url = build_network_optin_invitation_url(slug, facility_doc.facility_name)
-
 
 	response = {
 		"success": True,

@@ -1977,19 +1977,29 @@ def save_facility(data: Any):
 	else:
 		doc = frappe.new_doc("CRM Pre-Qualified Facility")
 	is_new_facility = doc.is_new()
-	existing_networks = {m.network for m in (doc.memberships or [])}
-	existing_memberships = {m.network: m for m in (doc.memberships or [])}
+	# This form manages Network Opt-In rows. Self-Onboarding (Partner Coupon) rows are only
+	# edited when the caller names one, and then only their contact name, phone and status.
+	existing_memberships = {
+		m.network: m for m in (doc.memberships or []) if not is_self_onboarding_contact(m)
+	}
+	existing_networks = set(existing_memberships)
+	coupon_rows = {m.name: m for m in (doc.memberships or []) if is_self_onboarding_contact(m)}
+	coupon_edits = []
+	optin_memberships = []
 	for membership in memberships:
-		net = frappe.utils.cstr(membership.get("network") or "").strip()
-		existing = existing_memberships.get(net)
-		if existing and getattr(existing, "customer", None):
-			existing_email = frappe.utils.cstr(existing.contact_email or "").strip().lower()
-			requested_email = frappe.utils.cstr(membership.get("contact_email") or "").strip().lower()
-			if requested_email != existing_email:
-				frappe.throw(
-					_("The email on a verified Self-Onboarding account cannot be changed here."),
-					frappe.ValidationError,
-				)
+		coupon_row = coupon_rows.get(frappe.utils.cstr(membership.get("membership_name")).strip())
+		if not coupon_row:
+			optin_memberships.append(membership)
+			continue
+		existing_email = frappe.utils.cstr(coupon_row.contact_email or "").strip().lower()
+		requested_email = frappe.utils.cstr(membership.get("contact_email") or "").strip().lower()
+		if requested_email != existing_email:
+			frappe.throw(
+				_("The email on a verified Self-Onboarding account cannot be changed here."),
+				frappe.ValidationError,
+			)
+		coupon_edits.append((coupon_row, membership))
+	memberships = optin_memberships
 
 	doc.mfl_code = mfl_code or doc.mfl_code
 	# The Facility ID comes from the HFR lookup or the CSV; a blank value never clears a stored one.
@@ -2004,19 +2014,25 @@ def save_facility(data: Any):
 	# Rebuild memberships: keep existing rows not in the new set (other network), update/add for this set
 	new_network_set = {m.get("network") for m in memberships if m.get("network")}
 	# Remove membership rows for networks being replaced
-	doc.memberships = [m for m in (doc.memberships or []) if m.network not in new_network_set]
+	doc.memberships = [
+		m
+		for m in (doc.memberships or [])
+		if m.network not in new_network_set or is_self_onboarding_contact(m)
+	]
+	for coupon_row, mem_data in coupon_edits:
+		coupon_row.contact_name = frappe.utils.cstr(mem_data.get("contact_name") or coupon_row.contact_name)
+		coupon_row.contact_phone = frappe.utils.cstr(mem_data.get("contact_phone") or coupon_row.contact_phone)
+		coupon_row.status = mem_data.get("status") or coupon_row.status
 	try:
 		membership_has_override = frappe.db.has_column("CRM Facility Membership", "price_list_override")
 		membership_has_overrides = frappe.db.has_column(
 			"CRM Facility Membership", "price_list_overrides_json"
 		)
 		membership_has_go_live = frappe.db.has_column("CRM Facility Membership", "go_live")
-		membership_has_customer = frappe.db.has_column("CRM Facility Membership", "customer")
 	except Exception:
 		membership_has_override = False
 		membership_has_overrides = False
 		membership_has_go_live = False
-		membership_has_customer = False
 	for mem_data in memberships:
 		net = frappe.utils.cstr(mem_data.get("network") or "").strip()
 		if not net:
@@ -2028,12 +2044,6 @@ def save_facility(data: Any):
 			"contact_email": frappe.utils.cstr(mem_data.get("contact_email") or "").lower(),
 			"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
 		}
-		if membership_has_customer and net in existing_memberships:
-			# Network contact edits rebuild the child row; retain the Customer link
-			# that identifies an existing Self-Onboarding portal contact.
-			customer = existing_memberships[net].get("customer")
-			if customer:
-				membership_values["customer"] = customer
 		if membership_has_override:
 			# Preserve an existing override when the caller omits the field, while
 			# pre-opt-in edits and CSV/admin callers may clear or replace it explicitly.
@@ -2097,7 +2107,11 @@ def save_facility(data: Any):
 	# facility, explicitly invite memberships newly added through this admin flow.
 	if not is_new_facility:
 		for membership in doc.memberships or []:
-			if membership.network in new_network_set and membership.network not in existing_networks:
+			if (
+				membership.network in new_network_set
+				and membership.network not in existing_networks
+				and not is_self_onboarding_contact(membership)
+			):
 				from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility import (
 					_send_membership_invitation,
 				)
@@ -2535,7 +2549,7 @@ def invite_facility_to_customer_experience(facility_name: Any, membership_name: 
 			_send_membership_invitation,
 		)
 		if is_self_onboarded_facility(facility):
-			_send_membership_invitation(facility, membership)
+			_send_membership_invitation(facility, membership, express=True)
 			user_name = frappe.db.get_value("User", {"email": recipient}, "name") if hasattr(frappe.db, "get_value") else None
 			return {
 				"status": "linked" if user_name else "sent",

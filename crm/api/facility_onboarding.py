@@ -35,6 +35,7 @@ from crm.api._email import (
 )
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref, record_event
 from crm.utils import value_express
+from crm.utils.onboarding_source import is_self_onboarding_contact
 from crm.utils.token_facility import facility_fid_for_mfl
 
 try:
@@ -1384,7 +1385,9 @@ def _upsert_facility_membership(
 	if hasattr(facility_doc, "is_self_onboarded") or (hasattr(facility_doc, "meta") and facility_doc.meta.has_field("is_self_onboarded")):
 		facility_doc.is_self_onboarded = 1
 	for row_item in facility_doc.memberships or []:
-		if row_item.network == network and (
+		# Resume only this journey's own customer-linked row. A Network Opt-In row for the same
+		# email is the partner's contract record and stays untouched; this journey appends its own.
+		if row_item.network == network and is_self_onboarding_contact(row_item) and (
 			_text(getattr(row_item, "customer", "")) == customer
 			or _text(row_item.contact_email).lower() == person["email"].lower()
 		):

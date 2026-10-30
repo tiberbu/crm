@@ -22,6 +22,7 @@ from crm.partner_portal.utils import (
 	resolve_or_create_facility,
 	store_idempotency,
 )
+from crm.utils.onboarding_source import is_network_optin_membership
 
 
 def _assert_portal_access(network_doc=None, partner_id=None):
@@ -112,7 +113,8 @@ def configure_facility_pricing(
 	# Update or add membership on facility
 	membership_found = False
 	for mem in facility_doc.memberships or []:
-		if mem.network == network_doc.name:
+		# Negotiated pricing belongs on the Network Opt-In row, never a Partner Coupon row.
+		if mem.network == network_doc.name and is_network_optin_membership(mem):
 			membership_found = True
 			mem.price_list_override = price_lists_dict.get("1") or ""
 			mem.price_list_overrides_json = json.dumps(price_lists_dict, separators=(",", ":"))
@@ -130,6 +132,8 @@ def configure_facility_pricing(
 		fallback_email = ""
 		fallback_phone = ""
 		for m in facility_doc.memberships or []:
+			if not is_network_optin_membership(m):
+				continue
 			if getattr(m, "contact_email", None):
 				fallback_email = m.contact_email
 			if getattr(m, "contact_name", None):

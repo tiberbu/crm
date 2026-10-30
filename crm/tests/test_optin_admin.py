@@ -780,11 +780,19 @@ class TestOptInPriceListTools(UnitTestCase):
 					frappe._dict(
 						{
 							"network": "network-a",
-							"customer": "CUST-SELF",
 							"contact_email": "jane@example.com",
 							"price_list_override": "Negotiated Facility A",
 						}
-					)
+					),
+					frappe._dict(
+						{
+							"name": "MEM-COUPON",
+							"network": "network-a",
+							"customer": "CUST-SELF",
+							"contact_email": "buyer@example.com",
+							"contact_name": "Coupon Buyer",
+						}
+					),
 				]
 
 			def is_new(self):
@@ -822,9 +830,15 @@ class TestOptInPriceListTools(UnitTestCase):
 				}
 			)
 
-		self.assertEqual(len(facility.memberships), 1)
-		self.assertEqual(facility.memberships[0].price_list_override, "Negotiated Facility A")
-		self.assertEqual(facility.memberships[0].customer, "CUST-SELF")
+		self.assertEqual(len(facility.memberships), 2)
+		optin_row = next(m for m in facility.memberships if not m.get("customer"))
+		coupon_row = next(m for m in facility.memberships if m.get("customer"))
+		self.assertEqual(optin_row.price_list_override, "Negotiated Facility A")
+		self.assertEqual(optin_row.contact_email, "jane@example.com")
+		# The Partner Coupon row in the same network is neither merged nor re-labelled.
+		self.assertEqual(coupon_row.name, "MEM-COUPON")
+		self.assertEqual(coupon_row.contact_email, "buyer@example.com")
+		self.assertFalse(coupon_row.get("price_list_override"))
 
 	def test_opted_in_membership_cannot_change_facility_price_list(self):
 		existing = frappe._dict({"status": "Opted In", "price_list_override": "Negotiated Facility A"})

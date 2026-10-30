@@ -233,3 +233,58 @@ class TestCRMPreQualifiedFacility(UnitTestCase):
 		ensure_cx_access.assert_not_called()
 
 
+
+	def _route(self, membership, **kwargs):
+		facility = SimpleNamespace(
+			doctype="CRM Pre-Qualified Facility",
+			name="FAC-BOTH-001",
+			facility_name="Synthetic Clinic",
+			is_self_onboarded=1,
+			memberships=[],
+		)
+		network = SimpleNamespace(slug="partner-network", display_name="Partner Network")
+		queue = SimpleNamespace(name="EMAIL-QUEUE-0004", send=Mock())
+		with (
+			patch.object(frappe, "get_doc", return_value=network),
+			patch.object(frappe, "sendmail", return_value=queue) as sendmail,
+			patch.object(frappe.db, "set_value"),
+			patch.object(frappe.utils, "get_url", return_value="https://crm.example.test"),
+			patch.object(frappe.utils, "now_datetime", return_value="2026-10-30 12:00:00"),
+			patch(
+				"crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility._ensure_self_onboarded_facility_cx_access"
+			),
+		):
+			_send_membership_invitation(facility, membership, **kwargs)
+		return sendmail.call_args.kwargs
+
+	def _membership(self, customer=None):
+		return SimpleNamespace(
+			name="MEM-ADMIN-001",
+			network="partner-network",
+			status="Active",
+			contact_name="Network Contact",
+			contact_email="contact@example.test",
+			customer=customer,
+			price_list_override="",
+			price_list_overrides_json="",
+			invite_email_queue=None,
+			invite_sent_at=None,
+		)
+
+	def test_admin_added_contact_on_self_onboarded_facility_gets_the_optin_invitation(self):
+		# The row decides the journey: a row without a Customer is a Network Opt-In contact,
+		# even without negotiated pricing and even when the facility also self-onboarded.
+		sent = self._route(self._membership())
+		self.assertEqual(sent["subject"], "You've been pre-qualified: Partner Network — CareverseHIMS")
+		self.assertIn("/opt-in?network=partner-network", sent["message"])
+		self.assertNotIn("/cx-portal", sent["message"])
+
+	def test_partner_coupon_row_gets_the_express_alert(self):
+		sent = self._route(self._membership(customer="CUST-COUPON"))
+		self.assertIn("Log in to Tiberbu Express", sent["subject"])
+		self.assertNotIn("/opt-in", sent["message"])
+
+	def test_explicit_express_invitation_sends_the_express_alert(self):
+		sent = self._route(self._membership(), express=True)
+		self.assertIn("Log in to Tiberbu Express", sent["subject"])
+		self.assertNotIn("/opt-in", sent["message"])
