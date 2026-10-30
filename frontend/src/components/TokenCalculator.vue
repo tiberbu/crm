@@ -41,14 +41,10 @@ const fallbackConfig = {
   default_avg_bill: 1500,
   default_operating_days: 24,
   service_points: [
-    { id: 'registration', name: 'Patient registration / check-in', tokens: 6, default_frequency: 0.2, applies_to: ['opd', 'ipd'] },
-    { id: 'consultation', name: 'Consultation visit', tokens: 3, default_frequency: 1.0, applies_to: ['opd', 'ipd'] },
-    { id: 'laboratory', name: 'Laboratory order', tokens: 6, default_frequency: 0.5, applies_to: ['opd', 'ipd'] },
+    { id: 'consultation', name: 'Consultation visit', tokens: 6, default_frequency: 1.0, applies_to: ['opd', 'ipd'] },
+    { id: 'laboratory', name: 'Laboratory investigations order', tokens: 6, default_frequency: 0.5, applies_to: ['opd', 'ipd'] },
     { id: 'prescription', name: 'Prescription processing', tokens: 6, default_frequency: 0.5, applies_to: ['opd', 'ipd'] },
-    { id: 'imaging', name: 'Imaging order (X-ray, Ultrasound)', tokens: 12, default_frequency: 0.1, applies_to: ['opd', 'ipd'] },
-    { id: 'procedure', name: 'Medical / Minor surgical procedure', tokens: 12, default_frequency: 0.05, applies_to: ['ipd'] },
-    { id: 'inpatient_admission', name: 'Inpatient admission', tokens: 3, default_frequency: 0.05, applies_to: ['ipd'] },
-    { id: 'program_visit', name: 'Chronic care / Program visit', tokens: 6, default_frequency: 0.05, applies_to: ['opd', 'ipd'] },
+    { id: 'imaging', name: 'Imaging order', tokens: 6, default_frequency: 0.1, applies_to: ['opd', 'ipd'] },
   ],
   presets: [
     { id: 'solo', label: 'Solo Practice / Clinic', description: 'Pilots & small community clinics', facility_type: 'opd', daily_patients: 5, avg_bill: 1500, operating_days: 24 },
