@@ -369,9 +369,9 @@ html {
   --cx-border-soft: #edf1f5;
   --cx-ink: #0f172a;
   --cx-ink-2: #334155;
-  /* ink-3 and ink-4 clear WCAG AA (4.5:1) on surface, bg and well; ink-4 is for hints, not content. */
-  --cx-ink-3: #566275;
-  --cx-ink-4: #647185;
+  /* Labels only. ink-3 clears WCAG AAA (7:1) on surface, bg and well; ink-4 is for hints, not content (AA). */
+  --cx-ink-3: #475569;
+  --cx-ink-4: #566275;
   --cx-contrast: #ffffff;
   --cx-ink-hover: #000000;
   --cx-brand: #bc1823;
@@ -414,8 +414,8 @@ html {
   --cx-border-soft: #23262b;
   --cx-ink: #f1f5f9;
   --cx-ink-2: #cbd5e1;
-  --cx-ink-3: #94a3b8;
-  --cx-ink-4: #8b97a8;
+  --cx-ink-3: #a8b4c4;
+  --cx-ink-4: #94a3b8;
   --cx-contrast: #0f1115;
   --cx-ink-hover: #ffffff;
   --cx-brand: #d23a41;
