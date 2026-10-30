@@ -250,6 +250,8 @@ CRM `develop` does not yet do the following:
 
 CRM already reads S1–S3, S8–S10 and the `status` words in §4.
 
+The setup service live today is v2.1. [`hmis-external-provisioning-v2-1-crm-changes.md`](hmis-external-provisioning-v2-1-crm-changes.md) lists what CRM changes to work with it. That change does part of CRM-P1, reads S1 and S3 from the nested `login` and `target` blocks, and treats `Deployed` as live only when the owner login exists.
+
 ### Outside CRM
 
 | # | Owner | Change |
