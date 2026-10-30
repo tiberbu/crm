@@ -11,6 +11,7 @@ this redirect actually runs for workspace-having users, closing a desk-fence byp
 """
 
 import hashlib
+import os
 from functools import lru_cache
 
 import frappe
@@ -25,13 +26,22 @@ no_cache = True
 ONBOARDING = "/facility-onboarding"
 
 
-@lru_cache(maxsize=1)
+CSS_FILES = ("value-express.css", "value-express-landing.css")
+
+
 def _css_version() -> str:
 	"""A content hash for the stylesheet links: the CDN caches /assets for a year, so a changed
-	file needs a new URL to reach visitors."""
+	file needs a new URL to reach visitors. Keyed on the files' mtimes so an edit is picked up
+	without restarting the workers."""
+	paths = tuple(frappe.get_app_path("crm", "public", "css", name) for name in CSS_FILES)
+	return _css_digest(tuple((path, os.stat(path).st_mtime_ns) for path in paths))
+
+
+@lru_cache(maxsize=4)
+def _css_digest(stamps: tuple) -> str:
 	digest = hashlib.sha256()
-	for name in ("value-express.css", "value-express-landing.css"):
-		with open(frappe.get_app_path("crm", "public", "css", name), "rb") as css:
+	for path, _mtime in stamps:
+		with open(path, "rb") as css:
 			digest.update(css.read())
 	return digest.hexdigest()[:10]
 
