@@ -396,3 +396,105 @@ export async function auditLayout(page: Page): Promise<LayoutIssue[]> {
     return issues
   })
 }
+
+export type TypeSample = {
+  text: string
+  size: number
+  weight: number
+  ratio: number
+  required: number
+  opacity: number
+  color: string
+  chip: boolean
+}
+
+// Runs in the page: every visible text node's size, weight, inherited opacity and WCAG
+// contrast against its composited background (translucent layers are blended down to an
+// opaque ancestor or the page colour). `required` is 3 for large text, 4.5 otherwise.
+export async function sampleTypography(page: Page): Promise<TypeSample[]> {
+  return page.evaluate(() => {
+    const ctx = new OffscreenCanvas(1, 1).getContext('2d', {
+      willReadFrequently: true,
+    })!
+    const rgba = (css: string): number[] => {
+      ctx.clearRect(0, 0, 1, 1)
+      ctx.fillStyle = '#000'
+      ctx.fillStyle = css
+      ctx.fillRect(0, 0, 1, 1)
+      const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+      return [r, g, b, a / 255]
+    }
+    const blend = (top: number[], under: number[]) =>
+      [0, 1, 2].map((i) => top[i] * top[3] + under[i] * (1 - top[3])).concat(1)
+    const lum = (c: number[]) => {
+      const [r, g, b] = c.slice(0, 3).map((v) => {
+        const s = v / 255
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const background = (el: Element) => {
+      const layers: number[][] = []
+      for (let node: Element | null = el; node; node = node.parentElement) {
+        const c = rgba(getComputedStyle(node).backgroundColor)
+        if (c[3] > 0) layers.push(c)
+        if (c[3] >= 1) break
+      }
+      let base =
+        layers.length && layers[layers.length - 1][3] >= 1
+          ? layers.pop()!
+          : rgba(getComputedStyle(document.body).backgroundColor || '#fff')
+      if (base[3] < 1) base = blend(base, [255, 255, 255, 1])
+      for (const layer of layers.reverse()) base = blend(layer, base)
+      return base
+    }
+    const out: TypeSample[] = []
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+    )
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.textContent?.trim()
+      const el = node.parentElement
+      if (
+        !text ||
+        !el ||
+        el.closest('script, style, svg, [aria-hidden="true"], .sr-only')
+      )
+        continue
+      const style = getComputedStyle(el)
+      const rect = el.getBoundingClientRect()
+      if (
+        style.visibility === 'hidden' ||
+        style.display === 'none' ||
+        rect.width === 0 ||
+        rect.height === 0
+      )
+        continue
+      let opacity = 1
+      for (let n: Element | null = el; n; n = n.parentElement)
+        opacity *= Number(getComputedStyle(n).opacity)
+      if (opacity === 0) continue
+      const bg = background(el)
+      const fg = blend(
+        [...rgba(style.color).slice(0, 3), rgba(style.color)[3] * opacity],
+        bg,
+      )
+      const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a)
+      const size = parseFloat(style.fontSize)
+      const weight = Number(style.fontWeight)
+      const large = size >= 24 || (size >= 18.66 && weight >= 700)
+      out.push({
+        text: text.slice(0, 50),
+        size,
+        weight,
+        ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100,
+        required: large ? 3 : 4.5,
+        opacity: Math.round(opacity * 100) / 100,
+        color: style.color,
+        chip: Boolean(el.closest('.rounded-full, [class~="py-0.5"]')),
+      })
+    }
+    return out
+  })
+}

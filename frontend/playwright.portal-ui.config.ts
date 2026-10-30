@@ -4,7 +4,8 @@ import { defineConfig, devices } from '@playwright/test'
 // tablet, laptop and desktop widths. No site or login is required.
 export default defineConfig({
   testDir: './e2e/regression',
-  testMatch: /(portal-layout|token-alerts|onboarding-layout)\.spec\.ts/,
+  testMatch:
+    /(portal-layout|token-alerts|onboarding-layout|portal-typography)\.spec\.ts/,
   fullyParallel: true,
   timeout: 60000,
   reporter: 'list',
