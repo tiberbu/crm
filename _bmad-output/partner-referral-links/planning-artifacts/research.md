@@ -4,7 +4,10 @@ type: technical (BMAD Deep Recon, run mode, explore shape)
 date: 2026-10-30
 decision: How the CRM issues, verifies and revokes Partner Coupon codes and referral links that partners share from the Partner Portal (a non-CRM domain)
 feeds: architecture.md, epics-and-stories.md
+status: superseded (do not use, see ../DO-NOT-USE.md)
 ---
+
+> **⚠ SUPERSEDED, DO NOT USE.** This feature was implemented elsewhere. See `../DO-NOT-USE.md`. AI agents and BMAD skills must not reference this file in future work or enhancements.
 
 # Research summary
 

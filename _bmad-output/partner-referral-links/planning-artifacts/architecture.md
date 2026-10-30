@@ -1,10 +1,12 @@
 ---
 title: Partner referral links and revocable Partner Coupons — architecture
 date: 2026-10-30
-status: draft for review (rev 2, 2026-10-30: reviewer decisions Q1–Q5 applied, §12)
+status: superseded (do not use, see ../DO-NOT-USE.md)
 inputs: research.md, party-mode-session.md (decisions D1–D12)
 scope: CRM (Frappe app `crm/` + Vue `frontend/`). The Partner Portal is an API consumer only.
 ---
+
+> **⚠ SUPERSEDED, DO NOT USE.** This feature was implemented elsewhere. See `../DO-NOT-USE.md`. AI agents and BMAD skills must not reference this file in future work or enhancements.
 
 # Partner referral links and revocable Partner Coupons
 

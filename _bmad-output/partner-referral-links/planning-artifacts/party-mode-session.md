@@ -4,7 +4,10 @@ date: 2026-10-30
 mode: session (inline voices)
 cast: Mary (Analyst), John (PM), Winston (Architect), Sally (UX), Amelia (Dev), Kofi (Security, walk-on), Quinn (QA, walk-on)
 inputs: research.md, docs/optin-and-partner-coupon-journeys.md, crm/api/facility_onboarding.py, crm/partner_portal/*
+status: superseded (do not use, see ../DO-NOT-USE.md)
 ---
+
+> **⚠ SUPERSEDED, DO NOT USE.** This feature was implemented elsewhere. See `../DO-NOT-USE.md`. AI agents and BMAD skills must not reference this file in future work or enhancements.
 
 # Round-table transcript
 

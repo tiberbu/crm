@@ -4,7 +4,10 @@ date: 2026-10-30
 rules: _bmad-output/STORY-RULES.md (one primary file, explicit files, deps, S/M/L, 1-command ACs, context7 before framework decisions)
 architecture: architecture.md
 rev: 2 (2026-10-30) — reviewer decisions Q1–Q5 applied: legacy coupon retired, revocation not retroactive with a pre-invoice check, maker-checker custom codes
+status: superseded (do not use, see ../DO-NOT-USE.md)
 ---
+
+> **⚠ SUPERSEDED, DO NOT USE.** This feature was implemented elsewhere. See `../DO-NOT-USE.md`. AI agents and BMAD skills must not reference this file in future work or enhancements.
 
 # Epics and stories
 
