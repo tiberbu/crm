@@ -31,7 +31,7 @@ const outstanding = computed(
   >
     <button
       type="button"
-      class="line-clamp-2 w-full break-words text-left text-base font-bold leading-snug text-cx-ink underline-offset-2 hover:text-cx-brand-strong hover:underline"
+      class="line-clamp-2 w-full break-words text-left text-base font-semibold leading-snug text-cx-ink underline-offset-2 hover:text-cx-brand-strong hover:underline"
       :title="facility.facility_name"
       @click.stop="emit('open', facility)"
     >
@@ -78,10 +78,10 @@ const outstanding = computed(
       </div>
       <div
         v-if="facility.recent_purchase"
-        class="flex items-baseline justify-between gap-3 text-[11px]"
+        class="flex items-baseline justify-between gap-3 text-xs"
       >
         <dt class="shrink-0 text-cx-ink-3">Recent order</dt>
-        <dd class="min-w-0 text-right font-mono text-cx-ink">
+        <dd class="min-w-0 text-right text-cx-ink">
           {{
             money(
               facility.recent_purchase.amount,
@@ -105,7 +105,7 @@ const outstanding = computed(
       </div>
       <div
         v-if="alert?.enabled"
-        class="flex items-baseline justify-between gap-3 text-[11px]"
+        class="flex items-baseline justify-between gap-3 text-xs"
         :data-testid="`facility-alert-${facility.mfl_code}`"
       >
         <dt class="shrink-0 text-cx-ink-3">Low-token alert</dt>
@@ -119,7 +119,7 @@ const outstanding = computed(
         class="flex items-baseline justify-between gap-3 border-t border-cx-border-soft pt-1.5"
       >
         <dt class="shrink-0 font-semibold text-cx-warning-ink">Amount due</dt>
-        <dd class="text-right font-bold text-cx-warning-ink">
+        <dd class="text-right font-semibold text-cx-warning-ink">
           {{
             money(
               facility.invoice_summary.outstanding_amount,
@@ -152,7 +152,7 @@ const outstanding = computed(
         </button>
         <span
           v-else-if="outstanding"
-          class="block text-center text-[11px] font-semibold text-cx-warning-ink"
+          class="block text-center text-xs font-semibold text-cx-warning-ink"
         >
           Payment verification pending
         </span>

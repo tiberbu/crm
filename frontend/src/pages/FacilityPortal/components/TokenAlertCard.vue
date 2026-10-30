@@ -115,7 +115,7 @@ async function save() {
       <div class="min-w-0">
         <h2
           id="token-alert-title"
-          class="flex items-center gap-1.5 text-sm font-bold text-cx-ink"
+          class="flex items-center gap-1.5 text-sm font-semibold text-cx-ink"
         >
           <CxIcon name="bell" class="size-4 shrink-0" /> Low-token email alert
         </h2>
@@ -185,11 +185,7 @@ async function save() {
       </div>
     </div>
 
-    <p
-      id="token-alert-context"
-      v-if="fid"
-      class="mt-3 text-[11px] text-cx-ink-3"
-    >
+    <p id="token-alert-context" v-if="fid" class="mt-3 text-xs text-cx-ink-3">
       <template v-if="balance.known"
         >Available now:
         <strong class="text-cx-ink-2">{{ tokens(balance.value) }}</strong
@@ -206,7 +202,7 @@ async function save() {
     </p>
     <p
       v-if="enabled && !thresholdValid"
-      class="mt-2 text-[11px] font-semibold text-cx-danger-ink"
+      class="mt-2 text-xs font-semibold text-cx-danger-ink"
     >
       Enter a whole number of 1 or more.
     </p>
