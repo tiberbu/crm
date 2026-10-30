@@ -195,6 +195,25 @@
                 }}
               </p>
             </div>
+            <div>
+              <p
+                class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
+              >
+                {{ __('Technology delivery partner') }}
+              </p>
+              <p class="mt-1 text-sm text-ink-gray-7">
+                {{
+                  networkDoc?.technology_delivery_partner_name ||
+                  __('None')
+                }}
+              </p>
+              <p
+                v-if="networkDoc?.technology_delivery_partner_short_name"
+                class="text-xs text-ink-gray-5"
+              >
+                {{ networkDoc?.technology_delivery_partner_short_name }}
+              </p>
+            </div>
           </div>
         </div>
       </template>
@@ -245,6 +264,14 @@
           <FormControl
             v-model="networkForm.footer_legal_name"
             :label="__('Footer Legal Name')"
+          />
+          <FormControl
+            v-model="networkForm.technology_delivery_partner_name"
+            :label="__('Technology Delivery Partner')"
+          />
+          <FormControl
+            v-model="networkForm.technology_delivery_partner_short_name"
+            :label="__('Technology Delivery Partner Short Name / Acronym')"
           />
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6">{{
@@ -1599,6 +1626,8 @@ const networkForm = reactive({
   optional_services_price_list: '',
   price_lists: [],
   custom_header_copy: '',
+  technology_delivery_partner_name: '',
+  technology_delivery_partner_short_name: '',
   partner_logos: [],
   coordinators: [],
   network_signers: [],
@@ -1633,6 +1662,10 @@ function startEditNetwork() {
       }
     })(),
     custom_header_copy: doc?.custom_header_copy ?? '',
+    technology_delivery_partner_name:
+      doc?.technology_delivery_partner_name ?? '',
+    technology_delivery_partner_short_name:
+      doc?.technology_delivery_partner_short_name ?? '',
     partner_logos: (doc?.partner_logos ?? []).map((row) => ({
       ...row,
       key: newRowKey(),
