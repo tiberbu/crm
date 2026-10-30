@@ -26,11 +26,19 @@
             :data-s="item.status === 'complete' ? 'done' : item.status === 'current' ? 'current' : 'todo'"
             :aria-current="item.status === 'current' ? 'step' : undefined"
           >
-            <span class="dot">{{ item.status === 'complete' ? '✓' : index + 1 }}</span>
-            <span>
-              <b>{{ item.label }}<span class="sr-only"> — {{ item.statusLabel }}</span></b>
-              <small>{{ item.subtitle }}</small>
-            </span>
+            <component
+              :is="canRevisit(item) ? 'button' : 'span'"
+              :type="canRevisit(item) ? 'button' : undefined"
+              class="stepbody"
+              :data-testid="canRevisit(item) ? `step-${item.key}` : undefined"
+              @click="canRevisit(item) && revisitStep(item.key)"
+            >
+              <span class="dot">{{ item.status === 'complete' ? '✓' : index + 1 }}</span>
+              <span>
+                <b>{{ item.label }}<span class="sr-only"> — {{ item.statusLabel }}<template v-if="canRevisit(item)">, {{ __('go back to this step') }}</template></span></b>
+                <small>{{ item.subtitle }}</small>
+              </span>
+            </component>
           </li>
         </ol>
         <div v-if="errorMessage" class="alert" role="alert">
@@ -186,6 +194,9 @@
                   <span>{{ facility.facility_level || __('Level not on record') }}</span>
                   <span v-if="facility.facility_type">{{ facility.facility_type }}</span>
                 </div>
+                <p v-if="!facility.facility_level && selectable(facility)" class="why" data-testid="facility-level-missing">
+                  {{ __('The registry has no KEPH level for this facility yet. You can continue; our team confirms the level before go-live.') }}
+                </p>
                 <p v-if="facility.onboarding_blocked" class="why" data-testid="facility-already-onboarded">
                   {{ __('This facility is already set up and can’t be added to a new request here.') }}
                   <a href="/login?redirect-to=/cx-portal">{{ __('Sign in to Tiberbu Express →') }}</a>
@@ -193,10 +204,11 @@
                 <p v-else-if="facility.onboarding_eligible !== true" class="why">
                   {{
                     facility.facility_eligibility_reason === 'missing_level'
-                      ? __('We couldn’t confirm this facility’s level in the registry, so it can’t be onboarded online. Our team can check it with you.')
+                      ? __('The registry has no KEPH level for this facility, and Value Express is priced by level, so it can’t be set up online yet. Ask the facility’s regulator to update its level, or contact us and we’ll check it with you.')
                       : __('Value Express is for Level 2 and Level 3 outpatient facilities, so this one can’t be selected.')
                   }}
-                  <a href="/#fit">{{ __('Enquire about CareverseHIMS Advanced & Enterprise →') }}</a>
+                  <a v-if="facility.facility_eligibility_reason === 'missing_level'" href="/#enterprise-enquiry">{{ __('Contact us about this facility →') }}</a>
+                  <a v-else href="/#fit">{{ __('Enquire about CareverseHIMS Advanced & Enterprise →') }}</a>
                 </p>
               </div>
               <span class="chip" :class="selectable(facility) ? 'ok' : 'no'">
@@ -247,8 +259,7 @@
                 </div>
                 <p v-if="couponApplied" class="ok" data-testid="partner-coupon-applied">✓ {{ __('Partner Coupon applied') }}<template v-if="catalog.network?.display_name"> · <span data-testid="partner-coupon-network">{{ catalog.network.display_name }}</span></template>: +{{ couponTokens.toLocaleString() }} {{ __('bonus tokens per facility with your first purchase') }}</p>
                 <div style="display: flex; gap: 10px; margin-top: 10px">
-                  <button type="button" class="btn primary small" @click="closeCoupon">{{ __('Done') }}</button>
-                  <button type="button" class="btn ghost small" data-testid="partner-coupon-close" @click="closeCoupon">{{ __('Close') }}</button>
+                  <button type="button" class="btn primary small" data-testid="partner-coupon-close" @click="closeCoupon">{{ partnerId ? __('Done') : __('Close') }}</button>
                 </div>
               </div>
             </div>
@@ -301,7 +312,7 @@
               </div>
 
               <div v-if="activePlan === 'flex'" :data-testid="`facility-package-${activePricingFacility.facility_id}`">
-                <h2 style="margin-top: 28px">{{ __('Value Express Flex - Pay As You Use') }}</h2>
+                <h2 style="margin-top: 28px">{{ __('Value Express Flex: pay as you use') }}</h2>
                 <p class="muted" style="margin-top: 6px">{{ __('Each package provides prepaid Careverse Tokens. The packages differ in the number of tokens you buy and the value you get. The CareverseHIMS product is the same.') }}</p>
                 <div v-if="accessTokens" class="access">
                   <span class="n">−{{ accessTokens.toLocaleString() }}</span>
@@ -316,7 +327,7 @@
                     <span class="vat">{{ __('excluding {0}', [pkg.vat_label || 'VAT']) }}</span>
                     <dl>
                       <dt>{{ __('Tokens') }}</dt><dd>{{ Number(pkg.token_quantity || 0).toLocaleString() }}</dd>
-                      <dt>{{ __('Suits') }}</dt><dd>{{ pkg.audience || '—' }}</dd>
+                      <template v-if="pkg.audience"><dt>{{ __('Suits') }}</dt><dd>{{ pkg.audience }}</dd></template>
                       <dt>{{ __('Price per token') }}</dt><dd>{{ currencyOf(pkg) }} {{ perTokenRate(pkg).toFixed(2) }}</dd>
                     </dl>
                     <span v-if="morePercent(pkg, catalog.packages)" class="more">{{ __('Includes {0}% more tokens', [morePercent(pkg, catalog.packages)]) }}</span>
@@ -339,8 +350,9 @@
                       <dt>{{ __('Tokens') }}</dt><dd>{{ activeCustomQuote.ok ? activeCustomQuote.tokens.toLocaleString() : '—' }}</dd>
                       <dt>{{ __('Suits') }}</dt><dd>{{ __('Any size — set your own amount') }}</dd>
                       <dt>{{ __('Price per token') }}</dt><dd>{{ customOffer.currency }} {{ activeCustomQuote.rate.toFixed(2) }}</dd>
-                      <dt>{{ __('You pay') }}</dt><dd>{{ activeCustomQuote.ok ? money(activeCustomQuote.charge, customOffer.currency, 2) : '—' }}</dd>
+                      <dt>{{ __('You pay') }}</dt><dd data-testid="custom-charge">{{ activeCustomQuote.ok ? money(activeCustomQuote.charge, customOffer.currency, 2) : '—' }}</dd>
                     </dl>
+                    <span v-if="activeCustomQuote.ok && customRoundingNote" class="vat" data-testid="custom-rounding">{{ customRoundingNote }}</span>
                     <span class="more">{{ __('{0} rate · no first-purchase bonus', [activeCustomQuote.tier]) }}</span>
                     <span v-if="accessTokens && activeCustomQuote.ok" class="firstmo">
                       {{ __('For services in month 1:') }} <b class="mono">{{ monthOneTokens(activeCustomQuote.tokens, 0, accessTokens).toLocaleString() }}</b> {{ __('tokens') }}
@@ -364,6 +376,7 @@
                     <span style="font-size: 0.85rem; color: var(--ink-2)">{{ activeFixed?.item_code === pkg.item_code ? __('Matches your facility level') : __('Not your facility’s level') }}</span>
                   </button>
                 </div>
+                <h3 class="incl">{{ __('What’s included') }}</h3>
                 <ul>
                   <li>{{ __('Full Value Express platform access') }}</li>
                   <li>{{ __('SHA eClaims capabilities') }}</li>
@@ -390,7 +403,10 @@
               <template v-if="totals"> · {{ __('Total to pay') }} <b>{{ money(totals.exVat, totals.currency) }}</b> <span class="muted">{{ __('excl. VAT') }}</span></template>
             </span>
             <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px">
+              <span style="display: flex; gap: 10px">
+              <button type="button" class="btn ghost" data-testid="pricing-back" @click="goBack">← {{ __('Back') }}</button>
               <button class="btn primary" :disabled="!allPackagesSelected || termsBusy || catalogBusy || !!catalogError || !catalogCurrent">{{ termsBusy ? __('Loading terms…') : __('Continue to Review →') }}</button>
+              </span>
               <small v-if="!allPackagesSelected" class="hintline">{{ chosenFacilities.length > 1 ? __('Choose a package for each facility to continue.') : __('Choose a package to continue.') }}</small>
             </span>
           </div>
@@ -433,14 +449,14 @@
           </p>
           <section class="terms" data-testid="self-onboarding-terms" aria-labelledby="review-terms-title">
             <div class="row">
-              <b id="review-terms-title">{{ termsSnapshot?.document || __('Terms and Conditions') }}</b>
+              <b id="review-terms-title">{{ termsTitle }}</b>
               <button type="button" class="btn ghost small" :disabled="!termsSnapshot?.rendered_html" data-testid="terms-download" @click="downloadTerms">{{ __('Download Terms') }}</button>
             </div>
             <label id="agree-row" class="agree" :class="{ nudge: agreeNudge }">
               <input v-model="termsAccepted" type="checkbox" :disabled="!termsSnapshot?.content_hash" data-testid="terms-acceptance" />
               <span>
                 {{ __('I have read and accept the') }}
-                <a href="#" aria-haspopup="dialog" @click.prevent="termsDialogOpen = true">{{ __('Value Express terms') }}</a>
+                <a href="#" aria-haspopup="dialog" data-testid="terms-open" @click.prevent="termsDialogOpen = true">{{ termsTitle }}</a>
                 {{ __('and the') }}
                 <a href="/#flex-rules" target="_blank" rel="noopener">{{ __('token rules') }}</a>.
               </span>
@@ -494,7 +510,7 @@
       </section>
     </main>
 
-    <Dialog v-model:open="termsDialogOpen" :title="termsSnapshot?.document || __('Terms and Conditions')" size="4xl">
+    <Dialog v-model:open="termsDialogOpen" :title="termsTitle" size="4xl">
       <div v-if="termsSnapshot?.rendered_html" class="prose prose-sm max-w-none prose-terms" v-html="termsSnapshot.rendered_html" />
     </Dialog>
   </div>
@@ -580,6 +596,8 @@ const termsAccepted = ref(false)
 const termsSnapshot = ref(null)
 const termsBusy = ref(false)
 const termsDialogOpen = ref(false)
+// One name for the Terms everywhere on the page: the configured document's own title.
+const termsTitle = computed(() => termsSnapshot.value?.document || __('Terms and Conditions'))
 const agreeNudge = ref(false)
 const submissions = ref([])
 const portalStatus = ref('')
@@ -655,6 +673,19 @@ const activeFixed = computed(() => fixedFor(activeId.value))
 const activePlan = computed(() => planSelections.value[activeId.value] || 'flex')
 const customAmountFor = (id) => customAmounts.value[id] ?? (Number(customOffer.value?.min_amount) || 0) + 1000
 const activeCustomQuote = computed(() => customQuote(customAmountFor(activeId.value), customOffer.value))
+// Custom amounts buy whole tokens, so the charge can sit just under the amount typed.
+const customRoundingNote = computed(() => {
+  const quote = activeCustomQuote.value
+  const entered = Number(customAmountFor(activeId.value)) || 0
+  const currency = customOffer.value?.currency || 'KES'
+  if (!quote.ok || Math.abs(entered - quote.charge) < 0.005) return ''
+  return __('{0} whole tokens at {1} each. That is {2} less than the {3} you entered, because tokens are not split.', [
+    quote.tokens.toLocaleString(),
+    money(quote.rate, currency, 2),
+    money(entered - quote.charge, currency, 2),
+    money(entered, currency),
+  ])
+})
 const recommendedKey = computed(() => {
   if (carried?.plan === 'flex' && carried.package === CUSTOM && customOffer.value) return CUSTOM
   if (carried?.plan === 'flex' && catalog.value.packages?.some((pkg) => pkg.item_code === carried.package)) return carried.package
@@ -1021,6 +1052,14 @@ function goBack() {
   const previous = previousStage(stage.value)
   if (previous) stage.value = previous
 }
+// Completed steps after identity verification can be reopened from the stepper.
+const REVISITABLE = ['facilities', 'pricing']
+function canRevisit(item) {
+  return item.status === 'complete' && REVISITABLE.includes(item.key) && !busy.value
+}
+function revisitStep(key) {
+  stage.value = key
+}
 function continueFacilities() {
   if (!selectedFacilities.value.length) return
   stage.value = 'pricing'
@@ -1094,7 +1133,11 @@ async function loadSelfOnboardingTerms() {
   termsSnapshot.value = null
   termsBusy.value = true
   try {
-    termsSnapshot.value = await request('get_self_onboarding_terms', { session_token: sessionToken.value })
+    termsSnapshot.value = await request('get_self_onboarding_terms', {
+      session_token: sessionToken.value,
+      selected_facility_ids: JSON.stringify(selectedFacilities.value),
+      facility_package_items: JSON.stringify(packageItemsPayload()),
+    })
     return true
   } catch (error) {
     errorMessage.value = error?.messages?.[0] || __('We could not load the current Terms and Conditions.')

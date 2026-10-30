@@ -23,6 +23,7 @@ from typing import Any
 import frappe
 import requests
 from frappe import _
+from frappe.utils import flt
 from frappe.utils.password import decrypt, encrypt
 from frappe.utils.synchronization import filelock
 
@@ -837,8 +838,72 @@ def get_token_calculator_config():
 	return {"success": True, "data": _calculator_config()}
 
 
-def _resolve_self_onboarding_terms() -> tuple[str, str]:
-	"""Return the configured, rendered self-onboarding Terms document."""
+def _selection_key(selected_ids: Any, facility_package_items: Any) -> str:
+	"""A canonical form of the facilities and packages a customer chose, or "" when absent."""
+	try:
+		items = json.loads(facility_package_items) if isinstance(facility_package_items, str) else facility_package_items
+		ids = json.loads(selected_ids) if isinstance(selected_ids, str) else selected_ids
+	except (TypeError, ValueError):
+		return ""
+	if not isinstance(items, dict) or not isinstance(ids, (list, tuple, set)) or not items:
+		return ""
+	return json.dumps({"selected": sorted(_text(v) for v in ids), "items": items}, sort_keys=True, default=str)
+
+
+def _money_display(value: float) -> str:
+	return "{:,.2f}".format(flt(value, 2))
+
+
+def _terms_pricing(session: dict[str, Any], selection_key: str) -> dict[str, Any]:
+	"""Terms variables priced on the server from the selection the customer is reviewing.
+
+	The figures match the review table: one row per facility, and the selected-term totals
+	are the first invoice. Only Fixed fees recur monthly; Flex packages are prepaid.
+	"""
+	selection = json.loads(selection_key)
+	selected = set(selection["selected"])
+	facilities = [row for row in session.get("facilities") or [] if _text(row.get("facility_id")) in selected]
+	packages = _packages_for_facilities(selected, selection["items"], None, facilities)
+	names = {_text(row.get("facility_id")): _text(row.get("facility_name")) or _text(row.get("mfl_code")) for row in facilities}
+	rows, net, vat, gross, monthly = [], 0.0, 0.0, 0.0, {"net": 0.0, "vat": 0.0, "gross": 0.0}
+	for facility_id in sorted(packages, key=lambda key: names.get(key, key)):
+		package = packages[facility_id]
+		row_net, row_vat, row_gross = flt(package.get("price_ex_vat")), flt(package.get("vat_amount")), flt(package.get("gross_total"))
+		net, vat, gross = net + row_net, vat + row_vat, gross + row_gross
+		fixed = package.get("plan") == value_express.FIXED
+		if fixed:
+			months = value_express.period_months(package.get("billing_period"))
+			monthly = {key: monthly[key] + amount / months for key, amount in (("net", row_net), ("vat", row_vat), ("gross", row_gross))}
+		plan = "Value Express %s: %s" % ("Fixed" if fixed else "Flex", package.get("display_name") or package.get("item_code"))
+		rows.append(
+			"<tr><td>%s</td><td>%s</td><td style=\"text-align:right\">%s</td><td style=\"text-align:right\">%s</td><td style=\"text-align:right\">%s</td></tr>"
+			% tuple(frappe.utils.escape_html(v) for v in (names.get(facility_id, facility_id), plan, _money_display(row_net), _money_display(row_vat), _money_display(row_gross)))
+		)
+	currency = next((_text(p.get("currency")) for p in packages.values() if p.get("currency")), "KES")
+	table = (
+		"<table><thead><tr><th>Facility</th><th>Plan</th><th style=\"text-align:right\">Excl. VAT (%s)</th>"
+		"<th style=\"text-align:right\">VAT (%s)</th><th style=\"text-align:right\">Incl. VAT (%s)</th></tr></thead><tbody>%s</tbody></table>"
+	) % (currency, currency, currency, "".join(rows))
+	no_monthly = "0.00 (Flex packages are prepaid; there is no monthly subscription)"
+	has_monthly = any(p.get("plan") == value_express.FIXED for p in packages.values())
+	return {
+		"pricing_table": table,
+		"contract_totals": frappe._dict(
+			monthly_exclusive_vat_display=_money_display(monthly["net"]) if has_monthly else no_monthly,
+			monthly_vat_display=_money_display(monthly["vat"]) if has_monthly else no_monthly,
+			monthly_inclusive_vat_display=_money_display(monthly["gross"]) if has_monthly else no_monthly,
+			selected_term_exclusive_vat_display=_money_display(net),
+			selected_term_vat_display=_money_display(vat),
+			selected_term_inclusive_vat_display=_money_display(gross),
+		),
+	}
+
+
+def _resolve_self_onboarding_terms(session: dict[str, Any] | None = None, selection_key: str = "") -> tuple[str, str]:
+	"""Return the configured, rendered self-onboarding Terms document.
+
+	With a selection, the pricing table and totals show the customer's server-priced choices.
+	"""
 	document_name = _text(_setting("self_onboarding_tc_document"))
 	if not document_name:
 		# active_tc_document is the configured Default Terms and Conditions
@@ -887,7 +952,11 @@ def _resolve_self_onboarding_terms() -> tuple[str, str]:
 			"commitment_years_label": "As confirmed during onboarding",
 			"invoice_issue_timing_label": "As confirmed during onboarding",
 		}
+		if session is not None and selection_key:
+			context.update(_terms_pricing(session, selection_key))
 		rendered_html = str(render_terms_template(terms_source, context))
+	except frappe.ValidationError:
+		raise
 	except Exception:
 		frappe.throw(
 			_("The Terms and Conditions are currently unavailable. Please contact support."),
@@ -903,14 +972,20 @@ def _resolve_self_onboarding_terms() -> tuple[str, str]:
 
 # nosemgrep: guest-whitelisted-method -- terms are returned only to an OTP-verified onboarding session.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def get_self_onboarding_terms(session_token: Any):
-	"""Return the current self-onboarding Terms and bind its snapshot to the session."""
+def get_self_onboarding_terms(session_token: Any, selected_facility_ids: Any = None, facility_package_items: Any = None):
+	"""Return the current self-onboarding Terms and bind its snapshot to the session.
+
+	When the client sends its package choices, the Terms show those amounts and the
+	submission must carry the same choices.
+	"""
 	token = _text(session_token)
 	session = _session_or_error(token, verified=True)
-	document_name, rendered_html = _resolve_self_onboarding_terms()
+	selection_key = _selection_key(selected_facility_ids, facility_package_items)
+	document_name, rendered_html = _resolve_self_onboarding_terms(session, selection_key)
 	content_hash = hashlib.sha256(rendered_html.encode()).hexdigest()
 	session["accepted_terms_document"] = document_name
 	session["accepted_terms_hash"] = content_hash
+	session["accepted_terms_selection"] = selection_key
 	_save_session(token, session)
 	return {"document": document_name, "rendered_html": rendered_html, "content_hash": content_hash}
 
@@ -929,7 +1004,7 @@ def _validate_self_onboarding_terms(session: dict[str, Any], accepted_terms_hash
 			_("Please review the current Terms and Conditions before continuing."), frappe.ValidationError
 		)
 
-	current_document, current_html = _resolve_self_onboarding_terms()
+	current_document, current_html = _resolve_self_onboarding_terms(session, _text(session.get("accepted_terms_selection")))
 	current_hash = hashlib.sha256(current_html.encode()).hexdigest()
 	if not (
 		current_document == accepted_document
@@ -1259,8 +1334,14 @@ def _catalog_packages(plans: tuple[str, ...] = (value_express.FLEX,)) -> list[di
 		for package in rows:
 			totals = calculate_vat_totals(package["price"])
 			public = {key: value for key, value in package.items() if key != "price_list"}
+			try:
+				metrics = frappe.parse_json(package.get("coverage_metrics") or "{}") or {}
+			except Exception:
+				metrics = {}
 			public.update(
 				{
+					# The same "Suits" line the landing page shows for this package.
+					"audience": _text(metrics.get("audience")) if isinstance(metrics, dict) else "",
 					"price_ex_vat": totals.net_total,
 					"vat_amount": totals.vat_amount,
 					"gross_total": totals.grand_total,
@@ -1742,6 +1823,12 @@ def submit_onboarding(
 	selected = _parse_selected_ids(selected_facility_ids)
 	if not selected:
 		frappe.throw(_("Select at least one facility to continue."), frappe.ValidationError)
+	reviewed = _text(session.get("accepted_terms_selection"))
+	if reviewed and reviewed != _selection_key(selected_facility_ids, facility_package_items):
+		frappe.throw(
+			_("Your package choices changed after you opened the Terms. Review the Terms again before continuing."),
+			frappe.ValidationError,
+		)
 	if not frappe.utils.cint(terms_accepted):
 		frappe.throw(
 			_("Accept the current Terms and Conditions before continuing."), frappe.ValidationError

@@ -192,7 +192,7 @@ describe('FacilityOnboardingLanding', () => {
     )
     expect(host.textContent).toContain('Facility without a level')
     expect(host.textContent).toContain(
-      'We couldn’t confirm this facility’s level in the registry',
+      'The registry has no KEPH level for this facility',
     )
     // Facilities that cannot be onboarded show a lock instead of a checkbox.
     expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
@@ -363,9 +363,13 @@ describe('FacilityOnboardingLanding', () => {
     )
     expect(termsPanel.textContent).toContain('Self-Onboarding Terms')
     const reviewForm = host.querySelector('form')
-    const termsLink = [...reviewForm.querySelectorAll('a')].find((link) =>
-      link.textContent.includes('Value Express terms'),
-    )
+    // The link, the section and the dialog all use the document's own title.
+    const termsLink = reviewForm.querySelector('[data-testid="terms-open"]')
+    expect(termsLink.textContent).toContain('Self-Onboarding Terms')
+    expect(call.mock.calls[3][1]).toMatchObject({
+      selected_facility_ids: expect.any(String),
+      facility_package_items: expect.any(String),
+    })
     expect(termsLink.getAttribute('aria-haspopup')).toBe('dialog')
     termsLink.click()
     await nextTick()
@@ -713,7 +717,7 @@ describe('FacilityOnboardingLanding', () => {
           ),
         ).toBe(true)
         expect(host.textContent).toContain(
-          'We couldn’t confirm this facility’s level in the registry',
+          'The registry has no KEPH level for this facility',
         )
       }
     },
