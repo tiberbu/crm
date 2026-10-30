@@ -229,12 +229,12 @@
   <div class="sub" id="flex-packages"><h3>Simple prepaid packages</h3>
     <div class="pkgs" data-testid="flex-grid" style="--cols:{{ offer.flex_columns or 4 }}">
       {% for card in flex %}
-      <div class="pkg{% if card.recommended %} rec{% endif %}" data-testid="flex-package">{% if card.recommended %}<span class="rectag">Popular</span>{% endif %}<div class="k">Value Express Flex<b>{{ card.name }}</b></div><p>{{ card.description }}</p><div class="p">{{ card.currency }} {{ amount(card.price) }}</div><dl><dt>Tokens</dt><dd>{{ amount(card.tokens) }}</dd>{% if card.suitability %}<dt>Suits</dt><dd>{{ card.suitability }}</dd>{% endif %}<dt>Price per token</dt><dd>{{ card.currency }} {{ "%.2f"|format(card.rate) }}</dd></dl>{% if card.more_percent %}<span class="more">Includes {{ card.more_percent }}% more tokens</span>{% endif %}{% if offer.welcome_bonus %}<span class="bonus">+{{ amount(offer.welcome_bonus) }} bonus tokens on first purchase</span>{% endif %}<a href="{{ onboarding_url }}?plan=flex&amp;package={{ card.item_code|urlencode }}">Get started →</a></div>
+      <div class="pkg{% if card.recommended %} rec{% endif %}" data-testid="flex-package">{% if card.recommended %}<span class="rectag">Popular</span>{% endif %}<div class="k">Value Express Flex<b>{{ card.name }}</b></div><p>{{ card.description }}</p><div class="p">{{ card.currency }} {{ amount(card.price) }}</div><dl><dt>Tokens</dt><dd>{{ amount(card.tokens) }}</dd>{% if card.suitability %}<dt class="suits">Suits</dt><dd class="suits">{{ card.suitability }}</dd>{% endif %}<dt>Price per token</dt><dd>{{ card.currency }} {{ "%.2f"|format(card.rate) }}</dd></dl>{% if card.more_percent %}<span class="more">Includes {{ card.more_percent }}% more tokens</span>{% endif %}{% if offer.welcome_bonus %}<span class="bonus">+{{ amount(offer.welcome_bonus) }} bonus tokens on first purchase</span>{% endif %}<a href="{{ onboarding_url }}?plan=flex&amp;package={{ card.item_code|urlencode }}">Get started →</a></div>
       {% endfor %}
       {% if offer.custom %}
       <div class="pkg" data-testid="custom-package"><div class="k">Value Express Flex<b>{{ offer.custom.display_name }}</b></div><p>Set your own amount. Tokens are worked out at the rate of the package your amount reaches.</p>
         <label class="lbl" for="cu-kes">Your amount ({{ offer.custom.currency }})</label><input class="cuin" id="cu-kes" type="number" min="{{ offer.custom.min_amount|int }}" step="500" value="{{ (offer.custom.min_amount|int) + 1000 }}" inputmode="numeric" aria-describedby="cu-err">
-        <dl><dt>Tokens</dt><dd id="cu-t">—</dd><dt>Suits</dt><dd id="cu-j">Any size — set your own amount</dd><dt>Price per token</dt><dd id="cu-r">—</dd><dt>You pay</dt><dd id="cu-c">—</dd></dl>
+        <dl><dt>Tokens</dt><dd id="cu-t">—</dd><dt class="suits">Suits</dt><dd class="suits">Any size — set your own amount</dd><dt>Price per token</dt><dd id="cu-r">—</dd><dt>You pay</dt><dd id="cu-c">—</dd></dl>
         <span class="more" id="cu-tier"></span><span class="cuerr" id="cu-err" hidden>Minimum {{ offer.custom.currency }} {{ amount(offer.custom.min_amount) }} ({{ amount(offer.custom.min_tokens) }} tokens).</span>
         <a id="cu-go" href="{{ onboarding_url }}?plan=custom">Get started →</a></div>
       {% endif %}
@@ -461,7 +461,6 @@
     var tokens = Math.floor(Math.round(kes * 100) / Math.round(tier.rate * 100)), bad = tokens < CU.min_tokens;
     cuIn.setAttribute('aria-invalid', bad); $('cu-err').hidden = !bad;
     $('cu-t').textContent = bad ? '—' : fmt(tokens);
-    $('cu-j').textContent = bad ? '—' : fmt(Math.floor(tokens / 40));
     $('cu-r').textContent = CU.currency + ' ' + tier.rate.toFixed(2);
     $('cu-c').textContent = bad ? '—' : CU.currency + ' ' + (tokens * tier.rate).toLocaleString('en-KE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     $('cu-tier').textContent = tier.name + ' rate · no first-purchase bonus';
