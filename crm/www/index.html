@@ -8,8 +8,8 @@
     <link rel="icon" type="image/svg+xml" href="{{ favicon or '/assets/crm/images/tiberbu-mark.svg' }}">
     <link rel="preload" href="/assets/crm/fonts/value-express/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/assets/crm/fonts/value-express/source-sans-3-latin.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/assets/crm/css/value-express.css">
-    <link rel="stylesheet" href="/assets/crm/css/value-express-landing.css">
+    <link rel="stylesheet" href="/assets/crm/css/value-express.css?v={{ css_version }}">
+    <link rel="stylesheet" href="/assets/crm/css/value-express-landing.css?v={{ css_version }}">
 </head>
 {%- set cur = offer.currency or 'KES' -%}
 {%- set fixed = offer.fixed or [] -%}
@@ -30,7 +30,7 @@
   <div class="hero-grid">
     <div class="stack" style="gap:22px">
       <span class="eyebrow"><span class="secno">01</span>Tiberbu CareverseHIMS Value Express</span>
-      <h1>Get digital. Get SHA ready. <span class="accent">Go live within hours.</span></h1>
+      <h1>Get digital. Get SHA &amp; Private Insurance ready. <span class="accent">Go live within hours.</span></h1>
       <p class="lede">A simple, affordable CareverseHIMS package designed for Level 2 and Level 3 outpatient facilities.</p>
       <p class="lede" style="margin-top:-8px">Get started quickly with guided self-onboarding, SHA eClaims capabilities, free virtual training and dedicated onboarding support.</p>
       <div class="ctas">
@@ -129,7 +129,7 @@
     {% if fixed %}
     <article class="plan" data-testid="plan-fixed">
       <div class="name"><small>Value Express Fixed</small>Predictable monthly cost</div>
-      <div class="tiers">{% for tier in fixed %}<div><span>{{ tier.label }}</span><b>{{ tier.currency }} {{ amount(tier.price) }}</b><span>per month</span></div>{% endfor %}</div>
+      <div class="tiers" style="--cols:{{ offer.fixed_columns or 2 }}">{% for tier in fixed %}<div data-testid="fixed-tier"><span>{{ tier.label }}</span><b>{{ tier.currency }} {{ amount(tier.price) }}</b><span>{{ tier.per }}</span></div>{% endfor %}</div>
       <p style="color:var(--ink-2)">Best for facilities looking for predictable monthly costs, with no token balances to monitor and no top-ups to make.</p>
       <ul><li>Full Value Express platform access</li><li>SHA eClaims capabilities</li><li>Guided self-onboarding and activation support</li><li>Recurring virtual CareverseHIMS training</li><li>Continuous remote support</li><li>Predictable monthly spend</li></ul>
       <div class="flow"><span>Subscribe</span><i>→</i><span>Activate CareverseHIMS</span><i>→</i><span>Use the platform</span><i>→</i><span>Pay the same monthly subscription</span></div>
@@ -152,7 +152,7 @@
   <div class="tablewrap"><table class="cmp">
     <thead><tr><th scope="col"></th><th scope="col">Value Express Fixed</th><th scope="col">Value Express Flex</th></tr></thead>
     <tbody>
-      <tr><td>Starting price</td><td class="mono">{{ fixed[0].currency }} {{ amount(fixed[0].price) }}/month</td><td class="mono">{{ cur }} {{ amount(offer.from_price) }}</td></tr>
+      <tr><td>Starting price</td>{%- set entry = (fixed|sort(attribute="monthly"))[0] -%}<td class="mono">{{ entry.currency }} {{ amount(entry.price) }} {{ entry.per }}</td><td class="mono">{{ cur }} {{ amount(offer.from_price) }}</td></tr>
       <tr><td>Model</td><td>Fixed monthly</td><td>Pay as you use</td></tr>
       <tr><td>Billing</td><td>Monthly subscription</td><td>Prepaid tokens</td></tr>
       <tr><td>Best for</td><td>Predictable or higher usage</td><td>Smaller or variable volumes</td></tr>
@@ -227,20 +227,20 @@
 
   {% if flex or offer.custom %}
   <div class="sub" id="flex-packages"><h3>Simple prepaid packages</h3>
-    <div class="pkgs" style="--cards:{{ flex|length + (1 if offer.custom else 0) }}">
+    <div class="pkgs" data-testid="flex-grid" style="--cols:{{ offer.flex_columns or 4 }}">
       {% for card in flex %}
-      <div class="pkg{% if card.recommended %} rec{% endif %}" data-testid="flex-package">{% if card.recommended %}<span class="rectag">Recommended</span>{% endif %}<div class="k">Value Express Flex<b>{{ card.name }}</b></div><p>{{ card.description }}</p><div class="p">{{ card.currency }} {{ amount(card.price) }}</div><dl><dt>Tokens</dt><dd>{{ amount(card.tokens) }}</dd><dt>Approx. patient journeys*</dt><dd>{{ card.journeys }}</dd><dt>Price per token</dt><dd>{{ card.currency }} {{ "%.2f"|format(card.rate) }}</dd></dl>{% if card.more_percent %}<span class="more">Includes {{ card.more_percent }}% more tokens</span>{% endif %}{% if offer.welcome_bonus %}<span class="bonus">+{{ amount(offer.welcome_bonus) }} bonus tokens on first purchase</span>{% endif %}<a href="{{ onboarding_url }}?plan=flex&amp;package={{ card.item_code|urlencode }}">Get started →</a></div>
+      <div class="pkg{% if card.recommended %} rec{% endif %}" data-testid="flex-package">{% if card.recommended %}<span class="rectag">Popular</span>{% endif %}<div class="k">Value Express Flex<b>{{ card.name }}</b></div><p>{{ card.description }}</p><div class="p">{{ card.currency }} {{ amount(card.price) }}</div><dl><dt>Tokens</dt><dd>{{ amount(card.tokens) }}</dd>{% if card.suitability %}<dt>Suits</dt><dd>{{ card.suitability }}</dd>{% endif %}<dt>Price per token</dt><dd>{{ card.currency }} {{ "%.2f"|format(card.rate) }}</dd></dl>{% if card.more_percent %}<span class="more">Includes {{ card.more_percent }}% more tokens</span>{% endif %}{% if offer.welcome_bonus %}<span class="bonus">+{{ amount(offer.welcome_bonus) }} bonus tokens on first purchase</span>{% endif %}<a href="{{ onboarding_url }}?plan=flex&amp;package={{ card.item_code|urlencode }}">Get started →</a></div>
       {% endfor %}
       {% if offer.custom %}
       <div class="pkg" data-testid="custom-package"><div class="k">Value Express Flex<b>{{ offer.custom.display_name }}</b></div><p>Set your own amount. Tokens are worked out at the rate of the package your amount reaches.</p>
         <label class="lbl" for="cu-kes">Your amount ({{ offer.custom.currency }})</label><input class="cuin" id="cu-kes" type="number" min="{{ offer.custom.min_amount|int }}" step="500" value="{{ (offer.custom.min_amount|int) + 1000 }}" inputmode="numeric" aria-describedby="cu-err">
-        <dl><dt>Tokens</dt><dd id="cu-t">—</dd><dt>Approx. patient journeys*</dt><dd id="cu-j">—</dd><dt>Price per token</dt><dd id="cu-r">—</dd><dt>You pay</dt><dd id="cu-c">—</dd></dl>
+        <dl><dt>Tokens</dt><dd id="cu-t">—</dd><dt>Suits</dt><dd id="cu-j">Any size — set your own amount</dd><dt>Price per token</dt><dd id="cu-r">—</dd><dt>You pay</dt><dd id="cu-c">—</dd></dl>
         <span class="more" id="cu-tier"></span><span class="cuerr" id="cu-err" hidden>Minimum {{ offer.custom.currency }} {{ amount(offer.custom.min_amount) }} ({{ amount(offer.custom.min_tokens) }} tokens).</span>
         <a id="cu-go" href="{{ onboarding_url }}?plan=custom">Get started →</a></div>
       {% endif %}
     </div>
   </div>
-  <p class="disclaim" style="margin-top:16px">Prices exclude VAT. *Patient journey estimates are indicative only. Actual token use depends on completed service-point transactions and patient-bill value.{% if offer.welcome_bonus %} First-purchase offer: {% for card in flex %}{{ card.name }}{% if not loop.last %}{% if loop.revindex == 2 %} and {% else %}, {% endif %}{% endif %}{% endfor %} currently include {{ amount(offer.welcome_bonus) }} bonus tokens on the first purchase, subject to the applicable offer and terms.{% endif %}</p>
+  <p class="disclaim" style="margin-top:16px">Prices exclude VAT. Token use depends on completed service-point transactions and patient-bill value.{% if offer.welcome_bonus %} First-purchase offer: {% for card in flex %}{{ card.name }}{% if not loop.last %}{% if loop.revindex == 2 %} and {% else %}, {% endif %}{% endif %}{% endfor %} currently include {{ amount(offer.welcome_bonus) }} bonus tokens on the first purchase, subject to the applicable offer and terms.{% endif %}</p>
   {% endif %}
 
   <div class="sub">

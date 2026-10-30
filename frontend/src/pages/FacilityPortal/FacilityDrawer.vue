@@ -79,8 +79,8 @@ function money(value, currency) {
       <!-- Drawer header -->
       <div class="flex h-16 shrink-0 items-center justify-between border-b border-cx-border px-5">
         <div class="min-w-0">
-          <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Facility details</span>
-          <h2 id="facility-drawer-title" class="truncate text-base font-bold tracking-tight text-cx-ink">{{ facility.facility_name }}</h2>
+          <span class="text-xs font-semibold text-cx-ink-3">Facility details</span>
+          <h2 id="facility-drawer-title" class="truncate text-base font-semibold tracking-tight text-cx-ink">{{ facility.facility_name }}</h2>
         </div>
         <button
           type="button"
@@ -101,11 +101,11 @@ function money(value, currency) {
         <div class="space-y-2 rounded-cx-sm border border-cx-border bg-cx-well p-4 text-xs">
           <div class="flex items-center justify-between">
             <span class="font-medium text-cx-ink-3">Network</span>
-            <span class="font-bold text-cx-ink"><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /> {{ facility.network }}</span>
+            <span class="font-semibold text-cx-ink"><CxIcon name="globe" class="inline-block size-4 align-[-0.15em]" /> {{ facility.network }}</span>
           </div>
           <div class="flex items-center justify-between">
             <span class="font-medium text-cx-ink-3">KEPH Level</span>
-            <span class="font-bold text-cx-ink">{{ facility.keph_level }}</span>
+            <span class="font-semibold text-cx-ink">{{ facility.keph_level }}</span>
           </div>
           <div class="flex items-center justify-between">
             <span class="font-medium text-cx-ink-3">Facility ID</span>
@@ -134,26 +134,26 @@ function money(value, currency) {
           </div>
           <div class="flex items-center justify-between border-t border-cx-border-soft pt-2">
             <span class="font-medium text-cx-ink-3">Organization</span>
-            <span class="font-bold text-cx-ink">{{ facility.organization || '—' }}</span>
+            <span class="font-semibold text-cx-ink">{{ facility.organization || '—' }}</span>
           </div>
           <div v-if="facility.source_type === 'ois'" class="flex items-center justify-between">
             <span class="font-medium text-cx-ink-3">Enrolled via</span>
-            <span class="font-mono text-[11px] font-semibold text-cx-ink">{{ facility.ois_name }}</span>
+            <span class="font-mono text-xs font-semibold text-cx-ink">{{ facility.ois_name }}</span>
           </div>
         </div>
 
         <!-- Token capacity -->
         <div class="space-y-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Token capacity</h3>
+          <h3 class="text-xs font-semibold text-cx-ink-3">Token capacity</h3>
           <div class="rounded-cx-sm border border-cx-border bg-cx-surface p-4">
             <div class="flex items-baseline gap-2">
-              <span class="font-mono text-2xl font-bold tracking-tight text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (facility.token_balance?.status === 'ok' ? Number(facility.token_balance.balance) || 0 : 0).toLocaleString() }}</span>
+              <span class="font-mono text-2xl font-semibold tracking-tight text-cx-brand"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ (facility.token_balance?.status === 'ok' ? Number(facility.token_balance.balance) || 0 : 0).toLocaleString() }}</span>
               <span class="text-xs font-semibold text-cx-ink-3">Care Tokens available</span>
             </div>
-            <p class="mt-1 text-[11px] text-cx-ink-3">
+            <p class="mt-1 text-xs text-cx-ink-3">
               Plan: <strong class="text-cx-ink">{{ facility.token_package || 'No active plan' }}</strong>
             </p>
-            <p v-if="facility.recent_purchase" class="mt-1 font-mono text-[11px] text-cx-ink-3">
+            <p v-if="facility.recent_purchase" class="mt-1 font-mono text-xs text-cx-ink-3">
               Last purchase: {{ facility.recent_purchase.package_name }} · {{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} on {{ facility.recent_purchase.date }}
             </p>
             <div class="mt-3 flex items-center gap-2">
@@ -178,10 +178,10 @@ function money(value, currency) {
 
         <!-- Facility invoices -->
         <div class="space-y-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Invoices</h3>
+          <h3 class="text-xs font-semibold text-cx-ink-3">Invoices</h3>
           <div v-if="!invoices.length" class="rounded-cx-sm border border-cx-border bg-cx-surface p-4 text-xs text-cx-ink-3">
             <span class="text-base"><CxIcon name="check-circle" class="inline-block size-4 align-[-0.15em]" /></span>
-            <p class="mt-1 font-bold text-cx-ink-2">All invoices settled</p>
+            <p class="mt-1 font-semibold text-cx-ink-2">All invoices settled</p>
             <p class="mt-0.5">No outstanding balance for this facility.</p>
           </div>
           <div v-else class="space-y-2">
@@ -200,13 +200,13 @@ function money(value, currency) {
                     {{ invoiceStatus(invoice).label }}
                   </span>
                 </div>
-                <p class="mt-0.5 text-[11px] text-cx-ink-3">Due: {{ invoice.due_date || 'On Receipt' }}</p>
+                <p class="mt-0.5 text-xs text-cx-ink-3">Due: {{ invoice.due_date || 'On Receipt' }}</p>
               </div>
               <div class="flex shrink-0 items-center gap-2">
                 <span class="text-sm font-semibold text-cx-ink">{{ money(invoice.amount, invoice.currency) }}</span>
                 <button
                   type="button"
-                  class="rounded-cx-sm bg-cx-success px-2.5 py-1.5 text-[11px] font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-success"
+                  class="rounded-cx-sm bg-cx-success px-2.5 py-1.5 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-success"
                   @click="emit('pay', invoice)"
                 >
                   <CxIcon name="phone" class="inline-block size-4 align-[-0.15em]" /> Pay
@@ -218,7 +218,7 @@ function money(value, currency) {
 
         <!-- Facility orders -->
         <div class="space-y-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[0.08em] text-cx-ink-3">Orders</h3>
+          <h3 class="text-xs font-semibold text-cx-ink-3">Orders</h3>
           <div v-if="!orders.length" class="rounded-cx-sm border border-cx-border bg-cx-surface p-4 text-xs text-cx-ink-3">
             No open token orders for this facility.
           </div>
@@ -230,14 +230,14 @@ function money(value, currency) {
             >
               <div class="min-w-0">
                 <span class="block truncate text-xs font-semibold text-cx-ink">{{ packageLabel(order.crm_token_package_item, tokenPackages) }}</span>
-                <span class="block font-mono text-[11px] text-cx-ink-3">Order #{{ order.name }}</span>
+                <span class="block font-mono text-xs text-cx-ink-3">Order #{{ order.name }}</span>
               </div>
               <div class="flex shrink-0 items-center gap-2">
                 <span class="text-xs font-semibold text-cx-ink">{{ money(order.grand_total, order.currency) }}</span>
                 <button
                   v-if="order.can_create_invoice"
                   type="button"
-                  class="rounded-cx-sm bg-cx-ink px-2.5 py-1.5 text-[11px] font-semibold text-cx-contrast transition hover:bg-cx-ink-hover"
+                  class="rounded-cx-sm bg-cx-ink px-2.5 py-1.5 text-xs font-semibold text-cx-contrast transition hover:bg-cx-ink-hover"
                   @click="emit('create-invoice', order)"
                 >
                   Generate Invoice

@@ -73,7 +73,8 @@ def get_value_express_offer() -> dict:
 	tiers = vx.flex_tiers(flex)
 	base_rate = tiers[0]["rate"] if tiers else 0
 	cards = []
-	for package in sorted(flex, key=lambda p: p["price_ex_vat"]):
+	# Cards follow the order set in Settings › Packages.
+	for package in flex:
 		try:
 			metrics = frappe.parse_json(package.get("coverage_metrics") or "{}") or {}
 		except Exception:
@@ -88,16 +89,17 @@ def get_value_express_offer() -> dict:
 				"price": package["price_ex_vat"],
 				"currency": package.get("currency") or "KES",
 				"tokens": int(package.get("token_quantity") or 0),
-				# The business publishes journeys per package; tokens ÷ 40 otherwise.
-				"journeys": cstr(metrics.get("journeys")) or vx.journeys(package.get("token_quantity")),
+				# Qualitative fit line (replaces the numeric patient-journey estimate).
+				"suitability": metrics.get("audience") or "",
 				"rate": rate,
 				"more_percent": extra if extra > 0 else 0,
 				"recommended": "popular" in cstr(metrics.get("badge")).lower(),
 			}
 		)
 	fixed = []
-	for package in sorted(_catalog_packages((vx.FIXED,)), key=lambda p: p.get("price_ex_vat") or 0):
+	for package in _catalog_packages((vx.FIXED,)):
 		levels = vx.levels_of(package)
+		period = package.get("billing_period") or "Monthly"
 		fixed.append(
 			{
 				"item_code": package["item_code"],
@@ -105,14 +107,20 @@ def get_value_express_offer() -> dict:
 				"levels": levels,
 				"price": package.get("price_ex_vat") or 0,
 				"currency": package.get("currency") or "KES",
+				"period": period,
+				"per": vx.period_label(period),
+				"monthly": vx.monthly_equivalent(package.get("price_ex_vat"), period),
 			}
 		)
+	custom = _custom_offer(flex)
 	calculator = _calculator_config()
 	return {
 		"flex": cards,
 		"fixed": fixed,
-		"custom": _custom_offer(flex),
-		"from_price": cards[0]["price"] if cards else 0,
+		"custom": custom,
+		"flex_columns": vx.grid_columns(len(cards) + (1 if custom else 0)),
+		"fixed_columns": vx.grid_columns(len(fixed), 2),
+		"from_price": min((c["price"] for c in cards), default=0),
 		"currency": cards[0]["currency"] if cards else "KES",
 		"welcome_bonus": bonus_settings()[WELCOME_BONUS],
 		"access_tokens": int(calculator.get("monthly_platform_fee") or 0),
@@ -129,7 +137,8 @@ def get_value_express_offer() -> dict:
 			],
 			"presets": calculator.get("presets") or [],
 			"packages": [{"name": c["name"], "price": c["price"], "tokens": c["tokens"], "item_code": c["item_code"]} for c in cards],
-			"fixed": {f["label"]: f["price"] for f in fixed},
+			# The calculator works in months, so a longer Fixed period is compared per month.
+			"fixed": {f["label"]: f["monthly"] for f in fixed},
 		},
 	}
 

@@ -1,7 +1,11 @@
-from urllib.parse import urlencode
-
 import frappe
 from frappe.model.document import Document
+
+from crm.utils.onboarding_source import (
+	build_network_optin_invitation_url,
+	is_network_optin_membership,
+	is_self_onboarding_contact,
+)
 
 
 class CRMPreQualifiedFacility(Document):
@@ -32,6 +36,52 @@ def _can_invite(membership):
 	)
 
 
+def _safe_has_column(doctype: str, column: str) -> bool:
+	"""Return True if the table and column exist in the database without raising TableMissingError."""
+	try:
+		if not getattr(frappe, "db", None) or not hasattr(frappe.db, "has_column"):
+			return False
+		if hasattr(frappe.db, "table_exists") and not frappe.db.table_exists(doctype):
+			return False
+		return bool(frappe.db.has_column(doctype, column))
+	except Exception:
+		return False
+
+
+def _has_self_onboarding_deal_facility(mfl: str) -> bool:
+	"""Return True only if a CRM Deal Facility row for this MFL belongs to a self-onboarding deal."""
+	if not mfl or not getattr(frappe, "db", None) or not hasattr(frappe.db, "table_exists"):
+		return False
+	try:
+		if not frappe.db.table_exists("CRM Deal Facility"):
+			return False
+		has_pkg_col = _safe_has_column("CRM Deal Facility", "cx_token_package_item")
+		has_deal_source_col = _safe_has_column("CRM Deal", "cx_onboarding_source")
+		if has_pkg_col:
+			if frappe.db.exists(
+				"CRM Deal Facility",
+				{"mfl_code": mfl, "cx_token_package_item": ["is", "set"]},
+			):
+				return True
+		if has_deal_source_col and hasattr(frappe, "get_all"):
+			parent_deals = frappe.get_all(
+				"CRM Deal Facility",
+				filters={"mfl_code": mfl, "parenttype": "CRM Deal"},
+				pluck="parent",
+				ignore_permissions=True,
+			)
+			if parent_deals and frappe.db.exists(
+				"CRM Deal",
+				{"name": ["in", parent_deals], "cx_onboarding_source": "facility_self_onboarding"},
+			):
+				return True
+		if not has_pkg_col and not has_deal_source_col:
+			return bool(frappe.db.exists("CRM Deal Facility", {"mfl_code": mfl}))
+	except Exception:
+		return False
+	return False
+
+
 def is_self_onboarded_facility(doc_or_name) -> bool:
 	"""Return True if this facility was enrolled via the self-onboarding journey."""
 	if not doc_or_name:
@@ -56,8 +106,7 @@ def is_self_onboarded_facility(doc_or_name) -> bool:
 	has_memberships_attr = hasattr(doc, "memberships") or (isinstance(doc, dict) and "memberships" in doc)
 	memberships = (doc.get("memberships") if isinstance(doc, dict) else getattr(doc, "memberships", None)) or []
 	for membership in memberships:
-		cust = membership.get("customer") if isinstance(membership, dict) else getattr(membership, "customer", None)
-		if cust:
+		if is_self_onboarding_contact(membership):
 			return True
 
 	if has_memberships_attr and getattr(doc, "name", None) is None:
@@ -65,7 +114,7 @@ def is_self_onboarded_facility(doc_or_name) -> bool:
 
 	if getattr(frappe, "db", None) and hasattr(frappe.db, "get_value"):
 		doc_name = getattr(doc, "name", None)
-		if doc_name and hasattr(frappe.db, "has_column") and frappe.db.has_column("CRM Pre-Qualified Facility", "is_self_onboarded"):
+		if doc_name and _safe_has_column("CRM Pre-Qualified Facility", "is_self_onboarded"):
 			if frappe.utils.cint(frappe.db.get_value("CRM Pre-Qualified Facility", doc_name, "is_self_onboarded")):
 				return True
 
@@ -84,14 +133,14 @@ def is_self_onboarded_facility(doc_or_name) -> bool:
 				return True
 
 		mfl = getattr(doc, "mfl_code", None)
-		if not mfl and doc_name and hasattr(frappe.db, "has_column") and frappe.db.has_column("CRM Pre-Qualified Facility", "mfl_code"):
+		if not mfl and doc_name and _safe_has_column("CRM Pre-Qualified Facility", "mfl_code"):
 			mfl = frappe.db.get_value("CRM Pre-Qualified Facility", doc_name, "mfl_code")
 
-		if mfl and hasattr(frappe.db, "table_exists") and frappe.db.table_exists("CRM Deal Facility"):
-			if frappe.db.exists("CRM Deal Facility", {"mfl_code": mfl}):
-				return True
+		if mfl and _has_self_onboarding_deal_facility(mfl):
+			return True
 
 	return False
+
 
 
 def _ensure_self_onboarded_facility_cx_access(doc, membership):
@@ -136,6 +185,19 @@ def _ensure_self_onboarded_facility_cx_access(doc, membership):
 		frappe.log_error(frappe.get_traceback(), "CRMPreQualifiedFacility: CX access provisioning failed")
 
 
+def _should_send_self_onboarded_cx_alert(doc, membership) -> bool:
+	"""Return True if this membership invitation should alert an already self-onboarded CX user
+	rather than sending a Network Opt-In contract invitation.
+	"""
+	doc_flags = (doc.get("flags") if isinstance(doc, dict) else getattr(doc, "flags", None)) or {}
+	mem_flags = (membership.get("flags") if isinstance(membership, dict) else getattr(membership, "flags", None)) or {}
+	if doc_flags.get("force_optin_invitation") or mem_flags.get("force_optin_invitation"):
+		return False
+	if is_network_optin_membership(membership):
+		return False
+	return is_self_onboarding_contact(membership) or is_self_onboarded_facility(doc)
+
+
 def _send_membership_invitation(doc, membership):
 	"""Send and track a branded invitation for one active network membership."""
 	if not _can_invite(membership):
@@ -143,7 +205,7 @@ def _send_membership_invitation(doc, membership):
 
 	network = frappe.get_doc("CRM Opt-In Network", membership.network)
 	slug = network.slug or membership.network
-	if is_self_onboarded_facility(doc):
+	if _should_send_self_onboarded_cx_alert(doc, membership):
 		portal_url = "{}/cx-portal".format(frappe.utils.get_url())
 		subject = "You've been added to {} — Log in to Tiberbu Express".format(network.display_name)
 		message = _cx_login_alert_html(
@@ -154,8 +216,7 @@ def _send_membership_invitation(doc, membership):
 		)
 		_ensure_self_onboarded_facility_cx_access(doc, membership)
 	else:
-		invitation_query = urlencode({"network": slug, "facility": doc.facility_name})
-		invitation_url = "{}/facility-onboarding?{}".format(frappe.utils.get_url(), invitation_query)
+		invitation_url = build_network_optin_invitation_url(slug, doc.facility_name)
 		subject = "You've been pre-qualified: {} — CareverseHIMS".format(network.display_name)
 		message = _invite_html(
 			membership.contact_name,
@@ -163,6 +224,7 @@ def _send_membership_invitation(doc, membership):
 			doc.facility_name,
 			invitation_url,
 		)
+
 
 	queue = frappe.sendmail(
 		recipients=[membership.contact_email],

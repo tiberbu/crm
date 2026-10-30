@@ -10,9 +10,14 @@ export const FACILITIES = [
   { facility_id: "FID-00-VXTEST-4", facility_name: "Synthetic Clinic D", mfl_code: "VX-04", facility_level: "Level 2", facility_type: "Medical Clinic", onboarding_eligible: true, onboarding_blocked: true },
 ];
 
+/** A mocked get_catalog response: a payload, or an HTTP error (for invalid-coupon flows). */
+export type CatalogMock = { ok: unknown } | { error: { status?: number; body: unknown } };
+
 /** Answers the identity, OTP, terms and submit endpoints; returns the submitted payloads. */
-export async function mockOnboarding(page: Page) {
+export async function mockOnboarding(page: Page, opts: { catalog?: CatalogMock | CatalogMock[] } = {}) {
   const submitted: Record<string, string>[] = [];
+  const catalogQueue: CatalogMock[] | null =
+    opts.catalog === undefined ? null : (Array.isArray(opts.catalog) ? [...opts.catalog] : [opts.catalog]);
   const identity = { full_name: "Synthetic Person", email: "s***n@example.test", phone: "071******00" };
   const answers = new Map<string, unknown>(Object.entries({
     start_identity: {
@@ -27,6 +32,15 @@ export async function mockOnboarding(page: Page) {
   }));
   await page.route(/\/api\/method\/crm\.api\.facility_onboarding\.(\w+)/, async (route, request) => {
     const method = new URL(request.url()).pathname.split(".").pop() || "";
+    if (method === "get_catalog" && catalogQueue) {
+      const item = catalogQueue.length > 1 ? catalogQueue.shift()! : catalogQueue[0];
+      if ("error" in item) {
+        await route.fulfill({ status: item.error.status ?? 417, json: item.error.body });
+      } else {
+        await route.fulfill({ json: { message: item.ok } });
+      }
+      return;
+    }
     if (!answers.has(method)) return route.continue();
     if (method === "submit_onboarding") {
       const body = request.postData() || "";

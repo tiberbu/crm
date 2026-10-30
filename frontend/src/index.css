@@ -344,6 +344,12 @@ html {
   background-attachment: fixed;
 }
 
+/* The portal uses three weights: regular, medium and semibold. Browser defaults would
+   render table headers and <strong>/<b> at 700 next to 600 headings. */
+.cx-portal :is(th, strong, b) {
+  font-weight: 600;
+}
+
 /* --- CX Portal design tokens (professional admin pass, 2026-10-20) -------
    Self-contained token system for the portal SPA (PRD-CX-PORTFOLIO-002
    overhaul). Defined at :root / [data-theme='dark'] (NOT .cx-portal-scoped)
@@ -363,8 +369,9 @@ html {
   --cx-border-soft: #edf1f5;
   --cx-ink: #0f172a;
   --cx-ink-2: #334155;
-  --cx-ink-3: #64748b;
-  --cx-ink-4: #94a3b8;
+  /* ink-3 and ink-4 clear WCAG AA (4.5:1) on surface, bg and well; ink-4 is for hints, not content. */
+  --cx-ink-3: #566275;
+  --cx-ink-4: #647185;
   --cx-contrast: #ffffff;
   --cx-ink-hover: #000000;
   --cx-brand: #bc1823;
@@ -372,7 +379,7 @@ html {
   --cx-brand-soft: #fdf2f3;
   --cx-brand-soft-border: #f6c2c5;
   --cx-brand-ink: #8f111b;
-  --cx-success: #059669;
+  --cx-success: #047857;
   --cx-success-soft: #ecfdf5;
   --cx-success-ink: #065f46;
   --cx-success-border: #a7f3d0;
@@ -387,7 +394,8 @@ html {
   --cx-shadow-subtle: 0 1px 2px rgba(15, 23, 42, 0.05);
   --cx-shadow-raised: 0 8px 24px rgba(15, 23, 42, 0.12);
   --cx-glass-chrome: rgba(255, 255, 255, 0.82);
-  --cx-glass-panel: rgba(255, 255, 255, 0.72);
+  /* Content panels stay nearly opaque so text is never washed out by the canvas behind. */
+  --cx-glass-panel: rgba(255, 255, 255, 0.96);
   --cx-glass-highlight: rgba(255, 255, 255, 0.88);
   --cx-glass-blur: 18px;
   --cx-glow-brand: rgba(188, 24, 35, 0.055);
@@ -407,7 +415,7 @@ html {
   --cx-ink: #f1f5f9;
   --cx-ink-2: #cbd5e1;
   --cx-ink-3: #94a3b8;
-  --cx-ink-4: #64748b;
+  --cx-ink-4: #8b97a8;
   --cx-contrast: #0f1115;
   --cx-ink-hover: #ffffff;
   --cx-brand: #d23a41;
@@ -430,7 +438,7 @@ html {
   --cx-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.4);
   --cx-shadow-raised: 0 12px 32px rgba(0, 0, 0, 0.5);
   --cx-glass-chrome: rgba(22, 24, 29, 0.82);
-  --cx-glass-panel: rgba(30, 33, 38, 0.78);
+  --cx-glass-panel: rgba(30, 33, 38, 0.96);
   --cx-glass-highlight: rgba(255, 255, 255, 0.07);
   --cx-glow-brand: rgba(210, 58, 65, 0.1);
   --cx-glow-cool: rgba(148, 163, 184, 0.045);

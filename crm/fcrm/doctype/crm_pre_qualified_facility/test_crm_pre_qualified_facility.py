@@ -51,9 +51,10 @@ class TestCRMPreQualifiedFacility(UnitTestCase):
 		self.assertEqual(membership.invite_email_queue, queue.name)
 		message = sendmail.call_args.kwargs["message"]
 		self.assertIn(
-			"https://crm.example.test/facility-onboarding?network=example-network&facility=Example+Hospital",
+			"https://crm.example.test/opt-in?network=example-network&facility=Example+Hospital",
 			message,
 		)
+		self.assertNotIn("/facility-onboarding", message)
 		sendmail.assert_called_once_with(
 			recipients=["jane@example.com"],
 			subject="You've been pre-qualified: Example Network — CareverseHIMS",
@@ -168,6 +169,7 @@ class TestCRMPreQualifiedFacility(UnitTestCase):
 		# Must NOT send the pre-qualification invitation
 		self.assertNotIn("You've been pre-qualified", subject)
 		self.assertNotIn("/facility-onboarding", message)
+		self.assertNotIn("/opt-in", message)
 
 		# MUST alert to login to Tiberbu Express
 		self.assertEqual(subject, "You've been added to Test Network — Log in to Tiberbu Express")
@@ -183,4 +185,51 @@ class TestCRMPreQualifiedFacility(UnitTestCase):
 			now=True,
 		)
 		ensure_cx_access.assert_called_once_with(facility, membership)
+
+	def test_network_optin_membership_with_price_overrides_sends_optin_invite_not_self_onboarding_alert(self):
+		facility = SimpleNamespace(
+			doctype="CRM Pre-Qualified Facility",
+			name="FAC-MIXED-001",
+			facility_name="Mixed Journey Hospital",
+			is_self_onboarded=1,
+			memberships=[],
+		)
+		membership = SimpleNamespace(
+			name="MEM-OPTIN-001",
+			network="partner-network",
+			status="Active",
+			contact_name="Dr. Grace",
+			contact_email="grace@example.com",
+			customer=None,
+			price_list_override="Negotiated Year 1",
+			price_list_overrides_json='{"1":"Negotiated Year 1","2":"Negotiated Year 2"}',
+			invite_email_queue=None,
+			invite_sent_at=None,
+		)
+		network = SimpleNamespace(slug="partner-network", display_name="Partner Network")
+		queue = SimpleNamespace(name="EMAIL-QUEUE-0003", send=Mock())
+
+		with (
+			patch.object(frappe, "get_doc", return_value=network),
+			patch.object(frappe, "sendmail", return_value=queue) as sendmail,
+			patch.object(frappe.db, "set_value"),
+			patch.object(frappe.utils, "get_url", return_value="https://crm.example.test"),
+			patch.object(frappe.utils, "now_datetime", return_value="2026-10-28 12:00:00"),
+			patch(
+				"crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility._ensure_self_onboarded_facility_cx_access"
+			) as ensure_cx_access,
+		):
+			_send_membership_invitation(facility, membership)
+
+		message = sendmail.call_args.kwargs["message"]
+		subject = sendmail.call_args.kwargs["subject"]
+		self.assertEqual(subject, "You've been pre-qualified: Partner Network — CareverseHIMS")
+		self.assertIn(
+			"https://crm.example.test/opt-in?network=partner-network&facility=Mixed+Journey+Hospital",
+			message,
+		)
+		self.assertNotIn("/facility-onboarding", message)
+		self.assertNotIn("/cx-portal", message)
+		ensure_cx_access.assert_not_called()
+
 

@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import Mock, call, patch
+from unittest.mock import MagicMock, Mock, call, patch
 
 import frappe
 from frappe.tests import UnitTestCase
@@ -122,6 +122,41 @@ class TestOptInInvitationAccess(UnitTestCase):
 
 		self.assertEqual(result.membership_name, "MEM-NETWORK")
 
+	def test_membership_lookup_accepts_opted_in_contacts(self):
+		"""Re-sent opt-in links must keep working after a contact has opted in."""
+		row = frappe._dict(
+			{
+				"name": "MEM-OPTED",
+				"parent": "FAC-1",
+				"contact_name": "Opted In Contact",
+				"contact_phone": "",
+				"customer": "",
+			}
+		)
+		facility = frappe._dict(
+			{
+				"name": "FAC-1",
+				"mfl_code": "10001",
+				"facility_name": "Opted In Clinic",
+				"keph_level": "Level 2",
+			}
+		)
+		captured_filters = []
+
+		def fake_get_list(doctype, filters=None, fields=None, **kwargs):
+			captured_filters.append(filters)
+			return [row] if len(captured_filters) == 1 else [facility]
+
+		with (
+			patch("crm.api.optin.frappe.db.has_column", return_value=False),
+			patch("crm.api.optin.frappe.get_list", side_effect=fake_get_list),
+		):
+			result = _get_membership("opted@example.com", "network-a")
+
+		self.assertIsNotNone(result)
+		self.assertEqual(result.membership_name, "MEM-OPTED")
+		self.assertEqual(captured_filters[0]["status"], ["in", ["Active", "Opted In"]])
+
 	def test_self_onboarding_contacts_are_not_returned_as_optin_facilities(self):
 		with (
 			patch("crm.api.optin.frappe.db.has_column", return_value=True),
@@ -167,6 +202,97 @@ class TestOptInInvitationAccess(UnitTestCase):
 		set_value.assert_called_once_with(
 			"CRM Facility Membership",
 			"MEM-NETWORK",
+			"status",
+			"Opted In",
+			update_modified=False,
+		)
+
+	def test_contact_with_customer_can_request_optin_otp_when_no_pure_network_contact_exists(self):
+		self_contact = frappe._dict(
+			{
+				"name": "MEM-CUSTOMER",
+				"parent": "FAC-1",
+				"contact_name": "Salim Ruru",
+				"contact_phone": "+254700000000",
+				"contact_email": "salim@example.com",
+				"customer": "ZUHRI MEDICARE LIMITED",
+				"price_list_override": "",
+				"price_list_overrides_json": "",
+				"otp_expiry": None,
+				"otp_attempts": 0,
+			}
+		)
+		facility = frappe._dict(
+			{
+				"name": "FAC-1",
+				"mfl_code": "120942",
+				"facility_name": "A.P. Embakasi",
+				"keph_level": "Level 2",
+			}
+		)
+		with (
+			patch("crm.api.optin.frappe.db.has_column", return_value=True),
+			patch(
+				"crm.api.optin.frappe.get_list",
+				side_effect=[[self_contact], [facility]],
+			),
+		):
+			res = _get_membership("salim@example.com", "network-a")
+
+		self.assertIsNotNone(res)
+		self.assertEqual(res.membership_name, "MEM-CUSTOMER")
+		self.assertEqual(res.facility_name, "A.P. Embakasi")
+
+	def test_all_memberships_returns_customer_linked_facilities_when_no_other_network_rows(self):
+		self_contact = frappe._dict(
+			{
+				"name": "MEM-CUSTOMER",
+				"parent": "FAC-1",
+				"customer": "ZUHRI MEDICARE LIMITED",
+				"price_list_override": "",
+				"price_list_overrides_json": "",
+			}
+		)
+		facility = frappe._dict(
+			{
+				"name": "FAC-1",
+				"mfl_code": "120942",
+				"facility_name": "A.P. Embakasi",
+				"keph_level": "Level 2",
+			}
+		)
+		with (
+			patch("crm.api.optin.frappe.db.has_column", return_value=True),
+			patch(
+				"crm.api.optin.frappe.get_list",
+				side_effect=[[self_contact], [facility]],
+			),
+		):
+			res = _get_all_memberships("salim@example.com", "network-a")
+
+		self.assertEqual(len(res), 1)
+		self.assertEqual(res[0].name, "FAC-1")
+		self.assertEqual(res[0].mfl_code, "120942")
+
+	def test_optin_completion_marks_customer_linked_membership_if_it_is_the_only_membership(self):
+		with (
+			patch("crm.api.optin.frappe.db.has_column", return_value=True),
+			patch(
+				"crm.api.optin.frappe.get_list",
+				side_effect=[
+					[frappe._dict({"name": "FAC-1"})],
+					[
+						frappe._dict({"name": "MEM-CUSTOMER", "customer": "CUST-1"}),
+					],
+				],
+			),
+			patch("crm.api.optin.frappe.db.set_value") as set_value,
+		):
+			_mark_opted_in_facilities("network-a", [{"mfl_code": "10001"}])
+
+		set_value.assert_called_once_with(
+			"CRM Facility Membership",
+			"MEM-CUSTOMER",
 			"status",
 			"Opted In",
 			update_modified=False,

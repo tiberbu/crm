@@ -56,7 +56,10 @@ from crm.utils.optin_bundles import (
 	split_period_amount,
 )
 from crm.utils.optin_network import set_network_link
-from crm.utils.onboarding_source import is_self_onboarding_contact
+from crm.utils.onboarding_source import (
+	is_network_optin_membership,
+	is_self_onboarding_contact,
+)
 from crm.utils.price_list_history import ensure_initial
 from crm.utils.quotation_tax import (
 	apply_quotation_taxes,
@@ -293,6 +296,14 @@ def _get_network_doc(network_slug):
 		limit=1,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
+	if not rows:
+		rows = frappe.get_list(
+			"CRM Opt-In Network",
+			filters={"name": network_slug, "enabled": 1},
+			fields=fields,
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
 	return rows[0] if rows else None
 
 
@@ -463,9 +474,15 @@ def _get_partner_logos(network_name):
 
 def _get_membership(email, network_slug):
 	"""
-	Return the first Active CRM Facility Membership for this email+network,
-	with its parent facility facts. Returns None if not found.
+	Return the first qualifying CRM Facility Membership for this email+network
+	(with its parent facility facts). A contact qualifies while Active (pre-
+	opt-in) and once Opted In — re-sent opt-in links must keep working for
+	contacts who already completed the flow. Declined contacts never qualify.
+	Returns None if not found.
 	"""
+	email = frappe.utils.cstr(email).strip().lower()
+	network_slug = frappe.utils.cstr(network_slug).strip()
+
 	membership_fields = ["name", "parent", "contact_name", "contact_phone", "otp_expiry", "otp_attempts"]
 	try:
 		if frappe.db.has_column("CRM Facility Membership", "customer"):
@@ -476,19 +493,31 @@ def _get_membership(email, network_slug):
 			membership_fields.insert(5, "price_list_overrides_json")
 	except Exception:
 		pass
+
 	mem_rows = frappe.get_list(
 		"CRM Facility Membership",
 		filters={
 			"contact_email": email,
 			"network": network_slug,
-			"status": "Active",
+			"status": ["in", ["Active", "Opted In"]],
 		},
 		fields=membership_fields,
 		limit_page_length=0,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
-	mem = next((row for row in mem_rows if not is_self_onboarding_contact(row)), None)
+	# Preference:
+	# 1. Explicit Network Opt-In membership (e.g. carrying custom pricing override)
+	# 2. Memberships without an attached self-onboarding Customer
+	# 3. Fallback to any active membership for this contact under this network
+	mem = next((row for row in mem_rows if is_network_optin_membership(row)), None)
 	if not mem:
+		mem = next((row for row in mem_rows if not is_self_onboarding_contact(row)), None)
+	if not mem and mem_rows:
+		mem = mem_rows[0]
+	if not mem:
+		return None
+	# Skip rows with blank parent — they can't be resolved to a facility
+	if not mem.parent:
 		return None
 	# Fetch facility facts from parent
 	fac_rows = frappe.get_list(
@@ -520,7 +549,11 @@ def _get_membership(email, network_slug):
 
 
 def _get_all_memberships(email, network_slug):
-	"""Return all Active facilities for this email+network as a list of dicts."""
+	"""Return all qualifying facilities (Active or Opted In) for this
+	email+network as a list of dicts."""
+	email = frappe.utils.cstr(email).strip().lower()
+	network_slug = frappe.utils.cstr(network_slug).strip()
+
 	membership_fields = ["name", "parent"]
 	try:
 		if frappe.db.has_column("CRM Facility Membership", "customer"):
@@ -531,19 +564,45 @@ def _get_all_memberships(email, network_slug):
 			membership_fields.append("price_list_overrides_json")
 	except Exception:
 		pass
+
 	mem_rows = frappe.get_list(
 		"CRM Facility Membership",
 		filters={
 			"contact_email": email,
 			"network": network_slug,
-			"status": "Active",
+			"status": ["in", ["Active", "Opted In"]],
 		},
 		fields=membership_fields,
 		ignore_permissions=True,  # SYSTEM-INTERNAL
 	)
-	mem_rows = [row for row in mem_rows if not is_self_onboarding_contact(row)]
+	optin_rows = [row for row in mem_rows if is_network_optin_membership(row)]
+	non_self_rows = [row for row in mem_rows if not is_self_onboarding_contact(row)]
+	mem_rows = optin_rows or non_self_rows or mem_rows
 	if not mem_rows:
 		return []
+	parent_names = [m.parent for m in mem_rows if m.parent]
+	fac_rows = frappe.get_list(
+		"CRM Pre-Qualified Facility",
+		filters={"name": ["in", parent_names]},
+		fields=["name", "mfl_code", "facility_name", "keph_level"],
+		ignore_permissions=True,  # SYSTEM-INTERNAL
+	)
+	price_list_by_parent = {
+		row.parent: {
+			"price_list_override": row.get("price_list_override") or "",
+			"price_list_overrides_json": row.get("price_list_overrides_json") or "",
+		}
+		for row in mem_rows
+	}
+	return [
+		frappe._dict(
+			{
+				**row,
+				**price_list_by_parent.get(row.name, {}),
+			}
+		)
+		for row in fac_rows
+	]
 	parent_names = [m.parent for m in mem_rows if m.parent]
 	fac_rows = frappe.get_list(
 		"CRM Pre-Qualified Facility",
@@ -3110,6 +3169,10 @@ def _mark_opted_in_facilities(network_slug, facilities):
 		membership_fields = ["name"]
 		if frappe.db.has_column("CRM Facility Membership", "customer"):
 			membership_fields.append("customer")
+		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
+			membership_fields.append("price_list_override")
+		if frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json"):
+			membership_fields.append("price_list_overrides_json")
 		memberships = frappe.get_list(
 			"CRM Facility Membership",
 			filters={
@@ -3121,8 +3184,9 @@ def _mark_opted_in_facilities(network_slug, facilities):
 			limit_page_length=0,
 			ignore_permissions=True,  # SYSTEM-INTERNAL
 		)
+		has_network_target = any(not is_self_onboarding_contact(m) or is_network_optin_membership(m) for m in memberships)
 		for membership in memberships:
-			if is_self_onboarding_contact(membership):
+			if has_network_target and is_self_onboarding_contact(membership) and not is_network_optin_membership(membership):
 				continue
 			frappe.db.set_value(
 				"CRM Facility Membership",
