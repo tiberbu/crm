@@ -57,11 +57,25 @@ describe('Value Express pricing helpers', () => {
   })
 
   it('reads the choice carried from the landing page', () => {
-    expect(parseCarriedChoice('?plan=flex&package=CV-TOKEN-GROWTH')).toEqual({ plan: 'flex', package: 'CV-TOKEN-GROWTH' })
-    expect(parseCarriedChoice('?plan=fixed')).toEqual({ plan: 'fixed' })
-    expect(parseCarriedChoice('?plan=custom&amount=7000')).toEqual({ plan: 'flex', package: CUSTOM, amount: 7000 })
+    expect(parseCarriedChoice('?plan=flex&package=CV-TOKEN-GROWTH')).toEqual({ plan: 'flex', package: 'CV-TOKEN-GROWTH', coupon: null })
+    expect(parseCarriedChoice('?plan=fixed')).toEqual({ plan: 'fixed', coupon: null })
+    expect(parseCarriedChoice('?plan=custom&amount=7000')).toEqual({ plan: 'flex', package: CUSTOM, amount: 7000, coupon: null })
     expect(parseCarriedChoice('?plan=custom&amount=-3').amount).toBeNull()
     expect(parseCarriedChoice('?network=x')).toBeNull()
+  })
+
+  it('carries a well-formed Partner Coupon from the URL, alone or with a plan', () => {
+    expect(parseCarriedChoice('?partner_coupon=123456')).toEqual({ coupon: '123456' })
+    expect(parseCarriedChoice('?partner_id=654321')).toEqual({ coupon: '654321' })
+    expect(parseCarriedChoice('?plan=flex&package=CV-TOKEN-GROWTH&partner_coupon=123456')).toEqual({
+      plan: 'flex',
+      package: 'CV-TOKEN-GROWTH',
+      coupon: '123456',
+    })
+    expect(parseCarriedChoice('?partner_coupon=123456&partner_id=654321').coupon).toBe('123456')
+    expect(parseCarriedChoice('?partner_coupon=12345')).toBeNull()
+    expect(parseCarriedChoice('?partner_coupon=abcdef')).toBeNull()
+    expect(parseCarriedChoice('?partner_coupon=%20123456%20')).toEqual({ coupon: '123456' })
   })
 
   it('counts month-one service tokens after the access charge', () => {
