@@ -35,6 +35,45 @@ Baseline result: 6 of 24 view/viewport checks failed, plus the content defects b
 
 Found during implementation: the Profile's connected-facility cards called an undefined `openFacilityDetail` and threw on click; they now open the facility page. Missing FIDs there read "Facility ID not linked yet" instead of being hidden.
 
+## Round 2: faded text, font weight and sizing
+
+**Report:** some portal areas look faded, and boldness is inconsistent, for example on the facility page. The second review was led by the business analyst with UX and QA. Each complaint was turned into a measurable criterion.
+
+**Measured before the change.** Laptop width, every visible text node, contrast against the composited background:
+
+| View | Text nodes | Below WCAG AA | Size/weight combinations |
+|---|---|---|---|
+| Dashboard | 83 | 11 | 12 |
+| Facilities | 57 | 10 | 12 |
+| Billing | 59 | 13 | 12 |
+| Profile | 68 | 16 | 15 |
+| Facility page | 107 | 5 (plus 53 nodes at 10–11px) | 19 |
+
+**Root causes**
+- **`--cx-ink-3`** (#64748b) is 4.34:1 on the grey wells. **`--cx-ink-4`** (#94a3b8) is 2.56:1 on white.
+- **White text on `--cx-success`** (the M-Pesa buttons) is 3.77:1.
+- **The frappe-ui preset remaps Tailwind's type scale.** `text-3xl` is 20px, `text-2xl` is 18px and `text-4xl` is 24px. A "3xl" page title was barely larger than the 18px card values beside it.
+- **Weight 700 (`font-bold`) and 600 were used interchangeably.** Browser defaults also rendered `<th>`, `<strong>` and `<b>` at 700.
+- **Most section labels were 10–11px uppercase grey eyebrows,** and many explanatory lines were 10–11px.
+- **Monospace was used for counts and money** ("120" tokens, recent purchases) as well as identifiers.
+- **Content panels on the facility page were 40–80% opaque** over the tinted canvas.
+
+**Acceptance criteria and changes**
+
+| Criterion | Change |
+|---|---|
+| WCAG AA contrast for all text | `--cx-ink-3` #566275 (≥5.6:1 on wells), `--cx-ink-4` #647185 (≥4.5:1), `--cx-success` #047857 (white text 5.5:1). Dark-mode `--cx-ink-4` raised to #8b97a8. |
+| Three weights: regular 420, medium 500, semibold 600 | `font-bold` replaced with `font-semibold` across the portal. `th`, `strong` and `b` are 600 inside `.cx-portal`. |
+| Running text at least 12px; only chips and pills may be 11px; nothing under 11px | 10px removed. Paragraphs, table cells and meta lines at 11px moved to 12px. |
+| A stepped heading scale | Page title 24px (`text-4xl`). Metric values 20px (`text-3xl`); name metrics 18px, wrapping to two lines. Section titles 16px (`text-lg`). Body 13px (`text-sm`). |
+| Labels readable | Uppercase, wide-tracked eyebrows became 12px sentence-case labels. This also closes the eyebrow item deferred in round 1. |
+| Monospace for identifiers only | Mono removed from token counts, amounts and dates. It stays on Facility ID, MFL, invoice, order and M-Pesa codes. |
+| No translucent content panels | Facility page panels are solid. `--cx-glass-panel` is 96% opaque (chrome keeps its glass). |
+
+**Gate:** `frontend/e2e/regression/portal-typography.spec.ts` checks every portal view and the facility page at four widths. It fails on any AA contrast miss, any text under 11px, running text under 12px outside chips, and any weight other than 400/420/500/600.
+
+**Out of scope:** self-onboarding uses its own stylesheet (`valueExpressOnboarding.css`) and was not part of this report.
+
 ## Self-onboarding feedback (`/facility-onboarding`)
 
 A second round of feedback on the Facility, Package and Review steps, checked against the current `develop` build.
