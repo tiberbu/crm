@@ -71,15 +71,60 @@
               .join(' · ') || '—'
           }}
         </p>
-        <div
-          v-if="networkDoc?.partner_id"
-          class="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-surface-gray-1 px-3 py-2"
-        >
-          <span class="text-xs font-medium text-ink-gray-6">{{ __('Self-onboarding link') }}</span>
-          <code class="max-w-full truncate font-mono text-xs text-ink-gray-5" :title="selfOnboardingUrl">{{ selfOnboardingUrl }}</code>
-          <Button variant="subtle" size="sm" @click="copySelfOnboardingLink">{{ __('Copy link') }}</Button>
+        <div class="mt-3 grid gap-2" data-testid="network-journey-links">
+          <div
+            class="flex flex-wrap items-center gap-2 rounded-lg bg-surface-gray-1 px-3 py-2"
+            data-testid="optin-invitation-link"
+          >
+            <span class="text-xs font-medium text-ink-gray-6">{{
+              __('Opt-In invitation')
+            }}</span>
+            <span class="text-xs text-ink-gray-5">{{
+              __('Network contacts sign the network contract')
+            }}</span>
+            <code
+              class="max-w-full truncate font-mono text-xs text-ink-gray-5"
+              :title="optInUrl"
+              >{{ optInUrl }}</code
+            >
+            <Button
+              variant="subtle"
+              size="sm"
+              @click="copyToClipboard(optInUrl)"
+              >{{ __('Copy link') }}</Button
+            >
+          </div>
+          <div
+            v-if="networkDoc?.partner_id"
+            class="flex flex-wrap items-center gap-2 rounded-lg bg-surface-gray-1 px-3 py-2"
+            data-testid="partner-coupon-link"
+          >
+            <span class="text-xs font-medium text-ink-gray-6">{{
+              __('Partner Coupon link')
+            }}</span>
+            <span class="text-xs text-ink-gray-5">{{
+              __('Any facility buys Tiberbu Express tokens with this coupon')
+            }}</span>
+            <code
+              class="max-w-full truncate font-mono text-xs text-ink-gray-5"
+              :title="selfOnboardingUrl"
+              >{{ selfOnboardingUrl }}</code
+            >
+            <Button
+              variant="subtle"
+              size="sm"
+              @click="copySelfOnboardingLink"
+              >{{ __('Copy link') }}</Button
+            >
+          </div>
+          <p v-else class="text-xs text-ink-gray-4">
+            {{
+              __(
+                'Set a Partner ID to generate a Partner Coupon link for this network.',
+              )
+            }}
+          </p>
         </div>
-        <p v-else class="mt-3 text-xs text-ink-gray-4">{{ __('Set a Partner ID to generate a self-onboarding link for this network.') }}</p>
         <div
           class="mt-5 grid gap-4 border-t border-outline-gray-2 pt-4 sm:grid-cols-2 lg:grid-cols-3"
         >
@@ -202,10 +247,7 @@
                 {{ __('Technology delivery partner') }}
               </p>
               <p class="mt-1 text-sm text-ink-gray-7">
-                {{
-                  networkDoc?.technology_delivery_partner_name ||
-                  __('None')
-                }}
+                {{ networkDoc?.technology_delivery_partner_name || __('None') }}
               </p>
               <p
                 v-if="networkDoc?.technology_delivery_partner_short_name"
@@ -907,11 +949,31 @@
                 <span
                   class="mt-1 inline-flex rounded-full border border-outline-gray-2 px-2 py-0.5 text-[10px] font-medium text-ink-gray-6"
                 >
-                  {{ isSelfOnboardingContact(row) ? __('Self-Onboarding') : __('Network Opt-In') }}
+                  {{
+                    isSelfOnboardingContact(row)
+                      ? __('Self-Onboarding')
+                      : __('Network Opt-In')
+                  }}
+                </span>
+                <span
+                  v-if="
+                    !isSelfOnboardingContact(row) && hasPartnerCouponRow(row)
+                  "
+                  class="mt-1 ml-1 inline-flex rounded-full border border-outline-gray-2 px-2 py-0.5 text-[10px] font-medium text-ink-gray-6"
+                  :title="
+                    __(
+                      'This facility also buys Tiberbu Express tokens with this network\'s Partner Coupon',
+                    )
+                  "
+                >
+                  {{ __('Also Partner Coupon') }}
                 </span>
               </td>
               <td class="px-4 py-3">
-                <span v-if="isSelfOnboardingContact(row)" class="text-xs text-ink-gray-5">
+                <span
+                  v-if="isSelfOnboardingContact(row)"
+                  class="text-xs text-ink-gray-5"
+                >
                   {{ __('Tiberbu Express access') }}
                 </span>
                 <span
@@ -1003,7 +1065,11 @@
                     "
                     :disabled="!canResendInvite(networkMembership(row))"
                     @click="resendInvite(row)"
-                    >{{ isSelfOnboardingContact(row) ? __('Resend CX access') : __('Resend Opt-In invitation') }}</Button
+                    >{{
+                      isSelfOnboardingContact(row)
+                        ? __('Resend CX access')
+                        : __('Resend Opt-In invitation')
+                    }}</Button
                   >
                   <Button
                     size="sm"
@@ -1290,14 +1356,20 @@
             <input
               v-model="form.contact_email"
               type="email"
-              :disabled="!!editingFacility && isSelfOnboardingContact(editingFacility)"
+              :disabled="
+                !!editingFacility && isSelfOnboardingContact(editingFacility)
+              "
               class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
             />
             <p
               v-if="editingFacility && isSelfOnboardingContact(editingFacility)"
               class="text-[11px] text-ink-gray-5"
             >
-              {{ __('This email is tied to the verified Tiberbu Express account.') }}
+              {{
+                __(
+                  'This email is tied to the verified Tiberbu Express account.',
+                )
+              }}
             </p>
           </div>
           <div class="flex flex-col gap-1">
@@ -1489,7 +1561,9 @@
                   <span v-else class="italic text-ink-gray-5">{{
                     __('Not linked yet')
                   }}</span>
-                  <span class="block text-ink-gray-5">MFL {{ r.mfl_code }}</span>
+                  <span class="block text-ink-gray-5"
+                    >MFL {{ r.mfl_code }}</span
+                  >
                 </td>
                 <td class="px-3 py-2 text-ink-gray-7">{{ r.facility_name }}</td>
                 <td class="px-3 py-2 text-ink-gray-7">
@@ -1597,11 +1671,10 @@ const optInUrl = computed(
   () => `/opt-in?network=${encodeURIComponent(props.networkSlug)}`,
 )
 // Public Value Express self-onboarding link carrying this network's Partner Coupon.
-const selfOnboardingUrl = computed(
-  () =>
-    networkDoc.value?.partner_id
-      ? `/facility-onboarding?partner_coupon=${encodeURIComponent(networkDoc.value.partner_id)}`
-      : '',
+const selfOnboardingUrl = computed(() =>
+  networkDoc.value?.partner_id
+    ? `/facility-onboarding?partner_coupon=${encodeURIComponent(networkDoc.value.partner_id)}`
+    : '',
 )
 function copySelfOnboardingLink() {
   if (selfOnboardingUrl.value) copyToClipboard(selfOnboardingUrl.value)
@@ -1912,21 +1985,30 @@ function nextPage() {
   facilitiesResource.reload()
 }
 
+// A facility can hold a Network Opt-In row and a Partner Coupon (Self-Onboarding) row in
+// the same network; the network contact list shows the Opt-In row when there is one.
 function networkMembership(row) {
-  const memberships = row.memberships ?? []
+  const inNetwork = (row.memberships ?? []).filter(
+    (m) => m.network === props.networkSlug,
+  )
   return (
-    memberships.find((m) => m.network === props.networkSlug) ??
-    memberships[0] ??
+    inNetwork.find((m) => m.contact_source !== 'Self-Onboarding') ??
+    inNetwork[0] ??
+    row.memberships?.[0] ??
     null
   )
 }
 
-function isSelfOnboardingContact(row) {
-  const membership = networkMembership(row)
-  return (
-    membership?.contact_source === 'Self-Onboarding' ||
-    membership?.customer_experience?.is_self_onboarded === true
+function hasPartnerCouponRow(row) {
+  return (row.memberships ?? []).some(
+    (m) =>
+      m.network === props.networkSlug && m.contact_source === 'Self-Onboarding',
   )
+}
+
+// The row decides the journey, not whether the facility ever self-onboarded.
+function isSelfOnboardingContact(row) {
+  return networkMembership(row)?.contact_source === 'Self-Onboarding'
 }
 
 const showSampleQuote = ref(false)
@@ -1957,7 +2039,7 @@ function customerExperienceLink(row) {
 function canInviteToCustomerExperience(row) {
   return Boolean(
     networkMembership(row)?.contact_email &&
-      customerExperienceLink(row)?.ois_numbers?.length,
+    customerExperienceLink(row)?.ois_numbers?.length,
   )
 }
 
@@ -2285,9 +2367,18 @@ async function saveContact() {
     contact_email: form.contact_email,
     contact_phone: form.contact_phone,
   }
+  const editingCoupon =
+    Boolean(editingFacility.value) &&
+    isSelfOnboardingContact(editingFacility.value)
+  // A Partner Coupon contact edit changes only that row's contact details, never pricing.
+  if (editingCoupon)
+    membership.membership_name = networkMembership(editingFacility.value)?.name
   // Opted-in pricing is immutable here. The quotation workflow remains the
   // only place where pricing can be changed before facility signature.
-  if (!editingFacility.value || !isOptedIn(editingFacility.value)) {
+  if (
+    !editingCoupon &&
+    (!editingFacility.value || !isOptedIn(editingFacility.value))
+  ) {
     membership.price_list_override = ''
     membership.price_list_overrides = Object.fromEntries(
       Object.entries(form.price_list_overrides).filter(([, value]) => value),
