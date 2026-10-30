@@ -237,7 +237,8 @@ const errorHttpStatus = computed(() => {
   }
 })
 const errorCorrelationId = computed(() => provisioning.value?.submission?.correlation_id || provisioning.value?.correlation_id || '')
-const goLiveReady = computed(() => journey.value?.phase === 'live' || String(provisioning.value?.status || '').toLowerCase() === 'deployed')
+// A deployed site is ready only once its owner login exists, which the journey phase reflects.
+const goLiveReady = computed(() => journey.value ? journey.value.phase === 'live' : String(provisioning.value?.status || '').toLowerCase() === 'deployed')
 const configuredPackage = computed(() => props.tokenPackages.find((pkg) => pkg.item_code === props.facility.token_package_item_code) || null)
 const selectedPackageTokens = computed(() => Number(props.facility.token_quantity || configuredPackage.value?.token_quantity || 0))
 const selectedPackageCost = computed(() => Number(props.facility.package_gross_total ?? configuredPackage.value?.gross_total ?? props.facility.package_price ?? configuredPackage.value?.price ?? 0))

@@ -314,3 +314,98 @@ test('blocked setup says what is missing and does not poll', async ({ page }) =>
   await page.clock.fastForward('10:00')
   expect(statusCalls.filter((call) => call.method.endsWith('get_provisioning_status'))).toHaveLength(0)
 })
+
+// Setup service v2.1: a deployed site is live only once its owner login exists.
+const ownerLive = (ownerLogin: { status: string; email_sent: boolean }, passwordStep: string) => ({
+  configured: true,
+  status: 'Deployed',
+  progress: 100,
+  reported: { site_url: SITE_URL, admin_username: ADMIN, owner_login: { email: ADMIN, ...ownerLogin } },
+  journey: {
+    phase: 'live',
+    label: 'Live',
+    headline: 'Your HMIS site is ready',
+    detail: 'Sign in with the facility administrator account below.',
+    steps: steps(4),
+    progress: 100,
+    estimate: null,
+    poll: false,
+    checked_at: '2026-10-25T10:00:00',
+    site: { url: SITE_URL, login_url: SITE_URL, admin_email: ADMIN, instructions: [`Open ${SITE_URL}`, `Sign in with ${ADMIN}`, passwordStep] },
+  },
+})
+
+test('a deployed site whose owner login is still being created keeps configuring, then goes live', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-25T10:00:00') })
+  const configuring = {
+    configured: true,
+    status: 'Deployed',
+    progress: 100,
+    reported: { site_url: SITE_URL, owner_login: { email: ADMIN, status: null, email_sent: false } },
+    journey: {
+      phase: 'configuring',
+      label: 'Configuring',
+      headline: 'Creating your administrator account',
+      detail: 'Your HMIS site is deployed. The administrator sign-in is being created; this page updates automatically.',
+      steps: steps(2),
+      progress: 100,
+      estimate: { minutes: 20, source: 'typical', overdue: false, label: 'Usually ready within about 20 min' },
+      site: null,
+      poll: true,
+      checked_at: '2026-10-25T10:00:00',
+    },
+  }
+  const live = ownerLive({ status: 'created', email_sent: true }, `Use the password in the HMIS credentials email sent to ${ADMIN}, or “Forgot password” on the sign-in page.`)
+  await openFacility(page, async (route) => route.fulfill(status(configuring)), facility, async (route) => route.fulfill(status(live)))
+
+  const journey = page.getByTestId('hmis-setup-journey')
+  await expect(journey).toContainText('Creating your administrator account')
+  await expect(journey.locator('li[data-state="current"]')).toContainText('Configuring facility and administrator')
+  await expect(page.getByTestId('hmis-live-site')).toHaveCount(0)
+  // Deployed alone is not go-live: the owner cannot sign in yet.
+  await expect(page.getByText('Live', { exact: true })).toHaveCount(0)
+
+  await page.clock.fastForward('05:05')
+  const card = page.getByTestId('hmis-live-site')
+  await expect(card).toContainText(SITE_URL)
+  await expect(card).toContainText(`credentials email sent to ${ADMIN}`)
+})
+
+test('an undelivered credentials email points to Forgot password and shows no password', async ({ page }) => {
+  const live = ownerLive({ status: 'created', email_sent: false }, 'The credentials email could not be delivered. Use “Forgot password” on the sign-in page to set your password.')
+  await openFacility(page, async (route) => route.fulfill(status(live)))
+  const card = page.getByTestId('hmis-live-site')
+  await expect(card).toContainText('could not be delivered')
+  await expect(card).toContainText('Forgot password')
+  await expect(card.getByRole('button', { name: /password/i })).toHaveCount(0)
+})
+
+test('an owner login failure points at the configure step and stops polling', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-25T10:00:00') })
+  const statusCalls = await openFacility(page, async (route) =>
+    route.fulfill(
+      status({
+        configured: true,
+        status: 'Deployed',
+        progress: 100,
+        journey: {
+          phase: 'needs_attention',
+          label: 'Needs attention',
+          headline: 'Administrator account needs attention',
+          detail: 'The HMIS site could not create the administrator sign-in yet. The setup service retries it on the next deployment; contact Network Support if this does not change.',
+          steps: steps(0, 2),
+          progress: 100,
+          estimate: null,
+          site: null,
+          poll: false,
+        },
+      }),
+    ),
+  )
+  const journey = page.getByTestId('hmis-setup-journey')
+  await expect(page.getByText('Needs attention', { exact: true })).toBeVisible()
+  await expect(journey.locator('li[data-state="error"]')).toContainText('Configuring facility and administrator')
+  await expect(journey.locator('li[data-state="done"]')).toHaveCount(2)
+  await page.clock.fastForward('10:00')
+  expect(statusCalls.filter((call) => call.method.endsWith('get_provisioning_status'))).toHaveLength(0)
+})

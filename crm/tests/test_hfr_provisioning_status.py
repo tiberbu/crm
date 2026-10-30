@@ -21,7 +21,6 @@ from crm.api.hfr import (
 	_map_facility_to_org_fields,
 	_external_submit_error,
 	_external_error_details,
-	_token_expiry_from_onboarding_date,
 	_unique_facility_projection,
 	search_facility,
 )
@@ -40,11 +39,8 @@ class TestExternalProvisioningStatus(UnitTestCase):
 		return {
 			"fid": "FID-99-TEST-1",
 			"licence": "LIC-TEST-1",
-			"tokens_awarded": 500,
-			"token_expiry_date": "2027-10-21",
 			"admin_email": "facility@example.test",
 			"admin_name": "Facility Admin",
-			"billing_model": "Token",
 			"admin_mobile": "+254700000001",
 		}
 
@@ -92,12 +88,9 @@ class TestExternalProvisioningStatus(UnitTestCase):
 
 	def test_ta_validation_message_is_visible_to_facility_operator(self):
 		message = _external_submit_error(
-			400, {"message": "Missing required field(s): licence, token_expiry_date."}
+			400, {"message": "Missing required field(s): admin_email, admin_name, admin_mobile."}
 		)
-		self.assertIn("licence, token_expiry_date", message)
-
-	def test_token_expiry_is_30_days_after_facility_onboarding_date(self):
-		self.assertEqual(_token_expiry_from_onboarding_date("2026-10-21"), "2026-11-20")
+		self.assertIn("admin_email, admin_name, admin_mobile", message)
 
 	def test_raw_service_error_details_redact_credentials(self):
 		details = _external_error_details(
@@ -196,7 +189,8 @@ class TestExternalProvisioningStatus(UnitTestCase):
 		)
 		self.assertEqual(result["submission"]["state"], "blocked")
 		self.assertIn("licence", result["submission"]["missing_fields"])
-		self.assertIn("token_expiry_date", result["submission"]["missing_fields"])
+		self.assertIn("admin_email", result["submission"]["missing_fields"])
+		self.assertNotIn("token_expiry_date", result["submission"]["missing_fields"])
 		mock_post.assert_not_called()
 
 	def test_payload_builder_accepts_complete_policy_verified_data(self):
@@ -207,7 +201,8 @@ class TestExternalProvisioningStatus(UnitTestCase):
 		}
 		payload, missing = _build_external_provisioning_payload(source)
 		self.assertEqual(missing, [])
-		self.assertEqual(payload["tokens_awarded"], 500)
+		for fieldname in ("tokens_awarded", "token_expiry_date", "billing_model", "license_expiry_date"):
+			self.assertNotIn(fieldname, payload)
 		self.assertEqual(payload["facility_name"], "Example Health Centre")
 
 	@patch("crm.api.hfr.filelock", side_effect=LockTimeoutError("locked"))

@@ -6,7 +6,6 @@ import hmac
 import math
 import re
 import time
-from datetime import date, timedelta
 from urllib.parse import quote, urlparse
 
 import frappe
@@ -373,7 +372,35 @@ def _reported_setup_details(payload):
 			if isinstance(value, str) and value.strip():
 				reported[key] = value.strip()[:500]
 				break
+	# Setup service v2.x: the site address is under `target` and the owner
+	# administrator sign-in under `login`.
+	target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
+	login = payload.get("login") if isinstance(payload.get("login"), dict) else None
+	if "site_url" not in reported:
+		# login.url is the documented sign-in address; frontend_url is an undocumented extra.
+		for value in ((login or {}).get("url"), target.get("url"), target.get("frontend_url")):
+			if isinstance(value, str) and value.strip():
+				reported["site_url"] = value.strip()[:500]
+				break
+	if login is not None:
+		owner_login = _owner_login(login)
+		reported["owner_login"] = owner_login
+		if owner_login["email"]:
+			reported["admin_username"] = owner_login["email"]
 	return reported
+
+
+_OWNER_LOGIN_READY = {"created", "activated", "skipped"}
+
+
+def _owner_login(login):
+	"""Summarize the setup service's owner sign-in block; the password itself never leaves here."""
+	status = frappe.utils.cstr(login.get("status") or "").strip()
+	return {
+		"email": frappe.utils.cstr(login.get("email") or "").strip().lower()[:254] or None,
+		"status": status.casefold() or None,
+		"email_sent": bool(login.get("email_sent")),
+	}
 
 
 def _safe_site_url(value):
@@ -424,7 +451,13 @@ def _journey_phase(status):
 	if key == "needs support" or key in _ERROR_STATUSES or status.get("has_error"):
 		return "needs_attention"
 	if key in _LIVE_STATUSES:
-		return "live"
+		# v2.x: the owner login is created asynchronously, so a deployed site is only
+		# usable once it is Created/Activated (Skipped = no email was recorded). A
+		# service without a login block keeps the older Deployed-means-live rule.
+		owner_status = ((status.get("reported") or {}).get("owner_login") or {"status": "created"}).get("status")
+		if owner_status == "failed":
+			return "needs_attention"
+		return "live" if owner_status in _OWNER_LOGIN_READY else "configuring"
 	if key == "not submitted" or submission == "unknown":
 		return "preparing"
 	if key in _QUEUED_STATUSES or not key:
@@ -516,6 +549,14 @@ def _provisioning_journey(status, typical_minutes=_DEFAULT_TYPICAL_SETUP_MINUTES
 		detail = _("The implementation team has approved your setup. Deployment to your HMIS site starts next; this page checks again automatically.")
 	if phase == "deploying" and raw_status and _journey_status_key(status) not in ("deploying", "in progress", "provisioning"):
 		detail = _("The setup service reports “{0}”. This page updates automatically.").format(raw_status)
+	owner_login = reported.get("owner_login") or {}
+	owner_failed = owner_login.get("status") == "failed" or status.get("owner_user_failed")
+	if phase == "configuring" and _journey_status_key(status) in _LIVE_STATUSES:
+		headline = _("Creating your administrator account")
+		detail = _("Your HMIS site is deployed. The administrator sign-in is being created; this page updates automatically.")
+	if phase == "needs_attention" and owner_failed and not submission.get("state"):
+		headline = _("Administrator account needs attention")
+		detail = _("The HMIS site could not create the administrator sign-in yet. The setup service retries it on the next deployment; contact Network Support if this does not change.")
 
 	steps = []
 	if phase in _JOURNEY_STEP_INDEX or phase in ("blocked", "needs_attention"):
@@ -529,7 +570,10 @@ def _provisioning_journey(status, typical_minutes=_DEFAULT_TYPICAL_SETUP_MINUTES
 		failed = None
 		if phase in ("blocked", "needs_attention"):
 			# A failure before TA holds a setup record is a request failure.
-			failed = 0 if submission.get("state") in ("blocked", "error") or _journey_status_key(status) == "not submitted" else 1
+			if submission.get("state") in ("blocked", "error") or _journey_status_key(status) == "not submitted":
+				failed = 0
+			else:
+				failed = 2 if owner_failed else 1
 		for index, (key, step_label) in enumerate(labels):
 			if failed is not None:
 				state = "done" if index < failed else "error" if index == failed else "upcoming"
@@ -550,10 +594,19 @@ def _provisioning_journey(status, typical_minutes=_DEFAULT_TYPICAL_SETUP_MINUTES
 		url = _safe_site_url(reported.get("site_url"))
 		login_url = _safe_site_url(reported.get("login_url")) or url
 		admin_email = reported.get("admin_username") or (admin_contact or {}).get("admin_email") or None
+		password_step = _("First time signing in? Use the HMIS welcome email or “Forgot password” on the sign-in page to set your password.")
+		if owner_login.get("status") == "created":
+			password_step = (
+				_("Use the password in the HMIS credentials email sent to {0}, or “Forgot password” on the sign-in page.").format(admin_email or _("your administrator"))
+				if owner_login.get("email_sent")
+				else _("The credentials email could not be delivered. Use “Forgot password” on the sign-in page to set your password.")
+			)
+		elif owner_login.get("status") == "activated":
+			password_step = _("This account already existed, so keep using its current password, or use “Forgot password” on the sign-in page.")
 		instructions = [
 			_("Open {0}").format(login_url) if login_url else _("Open the HMIS site link in the welcome email sent to your administrator."),
 			_("Sign in with {0}").format(admin_email) if admin_email else _("Sign in with your facility administrator email."),
-			_("First time signing in? Use the HMIS welcome email or “Forgot password” on the sign-in page to set your password."),
+			password_step,
 		]
 		site = {"url": url, "login_url": login_url, "admin_email": admin_email, "instructions": instructions}
 
@@ -765,7 +818,10 @@ def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 			source = _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, customers)
 			payload, missing_fields = _build_external_provisioning_payload(source)
 			metering = _apply_token_source(
-				settings, payload, package_item=(deal_facility or {}).get("cx_token_package_item")
+				settings,
+				payload,
+				package_item=(deal_facility or {}).get("cx_token_package_item"),
+				package_tokens=source.get("package_tokens"),
 			)
 			status = _auto_submit_external_provisioning(
 				external_url,
@@ -1006,6 +1062,8 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 			"service_units_message": _("The setup status API does not report configured service units."),
 			"reported": _reported_setup_details(payload),
 		}
+		# The deploy flow's Owner User (retry) step prefixes its failure this way.
+		result["owner_user_failed"] = "[owner user]" in frappe.utils.cstr(payload.get("error") or "").casefold()
 		if status.casefold() == "error" or payload.get("error"):
 			error_details = _external_error_details(
 				response.status_code,
@@ -1026,8 +1084,8 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, 
 	The administrator is the accepted Opt-In signatory or, for a self-onboarded
 	facility (which has no Opt-In), the OTP-verified owner on its membership. The
 	TA maps licence to the HFR licence number or registration number, backfilled
-	from the HFR registry by FID when onboarding did not store one. Token expiry
-	is 30 days after the CRM facility onboarding record was created.
+	from the HFR registry by FID when onboarding did not store one. Billing is not
+	part of the setup request (setup service v2.1); the metering system owns it.
 	"""
 	facility = frappe._dict(facility or {})
 	deal_facility = frappe._dict(deal_facility or {})
@@ -1038,16 +1096,6 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, 
 		licence = _backfill_licence_from_hfr(facility.get("hfr_facility_id"), mfl_code, deals)
 	if deal_facility.get("cx_token_package_item"):
 		selected_package = deal_facility
-	onboarding_date = facility.get("onboarding_date") or deal_facility.get("creation") or facility.get("creation")
-	if onboarding_date:
-		try:
-			onboarding_date = frappe.utils.getdate(onboarding_date)
-		except (TypeError, ValueError):
-			onboarding_date = None
-	if not onboarding_date:
-		# A new lead may not have a CRM facility row yet. The first ensure request
-		# is then the start of its CRM onboarding timeline.
-		onboarding_date = frappe.utils.getdate(frappe.utils.nowdate())
 	return {
 		"fid": facility.get("hfr_facility_id"),
 		"licence": licence,
@@ -1055,9 +1103,9 @@ def _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, 
 		"facility_level": facility.get("keph_level") or facility.get("facility_level"),
 		"county": facility.get("hfr_county"),
 		"sub_county": facility.get("hfr_sub_county"),
-		"tokens_awarded": (selected_package.get("cx_token_package_quantity") or 0) if selected_package else 0,
-		"token_expiry_date": _token_expiry_from_onboarding_date(onboarding_date),
-		"billing_model": "Token",
+		# Not sent to the setup service (v2.1 dropped billing fields); the metering
+		# hooks still receive the package size.
+		"package_tokens": (selected_package.get("cx_token_package_quantity") or 0) if selected_package else 0,
 		**admin,
 	}
 
@@ -1182,25 +1230,17 @@ def _backfill_licence_from_hfr(fid, mfl_code, deals):
 	return values.get("license_number") or values.get("registration_number")
 
 
-def _token_expiry_from_onboarding_date(onboarding_date):
-	"""Return the TA token expiry, 30 calendar days after CRM onboarding starts."""
-	return (frappe.utils.getdate(onboarding_date) + timedelta(days=30)).isoformat()
+# Setup service v2.1 contract: billing metering moved to the independent metering
+# system, so tokens_awarded, token_expiry_date, billing_model and
+# license_expiry_date are neither sent nor required.
+_EXTERNAL_PROVISIONING_REQUIRED = ("fid", "licence", "admin_email", "admin_name", "admin_mobile")
 
 
 def _build_external_provisioning_payload(source):
 	"""Validate the exact TA-required payload without guessing missing policy data."""
 	source = source or {}
 	payload = {}
-	for fieldname in (
-		"fid",
-		"licence",
-		"tokens_awarded",
-		"token_expiry_date",
-		"admin_email",
-		"admin_name",
-		"billing_model",
-		"admin_mobile",
-	):
+	for fieldname in _EXTERNAL_PROVISIONING_REQUIRED + ("facility_name", "facility_level", "county", "sub_county"):
 		value = source.get(fieldname)
 		if isinstance(value, str):
 			value = value.strip()
@@ -1208,67 +1248,26 @@ def _build_external_provisioning_payload(source):
 				value = value.lower()
 		if value not in (None, ""):
 			payload[fieldname] = value
-	if source.get("billing_model") == "License" and source.get("license_expiry_date"):
-		payload["license_expiry_date"] = source["license_expiry_date"]
-	for fieldname in ("facility_name", "facility_level", "county", "sub_county"):
-		value = source.get(fieldname)
-		if isinstance(value, str):
-			value = value.strip()
-		if value not in (None, ""):
-			payload[fieldname] = value
 
-	missing = [
-		fieldname
-		for fieldname in (
-			"fid",
-			"licence",
-			"tokens_awarded",
-			"token_expiry_date",
-			"admin_email",
-			"admin_name",
-			"billing_model",
-			"admin_mobile",
-		)
-		if fieldname not in payload
-	]
-	if payload.get("billing_model") == "License" and not payload.get("license_expiry_date"):
-		missing.append("license_expiry_date")
-
+	missing = [fieldname for fieldname in _EXTERNAL_PROVISIONING_REQUIRED if fieldname not in payload]
 	if payload.get("fid") and not re.fullmatch(r"FID-\d{2}-[\w-]+", frappe.utils.cstr(payload["fid"]), flags=re.IGNORECASE):
 		missing.append("valid fid")
 	if payload.get("admin_email") and "@" not in frappe.utils.cstr(payload["admin_email"]):
 		missing.append("valid admin_email")
-	if payload.get("billing_model") and payload["billing_model"] not in ("License", "Token"):
-		missing.append("valid billing_model")
-	for date_field in ("token_expiry_date", "license_expiry_date"):
-		if payload.get(date_field):
-			try:
-				if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", frappe.utils.cstr(payload[date_field])):
-					raise ValueError
-				date.fromisoformat(frappe.utils.cstr(payload[date_field]))
-			except ValueError:
-				missing.append("valid " + date_field)
-	if "tokens_awarded" in payload:
-		try:
-			payload["tokens_awarded"] = int(payload["tokens_awarded"])
-			if payload["tokens_awarded"] < 0:
-				missing.append("non-negative tokens_awarded")
-		except (TypeError, ValueError):
-			missing.append("integer tokens_awarded")
 	return payload, list(dict.fromkeys(missing))
 
 
-def _apply_token_source(settings, payload, package_item=None):
+def _apply_token_source(settings, payload, package_item=None, package_tokens=0):
 	"""Set the HMIS token source on the payload and return the context the metering hooks receive.
 
 	With OpenMeter as the token source (openmeter_mediator ADR-003), CRM grants the
 	facility's tokens in OpenMeter under its FID and HMIS reads its balance there,
-	so the payload awards no tokens itself. A paid package is granted when its
+	and the setup service carries no token ledger (v2.1). A paid package is granted when its
 	invoice is paid, never at provisioning, so the context defers it.
 	"""
 	context = {
 		"fid": payload.get("fid"),
-		"package_tokens": payload.get("tokens_awarded") or 0,
+		"package_tokens": package_tokens or 0,
 		"token_source": "crm",
 		"defer_package_grant": _is_paid_package(package_item),
 	}
@@ -1276,7 +1275,6 @@ def _apply_token_source(settings, payload, package_item=None):
 		return context
 	context["token_source"] = "openmeter"
 	payload["token_source"] = "openmeter"
-	payload["tokens_awarded"] = 0
 	payload["token_purchase_url"] = frappe.utils.cstr(settings.get("token_purchase_url") or "").strip() or frappe.utils.get_url(
 		"/cx-portal"
 	)
@@ -1606,7 +1604,8 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 		if refreshed.get("status") == "not_submitted":
 			refreshed.update({"status": body.get("status") or "Draft", "progress": 0})
 		refreshed["submission"] = {
-			"state": "created",
+			# An FID that already had a setup record comes back as idempotent (v2.x).
+			"state": "already_exists" if body.get("idempotent") else "created",
 			"retryable": False,
 			"facility_setup": body.get("facility_setup"),
 			"message": body.get("message") or _("The HMIS setup draft was created and status has been refreshed."),
