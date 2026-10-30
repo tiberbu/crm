@@ -37,11 +37,30 @@ const outstanding = computed(
     >
       {{ facility.facility_name }}
     </button>
-    <p class="mt-1 break-words text-xs text-cx-ink-3">
-      {{ facility.keph_level }} · Facility ID {{ fid || 'not linked yet' }} ·
-      MFL {{ facility.mfl_code }}
-    </p>
-    <div class="mt-2 flex flex-wrap items-center gap-1.5">
+    <!-- Level and Facility ID each get their own row on a shared label column so the
+         values line up; the MFL code stays off the card (it lives in the drawer). -->
+    <dl
+      class="mt-3 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-cx-border-soft pt-3 text-xs leading-snug"
+      data-testid="facility-card-ids"
+    >
+      <dt class="text-cx-ink-3">Level</dt>
+      <dd class="break-words font-medium text-cx-ink-2">
+        {{ facility.keph_level || '—' }}
+      </dd>
+      <dt class="text-cx-ink-3">Facility ID</dt>
+      <dd
+        class="truncate"
+        :class="
+          fid
+            ? 'font-mono font-semibold text-cx-ink'
+            : 'font-medium italic text-cx-ink-3'
+        "
+        data-testid="facility-card-fid"
+      >
+        {{ fid || 'Not linked yet' }}
+      </dd>
+    </dl>
+    <div class="mt-3 flex flex-wrap items-center gap-1.5">
       <span
         class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold"
         :class="
