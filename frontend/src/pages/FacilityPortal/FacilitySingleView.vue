@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { call } from 'frappe-ui'
 import CxIcon from './components/CxIcon.vue'
+import TokenAlertCard from './components/TokenAlertCard.vue'
+import { tokenBalanceText } from '@/utils/tokenBalance'
 
 const props = defineProps({
   facility: { type: Object, required: true },
@@ -15,8 +17,10 @@ const props = defineProps({
   getProvisioningStatus: { type: Function, default: null },
   // Order whose invoice is being generated, so its button can show progress.
   busyOrder: { type: String, default: '' },
+  // The owner's low-token email alert for this facility, if any.
+  tokenAlert: { type: Object, default: null },
 })
-const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay', 'review-order', 'create-invoice', 'open-billing'])
+const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay', 'review-order', 'create-invoice', 'open-billing', 'token-alert-saved'])
 const provisioning = ref(null)
 const provisioningBusy = ref(true)
 const provisioningError = ref('')
@@ -378,13 +382,7 @@ function pendingPaymentForInvoice(invoice) {
 
 // Live balance from OpenMeter (crm_get_facility_token_balances); absent when metering is off.
 const liveBalance = computed(() => props.facility.token_balance || null)
-const liveBalanceText = computed(() => {
-  const entry = liveBalance.value
-  // No metering site yet means nothing has been paid for and granted.
-  if (!entry || entry.status === 'not_metered') return '0'
-  if (entry.status === 'ok') return Number(entry.balance || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })
-  return 'Unavailable'
-})
+const liveBalanceText = computed(() => tokenBalanceText(props.facility))
 const liveBalanceNote = computed(() => {
   const entry = liveBalance.value
   if (entry?.status !== 'ok') return 'Tokens are added when the package invoice is paid.'
@@ -442,6 +440,8 @@ function reviewInvoice() {
         <p class="mt-auto pt-1 text-[11px] text-cx-ink-3">Your onboarding partner</p>
       </article>
     </div>
+
+    <TokenAlertCard :facility="facility" :alert="tokenAlert" @saved="emit('token-alert-saved', $event)" />
 
     <section class="overflow-hidden rounded-cx border border-cx-border bg-cx-surface shadow-cx">
       <div class="border-b border-cx-border-soft bg-gradient-to-br from-cx-surface via-cx-surface to-cx-well/70 p-5 sm:p-7">
@@ -633,9 +633,9 @@ function reviewInvoice() {
             </div>
             <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">The setup service requires a token quantity when a go-live setup request is created. Choose a free package or order paid tokens; after paying an invoice, wait for payment verification before setup proceeds.</p>
           </div>
-          <div v-if="hasConfiguredPackage" class="rounded-cx-sm border border-cx-border bg-cx-surface/80 px-3 py-2 text-right shadow-sm">
+          <div v-if="hasConfiguredPackage" class="min-w-0 max-w-full rounded-cx-sm border border-cx-border bg-cx-surface/80 px-3 py-2 text-right shadow-sm sm:max-w-xs">
             <p class="text-[10px] font-semibold uppercase tracking-wide text-cx-ink-3">Selected package</p>
-            <p class="mt-1 text-xs font-bold text-cx-ink">{{ configuredPackage?.display_name || facility.token_package || 'Token package' }}</p>
+            <p class="mt-1 break-words text-xs font-bold text-cx-ink">{{ configuredPackage?.display_name || facility.token_package || 'Token package' }}</p>
             <p class="mt-0.5 text-[11px] text-cx-ink-2">{{ selectedPackageTokens.toLocaleString() }} tokens · {{ selectedPackageCost > 0 ? money(selectedPackageCost, facility.package_currency) : 'Free' }}</p>
           </div>
         </div>
