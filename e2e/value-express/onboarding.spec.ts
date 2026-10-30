@@ -107,3 +107,61 @@ test("review: Change goes back to that facility's package", async ({ page }) => 
   await page.getByTestId("change-FID-00-VXTEST-2").click();
   await expect(page.getByRole("tab", { name: /Synthetic Nursing Home B/ })).toHaveAttribute("aria-selected", "true");
 });
+
+const SYN_PKG = {
+  item_code: "CV-TOKEN-STARTER",
+  display_name: "Starter",
+  description: "Synthetic starter package",
+  price_ex_vat: 6000,
+  currency: "KES",
+  vat_label: "VAT",
+  token_quantity: 1000,
+  audience: "Small clinics",
+  plan: "flex",
+};
+
+test("url: a carried Partner Coupon is validated and shows the network name", async ({ page }) => {
+  await mockOnboarding(page, {
+    catalog: {
+      ok: {
+        network: { name: "NET-SYN-1", slug: "synthetic-net", display_name: "Synthetic Network Ltd" },
+        packages: [SYN_PKG],
+        fixed_packages: [],
+        custom_offer: null,
+        calculator_config: {},
+        welcome_bonus_tokens: 0,
+        partner_coupon_tokens: 500,
+      },
+    },
+  });
+  await verify(page, "?partner_coupon=123456");
+  await toPackages(page, ["Synthetic Clinic A"]);
+  await expect(page.getByTestId("partner-coupon-toggle")).toHaveText("Partner Coupon: 123456");
+  await page.getByTestId("partner-coupon-toggle").click();
+  await expect(page.getByTestId("partner-coupon-applied")).toBeVisible();
+  await expect(page.getByTestId("partner-coupon-network")).toHaveText("Synthetic Network Ltd");
+});
+
+test("url: an unknown Partner Coupon is dropped silently and the catalog still loads", async ({ page }) => {
+  await mockOnboarding(page, {
+    catalog: [
+      { error: { status: 417, body: { exception: true, _server_messages: "[\"That Partner Coupon is not available.\"]" } } },
+      {
+        ok: {
+          network: {},
+          packages: [SYN_PKG],
+          fixed_packages: [],
+          custom_offer: null,
+          calculator_config: {},
+          welcome_bonus_tokens: 0,
+          partner_coupon_tokens: 0,
+        },
+      },
+    ],
+  });
+  await verify(page, "?partner_coupon=999999");
+  await toPackages(page, ["Synthetic Clinic A"]);
+  await expect(page.getByTestId("partner-coupon-toggle")).toHaveText("Have a Partner Coupon?");
+  await expect(page.getByTestId("catalog-error")).toHaveCount(0);
+  await expect(page.getByTestId("package-grid")).toBeVisible();
+});

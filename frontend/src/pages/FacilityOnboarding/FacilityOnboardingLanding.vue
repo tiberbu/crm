@@ -245,7 +245,7 @@
                   <input id="partner-coupon-input" ref="couponInputRef" :value="partnerId" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]{6}" placeholder="123456" :aria-invalid="Boolean(partnerId && partnerId.length !== 6)" @input="onPartnerIdInput" @keydown.enter.prevent="closeCoupon" />
                   <span class="hint">{{ partnerId && partnerId.length !== 6 ? __('Enter all six digits, or clear the field to leave it blank.') : __('Leave it blank if you don’t have one.') }}</span>
                 </div>
-                <p v-if="couponApplied" class="ok" data-testid="partner-coupon-applied">✓ {{ __('Partner Coupon applied') }}: +{{ couponTokens.toLocaleString() }} {{ __('bonus tokens per facility with your first purchase') }}</p>
+                <p v-if="couponApplied" class="ok" data-testid="partner-coupon-applied">✓ {{ __('Partner Coupon applied') }}<template v-if="catalog.network?.display_name"> · <span data-testid="partner-coupon-network">{{ catalog.network.display_name }}</span></template>: +{{ couponTokens.toLocaleString() }} {{ __('bonus tokens per facility with your first purchase') }}</p>
                 <div style="display: flex; gap: 10px; margin-top: 10px">
                   <button type="button" class="btn primary small" @click="closeCoupon">{{ __('Done') }}</button>
                   <button type="button" class="btn ghost small" data-testid="partner-coupon-close" @click="closeCoupon">{{ __('Close') }}</button>
@@ -559,7 +559,12 @@ watch(facilitySearch, () => {
 const otp = ref('')
 const facilities = ref([])
 const selectedFacilities = ref([])
-const partnerId = ref('')
+// "Get started" on the landing page carries a plan, package or Custom amount; a referral link may
+// additionally carry a Partner Coupon (?partner_coupon=) that is validated on the first catalog load.
+const carried = parseCarriedChoice(typeof window === 'undefined' ? '' : window.location.search)
+const partnerId = ref(carried?.coupon || '')
+// True until the URL-supplied coupon has been validated (or the user edits the field).
+let urlCouponPending = Boolean(carried?.coupon)
 const couponOpen = ref(false)
 const couponPanelRef = ref(null)
 const couponToggleRef = ref(null)
@@ -570,8 +575,6 @@ const planSelections = ref({})
 const flexChoice = ref({})
 const customAmounts = ref({})
 const activePricingFacilityId = ref('')
-// "Get started" on the landing page carries a plan, package or Custom amount.
-const carried = parseCarriedChoice(typeof window === 'undefined' ? '' : window.location.search)
 const accountEmail = ref('')
 const termsAccepted = ref(false)
 const termsSnapshot = ref(null)
@@ -1038,10 +1041,19 @@ async function loadCatalog(force = false) {
     if (requestId !== catalogRequestId) return false
     catalog.value = nextCatalog
     loadedCatalogPartnerId = requestedPartnerId
+    urlCouponPending = false
     applyCarriedChoice()
     return true
   } catch (error) {
     if (requestId !== catalogRequestId) return false
+    // A coupon that arrived via the URL is validated exactly like typed entry; when it does not
+    // resolve, drop it silently (the user did not type it) and reload the catalog without it.
+    if (urlCouponPending && requestedPartnerId) {
+      urlCouponPending = false
+      partnerId.value = ''
+      loadedCatalogPartnerId = null
+      return loadCatalog(true)
+    }
     catalog.value = { network: null, packages: [], fixed_packages: [], custom_offer: null }
     loadedCatalogPartnerId = null
     catalogError.value =
@@ -1057,6 +1069,7 @@ function onPartnerIdInput(event) {
     .slice(0, 6)
   if (nextPartnerId === partnerId.value) return
   partnerId.value = nextPartnerId
+  urlCouponPending = false
   catalogRequestId += 1
   catalogBusy.value = false
   catalogError.value = ''

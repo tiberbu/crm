@@ -69,17 +69,20 @@ export function fixedForLevel(level, fixedPackages) {
 }
 
 // "Get started" on the landing page carries ?plan=flex&package=CODE, ?plan=fixed or ?plan=custom&amount=N.
+// Referral links may additionally carry ?partner_coupon=123456 (alias ?partner_id=) for auto-fill.
 export function parseCarriedChoice(search) {
   const params = new URLSearchParams(search || '')
   const plan = params.get('plan')
-  if (plan === 'fixed') return { plan: 'fixed' }
+  const couponRaw = (params.get('partner_coupon') || params.get('partner_id') || '').trim()
+  // Only well-formed six-digit coupons are carried; anything else is ignored.
+  const coupon = /^\d{6}$/.test(couponRaw) ? couponRaw : null
+  if (plan === 'fixed') return { plan: 'fixed', coupon }
   if (plan === 'custom') {
     const amount = Math.floor(Number(params.get('amount')) || 0)
-    return { plan: 'flex', package: CUSTOM, amount: amount > 0 ? amount : null }
+    return { plan: 'flex', package: CUSTOM, amount: amount > 0 ? amount : null, coupon }
   }
-  if (plan === 'flex')
-    return { plan: 'flex', package: params.get('package') || null }
-  return null
+  if (plan === 'flex') return { plan: 'flex', package: params.get('package') || null, coupon }
+  return coupon ? { coupon } : null
 }
 
 // Tokens left for services in the first funded month.
