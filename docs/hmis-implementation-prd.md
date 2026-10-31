@@ -13,6 +13,8 @@ The required outcome is deterministic: when an authorized facility has a verifie
 
 ## 2. Product rules
 
+> **Agreed change (2026-10-27):** rules 6, 8 and 9 below, and HIMS-04's expiry and token rules, are superseded by version 2 of the setup service contract ([`hmis-provisioning-status-api-requirements.md`](hmis-provisioning-status-api-requirements.md)): CRM sends `auto_deploy: true`, sends no `token_expiry_date` or `tokens_awarded`, and the setup service deduplicates by FID. They stay below as a record of the 2026-10-25 baseline.
+
 1. **One deployment identity:** `hfr_facility_id` (HFR Facility ID / FID) is the setup service key. MFL code locates the CRM facility; generic HIE IDs are never substituted for FID.
 2. **Read and command are distinct:** `get_provisioning_status` is read-only. `ensure_provisioning_draft` is the command used by the Single Facility view on load and on retry.
 3. **Only an authoritative absence creates:** CRM POSTs only after the TA GET has returned the exact documented no-setup condition (TA 400 or Frappe 417 `No Facility Setup found`). Auth, timeout, unknown errors, duplicate records, and other failures never trigger POST.

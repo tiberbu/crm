@@ -34,7 +34,7 @@ Pricing cards no longer say "/ monthly": the price buys the stated tokens.
 | # | Decision | Why |
 |---|---|---|
 | D1 | CRM puts `defer_package_grant: true` in the provisioning context for **paid** packages; the metering app then settles `initial:<FID>` as **Skipped**. | The backstop job grants any Initial Package that is not Granted/Skipped. Leaving it unsettled would grant it later. |
-| D2 | Zero-priced packages (Free Trial) keep the grant at provisioning. | Nothing to pay; waiting on a KES 0 invoice adds a step with no value. **Flagged for maintainer review.** |
+| D2 | ~~Zero-priced packages (Free Trial) keep the grant at provisioning.~~ **Reversed 2026-10-27:** no tokens before payment; nothing is granted at provisioning (setup service contract v2, D5). | Nothing to pay; waiting on a KES 0 invoice adds a step with no value. **Flagged for maintainer review.** |
 | D3 | Draft Sales Order, not draft Quotation. The onboarding Quotation is submitted and the order made from it. | The brief asks for an order; the CRM Deal keeps its quote link. |
 | D4 | KRA PIN on `Customer.tax_id`, validated `^[A-Z]\d{9}[A-Z]$`. | eTIMS reads the customer's tax id; one PIN per customer, reused across orders. |
 | D5 | Recurring = ERPNext **Auto Repeat** on the submitted Sales Order, `submit_on_creation = 0`. | Each period's order arrives as a draft for the client to review again. No silent charges. |
@@ -88,5 +88,5 @@ The portal `open_orders` list now includes drafts (`is_draft: true`).
 - Facilities submitted before this change that are not yet provisioned have no draft order, and a paid package is no
   longer granted at provisioning: they buy tokens from the portal top-up action (unchanged: it raises a submitted order).
 - Portal top-ups do not yet ask for the billing address / KRA PIN; bring them through the same review step if eTIMS needs it.
-- Free Trial (KES 0) packages are still granted at provisioning (D2): confirm or change.
+- Free Trial (KES 0) packages are still granted at provisioning (D2): **decided 2026-10-27, no grant before payment** (CRM-P3 and X2 in `docs/hmis-provisioning-status-api-requirements.md`).
 - KRA PIN check against KRA iTax is not done here; eTIMS invoice submission validates it.
