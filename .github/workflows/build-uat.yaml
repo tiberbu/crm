@@ -92,6 +92,10 @@ jobs:
             {
               "url": "https://mwogi:${GIT_TOKEN}@github.com/tiberbu/crm.git",
               "branch": "develop"
+            },
+            {
+              "url": "https://mwogi:${GIT_TOKEN}@github.com/tiberbu/openmeter_mediator.git",
+              "branch": "feat/hmis-essentials-postman"
             }
           ]
           EOF
