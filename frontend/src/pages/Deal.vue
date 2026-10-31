@@ -572,6 +572,7 @@ import LinkIcon from '@/components/Icons/LinkIcon.vue'
 import ArrowUpRightIcon from '@/components/Icons/ArrowUpRightIcon.vue'
 import SuccessIcon from '@/components/Icons/SuccessIcon.vue'
 import AttachmentIcon from '@/components/Icons/AttachmentIcon.vue'
+import LightningIcon from '@/components/Icons/LightningIcon.vue'
 import LayoutHeader from '@/components/LayoutHeader.vue'
 import Activities from '@/components/Activities/Activities.vue'
 import OrganizationModal from '@/components/Modals/OrganizationModal.vue'
@@ -598,6 +599,7 @@ import { statusesStore } from '@/stores/statuses'
 import { getMeta } from '@/stores/meta'
 import { useDocument } from '@/data/document'
 import { whatsappEnabled } from '@/composables/whatsapp'
+import { useMeteringAccess } from '@/composables/meteringAccess'
 import { callEnabled } from '@/composables/telephony'
 import { useBroadcast } from '@/composables/useBroadcast'
 import {
@@ -806,6 +808,8 @@ usePageMeta(() => {
   }
 })
 
+const meteringAccess = useMeteringAccess()
+
 const tabs = computed(() => {
   let tabOptions = [
     {
@@ -864,6 +868,13 @@ const tabs = computed(() => {
       label: __('WhatsApp'),
       icon: WhatsAppIcon,
       condition: () => whatsappEnabled.value,
+    },
+    {
+      // OpenMeter Probe activities, for OpenMeter Admins when the metering app is installed.
+      name: 'Metering',
+      label: __('Metering'),
+      icon: LightningIcon,
+      condition: () => meteringAccess.canManage.value,
     },
   ]
   return tabOptions.filter((tab) => (tab.condition ? tab.condition() : true))
