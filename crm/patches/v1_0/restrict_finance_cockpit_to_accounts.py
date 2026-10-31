@@ -21,13 +21,43 @@ def _ensure_permission(doc, role, values):
 	return True
 
 
+def _ensure_role(role):
+	if frappe.db.exists("Role", role):
+		return
+	frappe.get_doc({"doctype": "Role", "role_name": role, "desk_access": 1}).insert(
+		ignore_permissions=True  # SYSTEM-INTERNAL: permission migration
+	)
+
+
+def restrict_page_roles():
+	"""Limit the Finance Cockpit page to Accounts roles.
+
+	Rows are added with ``append`` so they are child documents; a raw list of dicts
+	crashes ``save()`` with ``'dict' object has no attribute 'is_new'``. Model sync
+	usually imports these roles from the page JSON already, so the save is skipped
+	when nothing would change.
+	"""
+	if not frappe.db.exists("Page", "finance-cockpit"):
+		return False
+
+	page = frappe.get_doc("Page", "finance-cockpit")
+	if sorted(row.role for row in page.get("roles") or []) == sorted(ACCOUNTING_ROLES):
+		return False
+
+	for role in sorted(ACCOUNTING_ROLES):
+		_ensure_role(role)
+
+	page.set("roles", [])
+	for role in sorted(ACCOUNTING_ROLES):
+		page.append("roles", {"role": role})
+	# The page JSON in the app is the source of truth; never rewrite it from a migration.
+	page.flags.do_not_update_json = True
+	page.save(ignore_permissions=True)  # SYSTEM-INTERNAL: permission migration
+	return True
+
+
 def execute():
-	if frappe.db.exists("DocType", "Page") and frappe.db.exists("Page", "finance-cockpit"):
-		page = frappe.get_doc("Page", "finance-cockpit")
-		page.set("roles", [])
-		for role in sorted(ACCOUNTING_ROLES):
-			page.append("roles", {"role": role})
-		page.save(ignore_permissions=True)  # SYSTEM-INTERNAL: permission migration
+	restrict_page_roles()
 
 	for doctype in ("CRM Partner Rebate Voucher", "CRM Sales Commission"):
 		if not frappe.db.exists("DocType", doctype):
