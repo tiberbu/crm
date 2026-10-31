@@ -2,7 +2,7 @@
 // here are display values only; the server re-resolves package, price and VAT.
 
 export const STEPS = [
-  { key: 'identity', label: 'Details', stages: ['identity', 'otp'] },
+  { key: 'identity', label: 'Details', stages: ['identity', 'otp', 'org_email'] },
   { key: 'facilities', label: 'Facilities', stages: ['facilities'] },
   { key: 'pricing', label: 'Packages', stages: ['pricing'] },
   { key: 'review', label: 'Review', stages: ['review'] },
@@ -10,6 +10,7 @@ export const STEPS = [
 
 const PREVIOUS = {
   otp: 'identity',
+  org_email: 'otp',
   pricing: 'facilities',
   review: 'pricing',
 }

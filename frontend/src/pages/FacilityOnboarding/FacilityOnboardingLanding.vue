@@ -53,7 +53,7 @@
 
       <!-- STEP 1: verify -->
       <section v-if="stage === 'identity' || stage === 'otp'" class="wrap">
-        <form v-if="stage === 'identity'" class="card" @submit.prevent="startIdentity">
+        <form v-if="stage === 'identity' && !adminMode" class="card" @submit.prevent="startIdentity">
           <div class="card-h">
             <h1>{{ __('Let’s find your facility') }}</h1>
             <div class="tip">
@@ -92,6 +92,49 @@
             <button class="btn primary" :disabled="busy" style="justify-self: start">
               {{ busy ? __('Checking your details…') : __('Verify & Find My Facility') }}
             </button>
+          </div>
+        </form>
+
+        <form v-else-if="stage === 'identity' && adminMode" class="card" @submit.prevent="startAdminPath">
+          <div class="card-h">
+            <h1>{{ __('Setting up on behalf of a facility?') }}</h1>
+            <div class="tip">
+              <button type="button" :aria-expanded="adminTipOpen" aria-controls="admin-tip-pop" @click="adminTipOpen = !adminTipOpen">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.5" /></svg>
+                {{ __('How this works') }}
+              </button>
+              <div v-if="adminTipOpen" id="admin-tip-pop" class="pop">
+                <b>{{ __('How this works') }}</b>
+                <ol>
+                  <li><span>1</span><div><b>{{ __('Find the facility') }}</b>{{ __('Search by its MFL code or registration number — the exact numbers on the facility’s records.') }}</div></li>
+                  <li><span>2</span><div><b>{{ __('The registered contact gets the code') }}</b>{{ __('We send a one-time code to the registered contact on the facility record. Call them to get it.') }}</div></li>
+                  <li><span>3</span><div><b>{{ __('Enter the code and continue') }}</b>{{ __('Once verified, you choose the Value Express plan and pay, just as usual.') }}</div></li>
+                </ol>
+              </div>
+            </div>
+          </div>
+          <p class="muted" style="margin-top: 12px">{{ __('For administrators and staff onboarding a facility whose registered contact holds the onboarding link. We verify with the registered contact, so the facility stays protected.') }}</p>
+          <div class="form">
+            <div class="row2">
+              <div class="field">
+                <label for="admin-ref-type">{{ __('Facility reference') }}</label>
+                <select id="admin-ref-type" v-model="adminRefType">
+                  <option value="mfl">{{ __('MFL code') }}</option>
+                  <option value="registration">{{ __('Registration number') }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="admin-ref">{{ adminRefType === 'mfl' ? __('MFL code') : __('Registration number') }}</label>
+                <input id="admin-ref" v-model.trim="adminReference" required autocomplete="off" data-testid="admin-reference-input" :placeholder="adminRefType === 'mfl' ? __('e.g. 12345') : __('e.g. REG-2024-123')" />
+                <span class="hint">{{ __('Use the exact number from the facility’s records.') }}</span>
+              </div>
+            </div>
+            <button class="btn primary" :disabled="busy" style="justify-self: start">
+              {{ busy ? __('Finding your facility…') : __('Find facility & send code') }}
+            </button>
+          </div>
+          <div style="margin-top: 14px">
+            <button type="button" class="btn link" data-testid="admin-path-back" @click="adminMode = false">← {{ __('I am the registered owner') }}</button>
           </div>
         </form>
 
@@ -141,11 +184,42 @@
           </template>
         </form>
 
+        <div v-if="stage === 'identity' && !adminMode" class="alt-entry">
+          <button type="button" class="btn link" data-testid="admin-path-toggle" @click="adminMode = true">
+            {{ __('I’m not the registered owner — set up on behalf of a facility →') }}
+          </button>
+        </div>
+
         <div class="assist">
           <b>{{ __('No longer have access to this contact? Having trouble finding your facility?') }}</b>
           <span class="muted">{{ __('Our Value Express onboarding team can help verify your facility information and guide you through onboarding.') }}</span>
           <a href="/#contact">{{ __('Get onboarding assistance →') }}</a>
         </div>
+      </section>
+
+      <!-- STEP 1b: corporate email (admin path only) -->
+      <section v-else-if="stage === 'org_email'" class="wrap">
+        <form class="card" @submit.prevent="confirmOrgEmail">
+          <h1>{{ __('Where should the Tiberbu Express account be created?') }}</h1>
+          <p class="muted" style="margin-top: 10px">{{ __('The account belongs to your organization, not to a personal inbox. Using the facility’s corporate email keeps access with the organization — when staff change, the next person signs in with the same account.') }}</p>
+          <p v-if="adminOwner" class="verified" data-testid="admin-owner-verified">
+            ✓ {{ __('Verified with the registered contact') }}: <b>{{ adminOwner.first_name }}</b>
+            <span> · {{ adminOwner.role }}</span>
+            <span v-if="adminOwner.masked_phone"> · {{ adminOwner.masked_phone }}</span>
+          </p>
+          <div class="form">
+            <div class="field">
+              <label for="org-email">{{ __('Corporate email') }}</label>
+              <input id="org-email" v-model.trim="orgEmail" type="email" required autocomplete="off" data-testid="org-email-input" :placeholder="__('info@yourfacility.go.ke')" />
+              <span class="hint">{{ __('The email the organization uses for billing and Tiberbu Express sign-in.') }}</span>
+            </div>
+            <div v-if="orgEmailError" class="status-note" role="alert">{{ orgEmailError }}</div>
+            <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center">
+              <button class="btn primary" :disabled="orgEmailBusy" data-testid="org-email-continue">{{ orgEmailBusy ? __('Checking…') : __('Continue to facility →') }}</button>
+              <button type="button" class="btn link" :disabled="orgEmailBusy" @click="backToOtp">← {{ __('Use a different code') }}</button>
+            </div>
+          </div>
+        </form>
       </section>
 
       <!-- STEP 2: facility -->
@@ -563,6 +637,16 @@ const sessionToken = ref('')
 const identityType = ref('national_id')
 const identityNumber = ref('')
 const identityPreview = ref({})
+// Alternative path: an administrator onboards a facility whose registered contact holds the link.
+const adminMode = ref(false)
+const adminRefType = ref('mfl')
+const adminReference = ref('')
+const adminTipOpen = ref(false)
+const adminOwner = ref(null)
+const adminFacility = ref(null)
+const orgEmail = ref('')
+const orgEmailBusy = ref(false)
+const orgEmailError = ref('')
 const tipOpen = ref(false)
 const facilitySearch = ref('')
 const facilityPageNumber = ref(1)
@@ -954,6 +1038,51 @@ async function startIdentity() {
     busy.value = false
   }
 }
+async function startAdminPath() {
+  errorMessage.value = ''
+  busy.value = true
+  try {
+    const data = await request('start_admin_onboarding', { reference: adminReference.value })
+    sessionToken.value = data.session_token
+    adminOwner.value = data.owner || {}
+    adminFacility.value = data.facility || {}
+    orgEmail.value = data.suggested_account_email || ''
+    otp.value = ''
+    otpError.value = ''
+    hfrRetryPending.value = false
+    hfrRetryExhausted.value = false
+    // A restart within the resend window reuses the code already sent.
+    applyDelivery({ ...(data.delivery || {}), reused: Boolean(data.reused) })
+    stage.value = 'otp'
+  } catch (error) {
+    errorMessage.value = error?.messages?.[0] || __('We couldn’t find a facility we can verify with that reference. Check the number and try again.')
+  } finally {
+    busy.value = false
+  }
+}
+async function confirmOrgEmail() {
+  orgEmailError.value = ''
+  const email = orgEmail.value.trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    orgEmailError.value = __('Enter the organization’s full email address, like info@facility.go.ke.')
+    return
+  }
+  orgEmailBusy.value = true
+  try {
+    const data = await request('set_admin_account_email', { session_token: sessionToken.value, email })
+    accountEmail.value = data.email || email
+    orgEmail.value = accountEmail.value
+    if (adminFacility.value?.facility_id) selectedFacilities.value = [adminFacility.value.facility_id]
+    stage.value = 'facilities'
+  } catch (error) {
+    orgEmailError.value = error?.messages?.[0] || __('We couldn’t use that email. Check it and try again.')
+  } finally {
+    orgEmailBusy.value = false
+  }
+}
+function backToOtp() {
+  stage.value = 'otp'
+}
 async function resendOtp() {
   errorMessage.value = ''
   otpError.value = ''
@@ -1010,7 +1139,7 @@ function acceptFacilities(data) {
   facilityPageNumber.value = 1
   hfrRetryPending.value = false
   hfrRetryExhausted.value = false
-  stage.value = 'facilities'
+  stage.value = adminMode.value ? 'org_email' : 'facilities'
   stopResendTimer()
 }
 async function retryHfr() {
@@ -1045,10 +1174,16 @@ function editIdentity() {
   termsAccepted.value = false
   accountEmail.value = ''
   identityPreview.value = {}
+  adminOwner.value = null
+  orgEmailError.value = ''
   errorMessage.value = ''
   stage.value = 'identity'
 }
 function goBack() {
+  if (stage.value === 'facilities' && adminMode.value) {
+    stage.value = 'org_email'
+    return
+  }
   const previous = previousStage(stage.value)
   if (previous) stage.value = previous
 }
@@ -1281,6 +1416,11 @@ async function submit() {
 }
 function reset() {
   stage.value = 'identity'
+  adminMode.value = false
+  adminOwner.value = null
+  adminFacility.value = null
+  orgEmail.value = ''
+  orgEmailError.value = ''
   errorMessage.value = ''
   registrationConflictDetected.value = false
   sessionExpired.value = false
