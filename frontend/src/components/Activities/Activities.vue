@@ -386,6 +386,9 @@
         @afterSave="(data) => emit('afterSave', data)"
       />
     </div>
+    <div v-else-if="title == 'Metering'" class="h-full">
+      <MeteringTab :deal-id="docname" />
+    </div>
     <div v-else-if="title == 'Quoting'" class="h-full">
       <QuotingTab
         :deal-id="docname"
@@ -525,6 +528,9 @@ const tabIndex = defineModel('tabIndex', { type: Number, default: 0 })
 // is selected. The component contract and route remain unchanged.
 const QuotingTab = defineAsyncComponent(
   () => import('@/pages/Deal/QuotingTab.vue'),
+)
+const MeteringTab = defineAsyncComponent(
+  () => import('@/pages/Deal/MeteringTab.vue'),
 )
 const CommentArea = defineAsyncComponent(
   () => import('@/components/Activities/CommentArea.vue'),

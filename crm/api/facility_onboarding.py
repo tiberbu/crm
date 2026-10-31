@@ -35,6 +35,7 @@ from crm.api._email import (
 )
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref, record_event
 from crm.utils import value_express
+from crm.utils.onboarding_source import is_self_onboarding_contact
 from crm.utils.token_facility import facility_fid_for_mfl
 
 try:
@@ -679,27 +680,19 @@ def _default_calculator_config() -> dict[str, Any]:
 		"default_operating_days": 24,
 		"service_points": [
 			{
-				"id": "registration",
-				"name": "Patient registration / check-in",
-				"tokens": 6,
-				"default_frequency": 0.2,
-				"description": "Per completed patient registration / visit event (typically ~20% new intakes)",
-				"applies_to": ["opd", "ipd"],
-			},
-			{
 				"id": "consultation",
 				"name": "Consultation visit",
-				"tokens": 3,
+				"tokens": 6,
 				"default_frequency": 1.0,
-				"description": "Per completed consultation encounter",
+				"description": "Per completed consultation",
 				"applies_to": ["opd", "ipd"],
 			},
 			{
 				"id": "laboratory",
-				"name": "Laboratory order",
+				"name": "Laboratory investigations order",
 				"tokens": 6,
 				"default_frequency": 0.5,
-				"description": "Per completed laboratory investigation order",
+				"description": "Per completed laboratory order, not per individual test",
 				"applies_to": ["opd", "ipd"],
 			},
 			{
@@ -707,39 +700,15 @@ def _default_calculator_config() -> dict[str, Any]:
 				"name": "Prescription processing",
 				"tokens": 6,
 				"default_frequency": 0.5,
-				"description": "Per completed prescription order",
+				"description": "Per completed prescription",
 				"applies_to": ["opd", "ipd"],
 			},
 			{
 				"id": "imaging",
-				"name": "Imaging order (X-ray, Ultrasound)",
-				"tokens": 12,
-				"default_frequency": 0.1,
-				"description": "Per completed diagnostic imaging order",
-				"applies_to": ["opd", "ipd"],
-			},
-			{
-				"id": "procedure",
-				"name": "Medical / Minor surgical procedure",
-				"tokens": 12,
-				"default_frequency": 0.05,
-				"description": "Exempt for OPD-only; charged for OPD & IPD facilities",
-				"applies_to": ["ipd"],
-			},
-			{
-				"id": "inpatient_admission",
-				"name": "Inpatient admission",
-				"tokens": 3,
-				"default_frequency": 0.05,
-				"description": "Exempt for OPD-only; charged for OPD & IPD facilities",
-				"applies_to": ["ipd"],
-			},
-			{
-				"id": "program_visit",
-				"name": "Chronic care / Program visit",
+				"name": "Imaging order",
 				"tokens": 6,
-				"default_frequency": 0.05,
-				"description": "Per completed specialized clinic or program visit",
+				"default_frequency": 0.1,
+				"description": "Per completed imaging order",
 				"applies_to": ["opd", "ipd"],
 			},
 		],
@@ -1384,7 +1353,9 @@ def _upsert_facility_membership(
 	if hasattr(facility_doc, "is_self_onboarded") or (hasattr(facility_doc, "meta") and facility_doc.meta.has_field("is_self_onboarded")):
 		facility_doc.is_self_onboarded = 1
 	for row_item in facility_doc.memberships or []:
-		if row_item.network == network and (
+		# Resume only this journey's own customer-linked row. A Network Opt-In row for the same
+		# email is the partner's contract record and stays untouched; this journey appends its own.
+		if row_item.network == network and is_self_onboarding_contact(row_item) and (
 			_text(getattr(row_item, "customer", "")) == customer
 			or _text(row_item.contact_email).lower() == person["email"].lower()
 		):

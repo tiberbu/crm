@@ -237,6 +237,26 @@ export async function mockPortalApi(
           },
         },
       })
+    if (method === 'crm.api.customer_experience.get_billing_profile')
+      return route.fulfill({
+        json: {
+          message: {
+            data: {
+              customer_name: 'Example Healthcare Holdings Limited',
+              kra_pin: 'P000000000X',
+              addresses: [
+                {
+                  address_line1: 'Plot 12, Example Medical Plaza',
+                  address_line2: 'Second Floor, Wing B',
+                  city: 'Nairobi',
+                  state: 'Nairobi County',
+                  country: 'Kenya',
+                },
+              ],
+            },
+          },
+        },
+      })
     return route.fulfill({ json: { message: { data: {} } } })
   })
 }

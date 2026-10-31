@@ -8,6 +8,7 @@ from crm.api.quotes import (
 	_facility_signatory_has_signed,
 	_group_billing_schedule_by_year,
 	_normalise_quote_totals,
+	_resolve_leaf_tree_node,
 	get_quote_lines,
 	list_catalogue_items,
 	list_quotes,
@@ -319,3 +320,20 @@ class TestQuotationPrintTaxSummary(UnitTestCase):
 		self.assertEqual(result.vat_label, "VAT (16%)")
 		self.assertEqual(result.vat_amount, 16_000)
 		self.assertEqual(result.grand_total, 116_000)
+
+
+class TestLeafTreeNodeResolution(UnitTestCase):
+	def test_guest_resolves_a_leaf_when_configured_node_is_a_group(self):
+		frappe.set_user("Guest")
+		try:
+			result = _resolve_leaf_tree_node(
+				"Customer Group",
+				"All Customer Groups",
+				"customer_group_name",
+				"parent_customer_group",
+				"Default Customer Group",
+			)
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertEqual(frappe.db.get_value("Customer Group", result, "is_group"), 0)

@@ -16,36 +16,25 @@ OPTIN_ROUTE = "/opt-in"
 SELF_ONBOARDING_ROUTE = "/facility-onboarding"
 
 
-def is_network_optin_membership(membership) -> bool:
-	"""Return True if a membership row is explicitly configured for the Network Opt-In contract journey."""
-	if not membership:
-		return False
-	if isinstance(membership, dict):
-		override = membership.get("price_list_override")
-		overrides_json = membership.get("price_list_overrides_json")
-		flags = membership.get("flags") or {}
-	else:
-		override = getattr(membership, "price_list_override", None)
-		overrides_json = getattr(membership, "price_list_overrides_json", None)
-		flags = getattr(membership, "flags", None) or {}
-	if flags.get("force_optin_invitation"):
-		return True
-	has_override = bool(str(override or "").strip())
-	has_overrides_json = bool(str(overrides_json or "").strip() and str(overrides_json).strip() != "{}")
-	return has_override or has_overrides_json
+def is_self_onboarding_contact(membership) -> bool:
+	"""Customer-linked memberships belong to Self-Onboarding (Value Express, Partner Coupon).
 
-
-def is_self_onboarding_contact(membership):
-	"""Customer-linked facility memberships belong to Self-Onboarding unless explicitly configured for Network Opt-In."""
+	The Customer link is the only journey discriminator. Writers never move a row between
+	journeys: Self-Onboarding appends its own customer-linked row and Network Opt-In
+	(admin, Partner Portal) appends its own row without one.
+	"""
 	if not membership:
 		return False
 	if isinstance(membership, dict):
 		customer = membership.get("customer")
 	else:
 		customer = getattr(membership, "customer", None)
-	if not bool(str(customer or "").strip()):
-		return False
-	return not is_network_optin_membership(membership)
+	return bool(str(customer or "").strip())
+
+
+def is_network_optin_membership(membership) -> bool:
+	"""Memberships without a Customer belong to the Network Opt-In contract journey."""
+	return bool(membership) and not is_self_onboarding_contact(membership)
 
 
 def build_network_optin_invitation_url(

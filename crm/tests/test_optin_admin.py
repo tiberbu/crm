@@ -6,9 +6,11 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from crm.api.optin_admin import (
+	_apply_token_calculator,
 	_customer_experience_link,
 	_get_negotiated_price_list,
 	_normalize_facility_level_allowlist,
+	_normalize_token_calculator,
 	_validate_opted_in_price_list_override,
 	create_sellable_item,
 	duplicate_negotiated_price_list,
@@ -74,6 +76,56 @@ class TestSelfOnboardingFacilityLevelSettings(UnitTestCase):
 			update_optin_settings({})
 
 		self.assertEqual(doc.self_onboarding_allowed_facility_levels, "Level 2\nLevel 3B\nLevel 3C")
+
+
+class TestTokenCalculatorSettings(UnitTestCase):
+	def _payload(self, **values):
+		return {
+			"monthly_platform_fee": "500",
+			"bill_value_per_token": 750,
+			"service_points": [
+				{"id": "consultation", "name": "Consultation visit", "tokens": "6", "default_frequency": 1, "applies_to": ["opd", "ipd"], "_key": "x"},
+				{"name": "Program visit", "tokens": 0, "default_frequency": "0.05", "applies_to": ["ipd", "other"]},
+			],
+			**values,
+		}
+
+	def test_rates_are_validated_and_new_services_get_an_id(self):
+		calculator = _normalize_token_calculator(self._payload())
+		self.assertEqual((calculator["monthly_platform_fee"], calculator["bill_value_per_token"]), (500, 750))
+		self.assertEqual(
+			calculator["service_points"][0],
+			{"id": "consultation", "name": "Consultation visit", "tokens": 6, "default_frequency": 1.0, "applies_to": ["opd", "ipd"]},
+		)
+		self.assertEqual(calculator["service_points"][1]["id"], "program_visit")
+		self.assertEqual(calculator["service_points"][1]["applies_to"], ["ipd"])
+
+	def test_invalid_rates_are_rejected(self):
+		for payload in (
+			self._payload(monthly_platform_fee=-1),
+			self._payload(bill_value_per_token=0),
+			self._payload(bill_value_per_token="12.5"),
+			self._payload(service_points=[{"name": "", "tokens": 1, "default_frequency": 1, "applies_to": ["opd"]}]),
+			self._payload(service_points=[{"name": "Lab", "tokens": 1, "default_frequency": 1, "applies_to": []}]),
+			self._payload(service_points=[{"name": "Lab", "tokens": 1.5, "default_frequency": 1, "applies_to": ["opd"]}]),
+			self._payload(service_points=[{"name": "Lab", "tokens": 1, "default_frequency": 1, "applies_to": ["opd"]}] * 2),
+		):
+			with self.subTest(payload=payload), self.assertRaises(frappe.ValidationError):
+				_normalize_token_calculator(payload)
+
+	def test_save_keeps_presets_and_service_descriptions(self):
+		stored = {
+			"presets": [{"id": "solo"}],
+			"service_points": [{"id": "consultation", "name": "Old", "tokens": 3, "description": "Kept"}],
+		}
+		doc = frappe._dict(token_calc_parameters_json=json.dumps(stored))
+		_apply_token_calculator(doc, _normalize_token_calculator(self._payload()))
+		saved = json.loads(doc.token_calc_parameters_json)
+		self.assertEqual((doc.token_calc_monthly_platform_fee, doc.token_calc_bill_value_per_token), (500, 750))
+		self.assertEqual(saved["presets"], [{"id": "solo"}])
+		self.assertEqual(saved["service_points"][0]["description"], "Kept")
+		self.assertEqual(saved["service_points"][0]["tokens"], 6)
+		self.assertEqual([point["id"] for point in saved["service_points"]], ["consultation", "program_visit"])
 
 
 class TestCustomerExperienceNetworkContactInvitation(UnitTestCase):
@@ -780,11 +832,19 @@ class TestOptInPriceListTools(UnitTestCase):
 					frappe._dict(
 						{
 							"network": "network-a",
-							"customer": "CUST-SELF",
 							"contact_email": "jane@example.com",
 							"price_list_override": "Negotiated Facility A",
 						}
-					)
+					),
+					frappe._dict(
+						{
+							"name": "MEM-COUPON",
+							"network": "network-a",
+							"customer": "CUST-SELF",
+							"contact_email": "buyer@example.com",
+							"contact_name": "Coupon Buyer",
+						}
+					),
 				]
 
 			def is_new(self):
@@ -822,9 +882,15 @@ class TestOptInPriceListTools(UnitTestCase):
 				}
 			)
 
-		self.assertEqual(len(facility.memberships), 1)
-		self.assertEqual(facility.memberships[0].price_list_override, "Negotiated Facility A")
-		self.assertEqual(facility.memberships[0].customer, "CUST-SELF")
+		self.assertEqual(len(facility.memberships), 2)
+		optin_row = next(m for m in facility.memberships if not m.get("customer"))
+		coupon_row = next(m for m in facility.memberships if m.get("customer"))
+		self.assertEqual(optin_row.price_list_override, "Negotiated Facility A")
+		self.assertEqual(optin_row.contact_email, "jane@example.com")
+		# The Partner Coupon row in the same network is neither merged nor re-labelled.
+		self.assertEqual(coupon_row.name, "MEM-COUPON")
+		self.assertEqual(coupon_row.contact_email, "buyer@example.com")
+		self.assertFalse(coupon_row.get("price_list_override"))
 
 	def test_opted_in_membership_cannot_change_facility_price_list(self):
 		existing = frappe._dict({"status": "Opted In", "price_list_override": "Negotiated Facility A"})

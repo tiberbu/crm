@@ -14,6 +14,7 @@ import io
 import json
 import math
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import frappe
@@ -712,8 +713,105 @@ def get_optin_settings():
 		"token_invoice_due_days": int(settings.get("token_invoice_due_days") or 30),
 		"welcome_bonus_tokens": frappe.utils.cint(settings.get("welcome_bonus_tokens")),
 		"partner_coupon_tokens": frappe.utils.cint(settings.get("partner_coupon_tokens")),
+		"token_calculator": _token_calculator_view(),
 		"token_packages": token_packages,
 	}
+
+
+def _token_calculator_view() -> dict[str, Any]:
+	"""The usage rates the token calculator estimates with: monthly fee, bill value and service tokens."""
+	from crm.api.facility_onboarding import _calculator_config
+
+	config = _calculator_config()
+	return {
+		"monthly_platform_fee": frappe.utils.cint(config.get("monthly_platform_fee")),
+		"bill_value_per_token": frappe.utils.flt(config.get("bill_value_per_token")),
+		"service_points": [
+			{
+				"id": frappe.utils.cstr(point.get("id")),
+				"name": frappe.utils.cstr(point.get("name")),
+				"tokens": frappe.utils.cint(point.get("tokens")),
+				"default_frequency": frappe.utils.flt(point.get("default_frequency")),
+				"applies_to": [scope for scope in point.get("applies_to") or [] if scope in ("opd", "ipd")],
+			}
+			for point in config.get("service_points") or []
+			if isinstance(point, dict)
+		],
+	}
+
+
+def _whole_number(value: Any, label: str, low: int, high: int) -> int:
+	try:
+		number = Decimal(str(value if value not in (None, "") else "x"))
+	except InvalidOperation:
+		number = None
+	if number is None or number != number.to_integral_value() or not low <= number <= high:
+		frappe.throw(_("{0} must be a whole number from {1} to {2}.").format(label, f"{low:,}", f"{high:,}"))
+	return int(number)
+
+
+def _normalize_token_calculator(payload: Any) -> dict[str, Any]:
+	"""Validate the calculator rates from Settings › Opt-In Process."""
+	if not isinstance(payload, dict):
+		frappe.throw(_("Token calculator settings must be an object."))
+	fee = _whole_number(payload.get("monthly_platform_fee"), _("Monthly system access fee (tokens)"), 0, 1_000_000)
+	bill_value = _whole_number(payload.get("bill_value_per_token"), _("Bill value per token (KES)"), 1, 1_000_000)
+	points = payload.get("service_points")
+	if not isinstance(points, list) or any(not isinstance(point, dict) for point in points):
+		frappe.throw(_("Service tokens must be a list of services."))
+	normalized, seen = [], set()
+	for point in points:
+		name = frappe.utils.cstr(point.get("name")).strip()
+		if not name:
+			frappe.throw(_("Each service needs a name."))
+		point_id = frappe.utils.cstr(point.get("id")).strip() or frappe.scrub(name)
+		if point_id in seen:
+			frappe.throw(_("{0} is listed twice.").format(name))
+		seen.add(point_id)
+		applies_to = [scope for scope in ("opd", "ipd") if scope in (point.get("applies_to") or [])]
+		if not applies_to:
+			frappe.throw(_("{0}: choose OPD, IPD or both.").format(name))
+		try:
+			frequency = Decimal(str(point.get("default_frequency") if point.get("default_frequency") not in (None, "") else "x"))
+		except InvalidOperation:
+			frequency = None
+		if frequency is None or not 0 <= frequency <= 10:
+			frappe.throw(_("{0}: uses per patient must be a number from 0 to 10.").format(name))
+		normalized.append(
+			{
+				"id": point_id,
+				"name": name,
+				"tokens": _whole_number(point.get("tokens"), _("{0} tokens").format(name), 0, 10_000),
+				"default_frequency": float(frequency),
+				"applies_to": applies_to,
+			}
+		)
+	return {"monthly_platform_fee": fee, "bill_value_per_token": bill_value, "service_points": normalized}
+
+
+def _apply_token_calculator(doc, calculator: dict[str, Any]):
+	"""Store the fee and bill value in their fields and the services in the calculator JSON.
+
+	Presets and each service's description stay as they were.
+	"""
+	from crm.api.facility_onboarding import _default_calculator_config
+
+	try:
+		stored = json.loads(doc.get("token_calc_parameters_json") or "{}")
+	except ValueError:
+		stored = {}
+	if not isinstance(stored, dict):
+		stored = {}
+	stored = {**_default_calculator_config(), **stored}
+	previous = {
+		point.get("id"): point for point in stored.get("service_points") or [] if isinstance(point, dict)
+	}
+	stored["service_points"] = [{**previous.get(point["id"], {}), **point} for point in calculator["service_points"]]
+	stored["monthly_platform_fee"] = calculator["monthly_platform_fee"]
+	stored["bill_value_per_token"] = float(calculator["bill_value_per_token"])
+	doc.token_calc_monthly_platform_fee = calculator["monthly_platform_fee"]
+	doc.token_calc_bill_value_per_token = calculator["bill_value_per_token"]
+	doc.token_calc_parameters_json = json.dumps(stored, indent=2)
 
 
 @frappe.whitelist()
@@ -763,6 +861,9 @@ def update_optin_settings(settings: Any):
 			bonus_tokens[fieldname] = -1
 		if not 0 <= bonus_tokens[fieldname] <= 1_000_000:
 			frappe.throw(_("{0} must be a whole number from 0 to 1,000,000.").format(label))
+	token_calculator = (
+		_normalize_token_calculator(settings.get("token_calculator")) if "token_calculator" in settings else None
+	)
 	# Settings › Packages owns the catalogue; an Opt-In save only replaces it when it sends it.
 	packages_sent = "token_packages" in settings
 	token_packages = settings.get("token_packages") or []
@@ -923,6 +1024,8 @@ def update_optin_settings(settings: Any):
 		doc.token_invoice_due_days = token_invoice_due_days
 		if packages_sent:
 			doc.set("token_packages", normalized_token_packages)
+	if token_calculator is not None and doc.meta.has_field("token_calc_parameters_json"):
+		_apply_token_calculator(doc, token_calculator)
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 	frappe.db.commit()
 
@@ -1977,19 +2080,29 @@ def save_facility(data: Any):
 	else:
 		doc = frappe.new_doc("CRM Pre-Qualified Facility")
 	is_new_facility = doc.is_new()
-	existing_networks = {m.network for m in (doc.memberships or [])}
-	existing_memberships = {m.network: m for m in (doc.memberships or [])}
+	# This form manages Network Opt-In rows. Self-Onboarding (Partner Coupon) rows are only
+	# edited when the caller names one, and then only their contact name, phone and status.
+	existing_memberships = {
+		m.network: m for m in (doc.memberships or []) if not is_self_onboarding_contact(m)
+	}
+	existing_networks = set(existing_memberships)
+	coupon_rows = {m.name: m for m in (doc.memberships or []) if is_self_onboarding_contact(m)}
+	coupon_edits = []
+	optin_memberships = []
 	for membership in memberships:
-		net = frappe.utils.cstr(membership.get("network") or "").strip()
-		existing = existing_memberships.get(net)
-		if existing and getattr(existing, "customer", None):
-			existing_email = frappe.utils.cstr(existing.contact_email or "").strip().lower()
-			requested_email = frappe.utils.cstr(membership.get("contact_email") or "").strip().lower()
-			if requested_email != existing_email:
-				frappe.throw(
-					_("The email on a verified Self-Onboarding account cannot be changed here."),
-					frappe.ValidationError,
-				)
+		coupon_row = coupon_rows.get(frappe.utils.cstr(membership.get("membership_name")).strip())
+		if not coupon_row:
+			optin_memberships.append(membership)
+			continue
+		existing_email = frappe.utils.cstr(coupon_row.contact_email or "").strip().lower()
+		requested_email = frappe.utils.cstr(membership.get("contact_email") or "").strip().lower()
+		if requested_email != existing_email:
+			frappe.throw(
+				_("The email on a verified Self-Onboarding account cannot be changed here."),
+				frappe.ValidationError,
+			)
+		coupon_edits.append((coupon_row, membership))
+	memberships = optin_memberships
 
 	doc.mfl_code = mfl_code or doc.mfl_code
 	# The Facility ID comes from the HFR lookup or the CSV; a blank value never clears a stored one.
@@ -2004,19 +2117,25 @@ def save_facility(data: Any):
 	# Rebuild memberships: keep existing rows not in the new set (other network), update/add for this set
 	new_network_set = {m.get("network") for m in memberships if m.get("network")}
 	# Remove membership rows for networks being replaced
-	doc.memberships = [m for m in (doc.memberships or []) if m.network not in new_network_set]
+	doc.memberships = [
+		m
+		for m in (doc.memberships or [])
+		if m.network not in new_network_set or is_self_onboarding_contact(m)
+	]
+	for coupon_row, mem_data in coupon_edits:
+		coupon_row.contact_name = frappe.utils.cstr(mem_data.get("contact_name") or coupon_row.contact_name)
+		coupon_row.contact_phone = frappe.utils.cstr(mem_data.get("contact_phone") or coupon_row.contact_phone)
+		coupon_row.status = mem_data.get("status") or coupon_row.status
 	try:
 		membership_has_override = frappe.db.has_column("CRM Facility Membership", "price_list_override")
 		membership_has_overrides = frappe.db.has_column(
 			"CRM Facility Membership", "price_list_overrides_json"
 		)
 		membership_has_go_live = frappe.db.has_column("CRM Facility Membership", "go_live")
-		membership_has_customer = frappe.db.has_column("CRM Facility Membership", "customer")
 	except Exception:
 		membership_has_override = False
 		membership_has_overrides = False
 		membership_has_go_live = False
-		membership_has_customer = False
 	for mem_data in memberships:
 		net = frappe.utils.cstr(mem_data.get("network") or "").strip()
 		if not net:
@@ -2028,12 +2147,6 @@ def save_facility(data: Any):
 			"contact_email": frappe.utils.cstr(mem_data.get("contact_email") or "").lower(),
 			"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
 		}
-		if membership_has_customer and net in existing_memberships:
-			# Network contact edits rebuild the child row; retain the Customer link
-			# that identifies an existing Self-Onboarding portal contact.
-			customer = existing_memberships[net].get("customer")
-			if customer:
-				membership_values["customer"] = customer
 		if membership_has_override:
 			# Preserve an existing override when the caller omits the field, while
 			# pre-opt-in edits and CSV/admin callers may clear or replace it explicitly.
@@ -2097,7 +2210,11 @@ def save_facility(data: Any):
 	# facility, explicitly invite memberships newly added through this admin flow.
 	if not is_new_facility:
 		for membership in doc.memberships or []:
-			if membership.network in new_network_set and membership.network not in existing_networks:
+			if (
+				membership.network in new_network_set
+				and membership.network not in existing_networks
+				and not is_self_onboarding_contact(membership)
+			):
 				from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility import (
 					_send_membership_invitation,
 				)
@@ -2535,7 +2652,7 @@ def invite_facility_to_customer_experience(facility_name: Any, membership_name: 
 			_send_membership_invitation,
 		)
 		if is_self_onboarded_facility(facility):
-			_send_membership_invitation(facility, membership)
+			_send_membership_invitation(facility, membership, express=True)
 			user_name = frappe.db.get_value("User", {"email": recipient}, "name") if hasattr(frappe.db, "get_value") else None
 			return {
 				"status": "linked" if user_name else "sent",
