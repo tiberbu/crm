@@ -1062,7 +1062,11 @@ def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 				"message": _("External HMIS setup access is incomplete. Ask your administrator to finish the service credentials."),
 			}
 		status = _get_external_provisioning_status(external_url, external_key, external_secret, facility.hfr_facility_id)
-		if ensure_missing_draft and (status.get("status") == "unavailable" or status.get("has_error")):
+		if (
+			ensure_missing_draft
+			and (status.get("status") == "unavailable" or status.get("has_error"))
+			and status.get("error_code") != "invalid_fid"
+		):
 			frappe.log_error(
 				title="External HMIS provisioning status requires support",
 				message="fid=%s correlation_id=%s\n%s"
@@ -1270,6 +1274,9 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 			"source": "external_setup",
 			"message": _("External HMIS setup must use a secure HTTPS address."),
 		}
+	if not _is_valid_fid(fid):
+		# The service answers a malformed FID with a 400 on every poll (v2.2 §5); it is a CRM data fix.
+		return _external_provisioning_unavailable("invalid_fid", None)
 	url = base_url + "/api/method/hmis_setup.api.external_provisioning.get_provision_status"
 	correlation_id = frappe.generate_hash(length=16)
 	try:
@@ -1525,6 +1532,11 @@ def _backfill_licence_from_hfr(fid, mfl_code, deals):
 _EXTERNAL_PROVISIONING_REQUIRED = ("fid", "licence", "admin_email", "admin_name", "admin_mobile")
 
 
+def _is_valid_fid(fid):
+	"""The setup service's FR code format, `^FID-\\d{2}-[\\w-]+$` (case-insensitive)."""
+	return bool(re.fullmatch(r"FID-\d{2}-[\w-]+", frappe.utils.cstr(fid).strip(), flags=re.IGNORECASE))
+
+
 def _build_external_provisioning_payload(source):
 	"""Validate the exact TA-required payload without guessing missing policy data."""
 	source = source or {}
@@ -1539,7 +1551,7 @@ def _build_external_provisioning_payload(source):
 			payload[fieldname] = value
 
 	missing = [fieldname for fieldname in _EXTERNAL_PROVISIONING_REQUIRED if fieldname not in payload]
-	if payload.get("fid") and not re.fullmatch(r"FID-\d{2}-[\w-]+", frappe.utils.cstr(payload["fid"]), flags=re.IGNORECASE):
+	if payload.get("fid") and not _is_valid_fid(payload["fid"]):
 		missing.append("valid fid")
 	if payload.get("admin_email") and "@" not in frappe.utils.cstr(payload["admin_email"]):
 		missing.append("valid admin_email")
@@ -1895,7 +1907,12 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 
 		idempotent = bool(body.get("idempotent"))
 		deploy_queued = None
-		if request_payload.get("auto_deploy") is True and not idempotent:
+		if request_payload.get("auto_deploy") is True and idempotent:
+			# v2.2 §4.5: a re-post never starts deployment, so a record still in Draft waits for a manual release.
+			if _journey_status_key({"status": body.get("status")}) in _QUEUED_STATUSES:
+				deploy_queued = False
+				frappe.cache().set_value(_deploy_not_queued_key(fid), 1, expires_in_sec=7 * 24 * 3600)
+		elif request_payload.get("auto_deploy") is True:
 			# v2.0 still answers 200 when the deployment enqueue fails, with a WARNING message.
 			warning = frappe.utils.cstr(body.get("message")).lstrip().upper().startswith("WARNING")
 			if body.get("auto_deploy_queued") is False or warning:
@@ -2028,6 +2045,11 @@ def _external_provisioning_unavailable(kind, status_code, error_details=None, co
 		error_title = _("Could not reach the deployment service")
 		message = _("Check your connection and try refreshing the status.")
 		retryable = True
+	elif kind == "invalid_fid":
+		error_code = "invalid_fid"
+		error_title = _("This facility's HFR Facility ID is not in the expected format")
+		message = _("The Facility ID must look like FID-XX-…. Ask your implementation team to correct it in CRM.")
+		retryable = False
 	elif kind == "bad_request":
 		error_code = "status_request_rejected"
 		error_title = _("The deployment service could not find a clear status")
