@@ -5,7 +5,7 @@
 **CRM code:** `crm/api/hfr.py`, `frontend/src/pages/FacilityPortal/FacilitySingleView.vue`
 **Related:** [`hmis-provisioning-status-api-requirements.md`](hmis-provisioning-status-api-requirements.md) (CRM contract v2), [`cx-portal-provisioning-gateway-api.md`](cx-portal-provisioning-gateway-api.md)
 
-This note covers what CRM changes so it works with the setup service that is live today (v2.1). The setup service team's later contract document, "External Facility Provisioning API v2.0" (shared 2026-11-01), describes the same live service; see [Setup service API v2.0 (2026-11-01)](#setup-service-api-v20-2026-11-01). Contract v2 is what CRM asks the setup service for next. Where they differ, contract v2 wins; see [Against contract v2](#against-contract-v2).
+This note covers what CRM changes so it works with the setup service that is live today (v2.1). The setup service team's later contract document, "External Facility Provisioning API v2.0" (shared 2026-11-01), describes the same live service; see [Setup service API v2.0 (2026-11-01)](#setup-service-api-v20-2026-11-01).  Its v2.1 / v2.2 revision is in [Setup service API v2.1 / v2.2](#setup-service-api-v21--v22-2026-11-01). Contract v2 is what CRM asks the setup service for next. Where they differ, contract v2 wins; see [Against contract v2](#against-contract-v2).
 
 ## What changed in the setup service
 
@@ -138,3 +138,21 @@ Not used: the `workflow` block, forcing `hmis_instance`, and the optional billin
 - Playwright `frontend/playwright.facility.config.ts`: all 12 facility single view tests pass against the built bundle, including the running step with 60 s polling, "Live since", and the stopped step. Two FID tests were fixed to scope their locator to the header ID strip; they failed on the baseline build too.
 - `yarn test:run`: 241 pass.
 - Live read-only check from the dev site: status for every facility with an FID was parsed with the new code (GET only). The live service returns `completion`; no password appears in any parsed status or journey.
+
+## Setup service API v2.1 / v2.2 (2026-11-01)
+
+The setup service team shared the contract again as "Version 2.1", with change notes for v2.1 and v2.2. The versions are now numbered in the document itself, which closes the naming question above. The party review and decisions V22-A to V22-E are in `_bmad-output/hmis-provisioning/implementation-artifacts/party-review-provisioning-api-v2-2-2026-11-01.md`.
+
+| Change | CRM behaviour |
+|---|---|
+| v2.1 removes `tokens_awarded`, `token_expiry_date`, `billing_model`, `license_expiry_date` | Already not sent. A test pins it. |
+| v2.2: `auto_deploy` defaults to true | No change. CRM always sends `auto_deploy`; an explicit `false` is now the only way **Review HMIS Deployments Before They Start** keeps a Draft, so CRM must keep sending it. |
+| §4.5: an idempotent re-post never starts deployment | An idempotent response with a queued status (e.g. `Draft`) after CRM asked for auto-deploy is recorded as not queued (`submission.deploy_queued: false`, 7-day flag), so the portal says the implementation team will start deployment instead of "starts automatically". |
+| §5: a malformed FID is a 400 on the status call | CRM checks the FID against the service's pattern (`^FID-\d{2}-[\w-]+$`) first. A malformed FID is not sent; the portal shows "This facility's HFR Facility ID is not in the expected format" and no support Error Log is written on each refresh. |
+| Validation errors documented as 400 | Frappe 15 raises `ValidationError` as 417. CRM treats 400 and 417 the same. |
+
+Still asked of the setup service team: confirm `token_source`, `token_purchase_url` and `metering_site_key` are accepted and never written to the deployment log; an `error_code` for the instance block and owner-user failure; `X-Correlation-Id` on responses. The earlier ask to stop returning `login.password` is withdrawn (section 4: shown once to the owner).
+
+Deployment: Python only; no migration or setting.
+
+Verification (2026-11-01): `test_hmis_provisioning_api_v2_2` (9 new) with the v2.0, journey, status, token source and facility ID suites: 121 tests pass. Full CRM suite (797 tests): the failures with this change are a subset of those without it (all in checkout, customer experience, onboarding and other suites that do not touch provisioning).
