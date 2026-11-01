@@ -3003,55 +3003,6 @@ def _queue_confirmation_email(submission, recipient, first_name, network, pricin
 	return queue
 
 
-def _queue_payment_link_email(submission, network):
-	"""Send the processed OIS signatory a protected link to outstanding invoices."""
-	network = network or {}
-	recipient = frappe.utils.cstr(getattr(submission, "facility_signatory_email", "") or "").strip().lower()
-	if not recipient:
-		return None
-	if getattr(submission, "payment_link_email_queue", None):
-		return None
-	url = "%s/payment-checkout?ois=%s" % (frappe.utils.get_url(), submission.name)
-	brand = (network or {}).get("display_name") or "CareverseHIMS"
-	subject = "%s — secure invoice payment link · %s" % (brand, submission.name)
-	message = branded_email_html(
-		network,
-		heading="Your secure invoice payment link",
-		intro_html=(
-			"<p style='margin:0'>Your Opt-In is complete. Use this protected link to review any submitted "
-			"invoices and choose online payment or bank transfer.</p>"
-		),
-		cta_label="Review invoices and pay",
-		cta_url=url,
-		note_html=(
-			"You will verify access with a one-time code sent to this signatory email. Payment options "
-			"appear when a submitted invoice is ready; bank transfers remain pending until finance reconciles them."
-		),
-	)
-	communication = create_transactional_communication(
-		"CRM Opt-In Submission",
-		submission.name,
-		subject=subject,
-		content="Secure invoice payment link sent to the facility signatory.",
-		recipients=[recipient],
-		links=[("CRM Deal", submission.deal)] if getattr(submission, "deal", None) else None,
-	)
-	queue = frappe.sendmail(
-		recipients=[recipient],
-		subject=subject,
-		message=message,
-		**({"communication": communication} if communication else {}),
-		reference_doctype="CRM Opt-In Submission",
-		reference_name=submission.name,
-		now=True,
-	)
-	if queue and frappe.db.has_column("CRM Opt-In Submission", "payment_link_email_queue"):
-		submission.payment_link_email_queue = queue.name
-		submission.payment_link_email_queued_at = frappe.utils.now_datetime()
-		submission.save(ignore_permissions=True)
-	return queue
-
-
 def _should_auto_generate_contract():
 	"""Return whether completed Opt-In submissions should generate contracts."""
 	try:
@@ -3070,13 +3021,6 @@ def _should_auto_generate_contract():
 def requires_contract_signature(submission):
 	"""Keep legacy Opt-In signing, while self-onboarding records require no contract."""
 	return frappe.utils.cstr(getattr(submission, "onboarding_source", "") or "").strip() != "token_self_onboarding"
-
-
-def should_send_legacy_payment_link(submission):
-	"""Only the legacy Opt-In flow sends its signatory a separate checkout link."""
-	return frappe.utils.cstr(getattr(submission, "onboarding_source", "") or "").strip() != (
-		"token_self_onboarding"
-	)
 
 
 def _provision_customer_experience_access(submission):
@@ -4242,10 +4186,8 @@ def _process_submission(submission_ref):
 		# Keep the historic per-OIS behavior for existing Opt-In submissions.
 		if requires_contract_signature(sub):
 			_provision_customer_experience_access(sub)
-		# Existing Opt-In customers keep their signatory checkout link. Self-onboarded
-		# customers use the new CX account email and portal journey instead.
-		if should_send_legacy_payment_link(sub):
-			_queue_payment_link_email(sub, network)
+		# Submission sends only the signing invitation. The invoice checkout link is
+		# sent later from Network Detail → "Send payment link" once billing applies.
 		frappe.db.commit()
 
 		data = _get_job_progress(submission_ref) or {}
