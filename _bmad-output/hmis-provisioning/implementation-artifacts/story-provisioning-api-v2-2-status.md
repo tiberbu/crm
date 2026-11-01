@@ -3,7 +3,7 @@
 **Status:** done (2026-11-01)
 **Decisions:** [party-review-provisioning-api-v2-2-2026-11-01.md](party-review-provisioning-api-v2-2-2026-11-01.md) (V22-A to V22-E)
 **Builds on:** [story-provisioning-api-v2-0-status.md](story-provisioning-api-v2-0-status.md)
-**PR:** #126
+**PR:** #151
 
 As a facility administrator waiting for my HMIS site, I want the portal to tell me the truth when deployment will not start by itself, and as support I want no repeated error logs for a facility whose ID CRM holds in the wrong format.
 

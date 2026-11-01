@@ -1,7 +1,7 @@
 # Party review: HMIS setup service provisioning API v2.1 / v2.2
 
 **Date:** 2026-11-01
-**PR:** #126 (`docs/hmis-setup-service-crm-spec-v2` → `develop`)
+**PR:** #151 (`feat/hmis-provisioning-api-v2-2` → `develop`)
 **Input:** "External Facility Provisioning API — Contract, Version 2.1" from the HMIS setup service team, with its v2.1 and v2.2 change notes (shared 2026-11-01). Identifiers in its examples are not copied here.
 **Room:** Mary (analyst), John (PM), Winston (architect), Amelia (dev), Sally (UX), Murat (test architect)
 **Baseline reviewed:** the v2.0 work on PR #126 ([party-review-provisioning-api-v2-0-2026-11-01.md](party-review-provisioning-api-v2-0-2026-11-01.md), D-A to D-L), the owner password one-time view ([party-review-owner-password-one-time-view-2026-11-01.md](party-review-owner-password-one-time-view-2026-11-01.md)), and `crm/api/hfr.py` as staged.
