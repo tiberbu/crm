@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import { createServer, type Server } from 'http'
 import { existsSync, readFileSync } from 'fs'
 import { extname, join } from 'path'
@@ -481,7 +482,8 @@ test('a failed deployment says which step it stopped at', async ({ page }) => {
 })
 
 // Temporary password: shown once to the HMIS owner, never in the polled status.
-const TEMP_PASSWORD = 'Tmp-Example-Only-42'
+// Generated per run: a fixture value only, never a credential kept in source.
+const TEMP_PASSWORD = `tmp-${randomUUID()}`
 const credentialLive = (credentials: Record<string, unknown>) => {
   const live = ownerLive(
     { status: 'created', email_sent: false },
