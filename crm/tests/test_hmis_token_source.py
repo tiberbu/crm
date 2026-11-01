@@ -57,7 +57,8 @@ class TestApplyTokenSource(UnitTestCase):
 		context = _apply_token_source(frappe._dict(), payload, package_tokens=400)
 		self.assertEqual(payload, _payload())
 		self.assertEqual(
-			context, {"fid": FID, "package_tokens": 400, "token_source": "crm", "defer_package_grant": True}
+			context,
+			{"fid": FID, "package_tokens": 400, "package_item": "", "token_source": "crm", "defer_package_grant": True},
 		)
 
 	def test_paid_packages_defer_their_grant_to_the_invoice(self):
@@ -72,6 +73,8 @@ class TestApplyTokenSource(UnitTestCase):
 		self.assertFalse(free["defer_package_grant"])
 		self.assertTrue(paid["defer_package_grant"])
 		self.assertTrue(unknown["defer_package_grant"])
+		# The metering app re-checks the item's price itself before any initial grant.
+		self.assertEqual((free["package_item"], paid["package_item"]), ("CV-TOKEN-FREE", "CV-TOKEN-STARTER"))
 
 	def test_openmeter_sends_no_billing_fields(self):
 		payload = _payload()

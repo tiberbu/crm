@@ -40,8 +40,11 @@ class TestWelcomeBonusDispense(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self._settings(welcome_bonus_tokens=400, auto_dispense_welcome_bonus=1)
+		self.known = patch.object(metering_admin, "_known_facility", side_effect=lambda fid: fid == FID)
+		self.known.start()
 
 	def tearDown(self):
+		self.known.stop()
 		frappe.db.rollback()
 		frappe.clear_document_cache("CRM Opt-In Settings", "CRM Opt-In Settings")
 		frappe.set_user("Administrator")
@@ -123,6 +126,8 @@ class TestWelcomeBonusDispense(IntegrationTestCase):
 		hook, calls = _hooks()
 		with hook, patch.object(metering_admin, "get_access", return_value={"can_manage": True}):
 			self.assertRaises(frappe.ValidationError, metering_admin.dispense_welcome_bonus, " ")
+			# An FID no CRM facility carries never reaches the metering app.
+			self.assertRaises(frappe.ValidationError, metering_admin.dispense_welcome_bonus, "FID-99-NOT-A-FACILITY")
 			self._settings(welcome_bonus_tokens=0)
 			self.assertRaises(frappe.ValidationError, metering_admin.dispense_welcome_bonus, FID)
 		self.assertEqual(calls, [])

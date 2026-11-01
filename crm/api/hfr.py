@@ -1268,6 +1268,8 @@ def _apply_token_source(settings, payload, package_item=None, package_tokens=0):
 	context = {
 		"fid": payload.get("fid"),
 		"package_tokens": package_tokens or 0,
+		# The metering app re-checks this item's catalog price before any initial grant.
+		"package_item": frappe.utils.cstr(package_item or "").strip(),
 		"token_source": "crm",
 		"defer_package_grant": _is_paid_package(package_item),
 	}
