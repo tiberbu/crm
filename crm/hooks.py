@@ -243,6 +243,9 @@ doc_events = {
 			"crm.fcrm.doctype.erpnext_crm_settings.erpnext_crm_settings.create_customer_on_sales_order"
 		],
 		"validate": ["crm.utils.token_facility.stamp_facility_fid"],
+		# P-76: auto-assign the welcome bonus once a facility selects a package (when switched on).
+		"after_insert": ["crm.utils.token_bonus.auto_dispense_on_package_selection"],
+		"on_submit": ["crm.utils.token_bonus.auto_dispense_on_package_selection"],
 	},
 	# OpenMeter grants are keyed by FID, so token purchases carry it beside the MFL.
 	"Quotation": {

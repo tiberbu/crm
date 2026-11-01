@@ -12,6 +12,10 @@ provisioning do for a paid package: the metering hook runs with the package gran
 draft token order is raised (with the first-purchase bonus and coupon lines). `partner_coupon_tokens`,
 when given, sets that CRM setting first. The customer's KRA PIN is cleared so the journey has to
 enter it. A site key for the facility is written to `key_file` (mode 600).
+
+For the welcome-bonus journey (welcome_bonus_dispense.spec.ts, P-76), `admin_password` also creates
+the synthetic OpenMeter Admin `e2e.metering-admin@example.test` and a Deal listing the facility, so
+its Metering tab shows the Dispense button. `auto_dispense` sets that CRM setting first.
 """
 
 from __future__ import annotations
@@ -20,6 +24,8 @@ import os
 
 import frappe
 
+ADMIN_EMAIL = "e2e.metering-admin@example.test"
+
 
 def setup(
 	run_id: str,
@@ -27,6 +33,8 @@ def setup(
 	package_item: str = "CV-TOKEN-STARTER",
 	partner_coupon: bool = True,
 	partner_coupon_tokens: int | None = None,
+	admin_password: str | None = None,
+	auto_dispense: bool | None = None,
 ) -> dict:
 	from openmeter_mediator.services.provisioning import on_provisioning_submitted
 	from openmeter_mediator.services.site_keys import issue_site_key
@@ -44,6 +52,9 @@ def setup(
 
 	if partner_coupon_tokens is not None:
 		frappe.db.set_single_value("CRM Opt-In Settings", "partner_coupon_tokens", int(partner_coupon_tokens))
+		frappe.clear_document_cache("CRM Opt-In Settings", "CRM Opt-In Settings")
+	if auto_dispense is not None:
+		frappe.db.set_single_value("CRM Opt-In Settings", "auto_dispense_welcome_bonus", 1 if auto_dispense else 0)
 		frappe.clear_document_cache("CRM Opt-In Settings", "CRM Opt-In Settings")
 	customer = base._ensure_customer()
 	# Without a Partner Coupon, self-onboarding records the No Network record, as here.
@@ -81,6 +92,18 @@ def setup(
 		for row in frappe.get_doc("Sales Order", order).items
 		if row.get("crm_bonus_type")
 	}
+	deal = None
+	if admin_password:
+		base._ensure_user(ADMIN_EMAIL, "E2E Metering Admin", admin_password, roles=("OpenMeter Admin", "Sales Manager"))
+		deal = frappe.get_doc(
+			{
+				"doctype": "CRM Deal",
+				"organization_name": f"E2E Express Clinic {run_id} (synthetic)",
+				"facilities": [
+					{"facility_name": facility.facility_name, "mfl_code": mfl, "hfr_facility_id": fid, "facility_level": "Level 2"}
+				],
+			}
+		).insert(ignore_permissions=True, ignore_links=True, ignore_mandatory=True).name
 	key = issue_site_key(fid)
 	fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 	with os.fdopen(fd, "w") as fh:
@@ -96,4 +119,6 @@ def setup(
 		"package_tokens": package["token_quantity"],
 		"bonuses": bonuses,
 		"expected_tokens": package["token_quantity"] + sum(bonuses.values()),
+		"deal": deal,
+		"admin": ADMIN_EMAIL if admin_password else None,
 	}

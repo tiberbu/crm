@@ -163,6 +163,18 @@
               @update:modelValue="markDirty"
             />
             <FormControl
+              v-model="form.auto_dispense_welcome_bonus"
+              data-testid="optin-auto-dispense-welcome-bonus"
+              :label="__('Auto-assign the bonus when a package is selected')"
+              type="checkbox"
+              :description="
+                __(
+                  'Grant the first-purchase bonus as soon as a facility selects a Flex package, before payment. Each facility still gets it once; its first paid invoice then grants the package only.',
+                )
+              "
+              @update:modelValue="markDirty"
+            />
+            <FormControl
               v-model="form.partner_coupon_tokens"
               :label="__('Partner Coupon tokens')"
               type="number"
@@ -627,6 +639,7 @@ const form = reactive({
   token_invoice_due_days: 30,
   welcome_bonus_tokens: 0,
   partner_coupon_tokens: 0,
+  auto_dispense_welcome_bonus: false,
   token_calculator: {
     monthly_platform_fee: 0,
     bill_value_per_token: 0,

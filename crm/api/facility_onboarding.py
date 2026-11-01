@@ -1248,6 +1248,240 @@ def retry_hfr(session_token: Any):
 	return _resolve_verified_hfr(token, session)
 
 
+ADMIN_REFERENCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .'/-]{2,63}$")
+_ADMIN_NOT_FOUND = (
+	_("We couldn’t find a facility we can verify with that reference. Check the MFL code or registration number and try again.")
+)
+
+
+def _admin_facility_doc(reference: str):
+	"""Resolve a facility already on our books by exact MFL code or registration number."""
+	value = _text(reference)
+	if not value:
+		return None
+	for fieldname in ("mfl_code", "registration_number"):
+		name = frappe.db.get_value(
+			"CRM Pre-Qualified Facility",
+			{fieldname: value},
+			"name",
+		)
+		if name:
+			return frappe.get_doc("CRM Pre-Qualified Facility", name)
+	return None
+
+
+def _admin_facility_parent_links(doc) -> list[tuple[str, str]]:
+	"""Leads registered against this facility, via Lead Facility and Deal Facility links."""
+	links: list[tuple[str, str]] = []
+	mfl = _text(doc.mfl_code)
+	if not mfl:
+		return links
+	if frappe.db.exists("DocType", "CRM Lead Facility"):
+		for row in frappe.get_all(
+			"CRM Lead Facility",
+			filters={"mfl_code": mfl},
+			fields=["parent"],
+			ignore_permissions=True,
+			limit_page_length=5,
+		):
+			if _text(row.get("parent")) and frappe.db.exists("CRM Lead", row["parent"]):
+				links.append(("CRM Lead", row["parent"]))
+	if frappe.db.exists("DocType", "CRM Deal Facility"):
+		for row in frappe.get_all(
+			"CRM Deal Facility",
+			filters={"mfl_code": mfl},
+			fields=["parent"],
+			ignore_permissions=True,
+			limit_page_length=5,
+		):
+			if not _text(row.get("parent")) or not frappe.db.exists("CRM Deal", row["parent"]):
+				continue
+			lead = frappe.db.get_value("CRM Deal", row["parent"], "lead")
+			if lead and frappe.db.exists("CRM Lead", lead):
+				links.append(("CRM Lead", lead))
+	return links
+
+
+def _admin_registered_contact(doc) -> dict[str, Any] | None:
+	"""The registered person on record: the facility's network contact first, then its Lead."""
+
+	def split_name(full_name: Any) -> tuple[str, str] | None:
+		parts = _text(full_name).split()
+		if not parts:
+			return None
+		return parts[0], " ".join(parts[1:])
+
+	for status in ("Active", ""):
+		for row in doc.memberships or []:
+			if status and _text(row.get("status")) != status:
+				continue
+			email = _text(row.get("contact_email")).lower()
+			phone = _text(row.get("contact_phone"))
+			split = split_name(row.get("contact_name"))
+			if split and email and phone:
+				return {"first_name": split[0], "last_name": split[1], "email": email, "phone": phone}
+	for parenttype, parent in _admin_facility_parent_links(doc):
+		row = frappe.db.get_value(
+			parenttype,
+			parent,
+			["first_name", "last_name", "email", "mobile_no"],
+			as_dict=True,
+		) or {}
+		email = _text(row.get("email")).lower()
+		phone = _text(row.get("mobile_no"))
+		split = split_name("%s %s" % (_text(row.get("first_name")), _text(row.get("last_name"))))
+		if split and email and phone:
+			return {"first_name": split[0], "last_name": split[1], "email": email, "phone": phone}
+	return None
+
+
+def _admin_facility_row(doc) -> dict[str, Any]:
+	fid = _text(doc.hfr_facility_id) or _text(doc.mfl_code)
+	return {
+		"facility_id": fid,
+		"mfl_code": _text(doc.mfl_code) or fid,
+		"facility_name": _text(doc.facility_name),
+		"classification": _text(doc.keph_level),
+		"facility_level": _text(doc.keph_level),
+		"facility_type": _text(doc.facility_type),
+		"facility_category": _text(doc.facility_category),
+		"number_of_beds": frappe.utils.cint(doc.number_of_beds or 0),
+		"county": _text(doc.hfr_county),
+		"sub_county": _text(doc.hfr_sub_county),
+		"owner_type": _text(doc.facility_owner_type),
+		"registration_number": _text(doc.registration_number),
+		"license_number": _text(doc.license_number),
+	}
+
+
+def _suggested_account_email(doc) -> str:
+	"""Best-known organization inbox: the facility Lead's email. The network contact's own
+	email is the OTP recipient and is never echoed back in clear text."""
+	for parenttype, parent in _admin_facility_parent_links(doc):
+		email = _text(frappe.db.get_value(parenttype, parent, "email")).lower()
+		if email:
+			return email
+	return ""
+
+
+# nosemgrep: guest-whitelisted-method -- exact-match facility lookup only; the OTP is routed to the registered contact and facility data stays gated behind it.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def start_admin_onboarding(reference: Any):
+	"""Alternative path: an administrator finds the facility by MFL code or registration
+	number, and the verification code is sent to the registered contact on record."""
+	value = _text(reference)
+	if not value or not ADMIN_REFERENCE_RE.fullmatch(value) or _rate_limited("admin_start:%s" % _client_ip()):
+		frappe.throw(_ADMIN_NOT_FOUND, frappe.ValidationError)
+	doc = _admin_facility_doc(value)
+	person = _admin_registered_contact(doc) if doc else None
+	if not doc or not person:
+		frappe.throw(_ADMIN_NOT_FOUND, frappe.ValidationError)
+	mfl = _text(doc.mfl_code)
+	reg = _text(doc.registration_number)
+	identity_hash = hashlib.sha256(("admin|%s|%s" % (mfl.casefold(), reg.casefold())).encode()).hexdigest()
+	identity_ref = evidence_ref("admin|%s|%s" % (mfl, reg))
+	now = int(time.time())
+	token = secrets.token_urlsafe(32)
+	otp = "%06d" % secrets.randbelow(1_000_000)
+	payload = {
+		"verified": False,
+		"lookup_valid": True,
+		"admin_path": True,
+		"hfr_state": "ready",
+		"facilities": [_admin_facility_row(doc)],
+		"organization_name": _text(doc.organization) or _text(doc.facility_name),
+		"identity_hash": identity_hash,
+		"identity_ref": identity_ref,
+		"person": {
+			"first_name": person["first_name"],
+			"last_name": person["last_name"],
+			"email": person["email"],
+			"phone": person["phone"],
+		},
+		"otp_hash": _otp_hash(otp),
+		"otp_attempts": 0,
+		"otp_expires_at": now + OTP_TTL_SECONDS,
+		"otp_sent_at": now,
+		"resend_count": 0,
+	}
+	with filelock("crm_facility_onboarding_identity_%s" % identity_hash[:24], timeout=60):
+		recent = _take_recent_challenge(identity_hash, payload["person"], True, now)
+		if recent:
+			payload.update(recent)
+		else:
+			payload["delivery"] = _send_otp(payload["person"], otp)
+			payload["delivery_mask_decoy"] = payload["delivery"]["status"] != "sent"
+		_save_session(token, payload)
+		frappe.cache().set_value(_identity_challenge_key(identity_hash), token, expires_in_sec=OTP_RESEND_SECONDS)
+	_evidence("lookup", token, payload, outcome="ok", detail="admin path: facility %s resolved" % mfl)
+	if not recent:
+		_evidence(
+			"otp_sent",
+			token,
+			payload,
+			outcome="ok" if payload["delivery"]["status"] == "sent" else "failed",
+			channel=payload["delivery"]["channel"] or "",
+			detail="admin path",
+		)
+	facility = payload["facilities"][0]
+	return {
+		"success": True,
+		"data": {
+			"session_token": token,
+			"reused": bool(recent),
+			"delivery": _delivery_payload(payload, now),
+			"owner": {
+				"first_name": _text(payload["person"]["first_name"]),
+				"role": "Registered contact",
+				"masked_phone": _mask_phone(payload["person"]["phone"]),
+				"masked_email": _mask_email(payload["person"]["email"]),
+			},
+			"facility": {
+				"facility_id": facility["facility_id"],
+				"mfl_code": facility["mfl_code"],
+				"facility_name": facility["facility_name"],
+				"facility_level": facility["facility_level"],
+				"facility_type": facility["facility_type"],
+			},
+			"organization_name": payload["organization_name"],
+			"suggested_account_email": _suggested_account_email(doc),
+		},
+	}
+
+
+# nosemgrep: guest-whitelisted-method -- binds the corporate account email to an OTP-verified admin session only.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def set_admin_account_email(session_token: Any, email: Any):
+	token = _text(session_token)
+	session = _session_or_error(token, verified=True)
+	if not session.get("admin_path"):
+		frappe.throw(_("This onboarding session cannot set an account email."), frappe.PermissionError)
+	account_email = _text(email).strip().lower()
+	validated = frappe.utils.validate_email_address(account_email).strip().lower()
+	if not account_email or validated != account_email:
+		frappe.throw(
+			_("Enter the organization’s full email address, like info@facility.go.ke."),
+			frappe.ValidationError,
+		)
+	user_name = frappe.db.get_value("User", {"email": account_email}, "name")
+	if user_name:
+		user = frappe.db.get_value("User", user_name, ["user_type", "enabled"], as_dict=True) or {}
+		if user.get("user_type") and user.get("user_type") != "Website User":
+			frappe.throw(
+				_("That email is reserved for internal accounts. Use the organization’s email instead."),
+				frappe.ValidationError,
+			)
+		if not frappe.utils.cint(user.get("enabled")):
+			frappe.throw(
+				_("That login is disabled. Contact support to restore access before continuing."),
+				frappe.ValidationError,
+			)
+	session["account_email_override"] = account_email
+	_save_session(token, session)
+	_evidence("lookup", token, session, outcome="ok", detail="admin path: corporate account email bound")
+	return {"success": True, "data": {"email": account_email}}
+
+
 # nosemgrep: guest-whitelisted-method -- only public package metadata is returned after strict six-digit Network validation.
 @frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
 def get_catalog(partner_id: Any = None):
@@ -1845,8 +2079,50 @@ def submit_onboarding(
 		)
 
 
+def _validate_admin_account_email(value: Any, session: dict[str, Any]) -> str:
+	"""Admin path: the account is the organization's corporate email, bound after OTP verification."""
+	account_email = _text(value).strip().lower()
+	validated = frappe.utils.validate_email_address(account_email).strip().lower()
+	if not account_email or validated != account_email:
+		frappe.throw(
+			_("A valid corporate email address is required for the Tiberbu Express account. Please contact support."),
+			frappe.ValidationError,
+		)
+	override = _text(session.get("account_email_override")).lower()
+	if override and override != account_email:
+		frappe.throw(
+			_("Use the corporate email you confirmed to continue this onboarding."),
+			frappe.ValidationError,
+		)
+	user_name = frappe.db.get_value("User", {"email": account_email}, "name")
+	if user_name:
+		user = frappe.db.get_value("User", user_name, ["user_type", "enabled"], as_dict=True) or {}
+		if user.get("user_type") and user.get("user_type") != "Website User":
+			frappe.throw(
+				_("This email cannot be used for facility onboarding."),
+				frappe.ValidationError,
+			)
+		if not frappe.utils.cint(user.get("enabled")):
+			frappe.throw(
+				_("This login cannot be used because the account is disabled. Contact support to restore access before continuing."),
+				frappe.ValidationError,
+			)
+	for submission_name in (session or {}).get("submitted", {}).values():
+		if not frappe.db.exists("CRM Opt-In Submission", submission_name):
+			continue
+		prior_email = _text(frappe.db.get_value("CRM Opt-In Submission", submission_name, "cx_account_email") or "").lower()
+		if prior_email and prior_email != account_email:
+			frappe.throw(
+				_("Use the same Tiberbu Express email to resume this onboarding."),
+				frappe.ValidationError,
+			)
+	return account_email
+
+
 def _validate_account_email(value: Any, session: dict[str, Any] | None = None) -> str:
 	"""Use the registry email bound to the OTP-verified identity, never a browser-selected address."""
+	if session and session.get("admin_path"):
+		return _validate_admin_account_email(value, session)
 	account_email = _text(((session or {}).get("person") or {}).get("email")).lower()
 	validated = frappe.utils.validate_email_address(account_email).strip().lower()
 	if not account_email or validated != account_email:
@@ -2067,7 +2343,11 @@ def _submit_selected_facilities(token, partner, packages_by_facility, account_em
 	person_name = " ".join(
 		part for part in (_text(person.get("first_name")), _text(person.get("last_name"))) if part
 	).strip()
-	customer_target = person_name or account_email
+	if session.get("admin_path"):
+		# The account belongs to the organization, not the verified contact.
+		customer_target = _text(session.get("organization_name")) or person_name or account_email
+	else:
+		customer_target = person_name or account_email
 	existing_customer = _resolve_existing_customer(session, account_email)
 	customer = existing_customer or _ensure_customer(customer_target, commit=False)
 	if not customer:

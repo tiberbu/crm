@@ -713,6 +713,7 @@ def get_optin_settings():
 		"token_invoice_due_days": int(settings.get("token_invoice_due_days") or 30),
 		"welcome_bonus_tokens": frappe.utils.cint(settings.get("welcome_bonus_tokens")),
 		"partner_coupon_tokens": frappe.utils.cint(settings.get("partner_coupon_tokens")),
+		"auto_dispense_welcome_bonus": bool(frappe.utils.cint(settings.get("auto_dispense_welcome_bonus"))),
 		"token_calculator": _token_calculator_view(),
 		"token_packages": token_packages,
 	}
@@ -1021,6 +1022,8 @@ def update_optin_settings(settings: Any):
 		for fieldname, value in bonus_tokens.items():
 			if doc.meta.has_field(fieldname):
 				doc.set(fieldname, value)
+		if "auto_dispense_welcome_bonus" in settings and doc.meta.has_field("auto_dispense_welcome_bonus"):
+			doc.auto_dispense_welcome_bonus = 1 if frappe.utils.cint(settings.get("auto_dispense_welcome_bonus")) else 0
 		doc.token_invoice_due_days = token_invoice_due_days
 		if packages_sent:
 			doc.set("token_packages", normalized_token_packages)
