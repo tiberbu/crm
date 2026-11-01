@@ -113,7 +113,7 @@ test('shows the saved HFR FID and offers a retry when status lookup temporarily 
     return route.fulfill(status({ configured: true, status: 'deployed', progress: 100 }))
   })
 
-  await expect(page.getByText('FID-29-88776-5', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('facility-header-ids').getByText('FID-29-88776-5', { exact: true })).toBeVisible()
   await expect(page.getByText('A verified HFR FID is required for deployment status and setup.')).toHaveCount(0)
   await expect(page.getByRole('alert')).toContainText('temporarily unavailable')
   await expect(page.getByRole('button', { name: 'Retry check' })).toBeVisible()
@@ -121,7 +121,7 @@ test('shows the saved HFR FID and offers a retry when status lookup temporarily 
 
   await page.getByRole('button', { name: 'Retry check' }).click()
   await expect(page.getByText('Live', { exact: true })).toBeVisible()
-  await expect(page.getByText('FID-29-88776-5', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('facility-header-ids').getByText('FID-29-88776-5', { exact: true })).toBeVisible()
   expect(statusCalls).toHaveLength(2)
   expect(statusCalls[1].mfl_code).toBe('88776')
 })
@@ -138,7 +138,7 @@ test('a status service mismatch names the FID the portal actually sent for resol
     ),
   )
 
-  await expect(page.getByText('FID-29-88776-5', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('facility-header-ids').getByText('FID-29-88776-5', { exact: true })).toBeVisible()
   await expect(page.getByText('FID lookup needs attention', { exact: true })).toBeVisible()
   await expect(page.getByText(/portal has HFR FID FID-29-88776-5/)).toBeVisible()
   await expect(page.getByText('A verified HFR FID is required for deployment status and setup.')).toHaveCount(0)
@@ -408,4 +408,156 @@ test('an owner login failure points at the configure step and stops polling', as
   await expect(journey.locator('li[data-state="done"]')).toHaveCount(2)
   await page.clock.fastForward('10:00')
   expect(statusCalls.filter((call) => call.method.endsWith('get_provisioning_status'))).toHaveLength(0)
+})
+
+// Setup service API v2.0: named deployment steps, faster polling during deployment, "Live since".
+test('a running deployment names its step, checks every 60 seconds, then shows when it went live', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-01T10:00:00') })
+  const deploying = {
+    configured: true,
+    status: 'In Progress',
+    progress: 45,
+    journey: {
+      phase: 'deploying',
+      label: 'Deploying',
+      headline: 'Deploying your HMIS site',
+      detail: 'Your HMIS site is being deployed. You can keep using the portal; this page updates automatically.',
+      steps: steps(1),
+      progress: 45,
+      estimate: null,
+      site: null,
+      deploy_step: { index: 6, total: 12, name: 'Service Units', label: 'Creating service units', state: 'running', text: 'Step 6 of 12 · Creating service units' },
+      poll: true,
+      poll_after_seconds: 60,
+      checked_at: '2026-11-01T10:00:00',
+    },
+  }
+  const live = {
+    ...ownerLive({ status: 'created', email_sent: true }, `Use the password in the HMIS credentials email sent to ${ADMIN}, or “Forgot password” on the sign-in page.`),
+  }
+  live.journey = { ...live.journey, site: { ...live.journey.site, live_since: 'Live since 1 Nov 2026' } } as typeof live.journey
+  const statusCalls = await openFacility(page, async (route) => route.fulfill(status(deploying)), facility, async (route) => route.fulfill(status(live)))
+
+  await expect(page.getByTestId('hmis-deploy-step')).toHaveText(/Step 6 of 12 · Creating service units/)
+  await expect(page.getByTestId('hmis-auto-refresh')).toHaveText(/every 60 seconds/)
+  await page.clock.fastForward('00:50')
+  expect(statusCalls.filter((call) => call.method.endsWith('get_provisioning_status'))).toHaveLength(0)
+  await page.clock.fastForward('00:15')
+  const card = page.getByTestId('hmis-live-site')
+  await expect(card).toContainText(SITE_URL)
+  await expect(page.getByTestId('hmis-live-since')).toHaveText('Live since 1 Nov 2026')
+  await expect(page.getByTestId('hmis-deploy-step')).toHaveCount(0)
+})
+
+test('a failed deployment says which step it stopped at', async ({ page }) => {
+  await openFacility(page, async (route) =>
+    route.fulfill(
+      status({
+        configured: true,
+        status: 'Failed',
+        progress: 55,
+        journey: {
+          phase: 'needs_attention',
+          label: 'Needs attention',
+          headline: 'Setup needs attention',
+          detail: 'The implementation team needs to review the latest deployment attempt. Contact Network Support if this does not change.',
+          steps: steps(0, 1),
+          progress: 55,
+          estimate: null,
+          site: null,
+          deploy_step: { index: 7, total: 12, name: 'Laboratories', label: 'Setting up laboratories', state: 'failed', text: 'Stopped at step 7 of 12 · Setting up laboratories' },
+          poll: false,
+          poll_after_seconds: null,
+          checked_at: '2026-11-01T10:00:00',
+        },
+      }),
+    ),
+  )
+  const journey = page.getByTestId('hmis-setup-journey')
+  await expect(journey).toContainText('Where setup stopped')
+  await expect(page.getByTestId('hmis-deploy-step')).toHaveText(/Stopped at step 7 of 12 · Setting up laboratories/)
+  await expect(journey.locator('li[data-state="error"]')).toContainText('Deploying HMIS site')
+  await expect(page.getByTestId('hmis-auto-refresh')).toHaveCount(0)
+})
+
+// Temporary password: shown once to the HMIS owner, never in the polled status.
+const TEMP_PASSWORD = 'Tmp-Example-Only-42'
+const credentialLive = (credentials: Record<string, unknown>) => {
+  const live = ownerLive(
+    { status: 'created', email_sent: false },
+    'The credentials email could not be delivered. The facility administrator can view the temporary password once below. Change it after you first sign in.',
+  )
+  live.journey = { ...live.journey, site: { ...live.journey.site, credentials: { status: 'created', email_sent: false, password_available: true, owner_email_masked: 'a***@e***.test', viewed_on: null, viewed_by_you: false, can_view: false, ...credentials } } } as typeof live.journey
+  return live
+}
+
+test('the owner views the temporary password once, must confirm saving it, and the card then says it was viewed', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const reveals: string[] = []
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status(credentialLive({ can_view: true }))),
+    facility,
+    async (route) => route.fulfill(status(credentialLive({ viewed_on: '2026-11-01 10:05:00', viewed_by_you: true }))),
+  )
+  await page.route('**/api/method/crm.api.hfr.reveal_hmis_owner_password', async (route) => {
+    reveals.push(route.request().method())
+    return route.fulfill({ json: { message: { email: ADMIN, password: TEMP_PASSWORD, viewed_on: '2026-11-01 10:05:00' } } })
+  })
+
+  const panel = page.getByTestId('hmis-owner-password')
+  await expect(page.getByText(TEMP_PASSWORD)).toHaveCount(0)
+  await panel.getByRole('button', { name: 'View temporary password' }).click()
+  const confirm = page.getByTestId('hmis-reveal-confirm')
+  await expect(confirm).toContainText('shown one time only')
+  await confirm.getByRole('button', { name: 'Not now' }).click()
+  expect(reveals).toHaveLength(0)
+
+  await panel.getByRole('button', { name: 'View temporary password' }).click()
+  await page.getByTestId('hmis-reveal-confirm').getByRole('button', { name: 'Show password' }).click()
+  const dialog = page.getByTestId('hmis-owner-password-dialog')
+  await expect(dialog.getByTestId('hmis-owner-password-value')).toHaveText(TEMP_PASSWORD)
+  await expect(dialog).toContainText(ADMIN)
+  expect(reveals).toEqual(['POST'])
+
+  await dialog.getByRole('button', { name: 'Copy' }).click()
+  await expect(dialog.getByRole('button', { name: 'Copied' })).toBeVisible()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(TEMP_PASSWORD)
+
+  // Escape and the backdrop do not close it; only the confirmed Close button does.
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+  const close = dialog.getByRole('button', { name: 'Close' })
+  await expect(close).toBeDisabled()
+  await dialog.getByTestId('hmis-owner-password-saved').check()
+  await close.click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByText(TEMP_PASSWORD)).toHaveCount(0)
+  await expect(panel).toContainText('You viewed the temporary password on')
+  await expect(panel).toContainText('cannot be shown again')
+  await expect(panel.getByRole('button', { name: 'View temporary password' })).toHaveCount(0)
+})
+
+test('other portal users see who can view the temporary password, not a button', async ({ page }) => {
+  await openFacility(page, async (route) => route.fulfill(status(credentialLive({ can_view: false }))))
+  const panel = page.getByTestId('hmis-owner-password')
+  await expect(panel).toContainText('Only the facility administrator (a***@e***.test) can view the temporary password, once')
+  await expect(panel.getByRole('button')).toHaveCount(0)
+})
+
+test('a refused view explains why and shows no password', async ({ page }) => {
+  await openFacility(page, async (route) => route.fulfill(status(credentialLive({ can_view: true }))))
+  await page.route('**/api/method/crm.api.hfr.reveal_hmis_owner_password', (route) =>
+    route.fulfill({
+      status: 417,
+      json: {
+        exc_type: 'ValidationError',
+        _server_messages: JSON.stringify([JSON.stringify({ message: 'The temporary password was already viewed on 1 Nov 2026. Contact Network Support if it was lost.' })]),
+      },
+    }),
+  )
+  await page.getByTestId('hmis-owner-password').getByRole('button', { name: 'View temporary password' }).click()
+  await page.getByTestId('hmis-reveal-confirm').getByRole('button', { name: 'Show password' }).click()
+  await expect(page.getByTestId('hmis-owner-password')).toContainText('already viewed')
+  await expect(page.getByTestId('hmis-owner-password-dialog')).toHaveCount(0)
 })

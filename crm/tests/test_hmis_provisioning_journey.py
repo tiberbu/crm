@@ -231,7 +231,7 @@ class TestOwnerLoginJourney(UnitTestCase):
 		self.assertEqual(reported["admin_username"], ADMIN)
 		self.assertEqual(
 			reported["owner_login"],
-			{"email": ADMIN, "status": "created", "email_sent": False},
+			{"email": ADMIN, "status": "created", "email_sent": False, "password_available": True},
 		)
 		self.assertNotIn("temporary-secret", frappe.as_json(reported))
 
@@ -264,13 +264,19 @@ class TestOwnerLoginJourney(UnitTestCase):
 		journey = _provisioning_journey(_v2_status(status="In Progress", login_status=None, password=False), now=NOW)
 		self.assertEqual(journey["phase"], "deploying")
 
-	def test_undelivered_credentials_point_to_forgot_password(self):
+	def test_undelivered_credentials_offer_a_one_time_view_without_the_password(self):
 		site = _provisioning_journey(_v2_status(), now=NOW)["site"]
 		self.assertEqual(site["admin_email"], ADMIN)
-		self.assertNotIn("credentials", site)
+		self.assertEqual(site["credentials"], {"status": "created", "email_sent": False, "password_available": True})
 		self.assertIn("could not be delivered", site["instructions"][2])
-		self.assertIn("Forgot password", site["instructions"][2])
+		self.assertIn("view the temporary password once", site["instructions"][2])
 		self.assertNotIn("temporary-secret", frappe.as_json(site))
+
+	def test_undelivered_credentials_without_a_password_point_to_forgot_password(self):
+		site = _provisioning_journey(_v2_status(password=False), now=NOW)["site"]
+		self.assertFalse(site["credentials"]["password_available"])
+		self.assertIn("Forgot password", site["instructions"][2])
+		self.assertIn("Network Support", site["instructions"][2])
 
 	def test_delivered_and_activated_logins_explain_the_password_source(self):
 		sent = _provisioning_journey(_v2_status(email_sent=True, password=False), now=NOW)["site"]
