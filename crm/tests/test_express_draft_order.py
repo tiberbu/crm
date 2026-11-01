@@ -255,6 +255,28 @@ class TestTokenBonuses(TestExpressDraftOrder):
 			third = cx.create_express_draft_order(self.customer, MFL, self.package)["data"]["sales_order"]
 		self.assertEqual(self._bonus_rows(third), {})
 
+	def test_a_dispensed_welcome_bonus_leaves_the_order_and_invoice(self):
+		"""P-76: once dispensed (button or auto-assign), the confirmed order carries no welcome line."""
+		from crm.utils import token_bonus
+
+		with patch.object(token_bonus, "welcome_bonus_status", return_value={"dispensed": True}):
+			invoice = frappe.get_doc("Sales Invoice", self._confirm()["invoice"])
+		self.assertEqual(self._bonus_rows(self.order), {})
+		self.assertFalse([row for row in invoice.items if row.crm_bonus_type])
+		self.assertEqual(invoice.net_total, self.package["price"])
+
+	def test_dispensing_takes_the_welcome_line_off_the_draft(self):
+		from crm.utils import token_bonus
+
+		fid = frappe.db.get_value("Sales Order", self.order, "crm_token_facility_fid")
+		if not fid:
+			frappe.db.set_value("Sales Order", self.order, "crm_token_facility_fid", "FID-00-TEST-0077")
+			fid = "FID-00-TEST-0077"
+		self.assertIn("Welcome Bonus", self._bonus_rows(self.order))
+		self.assertEqual(token_bonus.drop_welcome_lines_from_drafts(fid), [self.order])
+		self.assertNotIn("Welcome Bonus", self._bonus_rows(self.order))
+		self.assertEqual(frappe.get_doc("Sales Order", self.order).net_total, self.package["price"])
+
 	def test_no_coupon_without_the_flag_and_nothing_when_set_to_zero(self):
 		self.assertNotIn("Partner Coupon", self._bonus_rows(self.order))
 		frappe.db.set_single_value("CRM Opt-In Settings", "welcome_bonus_tokens", 0)
