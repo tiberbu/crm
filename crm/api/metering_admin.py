@@ -91,6 +91,14 @@ def _require_manage():
 		frappe.throw(_("Only OpenMeter Admins can use metering."), frappe.PermissionError)
 
 
+def _known_facility(fid: str) -> bool:
+	"""A deal facility or self-onboarded registry row carries this Facility ID."""
+	return bool(
+		frappe.db.exists("CRM Deal Facility", {"hfr_facility_id": fid, "parenttype": "CRM Deal"})
+		or frappe.db.exists("CRM Pre-Qualified Facility", {"hfr_facility_id": fid})
+	)
+
+
 def _welcome_bonus_view(fid: str) -> dict:
 	from crm.utils.token_bonus import WELCOME_BONUS, auto_dispense_enabled, bonus_settings, welcome_bonus_status
 
@@ -117,6 +125,9 @@ def dispense_welcome_bonus(fid: str) -> dict:
 	fid = cstr(fid).strip()
 	if not fid:
 		frappe.throw(_("This facility has no Facility ID."))
+	if not _known_facility(fid):
+		# The metering app would otherwise create an Active site for any string it is given.
+		frappe.throw(_("No CRM facility has the Facility ID {0}.").format(fid))
 	if bonus_settings()[WELCOME_BONUS] <= 0:
 		frappe.throw(_("The first-purchase bonus is set to 0 tokens in Settings › Opt-In."))
 	outcome = dispense(fid, "User", frappe.session.user)
