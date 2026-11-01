@@ -48,6 +48,7 @@
       @import="importSites"
       @issue="(fid) => confirm('issue', fid)"
       @reissue="(fid) => confirm('reissue', fid)"
+      @bonus="(fid) => confirm('bonus', fid)"
       @reveal="openReveal"
       @probe="sendProbe"
     />
@@ -377,6 +378,15 @@ function confirm(kind, fid) {
       confirmLabel: __('Issue key'),
       onConfirm: () => issueKey(fid),
     },
+    bonus: {
+      title: __('Dispense the welcome bonus?'),
+      message: __(
+        '{0} gets its one-time welcome bonus now. Its first paid package will then grant only the tokens bought. This cannot be repeated.',
+        [fid],
+      ),
+      confirmLabel: __('Dispense bonus'),
+      onConfirm: () => dispenseBonus(fid),
+    },
     reissue: {
       title: __('Re-issue expiring grants?'),
       message: __(
@@ -424,6 +434,32 @@ async function issueKey(fid) {
     ),
   )
   cards[fid]?.reload()
+}
+
+async function dispenseBonus(fid) {
+  busy.value = 'welcome_bonus'
+  busyFid.value = fid
+  try {
+    const result = await call(API + 'dispense_welcome_bonus', { fid })
+    if (result.changed) {
+      toast.success(
+        __('{0} welcome bonus tokens dispensed to {1}.', [
+          Number(result.tokens).toLocaleString(),
+          fid,
+        ]),
+      )
+    } else if (result.dispensed) {
+      toast.info(__('{0} already has its welcome bonus.', [fid]))
+    } else {
+      toast.error(result.reason || __('The welcome bonus was not dispensed.'))
+    }
+  } catch (error) {
+    toast.error(message(error))
+  } finally {
+    busy.value = null
+    busyFid.value = null
+    cards[fid]?.reload()
+  }
 }
 
 async function reissueGrants(fid) {
