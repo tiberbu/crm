@@ -23,11 +23,8 @@ def _payload():
 	return {
 		"fid": FID,
 		"licence": "LIC-TEST-1",
-		"tokens_awarded": 400,
-		"token_expiry_date": "2027-10-21",
 		"admin_email": "facility@example.test",
 		"admin_name": "Facility Admin",
-		"billing_model": "Token",
 		"admin_mobile": "+254700000001",
 	}
 
@@ -57,7 +54,7 @@ def _hooks(key_hook=None, submitted_hook=None):
 class TestApplyTokenSource(UnitTestCase):
 	def test_off_by_default_leaves_the_payload_unchanged(self):
 		payload = _payload()
-		context = _apply_token_source(frappe._dict(), payload)
+		context = _apply_token_source(frappe._dict(), payload, package_tokens=400)
 		self.assertEqual(payload, _payload())
 		self.assertEqual(
 			context,
@@ -79,11 +76,12 @@ class TestApplyTokenSource(UnitTestCase):
 		# The metering app re-checks the item's price itself before any initial grant.
 		self.assertEqual((free["package_item"], paid["package_item"]), ("CV-TOKEN-FREE", "CV-TOKEN-STARTER"))
 
-	def test_openmeter_awards_no_tokens_in_the_payload(self):
+	def test_openmeter_sends_no_billing_fields(self):
 		payload = _payload()
 		with patch("crm.api.hfr.frappe.utils.get_url", return_value="https://crm.example.test/cx-portal"):
-			context = _apply_token_source(frappe._dict(hmis_token_source_openmeter=1), payload)
-		self.assertEqual(payload["tokens_awarded"], 0)
+			context = _apply_token_source(frappe._dict(hmis_token_source_openmeter=1), payload, package_tokens=400)
+		for fieldname in ("tokens_awarded", "token_expiry_date", "billing_model", "license_expiry_date"):
+			self.assertNotIn(fieldname, payload)
 		self.assertEqual(payload["token_source"], "openmeter")
 		self.assertEqual(payload["token_purchase_url"], "https://crm.example.test/cx-portal")
 		self.assertEqual(context["package_tokens"], 400)
@@ -110,7 +108,7 @@ class TestOpenMeterProvisioningSubmit(UnitTestCase):
 		cache.get_value.return_value = None
 		mock_cache.return_value = cache
 		payload = _payload()
-		payload.update(tokens_awarded=0, token_source="openmeter")
+		payload.update(token_source="openmeter")
 		return payload, _auto_submit_external_provisioning(
 			"https://deploy.example.test",
 			"key",
@@ -136,7 +134,7 @@ class TestOpenMeterProvisioningSubmit(UnitTestCase):
 		key_hook.assert_called_once_with(fid=FID, context=metering)
 		sent = mock_post.call_args.kwargs["json"]
 		self.assertEqual(sent["metering_site_key"], SITE_KEY)
-		self.assertEqual(sent["tokens_awarded"], 0)
+		self.assertNotIn("tokens_awarded", sent)
 		self.assertNotIn("metering_site_key", payload)
 		self.assertNotIn(SITE_KEY, frappe.as_json(result))
 		self.assertEqual(result["submission"]["state"], "created")

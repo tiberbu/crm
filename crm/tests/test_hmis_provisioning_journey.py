@@ -202,3 +202,83 @@ class TestProvisioningAfterOnboarding(UnitTestCase):
 	def test_enqueue_failure_never_blocks_onboarding(self, _enqueue, mock_log):
 		self.assertEqual(_queue_hmis_provisioning(PORTAL_USER, [MFL]), {"state": "deferred", "facilities": []})
 		mock_log.assert_called_once()
+
+
+def _v2_status(status="Deployed", login_status="created", email_sent=False, password=True, error=None):
+	"""A setup service v2.1 get_provision_status payload, parsed as CRM stores it."""
+	payload = {
+		"status": status,
+		"progress": 100 if status == "Deployed" else 21,
+		"error": error,
+		"target": {"instance": "instance", "url": SITE_URL},
+		"login": {"email": ADMIN.upper(), "url": SITE_URL, "status": login_status, "email_sent": email_sent},
+	}
+	if password:
+		payload["login"]["password"] = "temporary-secret"
+	return {
+		"status": status,
+		"progress": payload["progress"],
+		"has_error": bool(error),
+		"owner_user_failed": "[owner user]" in (error or "").casefold(),
+		"reported": _reported_setup_details(payload),
+	}
+
+
+class TestOwnerLoginJourney(UnitTestCase):
+	def test_status_parsing_keeps_login_summary_but_never_the_password(self):
+		reported = _v2_status()["reported"]
+		self.assertEqual(reported["site_url"], SITE_URL)
+		self.assertEqual(reported["admin_username"], ADMIN)
+		self.assertEqual(
+			reported["owner_login"],
+			{"email": ADMIN, "status": "created", "email_sent": False},
+		)
+		self.assertNotIn("temporary-secret", frappe.as_json(reported))
+
+	def test_deployed_is_live_only_once_the_owner_login_exists(self):
+		for login_status in ("Created", "Activated", "Skipped"):
+			journey = _provisioning_journey(_v2_status(login_status=login_status), now=NOW)
+			self.assertEqual(journey["phase"], "live", login_status)
+
+	def test_deployed_with_pending_owner_login_keeps_configuring(self):
+		journey = _provisioning_journey(_v2_status(login_status=None, password=False), now=NOW)
+		self.assertEqual(journey["phase"], "configuring")
+		self.assertTrue(journey["poll"])
+		self.assertEqual(journey["headline"], "Creating your administrator account")
+		self.assertEqual(_states(journey), ["done", "done", "current", "upcoming"])
+
+	def test_failed_owner_login_needs_attention_at_the_configure_step(self):
+		journey = _provisioning_journey(_v2_status(login_status="Failed", password=False), now=NOW)
+		self.assertEqual(journey["phase"], "needs_attention")
+		self.assertEqual(_states(journey), ["done", "done", "error", "upcoming"])
+		self.assertEqual(journey["headline"], "Administrator account needs attention")
+
+	def test_failed_owner_user_deploy_step_marks_configure_not_deploy(self):
+		status = _v2_status(status="Failed", login_status=None, password=False, error="[Owner User] FAILED: target unreachable")
+		journey = _provisioning_journey(status, now=NOW)
+		self.assertEqual(_states(journey), ["done", "done", "error", "upcoming"])
+		other = _provisioning_journey(_v2_status(status="Failed", login_status=None, password=False, error="Warehouses failed"), now=NOW)
+		self.assertEqual(_states(other), ["done", "error", "upcoming", "upcoming"])
+
+	def test_in_progress_owner_retry_step_is_deploying(self):
+		journey = _provisioning_journey(_v2_status(status="In Progress", login_status=None, password=False), now=NOW)
+		self.assertEqual(journey["phase"], "deploying")
+
+	def test_undelivered_credentials_point_to_forgot_password(self):
+		site = _provisioning_journey(_v2_status(), now=NOW)["site"]
+		self.assertEqual(site["admin_email"], ADMIN)
+		self.assertNotIn("credentials", site)
+		self.assertIn("could not be delivered", site["instructions"][2])
+		self.assertIn("Forgot password", site["instructions"][2])
+		self.assertNotIn("temporary-secret", frappe.as_json(site))
+
+	def test_delivered_and_activated_logins_explain_the_password_source(self):
+		sent = _provisioning_journey(_v2_status(email_sent=True, password=False), now=NOW)["site"]
+		self.assertIn("credentials email sent to " + ADMIN, sent["instructions"][2])
+		activated = _provisioning_journey(_v2_status(login_status="Activated", password=False), now=NOW)["site"]
+		self.assertIn("already existed", activated["instructions"][2])
+
+	@patch("crm.api.hfr._typical_setup_minutes", return_value=60)
+	@patch("crm.api.hfr._resolve_provisioning_status", side_effect=lambda *args: _v2_status())
+	def test_polled_status_never_carries_the_password(self, _resolve, _typical):
+		self.assertNotIn("temporary-secret", frappe.as_json(_get_provisioning_status(MFL, False)))

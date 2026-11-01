@@ -14,7 +14,7 @@ PR #103 (merged 2026-10-22) replaced `facility-auto-provisioning-prd.md` with **
 
 - **Reading and creating are now separate.** `get_provisioning_status` is GET-only and read-only. The new `ensure_provisioning_draft` (POST) creates the draft. The Single Facility View calls it on load and on Retry.
 - **No commercial check.** A Won deal and a paid invoice are no longer required. A draft is created as soon as an authorized facility has a verified FID and the setup tool reports no draft.
-- **Payload rules decided.** `billing_model` = `Token`. `token_expiry_date` = CRM onboarding date (the facility row's creation date) + 30 days. `tokens_awarded` = the selected package quantity, or `0`.
+- **Payload rules decided.** `billing_model` = `Token`. `token_expiry_date` = CRM onboarding date (the facility row's creation date) + 30 days. `tokens_awarded` = the selected package quantity, or `0`. *Superseded on 2026-10-27: CRM will send none of these three fields; see [`hmis-provisioning-status-api-requirements.md`](hmis-provisioning-status-api-requirements.md).*
 - **Responses and errors.** The setup tool's 400 and 417 "no setup found" responses are both handled. Every request carries a correlation ID, and System Managers can see the setup tool's error details.
 - **FID lookup.** CRM resolves the FID across Pre-Qualified, Deal and Lead facility records and the registry. It won't choose between conflicting registry FIDs, and reports `not_linked` when there is none.
 
