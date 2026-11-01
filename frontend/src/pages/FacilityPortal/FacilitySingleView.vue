@@ -28,8 +28,8 @@ const errorDetailsOpen = ref(false)
 const siteLinkCopied = ref(false)
 let statusRequestSequence = 0
 let pollTimer = null
-// Deployment happens on a separate site and takes tens of minutes; a 5-minute
-// read-only check is enough to notice when the site has been provisioned.
+// Fallback when the journey does not say how soon to check again. The backend
+// asks for 60 s while deploying or configuring and 5 minutes while waiting.
 const POLL_INTERVAL_MS = 5 * 60 * 1000
 // Phases whose setup journey the backend normalizes for display. Identity and
 // connection problems keep their own FID-specific guidance below.
@@ -49,6 +49,16 @@ const journey = computed(() => {
 const journeySteps = computed(() => journey.value?.steps || [])
 const liveSite = computed(() => journey.value?.phase === 'live' ? journey.value.site : null)
 const pollingActive = computed(() => Boolean(journey.value?.poll && props.getProvisioningStatus))
+const pollIntervalMs = computed(() => {
+  const seconds = Number(journey.value?.poll_after_seconds)
+  return Number.isFinite(seconds) && seconds >= 30 ? seconds * 1000 : POLL_INTERVAL_MS
+})
+const pollIntervalLabel = computed(() => {
+  const seconds = Math.round(pollIntervalMs.value / 1000)
+  return seconds < 120 ? `Checks again every ${seconds} seconds` : `Checks again every ${Math.round(seconds / 60)} minutes`
+})
+// v2.0 setup services report their 12 deployment steps; the journey names one.
+const deployStep = computed(() => journey.value?.deploy_step?.text ? journey.value.deploy_step : null)
 const checkedAt = computed(() => {
   const value = journey.value?.checked_at
   const parsed = value ? new Date(value) : null
@@ -91,7 +101,7 @@ function stopPolling() {
 function schedulePoll() {
   stopPolling()
   if (!pollingActive.value) return
-  pollTimer = setTimeout(pollStatus, POLL_INTERVAL_MS)
+  pollTimer = setTimeout(pollStatus, pollIntervalMs.value)
 }
 
 // Silent refresh: keeps the last good state on failure and never flips the view
@@ -122,6 +132,74 @@ async function copySiteLink() {
   }
 }
 
+// One-time view of the temporary HMIS owner password (setup service v2.0 returns it
+// while its credentials email is undelivered). The polled status only says whether
+// it is on offer; the password comes from a separate POST, lives in this component
+// while the dialog is open, and is cleared when the dialog closes.
+const ownerCredentials = computed(() => liveSite.value?.credentials?.password_available ? liveSite.value.credentials : null)
+const revealConfirmOpen = ref(false)
+const revealBusy = ref(false)
+const revealError = ref('')
+const revealedCredential = ref(null)
+const revealSaved = ref(false)
+const revealCopied = ref(false)
+const credentialViewedOn = computed(() => {
+  const value = ownerCredentials.value?.viewed_on
+  const parsed = value ? new Date(String(value).replace(' ', 'T')) : null
+  return parsed && !Number.isNaN(parsed.getTime())
+    ? parsed.toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : ''
+})
+
+function warnBeforeLeaving(event) {
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+async function revealOwnerPassword() {
+  revealBusy.value = true
+  revealError.value = ''
+  try {
+    const result = await call('crm.api.hfr.reveal_hmis_owner_password', { mfl_code: props.facility.mfl_code })
+    const data = result?.message && typeof result.message === 'object' ? result.message : result
+    if (!data?.password) throw new Error('The temporary password is not available right now.')
+    revealedCredential.value = { email: data.email, password: data.password }
+    revealSaved.value = false
+    revealCopied.value = false
+    window.addEventListener('beforeunload', warnBeforeLeaving)
+  } catch (error) {
+    revealError.value = (error?.messages || []).join(' ') || error?.message || 'The temporary password could not be shown.'
+  } finally {
+    revealBusy.value = false
+    revealConfirmOpen.value = false
+  }
+}
+
+async function copyOwnerPassword() {
+  try {
+    await navigator.clipboard.writeText(revealedCredential.value?.password || '')
+    revealCopied.value = true
+  } catch {
+    revealCopied.value = false
+    revealError.value = 'Copy did not work in this browser. Select the password and copy it by hand.'
+  }
+}
+
+function clearRevealedCredential() {
+  revealedCredential.value = null
+  revealSaved.value = false
+  revealCopied.value = false
+  window.removeEventListener('beforeunload', warnBeforeLeaving)
+}
+
+function closeRevealedCredential() {
+  if (!revealSaved.value) return
+  clearRevealedCredential()
+  revealError.value = ''
+  // Refresh so the card says when the password was viewed.
+  if (props.getProvisioningStatus) pollStatus()
+}
+
 async function loadStatus() {
   stopPolling()
   const requestSequence = ++statusRequestSequence
@@ -144,7 +222,10 @@ async function loadStatus() {
   }
 }
 onMounted(loadStatus)
-onUnmounted(stopPolling)
+onUnmounted(() => {
+  stopPolling()
+  clearRevealedCredential()
+})
 watch(() => props.facility.mfl_code, () => {
   provisioning.value = null
   loadStatus()
@@ -498,6 +579,7 @@ function reviewInvoice() {
                 <p class="text-xs font-semibold text-cx-success-ink">Your HMIS site</p>
                 <p v-if="liveSite.url" class="mt-0.5 break-all font-mono text-sm font-semibold text-cx-ink sm:text-base">{{ liveSite.url }}</p>
                 <p v-else class="mt-0.5 text-xs font-medium text-cx-ink-2">The site address is in the welcome email sent to your administrator.</p>
+                <p v-if="liveSite.live_since" class="mt-0.5 text-xs font-medium text-cx-ink-2" data-testid="hmis-live-since">{{ liveSite.live_since }}</p>
               </div>
             </div>
             <div v-if="liveSite.url" class="flex flex-wrap items-center gap-2">
@@ -517,6 +599,21 @@ function reviewInvoice() {
                 <span class="break-words">{{ step }}</span>
               </li>
             </ol>
+            <div v-if="ownerCredentials" class="mt-3 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/60 p-3" data-testid="hmis-owner-password">
+              <template v-if="ownerCredentials.can_view">
+                <p class="text-xs font-semibold text-cx-ink">Temporary password</p>
+                <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">You can view it once. Have somewhere safe ready to save it, such as a password manager, before you open it.</p>
+                <button type="button" class="mt-2 inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-brand px-3 py-2 text-xs font-semibold text-cx-contrast shadow-sm hover:opacity-90 disabled:opacity-50" :disabled="revealBusy" @click="revealConfirmOpen = true">
+                  <CxIcon name="eye" class="size-3.5" /> View temporary password
+                </button>
+              </template>
+              <div v-else-if="ownerCredentials.viewed_on" class="text-xs leading-relaxed text-cx-ink-2">
+                <p>{{ ownerCredentials.viewed_by_you ? 'You viewed' : 'The facility administrator viewed' }} the temporary password on {{ credentialViewedOn || ownerCredentials.viewed_on }}. It cannot be shown again.</p>
+                <p class="mt-1">Lost it? <button type="button" class="font-semibold text-cx-brand underline-offset-2 hover:underline" @click="emit('open-support')">Contact Network Support</button>.</p>
+              </div>
+              <p v-else class="text-xs leading-relaxed text-cx-ink-2">Only the facility administrator{{ ownerCredentials.owner_email_masked ? ` (${ownerCredentials.owner_email_masked})` : '' }} can view the temporary password, once, while signed in to this portal.</p>
+              <p v-if="revealError" class="mt-2 text-xs font-medium text-cx-danger-ink" role="alert">{{ revealError }}</p>
+            </div>
           </div>
         </section>
         <section v-else-if="journeySteps.length" class="mt-5 max-w-3xl rounded-cx-sm border border-cx-border-soft bg-cx-surface p-4 sm:p-5" data-testid="hmis-setup-journey" aria-live="polite">
@@ -532,6 +629,9 @@ function reviewInvoice() {
           <div v-if="progressValue != null" class="mt-3 h-2 overflow-hidden rounded-full bg-cx-well" role="progressbar" :aria-valuenow="progressValue" aria-valuemin="0" aria-valuemax="100" aria-label="Reported deployment progress">
             <div class="h-full rounded-full bg-cx-brand transition-all duration-500" :style="{ width: `${progressValue}%` }"></div>
           </div>
+          <p v-if="deployStep" class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium" :class="deployStep.state === 'failed' ? 'text-cx-danger-ink' : 'text-cx-ink-2'" data-testid="hmis-deploy-step">
+            <CxIcon :name="deployStep.state === 'failed' ? 'alert' : 'clock'" class="size-3.5" /> {{ deployStep.text }}
+          </p>
           <ol class="mt-4 grid gap-2 sm:grid-cols-4">
             <li v-for="step in journeySteps" :key="step.key" class="flex items-center gap-2 sm:flex-col sm:items-start sm:gap-1.5" :data-state="step.state">
               <span class="grid size-6 shrink-0 place-items-center rounded-full border text-[11px] font-semibold"
@@ -570,7 +670,7 @@ function reviewInvoice() {
           <span class="font-medium text-cx-ink">{{ checkedAt }}</span>
         </div>
         <span v-if="pollingActive" class="inline-flex items-center gap-1.5 text-xs font-medium text-cx-brand-ink" data-testid="hmis-auto-refresh">
-          <span class="size-1.5 animate-pulse rounded-full bg-cx-brand" /> Checks again every 5 minutes
+          <span class="size-1.5 animate-pulse rounded-full bg-cx-brand" /> {{ pollIntervalLabel }}
         </span>
       </div>
 
@@ -788,6 +888,46 @@ function reviewInvoice() {
       </section>
     </div>
 
+    <div v-if="revealConfirmOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation" tabindex="-1" @click.self="revealConfirmOpen = false" @keydown.esc="revealConfirmOpen = false">
+      <section role="dialog" aria-modal="true" aria-labelledby="hmis-reveal-confirm-title" class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl" data-testid="hmis-reveal-confirm">
+        <h2 id="hmis-reveal-confirm-title" class="text-sm font-semibold text-cx-ink">View the temporary password once?</h2>
+        <p class="mt-2 text-xs leading-relaxed text-cx-ink-2">The password is shown one time only. After you close the window it cannot be shown again, so have a password manager or another safe place ready to save it.</p>
+        <div class="mt-4 flex justify-end gap-2">
+          <button type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="revealConfirmOpen = false">Not now</button>
+          <button type="button" class="rounded-md bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:opacity-90 disabled:opacity-50" :disabled="revealBusy" @click="revealOwnerPassword">{{ revealBusy ? 'Opening…' : 'Show password' }}</button>
+        </div>
+      </section>
+    </div>
+    <div v-if="revealedCredential" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">
+      <section role="dialog" aria-modal="true" aria-labelledby="hmis-owner-password-title" class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl" data-testid="hmis-owner-password-dialog">
+        <h2 id="hmis-owner-password-title" class="text-sm font-semibold text-cx-ink">Temporary HMIS password</h2>
+        <p class="mt-1 text-xs font-medium text-cx-danger-ink">Shown once. It will not be available again after you close this window.</p>
+        <dl class="mt-4 space-y-3">
+          <div>
+            <dt class="text-xs font-semibold text-cx-ink-3">Sign in with</dt>
+            <dd class="mt-0.5 break-all text-sm font-medium text-cx-ink">{{ revealedCredential.email }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold text-cx-ink-3">Temporary password</dt>
+            <dd class="mt-1 flex items-center gap-2">
+              <code class="min-w-0 flex-1 select-all break-all rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-base font-semibold text-cx-ink" data-testid="hmis-owner-password-value">{{ revealedCredential.password }}</code>
+              <button type="button" class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="copyOwnerPassword">
+                <CxIcon :name="revealCopied ? 'check' : 'copy'" class="size-3.5" /> {{ revealCopied ? 'Copied' : 'Copy' }}
+              </button>
+            </dd>
+          </div>
+        </dl>
+        <p class="mt-3 text-xs leading-relaxed text-cx-ink-2">Change this password after you first sign in to HMIS.</p>
+        <p v-if="revealError" class="mt-2 text-xs font-medium text-cx-danger-ink" role="alert">{{ revealError }}</p>
+        <label class="mt-4 flex items-start gap-2 text-xs font-medium text-cx-ink">
+          <input v-model="revealSaved" type="checkbox" class="mt-0.5 rounded border-slate-300" data-testid="hmis-owner-password-saved" />
+          I have copied and saved this password
+        </label>
+        <div class="mt-4 flex justify-end">
+          <button type="button" class="rounded-md bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!revealSaved" @click="closeRevealedCredential">Close</button>
+        </div>
+      </section>
+    </div>
     <div v-if="errorDetailsOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation" tabindex="-1" @click.self="errorDetailsOpen = false" @keydown.esc="errorDetailsOpen = false">
       <section role="dialog" aria-modal="true" aria-labelledby="hmis-error-details-title" class="w-full max-w-3xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
         <header class="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">

@@ -113,7 +113,7 @@ For HMIS sites set up before metering. They never send a provisioning request ag
 
 ## 4. `GET get_provision_status`
 
-CRM polls every 5 minutes while setup is in progress. Version 1's requirements still stand, renumbered here with the screen each field drives.
+CRM polls every 60 seconds while the site is deploying or configuring, and every 5 minutes while the request waits in the queue. Version 1's requirements still stand, renumbered here with the screen each field drives.
 
 | # | Field | Type | Drives | Priority | CRM reads it today |
 |---|---|---|---|---|---|
@@ -175,7 +175,12 @@ CRM detects these by matching message text in a 400 or 417 response. Both need a
 
 ## 6. Security requirements
 
-1. **No credentials in any response.** Do not return passwords, reset tokens or site keys in `get_provision_status` or any other response CRM receives. CRM never shows, stores or logs credentials. First sign-in uses the welcome email or "Forgot password", reported through S4.
+1. **Credentials in responses.** Do not return reset tokens or site keys in any response CRM receives. **Amended 2026-11-01:** the generated owner password (`login.password`) may be returned while the credentials email is undelivered, because a new HMIS site may not be able to send mail, so neither the credentials email nor "Forgot password" can be relied on. CRM handles it as follows:
+   - It reads the password server to server only. It never puts it in the status it stores, polls or sends to the browser; the portal is told only that a password is on offer.
+   - The facility's HMIS owner (the signed-in portal user whose verified email equals `login.email`) can view it **once**, in a dialog with a copy button. CRM records who viewed it and when (`CRM HMIS Credential View`), never the password, and refuses a second view. CRM support can re-arm one more view.
+   - CRM never stores or logs the password.
+
+   The setup service should: return the password only while the email is undelivered; let CRM tell it the password was shown, so it can stop returning it; and mark the password temporary so HMIS asks for a new one at first sign-in, if HMIS supports that.
 2. **Site key.** `metering_site_key` travels in the request body only. Do not log it, return it, or include it in error messages. Deliver it to the site only in the signed `update_license` push. Store it encrypted on the setup site, never in a JSON field or the deployment log. `metering_gateway_url` is not secret, but it must be `https://` and carry no credentials.
 3. **Masking.** `credentials_sent_to` is masked, for example `a***@d***.org`.
 4. **Errors.** Error text returned to CRM contains no stack traces, internal hostnames or secrets.
@@ -243,9 +248,9 @@ CRM `develop` does not yet do the following:
 | CRM-P1 | Stop sending `tokens_awarded`, `token_expiry_date`, `billing_model`, `token_source` and `token_purchase_url` | Sends the package quantity, onboarding + 30 days and `billing_model: Token`; with the OpenMeter setting on, also `tokens_awarded: 0`, `token_source` and `token_purchase_url` |
 | CRM-P2 | Make OpenMeter the only token source: always issue a site key, and block the POST without one | Behind CRM HFR Settings → Use OpenMeter as the HMIS Token Source, off by default |
 | CRM-P3 | Grant nothing at provisioning (D5) | Paid packages are deferred to their invoice. The Free Trial package is retired (patch `add_token_bonus_and_partner_coupon`), but any zero-priced package is still granted when the setup service accepts |
-| CRM-P4 | Send `auto_deploy: true` | Not sent |
-| CRM-P5 | Change portal copy that says the implementation team reviews and starts deployment | Shown on the status card |
-| CRM-P6 | Read S4, S5, S7, S11–S17, `not_found` and `DUPLICATE_SETUP` | Not read |
+| CRM-P4 | Send `auto_deploy: true` | Done 2026-11-01 (setup service API v2.0), with a CRM HFR Settings switch for manual review |
+| CRM-P5 | Change portal copy that says the implementation team reviews and starts deployment | Done 2026-11-01: the queued copy follows the auto-deploy setting |
+| CRM-P6 | Read S4, S5, S7, S11–S17, `not_found` and `DUPLICATE_SETUP` | Partly done 2026-11-01 through the v2.0 equivalents: `steps[]` (S7), `deployed_on` (S11), `completion` (ready rule). The rest are not read |
 | CRM-P7 | Send `metering_gateway_url` in `provision_facility` and `update_metering_site_key` (D6) | No gateway address is configured anywhere in CRM or the metering app |
 
 CRM already reads S1–S3, S8–S10 and the `status` words in §4.

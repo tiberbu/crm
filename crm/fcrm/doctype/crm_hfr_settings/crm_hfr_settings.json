@@ -20,6 +20,7 @@
   "external_provisioning_key",
   "external_provisioning_secret",
   "provisioning_typical_minutes",
+  "external_provisioning_manual_review",
   "token_metering_section",
   "hmis_token_source_openmeter",
   "token_purchase_url"
@@ -121,6 +122,13 @@
    "non_negative": 1
   },
   {
+   "default": "0",
+   "description": "When on, CRM asks the setup service to create the facility's setup record without deploying it, and the implementation team starts deployment in the setup service. When off, deployment starts automatically.",
+   "fieldname": "external_provisioning_manual_review",
+   "fieldtype": "Check",
+   "label": "Review HMIS Deployments Before They Start"
+  },
+  {
    "description": "Turn this on only after the OpenMeter Mediator app, the metering gateway and the HMIS balance pull are deployed. Until then HMIS keeps receiving its tokens in the provisioning payload.",
    "fieldname": "token_metering_section",
    "fieldtype": "Section Break",
@@ -143,7 +151,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-25 12:00:00.000000",
+ "modified": "2026-11-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "FCRM",
  "name": "CRM HFR Settings",

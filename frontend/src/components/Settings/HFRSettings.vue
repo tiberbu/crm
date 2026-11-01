@@ -173,7 +173,7 @@
           {{ __('External HMIS Setup Service') }}
         </div>
         <p class="mb-4 max-w-3xl text-p-sm text-ink-gray-5">
-          {{ __('If all three values are configured, status reads go directly to the setup service and take precedence over HIE. Use a dedicated Frappe service-user API key and secret. The setup API creates draft records only; deployment still requires implementation-team review.') }}
+          {{ __('If all three values are configured, status reads go directly to the setup service and take precedence over HIE. Use a dedicated Frappe service-user API key and secret. Deployment starts automatically unless manual review is switched on below.') }}
         </p>
         <div class="flex flex-col gap-3">
           <div class="flex items-center gap-4">
@@ -195,6 +195,20 @@
           <p class="text-p-sm text-ink-gray-5">
             {{ __('Facility users see this as the usual wait while their HMIS site is set up, unless the setup service reports its own estimate. Set 0 to hide it.') }}
           </p>
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <div class="text-p-sm font-medium text-ink-gray-8">{{ __('Review HMIS deployments before they start') }}</div>
+              <div class="text-p-sm text-ink-gray-5">
+                {{ __('When on, new setup records wait for the implementation team to start deployment in the setup service. When off, deployment starts automatically.') }}
+              </div>
+            </div>
+            <Switch
+              v-model="form.external_provisioning_manual_review"
+              size="sm"
+              data-testid="hfr-manual-review"
+              @update:modelValue="markDirty"
+            />
+          </div>
           <p class="text-p-sm text-ink-gray-5">
             {{ form.external_provisioning_configured ? __('Direct setup service credentials are configured and take precedence over HIE for status lookups.') : (form.external_provisioning_secret_configured ? __('A saved API secret exists. Save a base URL and API key to activate the direct setup service.') : __('Direct setup service credentials are not complete; status lookups use the HIE gateway fallback.')) }}
           </p>
@@ -242,6 +256,7 @@ const form = reactive({
   external_provisioning_secret_configured: false,
   external_provisioning_configured: false,
   provisioning_typical_minutes: 60,
+  external_provisioning_manual_review: 0,
 })
 
 const settings = createResource({

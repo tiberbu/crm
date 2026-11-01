@@ -11,6 +11,7 @@ from urllib.parse import quote, urlparse
 import frappe
 import requests
 from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.utils.file_lock import LockTimeoutError
 from frappe.utils.synchronization import filelock
 
@@ -277,6 +278,7 @@ def get_hfr_settings():
 			and s.get_password("external_provisioning_secret", raise_exception=False)
 		),
 		"provisioning_typical_minutes": _typical_setup_minutes(s),
+		"external_provisioning_manual_review": frappe.utils.cint(s.get("external_provisioning_manual_review")),
 	})
 	return response
 
@@ -304,6 +306,8 @@ def update_hfr_settings(settings):
 		s.external_provisioning_secret = settings["external_provisioning_secret"]
 	if "provisioning_typical_minutes" in settings:
 		s.provisioning_typical_minutes = max(0, frappe.utils.cint(settings.get("provisioning_typical_minutes")))
+	if "external_provisioning_manual_review" in settings:
+		s.external_provisioning_manual_review = 1 if frappe.utils.cint(settings.get("external_provisioning_manual_review")) else 0
 	s.save()
 	return {"success": True}
 
@@ -346,6 +350,11 @@ _JOURNEY_POLL_PHASES = {"preparing", "queued", "deploying", "configuring"}
 _JOURNEY_STEP_INDEX = {"preparing": 0, "queued": 1, "deploying": 1, "configuring": 2, "live": 4}
 
 
+def _auto_deploy_enabled(settings=None):
+	"""CRM asks the setup service to deploy at once unless manual review is switched on."""
+	return not frappe.utils.cint((settings or frappe.get_single(_DOCTYPE)).get("external_provisioning_manual_review"))
+
+
 def _typical_setup_minutes(settings=None):
 	"""Configured usual setup duration; 0 hides the typical estimate."""
 	value = (settings or frappe.get_single(_DOCTYPE)).get("provisioning_typical_minutes")
@@ -361,6 +370,8 @@ def _reported_setup_details(payload):
 		"eta_minutes": ("eta_minutes", "estimated_minutes_remaining", "minutes_remaining"),
 		"estimated_completion": ("estimated_completion", "eta"),
 		"started_at": ("started_at", "deployment_started", "deployment_started_at"),
+		"deployed_on": ("deployed_on", "completed_at"),
+		"setup_id": ("setup_id", "facility_setup"),
 	}
 	reported = {}
 	for key, names in aliases.items():
@@ -377,8 +388,9 @@ def _reported_setup_details(payload):
 	target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
 	login = payload.get("login") if isinstance(payload.get("login"), dict) else None
 	if "site_url" not in reported:
-		# login.url is the documented sign-in address; frontend_url is an undocumented extra.
-		for value in ((login or {}).get("url"), target.get("url"), target.get("frontend_url")):
+		# v2.0: login.url is the owner's sign-in address and target.frontend_url the
+		# public site; target.url is the Frappe backend, so it is only the last resort.
+		for value in ((login or {}).get("url"), target.get("frontend_url"), target.get("url")):
 			if isinstance(value, str) and value.strip():
 				reported["site_url"] = value.strip()[:500]
 				break
@@ -387,19 +399,84 @@ def _reported_setup_details(payload):
 		reported["owner_login"] = owner_login
 		if owner_login["email"]:
 			reported["admin_username"] = owner_login["email"]
+	# v2.0: `completion.fully_provisioned` is the authoritative "ready" flag.
+	completion = payload.get("completion")
+	if isinstance(completion, dict):
+		reported["completion"] = {
+			key: completion.get(key) is True
+			for key in ("deployment_complete", "owner_user_complete", "fully_provisioned")
+		}
+	# v2.0: per-step deployment tracking. Only names and states are kept; step
+	# error text can carry internal detail and stays with System Managers.
+	steps = payload.get("steps")
+	if isinstance(steps, list):
+		reported["deploy_steps"] = [
+			{
+				"name": frappe.utils.cstr(step.get("name")).strip()[:120],
+				"status": frappe.utils.cstr(step.get("status")).strip().casefold(),
+			}
+			for step in steps[:50]
+			if isinstance(step, dict) and frappe.utils.cstr(step.get("name")).strip()
+		]
 	return reported
+
+
+def _deploy_step_label(name):
+	"""Plain wording for the setup service's deployment step names; unknown names pass through."""
+	labels = {
+		"role profiles": _("Preparing staff roles"),
+		"company": _("Creating your facility"),
+		"owner user (retry)": _("Creating your administrator account"),
+		"warehouses": _("Setting up stores"),
+		"practitioners": _("Adding practitioners"),
+		"service units": _("Creating service units"),
+		"laboratories": _("Setting up laboratories"),
+		"service unit access": _("Granting service unit access"),
+		"company settings": _("Applying facility settings"),
+		"final configuration": _("Finishing configuration"),
+		"api gateway credentials": _("Connecting the HMIS gateway"),
+		"verification pass": _("Running final checks"),
+	}
+	return labels.get(" ".join(name.casefold().split()), name)
+
+
+def _deploy_step(steps):
+	"""Pick the failed, running or next deployment step from the reported step list."""
+	steps = steps or []
+	if not steps:
+		return None
+	for state, matches in (
+		("failed", lambda value: value == "failed"),
+		("running", lambda value: value == "running"),
+		("pending", lambda value: value not in ("done", "skipped")),
+	):
+		index = next((i for i, step in enumerate(steps) if matches(step["status"])), None)
+		if index is not None:
+			name = steps[index]["name"]
+			return {"index": index + 1, "total": len(steps), "name": name, "label": _deploy_step_label(name), "state": state}
+	return None
+
+
+def _is_owner_user_step(name):
+	return frappe.utils.cstr(name).casefold().startswith("owner user")
 
 
 _OWNER_LOGIN_READY = {"created", "activated", "skipped"}
 
 
 def _owner_login(login):
-	"""Summarize the setup service's owner sign-in block; the password itself never leaves here."""
+	"""Summarize the setup service's owner sign-in block; the password itself never leaves here.
+
+	Only whether a temporary password is on offer is kept. The password is read
+	again, server to server, by `reveal_hmis_owner_password` when the owner asks.
+	"""
 	status = frappe.utils.cstr(login.get("status") or "").strip()
+	password = login.get("password")
 	return {
 		"email": frappe.utils.cstr(login.get("email") or "").strip().lower()[:254] or None,
 		"status": status.casefold() or None,
 		"email_sent": bool(login.get("email_sent")),
+		"password_available": isinstance(password, str) and bool(password),
 	}
 
 
@@ -450,6 +527,14 @@ def _journey_phase(status):
 		return "not_configured"
 	if key == "needs support" or key in _ERROR_STATUSES or status.get("has_error"):
 		return "needs_attention"
+	completion = (status.get("reported") or {}).get("completion")
+	if completion is not None:
+		# v2.0: ready only when both the deployment and the owner-login tracks are
+		# complete; progress 100 or "Deployed" alone is not enough.
+		if completion.get("fully_provisioned"):
+			return "live"
+		if key in _LIVE_STATUSES or completion.get("deployment_complete"):
+			return "configuring"
 	if key in _LIVE_STATUSES:
 		# v2.x: the owner login is created asynchronously, so a deployed site is only
 		# usable once it is Created/Activated (Skipped = no email was recorded). A
@@ -547,16 +632,44 @@ def _provisioning_journey(status, typical_minutes=_DEFAULT_TYPICAL_SETUP_MINUTES
 		label = _("Approved")
 		headline = _("Approved for deployment")
 		detail = _("The implementation team has approved your setup. Deployment to your HMIS site starts next; this page checks again automatically.")
+	elif phase == "queued" and (submission.get("deploy_queued") is False or status.get("deploy_not_queued")):
+		# Auto-deploy was requested but the setup service could not queue it.
+		detail = _("The HMIS setup service has your facility details, but deployment did not start automatically. The implementation team will start it; this page updates automatically.")
+	elif phase == "queued" and status.get("auto_deploy"):
+		detail = _("The HMIS setup service has your facility details. Deployment starts automatically within a few minutes; this page updates automatically.")
 	if phase == "deploying" and raw_status and _journey_status_key(status) not in ("deploying", "in progress", "provisioning"):
 		detail = _("The setup service reports “{0}”. This page updates automatically.").format(raw_status)
 	owner_login = reported.get("owner_login") or {}
-	owner_failed = owner_login.get("status") == "failed" or status.get("owner_user_failed")
-	if phase == "configuring" and _journey_status_key(status) in _LIVE_STATUSES:
+	owner_failed = (
+		owner_login.get("status") == "failed"
+		or status.get("owner_user_failed")
+		or any(step["status"] == "failed" and _is_owner_user_step(step["name"]) for step in reported.get("deploy_steps") or [])
+	)
+	completion = reported.get("completion") or {}
+	if phase == "configuring" and (_journey_status_key(status) in _LIVE_STATUSES or completion.get("deployment_complete")):
 		headline = _("Creating your administrator account")
 		detail = _("Your HMIS site is deployed. The administrator sign-in is being created; this page updates automatically.")
-	if phase == "needs_attention" and owner_failed and not submission.get("state"):
-		headline = _("Administrator account needs attention")
-		detail = _("The HMIS site could not create the administrator sign-in yet. The setup service retries it on the next deployment; contact Network Support if this does not change.")
+	if phase == "needs_attention" and not submission.get("state"):
+		if owner_failed:
+			headline = _("Administrator account needs attention")
+			detail = _("The HMIS site could not create the administrator sign-in yet. The setup service retries it on the next deployment; contact Network Support if this does not change.")
+		elif status.get("instance_blocked"):
+			headline = _("HMIS server paused")
+			detail = _("Deployment is on hold because the HMIS server for your facility is paused for maintenance. The implementation team restarts it once the server is back; contact Network Support if this does not change.")
+		elif _journey_status_key(status) in ("cancelled", "canceled"):
+			label = _("Cancelled")
+			headline = _("Setup was cancelled")
+			detail = _("The implementation team cancelled this HMIS setup. Contact Network Support to start it again.")
+
+	# v2.0 step tracking: name the step that is running, or where deployment stopped.
+	deploy_step = _deploy_step(reported.get("deploy_steps"))
+	if deploy_step:
+		if phase in ("deploying", "configuring") and deploy_step["state"] != "failed":
+			deploy_step["text"] = _("Step {0} of {1} · {2}").format(deploy_step["index"], deploy_step["total"], deploy_step["label"])
+		elif phase == "needs_attention" and deploy_step["state"] == "failed" and not submission.get("state"):
+			deploy_step["text"] = _("Stopped at step {0} of {1} · {2}").format(deploy_step["index"], deploy_step["total"], deploy_step["label"])
+		else:
+			deploy_step = None
 
 	steps = []
 	if phase in _JOURNEY_STEP_INDEX or phase in ("blocked", "needs_attention"):
@@ -595,12 +708,14 @@ def _provisioning_journey(status, typical_minutes=_DEFAULT_TYPICAL_SETUP_MINUTES
 		login_url = _safe_site_url(reported.get("login_url")) or url
 		admin_email = reported.get("admin_username") or (admin_contact or {}).get("admin_email") or None
 		password_step = _("First time signing in? Use the HMIS welcome email or “Forgot password” on the sign-in page to set your password.")
+		password_on_offer = _owner_password_on_offer(owner_login)
 		if owner_login.get("status") == "created":
-			password_step = (
-				_("Use the password in the HMIS credentials email sent to {0}, or “Forgot password” on the sign-in page.").format(admin_email or _("your administrator"))
-				if owner_login.get("email_sent")
-				else _("The credentials email could not be delivered. Use “Forgot password” on the sign-in page to set your password.")
-			)
+			if owner_login.get("email_sent"):
+				password_step = _("Use the password in the HMIS credentials email sent to {0}, or “Forgot password” on the sign-in page.").format(admin_email or _("your administrator"))
+			elif password_on_offer:
+				password_step = _("The credentials email could not be delivered. The facility administrator can view the temporary password once below. Change it after you first sign in.")
+			else:
+				password_step = _("The credentials email could not be delivered. Use “Forgot password” on the sign-in page, or contact Network Support if no reset email arrives.")
 		elif owner_login.get("status") == "activated":
 			password_step = _("This account already existed, so keep using its current password, or use “Forgot password” on the sign-in page.")
 		instructions = [
@@ -609,6 +724,16 @@ def _provisioning_journey(status, typical_minutes=_DEFAULT_TYPICAL_SETUP_MINUTES
 			password_step,
 		]
 		site = {"url": url, "login_url": login_url, "admin_email": admin_email, "instructions": instructions}
+		if owner_login:
+			# Whether the temporary password is on offer; who may view it is added per request.
+			site["credentials"] = {
+				"status": owner_login.get("status"),
+				"email_sent": owner_login.get("email_sent"),
+				"password_available": password_on_offer,
+			}
+		deployed_on = _parse_status_time(reported.get("deployed_on"))
+		if deployed_on:
+			site["live_since"] = _("Live since {0}").format("{0} {1}".format(deployed_on.day, deployed_on.strftime("%b %Y")))
 
 	return {
 		"phase": phase,
@@ -619,7 +744,10 @@ def _provisioning_journey(status, typical_minutes=_DEFAULT_TYPICAL_SETUP_MINUTES
 		"progress": progress,
 		"estimate": _journey_estimate(phase, status, typical_minutes, now),
 		"site": site,
+		"deploy_step": deploy_step,
 		"poll": phase in _JOURNEY_POLL_PHASES,
+		# v2.0 asks for 30-60 s polling during deployment; waiting phases change slowly.
+		"poll_after_seconds": (60 if phase in ("deploying", "configuring") else 300) if phase in _JOURNEY_POLL_PHASES else None,
 		"checked_at": now.isoformat(timespec="seconds"),
 	}
 
@@ -666,7 +794,137 @@ def _get_provisioning_status(mfl_code, ensure_missing_draft):
 	if _journey_phase(status) == "live" and not (status.get("reported") or {}).get("admin_username"):
 		admin_contact = _portal_admin_contact(mfl_code)
 	status["journey"] = _provisioning_journey(status, _typical_setup_minutes(), admin_contact)
+	credentials = (status["journey"].get("site") or {}).get("credentials")
+	if credentials:
+		owner_email = ((status.get("reported") or {}).get("owner_login") or {}).get("email")
+		view = _credential_view(status.get("fid"), (status.get("reported") or {}).get("setup_id")) if credentials["password_available"] else None
+		credentials["owner_email_masked"] = _mask_email(owner_email)
+		credentials["viewed_on"] = frappe.utils.cstr(view.viewed_on) if view else None
+		credentials["viewed_by_you"] = bool(view and view.viewed_by == frappe.session.user)
+		credentials["can_view"] = bool(
+			credentials["password_available"] and not view and owner_email and owner_email == _session_email()
+		)
 	return status
+
+
+def _owner_password_on_offer(owner_login):
+	"""The setup service offers a temporary password only while its credentials email is unconfirmed."""
+	return bool(
+		owner_login.get("status") == "created" and not owner_login.get("email_sent") and owner_login.get("password_available")
+	)
+
+
+def _session_email():
+	user = frappe.session.user
+	return frappe.utils.cstr(frappe.db.get_value("User", user, "email") or user).strip().lower()
+
+
+def _mask_email(email):
+	"""a***@d***.org: enough to recognise the inbox, not to read it."""
+	email = frappe.utils.cstr(email or "").strip()
+	if "@" not in email:
+		return None
+	local, _sep, domain = email.partition("@")
+	host, dot, tld = domain.rpartition(".")
+	return "%s***@%s***%s%s" % (local[:1], (host or domain)[:1], dot, tld if host else "")
+
+
+_CREDENTIAL_VIEW_DOCTYPE = "CRM HMIS Credential View"
+
+
+def _credential_view(fid, setup_id):
+	"""The open one-time view of this FID's temporary password, if any. Re-armed rows do not count."""
+	if not fid:
+		return None
+	rows = frappe.get_all(
+		_CREDENTIAL_VIEW_DOCTYPE,
+		filters={"fid": fid, "facility_setup": setup_id or ["is", "not set"], "status": "Viewed"},
+		fields=["name", "viewed_by", "viewed_on"],
+		order_by="viewed_on desc",
+		limit_page_length=1,
+		ignore_permissions=True,
+	)
+	return rows[0] if rows else None
+
+
+def _fetch_owner_login(fid):
+	"""Read the owner login block, password included, straight from the setup service.
+
+	Server to server only. Nothing from this response is cached, stored or logged.
+	"""
+	credentials = _external_provisioning_credentials()
+	if not credentials:
+		return None
+	base_url, api_key, api_secret = credentials
+	try:
+		response = requests.get(
+			base_url + "/api/method/hmis_setup.api.external_provisioning.get_provision_status",
+			params={"fid": fid},
+			auth=(api_key, api_secret),
+			headers={"Accept": "application/json", "X-Correlation-Id": frappe.generate_hash(length=16)},
+			timeout=15,
+		)
+		if response.status_code != 200:
+			return None
+		login = _gateway_data(response).get("login")
+	except (requests.exceptions.RequestException, ValueError, TypeError, AttributeError):
+		return None
+	return login if isinstance(login, dict) else None
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=5, seconds=3600)
+def reveal_hmis_owner_password(mfl_code):
+	"""Show the facility's temporary HMIS owner password once, to that owner only.
+
+	The setup service returns a generated password while its credentials email is
+	unconfirmed, because a new HMIS site may not be able to send mail yet. CRM never
+	puts it in the polled status: it is fetched here on request, handed back in this
+	one response, and recorded as viewed (who and when, never the password) before
+	it is returned, so a second request is refused.
+	"""
+	status = _get_provisioning_status(mfl_code, ensure_missing_draft=False)
+	journey = status.get("journey") or {}
+	reported = status.get("reported") or {}
+	owner_email = (reported.get("owner_login") or {}).get("email")
+	if not owner_email or owner_email != _session_email():
+		frappe.throw(_("Only the facility administrator can view the temporary HMIS password."), frappe.PermissionError)
+	credentials = (journey.get("site") or {}).get("credentials") or {}
+	if journey.get("phase") != "live" or not credentials.get("password_available"):
+		frappe.throw(_("No temporary password is on offer for this HMIS site. Check the HMIS credentials email or use “Forgot password” on the sign-in page."))
+	fid = status.get("fid")
+	setup_id = reported.get("setup_id") or ""
+	lock_key = hashlib.sha256(frappe.utils.cstr(fid).encode()).hexdigest()[:32]
+	with filelock("crm_hmis_credential_view_%s" % lock_key, timeout=10):
+		view = _credential_view(fid, setup_id)
+		if view:
+			frappe.throw(
+				_("The temporary password was already viewed on {0}. Contact Network Support if it was lost.").format(
+					frappe.utils.format_datetime(view.viewed_on)
+				)
+			)
+		login = _fetch_owner_login(fid) or {}
+		password = login.get("password")
+		if (
+			not (isinstance(password, str) and password)
+			or login.get("email_sent")
+			or frappe.utils.cstr(login.get("email")).strip().lower() != owner_email
+		):
+			frappe.throw(_("The temporary password is not available right now. Try again shortly, or use “Forgot password” on the sign-in page."))
+		viewed_on = frappe.utils.now_datetime()
+		frappe.get_doc({
+			"doctype": _CREDENTIAL_VIEW_DOCTYPE,
+			"status": "Viewed",
+			"fid": fid,
+			"facility": frappe.db.get_value("CRM Pre-Qualified Facility", {"hfr_facility_id": fid}, "name"),
+			"facility_setup": setup_id,
+			"owner_email": owner_email,
+			"viewed_by": frappe.session.user,
+			"viewed_on": viewed_on,
+		}).insert(ignore_permissions=True)
+		# Commit before the password leaves, so a concurrent or repeated request is refused.
+		frappe.db.commit()
+	return {"email": owner_email, "password": password, "viewed_on": frappe.utils.cstr(viewed_on)}
 
 
 def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
@@ -804,7 +1062,11 @@ def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 				"message": _("External HMIS setup access is incomplete. Ask your administrator to finish the service credentials."),
 			}
 		status = _get_external_provisioning_status(external_url, external_key, external_secret, facility.hfr_facility_id)
-		if ensure_missing_draft and (status.get("status") == "unavailable" or status.get("has_error")):
+		if (
+			ensure_missing_draft
+			and (status.get("status") == "unavailable" or status.get("has_error"))
+			and status.get("error_code") != "invalid_fid"
+		):
 			frappe.log_error(
 				title="External HMIS provisioning status requires support",
 				message="fid=%s correlation_id=%s\n%s"
@@ -817,6 +1079,9 @@ def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 		if ensure_missing_draft and status.get("status") == "not_submitted":
 			source = _get_external_provisioning_source(facility, deal_facility, mfl_code, deals, customers)
 			payload, missing_fields = _build_external_provisioning_payload(source)
+			# Contract v2 D2: deployment starts without a manual release unless the
+			# implementation team has switched manual review on in CRM HFR Settings.
+			payload["auto_deploy"] = _auto_deploy_enabled(settings)
 			metering = _apply_token_source(
 				settings,
 				payload,
@@ -834,6 +1099,7 @@ def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 				metering=metering,
 			)
 		status["fid"] = facility.hfr_facility_id
+		status["auto_deploy"] = _auto_deploy_enabled(settings)
 		# The TA status API includes its deployment log and last error on a 200
 		# response. These can contain internal tracebacks, so only CRM System
 		# Managers receive them through this customer-portfolio endpoint.
@@ -972,6 +1238,29 @@ def _resolve_provisioning_status(mfl_code, ensure_missing_draft):
 		return _provisioning_unavailable("response", None, correlation_id)
 
 
+def _owner_user_failed(payload, reported):
+	"""True when the setup service reports that the owner administrator login failed."""
+	# The deploy flow's Owner User (retry) step prefixes its failure this way.
+	if "[owner user]" in frappe.utils.cstr(payload.get("error") or "").casefold():
+		return True
+	# v2.0: Failed after every deployment step finished means the owner-user track failed.
+	completion = reported.get("completion") or {}
+	if (
+		frappe.utils.cstr(payload.get("status")).casefold() == "failed"
+		and completion.get("deployment_complete")
+		and not completion.get("owner_user_complete")
+	):
+		return True
+	return any(
+		step["status"] == "failed" and _is_owner_user_step(step["name"]) for step in reported.get("deploy_steps") or []
+	)
+
+
+def _deploy_not_queued_key(fid):
+	"""Cache key marking an FID whose auto-deploy request the setup service could not queue."""
+	return "crm_external_provisioning_deploy_not_queued:%s" % hashlib.sha256(frappe.utils.cstr(fid).encode()).hexdigest()[:32]
+
+
 def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 	"""Read status directly from the setup service when its service account is configured."""
 	base_url = base_url.rstrip("/")
@@ -985,6 +1274,9 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 			"source": "external_setup",
 			"message": _("External HMIS setup must use a secure HTTPS address."),
 		}
+	if not _is_valid_fid(fid):
+		# The service answers a malformed FID with a 400 on every poll (v2.2 §5); it is a CRM data fix.
+		return _external_provisioning_unavailable("invalid_fid", None)
 	url = base_url + "/api/method/hmis_setup.api.external_provisioning.get_provision_status"
 	correlation_id = frappe.generate_hash(length=16)
 	try:
@@ -1062,8 +1354,12 @@ def _get_external_provisioning_status(base_url, api_key, api_secret, fid):
 			"service_units_message": _("The setup status API does not report configured service units."),
 			"reported": _reported_setup_details(payload),
 		}
-		# The deploy flow's Owner User (retry) step prefixes its failure this way.
-		result["owner_user_failed"] = "[owner user]" in frappe.utils.cstr(payload.get("error") or "").casefold()
+		result["owner_user_failed"] = _owner_user_failed(payload, result["reported"])
+		error_text = frappe.utils.cstr(payload.get("error") or "").casefold()
+		# v2.0 blocks deployment while the target HMIS instance is not Active.
+		result["instance_blocked"] = "blocked until the instance is set to active" in error_text
+		if _journey_status_key(result) in _QUEUED_STATUSES and frappe.cache().get_value(_deploy_not_queued_key(fid)):
+			result["deploy_not_queued"] = True
 		if status.casefold() == "error" or payload.get("error"):
 			error_details = _external_error_details(
 				response.status_code,
@@ -1236,6 +1532,11 @@ def _backfill_licence_from_hfr(fid, mfl_code, deals):
 _EXTERNAL_PROVISIONING_REQUIRED = ("fid", "licence", "admin_email", "admin_name", "admin_mobile")
 
 
+def _is_valid_fid(fid):
+	"""The setup service's FR code format, `^FID-\\d{2}-[\\w-]+$` (case-insensitive)."""
+	return bool(re.fullmatch(r"FID-\d{2}-[\w-]+", frappe.utils.cstr(fid).strip(), flags=re.IGNORECASE))
+
+
 def _build_external_provisioning_payload(source):
 	"""Validate the exact TA-required payload without guessing missing policy data."""
 	source = source or {}
@@ -1250,7 +1551,7 @@ def _build_external_provisioning_payload(source):
 			payload[fieldname] = value
 
 	missing = [fieldname for fieldname in _EXTERNAL_PROVISIONING_REQUIRED if fieldname not in payload]
-	if payload.get("fid") and not re.fullmatch(r"FID-\d{2}-[\w-]+", frappe.utils.cstr(payload["fid"]), flags=re.IGNORECASE):
+	if payload.get("fid") and not _is_valid_fid(payload["fid"]):
 		missing.append("valid fid")
 	if payload.get("admin_email") and "@" not in frappe.utils.cstr(payload["admin_email"]):
 		missing.append("valid admin_email")
@@ -1564,7 +1865,7 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 				message="http_status=%s correlation_id=%s\n%s"
 				% (response.status_code, submission_correlation_id, error_details),
 			)
-			if response.status_code >= 500 or response.status_code in (408, 429):
+			if response.status_code >= 500 or response.status_code in (408, 429) or _is_transient_rejection(body):
 				state = "unknown"
 				retryable = True
 			else:
@@ -1576,7 +1877,9 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 				"state": state,
 				"retryable": retryable,
 				"retry_mode": "status_check" if retryable else None,
-				"message": _external_submit_error(response.status_code, body),
+				"message": _("The setup service could not reach the Health Facility Registry. CRM will check status and retry on the next refresh.")
+				if _is_transient_rejection(body)
+				else _external_submit_error(response.status_code, body),
 				"error_details": error_details,
 				"correlation_id": submission_correlation_id,
 			}
@@ -1602,18 +1905,61 @@ def _auto_submit_external_provisioning_impl(base_url, api_key, api_secret, fid, 
 				context=dict(metering or {"fid": fid}),
 			)
 
+		idempotent = bool(body.get("idempotent"))
+		deploy_queued = None
+		if request_payload.get("auto_deploy") is True and idempotent:
+			# v2.2 §4.5: a re-post never starts deployment, so a record still in Draft waits for a manual release.
+			if _journey_status_key({"status": body.get("status")}) in _QUEUED_STATUSES:
+				deploy_queued = False
+				frappe.cache().set_value(_deploy_not_queued_key(fid), 1, expires_in_sec=7 * 24 * 3600)
+		elif request_payload.get("auto_deploy") is True:
+			# v2.0 still answers 200 when the deployment enqueue fails, with a WARNING message.
+			warning = frappe.utils.cstr(body.get("message")).lstrip().upper().startswith("WARNING")
+			if body.get("auto_deploy_queued") is False or warning:
+				deploy_queued = False
+				frappe.cache().set_value(_deploy_not_queued_key(fid), 1, expires_in_sec=7 * 24 * 3600)
+				frappe.log_error(
+					title="External HMIS auto-deploy not queued",
+					message="fid=%s correlation_id=%s\n%s"
+					% (fid, response.headers.get("X-Correlation-Id") or correlation_id, frappe.utils.cstr(body.get("message"))[:2000]),
+				)
+			elif body.get("auto_deploy_queued") is True:
+				deploy_queued = True
+		if deploy_queued is not False and not idempotent:
+			# A new setup record replaces any earlier record whose deploy was not queued.
+			frappe.cache().delete_value(_deploy_not_queued_key(fid))
+
 		refreshed = _get_external_provisioning_status(base_url, api_key, api_secret, fid)
 		if refreshed.get("status") == "not_submitted":
 			refreshed.update({"status": body.get("status") or "Draft", "progress": 0})
+		if deploy_queued is False and _journey_status_key(refreshed) in _QUEUED_STATUSES:
+			refreshed["deploy_not_queued"] = True
+		if idempotent:
+			message = _("An HMIS setup record already exists for this facility. Its status has been refreshed.")
+		elif deploy_queued is False:
+			message = _("The HMIS setup request was sent, but deployment did not start automatically. The implementation team will start it.")
+		elif request_payload.get("auto_deploy") is True:
+			message = _("The HMIS setup request was sent and deployment starts automatically.")
+		else:
+			message = _("The HMIS setup draft was created. The implementation team will review it before deployment.")
 		refreshed["submission"] = {
 			# An FID that already had a setup record comes back as idempotent (v2.x).
-			"state": "already_exists" if body.get("idempotent") else "created",
+			"state": "already_exists" if idempotent else "created",
 			"retryable": False,
 			"facility_setup": body.get("facility_setup"),
-			"message": body.get("message") or _("The HMIS setup draft was created and status has been refreshed."),
+			"deploy_queued": deploy_queued,
+			# The service's own message is operator-facing (it may name its admin UI or a WARNING).
+			"message": message,
 			"correlation_id": response.headers.get("X-Correlation-Id") or correlation_id,
 		}
 		return refreshed
+
+
+def _is_transient_rejection(body):
+	"""A validation-coded response that reports an outage, not bad facility details."""
+	message = frappe.utils.cstr((body or {}).get("message") if isinstance(body, dict) else "").casefold()
+	# v2.0 returns a registry HTTP failure as a 400; the same details succeed once it recovers.
+	return "registry lookup failed" in message
 
 
 def _external_submit_error(status_code, body):
@@ -1699,6 +2045,11 @@ def _external_provisioning_unavailable(kind, status_code, error_details=None, co
 		error_title = _("Could not reach the deployment service")
 		message = _("Check your connection and try refreshing the status.")
 		retryable = True
+	elif kind == "invalid_fid":
+		error_code = "invalid_fid"
+		error_title = _("This facility's HFR Facility ID is not in the expected format")
+		message = _("The Facility ID must look like FID-XX-…. Ask your implementation team to correct it in CRM.")
+		retryable = False
 	elif kind == "bad_request":
 		error_code = "status_request_rejected"
 		error_title = _("The deployment service could not find a clear status")
