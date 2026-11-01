@@ -43,12 +43,13 @@ export async function gatewayBalance(gateway: APIRequestContext, event?: string)
   return response.json();
 }
 
-/** Finance records a cash receipt for the invoice; a second Accounts Manager approves it. */
+/** Finance records a cash receipt for the invoice (in full, or half when `part`); a second Accounts Manager approves it. */
 export async function payInvoiceInCash(
   browser: Browser,
   customer: string,
   invoice: string,
   testInfo: TestInfo,
+  part = false,
 ) {
   const finance = await signedIn(
     browser,
@@ -67,7 +68,13 @@ export async function payInvoiceInCash(
   await finance.getByRole("button", { name: "Cash", exact: true }).click();
   const row = finance.locator("tr", { hasText: invoice });
   await row.locator('input[type="checkbox"]').check();
-  const allocated = await row.locator('input[type="number"]').inputValue();
+  const allocation = row.locator('input[type="number"]');
+  // A part payment allocates half of what is outstanding.
+  if (part) {
+    const outstanding = Number(await allocation.inputValue());
+    await allocation.fill(String(Math.floor(outstanding / 2)));
+  }
+  const allocated = await allocation.inputValue();
   await finance.getByPlaceholder("0.00").first().fill(allocated);
   await finance.getByRole("button", { name: /Review/ }).click();
   await finance.getByRole("button", { name: /Send for Approval/ }).click();
