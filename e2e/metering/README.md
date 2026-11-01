@@ -49,3 +49,21 @@ E2E_EXPRESS_MFL=... E2E_EXPRESS_FACILITY="..." E2E_EXPRESS_ORDER=... E2E_EXPRESS
 E2E_EXPRESS_SITE_KEY="$(cat /secure/express_site_key)" \
 npx playwright test --config e2e/metering/playwright.config.ts express_draft_order
 ```
+
+## Welcome bonus journeys (P-76)
+
+`welcome_bonus_dispense.spec.ts`: an OpenMeter Admin dispenses the welcome bonus from Deal › Metering,
+the button stays disabled, a repeat request adds nothing, the order loses its bonus line, a part
+payment grants nothing, and the full payment grants the package only. `welcome_bonus_auto_assign.spec.ts`:
+with auto-assign on, selecting the package releases the bonus and payment adds the package only.
+
+Create a facility per run with the admin user and a Deal:
+
+```bash
+# python (frappe.init/connect), not bench execute, so errors show:
+crm.tests.e2e_express_fixture.setup(run_id="<unique>", key_file="/secure/express_site_key",
+    partner_coupon=False, admin_password="...", auto_dispense=False)  # True for the auto-assign spec
+```
+
+Pass the Express variables plus `E2E_ADMIN_PASSWORD`, `E2E_BONUS_DEAL` (the returned deal),
+`E2E_BONUS_FID` (the returned fid) and `E2E_BONUS_TOKENS` (the Opt-In bonus quantity).

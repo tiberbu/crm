@@ -84,3 +84,40 @@ def run_action(action: str, fid: str | None = None, params: str | dict | None = 
 def reveal_key(fid: str, password: str) -> dict:
 	"""The facility's full site key, for the Administrator to copy. The metering app re-checks the password."""
 	return _require_hook("crm_metering_admin_reveal_key")(fid, password)
+
+
+def _require_manage():
+	if not get_access()["can_manage"]:
+		frappe.throw(_("Only OpenMeter Admins can use metering."), frappe.PermissionError)
+
+
+def _welcome_bonus_view(fid: str) -> dict:
+	from crm.utils.token_bonus import WELCOME_BONUS, auto_dispense_enabled, bonus_settings, welcome_bonus_status
+
+	status = welcome_bonus_status(fid)
+	if status.get("source_doctype") == "User":
+		status["source_label"] = frappe.utils.get_fullname(status.get("source_name"))
+	return {**status, "configured_tokens": bonus_settings()[WELCOME_BONUS], "auto_dispense": auto_dispense_enabled()}
+
+
+@frappe.whitelist(methods=["GET"])
+def get_welcome_bonus(fid: str) -> dict:
+	"""The facility's one-time welcome bonus: dispensed or not, and how many tokens it gives."""
+	_require_manage()
+	return _welcome_bonus_view(cstr(fid).strip())
+
+
+@frappe.whitelist(methods=["POST"])
+def dispense_welcome_bonus(fid: str) -> dict:
+	"""Grant the welcome bonus now. A facility gets it once; later clicks and its first payment add nothing."""
+	from crm.utils.token_bonus import WELCOME_BONUS, bonus_settings
+	from crm.utils.token_bonus import dispense_welcome_bonus as dispense
+
+	_require_manage()
+	fid = cstr(fid).strip()
+	if not fid:
+		frappe.throw(_("This facility has no Facility ID."))
+	if bonus_settings()[WELCOME_BONUS] <= 0:
+		frappe.throw(_("The first-purchase bonus is set to 0 tokens in Settings › Opt-In."))
+	outcome = dispense(fid, "User", frappe.session.user)
+	return {**_welcome_bonus_view(fid), "changed": bool(outcome.get("changed")), "reason": outcome.get("reason") or outcome.get("error")}

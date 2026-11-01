@@ -90,6 +90,38 @@
         </div>
       </div>
 
+      <div
+        v-if="bonus.data"
+        class="mt-5 flex flex-wrap items-center justify-between gap-3 rounded border border-outline-gray-1 p-3"
+        data-testid="welcome-bonus"
+      >
+        <div class="min-w-0">
+          <div class="text-base-semibold text-ink-gray-8">
+            {{ __('Welcome bonus') }}
+          </div>
+          <p
+            class="mt-0.5 text-base text-ink-gray-7"
+            data-testid="welcome-bonus-state"
+          >
+            {{ bonusText }}
+          </p>
+        </div>
+        <Button
+          data-testid="dispense-welcome-bonus"
+          :label="
+            bonus.data.dispensed
+              ? __('Bonus dispensed')
+              : __('Dispense {0} bonus tokens', [
+                  Number(bonus.data.configured_tokens).toLocaleString(),
+                ])
+          "
+          :variant="bonus.data.dispensed ? 'subtle' : 'solid'"
+          :disabled="!canDispense"
+          :loading="busy === 'welcome_bonus'"
+          @click="emit('bonus', facility.fid)"
+        />
+      </div>
+
       <div class="mt-5">
         <div class="text-base-semibold text-ink-gray-8">
           {{ __('Site key') }}
@@ -285,6 +317,7 @@ const props = defineProps({
   busy: { type: String, default: null },
 })
 const emit = defineEmits([
+  'bonus',
   'action',
   'import',
   'issue',
@@ -298,6 +331,56 @@ const probe = createResource({
   method: 'GET',
   makeParams: () => ({ fid: props.facility.fid }),
   auto: Boolean(props.facility.fid),
+})
+
+const bonus = createResource({
+  url: 'crm.api.metering_admin.get_welcome_bonus',
+  method: 'GET',
+  makeParams: () => ({ fid: props.facility.fid }),
+  auto: Boolean(props.facility.fid),
+})
+
+// Once Granted (by this button, auto-assign or the first paid invoice) it can never be dispensed again.
+const canDispense = computed(
+  () =>
+    bonus.data?.available &&
+    !bonus.data.dispensed &&
+    bonus.data.configured_tokens > 0 &&
+    !props.busy,
+)
+
+const bonusText = computed(() => {
+  const state = bonus.data || {}
+  if (state.dispensed) {
+    const via = {
+      User: __('by {0}', [state.source_label || state.source_name]),
+      'Sales Order': __('automatically when package {0} was selected', [
+        state.source_name,
+      ]),
+      'Sales Invoice': __('with paid invoice {0}', [state.source_name]),
+    }[state.source_doctype]
+    return __('{0} tokens dispensed on {1} {2}.', [
+      Number(state.tokens || 0).toLocaleString(),
+      formatDate(state.dispensed_at),
+      via || '',
+    ]).replace(' .', '.')
+  }
+  if (!state.available) return __('No metering app is installed on this site.')
+  if (!(state.configured_tokens > 0))
+    return __(
+      'The first-purchase bonus is set to 0 tokens in Settings › Opt-In.',
+    )
+  if (state.status === 'Failed')
+    return __('The last attempt failed: {0} You can try again.', [
+      state.error || '',
+    ])
+  return state.auto_dispense
+    ? __(
+        'Not dispensed yet. It is auto-assigned when a Flex package is selected, or added to the first paid package.',
+      )
+    : __(
+        'Not dispensed yet. It is added to the first paid package, or you can dispense it now (once).',
+      )
 })
 
 const data = computed(() => probe.data)
@@ -324,5 +407,10 @@ function formatDate(value) {
   return value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : ''
 }
 
-defineExpose({ reload: () => probe.reload() })
+defineExpose({
+  reload: () => {
+    probe.reload()
+    bonus.reload()
+  },
+})
 </script>

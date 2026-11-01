@@ -5,6 +5,11 @@ Both are zero-rated lines on the facility's token Sales Order (and so its invoic
 when the invoice is paid, separately from the bought tokens. Quantities come from CRM Opt-In
 Settings. A facility gets each bonus on one confirmed order only: the first-purchase bonus while it
 has no other confirmed token order, the Partner Coupon while no confirmed order carried one.
+
+The welcome bonus can also go out before any payment (P-76): an admin dispenses it from the
+Deal's Metering tab, or CRM Opt-In Settings auto-assigns it when the facility selects a package.
+openmeter_mediator keeps one `welcome:<FID>` grant per facility for all three paths, so once it is
+out, later orders carry no welcome line and the first paid invoice grants only the package.
 """
 
 from __future__ import annotations
@@ -24,6 +29,102 @@ def bonus_settings() -> dict[str, int]:
 		WELCOME_BONUS: max(cint(settings.get("welcome_bonus_tokens")), 0),
 		PARTNER_COUPON: max(cint(settings.get("partner_coupon_tokens")), 0),
 	}
+
+
+def _hook(name: str):
+	methods = frappe.get_hooks(name)
+	return frappe.get_attr(methods[-1]) if methods else None
+
+
+def auto_dispense_enabled() -> bool:
+	return bool(cint(frappe.get_cached_doc("CRM Opt-In Settings").get("auto_dispense_welcome_bonus")))
+
+
+def welcome_bonus_status(facility_fid: str | None) -> dict:
+	"""The metering app's record of this facility's welcome bonus; never dispensed without one."""
+	facility_fid = cstr(facility_fid).strip()
+	method = _hook("crm_welcome_bonus_status")
+	if not (method and facility_fid):
+		return {"fid": facility_fid, "dispensed": False, "status": None, "available": bool(method)}
+	return {**(method(facility_fid) or {}), "fid": facility_fid, "available": True}
+
+
+def dispense_welcome_bonus(facility_fid: str, source_doctype: str | None = None, source_name: str | None = None) -> dict:
+	"""Grant the facility's welcome bonus now. The metering app grants it at most once per facility."""
+	method = _hook("crm_dispense_welcome_bonus")
+	if not method:
+		frappe.throw(_("No metering app is installed on this site."))
+	facility_fid = cstr(facility_fid).strip()
+	outcome = method(facility_fid, bonus_settings()[WELCOME_BONUS], source_doctype=source_doctype, source_name=source_name)
+	if outcome.get("dispensed"):
+		drop_welcome_lines_from_drafts(facility_fid)
+	return outcome
+
+
+def drop_welcome_lines_from_drafts(facility_fid: str) -> list[str]:
+	"""Take the welcome line off the facility's unconfirmed orders once the bonus is out.
+
+	The client reviews a draft before confirming it, so the review must not promise a bonus the
+	facility already has. Confirmed orders keep their lines; the payment grants only the package.
+	"""
+	if not (facility_fid and frappe.db.has_column("Sales Order", "crm_token_facility_fid") and _installed()):
+		return []
+	drafts = frappe.get_all(
+		"Sales Order",
+		filters={"crm_token_facility_fid": facility_fid, "docstatus": 0},
+		pluck="name",
+		ignore_permissions=True,
+	)
+	changed = []
+	for name in drafts:
+		order = frappe.get_doc("Sales Order", name)
+		rows = [row for row in order.items if row.get("crm_bonus_type") != WELCOME_BONUS]
+		if len(rows) == len(order.items):
+			continue
+		order.set("items", rows)
+		order.save(ignore_permissions=True)  # SYSTEM-INTERNAL: removes a zero-rated line only
+		changed.append(name)
+	return changed
+
+
+def _order_fid(order) -> str:
+	from crm.utils.token_facility import facility_fid_for_mfl
+
+	return cstr(order.get("crm_token_facility_fid")).strip() or facility_fid_for_mfl(order.get("crm_token_facility_mfl"))
+
+
+def auto_dispense_on_package_selection(doc, method=None):
+	"""Sales Order hook: with auto-assign on, a Flex package selection releases the welcome bonus."""
+	if not (doc.get("crm_token_package_item") and doc.get("crm_token_facility_mfl")):
+		return
+	if not (auto_dispense_enabled() and bonus_settings()[WELCOME_BONUS] and _hook("crm_dispense_welcome_bonus")):
+		return
+	if not _earns_bonus(doc.get("crm_token_package_item")):
+		return
+	frappe.enqueue(
+		"crm.utils.token_bonus.auto_dispense_job",
+		queue="short",
+		enqueue_after_commit=True,
+		sales_order=doc.name,
+	)
+
+
+def auto_dispense_job(sales_order: str):
+	order = frappe.get_doc("Sales Order", sales_order)
+	if order.docstatus == 2 or not auto_dispense_enabled():
+		return
+	fid = _order_fid(order)
+	if not fid or welcome_bonus_status(fid).get("dispensed"):
+		return
+	outcome = dispense_welcome_bonus(fid, "Sales Order", order.name)
+	if not outcome.get("dispensed"):
+		# The first paid invoice still carries the bonus, and an admin can dispense it by hand.
+		frappe.log_error(
+			title=f"Welcome bonus not auto-assigned for {fid}",
+			message=frappe.as_json({"sales_order": order.name, **outcome}),
+			reference_doctype="Sales Order",
+			reference_name=order.name,
+		)
 
 
 def _installed() -> bool:
@@ -54,7 +155,9 @@ def _coupon_network(customer: str, facility_mfl: str) -> str | None:
 	return network or None
 
 
-def eligible_bonuses(customer: str, facility_mfl: str, exclude_order: str | None = None) -> list[dict]:
+def eligible_bonuses(
+	customer: str, facility_mfl: str, exclude_order: str | None = None, facility_fid: str | None = None
+) -> list[dict]:
 	"""The complimentary lines a facility's next confirmed token order should carry."""
 	facility_mfl = cstr(facility_mfl).strip()
 	if not facility_mfl or not _installed():
@@ -62,7 +165,12 @@ def eligible_bonuses(customer: str, facility_mfl: str, exclude_order: str | None
 	amounts = bonus_settings()
 	others = _other_confirmed_orders(facility_mfl, exclude_order)
 	lines = []
-	if amounts[WELCOME_BONUS] and not others:
+	if not facility_fid:
+		from crm.utils.token_facility import facility_fid_for_mfl
+
+		facility_fid = facility_fid_for_mfl(facility_mfl)
+	# Already dispensed (admin button or auto-assign): the paid order grants the package only.
+	if amounts[WELCOME_BONUS] and not others and not welcome_bonus_status(facility_fid).get("dispensed"):
 		lines.append(
 			{
 				"type": WELCOME_BONUS,
@@ -109,7 +217,12 @@ def apply_bonus_lines(order) -> list[dict]:
 	order.set("items", [row for row in order.items if not row.get("crm_bonus_type")])
 	if not _earns_bonus(order.get("crm_token_package_item")):
 		return []
-	bonuses = eligible_bonuses(order.customer, order.get("crm_token_facility_mfl"), exclude_order=order.name)
+	bonuses = eligible_bonuses(
+		order.customer,
+		order.get("crm_token_facility_mfl"),
+		exclude_order=order.name,
+		facility_fid=cstr(order.get("crm_token_facility_fid")).strip() or None,
+	)
 	if not bonuses:
 		return []
 	item = frappe.db.get_value("Item", BONUS_ITEM, ["item_name", "stock_uom"], as_dict=True)
