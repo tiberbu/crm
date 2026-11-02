@@ -686,6 +686,7 @@ def get_optin_settings():
 		"optional_services_price_list": settings.get("optional_services_price_list") or "",
 		"sales_tax_template": settings.sales_tax_template or "",
 		"active_tc_document": settings.active_tc_document or "",
+		"self_onboarding_tc_document": settings.get("self_onboarding_tc_document") or "",
 		"default_lead_owner": settings.default_lead_owner or "",
 		"tiberbu_signatory": settings.tiberbu_signatory or "",
 		"tiberbu_signatory_name": settings.get("tiberbu_signatory_name") or "",
@@ -827,6 +828,7 @@ def update_optin_settings(settings: Any):
 	optional_services_price_list = frappe.utils.cstr(settings.get("optional_services_price_list")).strip()
 	sales_tax_template = frappe.utils.cstr(settings.get("sales_tax_template")).strip()
 	active_tc_document = frappe.utils.cstr(settings.get("active_tc_document")).strip()
+	self_onboarding_tc_document = frappe.utils.cstr(settings.get("self_onboarding_tc_document")).strip()
 	default_lead_owner = frappe.utils.cstr(settings.get("default_lead_owner")).strip()
 	tiberbu_signatory = frappe.utils.cstr(settings.get("tiberbu_signatory")).strip()
 	tiberbu_signatory_name = frappe.utils.cstr(settings.get("tiberbu_signatory_name")).strip()
@@ -976,6 +978,10 @@ def update_optin_settings(settings: Any):
 		get_vat_tax_configuration(tax_template=sales_tax_template)
 	if active_tc_document and not frappe.db.exists("Terms and Conditions", active_tc_document):
 		frappe.throw(_("Terms and Conditions document not found."))
+	if self_onboarding_tc_document and not frappe.db.exists(
+		"Terms and Conditions", self_onboarding_tc_document
+	):
+		frappe.throw(_("Terms and Conditions document not found."))
 	for field, user in (("Default Lead Owner", default_lead_owner), ("Tiberbu Signatory", tiberbu_signatory)):
 		if user and not frappe.db.exists("User", {"name": user, "enabled": 1}):
 			frappe.throw(_("{0} must be an enabled user.").format(field))
@@ -996,6 +1002,8 @@ def update_optin_settings(settings: Any):
 		doc.optional_services_price_list = optional_services_price_list
 	doc.sales_tax_template = sales_tax_template
 	doc.active_tc_document = active_tc_document
+	if frappe.get_meta("CRM Opt-In Settings").has_field("self_onboarding_tc_document"):
+		doc.self_onboarding_tc_document = self_onboarding_tc_document
 	doc.default_lead_owner = default_lead_owner
 	doc.tiberbu_signatory = tiberbu_signatory
 	doc.tiberbu_signatory_name = tiberbu_signatory_name
