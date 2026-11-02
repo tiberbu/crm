@@ -171,28 +171,54 @@ def search_customer_360(query: str, limit: int = 10) -> dict:
 		rows = frappe.get_list(
 			"CRM Pre-Qualified Facility",
 			filters={"facility_name": ["like", like]},
-			fields=["name", "facility_name", "mfl_code"],
+			fields=["name", "facility_name", "mfl_code", "organization"],
 			order_by="creation desc",
 			limit_page_length=limit,
 		)
+		org_map = _org_doc_names([row.organization for row in rows if row.organization])
 		result["facilities"] = [
-			{"name": r.name, "label": r.facility_name or r.name, "mfl_code": r.mfl_code}
+			{
+				"name": r.name,
+				"label": r.facility_name or r.name,
+				"mfl_code": r.mfl_code,
+				"organization": org_map.get(r.organization),
+			}
 			for r in rows
 		]
 		if query.isdigit():
 			rows = frappe.get_list(
 				"CRM Pre-Qualified Facility",
 				filters={"mfl_code": ["like", like]},
-				fields=["name", "facility_name", "mfl_code"],
+				fields=["name", "facility_name", "mfl_code", "organization"],
 				limit_page_length=limit,
 			)
+			org_map.update(_org_doc_names([row.organization for row in rows if row.organization]))
 			existing = {row["name"] for row in result["facilities"]}
 			for r in rows:
 				if r.name not in existing:
 					result["facilities"].append(
-						{"name": r.name, "label": r.facility_name or r.name, "mfl_code": r.mfl_code}
+						{
+							"name": r.name,
+							"label": r.facility_name or r.name,
+							"mfl_code": r.mfl_code,
+							"organization": org_map.get(r.organization),
+						}
 					)
 	return result
+
+
+def _org_doc_names(organization_labels: list[str]) -> dict:
+	"""Map organization_name (display label) -> CRM Organization document name."""
+	labels = sorted({label for label in organization_labels if label})
+	if not labels or not _can_read("CRM Organization"):
+		return {}
+	rows = frappe.get_list(
+		"CRM Organization",
+		filters={"organization_name": ["in", labels]},
+		fields=["name", "organization_name"],
+		limit_page_length=0,
+	)
+	return {row.organization_name: row.name for row in rows}
 
 
 # ---------------------------------------------------------------------------
@@ -534,12 +560,21 @@ def _resolve_invoices(ois_names: list[str], quote_names: list[str], customer_nam
 
 
 def _resolve_payments(customer_names: list[str]) -> list[dict]:
+	"""Received payments whose party is one of the customer's ERPNext Customers.
+
+	Payment Entry has no `customer` column — the billing party lives in the
+	dynamic `party`/`party_type` pair.
+	"""
 	if not customer_names or not _can_read("Payment Entry"):
 		return []
 	rows = frappe.get_list(
 		"Payment Entry",
-		filters={"payment_type": "Receive", "customer": ["in", customer_names]},
-		fields=["name", "posting_date", "paid_amount", "payment_type", "currency"],
+		filters={
+			"payment_type": "Receive",
+			"party_type": "Customer",
+			"party": ["in", customer_names],
+		},
+		fields=["name", "posting_date", "paid_amount", "payment_type", "party"],
 		order_by="posting_date desc",
 		limit_page_length=100,
 	)
@@ -549,7 +584,7 @@ def _resolve_payments(customer_names: list[str]) -> list[dict]:
 			"posting_date": row.posting_date,
 			"paid_amount": row.paid_amount,
 			"payment_type": row.payment_type,
-			"currency": row.currency,
+			"party": row.party,
 		}
 		for row in rows
 	]

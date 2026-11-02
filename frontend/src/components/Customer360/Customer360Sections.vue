@@ -319,9 +319,12 @@
               :key="payment.name"
               class="flex items-center justify-between"
             >
-              <span class="text-ink-gray-5">{{ formatDate(payment.posting_date) }}</span>
+              <span class="text-ink-gray-5">
+                {{ formatDate(payment.posting_date) }}
+                <template v-if="payment.party"> · {{ payment.party }}</template>
+              </span>
               <span class="tabular-nums text-ink-gray-9">
-                {{ money(payment.paid_amount, payment.currency) }}
+                {{ money(payment.paid_amount) }}
               </span>
             </li>
           </ul>

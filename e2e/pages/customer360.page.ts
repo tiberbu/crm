@@ -37,6 +37,13 @@ export class Customer360Page {
 			.click()
 	}
 
+	async openFacility(label: string): Promise<void> {
+		await this.page
+			.getByRole('button', { name: new RegExp(`Open 360 for ${label}`) })
+			.first()
+			.click()
+	}
+
 	get kpiSection() {
 		return this.page.getByText('Package Paid', { exact: true })
 	}

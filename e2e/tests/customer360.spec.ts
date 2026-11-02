@@ -66,23 +66,54 @@ async function realDealExists(request: any): Promise<boolean> {
 test.describe('Customer 360', () => {
 	let seededOrg: { name: string } | null = null
 	let seededDeal: { name: string } | null = null
+	let seededCustomer: { name: string } | null = null
+	let seededFacility: { name: string } | null = null
 	const suffix = uniqueSuffix()
 	const orgName = `E2E 360 Org ${suffix}`
+	const customerName = `E2E 360 Customer ${suffix}`
+	const facilityName = `E2E 360 Facility ${suffix}`
 
 	test.beforeAll(async ({ request }) => {
 		seededOrg = await apiCreate(request, 'CRM Organization', {
 			organization_name: orgName,
 		})
+		// A billing party forces get_customer_360 to run the real Sales Invoice /
+		// Payment Entry queries (a customer-less org skips them entirely).
+		seededCustomer = await apiCreate(request, 'Customer', {
+			customer_name: customerName,
+		})
 		seededDeal = await apiCreate(request, 'CRM Deal', {
 			organization: orgName,
 			status: 'Qualification',
 			email: `e2e-360-${suffix}@example.com`,
+			cx_customer: seededCustomer.name,
+		})
+		seededFacility = await apiCreate(request, 'CRM Pre-Qualified Facility', {
+			facility_name: facilityName,
+			mfl_code: `9${suffix.replace(/\D/g, '').slice(0, 3)}12`,
+			keph_level: 'Level 3',
+			organization: orgName,
 		})
 	})
 
 	test.afterAll(async ({ request }) => {
 		if (seededDeal) {
 			await apiDelete(request, 'CRM Deal', seededDeal.name)
+		}
+		if (seededFacility) {
+			await apiDelete(request, 'CRM Pre-Qualified Facility', seededFacility.name)
+		}
+		// Best effort: the dev site's role setup can deny Customer delete even to
+		// the QA user, and that restriction is not something the suite may change.
+		// A leftover synthetic Customer is harmless.
+		if (seededCustomer) {
+			try {
+				await apiDelete(request, 'Customer', seededCustomer.name)
+			} catch (e) {
+				console.warn(
+					`leftover Customer kept (delete denied on this site): ${seededCustomer.name}`,
+				)
+			}
 		}
 		if (seededOrg) {
 			await apiDelete(request, 'CRM Organization', seededOrg.name)
@@ -121,6 +152,19 @@ test.describe('Customer 360', () => {
 			.click()
 
 		await expect(p360.kpiSection).toBeVisible({ timeout: 15000 })
+	})
+
+	test('facility search hits open the parent customer 360', async ({ page }) => {
+		const p360 = new Customer360Page(page)
+		await p360.goto()
+
+		// The seeded facility is surfaced in the Facilities result group.
+		await p360.search(facilityName)
+		await p360.openFacility(facilityName)
+
+		// Clicking it resolves to the parent organization's 360 view.
+		await expect(p360.kpiSection).toBeVisible({ timeout: 15000 })
+		await expect(page.getByText(orgName).first()).toBeVisible()
 	})
 
 	test('short search does not query the server', async ({ page }) => {

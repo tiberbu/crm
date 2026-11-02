@@ -4,6 +4,7 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from crm.api.customer_360 import (
+	_resolve_payments,
 	_build_summary,
 	get_customer_360,
 	search_customer_360,
@@ -189,6 +190,67 @@ class _Fake360Context:
 			p.stop()
 
 
+class TestResolvePayments(UnitTestCase):
+	"""Regression: Payment Entry has no `customer` column — the billing party is
+	the dynamic `party`/`party_type` pair. A `customer` filter is a hard 500."""
+
+	def test_queries_by_party_not_customer(self):
+		ctx = _Fake360Context(
+			list_by_doctype={
+				"Payment Entry": [
+					{
+						"name": "PE-1",
+						"posting_date": "2026-10-01",
+						"paid_amount": 6960.0,
+						"payment_type": "Receive",
+						"party": "Acme Customer",
+					}
+				]
+			}
+		)
+		calls = []
+		frappe_dict = frappe._dict
+
+		def capturing_get_list(doctype, filters=None, fields=None, **kwargs):
+			calls.append((doctype, filters))
+			return [frappe_dict(row) for row in ctx.list_by_doctype.get(doctype, [])]
+
+		ctx.install()
+		try:
+			with patch(
+				"crm.api.customer_360.frappe.get_list", side_effect=capturing_get_list
+			):
+				result = _resolve_payments(["Acme Customer"])
+		finally:
+			ctx.uninstall()
+
+		self.assertEqual(len(result), 1)
+		self.assertEqual(result[0]["party"], "Acme Customer")
+		self.assertEqual(result[0]["paid_amount"], 6960.0)
+		pe_calls = [call for call in calls if call[0] == "Payment Entry"]
+		self.assertEqual(len(pe_calls), 1)
+		filters = pe_calls[0][1]
+		self.assertNotIn("customer", filters)
+		self.assertEqual(filters.get("party_type"), "Customer")
+		self.assertEqual(filters.get("party"), ["in", ["Acme Customer"]])
+
+	def test_empty_customer_list_skips_query(self):
+		ctx = _Fake360Context()
+		calls = []
+
+		ctx.install()
+		try:
+			with patch(
+				"crm.api.customer_360.frappe.get_list",
+				side_effect=lambda *a, **k: calls.append(a) or [],
+			):
+				result = _resolve_payments([])
+		finally:
+			ctx.uninstall()
+		self.assertEqual(result, [])
+		self.assertEqual(calls, [])
+
+
 class TestGetCustomer360Gating(UnitTestCase):
 	def test_requires_an_organization_or_deal(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -309,3 +371,29 @@ class TestSearchCustomer360(UnitTestCase):
 		self.assertEqual(len(result["organizations"]), 1)
 		self.assertEqual(result["organizations"][0]["label"], "Acme Corporation")
 		self.assertGreaterEqual(len(result["deals"]), 1)
+
+	def test_facility_results_carry_parent_org_doc_name(self):
+		ctx = _Fake360Context(
+			list_by_doctype={
+				"CRM Pre-Qualified Facility": [
+					{
+						"name": "F1",
+						"facility_name": "West Clinic",
+						"mfl_code": "12345",
+						"organization": "Acme Corporation",
+					}
+				],
+				"CRM Organization": [
+					{"name": "acme-doc", "organization_name": "Acme Corporation"}
+				],
+			}
+		)
+		ctx.install()
+		try:
+			result = search_customer_360("West")
+		finally:
+			ctx.uninstall()
+		self.assertEqual(len(result["facilities"]), 1)
+		facility = result["facilities"][0]
+		self.assertEqual(facility["label"], "West Clinic")
+		self.assertEqual(facility["organization"], "acme-doc")

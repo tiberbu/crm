@@ -82,17 +82,19 @@
             <h2 class="mb-2 text-xs font-medium text-ink-gray-5">{{
               __('Facilities')
             }}</h2>
-            <div
+            <button
               v-for="facility in results.facilities"
               :key="'fac-' + facility.name"
-              class="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm"
+              class="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-surface-gray-2"
+              :aria-label="__('Open 360 for {0}', [facility.label])"
+              @click="openFacility(facility)"
             >
               <span class="text-ink-gray-9">
                 {{ facility.label }}
                 <span class="text-ink-gray-5"> · {{ facility.mfl_code }}</span>
               </span>
               <Badge :label="__('Facility')" size="sm" theme="gray" variant="subtle" />
-            </div>
+            </button>
           </div>
         </template>
         <div v-else-if="searched" class="px-4 py-6 text-sm text-ink-gray-5">
@@ -129,8 +131,11 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Badge, createResource, Spinner, TextInput } from 'frappe-ui'
 import Customer360Sections from '@/components/Customer360/Customer360Sections.vue'
+
+const router = useRouter()
 
 const query = ref('')
 const searched = ref(false)
@@ -186,5 +191,16 @@ function openOrganization(name) {
 
 function openDeal(name) {
 	selectReference('deal', name)
+}
+
+// Facilities have no detail page of their own. A facility belongs to a customer,
+// so open the parent organization's 360; without a parent, fall back to the
+// facilities list page.
+function openFacility(facility) {
+	if (facility.organization) {
+		openOrganization(facility.organization)
+		return
+	}
+	router.push({ name: 'PrequalifiedFacilities' })
 }
 </script>
