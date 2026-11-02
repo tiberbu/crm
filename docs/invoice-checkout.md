@@ -33,8 +33,8 @@ Manager. The Network Detail → Prequalified Contacts table always shows the
 **Send payment link** action: it becomes available after Opt-In and a contact
 email are present. The action is intentionally not gated on an invoice. It sends
 the protected link now, while clearly explaining that payment options appear
-only after a submitted invoice is ready. Completed OIS submissions also
-automatically send the link to the facility signatory.
+only after a submitted invoice is ready. Completed OIS submissions do not send
+this link: the signatory receives only the agreement signing invitation.
 
 The same seeded destination is available to Terms & Conditions and contract
 renderers as `{{ bank_account_name }}`, `{{ bank_name }}`,

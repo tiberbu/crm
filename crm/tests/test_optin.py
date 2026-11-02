@@ -71,7 +71,6 @@ from crm.api.optin import (
 	get_pricing,
 	list_submissions,
 	requires_contract_signature,
-	should_send_legacy_payment_link,
 	teardown_submission,
 	verify_prequalified,
 	_mark_opted_in_facilities,
@@ -1369,8 +1368,6 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertTrue(requires_contract_signature(SimpleNamespace()))
 		self.assertTrue(requires_contract_signature(SimpleNamespace(onboarding_source="legacy")))
 		self.assertTrue(requires_contract_signature(SimpleNamespace(onboarding_source="unknown")))
-		self.assertTrue(should_send_legacy_payment_link(SimpleNamespace()))
-		self.assertFalse(should_send_legacy_payment_link(SimpleNamespace(onboarding_source="token_self_onboarding")))
 
 	def test_self_onboarding_source_skips_contract_automation(self):
 		submission = SimpleNamespace(onboarding_source="token_self_onboarding")
