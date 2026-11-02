@@ -352,6 +352,20 @@
             type="select"
             @update:modelValue="markDirty"
           />
+          <FormControl
+            v-model="form.self_onboarding_tc_document"
+            class="mt-4"
+            data-testid="optin-self-onboarding-terms"
+            :label="__('Token-Based Self-Onboarding Terms Document')"
+            :options="termsOptions"
+            type="select"
+            :description="
+              __(
+                'Terms shown in token-based facility onboarding. Leave blank to use the configured Default Terms and Conditions above.',
+              )
+            "
+            @update:modelValue="markDirty"
+          />
         </div>
       </section>
 
@@ -622,6 +636,7 @@ const form = reactive({
   optional_services_price_list: '',
   sales_tax_template: '',
   active_tc_document: '',
+  self_onboarding_tc_document: '',
   default_lead_owner: '',
   tiberbu_signatory: '',
   tiberbu_signatory_name: '',

@@ -78,6 +78,54 @@ class TestSelfOnboardingFacilityLevelSettings(UnitTestCase):
 		self.assertEqual(doc.self_onboarding_allowed_facility_levels, "Level 2\nLevel 3B\nLevel 3C")
 
 
+class TestSelfOnboardingTermsSettings(UnitTestCase):
+	def test_get_settings_returns_the_self_onboarding_terms_document(self):
+		settings = frappe._dict(
+			{
+				"active_tc_document": "Legacy Terms",
+				"self_onboarding_tc_document": "Self-Onboarding Terms",
+				"token_packages": [],
+			}
+		)
+		meta = frappe._dict(has_field=lambda field: field == "token_packages")
+		with (
+			patch("crm.api.optin_admin._require_optin_settings_manager"),
+			patch("crm.api.optin_admin.frappe.get_single", return_value=settings),
+			patch("crm.api.optin_admin.frappe.get_meta", return_value=meta),
+		):
+			result = get_optin_settings()
+
+		self.assertEqual(result["active_tc_document"], "Legacy Terms")
+		self.assertEqual(result["self_onboarding_tc_document"], "Self-Onboarding Terms")
+
+	def test_update_saves_the_self_onboarding_terms_document(self):
+		doc = Mock()
+		doc.active_tc_document = "Legacy Terms"
+		meta = frappe._dict(has_field=lambda _field: True)
+		with (
+			patch("crm.api.optin_admin._require_optin_settings_manager"),
+			patch("crm.api.optin_admin.frappe.get_single", return_value=doc),
+			patch("crm.api.optin_admin.frappe.get_meta", return_value=meta),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin_admin.frappe.db.commit"),
+		):
+			update_optin_settings({"self_onboarding_tc_document": "Self-Onboarding Terms"})
+
+		self.assertEqual(doc.self_onboarding_tc_document, "Self-Onboarding Terms")
+
+	def test_update_rejects_a_missing_self_onboarding_terms_document(self):
+		doc = Mock()
+		meta = frappe._dict(has_field=lambda _field: True)
+		with (
+			patch("crm.api.optin_admin._require_optin_settings_manager"),
+			patch("crm.api.optin_admin.frappe.get_single", return_value=doc),
+			patch("crm.api.optin_admin.frappe.get_meta", return_value=meta),
+			patch("crm.api.optin_admin.frappe.db.exists", return_value=False),
+		):
+			with self.assertRaisesRegex(frappe.ValidationError, "Terms and Conditions document not found."):
+				update_optin_settings({"self_onboarding_tc_document": "Missing Terms"})
+
+
 class TestTokenCalculatorSettings(UnitTestCase):
 	def _payload(self, **values):
 		return {
