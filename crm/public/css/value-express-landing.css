@@ -266,3 +266,18 @@ header.site .signin{margin-left:4px}
 /* Columns come from grid_columns(): at most four a row, rows kept even as packages are added or retired. */
 @media (min-width:901px){.pkgs{grid-template-columns:repeat(var(--cols,4),minmax(0,1fr))}}
 @media (min-width:821px){.tiers{grid-template-columns:repeat(var(--cols,2),1fr)}}
+/* Talk to us: floating quick access to the contact details (section 08). */
+.talkwrap{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:40;display:none}
+.talkwrap.on{display:block}
+.talk-fab{display:inline-flex;align-items:center;gap:9px;border:0;border-radius:999px;background:var(--btn);color:#fff;box-shadow:0 12px 30px -12px #0f1b3366;padding:13px 18px;font:700 .9rem/1 var(--f-body);cursor:pointer;transition:transform .15s,background .15s}
+.talk-fab:hover{transform:translateY(-1px);background:var(--btn-hover)}
+.talk-fab svg{flex:none}
+.talk-card{position:absolute;right:0;bottom:calc(100% + 12px);width:min(300px,calc(100vw - 40px));background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px -30px #0f1b3380;padding:18px}
+.talk-card[hidden]{display:none}
+.talk-card b{font:800 1.05rem/1.25 var(--f-display);padding-right:28px}
+.talk-card .lbl{display:block;margin-top:12px}
+.talk-card .call a{font-weight:700;text-decoration:none}
+.talk-card p{color:var(--ink-2);margin-top:2px;font-size:.95rem}
+.talk-close{position:absolute;top:10px;right:10px;width:30px;height:30px;border:0;border-radius:50%;background:var(--sunk);color:var(--ink);font-size:1.1rem;line-height:1;cursor:pointer}
+.talk-close:hover{background:var(--line)}
+.talk-go{margin-top:14px;font-weight:700}
