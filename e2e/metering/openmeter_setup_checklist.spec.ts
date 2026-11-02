@@ -8,6 +8,9 @@ import { env } from "./journey";
  *    Test Connection and blocks the checklist, instead of "Gateway Credential is not set".
  * 2. Against a real metering gateway, Connect opens the checklist by itself, Apply creates
  *    only what is missing, and the token meter, token feature and prices end up Done.
+ * 0. First-connection guidance (OMM-54): the banner names the step (no URL, then the address
+ *    found), Gateway Credential cannot be typed, and Use Break-Glass Token refuses to save a
+ *    token for an address that is OpenMeter itself.
  *
  * Variables: BASE_URL, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD (an OpenMeter Admin),
  * E2E_EXPOSED_OPENMETER_URL (an address that answers as OpenMeter itself) and
@@ -57,6 +60,10 @@ async function setGatewayUrl(page: Page, url: string) {
   await expect(page.locator(".indicator-pill").filter({ hasText: "Not Saved" })).toHaveCount(0);
 }
 
+function banner(page: Page) {
+  return page.locator(".form-message[data-connection-state]");
+}
+
 function checklist(page: Page) {
   return page.locator(".modal.show").filter({ hasText: "OpenMeter Setup Checklist" });
 }
@@ -71,6 +78,30 @@ test("Setup Checklist diagnoses the Gateway URL and applies OpenMeter configurat
   const original = await control(page, "base_url").inputValue();
 
   try {
+    await test.step("the banner guides the first connection; no token is ever typed", async () => {
+      await setGatewayUrl(page, "");
+      await expect(banner(page)).toHaveAttribute("data-connection-state", "no_url");
+      await expect(banner(page)).toContainText("not OpenMeter's");
+      await expect(control(page, "api_token")).toHaveCount(0); // read-only: shown, never an input
+      await page.screenshot({ path: testInfo.outputPath("0a-banner-no-url.png") });
+
+      await setGatewayUrl(page, env("E2E_EXPOSED_OPENMETER_URL"));
+      await expect(banner(page)).toHaveAttribute("data-connection-state", "openmeter_exposed");
+      await expect(banner(page)).toContainText("answers as OpenMeter itself");
+      await page.screenshot({ path: testInfo.outputPath("0b-banner-exposed.png") });
+
+      await gatewayMenu(page, "Use Break-Glass Token");
+      const dialog = page.locator(".modal.show").filter({ hasText: "Use Break-Glass Token" });
+      await expect(dialog).toContainText("Emergency only");
+      await dialog.locator('input[data-fieldname="token"]').fill("not-a-real-token");
+      await dialog.getByRole("button", { name: "Check and save" }).click();
+      const refused = page.locator(".modal.show").filter({ hasText: "Nothing was saved" });
+      await expect(refused).toContainText("answers as OpenMeter itself");
+      await page.screenshot({ path: testInfo.outputPath("0c-break-glass-refused.png") });
+      await refused.locator(".btn-modal-close").click();
+      await page.keyboard.press("Escape");
+    });
+
     await test.step("an exposed OpenMeter is named, not blamed on the credential", async () => {
       await setGatewayUrl(page, env("E2E_EXPOSED_OPENMETER_URL"));
       await gatewayMenu(page, "Test Connection");
