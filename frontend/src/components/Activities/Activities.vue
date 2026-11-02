@@ -395,6 +395,9 @@
         @email-dispatched="emit('email-dispatched')"
       />
     </div>
+    <div v-else-if="title == 'Customer 360'" class="h-full overflow-hidden">
+      <Customer360Tab :deal-id="docname" />
+    </div>
     <EmptyState
       v-else
       :title="emptyText"
@@ -531,6 +534,9 @@ const QuotingTab = defineAsyncComponent(
 )
 const MeteringTab = defineAsyncComponent(
   () => import('@/pages/Deal/MeteringTab.vue'),
+)
+const Customer360Tab = defineAsyncComponent(
+  () => import('@/pages/Deal/Customer360Tab.vue'),
 )
 const CommentArea = defineAsyncComponent(
   () => import('@/components/Activities/CommentArea.vue'),

@@ -152,6 +152,11 @@ const routes = [
     component: () => import('@/pages/CallLogs.vue'),
   },
   {
+    path: '/customer-360',
+    name: 'Customer360',
+    component: () => import('@/pages/Customer360.vue'),
+  },
+  {
     path: '/calendar',
     name: 'Calendar',
     component: () => import('@/pages/Calendar.vue'),

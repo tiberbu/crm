@@ -573,6 +573,7 @@ import ArrowUpRightIcon from '@/components/Icons/ArrowUpRightIcon.vue'
 import SuccessIcon from '@/components/Icons/SuccessIcon.vue'
 import AttachmentIcon from '@/components/Icons/AttachmentIcon.vue'
 import LightningIcon from '@/components/Icons/LightningIcon.vue'
+import ScanSearchIcon from '~icons/lucide/scan-search'
 import LayoutHeader from '@/components/LayoutHeader.vue'
 import Activities from '@/components/Activities/Activities.vue'
 import OrganizationModal from '@/components/Modals/OrganizationModal.vue'
@@ -600,6 +601,7 @@ import { getMeta } from '@/stores/meta'
 import { useDocument } from '@/data/document'
 import { whatsappEnabled } from '@/composables/whatsapp'
 import { useMeteringAccess } from '@/composables/meteringAccess'
+import { usersStore } from '@/stores/users'
 import { callEnabled } from '@/composables/telephony'
 import { useBroadcast } from '@/composables/useBroadcast'
 import {
@@ -809,6 +811,7 @@ usePageMeta(() => {
 })
 
 const meteringAccess = useMeteringAccess()
+const { isManager } = usersStore()
 
 const tabs = computed(() => {
   let tabOptions = [
@@ -875,6 +878,13 @@ const tabs = computed(() => {
       label: __('Metering'),
       icon: LightningIcon,
       condition: () => meteringAccess.canManage.value,
+    },
+    {
+      // 360-degree customer view: partner origin, payment, orders, provisioning, billing.
+      name: 'Customer 360',
+      label: __('Customer 360'),
+      icon: ScanSearchIcon,
+      condition: () => isManager(),
     },
   ]
   return tabOptions.filter((tab) => (tab.condition ? tab.condition() : true))
