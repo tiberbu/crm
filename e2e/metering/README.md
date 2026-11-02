@@ -67,3 +67,22 @@ crm.tests.e2e_express_fixture.setup(run_id="<unique>", key_file="/secure/express
 
 Pass the Express variables plus `E2E_ADMIN_PASSWORD`, `E2E_BONUS_DEAL` (the returned deal),
 `E2E_BONUS_FID` (the returned fid) and `E2E_BONUS_TOKENS` (the Opt-In bonus quantity).
+
+## OpenMeter Setup Checklist journey (openmeter_mediator OMM-53)
+
+`openmeter_setup_checklist.spec.ts` drives OpenMeter Settings as an OpenMeter Admin who may
+open Desk (the site's `desk_access_users`). It sets the Gateway URL to an address that answers
+as OpenMeter itself and checks that Test Connection and Gateway › Setup Checklist say so
+(Blocked, no Apply). With `E2E_GATEWAY_URL` it then connects to a real gateway, checks that
+the checklist opens by itself, applies missing items and expects the meter, token feature and
+facilities to be Done. It puts the Gateway URL back as it found it.
+
+Variables: `BASE_URL`, `E2E_ADMIN_EMAIL`, `E2E_ADMIN_PASSWORD`, `E2E_EXPOSED_OPENMETER_URL`,
+optional `E2E_GATEWAY_URL` (the gateway must be able to call the CRM back over HTTPS) and
+`E2E_MAP_HOST_TO_LOCALHOST` (to reach a bench site with no public DNS through local nginx):
+
+```bash
+BASE_URL=http://<site> E2E_MAP_HOST_TO_LOCALHOST=<site> E2E_ADMIN_EMAIL=<admin> \
+E2E_ADMIN_PASSWORD=... E2E_EXPOSED_OPENMETER_URL=https://<openmeter-host> \
+npx playwright test --config e2e/metering/playwright.config.ts openmeter_setup_checklist
+```
