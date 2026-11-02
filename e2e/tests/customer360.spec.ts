@@ -207,5 +207,33 @@ test.describe('Customer 360', () => {
 
 		// The customer's facility is listed with its network membership.
 		await expect(page.getByText('CORE CLINIC').first()).toBeVisible()
+
+		// Detail rows deep-link into the Finance Cockpit record views.
+		const invoiceLink = page
+			.locator('a[href*="finance-cockpit#/invoices?doctype=Sales"]')
+			.first()
+		await expect(invoiceLink).toBeVisible()
+		await expect(
+			page.locator('a[href*="finance-cockpit#/orders?doctype=Sales"]').first(),
+		).toBeVisible()
+		await expect(
+			page.locator(
+				'a[href*="finance-cockpit#/quotes?doctype=CRM+Pre-Qualified"]',
+			).first(),
+		).toBeVisible()
+
+		// Clicking the invoice row opens its record in the Finance Cockpit.
+		const href = (await invoiceLink.getAttribute('href')) as string
+		const invoiceName = new URLSearchParams(href.split('?')[1]).get('name')
+		expect(invoiceName).toBeTruthy()
+		const [popup] = await Promise.all([
+			page.waitForEvent('popup'),
+			invoiceLink.click(),
+		])
+		await popup.waitForLoadState('domcontentloaded')
+		await expect(
+			popup.getByText(invoiceName as string, { exact: true }).first(),
+		).toBeVisible({ timeout: 20000 })
+		await popup.close()
 	})
 })

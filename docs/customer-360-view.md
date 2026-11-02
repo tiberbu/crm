@@ -40,6 +40,11 @@ same 360 view for that customer.
   flag) plus onboarding requests (status, approvals, Careverse provisioned date).
 - **Deals** — the customer's deal list with partner attribution, linked to the deal page.
 
+Document links: order, invoice, payment and facility rows link to their source documents,
+opening the Finance Cockpit record view in a new tab (`cockpitRecordHref` — the same deep
+links the cockpit sidebar generates, e.g. `/finance-cockpit#/invoices?doctype=Sales
+Invoice&name=…`). Deals use the CRM deal page.
+
 Customer-wide aggregation (D3): a customer can hold several deals, so payment state,
 orders and invoices aggregate across all of the customer's deals, not just one.
 

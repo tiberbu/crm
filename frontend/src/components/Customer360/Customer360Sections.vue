@@ -225,8 +225,18 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-outline-gray-2">
-            <tr v-for="order in data.orders" :key="order.name">
-              <td class="px-4 py-2 text-ink-gray-9">{{ order.name }}</td>
+              <tr v-for="order in data.orders" :key="order.name">
+                <td class="px-4 py-2">
+                  <a
+                    v-if="recordLink('Sales Order', order.name)"
+                    :href="recordLink('Sales Order', order.name)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-ink-blue-6 hover:underline"
+                    >{{ order.name }}</a
+                  >
+                  <span v-else class="text-ink-gray-9">{{ order.name }}</span>
+                </td>
               <td class="px-4 py-2 text-ink-gray-5">{{ formatDate(order.transaction_date) }}</td>
               <td class="px-4 py-2 tabular-nums text-ink-gray-9">
                 {{ money(order.grand_total, order.currency) }}
@@ -279,7 +289,17 @@
             </thead>
             <tbody class="divide-y divide-outline-gray-2">
               <tr v-for="invoice in data.invoices" :key="invoice.name">
-                <td class="px-2 py-2 text-ink-gray-9">{{ invoice.name }}</td>
+                <td class="px-2 py-2">
+                  <a
+                    v-if="recordLink('Sales Invoice', invoice.name)"
+                    :href="recordLink('Sales Invoice', invoice.name)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-ink-blue-6 hover:underline"
+                    >{{ invoice.name }}</a
+                  >
+                  <span v-else class="text-ink-gray-9">{{ invoice.name }}</span>
+                </td>
                 <td class="px-2 py-2 text-ink-gray-5">{{ formatDate(invoice.creation) }}</td>
                 <td class="px-2 py-2 tabular-nums text-ink-gray-9">
                   {{ money(invoice.grand_total, invoice.currency) }}
@@ -314,19 +334,28 @@
             __('Payments Received')
           }}</h3>
           <ul class="flex flex-col gap-1 text-sm">
-            <li
-              v-for="payment in data.payments"
-              :key="payment.name"
-              class="flex items-center justify-between"
-            >
-              <span class="text-ink-gray-5">
-                {{ formatDate(payment.posting_date) }}
-                <template v-if="payment.party"> · {{ payment.party }}</template>
-              </span>
-              <span class="tabular-nums text-ink-gray-9">
-                {{ money(payment.paid_amount) }}
-              </span>
-            </li>
+              <li
+                v-for="payment in data.payments"
+                :key="payment.name"
+                class="flex items-center justify-between"
+              >
+                <span class="flex items-center gap-1 text-ink-gray-5">
+                  <a
+                    v-if="recordLink('Payment Entry', payment.name)"
+                    :href="recordLink('Payment Entry', payment.name)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-ink-blue-6 hover:underline"
+                    >{{ payment.name }}</a
+                  >
+                  <span v-else>{{ payment.name }}</span>
+                  {{ formatDate(payment.posting_date) }}
+                  <template v-if="payment.party"> · {{ payment.party }}</template>
+                </span>
+                <span class="tabular-nums text-ink-gray-9">
+                  {{ money(payment.paid_amount) }}
+                </span>
+              </li>
           </ul>
         </div>
       </div>
@@ -345,7 +374,17 @@
             class="border-b border-outline-gray-2 py-3 last:border-0"
           >
             <div class="flex flex-wrap items-center gap-2">
-              <span class="font-medium text-ink-gray-9">{{ facility.facility_name }}</span>
+              <a
+                v-if="recordLink('CRM Pre-Qualified Facility', facility.name)"
+                :href="recordLink('CRM Pre-Qualified Facility', facility.name)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="font-medium text-ink-blue-6 hover:underline"
+                >{{ facility.facility_name }}</a
+              >
+              <span v-else class="font-medium text-ink-gray-9">
+                {{ facility.facility_name }}
+              </span>
               <span class="rounded bg-surface-gray-2 px-2 py-0.5 font-mono text-xs text-ink-gray-5">
                 {{ facility.mfl_code }}
               </span>
@@ -504,6 +543,7 @@ import { computed } from 'vue'
 import { Badge } from 'frappe-ui'
 import { formatDate } from '@/utils/index.js'
 import { formatCurrency } from '@/utils/numberFormat.js'
+import { cockpitRecordHref } from '@/pages/FinanceCockpit/composables/useFinanceNavigation.js'
 import {
 	invoiceState,
 	onboardingState,
@@ -534,5 +574,11 @@ function dealStatusTheme(status) {
 		Negotiation: 'blue',
 	}
 	return themes[status] || 'gray'
+}
+
+// Detail rows deep-link into the Finance Cockpit record view (the canonical
+// href builder, same URLs the cockpit sidebar generates).
+function recordLink(doctype, name) {
+	return cockpitRecordHref(doctype, name, { absolute: true })
 }
 </script>
