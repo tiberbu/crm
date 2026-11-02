@@ -178,6 +178,7 @@
 import BrushCleaningIcon from '~icons/lucide/brush-cleaning'
 import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
 import OptInIcon from '~icons/lucide/clipboard-list'
+import ScanSearchIcon from '~icons/lucide/scan-search'
 import CRMLogo from '@/components/Icons/CRMLogo.vue'
 import InviteIcon from '@/components/Icons/InviteIcon.vue'
 import ConvertIcon from '@/components/Icons/ConvertIcon.vue'
@@ -360,6 +361,14 @@ const links = [
     label: 'Terms & Conditions',
     icon: NoteIcon,
     to: 'OptInTerms',
+    condition: () => isAdmin(),
+  },
+  {
+    // 360-degree customer view: search an org, deal or facility and trace
+    // partner origin, payment, orders, provisioning and billing in one place.
+    label: 'Customer 360',
+    icon: ScanSearchIcon,
+    to: 'Customer360',
     condition: () => isAdmin(),
   },
   {
