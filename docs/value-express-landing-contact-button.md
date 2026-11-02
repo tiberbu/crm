@@ -3,6 +3,20 @@
 Status: implemented · Reviewed in BMAD Party Mode (2026-11-02, room: John, Mary, Winston,
 Amelia, Sally)
 
+## 2026-11-02 follow-up — call bar at the top of the page
+
+Review feedback: the floating button only appears after scrolling; the space below the
+top navigation should carry the contact information, visible on load.
+
+Added a slim **call bar** at the top of the page, in the space between the sticky nav
+and the hero: the tap-to-call numbers, office hours, and a "Talk to us →" link to
+`#contact` — zero clicks to the numbers on the first screen.
+
+- Static (scrolls away with the page) rather than sticky: the mobile header is already
+  two rows at ≤1080px, and a third sticky row would take ~40% of a phone viewport.
+  The floating button takes over once the hero is out of view.
+- Pure HTML/CSS, same `landing` settings data; token-styled so dark mode is unchanged.
+
 ## Problem
 
 The contact details — two phone numbers, office hours, email — live in section 08
@@ -57,9 +71,9 @@ the header was not requested and would add a third door for a job one door does.
 
 | File | Change |
 |---|---|
-| `crm/www/index.html` | `.talkwrap` markup after `</main>` (FAB + card reusing `landing.phones` / `landing.hours` / `landing.email`); ~30 lines of vanilla JS in the existing IIFE (open/close, observers) |
-| `crm/public/css/value-express-landing.css` | `.talkwrap` / `.talk-fab` / `.talk-card` styles, token-based |
-| `e2e/value-express/landing.spec.ts` | New test: hidden at top, visible past the hero, card opens with `tel:` links and the form jump, × closes it (runs in desktop + mobile projects) |
+| `crm/www/index.html` | `.callbar` at the top of `main` (numbers, hours, CTA); `.talkwrap` markup after `</main>` (FAB + card reusing `landing.phones` / `landing.hours` / `landing.email`); ~30 lines of vanilla JS in the existing IIFE (open/close, observers) |
+| `crm/public/css/value-express-landing.css` | `.callbar` and `.talkwrap` / `.talk-fab` / `.talk-card` styles, token-based |
+| `e2e/value-express/landing.spec.ts` | New tests: call bar visible at the top without scrolling (valid `tel:` links, CTA → `#contact`); FAB hidden at top, visible past the hero, card opens with `tel:` links and the form jump, × closes it (run in desktop + mobile projects) |
 
 Constraints honored by the existing suite:
 
@@ -67,7 +81,7 @@ Constraints honored by the existing suite:
   `a.btn.primary`, so the invariant "every primary button reads Get started and opens
   onboarding" holds.
 - No `.secno` chips are added, so the "sections 01–08 in page order" test holds.
-- `data-testid`: `talk-us-fab`, `talk-us-card`, `talk-us-close`.
+- `data-testid`: `callbar`, `talk-us-fab`, `talk-us-card`, `talk-us-close`.
 
 ## Verification
 
