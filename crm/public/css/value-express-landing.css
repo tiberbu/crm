@@ -17,6 +17,13 @@ header.site{--p:0%}
 header.site::after{content:"";position:absolute;left:0;bottom:-1px;height:2px;width:var(--p);background:var(--red)}
 nav.top a.on{color:var(--ink);background:var(--sunk)}
 @media (max-width:1080px){header.site .wrap{flex-wrap:wrap;gap:8px 16px;padding-block:10px}header.site .btn{margin-left:auto}nav.top{order:3;width:100%;margin-left:0;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}nav.top::-webkit-scrollbar{display:none}nav.top a{white-space:nowrap;background:var(--sunk);border-radius:999px;padding:6px 12px}nav.top a.on{background:var(--ink);color:var(--bg)}section[id]{scroll-margin-top:124px}}
+/* call bar: contact numbers in the space below the sticky nav */
+.callbar{background:var(--surface);border-bottom:1px solid var(--line)}
+.callbar-inner{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;padding-block:10px;font-size:.95rem}
+.callbar-phones{display:inline-flex;align-items:center;gap:10px;font-weight:700}
+.callbar-phones .mono{color:var(--red-ink);text-decoration:none}
+.callbar-hours{color:var(--ink-2)}
+.callbar-cta{margin-left:auto;font-weight:700}
 /* hero */
 .hero{padding-block:64px 40px}
 .hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center}

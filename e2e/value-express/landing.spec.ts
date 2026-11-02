@@ -83,6 +83,17 @@ test("support details come from settings and the enquiry link picks its topic", 
   await expect(page.locator("#f-topic")).toHaveValue("CareverseHIMS Advanced & Enterprise");
 });
 
+test("the call bar shows the contact numbers at the top of the page without scrolling", async ({ page }) => {
+  const bar = page.getByTestId("callbar");
+  await expect(bar).toBeVisible();
+  expect(await bar.boundingBox()).not.toBeNull();
+  expect((await bar.boundingBox())!.y).toBeLessThan(200);
+  for (const link of await bar.locator('a[href^="tel:"]').all()) {
+    expect(await link.getAttribute("href")).toMatch(/^tel:\+?\d+$/);
+  }
+  await expect(bar.getByRole("link", { name: "Talk to us →" })).toHaveAttribute("href", "#contact");
+});
+
 test("the talk-to-us button surfaces the contact details without scrolling to the form", async ({ page }) => {
   const fab = page.getByTestId("talk-us-fab");
   await expect(fab).toBeHidden();
