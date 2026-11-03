@@ -47,6 +47,10 @@ from crm.utils.jinja import render_terms_template, resolve_terms_placeholders
 from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import contract_snapshot, set_snapshot, snapshot
 
+# frappe.ConfigurationError does not exist in this Frappe release; fall back to
+# ValidationError like the other modules (see quotation_tax, facility_onboarding).
+ConfigurationError = getattr(frappe, "ConfigurationError", frappe.ValidationError)
+
 _OTP_EXPIRY_SECONDS = 600  # 10 minutes
 _SIGN_EXPIRY_SECONDS = 7200  # 2 hours
 _INVITE_EXPIRY_SECONDS = 604800  # 7 days
@@ -71,7 +75,7 @@ def _get_signing_key():
 		settings = frappe.get_single("CRM Opt-In Settings")
 		key = settings.get_password("optin_signing_key", raise_exception=False)
 	if not key:
-		frappe.throw("Contract signing key not configured.", frappe.ConfigurationError)
+		frappe.throw("Contract signing key not configured.", ConfigurationError)
 	return key
 
 

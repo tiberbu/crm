@@ -67,6 +67,10 @@ from crm.utils.quotation_tax import (
 	quotation_tax_summary,
 )
 
+# frappe.ConfigurationError does not exist in this Frappe release; fall back to
+# ValidationError like the other modules (see quotation_tax, facility_onboarding).
+ConfigurationError = getattr(frappe, "ConfigurationError", frappe.ValidationError)
+
 # Static KEPH level → ERPNext item code mapping.
 # Matches seed data in patch crm/patches/v1_0/seed_negotiated_price_lists.py (optin-s0-3).
 _KEPH_MAP = [
@@ -99,7 +103,7 @@ def _get_signing_key():
 		settings = frappe.get_single("CRM Opt-In Settings")
 		key = settings.get_password("optin_signing_key", raise_exception=False)
 	if not key:
-		frappe.throw("Opt-in signing key not configured.", frappe.ConfigurationError)
+		frappe.throw("Opt-in signing key not configured.", ConfigurationError)
 	return key
 
 
@@ -111,7 +115,7 @@ def _get_optin_lead_source():
 	if not frappe.db.exists("CRM Lead Source", OPTIN_LEAD_SOURCE):
 		frappe.throw(
 			_("The Opt-In lead source could not be configured. Please contact support."),
-			frappe.ConfigurationError,
+			ConfigurationError,
 		)
 	return OPTIN_LEAD_SOURCE
 
@@ -892,7 +896,7 @@ def _prepare_submission_payload(payload, signing_token, email, network_slug, exp
 	if not default_company or not frappe.db.exists("Company", default_company):
 		frappe.throw(
 			_("Opt-In is temporarily unavailable. Please contact support."),
-			frappe.ConfigurationError,
+			ConfigurationError,
 		)
 
 	if not payload.get("terms_accepted") or not payload.get("tc_doc_name") or not payload.get("tc_doc_hash"):
@@ -1532,7 +1536,7 @@ def get_pricing(
 	plans = _configured_price_plans(network_doc, invitation)
 	if not plans:
 		frappe.throw(
-			_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError
+			_("Pricing is temporarily unavailable. Please contact support."), ConfigurationError
 		)
 	if isinstance(selected_years, str):
 		try:
@@ -1551,7 +1555,7 @@ def get_pricing(
 	for plan in selected_plans:
 		if not frappe.db.exists("Price List", {"name": plan["price_list"], "selling": 1, "enabled": 1}):
 			frappe.throw(
-				_("Pricing is temporarily unavailable. Please contact support."), frappe.ConfigurationError
+				_("Pricing is temporarily unavailable. Please contact support."), ConfigurationError
 			)
 
 	# Build MFL → facility info map from pre-qualified records via membership child table
@@ -1713,7 +1717,7 @@ def _price_plan_from_facilities(plan, selected_plans, facility_map, selected_mfl
 				_(
 					"Pricing is temporarily unavailable for one or more selected facilities. Please contact support."
 				),
-				frappe.ConfigurationError,
+				ConfigurationError,
 			)
 		item_code = _keph_to_item_code(fac.get("keph_level"))
 		price_rows = frappe.get_list(
@@ -1728,7 +1732,7 @@ def _price_plan_from_facilities(plan, selected_plans, facility_map, selected_mfl
 				_(
 					"Pricing is temporarily unavailable for one or more selected facilities. Please contact support."
 				),
-				frappe.ConfigurationError,
+				ConfigurationError,
 			)
 		monthly_kes = float(price_rows[0].price_list_rate)
 		annual_kes = round(monthly_kes * 12, 2)
