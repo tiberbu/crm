@@ -44,7 +44,7 @@ test("auto-assign releases the welcome bonus on package selection, then the pack
       .toBe(BONUS_TOKENS);
     await admin.goto(`/crm/deals/${DEAL}#metering`);
     await expect(admin.getByTestId("welcome-bonus-state")).toContainText(
-      `automatically when package ${ORDER} was selected`,
+      `automatically when order ${ORDER} was selected`,
     );
     await expect(admin.getByTestId("dispense-welcome-bonus")).toBeDisabled();
     await testInfo.attach("1-auto-assigned", { body: await admin.screenshot(), contentType: "image/png" });

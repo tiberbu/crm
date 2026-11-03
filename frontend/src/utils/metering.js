@@ -48,6 +48,29 @@ export function balanceStats(data) {
   ]
 }
 
+// Where the facility's one welcome bonus came from: a user (plain text) or a
+// linkable document (the order that selected the package, or the paid invoice).
+export function welcomeBonusVia(state) {
+  if (!state?.dispensed) return null
+  if (state.source_doctype === 'Sales Order' && state.source_name)
+    return { kind: 'order', name: state.source_name }
+  if (state.source_doctype === 'Sales Invoice' && state.source_name)
+    return { kind: 'invoice', name: state.source_name }
+  return { kind: 'user', label: state.source_label || state.source_name || '' }
+}
+
+// The Token purchase / Partner coupon lines of the facility card, straight from the
+// grant ledger (the single source of truth). One entry per grant, never a sum.
+export function tokenLines(grants) {
+  const purchase = []
+  const coupon = []
+  for (const grant of grants || []) {
+    if (grant.grant_source === 'Token Purchase') purchase.push(grant)
+    else if (grant.grant_source === 'Partner Coupon') coupon.push(grant)
+  }
+  return { purchase, coupon }
+}
+
 // Outcome of "Send probe event" before the round trip is checked.
 export function probeOutcome(result) {
   const event = result?.event || {}

@@ -11,16 +11,25 @@
       <div class="flex flex-wrap gap-2">
         <Button
           :label="__('Test connection')"
+          :tooltip="__(
+            'Check the connection to OpenMeter and its credentials, and report how many meters are visible. Read-only: changes nothing, and safe to run any time.',
+          )"
           :loading="busy === 'test_connection'"
           @click="testConnection"
         />
         <Button
           :label="__('Import sites from CRM')"
+          :tooltip="__(
+            'Create or update one metering site (Draft) for every facility on this deal. Safe to repeat: existing sites are refreshed, nothing is duplicated. New sites must be set Active to start metering.',
+          )"
           :loading="busy === 'import_sites'"
           @click="importSites"
         />
         <Dropdown :options="moreActions">
-          <Button :label="__('More')" />
+          <Button
+            :label="__('More')"
+            :tooltip="__('More metering actions for this deal.')"
+          />
         </Dropdown>
       </div>
     </div>
@@ -267,9 +276,18 @@ const facilities = createResource({
 const moreActions = [
   {
     label: __('Site keys for existing facilities'),
+    description: __(
+      'List facilities whose HMIS site exists but whose site key was never delivered, then queue the signed key delivery.',
+    ),
     onClick: () => openRollout(),
   },
-  { label: __('Scan paid token purchases'), onClick: () => scanPurchases() },
+  {
+    label: __('Scan paid token purchases'),
+    description: __(
+      'Backstop for the 15-minute scan: find fully paid token invoices and grant their tokens (plus any bonus lines). Safe to repeat; nothing is granted twice.',
+    ),
+    onClick: () => scanPurchases(),
+  },
 ]
 
 function message(error) {

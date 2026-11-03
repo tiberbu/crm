@@ -4,7 +4,9 @@ import {
   keyState,
   maskedKey,
   probeOutcome,
+  tokenLines,
   tone,
+  welcomeBonusVia,
 } from '@/utils/metering'
 
 describe('keyState', () => {
@@ -68,6 +70,71 @@ describe('balanceStats', () => {
         .slice(1)
         .map((s) => s.value),
     ).toEqual([null, null, null])
+  })
+})
+
+describe('welcomeBonusVia', () => {
+  it('is null until the bonus is dispensed', () => {
+    expect(welcomeBonusVia({ dispensed: false })).toBeNull()
+    expect(welcomeBonusVia(null)).toBeNull()
+  })
+  it('links the order that auto-selected the bonus', () => {
+    expect(
+      welcomeBonusVia({
+        dispensed: true,
+        source_doctype: 'Sales Order',
+        source_name: 'SAL-001',
+      }),
+    ).toEqual({ kind: 'order', name: 'SAL-001' })
+  })
+  it('links the paid invoice the bonus rode on', () => {
+    expect(
+      welcomeBonusVia({
+        dispensed: true,
+        source_doctype: 'Sales Invoice',
+        source_name: 'INV-001',
+      }),
+    ).toEqual({ kind: 'invoice', name: 'INV-001' })
+  })
+  it('shows the user by full-name label, falling back to the username', () => {
+    expect(
+      welcomeBonusVia({
+        dispensed: true,
+        source_doctype: 'User',
+        source_name: 'a@b.co',
+        source_label: 'A Person',
+      }),
+    ).toEqual({ kind: 'user', label: 'A Person' })
+    expect(
+      welcomeBonusVia({
+        dispensed: true,
+        source_doctype: 'User',
+        source_name: 'a@b.co',
+      }),
+    ).toEqual({ kind: 'user', label: 'a@b.co' })
+  })
+})
+
+describe('tokenLines', () => {
+  const grants = [
+    { name: 'welcome:F1', grant_source: 'Welcome Bonus', amount: 400 },
+    { name: 'invoice:INV-1', grant_source: 'Token Purchase', amount: 12000 },
+    { name: 'purchase:key', grant_source: 'Token Purchase', amount: 3000 },
+    { name: 'coupon:F1', grant_source: 'Partner Coupon', amount: 500 },
+    { name: 'initial:F1', grant_source: 'Initial Package', amount: 0 },
+    { name: 'reissue:F1', grant_source: 'Reissue', amount: 100 },
+  ]
+  it('separates purchase and coupon lines, one per grant, and keeps the rest out', () => {
+    const lines = tokenLines(grants)
+    expect(lines.purchase.map((g) => g.name)).toEqual([
+      'invoice:INV-1',
+      'purchase:key',
+    ])
+    expect(lines.coupon.map((g) => g.name)).toEqual(['coupon:F1'])
+  })
+  it('handles empty or missing grants', () => {
+    expect(tokenLines([])).toEqual({ purchase: [], coupon: [] })
+    expect(tokenLines(undefined)).toEqual({ purchase: [], coupon: [] })
   })
 })
 
