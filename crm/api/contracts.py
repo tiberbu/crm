@@ -43,13 +43,10 @@ from crm.api._email import (
 	schedule_email_queue_redaction,
 )
 from crm.api._timeline import log_deal_event
+from crm.utils.error_types import ConfigurationError
 from crm.utils.jinja import render_terms_template, resolve_terms_placeholders
 from crm.utils.optin_network import set_network_link
 from crm.utils.price_list_history import contract_snapshot, set_snapshot, snapshot
-
-# frappe.ConfigurationError does not exist in this Frappe release; fall back to
-# ValidationError like the other modules (see quotation_tax, facility_onboarding).
-ConfigurationError = getattr(frappe, "ConfigurationError", frappe.ValidationError)
 
 _OTP_EXPIRY_SECONDS = 600  # 10 minutes
 _SIGN_EXPIRY_SECONDS = 7200  # 2 hours
