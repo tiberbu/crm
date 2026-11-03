@@ -62,6 +62,13 @@ Sprint 2 (E2 auth/native) ───────────┘
                               Sprint 5 (E7 journeys)          ◄── needs E4/E5 call events
 ```
 
+## Follow-ups (filed from bug investigations)
+
+| ID | Item | Source | Proof | Status |
+|---|---|---|---|---|
+| **FU-158-A** | Consolidate the four duplicate `ConfigurationError` aliases (`quotation_tax.py`, `facility_onboarding.py`, `optin.py`, `contracts.py`) into one shared constant in `crm/utils`; import it everywhere | PR #158 (opt-in config-error guard) | Single definition; `grep 'getattr(frappe, "ConfigurationError"'` returns only the shared site; py_compile + import smoke check pass | pending — small, self-contained refactor, no test dependency |
+| **FU-158-B** | Investigate the reported "missing signing email": obtain the Error Log entries (method + traceback) from the environment where it was observed; with PR #158 deployed there, config-related failures now log a readable `ValidationError` message instead of a stack trace | PR #158 investigation — failure not yet reproduced/observed on the dev site | Log excerpt showing the failing call; scope reassessed (data/config gap vs new code path) before any fix | open action item — **blocked on external input** (reporting environment's logs); not testable here until then |
+
 ## Notes
 - **Sprint 1 + 2 can run in parallel** (independent surfaces). Sprint 1 first for visible brand progress.
 - Every frontend story: verify `yarn build` + dark/light before `review`.
