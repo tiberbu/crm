@@ -45,6 +45,7 @@ from crm.api._email import (
 	create_transactional_communication,
 	schedule_email_queue_redaction,
 )
+from crm.utils.error_types import ConfigurationError
 from crm.utils.facility_ids import facility_ids_by_mfl
 from crm.utils.jinja import render_terms_template
 from crm.utils.optin_bundles import (
@@ -66,10 +67,6 @@ from crm.utils.quotation_tax import (
 	calculate_vat_totals,
 	quotation_tax_summary,
 )
-
-# frappe.ConfigurationError does not exist in this Frappe release; fall back to
-# ValidationError like the other modules (see quotation_tax, facility_onboarding).
-ConfigurationError = getattr(frappe, "ConfigurationError", frappe.ValidationError)
 
 # Static KEPH level → ERPNext item code mapping.
 # Matches seed data in patch crm/patches/v1_0/seed_negotiated_price_lists.py (optin-s0-3).

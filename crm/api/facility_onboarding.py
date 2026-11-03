@@ -35,6 +35,7 @@ from crm.api._email import (
 )
 from crm.fcrm.doctype.crm_onboarding_evidence.crm_onboarding_evidence import evidence_ref, record_event
 from crm.utils import value_express
+from crm.utils.error_types import ConfigurationError
 from crm.utils.onboarding_source import is_self_onboarding_contact
 from crm.utils.token_facility import facility_fid_for_mfl
 
@@ -53,7 +54,6 @@ OTP_BRAND = "tiberbu Express"
 _DECOY_DOMAINS = ("gmail.com", "yahoo.com", "outlook.com", "hotmail.com")
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .'/-]{2,63}$")
 PARTNER_ID_RE = re.compile(r"^\d{6}$")
-ConfigurationError = getattr(frappe, "ConfigurationError", frappe.ValidationError)
 
 
 def _text(value: Any) -> str:

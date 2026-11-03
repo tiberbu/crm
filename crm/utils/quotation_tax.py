@@ -14,7 +14,7 @@ import frappe
 from frappe import _
 from frappe.utils import cstr, flt
 
-ConfigurationError = getattr(frappe, "ConfigurationError", frappe.ValidationError)
+from crm.utils.error_types import ConfigurationError
 
 _TAX_TEMPLATE = "Sales Taxes and Charges Template"
 _OPTIN_SETTINGS = "CRM Opt-In Settings"
