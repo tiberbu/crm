@@ -530,7 +530,7 @@
               <input v-model="termsAccepted" type="checkbox" :disabled="!termsSnapshot?.content_hash" data-testid="terms-acceptance" />
               <span>
                 {{ __('I have read and accept the') }}
-                <a href="#" aria-haspopup="dialog" data-testid="terms-open" @click.prevent="termsDialogOpen = true">{{ termsTitle }}</a>
+                <a href="#" aria-haspopup="dialog" data-testid="terms-open" @click.prevent="termsDialogOpen = true">{{ __('Terms and Conditions') }}</a>
                 {{ __('and the') }}
                 <a href="/#flex-rules" target="_blank" rel="noopener">{{ __('token rules') }}</a>.
               </span>
