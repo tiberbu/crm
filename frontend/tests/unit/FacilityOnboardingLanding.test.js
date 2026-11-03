@@ -363,9 +363,14 @@ describe('FacilityOnboardingLanding', () => {
     )
     expect(termsPanel.textContent).toContain('Self-Onboarding Terms')
     const reviewForm = host.querySelector('form')
-    // The link, the section and the dialog all use the document's own title.
+    // The section heading and the dialog use the document's own title; the acceptance
+    // sentence links the generic "Terms and Conditions" label so it never changes when
+    // the configured document is renamed.
     const termsLink = reviewForm.querySelector('[data-testid="terms-open"]')
-    expect(termsLink.textContent).toContain('Self-Onboarding Terms')
+    expect(termsLink.textContent).toContain('Terms and Conditions')
+    expect(termsPanel.querySelector('#review-terms-title').textContent).toContain(
+      'Self-Onboarding Terms',
+    )
     expect(call.mock.calls[3][1]).toMatchObject({
       selected_facility_ids: expect.any(String),
       facility_package_items: expect.any(String),

@@ -269,8 +269,9 @@ test('facility, package and review steps follow the review fixes and lay out cle
   expect(
     JSON.parse(String(termsRequests.at(-1)!.facility_package_items)),
   ).toEqual({ 'FID-00-OB-01': 'SCALE', 'FID-00-OB-02': 'GROWTH' })
+  // OB-11: the heading and dialog name the document; the acceptance sentence keeps a stable label.
   await expect(page.locator('#review-terms-title')).toHaveText(TERMS)
-  await expect(page.getByTestId('terms-open')).toHaveText(TERMS)
+  await expect(page.getByTestId('terms-open')).toHaveText('Terms and Conditions')
   await page.getByTestId('terms-open').click()
   await expect(page.getByRole('dialog')).toContainText(TERMS)
   await expect(page.getByRole('dialog')).toContainText('KES 34,800.00')

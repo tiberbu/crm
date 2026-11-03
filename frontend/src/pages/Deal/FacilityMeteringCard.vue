@@ -26,6 +26,9 @@
         <Button
           :label="__('Refresh')"
           size="sm"
+          :tooltip="__(
+            'Reload the metering data for this facility from CRM and OpenMeter.',
+          )"
           :loading="probe.loading"
           @click="probe.reload()"
         />
@@ -57,6 +60,9 @@
       }}</span>
       <Button
         :label="__('Import sites from CRM')"
+        :tooltip="__(
+          'Create or update one metering site (Draft) per facility on this deal. Safe to repeat; existing sites are refreshed, not duplicated.',
+        )"
         :loading="busy === 'import_sites'"
         @click="emit('import')"
       />
@@ -90,36 +96,166 @@
         </div>
       </div>
 
-      <div
-        v-if="bonus.data"
-        class="mt-5 flex flex-wrap items-center justify-between gap-3 rounded border border-outline-gray-1 p-3"
-        data-testid="welcome-bonus"
-      >
-        <div class="min-w-0">
-          <div class="text-base-semibold text-ink-gray-8">
-            {{ __('Welcome bonus') }}
+      <div class="mt-5" data-testid="token-grants">
+        <div class="text-base-semibold text-ink-gray-8">
+          {{ __('Token grants') }}
+        </div>
+
+        <div
+          v-if="bonus.data"
+          class="mt-2 flex flex-wrap items-center justify-between gap-3 rounded border border-outline-gray-1 p-3"
+          data-testid="welcome-bonus"
+        >
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-ink-gray-8">
+              {{ __('Welcome bonus') }}
+            </div>
+            <p
+              class="mt-0.5 text-base text-ink-gray-7"
+              data-testid="welcome-bonus-state"
+            >
+              <template v-if="bonusParts">
+                <template v-for="(part, i) in bonusParts" :key="i">
+                  <a
+                    v-if="part.link"
+                    :href="recordHref(part.link.doctype, part.link.name)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-ink-blue-6 hover:underline"
+                    >{{ part.link.name }}</a
+                  >
+                  <span v-else>{{ part.text }}</span>
+                </template>
+              </template>
+              <template v-else>{{ bonusStateText }}</template>
+            </p>
+          </div>
+          <Button
+            data-testid="dispense-welcome-bonus"
+            :label="
+              bonus.data.dispensed
+                ? __('Bonus dispensed')
+                : __('Dispense {0} bonus tokens', [
+                    Number(bonus.data.configured_tokens).toLocaleString(),
+                  ])
+            "
+            :tooltip="__(
+              'Grant the one-time welcome bonus for this facility now. It can only ever be dispensed once.',
+            )"
+            :variant="bonus.data.dispensed ? 'subtle' : 'solid'"
+            :disabled="!canDispense"
+            :loading="busy === 'welcome_bonus'"
+            @click="emit('bonus', facility.fid)"
+          />
+        </div>
+
+        <div
+          v-if="purchaseGrants.length"
+          class="mt-2 rounded border border-outline-gray-1 p-3"
+          data-testid="token-purchase"
+        >
+          <div class="text-sm font-medium text-ink-gray-8">
+            {{ __('Token purchase') }}
           </div>
           <p
+            v-for="grant in purchaseGrants"
+            :key="grant.name"
             class="mt-0.5 text-base text-ink-gray-7"
-            data-testid="welcome-bonus-state"
           >
-            {{ bonusText }}
+            <template v-if="grant.status === 'Granted'">
+              {{ Number(grant.amount || 0).toLocaleString() }}
+              {{ __('tokens · paid invoice') }}
+              <a
+                v-if="
+                  recordHref(grant.source_doctype || 'Sales Invoice', grant.source_name)
+                "
+                :href="
+                  recordHref(
+                    grant.source_doctype || 'Sales Invoice',
+                    grant.source_name,
+                  )
+                "
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-ink-blue-6 hover:underline"
+                >{{ grant.source_name }}</a
+              >
+              <template v-else>{{ grant.source_name }}</template
+              ><span v-if="grant.effective_at"
+                >
+                · {{ formatDate(grant.effective_at) }}</span
+              >.
+            </template>
+            <template v-else>
+              {{ Number(grant.amount || 0).toLocaleString() }}
+              {{ __('tokens') }} — {{ __(grant.status) }}
+              <span v-if="grant.last_error">: {{ grant.last_error }}</span
+              ><span v-if="grant.source_name">
+                ({{ grant.source_name }})</span
+              >.
+            </template>
           </p>
         </div>
-        <Button
-          data-testid="dispense-welcome-bonus"
-          :label="
-            bonus.data.dispensed
-              ? __('Bonus dispensed')
-              : __('Dispense {0} bonus tokens', [
-                  Number(bonus.data.configured_tokens).toLocaleString(),
-                ])
-          "
-          :variant="bonus.data.dispensed ? 'subtle' : 'solid'"
-          :disabled="!canDispense"
-          :loading="busy === 'welcome_bonus'"
-          @click="emit('bonus', facility.fid)"
-        />
+
+        <div
+          v-if="couponGrants.length"
+          class="mt-2 rounded border border-outline-gray-1 p-3"
+          data-testid="partner-coupon"
+        >
+          <div class="text-sm font-medium text-ink-gray-8">
+            {{ __('Partner coupon') }}
+          </div>
+          <p
+            v-for="grant in couponGrants"
+            :key="grant.name"
+            class="mt-0.5 text-base text-ink-gray-7"
+          >
+            <template v-if="grant.status === 'Granted'">
+              <template v-if="partner">
+                {{ __('Partner') }}
+                <a
+                  v-if="recordHref('CRM Opt-In Network', partner.name)"
+                  :href="recordHref('CRM Opt-In Network', partner.name)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-ink-blue-6 hover:underline"
+                  >{{ partner.display_name }} ({{ partner.partner_id }})</a
+                >
+                <template v-else
+                  >{{ partner.display_name }} ({{ partner.partner_id }})</template
+                > ·
+              </template>
+              {{ Number(grant.amount || 0).toLocaleString() }}
+              {{ __('tokens via invoice') }}
+              <a
+                v-if="
+                  recordHref(grant.source_doctype || 'Sales Invoice', grant.source_name)
+                "
+                :href="
+                  recordHref(
+                    grant.source_doctype || 'Sales Invoice',
+                    grant.source_name,
+                  )
+                "
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-ink-blue-6 hover:underline"
+                >{{ grant.source_name }}</a
+              >
+              <template v-else>{{ grant.source_name }}</template
+              ><span v-if="grant.effective_at"
+                >
+                · {{ formatDate(grant.effective_at) }}</span
+              >.
+            </template>
+            <template v-else>
+              {{ Number(grant.amount || 0).toLocaleString() }}
+              {{ __('tokens') }} — {{ __(grant.status) }}
+              <span v-if="grant.last_error">: {{ grant.last_error }}</span
+              ><span v-if="grant.source_name"> ({{ grant.source_name }})</span>.
+            </template>
+          </p>
+        </div>
       </div>
 
       <div class="mt-5">
@@ -146,17 +282,23 @@
             class="select-none rounded bg-surface-gray-2 px-2 py-1 text-sm text-ink-gray-8"
             >{{ maskedKey(site.site_key_prefix) }}</code
           >
-          <Button
-            v-if="keyMode === 'revealable'"
-            :label="__('Reveal full key')"
-            @click="emit('reveal', facility.fid)"
-          />
-          <Button
-            v-if="keyMode !== 'legacy'"
-            :label="__('Issue site key')"
-            :loading="busy === 'issue_key'"
-            @click="emit('issue', facility.fid)"
-          />
+            <Button
+              v-if="keyMode === 'revealable'"
+              :label="__('Reveal full key')"
+              :tooltip="__(
+                'Show the stored site key again. Requires the Administrator password; the reveal is recorded on the site.',
+              )"
+              @click="emit('reveal', facility.fid)"
+            />
+            <Button
+              v-if="keyMode !== 'legacy'"
+              :label="__('Issue site key')"
+              :tooltip="__(
+                'Generate a new ingest key for this facility. Any existing key stops working immediately; the facility must be re-configured with the new key.',
+              )"
+              :loading="busy === 'issue_key'"
+              @click="emit('issue', facility.fid)"
+            />
         </div>
         <div
           v-if="keyMode === 'legacy'"
@@ -208,17 +350,24 @@
           <div class="flex flex-wrap gap-2">
             <Button
               :label="__('Sync to OpenMeter')"
+              :tooltip="__(
+                'Create or update the customer and entitlement for this facility in OpenMeter, and push the site key metadata. Never grants tokens.',
+              )"
               :loading="busy === 'sync'"
               @click="run('sync')"
             />
             <Button
               :label="__('Send probe event')"
+              :tooltip="__(
+                'Send a one-off metering event that does not count toward usage, then verify OpenMeter stored it. Checks the whole ingest path.',
+              )"
               :loading="busy === 'send_probe'"
               @click="emit('probe', facility.fid)"
             />
             <Button
               v-if="data.queue.Failed"
               :label="__('Retry failed events')"
+              :tooltip="__('Re-queue usage events that failed delivery to OpenMeter. Safe to repeat.')"
               :loading="busy === 'retry_failed'"
               @click="run('retry_failed')"
             />
@@ -262,6 +411,9 @@
           </div>
           <Button
             :label="__('Re-issue expiring grants')"
+            :tooltip="__(
+              'Replace grants that would lose tokens at a period reset with one grant for their remaining tokens. Run it while the site is quiet.',
+            )"
             :loading="busy === 'reissue_grants'"
             @click="emit('reissue', facility.fid)"
           />
@@ -281,7 +433,22 @@
               :key="grant.name"
               class="border-t border-outline-gray-1"
             >
-              <td class="py-1">{{ __(grant.grant_source) }}</td>
+              <td class="py-1">
+                <Tooltip placement="top">
+                  <span class="text-ink-gray-8">{{ __(grant.grant_source) }}</span>
+                  <template #content>
+                    {{ grantSourceTip(grant) }}
+                    <a
+                      v-if="sourceHref(grant)"
+                      :href="sourceHref(grant)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="underline"
+                      >{{ __('Open {0}', [__(grant.source_doctype)]) }}</a
+                    >
+                  </template>
+                </Tooltip>
+              </td>
               <td class="py-1 text-right">
                 {{ Number(grant.amount || 0).toLocaleString() }}
               </td>
@@ -292,8 +459,10 @@
                     : __('Never')
                 }}
               </td>
-              <td class="py-1" :title="grant.last_error || ''">
-                {{ __(grant.status) }}
+              <td class="py-1">
+                <Tooltip placement="top" :text="grantStatusTip(grant)">
+                  <span data-testid="grant-status">{{ __(grant.status) }}</span>
+                </Tooltip>
               </td>
             </tr>
           </tbody>
@@ -308,8 +477,16 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Badge, Button, createResource } from 'frappe-ui'
-import { balanceStats, keyState, maskedKey, tone } from '@/utils/metering'
+import { Badge, Button, Tooltip, createResource } from 'frappe-ui'
+import {
+  balanceStats,
+  keyState,
+  maskedKey,
+  tokenLines,
+  tone,
+  welcomeBonusVia,
+} from '@/utils/metering'
+import { cockpitRecordHref } from '@/pages/FinanceCockpit/composables/useFinanceNavigation.js'
 
 const props = defineProps({
   facility: { type: Object, required: true },
@@ -349,22 +526,35 @@ const canDispense = computed(
     !props.busy,
 )
 
-const bonusText = computed(() => {
+// The dispensed bonus as text and link parts, so the order/invoice number is a
+// link while the sentence reads like the undispensed state.
+const bonusParts = computed(() => {
   const state = bonus.data || {}
-  if (state.dispensed) {
-    const via = {
-      User: __('by {0}', [state.source_label || state.source_name]),
-      'Sales Order': __('automatically when package {0} was selected', [
-        state.source_name,
-      ]),
-      'Sales Invoice': __('with paid invoice {0}', [state.source_name]),
-    }[state.source_doctype]
-    return __('{0} tokens dispensed on {1} {2}.', [
-      Number(state.tokens || 0).toLocaleString(),
-      formatDate(state.dispensed_at),
-      via || '',
-    ]).replace(' .', '.')
-  }
+  const via = welcomeBonusVia(state)
+  if (!via) return null
+  const head = __('{0} tokens dispensed on {1}', [
+    Number(state.tokens || 0).toLocaleString(),
+    formatDate(state.dispensed_at),
+  ])
+  if (via.kind === 'order')
+    return [
+      { text: `${head} ${__('automatically when order')} ` },
+      { link: { doctype: 'Sales Order', name: via.name } },
+      { text: ` ${__('was selected.')}` },
+    ]
+  if (via.kind === 'invoice')
+    return [
+      { text: `${head} ${__('with paid invoice')} ` },
+      { link: { doctype: 'Sales Invoice', name: via.name } },
+      { text: '.' },
+    ]
+  if (!via.label) return [{ text: `${head}.` }]
+  return [{ text: `${head} ${__('by {0}.', [via.label])}` }]
+})
+
+const bonusStateText = computed(() => {
+  const state = bonus.data || {}
+  if (state.dispensed) return ''
   if (!state.available) return __('No metering app is installed on this site.')
   if (!(state.configured_tokens > 0))
     return __(
@@ -382,6 +572,18 @@ const bonusText = computed(() => {
         'Not dispensed yet. It is added to the first paid package, or you can dispense it now (once).',
       )
 })
+
+// The Token purchase / Partner coupon lines, one per grant, from the ledger.
+const tokenGrantLines = computed(() => tokenLines(data.value?.grants))
+const purchaseGrants = computed(() => tokenGrantLines.value.purchase)
+const couponGrants = computed(() => tokenGrantLines.value.coupon)
+const partner = computed(() => data.value?.partner || null)
+
+function recordHref(doctype, name) {
+  return doctype && name
+    ? cockpitRecordHref(doctype, name, { absolute: true })
+    : ''
+}
 
 const data = computed(() => probe.data)
 const site = computed(() => data.value?.site || {})
@@ -401,6 +603,39 @@ function errorText(error) {
     error?.message ||
     __('Could not load metering for this facility.')
   )
+}
+
+const GRANT_SOURCE_TIPS = {
+  'Initial Package': __(
+    "The package selected for this facility during onboarding. Free packages are granted here; paid packages stay Skipped until their token invoice is fully paid.",
+  ),
+  'Token Purchase': __('Tokens bought on a fully paid token invoice.'),
+  'Welcome Bonus': __("The facility's one-time welcome bonus."),
+  'Partner Coupon': __('Complimentary tokens from the referring partner.'),
+  Reissue: __('Tokens re-issued in place of a grant that would expire.'),
+  Manual: __('Tokens granted manually by an administrator.'),
+}
+
+function sourceHref(grant) {
+  return recordHref(grant.source_doctype, grant.source_name)
+}
+
+function grantSourceTip(grant) {
+  const tip = GRANT_SOURCE_TIPS[grant.grant_source] || ''
+  if (grant.source_doctype === 'CRM Deal' && grant.source_name)
+    return `${tip} ${__('The link opens the deal where the package was selected.')}`
+  return tip
+}
+
+function grantStatusTip(grant) {
+  const reason = grant.last_error ? ` ${grant.last_error}` : ''
+  if (grant.status === 'Granted')
+    return __('These tokens are active in OpenMeter.')
+  if (grant.status === 'Skipped')
+    return __('No tokens were granted from this source.') + reason
+  if (grant.status === 'Failed')
+    return __('The last attempt to grant these tokens failed.') + reason
+  return __('The grant has not been confirmed yet.')
 }
 
 function formatDate(value) {
