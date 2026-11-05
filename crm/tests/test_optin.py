@@ -2219,6 +2219,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		contract = SimpleNamespace(name="CONT-ACC-00006", deal="DEAL-ACC-00006")
 		with (
 			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.contracts.frappe.db.get_value", return_value=None),
 			patch("crm.api.website_redirect.send_cx_access_invitation", return_value={"status": "sent"}),
 			patch("crm.api.contracts.log_deal_event") as log_event,
 		):
@@ -2228,6 +2229,7 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.contracts.frappe.db.get_value", return_value=None),
 			patch(
 				"crm.api.website_redirect.send_cx_access_invitation",
 				return_value={"status": "failed", "reason": "No valid facility email"},
@@ -2241,11 +2243,170 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.contracts.frappe.db.get_value", return_value=None),
+			patch(
+				"crm.api.website_redirect.send_cx_access_invitation",
+				return_value={"status": "blocked", "reason": "Email belongs to an internal user"},
+			),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_send_facility_access_invitation(contract)
+		log_event.assert_called_once()
+		self.assertIn("Email belongs to an internal user", log_event.call_args.args[1])
+
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.contracts.frappe.db.get_value", return_value={"status": "already_sent"}),
 			patch("crm.api.website_redirect.send_cx_access_invitation", return_value={"status": "already_sent"}),
 			patch("crm.api.contracts.log_deal_event") as log_event,
 		):
 			_send_facility_access_invitation(contract)
 		log_event.assert_not_called()
+
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.contracts.frappe.db.get_value", return_value="Failed"),
+			patch(
+				"crm.api.website_redirect.send_cx_access_invitation",
+				return_value={"status": "failed", "reason": "No valid facility email"},
+			),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_send_facility_access_invitation(contract)
+		log_event.assert_not_called()
+
+	def test_contract_without_a_deal_still_sends_but_logs_nothing(self):
+		contract = SimpleNamespace(name="CONT-ACC-00007", deal=None)
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00007"),
+			patch("crm.api.contracts.frappe.db.get_value", return_value=None),
+			patch(
+				"crm.api.website_redirect.send_cx_access_invitation", return_value={"status": "sent"}
+			) as send_access,
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			result = _send_facility_access_invitation(contract)
+		send_access.assert_called_once_with("OIS-ACC-00007", trigger="facility_signed")
+		self.assertEqual(result["status"], "sent")
+		log_event.assert_not_called()
+
+	def test_first_facility_signature_queues_exactly_one_access_email_across_reentries(self):
+		facility = SimpleNamespace(
+			signatory_role="Facility Signatory", status="Signed", invite_token="original"
+		)
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Pending", invite_token=None)
+		contract = SimpleNamespace(
+			name="CONT-CAP1-00001", deal="DEAL-CAP1-00001", signatories=[facility, witness]
+		)
+		ois = frappe._dict(
+			{
+				"name": "OIS-CAP1-00001",
+				"status": "Processed",
+				"onboarding_source": "",
+				"network_slug": "network-a",
+				"facility_signatory_name": "Admin One",
+				"facility_signatory_email": "signer@example.com",
+				"submitter_email": "signer@example.com",
+				"raw_json": '{"facilities":[{"mfl_code":"1001","facility_name":"First Clinic"}]}',
+			}
+		)
+		user = frappe._dict(
+			{
+				"name": "signer@example.com",
+				"email": "signer@example.com",
+				"first_name": "Signer",
+				"flags": frappe._dict({"email_sent": 0}),
+				"db_set": Mock(),
+				"_reset_password": Mock(return_value="https://site.example/api/reset/KEY"),
+			}
+		)
+		user.insert = lambda **kwargs: None
+		permission = frappe._dict()
+		permission.insert = lambda **kwargs: None
+		meta = Mock()
+		meta.has_field.return_value = True
+		queue = frappe._dict({"name": "Email Queue-CAP1"})
+		ts = "2026-11-05 10:00:00"
+		state = {"sent": False}
+		db_writes = []
+
+		def get_doc(doctype, name=None, **kwargs):
+			if doctype == "CRM Contract":
+				return contract
+			if doctype == "CRM Opt-In Submission":
+				return ois
+			if doctype == "User":
+				return user
+			return frappe._dict()
+
+		def get_all(doctype, filters=None, **kwargs):
+			if doctype == "CRM Opt-In Submission":
+				return [{"name": "OIS-CAP1-00001"}]
+			return []
+
+		def db_exists(doctype, *args, **kwargs):
+			if doctype == "CRM Opt-In Submission":
+				return True
+			return False
+
+		def db_get_value(doctype, name=None, fieldname=None, **kwargs):
+			if doctype == "User" and isinstance(name, dict):
+				return None
+			if doctype == "CRM Opt-In Submission" and isinstance(fieldname, list):
+				return ("Sent", ts, "signer@example.com") if state["sent"] else (None, None, None)
+			if doctype == "CRM Opt-In Submission":
+				return "Sent" if state["sent"] else None
+			return None
+
+		def db_set_value(doctype, name, fieldname, value, **kwargs):
+			db_writes.append((fieldname, value))
+			if fieldname == "portal_invitation_status" and value == "Sent":
+				state["sent"] = True
+
+		with (
+			patch("crm.api.contracts.frappe.get_doc", side_effect=get_doc),
+			patch("crm.api.contracts.frappe.get_all", side_effect=get_all),
+			patch("crm.api.contracts.frappe.db.exists", side_effect=db_exists),
+			patch("crm.api.contracts.frappe.db.get_value", side_effect=db_get_value),
+			patch("crm.api.contracts.frappe.db.set_value", side_effect=db_set_value),
+			patch("crm.api.contracts.frappe.db.get_single_value", return_value=1200),
+			patch("crm.api.contracts.frappe.get_meta", return_value=meta),
+			patch("crm.api.contracts.frappe.new_doc", side_effect=[user, permission]),
+			patch("crm.api.contracts.frappe.utils.get_url", return_value="https://site.example/cx-portal"),
+			patch("crm.api.contracts.frappe.utils.now_datetime", return_value=ts),
+			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
+			patch("crm.api.optin.requires_contract_signature", return_value=True),
+			patch("crm.api.optin._get_network_doc", return_value={"display_name": "Test Network"}),
+			patch("crm.automation.optin_billing.handoff_facility_signed", return_value={"ok": True}),
+			patch("crm.automation.optin_billing.activate_contract_billing_schedule", return_value=False),
+			patch("crm.api.contracts._issue_and_send_invitation") as issue,
+			patch("crm.api.contracts._set_contract_state") as set_state,
+			patch("crm.api.contracts._notify_internal_approvers"),
+			patch("crm.api.contracts._send_fully_executed_contract"),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_transition(contract.name)
+			witness.status = "Signed"
+			witness.invite_token = "issued"
+			_transition(contract.name)
+
+		sendmail.assert_called_once()
+		sent_kwargs = sendmail.call_args.kwargs
+		self.assertEqual(sent_kwargs["recipients"], ["signer@example.com"])
+		self.assertEqual(
+			sent_kwargs["subject"], "Contract signed — access Tiberbu Express for Test Network"
+		)
+		self.assertEqual(sent_kwargs["reference_doctype"], "CRM Opt-In Submission")
+		self.assertEqual(sent_kwargs["reference_name"], "OIS-CAP1-00001")
+		self.assertTrue(sent_kwargs["now"])
+		self.assertIn(("portal_user", "signer@example.com"), db_writes)
+		self.assertIn(("portal_invitation_status", "Awaiting signature"), db_writes)
+		self.assertIn(("portal_invitation_status", "Sent"), db_writes)
+		self.assertIn(("portal_invitation_sent_at", ts), db_writes)
+		self.assertEqual(ois.portal_invitation_status, "Sent")
+		issue.assert_called_once()
+		set_state.assert_called()
+		self.assertGreaterEqual(log_event.call_count, 2)
 
 	def test_internal_signatory_reminder_is_facility_named_and_logged(self):
 		contract = SimpleNamespace(name="CONT-TEST-00004", deal="DEAL-TEST-00004")

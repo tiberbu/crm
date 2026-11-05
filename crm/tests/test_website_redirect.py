@@ -324,7 +324,7 @@ class TestCustomerExperienceAccess(UnitTestCase):
 			_set_submission_portal_field(submission, "portal_invitation_status", "Sent")
 
 		set_value.assert_not_called()
-		self.assertFalse(hasattr(submission, "portal_invitation_status"))
+		self.assertNotIn("portal_invitation_status", submission)
 
 	def test_new_website_user_gets_native_welcome_and_ois_scoped_permission(self):
 		submission = frappe._dict(
@@ -473,6 +473,7 @@ class TestDeferredProvisioning(UnitTestCase):
 			patch("crm.api.website_redirect.frappe.db.get_value", side_effect=get_value),
 			patch("crm.api.website_redirect.frappe.get_doc", return_value=user),
 			patch("crm.api.website_redirect.frappe.get_all", return_value=[]),
+			patch("crm.api.website_redirect.frappe.new_doc", return_value=permission),
 			patch("crm.api.website_redirect._set_submission_portal_field") as set_field,
 		):
 			result = ensure_website_user_for_ois(submission, send_access_email=False)
@@ -509,14 +510,25 @@ class TestCxAccessInvitation(UnitTestCase):
 		)
 		return user
 
-	def _patches(self, *, exists_side_effect=None, get_value=(None, None, None), get_single_value=1200):
+	def _patches(
+		self,
+		*,
+		exists_side_effect=None,
+		get_value=(None, None, None),
+		get_single_value=1200,
+		ensure_result=None,
+		network_doc=None,
+	):
+		if network_doc is None:
+			network_doc = {"display_name": "Test Network"}
+		ensure_kwargs = {} if ensure_result is None else {"return_value": ensure_result}
 		return (
 			patch("crm.api.website_redirect.frappe.db.exists", side_effect=exists_side_effect or (lambda *a, **k: True)),
 			patch("crm.api.website_redirect.frappe.db.get_value", return_value=get_value),
 			patch("crm.api.website_redirect.frappe.db.get_single_value", return_value=get_single_value),
 			patch("crm.api.website_redirect.frappe.utils.get_url", return_value="https://site.example/cx-portal"),
-			patch("crm.api.website_redirect.ensure_website_user_for_ois"),
-			patch("crm.api.optin._get_network_doc", return_value={"display_name": "Test Network"}),
+			patch("crm.api.website_redirect.ensure_website_user_for_ois", **ensure_kwargs),
+			patch("crm.api.optin._get_network_doc", return_value=network_doc),
 		)
 
 	def _submission_doc(self, submission, user):
@@ -607,8 +619,10 @@ class TestCxAccessInvitation(UnitTestCase):
 				return False
 			return True
 
-		patches = self._patches(exists_side_effect=exists)
-		patches[4].return_value = {"status": "deferred", "user": "new@example.com", "created": True}
+		patches = self._patches(
+			exists_side_effect=exists,
+			ensure_result={"status": "deferred", "user": "new@example.com", "created": True},
+		)
 		queue = frappe._dict({"name": "Email Queue-1"})
 		with (
 			patches[0],
@@ -619,6 +633,7 @@ class TestCxAccessInvitation(UnitTestCase):
 			patches[5],
 			self._submission_doc(submission, user),
 			patch("crm.api.website_redirect.frappe.sendmail", return_value=queue) as sendmail,
+			patch("crm.api.website_redirect.frappe.utils.now_datetime", return_value="2026-11-05 10:00:00"),
 			patch("crm.api.website_redirect._set_submission_portal_field") as set_field,
 		):
 			result = send_cx_access_invitation("OIS-ACC-0001")
@@ -643,6 +658,7 @@ class TestCxAccessInvitation(UnitTestCase):
 		self.assertNotIn("communication", sendmail.call_args.kwargs)
 		writes = [(call.args[1], call.args[2]) for call in set_field.call_args_list]
 		self.assertIn(("portal_invitation_status", "Sent"), writes)
+		self.assertIn(("portal_invitation_sent_at", "2026-11-05 10:00:00"), writes)
 		self.assertIn(("portal_invitation_error", ""), writes)
 		submission.save.assert_not_called()
 
@@ -655,8 +671,10 @@ class TestCxAccessInvitation(UnitTestCase):
 				return True
 			return True
 
-		patches = self._patches(exists_side_effect=exists)
-		patches[4].return_value = {"status": "deferred", "user": "existing@example.com", "created": False}
+		patches = self._patches(
+			exists_side_effect=exists,
+			ensure_result={"status": "deferred", "user": "existing@example.com", "created": False},
+		)
 		queue = frappe._dict({"name": "Email Queue-2"})
 		with (
 			patches[0],
@@ -679,8 +697,7 @@ class TestCxAccessInvitation(UnitTestCase):
 	def test_blocked_provisioning_returns_without_email(self):
 		submission = self._submission()
 		user = self._user()
-		patches = self._patches()
-		patches[4].return_value = {"status": "blocked", "reason": "No valid facility email"}
+		patches = self._patches(ensure_result={"status": "blocked", "reason": "No valid facility email"})
 		with (
 			patches[0],
 			patches[1],
@@ -699,8 +716,9 @@ class TestCxAccessInvitation(UnitTestCase):
 	def test_queue_failure_marks_failed(self):
 		submission = self._submission()
 		user = self._user()
-		patches = self._patches()
-		patches[4].return_value = {"status": "deferred", "user": "new@example.com", "created": True}
+		patches = self._patches(
+			ensure_result={"status": "deferred", "user": "new@example.com", "created": True}
+		)
 		with (
 			patches[0],
 			patches[1],
@@ -722,8 +740,9 @@ class TestCxAccessInvitation(UnitTestCase):
 	def test_sendmail_exception_is_logged_not_raised(self):
 		submission = self._submission()
 		user = self._user()
-		patches = self._patches()
-		patches[4].return_value = {"status": "deferred", "user": "new@example.com", "created": True}
+		patches = self._patches(
+			ensure_result={"status": "deferred", "user": "new@example.com", "created": True}
+		)
 		with (
 			patches[0],
 			patches[1],
@@ -743,6 +762,85 @@ class TestCxAccessInvitation(UnitTestCase):
 		writes = [(call.args[1], call.args[2]) for call in set_field.call_args_list]
 		self.assertIn(("portal_invitation_status", "Failed"), writes)
 
+	def test_force_resends_when_already_sent(self):
+		submission = self._submission()
+		user = self._user(name="existing@example.com")
+
+		def exists(doctype, *args, **kwargs):
+			if doctype == "__Auth":
+				return True
+			return True
+
+		patches = self._patches(
+			exists_side_effect=exists,
+			get_value=("Sent", "2026-11-01 10:00:00", "existing@example.com"),
+			ensure_result={"status": "deferred", "user": "existing@example.com", "created": False},
+		)
+		queue = frappe._dict({"name": "Email Queue-5"})
+		with (
+			patches[0],
+			patches[1],
+			patches[2],
+			patches[3],
+			patches[4],
+			patches[5],
+			self._submission_doc(submission, user),
+			patch("crm.api.website_redirect.frappe.sendmail", return_value=queue) as sendmail,
+		):
+			result = send_cx_access_invitation("OIS-ACC-0001", force=True)
+
+		self.assertEqual(result["status"], "sent")
+		sendmail.assert_called_once()
+
+	def test_legacy_sent_without_sent_at_still_sends(self):
+		submission = self._submission()
+		user = self._user(name="existing@example.com")
+
+		def exists(doctype, *args, **kwargs):
+			if doctype == "__Auth":
+				return True
+			return True
+
+		patches = self._patches(
+			exists_side_effect=exists,
+			get_value=("Sent", None, "existing@example.com"),
+			ensure_result={"status": "deferred", "user": "existing@example.com", "created": False},
+		)
+		queue = frappe._dict({"name": "Email Queue-6"})
+		with (
+			patches[0],
+			patches[1],
+			patches[2],
+			patches[3],
+			patches[4],
+			patches[5],
+			self._submission_doc(submission, user),
+			patch("crm.api.website_redirect.frappe.sendmail", return_value=queue) as sendmail,
+		):
+			result = send_cx_access_invitation("OIS-ACC-0001")
+
+		self.assertEqual(result["status"], "sent")
+		sendmail.assert_called_once()
+
+	def test_failed_provisioning_returns_without_email(self):
+		submission = self._submission()
+		user = self._user()
+		patches = self._patches(ensure_result={"status": "failed", "user": "new@example.com"})
+		with (
+			patches[0],
+			patches[1],
+			patches[2],
+			patches[3],
+			patches[4],
+			patches[5],
+			self._submission_doc(submission, user),
+			patch("crm.api.website_redirect.frappe.sendmail") as sendmail,
+		):
+			result = send_cx_access_invitation("OIS-ACC-0001")
+
+		self.assertEqual(result, {"status": "failed", "user": "new@example.com"})
+		sendmail.assert_not_called()
+
 	def test_multi_facility_label_and_network_escaping(self):
 		submission = self._submission(
 			raw_json='{"facilities":[{"mfl_code":"1001","facility_name":"First Clinic"},{"mfl_code":"1002","facility_name":"Second Clinic"}]}'
@@ -754,9 +852,11 @@ class TestCxAccessInvitation(UnitTestCase):
 				return False
 			return True
 
-		patches = self._patches(exists_side_effect=exists)
-		patches[4].return_value = {"status": "deferred", "user": "new@example.com", "created": True}
-		patches[5] = patch("crm.api.optin._get_network_doc", return_value={"display_name": "Test <Network>"})
+		patches = self._patches(
+			exists_side_effect=exists,
+			ensure_result={"status": "deferred", "user": "new@example.com", "created": True},
+			network_doc={"display_name": "Test <Network>"},
+		)
 		queue = frappe._dict({"name": "Email Queue-3"})
 		with (
 			patches[0],
@@ -786,8 +886,11 @@ class TestCxAccessInvitation(UnitTestCase):
 			return True
 
 		def run(get_single_value):
-			patches = self._patches(exists_side_effect=exists, get_single_value=get_single_value)
-			patches[4].return_value = {"status": "deferred", "user": "new@example.com", "created": True}
+			patches = self._patches(
+				exists_side_effect=exists,
+				get_single_value=get_single_value,
+				ensure_result={"status": "deferred", "user": "new@example.com", "created": True},
+			)
 			queue = frappe._dict({"name": "Email Queue-4"})
 			with (
 				patches[0],
