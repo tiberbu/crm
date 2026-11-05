@@ -103,10 +103,10 @@ time.
 
 ## Verification
 
-- `bench --site crm.io run-tests --module crm.tests.test_optin` — 70 passed
-- `bench --site crm.io run-tests --module crm.tests.test_contract_print_format_patch` — passed
-- `bench --site crm.io run-tests --module crm.tests.test_optin_admin` — 30 passed
-- `bench --site crm.io run-tests --module crm.tests.test_optin_bundles` — 3 passed
+- `scripts/run-crm-tests.sh crm.io --module crm.tests.test_optin` — 70 passed
+- `scripts/run-crm-tests.sh crm.io --module crm.tests.test_contract_print_format_patch` — passed
+- `scripts/run-crm-tests.sh crm.io --module crm.tests.test_optin_admin` — 30 passed
+- `scripts/run-crm-tests.sh crm.io --module crm.tests.test_optin_bundles` — 3 passed
 - `yarn test:run` — 135 passed
 - `yarn build` — completed successfully
 - Quote and contract print formats were checked for selected-term commitment,
