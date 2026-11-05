@@ -14,6 +14,7 @@ as authority; the portal resolves both from the logged-in user on the server.
 from __future__ import annotations
 
 import json
+import math
 
 import frappe
 from frappe import _
@@ -330,7 +331,9 @@ def _set_submission_portal_field(submission, fieldname, value):
 			pass
 
 
-def ensure_website_user_for_ois(submission, email=None, display_name=None, send_password_setup=True):
+def ensure_website_user_for_ois(
+	submission, email=None, display_name=None, send_password_setup=True, send_access_email=True
+):
 	"""Create/reconcile a Website User and OIS permission exactly once."""
 	requested_email = cstr(email or "").strip().lower()
 	is_self_onboarding = cstr(getattr(submission, "onboarding_source", "") or "").strip() == (
@@ -390,6 +393,7 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None, send_
 		if (
 			is_self_onboarding
 			and send_password_setup
+			and send_access_email
 			and previous_invitation not in {"Sent", "Already active"}
 		):
 			try:
@@ -421,7 +425,10 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None, send_
 				),
 				"user_type": "Website User",
 				"enabled": 1,
-				"send_welcome_email": 1,
+				# With the access email deferred to the first contract signature,
+				# the native welcome is suppressed: the branded invitation sends its
+				# own set-password link instead (see send_cx_access_invitation).
+				"send_welcome_email": 0 if not send_access_email else 1,
 				# Native Frappe update_password() consumes User.redirect_url after
 				# the emailed reset link is used. This keeps the invitation flow on
 				# Frappe's password-reset implementation while landing in CX.
@@ -459,6 +466,15 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None, send_
 		return {"status": "failed", "user": user_name}
 
 	_set_submission_portal_field(submission, "portal_user", user_name)
+	if not send_access_email:
+		# Contract journeys defer the platform-access email to the facility's
+		# first signature (send_cx_access_invitation). Record that the account
+		# and permission exist but the email has not gone out yet.
+		previous_status = frappe.db.get_value(OIS_DOCTYPE, submission.name, "portal_invitation_status")
+		if previous_status != "Sent":
+			_set_submission_portal_field(submission, "portal_invitation_status", "Awaiting signature")
+		_set_submission_portal_field(submission, "portal_invitation_error", "")
+		return {"status": "deferred", "user": user_name, "created": created}
 	if created and not welcome_email_sent:
 		_set_submission_portal_field(submission, "portal_invitation_status", "Failed")
 		_set_submission_portal_field(
@@ -479,6 +495,191 @@ def ensure_website_user_for_ois(submission, email=None, display_name=None, send_
 		"status": "sent" if created else ("reset_sent" if welcome_email_sent else "linked"),
 		"user": user_name,
 	}
+
+
+def _cx_reset_link_expiry_text() -> str:
+	"""Human-readable lifetime of a native password-reset link (site setting)."""
+	secs = frappe.utils.cint(
+		frappe.db.get_single_value("System Settings", "reset_password_link_expiry_duration")
+	)
+	if secs <= 0:
+		return ""
+	if secs >= 3600 and secs % 3600 == 0:
+		hours = secs // 3600
+		return "1 hour" if hours == 1 else "%d hours" % hours
+	return "%d minutes" % frappe.utils.cint(math.ceil(secs / 60))
+
+
+def _cx_access_labels(submission, network_doc):
+	"""Facility and network labels for the access invitation (unescaped)."""
+	facility_names = []
+	for facility in _submission_facilities(submission):
+		name = cstr(facility.get("facility_name") or "").strip()
+		if name and name not in facility_names:
+			facility_names.append(name)
+	if len(facility_names) == 1:
+		facility_label = facility_names[0]
+	elif facility_names:
+		facility_label = "%s + %s more facilities" % (facility_names[0], len(facility_names) - 1)
+	else:
+		facility_label = "your facility"
+	network_name = (
+		(network_doc or {}).get("display_name")
+		or cstr(getattr(submission, "network_slug", "") or "").strip()
+		or "CareverseHIMS"
+	)
+	return facility_label, network_name
+
+
+def _cx_access_invitation_html(
+	contact_name, network_name, facility_label, action_url, portal_url, kind, trigger, expiry_text
+):
+	"""Branded platform-access invitation (same look as the pre-qualification emails)."""
+	if kind == "set_password":
+		action_label = "Set your password &rarr;"
+		body = (
+			"<p>Set your password to open Tiberbu Express, where you can follow your onboarding, "
+			"contract, invoices and token balance.</p>"
+		)
+		if expiry_text:
+			body += (
+				"<p>This link expires in %s. If it has expired, open <a href=\"%s\">%s</a> and choose "
+				"&ldquo;Forgot password?&rdquo; with this email address.</p>"
+			) % (expiry_text, portal_url, portal_url)
+	else:
+		action_label = "Log in to Tiberbu Express &rarr;"
+		body = (
+			"<p>Your Tiberbu Express account is already active. Log in to follow your onboarding, "
+			"contract, invoices and token balance.</p>"
+		)
+	return """
+<p>Dear {contact_name},</p>
+
+<p>Thank you for signing the CareverseHIMS agreement for <strong>{facility_label}</strong> in the
+<strong>{network_name}</strong> network.</p>
+
+{body}
+
+<p style="margin: 24px 0;">
+  <a href="{action_url}"
+     style="background:#0284c7;color:#fff;padding:12px 24px;border-radius:6px;
+            text-decoration:none;font-weight:600;">
+    {action_label}
+  </a>
+</p>
+
+<p>If the button doesn't work, paste this link in your browser:<br/>
+<a href="{action_url}">{action_url}</a></p>
+
+<p>If you have questions, reply to this email or contact us at
+<a href="mailto:hello@tiberbu.com">hello@tiberbu.com</a>.</p>
+
+<p>Best regards,<br/>The Tiberbu Team</p>
+""".format(
+		contact_name=contact_name,
+		network_name=network_name,
+		facility_label=facility_label,
+		action_url=action_url,
+		portal_url=portal_url,
+		body=body,
+		action_label=action_label,
+	)
+
+
+def send_cx_access_invitation(submission_name, *, trigger="facility_signed", force=False):
+	"""Send the branded Tiberbu Express access email for an Opt-In submission.
+
+	Called at the facility signatory's first contract signature. Best-effort:
+	every failure is logged and returned, never raised, so a signature always
+	commits. Idempotent per OIS: once the status is `Sent` (and `sent_at` is
+	set) nothing is sent again unless `force` is set.
+	"""
+	submission_name = cstr(submission_name or "").strip()
+	if not submission_name or not frappe.db.exists(OIS_DOCTYPE, submission_name):
+		return {"status": "skipped", "reason": "missing_submission"}
+	sub = frappe.get_doc(OIS_DOCTYPE, submission_name)
+	from crm.api.optin import _get_network_doc, requires_contract_signature
+
+	if not requires_contract_signature(sub):
+		return {"status": "skipped", "reason": "self_onboarding"}
+	if cstr(sub.status) != "Processed":
+		return {"status": "skipped", "reason": "submission_not_processed"}
+	status, sent_at, linked_user = frappe.db.get_value(
+		OIS_DOCTYPE,
+		submission_name,
+		["portal_invitation_status", "portal_invitation_sent_at", "portal_user"],
+	)
+	if not force and cstr(status) == "Sent" and sent_at:
+		return {"status": "already_sent", "user": cstr(linked_user or "")}
+	try:
+		result = ensure_website_user_for_ois(sub, send_access_email=False)
+		if result.get("status") in ("blocked", "failed"):
+			return result
+		user = frappe.get_doc("User", result["user"])
+		recipient = cstr(user.email).strip().lower()
+		needs_password = not frappe.db.exists(
+			"__Auth", {"doctype": "User", "name": user.name, "fieldname": "password"}
+		)
+		if needs_password:
+			user.db_set("redirect_url", PORTAL_ROUTE, update_modified=False)
+			action_url = user._reset_password(send_email=False)
+			kind = "set_password"
+		else:
+			action_url = frappe.utils.get_url(PORTAL_ROUTE)
+			kind = "login"
+		facility_label, network_name = _cx_access_labels(sub, _get_network_doc(sub.network_slug))
+		contact_name = (
+			cstr(getattr(user, "first_name", "") or "")
+			or cstr(getattr(sub, "facility_signatory_name", "") or "")
+			or "Facility Representative"
+		)
+		subject = "Contract signed — access Tiberbu Express for %s" % network_name
+		portal_url = frappe.utils.get_url(PORTAL_ROUTE)
+		message = _cx_access_invitation_html(
+			frappe.utils.escape_html(contact_name),
+			frappe.utils.escape_html(network_name),
+			frappe.utils.escape_html(facility_label),
+			action_url,
+			portal_url,
+			kind,
+			trigger,
+			_cx_reset_link_expiry_text(),
+		)
+		# No Communication record: the body carries a secret reset key.
+		queue = frappe.sendmail(
+			recipients=[recipient],
+			subject=subject,
+			message=message,
+			reference_doctype=OIS_DOCTYPE,
+			reference_name=sub.name,
+			now=True,
+		)
+		if not queue:
+			_set_submission_portal_field(sub, "portal_invitation_status", "Failed")
+			_set_submission_portal_field(sub, "portal_invitation_error", "The access email could not be queued.")
+			return {"status": "failed", "user": user.name, "reason": "queue_failed"}
+		_set_submission_portal_field(sub, "portal_invitation_status", "Sent")
+		_set_submission_portal_field(sub, "portal_invitation_sent_at", frappe.utils.now_datetime())
+		_set_submission_portal_field(sub, "portal_invitation_error", "")
+		return {"status": "sent", "user": user.name, "kind": kind, "email_queue": queue.name}
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"crm: CX access invitation failed for %s" % submission_name,
+		)
+		try:
+			_set_submission_portal_field(sub, "portal_invitation_status", "Failed")
+		except Exception:
+			pass
+		try:
+			_set_submission_portal_field(
+				sub,
+				"portal_invitation_error",
+				"We could not send the access email. Please try again or contact support.",
+			)
+		except Exception:
+			pass
+		return {"status": "failed", "reason": "exception"}
 
 
 def get_user_ois_numbers(user: str | None = None) -> list[str]:
