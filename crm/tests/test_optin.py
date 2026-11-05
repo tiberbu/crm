@@ -2219,7 +2219,6 @@ class TestOptInContractAutomation(UnitTestCase):
 		contract = SimpleNamespace(name="CONT-ACC-00006", deal="DEAL-ACC-00006")
 		with (
 			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
-			patch("crm.api.contracts.frappe.db.get_value", return_value=None),
 			patch("crm.api.website_redirect.send_cx_access_invitation", return_value={"status": "sent"}),
 			patch("crm.api.contracts.log_deal_event") as log_event,
 		):
@@ -2229,7 +2228,7 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
-			patch("crm.api.contracts.frappe.db.get_value", return_value=None),
+			patch("crm.api.contracts.frappe.get_all", return_value=[]),
 			patch(
 				"crm.api.website_redirect.send_cx_access_invitation",
 				return_value={"status": "failed", "reason": "No valid facility email"},
@@ -2243,7 +2242,7 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
-			patch("crm.api.contracts.frappe.db.get_value", return_value=None),
+			patch("crm.api.contracts.frappe.get_all", return_value=[]),
 			patch(
 				"crm.api.website_redirect.send_cx_access_invitation",
 				return_value={"status": "blocked", "reason": "Email belongs to an internal user"},
@@ -2256,7 +2255,6 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
-			patch("crm.api.contracts.frappe.db.get_value", return_value={"status": "already_sent"}),
 			patch("crm.api.website_redirect.send_cx_access_invitation", return_value={"status": "already_sent"}),
 			patch("crm.api.contracts.log_deal_event") as log_event,
 		):
@@ -2265,7 +2263,7 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		with (
 			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
-			patch("crm.api.contracts.frappe.db.get_value", return_value="Failed"),
+			patch("crm.api.contracts.frappe.get_all", return_value=[frappe._dict({"name": "existing note"})]),
 			patch(
 				"crm.api.website_redirect.send_cx_access_invitation",
 				return_value={"status": "failed", "reason": "No valid facility email"},
@@ -2275,11 +2273,35 @@ class TestOptInContractAutomation(UnitTestCase):
 			_send_facility_access_invitation(contract)
 		log_event.assert_not_called()
 
+	def test_access_invitation_blocked_at_processing_is_still_noted_once(self):
+		contract = SimpleNamespace(name="CONT-ACC-00008", deal="DEAL-ACC-00008")
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00008"),
+			patch("crm.api.contracts.frappe.get_all") as get_all,
+			patch(
+				"crm.api.website_redirect.send_cx_access_invitation",
+				return_value={"status": "blocked", "reason": "Email belongs to an internal user"},
+			),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			get_all.return_value = []
+			_send_facility_access_invitation(contract)
+		log_event.assert_called_once()
+		self.assertIn("not sent after contract CONT-ACC-00008", log_event.call_args.args[1])
+		get_all.assert_called_once()
+		self.assertEqual(get_all.call_args.args[0], "Comment")
+		filters = get_all.call_args.kwargs["filters"]
+		self.assertEqual(filters["reference_doctype"], "CRM Deal")
+		self.assertEqual(filters["reference_name"], "DEAL-ACC-00008")
+		self.assertEqual(
+			filters["content"],
+			["like", "Tiberbu Express access email not sent after contract CONT-ACC-00008%"],
+		)
+
 	def test_contract_without_a_deal_still_sends_but_logs_nothing(self):
 		contract = SimpleNamespace(name="CONT-ACC-00007", deal=None)
 		with (
 			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00007"),
-			patch("crm.api.contracts.frappe.db.get_value", return_value=None),
 			patch(
 				"crm.api.website_redirect.send_cx_access_invitation", return_value={"status": "sent"}
 			) as send_access,
@@ -2341,10 +2363,13 @@ class TestOptInContractAutomation(UnitTestCase):
 
 		def get_all(doctype, filters=None, **kwargs):
 			if doctype == "CRM Opt-In Submission":
-				return [{"name": "OIS-CAP1-00001"}]
+				return ["OIS-CAP1-00001"]
 			return []
 
+		exists_calls = []
+
 		def db_exists(doctype, *args, **kwargs):
+			exists_calls.append((doctype, args[0]) if args else (doctype, None))
 			if doctype == "CRM Opt-In Submission":
 				return True
 			return False
@@ -2404,6 +2429,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		self.assertIn(("portal_invitation_status", "Sent"), db_writes)
 		self.assertIn(("portal_invitation_sent_at", ts), db_writes)
 		self.assertEqual(ois.portal_invitation_status, "Sent")
+		self.assertIn(("CRM Opt-In Submission", "OIS-CAP1-00001"), exists_calls)
 		issue.assert_called_once()
 		set_state.assert_called()
 		self.assertGreaterEqual(log_event.call_count, 2)
