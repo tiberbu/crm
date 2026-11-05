@@ -1201,6 +1201,69 @@ def _mark_internal_action_available(contract, signatory_row):
 	return True
 
 
+def _optin_submission_for_contract(contract):
+	"""Resolve the OIS behind a contract, or None for manually created contracts."""
+	rows = frappe.get_all(
+		"CRM Opt-In Submission",
+		filters={"contract": contract.name},
+		pluck="name",
+		limit=1,
+		ignore_permissions=True,
+	)
+	if rows:
+		return rows[0]
+	if getattr(contract, "deal", None):
+		rows = frappe.get_all(
+			"CRM Opt-In Submission",
+			filters={"deal": contract.deal, "status": "Processed", "contract": ["is", "not set"]},
+			order_by="creation desc",
+			pluck="name",
+			limit=1,
+			ignore_permissions=True,
+		)
+		if rows:
+			return rows[0]
+	return None
+
+
+def _send_facility_access_invitation(contract):
+	"""Email the facility signatory the Tiberbu Express access link, once per contract.
+
+	Best-effort: every failure is logged and noted on the Deal timeline, and the
+	signature transaction is never rolled back because of it.
+	"""
+	try:
+		ois = _optin_submission_for_contract(contract)
+		if not ois:
+			return None
+		from crm.api.website_redirect import send_cx_access_invitation
+
+		result = send_cx_access_invitation(ois, trigger="facility_signed") or {}
+		status = result.get("status")
+		if not contract.deal:
+			return result
+		if status == "sent":
+			log_deal_event(
+				contract.deal,
+				"Tiberbu Express access email sent to the facility signatory after "
+				"contract %s was signed" % contract.name,
+			)
+		elif status in ("blocked", "failed"):
+			log_deal_event(
+				contract.deal,
+				"Tiberbu Express access email not sent after contract %s was signed: %s "
+				"— see %s portal invitation fields"
+				% (contract.name, frappe.utils.cstr(result.get("reason") or "unknown reason"), ois),
+			)
+		return result
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"contracts._transition: facility access invitation failed for %s" % contract.name,
+		)
+		return None
+
+
 def _transition(contract_name):
 	"""
 	Advance the contract workflow after a signatory signs. The Facility Signatory
@@ -1276,6 +1339,10 @@ def _transition(contract_name):
 					"Facility signatory signed contract %s — all external remaining "
 					"signatories invited together (7-day links)" % contract.name,
 				)
+		# The platform-access email goes out at the facility's first signature:
+		# branded, idempotent per OIS, best-effort. Runs after the finance
+		# handoff so it reads a fresh OIS and its writes are not overwritten.
+		_send_facility_access_invitation(contract)
 
 	# Done: all mandatory parties have signed. Tiberbu rows may be configured as
 	# "At Least One" while facility, witness, and network rows remain mandatory.
