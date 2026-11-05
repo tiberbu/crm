@@ -60,6 +60,7 @@ from crm.api.optin import (
 	_note_contract_handoff_skipped,
 	_prepare_submission_payload,
 	_process_submission,
+	_provision_customer_experience_access,
 	_queue_confirmation_email,
 	_should_auto_generate_contract,
 	_signatory_package_summary_html,
@@ -888,6 +889,22 @@ class TestOptInContractHandoffVisibility(UnitTestCase):
 		log_event.assert_not_called()
 		self.assertEqual(submission.error_log, reason)
 		submission.save.assert_called_once_with(ignore_permissions=True)
+
+
+class TestOptInPortalProvisioning(UnitTestCase):
+	def test_provision_defers_access_email_for_contract_journeys(self):
+		submission = SimpleNamespace(name="OIS-PORT-00001")
+		with patch("crm.api.website_redirect.ensure_website_user_for_ois") as ensure:
+			_provision_customer_experience_access(submission, send_access_email=False)
+
+		ensure.assert_called_once_with(submission, send_access_email=False)
+
+	def test_provision_keeps_access_email_by_default(self):
+		submission = SimpleNamespace(name="OIS-PORT-00002")
+		with patch("crm.api.website_redirect.ensure_website_user_for_ois") as ensure:
+			_provision_customer_experience_access(submission)
+
+		ensure.assert_called_once_with(submission, send_access_email=True)
 
 
 class TestOptInConfirmationEmail(UnitTestCase):

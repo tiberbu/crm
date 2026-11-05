@@ -3156,12 +3156,12 @@ def _note_contract_handoff_skipped(submission, reason):
 	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
 
 
-def _provision_customer_experience_access(submission):
+def _provision_customer_experience_access(submission, send_access_email=True):
 	"""Create the facility Website User after a completed Opt-In, idempotently."""
 	try:
 		from crm.api.website_redirect import ensure_website_user_for_ois
 
-		return ensure_website_user_for_ois(submission)
+		return ensure_website_user_for_ois(submission, send_access_email=send_access_email)
 	except Exception:
 		# Portal access must not roll back an otherwise completed Opt-In. The OIS
 		# remains auditable and can be reconciled by the invitation story/admin flow.
@@ -3961,7 +3961,9 @@ def _process_deal_invitation_submission(sub, payload):
 	_mark_opted_in_facilities(sub.network_slug, payload.get("facilities") or [])
 	sub.status = "Processed"
 	sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-	_provision_customer_experience_access(sub)
+	# Contract journeys defer the access email to the facility's first
+	# signature; self-onboarding keeps its native welcome here.
+	_provision_customer_experience_access(sub, send_access_email=not requires_contract_signature(sub))
 	data = _get_job_progress(sub.name) or {}
 	data["overall"] = "complete"
 	data["lead_id"] = None
@@ -4344,8 +4346,10 @@ def _process_submission(submission_ref):
 		# Self-onboarding provisions one Sam-owned Website User after every
 		# selected facility has been processed by the onboarding coordinator.
 		# Keep the historic per-OIS behavior for existing Opt-In submissions.
+		# Contract journeys provision the user now but defer the access email
+		# to the facility's first signature (send_cx_access_invitation).
 		if requires_contract_signature(sub):
-			_provision_customer_experience_access(sub)
+			_provision_customer_experience_access(sub, send_access_email=False)
 		# Submission sends only the signing invitation. The invoice checkout link is
 		# sent later from Network Detail → "Send payment link" once billing applies.
 		frappe.db.commit()
