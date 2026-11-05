@@ -2292,10 +2292,20 @@ def _generate_contract(
 			summary_html=invitation_summary_html,
 		)
 
-	log_deal_event(
-		deal,
-		"Contract %s generated — signing invitation sent to %s" % (contract.name, facility_signatory_email),
-	)
+	if invitation_queue:
+		# Name the Email Queue record so an operator can trace the exact queue
+		# entry if the invitation is ever reported as not received.
+		log_deal_event(
+			deal,
+			"Contract %s generated — signing invitation queued (Email Queue: %s) for %s"
+			% (contract.name, invitation_queue.name, facility_signatory_email),
+		)
+	else:
+		log_deal_event(
+			deal,
+			"Contract %s generated — signing invitation could not be queued for %s"
+			% (contract.name, facility_signatory_email),
+		)
 	return {
 		"contract": contract.name,
 		"invitation_queue": invitation_queue.name if invitation_queue else "",

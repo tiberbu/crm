@@ -56,6 +56,7 @@ from crm.api.optin import (
 	_get_membership,
 	_get_all_memberships,
 	_invoice_schedule_for_plan,
+	_note_contract_handoff_skipped,
 	_prepare_submission_payload,
 	_process_submission,
 	_queue_confirmation_email,
@@ -799,6 +800,41 @@ class TestOptInSynchronousProcessor(UnitTestCase):
 		finally:
 			frappe.db.delete("CRM Opt-In Submission", {"name": submission.name})
 			frappe.db.commit()
+
+
+class TestOptInContractHandoffVisibility(UnitTestCase):
+	"""A journey that expects a contract must never complete without a trace."""
+
+	def _submission(self, deal="DEAL-TEST-00100"):
+		return SimpleNamespace(
+			name="OIS-TEST-00100",
+			deal=deal,
+			error_log="",
+			save=Mock(),
+		)
+
+	def test_skipped_handoff_writes_readable_note_and_deal_event(self):
+		submission = self._submission()
+		reason = (
+			"No contract or signing email was created for this submission: contract "
+			"auto-generation is disabled in CRM Opt-In Settings."
+		)
+		with patch("crm.api._timeline.log_deal_event") as log_event:
+			_note_contract_handoff_skipped(submission, reason)
+
+		log_event.assert_called_once_with("DEAL-TEST-00100", reason)
+		self.assertEqual(submission.error_log, reason)
+		submission.save.assert_called_once_with(ignore_permissions=True)
+
+	def test_skipped_handoff_without_deal_still_writes_the_note(self):
+		submission = self._submission(deal="")
+		reason = "No contract created: auto-generation disabled."
+		with patch("crm.api._timeline.log_deal_event") as log_event:
+			_note_contract_handoff_skipped(submission, reason)
+
+		log_event.assert_not_called()
+		self.assertEqual(submission.error_log, reason)
+		submission.save.assert_called_once_with(ignore_permissions=True)
 
 
 class TestOptInConfirmationEmail(UnitTestCase):

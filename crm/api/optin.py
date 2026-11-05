@@ -3024,6 +3024,23 @@ def requires_contract_signature(submission):
 	return frappe.utils.cstr(getattr(submission, "onboarding_source", "") or "").strip() != "token_self_onboarding"
 
 
+def _note_contract_handoff_skipped(submission, reason):
+	"""Make a no-contract completion visible instead of silent.
+
+	When the journey expects a signed contract but none is generated (e.g. the
+	automation switch is off in settings), the submission would otherwise be
+	marked Processed with no contract, no signing email, and no trace anywhere.
+	The readable note is kept on the submission itself and mirrored as a Deal
+	timeline event so the gap is visible from the Deal without opening the OIS.
+	"""
+	from crm.api._timeline import log_deal_event
+
+	if getattr(submission, "deal", None):
+		log_deal_event(submission.deal, reason)
+	submission.error_log = reason
+	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+
+
 def _provision_customer_experience_access(submission):
 	"""Create the facility Website User after a completed Opt-In, idempotently."""
 	try:
@@ -3800,6 +3817,15 @@ def _process_deal_invitation_submission(sub, payload):
 		_generate_contract_for_submission(sub, quote.name)
 		_update_job_step(sub.name, "contract", "done", "Contract ready — signing invitation sending")
 		contract_invitation_queued = True
+	elif requires_contract_signature(sub):
+		# The journey expects a signed contract but the automation switch is
+		# off: never complete silently — leave a readable, actionable trace.
+		_note_contract_handoff_skipped(
+			sub,
+			"No contract or signing email was created for this submission: contract "
+			"auto-generation is disabled in CRM Opt-In Settings (auto_generate_contract_on_submission). "
+			"Enable the setting, or generate the contract from the Deal page.",
+		)
 
 	recipient = sub.submitter_email
 	if not recipient:
@@ -4157,6 +4183,15 @@ def _process_submission(submission_ref):
 				submission_ref, "contract", "done", "Contract ready — signing invitation sending"
 			)
 			contract_invitation_queued = True
+		elif requires_contract_signature(sub):
+			# The journey expects a signed contract but the automation switch is
+			# off: never complete silently — leave a readable, actionable trace.
+			_note_contract_handoff_skipped(
+				sub,
+				"No contract or signing email was created for this submission: contract "
+				"auto-generation is disabled in CRM Opt-In Settings (auto_generate_contract_on_submission). "
+				"Enable the setting, or generate the contract from the Deal page.",
+			)
 
 		# ── Step 4: Send confirmation email ──────────────────────────────────
 		_update_job_step(submission_ref, "email", "in_progress", "Sending confirmation...")
