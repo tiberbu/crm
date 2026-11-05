@@ -6,6 +6,7 @@ from frappe.tests import UnitTestCase
 from crm.api.website_redirect import (
 	CRM_LOGIN_MARKER,
 	_portal_progress,
+	_set_submission_portal_field,
 	ensure_website_user_for_ois,
 	get_login_team_route,
 	get_user_ois_numbers,
@@ -295,6 +296,34 @@ class TestCustomerExperienceAccess(UnitTestCase):
 			("portal_invitation_status", "Already active"),
 			[(call.args[1], call.args[2]) for call in set_field.call_args_list],
 		)
+
+	def test_portal_field_write_is_mirrored_onto_the_document(self):
+		submission = frappe._dict({"name": "OIS-0004", "portal_invitation_status": "Pending"})
+		meta = Mock()
+		meta.has_field.return_value = True
+		with (
+			patch("crm.api.website_redirect.frappe.get_meta", return_value=meta),
+			patch("crm.api.website_redirect.frappe.db.set_value") as set_value,
+		):
+			_set_submission_portal_field(submission, "portal_invitation_status", "Sent")
+
+		set_value.assert_called_once_with(
+			"CRM Opt-In Submission", "OIS-0004", "portal_invitation_status", "Sent", update_modified=False
+		)
+		self.assertEqual(submission.portal_invitation_status, "Sent")
+
+	def test_portal_field_write_is_skipped_when_field_is_absent(self):
+		submission = frappe._dict({"name": "OIS-0005"})
+		meta = Mock()
+		meta.has_field.return_value = False
+		with (
+			patch("crm.api.website_redirect.frappe.get_meta", return_value=meta),
+			patch("crm.api.website_redirect.frappe.db.set_value") as set_value,
+		):
+			_set_submission_portal_field(submission, "portal_invitation_status", "Sent")
+
+		set_value.assert_not_called()
+		self.assertFalse(hasattr(submission, "portal_invitation_status"))
 
 	def test_new_website_user_gets_native_welcome_and_ois_scoped_permission(self):
 		submission = frappe._dict(

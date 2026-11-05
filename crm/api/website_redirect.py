@@ -324,6 +324,10 @@ def _self_onboarding_progress(submission, contacts, opted_in, all_live):
 def _set_submission_portal_field(submission, fieldname, value):
 	if frappe.get_meta(OIS_DOCTYPE).has_field(fieldname):
 		frappe.db.set_value(OIS_DOCTYPE, submission.name, fieldname, value, update_modified=False)
+		try:
+			setattr(submission, fieldname, value)
+		except Exception:
+			pass
 
 
 def ensure_website_user_for_ois(submission, email=None, display_name=None, send_password_setup=True):
