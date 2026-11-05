@@ -336,7 +336,7 @@ Upon receiving the invitation email, the facility contact follows this path:
 A comprehensive test suite exercises all endpoints and error cases:
 
 ```bash
-bench --site cr-dev.tiberbu.app run-tests --module crm.tests.test_partner_portal
+scripts/run-crm-tests.sh cr-dev.tiberbu.app --module crm.tests.test_partner_portal
 ```
 
 Covered test scenarios:

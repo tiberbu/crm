@@ -72,6 +72,22 @@ yarn test          # watch mode
 - Only pure utility functions are unit-tested (no Vue component tests yet)
 - Add tests in `tests/unit/` when adding pure logic to `src/utils/`
 
+### Python (Frappe) tests
+
+Run with `scripts/run-crm-tests.sh`, which always passes `--app crm`:
+
+```bash
+scripts/run-crm-tests.sh <site> --module crm.tests.test_optin
+```
+
+> **Hard rule:** never run `bench run-tests` on a site without `--app crm`.
+> Without it, Frappe's test runner runs **every** installed app's `before_tests`
+> hook — and ERPNext's hook runs `delete from tabItem Price`, wiping all item
+> prices on the site, and also resets Selling/Stock test defaults (this happened
+> on 2026-11-05 and blanked the public facility-onboarding package catalogue).
+> On the reference/dev site prefer not running the suite at all; the site's
+> `allow_tests` config must stay `false` outside of an explicit, approved test run.
+
 ---
 
 ## Commit style
