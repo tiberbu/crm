@@ -1236,6 +1236,9 @@ def _send_facility_access_invitation(contract):
 		ois = _optin_submission_for_contract(contract)
 		if not ois:
 			return None
+		previous_status = frappe.db.get_value(
+			"CRM Opt-In Submission", ois, "portal_invitation_status"
+		)
 		from crm.api.website_redirect import send_cx_access_invitation
 
 		result = send_cx_access_invitation(ois, trigger="facility_signed") or {}
@@ -1248,7 +1251,12 @@ def _send_facility_access_invitation(contract):
 				"Tiberbu Express access email sent to the facility signatory after "
 				"contract %s was signed" % contract.name,
 			)
-		elif status in ("blocked", "failed"):
+		elif status in ("blocked", "failed") and frappe.utils.cstr(previous_status) not in (
+			"Blocked",
+			"Failed",
+		):
+			# One timeline note per problem: the first Blocked/Failed outcome is
+			# noted, later re-entries retry silently (the OIS fields carry the reason).
 			log_deal_event(
 				contract.deal,
 				"Tiberbu Express access email not sent after contract %s was signed: %s "
