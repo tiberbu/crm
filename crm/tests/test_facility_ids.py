@@ -102,6 +102,21 @@ class TestFacilityIds(IntegrationTestCase):
 		self.assertEqual(rows[0]["hfr_facility_id"], FID)
 		search.assert_not_called()
 
+	def test_csv_seed_matches_the_register_mfl_case_insensitively(self):
+		# MariaDB matches MFL case-insensitively; a differently cased CSV MFL must
+		# still seed from the register instead of falling through to a lookup.
+		csv_data = (
+			"mfl_code,hfr_facility_id,facility_name,keph_level,contact_name,contact_email,contact_phone\n"
+			"%s,,Linked,Level 3,A Person,a@example.test,0700000001\n"
+		) % MFL_LINKED.lower()
+		with (
+			patch("crm.api.optin_admin._assert_network_access"),
+			patch("crm.api.hfr.search_facility", return_value=[]) as search,
+		):
+			rows = import_facilities_csv(csv_data, "network-a", dry_run=1)["rows"]
+		self.assertEqual(rows[0]["hfr_facility_id"], FID)
+		search.assert_not_called()
+
 	def test_hfr_lookup_prefers_a_hit_carrying_a_fid(self):
 		blank = {"mfl_code": MFL_UNLINKED, "fid": "", "name": "Unlinked", "level": "3"}
 		hit = {"mfl_code": MFL_UNLINKED, "fid": "FID-00-FIDTEST-2", "name": "Unlinked", "level": "3"}
@@ -127,9 +142,9 @@ class TestFacilityIds(IntegrationTestCase):
 			"9003,,Budget Three,Level 3,C Person,c@example.test,0700000013\n"
 		)
 
-		def slow_lookup(mfl_code):
+		def slow_lookup(mfl_code, search_by="mfl_code"):
 			clock.now += 3  # simulated slow registry
-			return {"mfl_code": mfl_code, "fid": "FID-00-%s" % mfl_code, "name": "Budget", "level": "3"}
+			return [{"mfl_code": mfl_code, "fid": "FID-00-%s" % mfl_code, "name": "Budget", "level": "3"}]
 
 		def slow_save(payload):
 			clock.now += 10  # slow saves must not consume the lookup budget
