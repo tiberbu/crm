@@ -306,9 +306,11 @@ const allFacilities = computed(() => {
           recent_purchase: null,
           invoice_summary: null,
           orders: (submission.open_orders || []).filter((order) => rowsForFacility([order], mfl).length),
-          invoices: (submission.open_invoices || []).filter((invoice) =>
-            rowsForFacility([invoice], mfl).length,
-          ),
+          // Carry ois_name onto each row: the merged facility list wins over the account
+          // list, and payInvoice needs it to bill an OIS-only user's invoice (SPEC 8).
+          invoices: (submission.open_invoices || [])
+            .filter((invoice) => rowsForFacility([invoice], mfl).length)
+            .map((invoice) => ({ ...invoice, ois_name: submission.name })),
           payments: [],
           source_type: 'ois',
         })

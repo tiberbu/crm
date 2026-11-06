@@ -435,9 +435,26 @@ const topUp = computed(() => canTopUp(props.facility))
 
 const summaryCards = computed(() => {
   const cards = []
-  // Plan type decides the summary (SPEC 6 matrix): a time-bound plan is never presented
-  // as tokens, even when the facility also has a token meter.
-  if (commercial.value.plan_type === 'token') {
+  // SPEC 6 matrix, checked in order: time_bound (never token copy, even with a token
+  // meter), then any live token balance (token plan or metered unknown), then unknown.
+  if (commercial.value.plan_type === 'time_bound') {
+    cards.push({
+      testid: 'facility-plan-card',
+      label: 'Plan',
+      value: commercial.value.plan.name || 'Not set up yet',
+      note: commercial.value.plan.cycle_label || commercial.value.journey_label || '',
+      valueClass: 'text-cx-ink',
+      icon: 'file-text',
+    })
+    cards.push({
+      testid: 'facility-next-invoice',
+      label: 'Next invoice',
+      value: balanceOrNextText(props.facility),
+      note: commercial.value.plan.next_invoice?.label || '',
+      valueClass: 'text-cx-ink',
+      icon: 'receipt',
+    })
+  } else if (tokens.value) {
     cards.push({
       testid: 'facility-available-tokens',
       label: 'Available tokens',
@@ -459,23 +476,6 @@ const summaryCards = computed(() => {
           : 'Choose a package to get started',
       valueClass: 'text-cx-ink',
       icon: null,
-    })
-  } else if (commercial.value.plan_type === 'time_bound') {
-    cards.push({
-      testid: 'facility-plan-card',
-      label: 'Plan',
-      value: commercial.value.plan.name || 'Not set up yet',
-      note: commercial.value.plan.cycle_label || commercial.value.journey_label || '',
-      valueClass: 'text-cx-ink',
-      icon: 'file-text',
-    })
-    cards.push({
-      testid: 'facility-next-invoice',
-      label: 'Next invoice',
-      value: balanceOrNextText(props.facility),
-      note: commercial.value.plan.next_invoice?.label || '',
-      valueClass: 'text-cx-ink',
-      icon: 'receipt',
     })
   } else {
     cards.push({
@@ -590,7 +590,7 @@ function reviewInvoice() {
           <CxIcon name="chat" class="size-4" /> Network support
         </button>
         <button
-          v-if="tokens && commercial.plan_type !== 'time_bound'"
+          v-if="tokens"
           type="button"
           class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong"
           @click="emit('open-top-up', facility, 'paid')"
@@ -636,7 +636,7 @@ function reviewInvoice() {
       @open-support="emit('open-support', facility)"
     />
 
-    <TokenAlertCard v-if="commercial.plan_type === 'token'" :facility="facility" :alert="tokenAlert" @saved="emit('token-alert-saved', $event)" />
+    <TokenAlertCard v-if="tokens" :facility="facility" :alert="tokenAlert" @saved="emit('token-alert-saved', $event)" />
 
     <section class="overflow-hidden rounded-cx border border-cx-border bg-cx-surface shadow-cx">
       <div class="border-b border-cx-border-soft bg-gradient-to-br from-cx-surface via-cx-surface to-cx-well/70 p-5 sm:p-7">

@@ -129,7 +129,7 @@ const outstanding = computed(
         </dd>
       </div>
       <div
-        v-if="alert?.enabled && isToken"
+        v-if="alert?.enabled && showsTokens(facility)"
         class="flex items-baseline justify-between gap-3 text-xs"
         :data-testid="`facility-alert-${facility.mfl_code}`"
       >

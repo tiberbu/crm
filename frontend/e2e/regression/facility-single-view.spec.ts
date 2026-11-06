@@ -613,7 +613,7 @@ const timeBoundFacility = {
       name: 'SAL-ORD-2026-00035',
       display_title: 'Year 1 · Quarter 1 subscription',
       display_status: 'Confirmed',
-      doc_kind: 'fixed_period',
+      doc_kind: 'subscription',
       schedule_governed: true,
       is_draft: false,
       can_create_invoice: false,
@@ -720,7 +720,7 @@ const timeBoundWithTokensFacility = {
       name: 'SAL-ORD-2026-00041',
       display_title: 'Year 1 · Quarter 1 subscription',
       display_status: 'Confirmed',
-      doc_kind: 'fixed_period',
+      doc_kind: 'subscription',
       schedule_governed: true,
       is_draft: false,
       can_create_invoice: false,
@@ -765,12 +765,13 @@ test('a time-bound facility with a token meter still shows the plan, not token c
 
   await expect(page.getByTestId('facility-plan-card')).toBeVisible()
   await expect(page.getByTestId('facility-next-invoice')).toBeVisible()
-  // No token-centric summary, no token CTA, no token go-live block (the Care Tokens
-  // supplement in the plan panel is the only token mention and is accurate here).
+  // SPEC 6 "Time-bound with tokens": the summary is the plan (no token summary cards),
+  // but the live token meter still works — Top up CTA and the low-token alert are shown,
+  // and the go-live token block is hidden.
   await expect(page.getByTestId('facility-available-tokens')).toHaveCount(0)
   await expect(page.getByTestId('facility-current-package')).toHaveCount(0)
-  await expect(page.getByTestId('token-alert-card')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /Top up tokens/ })).toHaveCount(0)
+  await expect(page.getByTestId('token-alert-card')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Top up tokens/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /Choose a plan/ })).toHaveCount(0)
 })
 
@@ -870,4 +871,29 @@ test('a facility without a plan shows the plan-less summary and a choose-a-plan 
   await expect(page.getByTestId('plan-panel')).toContainText('No plan yet')
   await expect(page.getByRole('button', { name: 'Choose a plan' }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /Top up tokens/ })).toHaveCount(0)
+})
+
+// An unknown facility with a live token meter (has_tokens) still shows its balance;
+// the summary falls to the token branch, not "Not set up yet" (review finding 2).
+const unknownWithBalanceFacility = {
+  ...unplannedFacility,
+  mfl_code: '55556',
+  facility_name: 'Metered Unplanned Clinic',
+  commercial: {
+    ...unplannedFacility.commercial,
+    has_tokens: true,
+  },
+  token_balance: { status: 'ok', balance: 75, as_of: '2026-11-06 08:00:00' },
+}
+
+test('an unplanned facility with a live token balance shows that balance', async ({ page }) => {
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    unknownWithBalanceFacility,
+  )
+
+  await expect(page.getByTestId('facility-available-tokens')).toBeVisible()
+  await expect(page.getByTestId('facility-available-tokens-value')).toContainText('75')
+  await expect(page.getByRole('button', { name: /Top up tokens/ })).toBeVisible()
 })
