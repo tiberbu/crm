@@ -57,15 +57,18 @@ def execute():
 				doctype, row.name, "hfr_facility_id", fid, update_modified=False
 			)
 			filled += 1
-			frappe.msgprint(f"{doctype} {row.name}: hfr_facility_id = {fid}")
 
 	# --- 2. Honest sync status ------------------------------------------------
-	# A row without a Facility ID cannot claim "HFR Verified".
-	uncleared = 0
+	# A row without a Facility ID cannot claim "HFR Verified". Only that value is
+	# cleared; "Manual" and other statuses are left untouched.
+	cleared = 0
 	for doctype in ("CRM Lead Facility", "CRM Deal Facility"):
 		rows = frappe.get_all(
 			doctype,
-			filters={"hfr_facility_id": ["is", "not set"], "hfr_sync_status": ["is", "set"]},
+			filters={
+				"hfr_facility_id": ["is", "not set"],
+				"hfr_sync_status": "HFR Verified",
+			},
 			fields=["name"],
 			ignore_permissions=True,  # SYSTEM-INTERNAL: migration runs as Administrator.
 		)
@@ -73,10 +76,10 @@ def execute():
 			frappe.db.set_value(
 				doctype, row.name, "hfr_sync_status", "", update_modified=False
 			)
-			uncleared += 1
+			cleared += 1
 
 	frappe.db.commit()
 	frappe.msgprint(
 		f"Opt-in facility ID backfill complete: {filled} row(s) filled, "
-		f"{uncleared} false 'HFR Verified' status(es) cleared."
+		f"{cleared} false 'HFR Verified' status(es) cleared."
 	)

@@ -56,6 +56,7 @@ from crm.api.optin import (
 	_get_membership,
 	_get_all_memberships,
 	_invoice_schedule_for_plan,
+	_lead_facility_row,
 	_note_contract_handoff_skipped,
 	_prepare_submission_payload,
 	_process_submission,
@@ -81,6 +82,28 @@ from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
 from crm.setup.optin import ensure_internal_signatory_reminder_job
 from crm.utils.jinja import get_contract_network_for_print, render_current_terms_for_contract
 from crm.utils.optin_bundles import billing_schedule
+
+
+class TestLeadFacilityRow(UnitTestCase):
+	def test_row_carrying_a_facility_id_claims_hfr_verified(self):
+		row = _lead_facility_row(
+			{"mfl_code": "MFL-001", "facility_name": "Clinic", "keph_level": "Level 3", "hfr_facility_id": "FID-00-1"}
+		)
+		self.assertEqual(row["hfr_facility_id"], "FID-00-1")
+		self.assertEqual(row["hfr_sync_status"], "HFR Verified")
+
+	def test_row_without_a_facility_id_stays_unverified(self):
+		row = _lead_facility_row(
+			{"mfl_code": "MFL-001", "facility_name": "Clinic", "keph_level": "Level 3", "hfr_facility_id": ""}
+		)
+		self.assertEqual(row["hfr_facility_id"], "")
+		self.assertEqual(row["hfr_sync_status"], "")
+
+	def test_row_tolerates_a_missing_facility_id_key(self):
+		row = _lead_facility_row({"mfl_code": "MFL-001"})
+		self.assertEqual(row["hfr_facility_id"], "")
+		self.assertEqual(row["hfr_sync_status"], "")
+		self.assertEqual(row["mfl_code"], "MFL-001")
 
 
 class TestOptInInvitationAccess(UnitTestCase):

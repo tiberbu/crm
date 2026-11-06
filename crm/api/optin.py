@@ -3853,6 +3853,23 @@ def _process_deal_invitation_submission(sub, payload):
 	_set_job_progress(sub.name, data)
 
 
+def _lead_facility_row(fac):
+	"""Build a Lead facility row from a canonical payload facility.
+
+	The Facility ID is carried from the register lookup in the payload so it
+	reaches the Deal row via convert_to_deal; the sync status only claims
+	"HFR Verified" when a Facility ID is actually present.
+	"""
+	facility_id = frappe.utils.cstr(fac.get("hfr_facility_id", "")).strip()
+	return {
+		"mfl_code": frappe.utils.cstr(fac.get("mfl_code", "")),
+		"facility_name": frappe.utils.cstr(fac.get("facility_name", "")),
+		"facility_level": frappe.utils.cstr(fac.get("keph_level", "")),
+		"hfr_facility_id": facility_id,
+		"hfr_sync_status": "HFR Verified" if facility_id else "",
+	}
+
+
 def _process_submission(submission_ref):
 	"""
 	Process CRM Opt-In Submission → Lead → Deal → Quotation synchronously.
@@ -3939,17 +3956,7 @@ def _process_submission(submission_ref):
 			lead.tc_ip_address = payload.get("ip_address", "")
 
 			for fac in facilities:
-				facility_id = frappe.utils.cstr(fac.get("hfr_facility_id", "")).strip()
-				lead.append(
-					"facilities",
-					{
-						"mfl_code": frappe.utils.cstr(fac.get("mfl_code", "")),
-						"facility_name": frappe.utils.cstr(fac.get("facility_name", "")),
-						"facility_level": frappe.utils.cstr(fac.get("keph_level", "")),
-						"hfr_facility_id": facility_id,
-						"hfr_sync_status": "HFR Verified" if facility_id else "",
-					},
-				)
+				lead.append("facilities", _lead_facility_row(fac))
 
 			# The CRM Products child table's product_code is a CRM Product Link,
 			# not the ERPNext Item code from pricing, so it is deliberately unset.
