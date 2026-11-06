@@ -63,3 +63,24 @@ class TestFacilityIds(IntegrationTestCase):
 			result = lookup_hfr(MFL_UNLINKED)
 		self.assertEqual(result["hfr_facility_id"], "FID-00-FIDTEST-2")
 		self.assertEqual(result["keph_level"], "Level 3")
+
+	def test_hfr_lookup_rejects_a_hit_whose_mfl_does_not_match(self):
+		hit = {"mfl_code": "SOME-OTHER-MFL", "fid": "FID-00-FIDTEST-9", "name": "Other", "level": "3"}
+		with patch("crm.api.hfr.search_facility", return_value=[hit]):
+			with self.assertRaises(frappe.ValidationError):
+				lookup_hfr(MFL_UNLINKED)
+
+	def test_csv_preview_keeps_a_looked_up_facility_id(self):
+		# The register row and the CSV row both lack a FID, so the import must
+		# run the HFR lookup and keep the FID it finds (metering needs it).
+		csv_data = (
+			"mfl_code,hfr_facility_id,facility_name,keph_level,contact_name,contact_email,contact_phone\n"
+			"%s,,Unlinked,Level 3,B Person,b@example.test,0700000002\n"
+		) % MFL_UNLINKED
+		hit = {"mfl_code": MFL_UNLINKED, "fid": "FID-00-FIDTEST-3", "name": "Unlinked", "level": "3"}
+		with (
+			patch("crm.api.optin_admin._assert_network_access"),
+			patch("crm.api.hfr.search_facility", return_value=[hit]),
+		):
+			rows = import_facilities_csv(csv_data, "network-a", dry_run=1)["rows"]
+		self.assertEqual(rows[0]["hfr_facility_id"], "FID-00-FIDTEST-3")

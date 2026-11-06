@@ -437,6 +437,34 @@ class TestOptInSignatoryHandoff(UnitTestCase):
 		)
 		self.assertEqual(payload["terms_acknowledgement"], "signatory_nomination")
 
+	def test_facility_rows_carry_the_register_facility_id_from_the_beginning(self):
+		with (
+			patch("crm.api.optin.get_pricing", return_value=self._pricing_result()),
+			patch("crm.api.optin._get_network_doc", return_value=frappe._dict()),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin.frappe.db.get_single_value", return_value="Tiberbu Healthnet"),
+			patch("crm.api.optin.facility_ids_by_mfl", return_value={"MFL-001": "FID-00-TEST-1"}),
+		):
+			payload = _prepare_submission_payload(
+				self._payload(), "token", "ivy@example.com", "network-a", 9999999999
+			)
+
+		self.assertEqual(payload["facilities"][0]["hfr_facility_id"], "FID-00-TEST-1")
+
+	def test_facility_rows_without_a_register_facility_id_are_left_blank(self):
+		with (
+			patch("crm.api.optin.get_pricing", return_value=self._pricing_result()),
+			patch("crm.api.optin._get_network_doc", return_value=frappe._dict()),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin.frappe.db.get_single_value", return_value="Tiberbu Healthnet"),
+			patch("crm.api.optin.facility_ids_by_mfl", return_value={}),
+		):
+			payload = _prepare_submission_payload(
+				self._payload(), "token", "ivy@example.com", "network-a", 9999999999
+			)
+
+		self.assertEqual(payload["facilities"][0]["hfr_facility_id"], "")
+
 	def test_selected_facility_supplier_is_preserved_in_canonical_pricing(self):
 		payload = self._prepare(
 			self._payload(facilities=[{"mfl_code": "MFL-001", "rebate_supplier": "SUP-001"}])

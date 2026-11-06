@@ -2331,10 +2331,16 @@ def lookup_hfr(mfl_code: Any):
 	from crm.api.hfr import search_facility
 
 	results = search_facility(mfl_code, search_by="mfl_code")
-	if not results:
+	# Never trust results[0]: use the hit whose MFL actually matches the input.
+	matched = [
+		r
+		for r in (results or [])
+		if frappe.utils.cstr(r.get("mfl_code")).strip().lower() == mfl_code.lower()
+	]
+	if not matched:
 		frappe.throw(_("Facility MFL %s not found in HFR") % mfl_code)
 
-	hit = results[0]
+	hit = matched[0]
 	keph_level_raw = frappe.utils.cstr(hit.get("level") or "").strip()
 	if keph_level_raw and not keph_level_raw.lower().startswith("level"):
 		keph_level = "Level %s" % keph_level_raw
@@ -2456,11 +2462,14 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 
 		# HFR enrichment if fields missing. It is safe in preview mode because
 		# it does not write; it also ensures the count matches what can import.
-		if not error and (not facility_name or not keph_level):
+		# Also run it when the row has no Facility ID, so a looked-up FID is kept
+		# instead of discarded (metering needs it on the deal row).
+		if not error and (not facility_name or not keph_level or not preview["hfr_facility_id"]):
 			try:
 				hfr = lookup_hfr(mfl_code)
 				facility_name = facility_name or hfr.get("facility_name") or ""
 				keph_level = keph_level or hfr.get("keph_level") or ""
+				preview["hfr_facility_id"] = preview["hfr_facility_id"] or hfr.get("hfr_facility_id") or ""
 			except Exception:
 				# A facility name remains mandatory, but an absent KEPH level
 				# has the established Level 3 fallback used by this importer.

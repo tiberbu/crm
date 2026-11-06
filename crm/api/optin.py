@@ -3939,13 +3939,15 @@ def _process_submission(submission_ref):
 			lead.tc_ip_address = payload.get("ip_address", "")
 
 			for fac in facilities:
+				facility_id = frappe.utils.cstr(fac.get("hfr_facility_id", "")).strip()
 				lead.append(
 					"facilities",
 					{
 						"mfl_code": frappe.utils.cstr(fac.get("mfl_code", "")),
 						"facility_name": frappe.utils.cstr(fac.get("facility_name", "")),
 						"facility_level": frappe.utils.cstr(fac.get("keph_level", "")),
-						"hfr_sync_status": "HFR Verified",
+						"hfr_facility_id": facility_id,
+						"hfr_sync_status": "HFR Verified" if facility_id else "",
 					},
 				)
 
