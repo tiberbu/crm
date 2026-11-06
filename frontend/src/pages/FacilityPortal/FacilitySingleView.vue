@@ -3,7 +3,16 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { call } from 'frappe-ui'
 import CxIcon from './components/CxIcon.vue'
 import TokenAlertCard from './components/TokenAlertCard.vue'
+import BillingJourney from './components/BillingJourney.vue'
+import PlanPanel from './components/PlanPanel.vue'
 import { tokenBalanceText } from '@/utils/tokenBalance'
+import {
+  balanceOrNextText,
+  canTopUp,
+  commercialOf,
+  rowFacilityMfls,
+  showsTokens,
+} from '@/utils/portalCommercial'
 
 const props = defineProps({
   facility: { type: Object, required: true },
@@ -17,6 +26,8 @@ const props = defineProps({
   getProvisioningStatus: { type: Function, default: null },
   // Order whose invoice is being generated, so its button can show progress.
   busyOrder: { type: String, default: '' },
+  // Records that belong to the account, not to this one facility (SPEC 8 notice).
+  accountLevelCount: { type: Number, default: 0 },
   // The owner's low-token email alert for this facility, if any.
   tokenAlert: { type: Object, default: null },
 })
@@ -410,7 +421,94 @@ const orderedPackage = computed(() => {
 const amountDueNote = computed(() => {
   if (draftOrders.value.length) return `${draftOrders.value.length} ${draftOrders.value.length === 1 ? 'order' : 'orders'} to review before invoicing`
   const count = props.invoices.filter((invoice) => Number(invoice.amount) > 0).length
-  return count ? `${count} outstanding ${count === 1 ? 'invoice' : 'invoices'}` : 'Nothing outstanding'
+  const base = count ? `${count} outstanding ${count === 1 ? 'invoice' : 'invoices'}` : 'Nothing outstanding'
+  const shared = props.invoices.some(
+    (invoice) => Number(invoice.amount) > 0 && rowFacilityMfls(invoice).length > 1,
+  )
+  return shared ? `${base} · Includes invoices shared with other facilities` : base
+})
+
+// The server's commercial projection drives every plan-aware surface (SPEC 5.3/5.5).
+const commercial = computed(() => commercialOf(props.facility))
+const tokens = computed(() => showsTokens(props.facility))
+const topUp = computed(() => canTopUp(props.facility))
+
+const summaryCards = computed(() => {
+  const cards = []
+  if (tokens.value) {
+    cards.push({
+      testid: 'facility-available-tokens',
+      label: 'Available tokens',
+      value: liveBalanceText.value,
+      note: liveBalanceNote.value,
+      valueClass: 'text-cx-brand',
+      icon: 'coins',
+    })
+    cards.push({
+      testid: 'facility-current-package',
+      label: 'Current package',
+      value: props.facility.token_package || orderedPackage.value || 'None yet',
+      note: props.facility.token_package
+        ? props.facility.token_quantity
+          ? `${Number(props.facility.token_quantity).toLocaleString()} Care Tokens per package`
+          : 'Active package'
+        : orderedPackage.value
+          ? 'Ordered · tokens are added once paid'
+          : 'Choose a package to get started',
+      valueClass: 'text-cx-ink',
+      icon: null,
+    })
+  } else if (commercial.value.plan_type === 'time_bound') {
+    cards.push({
+      testid: 'facility-plan-card',
+      label: 'Plan',
+      value: commercial.value.plan.name || 'Not set up yet',
+      note: commercial.value.plan.cycle_label || commercial.value.journey_label || '',
+      valueClass: 'text-cx-ink',
+      icon: 'file-text',
+    })
+    cards.push({
+      testid: 'facility-next-invoice',
+      label: 'Next invoice',
+      value: balanceOrNextText(props.facility),
+      note: commercial.value.plan.next_invoice?.label || '',
+      valueClass: 'text-cx-ink',
+      icon: 'receipt',
+    })
+  } else {
+    cards.push({
+      testid: 'facility-plan-card',
+      label: 'Plan',
+      value: 'Not set up yet',
+      note: topUp.value ? 'Choose a plan below' : '',
+      valueClass: 'text-cx-ink',
+      icon: 'file-text',
+    })
+  }
+  cards.push({
+    testid: 'facility-amount-due',
+    label: 'Amount to pay',
+    value: money(amountDue.value),
+    note: amountDueNote.value,
+    noteClass: draftOrders.value.length ? 'font-semibold text-cx-warning-ink' : 'text-cx-ink-2',
+    valueClass: 'text-cx-ink',
+    icon: null,
+  })
+  if (props.facility.network) {
+    cards.push({
+      testid: 'facility-partner-card',
+      label: 'Partner',
+      value: props.facility.network,
+      note: 'Your onboarding partner',
+      valueClass: 'text-cx-ink',
+      icon: 'globe',
+    })
+  }
+  return cards
+})
+const summaryGridClass = computed(() => {
+  const count = Math.min(summaryCards.value.length, 4)
+  return { 2: 'xl:grid-cols-2', 3: 'xl:grid-cols-3', 4: 'xl:grid-cols-4' }[count] || 'xl:grid-cols-3'
 })
 
 function packageName(itemCode) {
@@ -445,10 +543,6 @@ const billingAddressLines = computed(() => {
   if (!address) return []
   return [address.address_line1, address.address_line2, [address.city, address.state].filter(Boolean).join(', '), address.country].filter(Boolean)
 })
-
-function invoiceStatus(invoice) {
-  return invoice.status || 'Outstanding'
-}
 
 function pendingPaymentForInvoice(invoice) {
   return props.payments.find((payment) => {
@@ -493,37 +587,54 @@ function reviewInvoice() {
         <button type="button" class="inline-flex items-center gap-2 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2.5 text-xs font-semibold text-cx-ink-2 shadow-sm transition hover:bg-cx-well" @click="emit('open-support', facility)">
           <CxIcon name="chat" class="size-4" /> Network support
         </button>
-        <button type="button" class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong" @click="emit('open-top-up', facility, 'paid')">
+        <button
+          v-if="tokens"
+          type="button"
+          class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong"
+          @click="emit('open-top-up', facility, 'paid')"
+        >
           Top up tokens
+        </button>
+        <button
+          v-else-if="topUp"
+          type="button"
+          class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong"
+          @click="emit('open-top-up', facility, 'paid')"
+        >
+          Choose a plan
         </button>
       </div>
     </div>
 
-    <!-- Summary: the same card style as the sections below, one height per row -->
-    <div class="grid gap-4 sm:grid-cols-2" :class="facility.network ? 'xl:grid-cols-4' : 'xl:grid-cols-3'" data-testid="facility-summary">
-      <article data-testid="facility-available-tokens" class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
-        <p class="flex items-center gap-1.5 text-xs font-semibold text-cx-ink-3"><CxIcon name="coins" class="size-4" /> Available tokens</p>
-        <p data-testid="facility-available-tokens-value" class="mt-2 text-3xl font-semibold tracking-tight text-cx-brand">{{ liveBalanceText }}</p>
-        <p class="mt-auto pt-1 text-xs text-cx-ink-2">{{ liveBalanceNote }}</p>
-      </article>
-      <article data-testid="facility-current-package" class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
-        <p class="text-xs font-semibold text-cx-ink-3">Current package</p>
-        <p class="mt-2 line-clamp-2 break-words text-2xl font-semibold leading-snug tracking-tight text-cx-ink" :title="facility.token_package || orderedPackage || ''">{{ facility.token_package || orderedPackage || 'None yet' }}</p>
-        <p class="mt-auto pt-1 text-xs text-cx-ink-2">{{ facility.token_package ? (facility.token_quantity ? `${Number(facility.token_quantity).toLocaleString()} Care Tokens per package` : 'Active package') : orderedPackage ? 'Ordered · tokens are added once paid' : 'Choose a package to get started' }}</p>
-      </article>
-      <article data-testid="facility-amount-due" class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
-        <p class="text-xs font-semibold text-cx-ink-3">Amount to pay</p>
-        <p class="mt-2 text-3xl font-semibold tracking-tight text-cx-ink">{{ money(amountDue) }}</p>
-        <p class="mt-auto pt-1 text-xs" :class="draftOrders.length ? 'font-semibold text-cx-warning-ink' : 'text-cx-ink-2'">{{ amountDueNote }}</p>
-      </article>
-      <article v-if="facility.network" data-testid="facility-partner-card" class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
-        <p class="flex items-center gap-1.5 text-xs font-semibold text-cx-ink-3"><CxIcon name="globe" class="size-4" /> Partner</p>
-        <p class="mt-2 line-clamp-2 break-words text-2xl font-semibold leading-snug tracking-tight text-cx-ink" :title="facility.network">{{ facility.network }}</p>
-        <p class="mt-auto pt-1 text-xs text-cx-ink-2">Your onboarding partner</p>
+    <!-- Summary: plan-aware cards per the journey-by-plan matrix (SPEC 6) -->
+    <div class="grid gap-4 sm:grid-cols-2" :class="summaryGridClass" data-testid="facility-summary">
+      <article
+        v-for="card in summaryCards"
+        :key="card.testid"
+        :data-testid="card.testid"
+        class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx"
+      >
+        <p class="flex items-center gap-1.5 text-xs font-semibold text-cx-ink-3">
+          <CxIcon v-if="card.icon" :name="card.icon" class="size-4" /> {{ card.label }}
+        </p>
+        <p
+          :data-testid="`${card.testid}-value`"
+          class="mt-2 line-clamp-2 break-words text-3xl font-semibold tracking-tight sm:text-2xl"
+          :class="card.valueClass"
+          :title="card.value"
+        >{{ card.value }}</p>
+        <p v-if="card.note" class="mt-auto pt-1 text-xs" :class="card.noteClass || 'text-cx-ink-2'">{{ card.note }}</p>
       </article>
     </div>
 
-    <TokenAlertCard :facility="facility" :alert="tokenAlert" @saved="emit('token-alert-saved', $event)" />
+    <PlanPanel
+      :facility="facility"
+      :default-currency="defaultCurrency"
+      @open-top-up="(target, mode) => emit('open-top-up', target, mode)"
+      @open-support="emit('open-support', facility)"
+    />
+
+    <TokenAlertCard v-if="tokens" :facility="facility" :alert="tokenAlert" @saved="emit('token-alert-saved', $event)" />
 
     <section class="overflow-hidden rounded-cx border border-cx-border bg-cx-surface shadow-cx">
       <div class="border-b border-cx-border-soft bg-gradient-to-br from-cx-surface via-cx-surface to-cx-well/70 p-5 sm:p-7">
@@ -674,55 +785,7 @@ function reviewInvoice() {
         </span>
       </div>
 
-      <section class="cx-glass-panel mx-4 my-5 overflow-hidden rounded-cx border border-white/70 bg-cx-surface shadow-cx sm:mx-6 sm:my-6 sm:backdrop-blur-xl">
-        <header class="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-6">
-          <div>
-            <p class="text-xs font-semibold text-cx-ink-3">Health Facility Registry</p>
-            <h3 class="mt-1 text-lg font-semibold text-cx-ink">Facility profile</h3>
-          </div>
-          <div class="flex items-center gap-2">
-            <span v-if="facility.hfr_sync_status" class="inline-flex items-center gap-1.5 rounded-full border border-cx-border-soft bg-cx-surface px-2.5 py-1 text-[11px] font-medium text-cx-ink-2">
-              <span class="size-1.5 rounded-full" :class="facility.hfr_sync_status === 'HFR Verified' ? 'bg-cx-success-ink' : 'bg-cx-warning-ink'" />
-              {{ facility.hfr_sync_status }}
-            </span>
-            <span v-if="facility.hfr_last_synced" class="text-xs text-cx-ink-2">Synced {{ facility.hfr_last_synced }}</span>
-          </div>
-        </header>
-
-        <div class="grid gap-px border-y border-white/60 bg-cx-border-soft/70 sm:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.6fr)]">
-          <div class="bg-cx-brand-soft/45 px-4 py-4 sm:px-6 sm:py-5">
-            <p class="text-xs font-semibold text-cx-ink-3">Facility ID</p>
-            <p v-if="deploymentFid" class="mt-1.5 break-all font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ deploymentFid }}</p>
-            <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to the Health Facility Registry yet</p>
-          </div>
-          <div class="bg-cx-surface px-4 py-4 sm:px-6 sm:py-5">
-            <p class="text-xs font-semibold text-cx-ink-3">MFL code</p>
-            <p class="mt-1.5 font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ facility.mfl_code || '—' }}</p>
-          </div>
-        </div>
-
-        <div class="grid sm:grid-cols-2 xl:grid-cols-4">
-          <section v-for="(group, index) in hfrProfileGroups" :key="group.title" class="min-w-0 px-4 py-4 sm:px-5 sm:py-5" :class="index ? 'border-t border-cx-border-soft sm:border-l xl:border-t-0' : ''">
-            <h4 class="mb-2 text-xs font-semibold text-cx-ink-3">{{ group.title }}</h4>
-            <dl v-if="group.items.length" class="divide-y divide-cx-border-soft/80">
-              <div v-for="item in group.items" :key="item.label" class="flex items-start justify-between gap-3 py-2 first:pt-1 last:pb-1">
-                <dt class="text-xs leading-relaxed text-cx-ink-3">{{ item.label }}</dt>
-                <dd class="max-w-[60%] break-words text-right text-xs font-medium leading-relaxed text-cx-ink">{{ item.value }}</dd>
-              </div>
-            </dl>
-            <p v-else class="text-xs leading-relaxed text-cx-ink-2">No details recorded</p>
-          </section>
-        </div>
-        <div v-if="!deploymentFid || (facility.hfr_sync_status && facility.hfr_sync_status !== 'HFR Verified')" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6">
-          <p class="text-xs leading-relaxed text-cx-warning-ink">
-            {{ !deploymentFid ? 'A verified HFR FID is required for deployment status and setup.' : `FID ${deploymentFid} is saved, but this profile has not been verified against the Health Facility Registry.` }}
-          </p>
-          <button type="button" class="text-xs font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
-        </div>
-      </section>
-
-
-      <section v-if="!goLiveReady" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
+      <section v-if="!goLiveReady && tokens" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="max-w-2xl">
             <div class="flex flex-wrap items-center gap-2">
@@ -772,88 +835,53 @@ function reviewInvoice() {
         </div>
       </section>
 
+      <section v-else-if="!goLiveReady && commercial.plan_type === 'unknown' && topUp" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
+        <div class="max-w-2xl">
+          <h3 class="text-lg font-semibold text-cx-ink">Go-live plan</h3>
+          <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">Choose a plan for this facility to continue.</p>
+          <button
+            v-if="freePackages.length || paidPackages.length"
+            type="button"
+            class="mt-3 rounded-cx-sm bg-cx-brand px-3.5 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-brand-strong"
+            @click="emit('open-top-up', facility, 'paid')"
+          >
+            Choose a plan
+          </button>
+          <button
+            v-else
+            type="button"
+            class="mt-3 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-xs font-semibold text-cx-ink-2"
+            @click="emit('open-support', facility)"
+          >
+            Ask Network Support
+          </button>
+        </div>
+      </section>
+
       <div class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-well px-4 py-3 sm:px-6">
-        <p class="text-xs text-cx-ink-2">Need help with go-live or token allocation?</p>
+        <p class="text-xs text-cx-ink-2">{{ tokens ? 'Need help with go-live or token allocation?' : 'Need help with go-live?' }}</p>
         <button type="button" class="inline-flex items-center gap-1.5 text-xs font-semibold text-cx-brand hover:underline" @click="emit('open-support', facility)">
           Contact Network Support <CxIcon name="chevron-right" class="size-3.5" />
         </button>
       </div>
     </section>
 
-    <div class="grid gap-5 xl:grid-cols-2">
-      <section id="facility-invoices" class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
-        <div class="mb-4 flex items-center justify-between"><h2 class="text-lg font-semibold text-cx-ink">Invoices</h2><span class="rounded-full bg-cx-well px-2.5 py-1 text-[11px] font-semibold text-cx-ink-2">{{ invoices.length }}</span></div>
-        <div v-if="!invoices.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">No outstanding invoices are linked to this facility.</div>
-        <div v-else class="divide-y divide-cx-border-soft">
-          <div v-for="invoice in invoices" :key="invoice.name" class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0">
-            <div>
-              <p class="text-xs font-semibold text-cx-ink">{{ invoice.invoice_number || invoice.name }}</p>
-              <p class="mt-1 text-xs text-cx-ink-2">Due {{ invoice.due_date || 'on receipt' }} · {{ pendingPaymentForInvoice(invoice) ? 'Payment verification pending' : invoiceStatus(invoice) }}</p>
-              <p v-if="pendingPaymentForInvoice(invoice)" class="mt-1 text-xs font-semibold text-cx-warning-ink">
-                M-Pesa report {{ pendingPaymentForInvoice(invoice).reference_no || pendingPaymentForInvoice(invoice).name }} is awaiting verification. Please wait before paying again.
-              </p>
-            </div>
-            <div class="flex items-center gap-3">
-              <strong class="text-sm text-cx-ink">{{ money(invoice.amount, invoice.currency) }}</strong>
-              <button v-if="Number(invoice.amount) > 0 && !pendingPaymentForInvoice(invoice)" type="button" class="rounded-cx-sm bg-cx-success px-3 py-1.5 text-xs font-semibold text-cx-contrast" @click="emit('pay', invoice)">Choose payment</button>
-              <span v-else-if="pendingPaymentForInvoice(invoice)" class="text-xs font-semibold text-cx-warning-ink">Verification pending</span>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx">
-        <div class="mb-4 flex items-center justify-between"><h2 class="text-lg font-semibold text-cx-ink">Payment history</h2><span class="rounded-full bg-cx-well px-2.5 py-1 text-[11px] font-semibold text-cx-ink-2">{{ payments.length }}</span></div>
-        <div v-if="!payments.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">No payments have been matched to this facility’s invoices.</div>
-        <div v-else class="divide-y divide-cx-border-soft">
-          <div v-for="payment in payments" :key="`${payment.name}-${payment.invoice || ''}`" class="flex items-center justify-between gap-3 py-3 first:pt-0">
-            <div>
-              <p class="text-xs font-semibold text-cx-ink">{{ payment.mode_of_payment }} · {{ payment.reference_no || payment.name }}</p>
-              <p class="mt-1 text-xs text-cx-ink-2">{{ payment.posting_date }}<span v-if="payment.invoice"> · Invoice {{ payment.invoice }}</span></p>
-              <span class="mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold" :class="payment.status === 'Pending Verification' ? 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink' : 'border-cx-success-border bg-cx-success-soft text-cx-success-ink'">{{ payment.status || 'Recorded' }}</span>
-            </div>
-            <strong class="shrink-0 text-sm text-cx-ink">{{ money(payment.amount) }}</strong>
-          </div>
-        </div>
-      </section>
-      <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx xl:col-span-2">
-        <div class="mb-4 flex items-center justify-between"><h2 class="text-lg font-semibold text-cx-ink">Token orders</h2><span class="rounded-full bg-cx-well px-2.5 py-1 text-[11px] font-semibold text-cx-ink-2">{{ orders.length }}</span></div>
-        <div v-if="!orders.length" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">No open orders are linked to this facility.</div>
-        <div v-else class="grid gap-3 sm:grid-cols-2">
-          <article v-for="order in orders" :key="order.name" class="flex flex-col gap-3 rounded-cx-sm border p-4" :class="order.is_draft ? 'border-cx-warning-border bg-cx-warning-soft/30' : 'border-cx-border-soft'" :data-testid="`facility-order-${order.name}`">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-sm font-semibold text-cx-ink">{{ packageName(order.crm_token_package_item) }}</p>
-                <p class="mt-1 text-xs text-cx-ink-2">Order {{ order.name }} · {{ order.transaction_date }}</p>
-              </div>
-              <span v-if="order.is_draft" class="shrink-0 rounded-full border border-cx-warning-border bg-cx-warning-soft px-2 py-0.5 text-[11px] font-semibold text-cx-warning-ink">Needs review</span>
-              <span v-else class="shrink-0 rounded-full border border-cx-border bg-cx-well px-2 py-0.5 text-[11px] font-semibold text-cx-ink-2">{{ order.status }}</span>
-            </div>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <strong class="text-sm text-cx-ink">{{ money(order.grand_total, order.currency) }}</strong>
-              <button
-                v-if="order.is_draft"
-                type="button"
-                class="rounded-cx-sm bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong"
-                :data-testid="`facility-review-order-${order.name}`"
-                @click="emit('review-order', order)"
-              >
-                Review order and pay
-              </button>
-              <button
-                v-else-if="order.can_create_invoice"
-                type="button"
-                class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover disabled:opacity-60"
-                :disabled="busyOrder === order.name"
-                @click="emit('create-invoice', order)"
-              >
-                {{ busyOrder === order.name ? 'Generating…' : 'Generate invoice' }}
-              </button>
-            </div>
-            <p v-if="order.is_draft" class="text-xs leading-relaxed text-cx-ink-2">Confirm your billing details to raise the invoice, then pay by M-Pesa or card. Tokens are added once payment is received.</p>
-          </article>
-        </div>
-      </section>
-      <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx xl:col-span-2" data-testid="facility-billing">
+    <BillingJourney
+      :facility="facility"
+      :orders="orders"
+      :invoices="invoices"
+      :payments="payments"
+      :busy-order="busyOrder"
+      :account-level-count="accountLevelCount"
+      :default-currency="defaultCurrency"
+      :token-packages="tokenPackages"
+      @review-order="emit('review-order', $event)"
+      @create-invoice="emit('create-invoice', $event)"
+      @pay="emit('pay', $event)"
+      @open-billing="emit('open-billing')"
+    />
+
+    <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx" data-testid="facility-billing">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 class="text-lg font-semibold text-cx-ink">Billing information</h2>
           <button type="button" class="inline-flex items-center gap-1 text-xs font-semibold text-cx-brand hover:underline" @click="emit('open-billing')">
@@ -885,8 +913,54 @@ function reviewInvoice() {
             <dd v-else class="mt-1 text-sm text-cx-ink-2">Added when you review your first order</dd>
           </div>
         </dl>
-      </section>
-    </div>
+    </section>
+
+    <section class="cx-glass-panel mx-4 my-5 overflow-hidden rounded-cx border border-white/70 bg-cx-surface shadow-cx sm:mx-6 sm:my-6 sm:backdrop-blur-xl" data-testid="facility-profile">
+      <header class="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-6">
+        <div>
+          <p class="text-xs font-semibold text-cx-ink-3">Health Facility Registry</p>
+          <h3 class="mt-1 text-lg font-semibold text-cx-ink">Facility profile</h3>
+        </div>
+        <div class="flex items-center gap-2">
+          <span v-if="facility.hfr_sync_status" class="inline-flex items-center gap-1.5 rounded-full border border-cx-border-soft bg-cx-surface px-2.5 py-1 text-[11px] font-medium text-cx-ink-2">
+            <span class="size-1.5 rounded-full" :class="facility.hfr_sync_status === 'HFR Verified' ? 'bg-cx-success-ink' : 'bg-cx-warning-ink'" />
+            {{ facility.hfr_sync_status }}
+          </span>
+          <span v-if="facility.hfr_last_synced" class="text-xs text-cx-ink-2">Synced {{ facility.hfr_last_synced }}</span>
+        </div>
+      </header>
+
+      <div class="grid gap-px border-y border-white/60 bg-cx-border-soft/70 sm:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.6fr)]">
+        <div class="bg-cx-brand-soft/45 px-4 py-4 sm:px-6 sm:py-5">
+          <p class="text-xs font-semibold text-cx-ink-3">Facility ID</p>
+          <p v-if="deploymentFid" class="mt-1.5 break-all font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ deploymentFid }}</p>
+          <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to the Health Facility Registry yet</p>
+        </div>
+        <div class="bg-cx-surface px-4 py-4 sm:px-6 sm:py-5">
+          <p class="text-xs font-semibold text-cx-ink-3">MFL code</p>
+          <p class="mt-1.5 font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ facility.mfl_code || '—' }}</p>
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-2 xl:grid-cols-4">
+        <div v-for="(group, index) in hfrProfileGroups" :key="group.title" class="min-w-0 px-4 py-4 sm:px-5 sm:py-5" :class="index ? 'border-t border-cx-border-soft sm:border-l xl:border-t-0' : ''">
+          <h4 class="mb-2 text-xs font-semibold text-cx-ink-3">{{ group.title }}</h4>
+          <dl v-if="group.items.length" class="divide-y divide-cx-border-soft/80">
+            <div v-for="item in group.items" :key="item.label" class="flex items-start justify-between gap-3 py-2 first:pt-1 last:pb-1">
+              <dt class="text-xs leading-relaxed text-cx-ink-3">{{ item.label }}</dt>
+              <dd class="max-w-[60%] break-words text-right text-xs font-medium leading-relaxed text-cx-ink">{{ item.value }}</dd>
+            </div>
+          </dl>
+          <p v-else class="text-xs leading-relaxed text-cx-ink-2">No details recorded</p>
+        </div>
+      </div>
+      <div v-if="!deploymentFid || (facility.hfr_sync_status && facility.hfr_sync_status !== 'HFR Verified')" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6">
+        <p class="text-xs leading-relaxed text-cx-warning-ink">
+          {{ !deploymentFid ? 'A verified HFR FID is required for deployment status and setup.' : `FID ${deploymentFid} is saved, but this profile has not been verified against the Health Facility Registry.` }}
+        </p>
+        <button type="button" class="text-xs font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
+      </div>
+    </section>
 
     <div v-if="revealConfirmOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation" tabindex="-1" @click.self="revealConfirmOpen = false" @keydown.esc="revealConfirmOpen = false">
       <section role="dialog" aria-modal="true" aria-labelledby="hmis-reveal-confirm-title" class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl" data-testid="hmis-reveal-confirm">

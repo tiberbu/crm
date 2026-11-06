@@ -1760,6 +1760,7 @@ onUnmounted(() => {
             :ensure-provisioning-draft="ensureProvisioningDraft"
             :get-provisioning-status="getProvisioningStatus"
             :busy-order="busyId"
+            :account-level-count="drawerAccountLevelCount"
             :token-alert="tokenAlerts[drawerFacility.mfl_code] || null"
             @back="closeFacilityDrawer"
             @open-top-up="openTopUpModal"
