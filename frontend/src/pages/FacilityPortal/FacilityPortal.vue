@@ -22,12 +22,23 @@ import {
 } from '@/utils/portalOrderState'
 import {
   accountLevelRows,
+  balanceOrNextLabel,
+  balanceOrNextText,
+  canTopUp,
   commercialOf,
   dedupeByName,
   facilityPayments,
+  facilityPlanText,
+  formatDate,
   mergeFacilityInvoices,
   mergeFacilityOrders,
+  orderStatus,
+  orderTitle,
+  portfolioColumnLabel,
+  portfolioPlanSummary,
+  rowFacilityMfls,
   rowsForFacility,
+  showsTokens,
 } from '@/utils/portalCommercial'
 
 function __(text, args) {
@@ -503,6 +514,18 @@ function pendingPaymentForInvoice(invoice) {
   }) || null
 }
 
+// One facility with its Facility ID, the shared-document count, or account-level (SPEC 8).
+function docFacilityText(row) {
+  const mfls = rowFacilityMfls(row)
+  if (!mfls.length) return 'Account-level'
+  if (mfls.length > 1) return `Covers ${mfls.length} facilities`
+  const match = allFacilities.value.find(
+    (facility) => String(facility.mfl_code || '').toLowerCase() === String(mfls[0]).toLowerCase(),
+  )
+  if (!match) return mfls[0]
+  return `${match.facility_name} · ${facilityId(match) || 'Not linked yet'}`
+}
+
 // Selected Facility — never falls back to the first facility; an empty
 // selection means "not chosen yet" and the Top Up modal shows a picker.
 const selectedFacility = computed(() => {
@@ -567,11 +590,9 @@ function closeNetworkSupportDrawer() {
 const drawerInvoices = computed(() => mergeFacilityInvoices(drawerFacility.value, allInvoices.value))
 const drawerOrders = computed(() => mergeFacilityOrders(drawerFacility.value, allOrders.value))
 const drawerPayments = computed(() => facilityPayments(drawerFacility.value, allPayments.value, drawerInvoices.value))
+// Unified records that belong to the account, not to this one facility (SPEC 8 notice).
 const drawerAccountLevelCount = computed(
-  () =>
-    accountLevelRows(drawerOrders.value).length +
-    accountLevelRows(drawerInvoices.value).length +
-    accountLevelRows(drawerPayments.value).length,
+  () => accountLevelRows(allOrders.value).length + accountLevelRows(allInvoices.value).length,
 )
 function invoiceForFacility(facility) {
   const invoiceName = facility.invoice_summary?.invoice_name
@@ -640,7 +661,30 @@ function availableTokens(facility) {
 
 const anyBalanceKnown = computed(() => allFacilities.value.some((fac) => tokenBalance(fac).known))
 const totalTokenCount = computed(() =>
-  allFacilities.value.reduce((sum, fac) => sum + availableTokens(fac), 0),
+  allFacilities.value
+    .filter((fac) => showsTokens(fac))
+    .reduce((sum, fac) => sum + availableTokens(fac), 0),
+)
+const planFacilitiesCount = computed(() =>
+  allFacilities.value.filter((fac) => commercialOf(fac).plan_type === 'time_bound').length,
+)
+const anyFacilityOnTokens = computed(() => allFacilities.value.some((fac) => showsTokens(fac)))
+const anyCanTopUp = computed(() => allFacilities.value.some((fac) => canTopUp(fac)))
+const portfolioNextInvoice = computed(() => portfolioPlanSummary(allFacilities.value).nextInvoice)
+const yourPlans = computed(() =>
+  allFacilities.value
+    .filter((fac) => commercialOf(fac).plan_type === 'time_bound')
+    .map((fac) => {
+      const commercial = commercialOf(fac)
+      return {
+        mfl_code: fac.mfl_code,
+        name: fac.facility_name,
+        facility_id: facilityId(fac),
+        plan: commercial.plan.name,
+        cycle: commercial.plan.cycle_label || '',
+        next_invoice: commercial.plan.next_invoice ? balanceOrNextText(fac) : 'Not scheduled',
+      }
+    }),
 )
 const liveFacilitiesCount = computed(
   () => allFacilities.value.filter((f) => f.go_live).length,
@@ -672,7 +716,7 @@ const dashboardAttention = computed(() => {
       key: `inv-${inv.name}`,
       icon: 'credit-card',
       text: `Invoice ${inv.invoice_number || inv.name} — ${money(inv.amount, inv.currency)} ${status.key === 'overdue' ? 'overdue' : 'due'}`,
-      meta: `Facility: ${facility?.facility_name || facilityLabel(inv.crm_token_facility_mfl, allFacilities.value)}`,
+      meta: docFacilityText(inv),
       mfl_code: facility?.mfl_code || '',
     })
   }
@@ -696,8 +740,8 @@ const recentActivity = computed(() => {
     if (!order.transaction_date) continue
     items.push({
       kind: 'order',
-      icon: 'coins',
-      title: packageLabel(order.crm_token_package_item, context.value.token_packages || []),
+      icon: order.doc_kind === 'token' ? 'coins' : 'receipt',
+      title: orderTitle(order, context.value.token_packages || []),
       text: `Order ${order.name} · ${money(order.grand_total, order.currency)}`,
       date: order.transaction_date,
     })
@@ -725,6 +769,7 @@ const optinRequests = computed(() => {
       signatory: ois.facility_signatory_name || '',
       source: ois.onboarding_source || '',
       contract: ois.contract || '',
+      plan_name: ois.progress?.facilities?.[0]?.commercial?.plan?.name || '',
       facilities: (ois.progress?.facilities || []).map((f) => ({
         name: f.facility_name,
         mfl_code: f.mfl_code,
@@ -1281,6 +1326,7 @@ async function confirmOrderReview() {
         postal_code: form.postal_code,
       })
     }
+    const isTokenOrder = Number(orderReview.value.package_tokens || 0) > 0
     const data = unwrap(await call('crm.api.customer_experience.confirm_draft_order', params))
     orderReviewOpen.value = false
     await refreshContext()
@@ -1288,7 +1334,9 @@ async function confirmOrderReview() {
     if (activeView.value !== 'facility_detail') activeView.value = 'billing'
     notice.value = {
       tone: 'success',
-      text: `Order ${data.sales_order} confirmed and invoice ${data.invoice} generated. Pay it below; your tokens are added once payment is received.`,
+      text:
+        `Order ${data.sales_order} confirmed and invoice ${data.invoice} generated.` +
+        (isTokenOrder ? ' Your tokens are added once payment is confirmed.' : ''),
     }
   } catch (error) {
     orderReviewError.value = error?.messages?.[0] || 'We could not confirm this order.'
@@ -1937,7 +1985,7 @@ onUnmounted(() => {
                           <th class="py-3 px-4">Facility ID</th>
                           <th class="py-3 px-4">Go-live readiness</th>
                           <th class="py-3 px-4">Plan</th>
-                          <th class="py-3 px-4 text-right">Available tokens</th>
+                          <th class="py-3 px-4 text-right">{{ portfolioColumnLabel(allFacilities) }}</th>
                           <th class="py-3 px-4 text-right">Actions</th>
                         </tr>
                       </thead>
@@ -1994,7 +2042,7 @@ onUnmounted(() => {
                             </span>
                           </td>
                           <td class="min-w-[10rem] py-3.5 px-4 font-medium text-cx-ink-2">
-                            <span class="font-semibold text-cx-ink block">{{ facility.token_package || 'No active plan' }}</span>
+                            <span class="font-semibold text-cx-ink block">{{ facilityPlanText(facility).join(' · ') }}</span>
                             <span v-if="facility.recent_purchase" class="text-xs text-cx-ink-3 block mt-0.5">
                               {{ facility.recent_purchase.package_name }}: {{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} · {{ facility.recent_purchase.date }}
                             </span>
@@ -2002,7 +2050,7 @@ onUnmounted(() => {
                           <td class="py-3.5 px-4 text-right">
                             <span class="font-semibold text-sm inline-flex items-center gap-1 whitespace-nowrap" :class="tokenBalance(facility).known ? 'text-cx-brand' : 'text-cx-ink-3'">
                               <span v-if="tokenBalance(facility).known"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
-                              <span>{{ tokenBalanceText(facility) }}</span>
+                              <span>{{ balanceOrNextText(facility) }}</span>
                             </span>
                           </td>
                           <td class="py-3.5 px-4 text-right">
@@ -2045,7 +2093,7 @@ onUnmounted(() => {
                         <th class="py-3 px-4">Facility ID</th>
                         <th class="py-3 px-4">Go-live readiness</th>
                         <th class="py-3 px-4">Plan</th>
-                        <th class="py-3 px-4 text-right">Available tokens</th>
+                        <th class="py-3 px-4 text-right">{{ portfolioColumnLabel(allFacilities) }}</th>
                         <th class="py-3 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -2113,17 +2161,17 @@ onUnmounted(() => {
 
                         <!-- Plan & Recent Purchase -->
                         <td class="min-w-[10rem] py-3.5 px-4 font-medium text-cx-ink-2">
-                          <span class="font-semibold text-cx-ink block">{{ facility.token_package || 'No active plan' }}</span>
+                          <span class="font-semibold text-cx-ink block">{{ facilityPlanText(facility).join(' · ') }}</span>
                           <span v-if="facility.recent_purchase" class="text-xs text-cx-ink-3 block mt-0.5">
                             {{ facility.recent_purchase.package_name }}: {{ money(facility.recent_purchase.amount, facility.recent_purchase.currency) }} · {{ facility.recent_purchase.date }}
                           </span>
                         </td>
 
-                        <!-- Tokens -->
+                        <!-- Balance or next invoice (plan-aware) -->
                         <td class="py-3.5 px-4 text-right">
                           <span class="font-semibold text-sm inline-flex items-center gap-1 whitespace-nowrap" :class="tokenBalance(facility).known ? 'text-cx-brand' : 'text-cx-ink-3'">
                             <span v-if="tokenBalance(facility).known"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
-                            <span>{{ tokenBalanceText(facility) }}</span>
+                            <span>{{ balanceOrNextText(facility) }}</span>
                           </span>
                         </td>
 
@@ -2229,9 +2277,9 @@ onUnmounted(() => {
             >
               <div class="min-w-0">
                 <p class="text-xs font-semibold text-cx-warning-ink">
-                  {{ draftOrders.length === 1 ? 'A token order is waiting for your review' : `${draftOrders.length} token orders are waiting for your review` }}
+                  {{ draftOrders.length === 1 ? 'An order is waiting for your review' : `${draftOrders.length} orders are waiting for your review` }}
                 </p>
-                <p class="mt-0.5 text-xs text-cx-ink-2">Confirm your billing details and generate the invoice. Your facility's tokens are added once the invoice is paid.</p>
+                <p class="mt-0.5 text-xs text-cx-ink-2">Confirm your billing details and generate the invoice.</p>
               </div>
               <button
                 type="button"
@@ -2302,7 +2350,7 @@ onUnmounted(() => {
 
             <!-- Top 3 Executive Metrics -->
             <div class="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr))]">
-              <div class="min-w-0 rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx space-y-3">
+              <div v-if="anyFacilityOnTokens" class="min-w-0 rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx space-y-3">
                 <span class="text-xs font-semibold text-cx-ink-3 block">Available tokens</span>
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1" data-testid="dashboard-total-tokens">
                   <template v-if="anyBalanceKnown">
@@ -2312,9 +2360,28 @@ onUnmounted(() => {
                   <span v-else class="text-2xl font-semibold text-cx-ink-3 tracking-tight leading-none">Not reported</span>
                 </div>
                 <p class="text-xs text-cx-ink-3 leading-relaxed">
-                  {{ anyBalanceKnown ? 'Combined live balance across your linked facilities.' : 'Live balances appear once your facilities are metered.' }}
+                  {{ !anyBalanceKnown
+                    ? 'Live balances appear once your facilities are metered.'
+                    : planFacilitiesCount > 0
+                      ? `Across ${allFacilities.filter((fac) => showsTokens(fac)).length} token facilities.`
+                      : 'Combined live balance across your linked facilities.' }}
                 </p>
-                <div class="pt-2 border-t border-cx-border-soft">
+                <div v-if="anyCanTopUp" class="pt-2 border-t border-cx-border-soft">
+                  <button type="button" class="text-xs font-semibold text-cx-brand hover:underline" @click="openTopUpModal()">
+                    + Add Care Tokens →
+                  </button>
+                </div>
+              </div>
+              <div v-else class="min-w-0 rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx space-y-3">
+                <span class="text-xs font-semibold text-cx-ink-3 block">Plans</span>
+                <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1" data-testid="dashboard-plans">
+                  <span class="text-4xl font-semibold text-cx-ink tracking-tight leading-none xl:text-5xl">{{ planFacilitiesCount }}</span>
+                  <span class="text-xs font-semibold text-cx-ink-3">{{ planFacilitiesCount === 1 ? 'facility on a plan' : 'facilities on a plan' }}</span>
+                </div>
+                <p class="text-xs text-cx-ink-3 leading-relaxed" data-testid="dashboard-next-invoice">
+                  {{ portfolioNextInvoice ? `Next invoice ${formatDate(portfolioNextInvoice.date)}` : 'No invoice scheduled' }}
+                </p>
+                <div v-if="anyCanTopUp" class="pt-2 border-t border-cx-border-soft">
                   <button type="button" class="text-xs font-semibold text-cx-brand hover:underline" @click="openTopUpModal()">
                     + Add Care Tokens →
                   </button>
@@ -2410,17 +2477,41 @@ onUnmounted(() => {
           <!-- ============================================================== -->
           <div v-if="activeView === 'pricing'" class="space-y-8">
             <div class="max-w-3xl">
-              <span class="inline-flex items-center gap-1.5 rounded-full border border-cx-brand-soft-border bg-cx-brand-soft px-3 py-0.5 text-xs font-semibold text-cx-brand-ink">
-                Consumption-Based HMIS Pricing
-              </span>
-              <h1 class="text-4xl font-semibold text-cx-ink tracking-tight mt-2 leading-tight">
-                CareVerse Token Plans & Capacity
-              </h1>
+              <h1 class="text-4xl font-semibold text-cx-ink tracking-tight leading-tight">Plans & Pricing</h1>
               <p class="text-sm text-cx-ink-3 mt-2 leading-relaxed">
-                Compare the current Care Token packages for your facility. Each package shows its price and the Care Tokens it buys; token use depends on your HMIS activity.
+                The plans you have committed to, and the token packages available to your facilities.
               </p>
             </div>
 
+            <section v-if="yourPlans.length" class="space-y-3" data-testid="your-plans">
+              <h2 class="text-lg font-semibold text-cx-ink">Your plans</h2>
+              <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <article
+                  v-for="plan in yourPlans"
+                  :key="plan.mfl_code"
+                  class="min-w-0 rounded-cx border border-cx-border bg-cx-surface p-4 shadow-cx"
+                >
+                  <p class="break-words text-sm font-semibold text-cx-ink">{{ plan.name }}</p>
+                  <p class="mt-0.5 font-mono text-xs text-cx-ink-3">{{ plan.facility_id || 'Not linked yet' }}</p>
+                  <dl class="mt-3 space-y-1.5 text-xs">
+                    <div class="flex items-baseline justify-between gap-3">
+                      <dt class="text-cx-ink-3">Plan</dt>
+                      <dd class="text-right font-semibold text-cx-ink">{{ plan.plan || 'Not set up yet' }}</dd>
+                    </div>
+                    <div v-if="plan.cycle" class="flex items-baseline justify-between gap-3">
+                      <dt class="text-cx-ink-3">Cycle</dt>
+                      <dd class="text-right font-semibold text-cx-ink">{{ plan.cycle }}</dd>
+                    </div>
+                    <div class="flex items-baseline justify-between gap-3">
+                      <dt class="text-cx-ink-3">Next invoice</dt>
+                      <dd class="text-right font-semibold text-cx-ink">{{ plan.next_invoice }}</dd>
+                    </div>
+                  </dl>
+                </article>
+              </div>
+            </section>
+
+            <template v-if="anyCanTopUp">
             <!-- Pricing cards: one column per package (up to four) so the row spans the page -->
             <div
               class="grid gap-6"
@@ -2493,6 +2584,7 @@ onUnmounted(() => {
             <div class="mt-8 rounded-cx border border-cx-border bg-cx-well p-4 text-xs text-cx-ink-3">
               Package names, prices, token quantities, and summaries above reflect the current catalog. Contact Network Support if you need a capability-by-capability comparison.
             </div>
+            </template>
           </div>
 
           <!-- ============================================================== -->
@@ -2501,7 +2593,51 @@ onUnmounted(() => {
           <div v-if="activeView === 'billing'" class="space-y-6">
             <div>
               <h1 class="text-4xl font-semibold text-cx-ink tracking-tight leading-tight">Billing & Invoices</h1>
-              <p class="text-xs text-cx-ink-3 mt-0.5">Review invoices and token orders. Pay by M-Pesa Paybill and submit the transaction code for verification, or use Paystack card checkout.</p>
+              <p class="text-xs text-cx-ink-3 mt-0.5">Review your orders and invoices. Pay by M-Pesa Paybill and submit the transaction code for verification, or use Paystack card checkout.</p>
+            </div>
+
+            <!-- Orders first, then invoices, then payment (SPEC 8 section order) -->
+            <div v-if="allOrders.length" class="space-y-3">
+              <h2 class="text-lg font-semibold text-cx-ink">Orders</h2>
+              <p class="text-xs text-cx-ink-3">Review a draft order, confirm your billing details and generate its invoice.</p>
+              <div class="space-y-3">
+                <article
+                  v-for="order in allOrders"
+                  :key="order.name"
+                  class="bg-cx-surface rounded-cx border border-cx-border p-4 shadow-cx flex flex-wrap items-center justify-between gap-3"
+                >
+                  <div class="min-w-0">
+                    <span class="break-words font-semibold text-xs text-cx-ink">{{ orderTitle(order, context.token_packages) }}</span>
+                    <span
+                      class="ml-2 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                      :class="order.is_draft ? 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink' : 'border-cx-border bg-cx-well text-cx-ink-2'"
+                    >
+                      {{ orderStatus(order) }}
+                    </span>
+                    <span class="ml-2 text-xs text-cx-ink-3">{{ docFacilityText(order) }} · Order #{{ order.name }}</span>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs font-semibold text-cx-ink">{{ money(order.grand_total, order.currency) }}</span>
+                    <button
+                      v-if="order.is_draft"
+                      type="button"
+                      :data-testid="`review-order-${order.name}`"
+                      class="rounded-cx-sm bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong transition cursor-pointer"
+                      @click="openOrderReview(order)"
+                    >
+                      Review order
+                    </button>
+                    <button
+                      v-if="order.can_create_invoice"
+                      type="button"
+                      class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition cursor-pointer"
+                      @click="createInvoice(order)"
+                    >
+                      Generate Invoice
+                    </button>
+                  </div>
+                </article>
+              </div>
             </div>
 
             <!-- M-Pesa Paybill settlement details -->
@@ -2585,8 +2721,7 @@ onUnmounted(() => {
                     </p>
                     <span class="inline-flex max-w-full items-center gap-1.5 rounded-cx-sm border border-cx-border bg-cx-well px-2 py-0.5 mt-1.5 text-[11px] font-semibold text-cx-ink-2">
                       <span class="shrink-0"><CxIcon name="hospital" class="inline-block size-4 align-[-0.15em]" /></span>
-                      <span class="min-w-0 truncate">{{ facilityLabel(invoice.crm_token_facility_mfl, allFacilities) }}</span>
-                      <span v-if="invoice.crm_token_facility_mfl" class="shrink-0 font-mono text-xs text-cx-ink-3">MFL {{ invoice.crm_token_facility_mfl }}</span>
+                      <span class="min-w-0 truncate">{{ docFacilityText(invoice) }}</span>
                     </span>
                   </div>
 
@@ -2611,45 +2746,6 @@ onUnmounted(() => {
                       @click="openMpesaModal(invoice)"
                     >
                       <span>{{ busyId === invoice.name ? 'Connecting…' : 'Choose payment method' }}</span>
-                    </button>
-                  </div>
-                </article>
-              </div>
-            </div>
-
-            <!-- Orders awaiting invoice -->
-            <div v-if="allOrders.length" class="space-y-3 pt-6 border-t border-cx-border">
-              <h2 class="text-lg font-semibold text-cx-ink">Token Orders</h2>
-              <p class="text-xs text-cx-ink-3">Review a draft order, confirm your billing details and generate its invoice. Tokens are added when the invoice is paid.</p>
-              <div class="space-y-3">
-                <article
-                  v-for="order in allOrders"
-                  :key="order.name"
-                  class="bg-cx-surface rounded-cx border border-cx-border p-4 shadow-cx flex items-center justify-between"
-                >
-                  <div>
-                    <span class="font-semibold text-xs text-cx-ink">{{ packageLabel(order.crm_token_package_item, context.token_packages) }}</span>
-                    <span v-if="order.is_draft" class="ml-2 rounded-full border border-cx-warning-border bg-cx-warning-soft px-2 py-0.5 text-[11px] font-semibold text-cx-warning-ink">Draft · needs review</span>
-                    <span class="text-xs text-cx-ink-3 ml-2">For {{ facilityLabel(order.crm_token_facility_mfl, allFacilities) }} · Order #{{ order.name }}</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs font-semibold text-cx-ink">{{ money(order.grand_total, order.currency) }}</span>
-                    <button
-                      v-if="order.is_draft"
-                      type="button"
-                      :data-testid="`review-order-${order.name}`"
-                      class="rounded-cx-sm bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-brand-strong transition cursor-pointer"
-                      @click="openOrderReview(order)"
-                    >
-                      Review order
-                    </button>
-                    <button
-                      v-if="order.can_create_invoice"
-                      type="button"
-                      class="rounded-cx-sm bg-cx-ink px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition cursor-pointer"
-                      @click="createInvoice(order)"
-                    >
-                      Generate Invoice
                     </button>
                   </div>
                 </article>
@@ -3368,7 +3464,7 @@ onUnmounted(() => {
             <legend class="block text-xs font-semibold text-cx-ink-2">Order type</legend>
             <div class="grid gap-2 sm:grid-cols-2">
               <label
-                v-for="option in [{ value: 'One-time', hint: 'Buy these tokens once.' }, { value: 'Recurring', hint: 'A new draft order is prepared for you each period.' }]"
+                v-for="option in [{ value: 'One-time', hint: 'Pay for this order once.' }, { value: 'Recurring', hint: 'A new draft order is prepared for you each period.' }]"
                 :key="option.value"
                 class="flex cursor-pointer items-start gap-2 rounded-cx-sm border p-3 text-xs"
                 :class="reviewForm.frequency === option.value ? 'border-cx-brand bg-cx-brand-soft' : 'border-cx-border bg-cx-surface'"
@@ -3660,7 +3756,7 @@ onUnmounted(() => {
             class="w-full rounded-cx-sm border border-cx-border px-3.5 py-2 text-xs font-medium text-cx-ink focus:outline-none focus:border-cx-brand"
           />
           <p class="text-xs text-cx-ink-3 mt-1">
-            Primary mobile number for SMS OTP security checks and token top-up confirmations.
+            Primary mobile number for SMS OTP security checks and billing confirmations.
           </p>
         </div>
 

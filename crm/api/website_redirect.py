@@ -290,9 +290,9 @@ def _self_onboarding_progress(submission, contacts, opted_in, all_live):
 	elif invoices:
 		next_action = {"key": "pay_invoice", "label": "Pay your open invoice when you are ready"}
 	elif orders:
-		next_action = {"key": "review_order", "label": "Create an invoice for your token order"}
+		next_action = {"key": "review_order", "label": "Create an invoice for your order"}
 	elif not quote_ready:
-		next_action = {"key": "order_preparing", "label": "Your token quote and order are being prepared"}
+		next_action = {"key": "order_preparing", "label": "Your quote and order are being prepared"}
 	else:
 		next_action = {"key": "implementation", "label": "Your implementation is in progress"}
 
@@ -304,7 +304,7 @@ def _self_onboarding_progress(submission, contacts, opted_in, all_live):
 			"label": "Self-Onboarding request submitted",
 			"status": "complete" if cstr(getattr(submission, "status", "")) == "Processed" else "current",
 		},
-		{"key": "package", "label": "Token package selected", "status": "complete" if package_selected else "upcoming"},
+		{"key": "package", "label": "Package selected", "status": "complete" if package_selected else "upcoming"},
 		{"key": "order", "label": "Quote and order ready", "status": "complete" if quote_ready else ("current" if package_selected else "upcoming")},
 		{
 			"key": "payment",
