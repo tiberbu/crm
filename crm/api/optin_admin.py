@@ -2435,12 +2435,18 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		for idx, raw_row in enumerate(reader, start=2)  # row 1 is header
 	]
 	rows = [(idx, row) for idx, row in rows if any(row.values())]
-	known_ids = facility_ids_by_mfl(row.get("mfl_code", "") for _, row in rows)
+	# The register matches MFL case-insensitively but returns its own casing, so
+	# fold both sides; a differently cased CSV MFL must still seed from the register.
+	known_ids = {
+		key.casefold(): value
+		for key, value in facility_ids_by_mfl(row.get("mfl_code", "") for _, row in rows).items()
+	}
 
 	# FID-only lookups (name and level already present) are best effort: a hung
 	# registry must not stall the whole import, so they share a cumulative time
-	# budget. Lookups needed for a missing name/level stay unbounded as before.
-	fid_lookup_deadline = time.monotonic() + _CSV_FID_LOOKUP_BUDGET_SECONDS
+	# budget. Only lookup time counts against it — time spent saving rows or in
+	# un-budgeted lookups does not.
+	fid_lookup_seconds = 0.0
 
 	errors = []
 	preview_rows = []
@@ -2458,7 +2464,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		preview = {
 			"row": idx,
 			"mfl_code": mfl_code,
-			"hfr_facility_id": row.get("hfr_facility_id", "") or known_ids.get(mfl_code, ""),
+			"hfr_facility_id": row.get("hfr_facility_id", "") or known_ids.get(mfl_code.casefold(), ""),
 			"facility_name": facility_name,
 			"organization": row.get("organization", ""),
 			"price_list_override": price_list_override,
@@ -2490,7 +2496,9 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		# but it is best effort under a time budget so a hung registry cannot stall
 		# the whole import; the row then simply stays "not linked yet".
 		if not error and (not facility_name or not keph_level or not preview["hfr_facility_id"]):
-			if not facility_name or not keph_level or time.monotonic() < fid_lookup_deadline:
+			fid_only = bool(facility_name and keph_level)
+			if not fid_only or fid_lookup_seconds < _CSV_FID_LOOKUP_BUDGET_SECONDS:
+				started = time.monotonic()
 				try:
 					hfr = lookup_hfr(mfl_code)
 					facility_name = facility_name or hfr.get("facility_name") or ""
@@ -2501,6 +2509,9 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 					# has the established Level 3 fallback used by this importer.
 					if not facility_name:
 						error = "facility_name could not be resolved (not in CSV and HFR lookup failed)"
+				finally:
+					if fid_only:
+						fid_lookup_seconds += time.monotonic() - started
 
 		organization = row.get("organization", "") or facility_name
 		preview.update({"facility_name": facility_name, "organization": organization})
