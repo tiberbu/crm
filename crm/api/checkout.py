@@ -18,7 +18,7 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate, nowdate
+from frappe.utils import cint, cstr, flt, getdate, nowdate
 from frappe.utils.synchronization import filelock
 
 from crm.api._email import (
@@ -163,7 +163,17 @@ def _invoice_fields() -> list[str]:
 		"outstanding_amount",
 		"currency",
 	]
-	for field in ("crm_optin_submission", "crm_deal", "optin_network", "crm_checkout_reference"):
+	for field in (
+		"crm_optin_submission",
+		"crm_deal",
+		"optin_network",
+		"crm_checkout_reference",
+		"crm_token_facility_mfl",
+		"crm_token_package_item",
+		"crm_optin_year",
+		"crm_optin_quarter",
+		"crm_optin_billing_key",
+	):
 		try:
 			if frappe.db.has_column("Sales Invoice", field):
 				fields.append(field)
@@ -182,6 +192,9 @@ def _invoice_rows(submission) -> list[dict]:
 		filters.append(["crm_deal", "=", submission.deal])
 	else:
 		return []
+	from crm.api.portal_commercial import enrich_invoices
+	from crm.api.website_redirect import _submission_facilities
+
 	rows = frappe.get_list(
 		"Sales Invoice",
 		filters=filters,
@@ -190,20 +203,18 @@ def _invoice_rows(submission) -> list[dict]:
 		limit_page_length=200,
 		ignore_permissions=True,
 	)
-	return [
-		{
-			"name": row.name,
-			"invoice_number": row.name,
-			"posting_date": str(row.posting_date or ""),
-			"due_date": str(row.due_date or ""),
-			"amount": float(row.outstanding_amount or 0),
-			"grand_total": float(row.grand_total or 0),
-			"currency": row.currency or "KES",
-			"status": "Outstanding",
-		}
-		for row in rows
-		if flt(row.outstanding_amount) > 0
-	]
+	ois_mfls_by_name = {
+		submission.name: [
+			cstr(snapshot.get("mfl_code")).strip()
+			for snapshot in _submission_facilities(submission)
+			if cstr(snapshot.get("mfl_code")).strip()
+		]
+	}
+	return enrich_invoices(
+		[row for row in rows if flt(row.outstanding_amount) > 0],
+		ois_mfls_by_name,
+		[],
+	)
 
 
 def _bank_details() -> dict:
