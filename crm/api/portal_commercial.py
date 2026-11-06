@@ -238,6 +238,49 @@ def _enrich_order_fields(rows, ois_mfls_by_name, account_mfls, packages, prevdoc
 	return rows
 
 
+# SPEC 11 allow-lists: only these fields may leave the server in portal/checkout
+# payloads (guest-reachable). Internal crm_optin_*/crm_deal/docstatus/etc. are used
+# to derive the public shape and then dropped.
+_ORDER_PUBLIC = (
+	"name",
+	"transaction_date",
+	"grand_total",
+	"currency",
+	"customer",
+	"facility_mfls",
+	"doc_kind",
+	"display_title",
+	"display_status",
+	"schedule_governed",
+	"period_label",
+	"quotation",
+	"is_draft",
+	"can_create_invoice",
+	"crm_token_facility_mfl",
+	"crm_token_package_item",
+)
+_INVOICE_PUBLIC = (
+	"name",
+	"invoice_number",
+	"posting_date",
+	"due_date",
+	"grand_total",
+	"amount",
+	"currency",
+	"status",
+	"customer",
+	"facility_mfls",
+	"doc_kind",
+	"period_label",
+	"sales_orders",
+	"crm_token_facility_mfl",
+)
+
+
+def _public_row(row: dict, keys) -> dict:
+	return {key: row[key] for key in keys if key in row}
+
+
 def enrich_orders(rows, ois_mfls_by_name, account_mfls, packages) -> list:
 	"""Add facility and display fields to customer/OIS order rows (SPEC 5.1)."""
 	if not rows:
@@ -248,7 +291,8 @@ def enrich_orders(rows, ois_mfls_by_name, account_mfls, packages) -> list:
 		row["_item_mfls"] = info["mfls"]
 		if not row.get("crm_optin_quotation") and info["prevdoc"]:
 			row["crm_optin_quotation"] = info["prevdoc"]
-	return _enrich_order_fields(rows, ois_mfls_by_name, account_mfls, packages, {})
+	enriched = _enrich_order_fields(rows, ois_mfls_by_name, account_mfls, packages, {})
+	return [_public_row(row, _ORDER_PUBLIC) for row in enriched]
 
 
 def _invoice_to_orders(invoice_names) -> dict:
@@ -303,7 +347,7 @@ def enrich_invoices(rows, ois_mfls_by_name, account_mfls) -> list:
 		row["period_label"] = period
 		row["sales_orders"] = invoice_to_orders.get(row.get("name"), [])
 		row.pop("crm_optin_billing_key", None)
-	return rows
+	return [_public_row(row, _INVOICE_PUBLIC) for row in rows]
 
 
 def _account_payment_rows(customer, invoices_by_name) -> list:
@@ -721,26 +765,38 @@ def _fill_fixed_plan(plan: dict, package_row, facility_orders, facility_invoices
 			end = add_days(add_months(getdate(start), value_express.period_months(cycle)), -1)
 			current_period = {"start": str(getdate(start)), "end": str(end)}
 	next_inv = None
-	latest_name = latest.get("name") if latest else None
-	if latest_name and frappe.db.exists("DocType", "Auto Repeat"):
+	# The Auto Repeat stays attached to the ORIGINAL order even after repeat orders
+	# exist, so match across every facility order, not just the newest. Auto Repeat is
+	# not submittable (no docstatus filter) and keys on ``reference_document``.
+	order_names = [cstr(o.get("name")) for o in (facility_orders or []) if cstr(o.get("name"))]
+	if order_names and frappe.db.exists("DocType", "Auto Repeat"):
 		try:
 			auto_repeats = frappe.get_all(
 				"Auto Repeat",
-				filters={"reference_doctype": "Sales Order", "reference_name": latest_name, "docstatus": 1},
-				fields=["next_schedule_date"],
+				filters={
+					"reference_doctype": "Sales Order",
+					"reference_document": ["in", order_names],
+				},
+				fields=["reference_document", "next_schedule_date"],
 				order_by="creation desc",
-				limit_page_length=1,
 				ignore_permissions=True,
 			)
 		except Exception:
 			auto_repeats = []
-		if auto_repeats and auto_repeats[0].get("next_schedule_date"):
+		for ar in auto_repeats:
+			if not ar.get("next_schedule_date"):
+				continue
+			src_name = cstr(ar.get("reference_document") or "")
+			src_order = next(
+				(o for o in (facility_orders or []) if cstr(o.get("name")) == src_name), latest
+			)
 			next_inv = {
 				"label": "Next renewal",
-				"date": str(auto_repeats[0].get("next_schedule_date")),
-				"amount_incl_vat": flt(latest.get("grand_total")),
+				"date": str(ar.get("next_schedule_date")),
+				"amount_incl_vat": flt(src_order.get("grand_total")),
 				"projected": True,
 			}
+			break
 	plan.update(
 		{
 			"name": cstr(package_row.get("display_name") or ""),

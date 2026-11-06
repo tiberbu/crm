@@ -170,7 +170,7 @@ function mflCount(row) {
     >
       <template #default="{ row }">
         <div
-          id="doc-{{ row.name }}"
+          :id="`doc-${row.name}`"
           class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 outline-none"
           tabindex="-1"
         >
@@ -204,7 +204,7 @@ function mflCount(row) {
     >
       <template #default="{ row }">
         <div
-          id="doc-{{ row.name }}"
+          :id="`doc-${row.name}`"
           class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 outline-none"
           tabindex="-1"
           :data-testid="`facility-order-${row.name}`"
@@ -269,7 +269,7 @@ function mflCount(row) {
     >
       <template #default="{ row }">
         <div
-          id="doc-{{ row.name }}"
+          :id="`doc-${row.name}`"
           class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 outline-none"
           tabindex="-1"
         >
@@ -334,7 +334,7 @@ function mflCount(row) {
     >
       <template #default="{ row }">
         <div
-          id="doc-{{ row.name }}"
+          :id="`doc-${row.name}`"
           class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 outline-none"
           tabindex="-1"
         >

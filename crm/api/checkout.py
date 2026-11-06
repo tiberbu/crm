@@ -203,6 +203,11 @@ def _invoice_rows(submission) -> list[dict]:
 		limit_page_length=200,
 		ignore_permissions=True,
 	)
+	# Invoices matched via crm_deal carry an empty crm_optin_submission; fall back to
+	# the submission name so enrich_invoices can attribute via the OIS (SPEC 4.1 rule 3).
+	for row in rows:
+		if not cstr(row.get("crm_optin_submission") or "").strip():
+			row["crm_optin_submission"] = submission.name
 	ois_mfls_by_name = {
 		submission.name: [
 			cstr(snapshot.get("mfl_code")).strip()

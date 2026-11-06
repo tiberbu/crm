@@ -268,3 +268,150 @@ class TestCommercialProjection(PortalCommercialBase):
 
 		commercial = build_commercial("MFL-N", Boom(), {}, [], [], [], False)
 		self.assertTrue(commercial["unavailable"])
+
+
+class TestFixedPlanAutoRepeat(PortalCommercialBase):
+	"""Review must-fix 4: Fixed ``next_invoice`` reads Auto Repeat correctly."""
+
+	def test_fixed_plan_reads_auto_repeat_next_date(self):
+		from crm.api.portal_commercial import build_commercial
+
+		order = _sales_order(self.customer, item_mfls=["MFL-F"])
+		if not frappe.db.exists("DocType", "Auto Repeat"):
+			self.skipTest("Auto Repeat doctype not installed")
+		try:
+			ar = frappe.get_doc(
+				{
+					"doctype": "Auto Repeat",
+					"reference_doctype": "Sales Order",
+					"reference_document": order,
+					"frequency": "Monthly",
+					"repeat_day": "1",
+					"start_date": frappe.utils.add_days(frappe.utils.nowdate(), 30),
+				}
+			)
+			ar.insert(ignore_permissions=True, ignore_mandatory=True)
+		except Exception:
+			self.skipTest("Auto Repeat could not be created in this environment")
+		next_date = frappe.utils.add_days(frappe.utils.nowdate(), 30)
+		frappe.db.set_value("Auto Repeat", ar.name, "next_schedule_date", next_date)
+
+		pkg = {
+			"plan": "Fixed",
+			"billing_period": "Monthly",
+			"display_name": "Fixed Plan",
+			"item_code": "PKG-X",
+			"token_quantity": 0,
+		}
+		commercial = build_commercial(
+			"MFL-F",
+			None,
+			pkg,
+			[{"name": order, "grand_total": 500, "crm_token_package_item": "PKG-X"}],
+			[],
+			[],
+			False,
+			facility_row={"package_currency": "KES", "package_gross_total": 500},
+		)
+		self.assertEqual(commercial["plan_type"], "time_bound")
+		next_invoice = commercial["plan"]["next_invoice"]
+		self.assertIsNotNone(next_invoice, "Auto Repeat next date must be projected")
+		self.assertEqual(next_invoice["label"], "Next renewal")
+		self.assertEqual(next_invoice["date"], str(next_date))
+
+
+class TestPublicProjection(PortalCommercialBase):
+	"""Review must-fix 8/9/10: allow-list payloads, OIS attribution, open invoice."""
+
+	def test_order_payload_exposes_no_internal_fields(self):
+		from crm.api.portal_commercial import account_billing
+
+		_sales_order(self.customer, item_mfls=["MFL-A"], crm_token_package_item="PKG-A")
+		rows = account_billing(self.customer, [], {})["orders"]
+		self.assertTrue(rows)
+		forbidden = {
+			"docstatus",
+			"per_billed",
+			"delivery_date",
+			"status",
+			"crm_optin_year",
+			"crm_optin_quarter",
+			"crm_optin_billing_key",
+			"crm_optin_quotation",
+			"crm_optin_submission",
+			"crm_order_frequency",
+			"crm_recurrence_period",
+		}
+		for row in rows:
+			leaked = forbidden & set(row)
+			self.assertFalse(leaked, "internal order fields leaked: %s" % sorted(leaked))
+			self.assertIn("name", row)
+			self.assertIn("facility_mfls", row)
+
+	def test_invoice_payload_exposes_no_internal_fields(self):
+		from crm.api.portal_commercial import account_billing
+
+		inv = frappe.get_doc(
+			{
+				"doctype": "Sales Invoice",
+				"customer": self.customer,
+				"posting_date": frappe.utils.nowdate(),
+				"items": [{"item_code": "Test Item", "qty": 1, "rate": 100}],
+			}
+		)
+		if frappe.db.has_column("Sales Invoice Item", "crm_optin_facility_mfl_code"):
+			inv.items[0].crm_optin_facility_mfl_code = "MFL-A"
+		inv.insert(ignore_permissions=True, ignore_mandatory=True)
+		inv.flags.ignore_permissions = True
+		inv.flags.ignore_validate = True
+		inv.submit()
+		rows = account_billing(self.customer, [], {})["invoices"]
+		self.assertTrue(rows)
+		forbidden = {
+			"company",
+			"crm_deal",
+			"optin_network",
+			"crm_checkout_reference",
+			"crm_optin_submission",
+			"crm_optin_year",
+			"crm_optin_quarter",
+			"crm_optin_billing_key",
+			"outstanding_amount",
+		}
+		for row in rows:
+			leaked = forbidden & set(row)
+			self.assertFalse(leaked, "internal invoice fields leaked: %s" % sorted(leaked))
+			self.assertIn("name", row)
+			self.assertIn("amount", row)
+
+	def test_ois_order_without_mfl_attributed_via_submission(self):
+		from crm.api.customer_experience import _order_rows
+
+		ois = self._network_ois("MFL-O")
+		order = _sales_order(self.customer, header_mfl=None, item_mfls=None)
+		if not frappe.db.has_column("Sales Order", "crm_optin_submission"):
+			self.skipTest("Sales Order.crm_optin_submission not installed")
+		frappe.db.set_value("Sales Order", order, "crm_optin_submission", ois)
+		rows = _order_rows(frappe.get_doc("CRM Opt-In Submission", ois))
+		row = next(r for r in rows if r["name"] == order)
+		self.assertEqual(row["facility_mfls"], ["MFL-O"])
+
+	def test_invoice_summary_prefers_open_invoice(self):
+		from crm.api.website_redirect import _facility_invoice_summary
+
+		summary = _facility_invoice_summary(
+			[
+				{"name": "INV-PAID", "amount": 0, "currency": "KES"},
+				{"name": "INV-OPEN", "amount": 100, "currency": "KES"},
+			]
+		)
+		self.assertEqual(summary["invoice_name"], "INV-OPEN")
+		self.assertTrue(summary["has_outstanding"])
+		self.assertEqual(summary["outstanding_amount"], 100)
+
+	def test_invoice_summary_none_when_all_paid(self):
+		from crm.api.website_redirect import _facility_invoice_summary
+
+		summary = _facility_invoice_summary([{"name": "INV-PAID", "amount": 0, "currency": "KES"}])
+		self.assertIsNone(summary["invoice_name"])
+		self.assertFalse(summary["has_outstanding"])

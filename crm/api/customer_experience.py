@@ -162,6 +162,8 @@ def _order_rows(submission):
 		"currency",
 		"status",
 		"docstatus",
+		# Required for OIS attribution in enrich_orders (SPEC 4.1 rule 3).
+		"crm_optin_submission",
 	]
 	for col in (
 		"crm_token_facility_mfl",

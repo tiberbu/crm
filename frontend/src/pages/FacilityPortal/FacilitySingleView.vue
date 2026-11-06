@@ -435,7 +435,9 @@ const topUp = computed(() => canTopUp(props.facility))
 
 const summaryCards = computed(() => {
   const cards = []
-  if (tokens.value) {
+  // Plan type decides the summary (SPEC 6 matrix): a time-bound plan is never presented
+  // as tokens, even when the facility also has a token meter.
+  if (commercial.value.plan_type === 'token') {
     cards.push({
       testid: 'facility-available-tokens',
       label: 'Available tokens',
@@ -588,7 +590,7 @@ function reviewInvoice() {
           <CxIcon name="chat" class="size-4" /> Network support
         </button>
         <button
-          v-if="tokens"
+          v-if="tokens && commercial.plan_type !== 'time_bound'"
           type="button"
           class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong"
           @click="emit('open-top-up', facility, 'paid')"
@@ -634,7 +636,7 @@ function reviewInvoice() {
       @open-support="emit('open-support', facility)"
     />
 
-    <TokenAlertCard v-if="tokens" :facility="facility" :alert="tokenAlert" @saved="emit('token-alert-saved', $event)" />
+    <TokenAlertCard v-if="commercial.plan_type === 'token'" :facility="facility" :alert="tokenAlert" @saved="emit('token-alert-saved', $event)" />
 
     <section class="overflow-hidden rounded-cx border border-cx-border bg-cx-surface shadow-cx">
       <div class="border-b border-cx-border-soft bg-gradient-to-br from-cx-surface via-cx-surface to-cx-well/70 p-5 sm:p-7">
@@ -785,7 +787,7 @@ function reviewInvoice() {
         </span>
       </div>
 
-      <section v-if="!goLiveReady && tokens" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
+      <section v-if="!goLiveReady && tokens && commercial.plan_type !== 'time_bound'" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="max-w-2xl">
             <div class="flex flex-wrap items-center gap-2">

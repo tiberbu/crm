@@ -501,6 +501,11 @@ const allPayments = computed(() => {
   return list
 })
 
+// Strict token plan (a time-bound facility with a token meter is not one).
+function isTokenPlan(facility) {
+  return commercialOf(facility).plan_type === 'token'
+}
+
 function pendingPaymentForInvoice(invoice) {
   if (!invoice?.name) return null
   return allPayments.value.find((payment) => {
@@ -595,10 +600,13 @@ const drawerAccountLevelCount = computed(
   () => accountLevelRows(allOrders.value).length + accountLevelRows(allInvoices.value).length,
 )
 function invoiceForFacility(facility) {
+  // Open invoices attributed to this facility (SPEC I1); the summary's invoice_name
+  // is now open too, but re-check against the facility so a paid/other invoice can never win.
+  const open = rowsForFacility(allInvoices.value, facility.mfl_code).filter(
+    (invoice) => Number(invoice.amount) > 0,
+  )
   const invoiceName = facility.invoice_summary?.invoice_name
-  return allInvoices.value.find((invoice) => invoice.name === invoiceName) || allInvoices.value.find(
-    (invoice) => String(invoice.crm_token_facility_mfl || '').toLowerCase() === String(facility.mfl_code || '').toLowerCase(),
-  ) || null
+  return open.find((invoice) => invoice.name === invoiceName) || open[0] || null
 }
 function pendingPaymentForFacility(facility) {
   const invoice = invoiceForFacility(facility)
@@ -707,10 +715,15 @@ const primaryOrganizationName = computed(() => {
 const dashboardAttention = computed(() => {
   const items = []
   for (const inv of allInvoices.value) {
-    const facilityMfl = String(inv.crm_token_facility_mfl || '').trim()
-    const facility = allFacilities.value.find(
-      (item) => String(item.mfl_code || '').trim().toLowerCase() === facilityMfl.toLowerCase(),
-    )
+    // Opt-in invoices carry the facility on facility_mfls, not the header tag (SPEC I1).
+    const mfls = rowFacilityMfls(inv)
+    const facility = mfls
+      .map((mfl) =>
+        allFacilities.value.find(
+          (item) => String(item.mfl_code || '').trim().toLowerCase() === String(mfl).toLowerCase(),
+        ),
+      )
+      .find(Boolean)
     const status = invoiceStatus(inv)
     items.push({
       key: `inv-${inv.name}`,
@@ -2048,8 +2061,8 @@ onUnmounted(() => {
                             </span>
                           </td>
                           <td class="py-3.5 px-4 text-right">
-                            <span class="font-semibold text-sm inline-flex items-center gap-1 whitespace-nowrap" :class="tokenBalance(facility).known ? 'text-cx-brand' : 'text-cx-ink-3'">
-                              <span v-if="tokenBalance(facility).known"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
+                            <span class="font-semibold text-sm inline-flex items-center gap-1 whitespace-nowrap" :class="isTokenPlan(facility) && tokenBalance(facility).known ? 'text-cx-brand' : 'text-cx-ink-3'">
+                              <span v-if="isTokenPlan(facility) && tokenBalance(facility).known"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
                               <span>{{ balanceOrNextText(facility) }}</span>
                             </span>
                           </td>
@@ -2068,6 +2081,7 @@ onUnmounted(() => {
                                 Payment verification pending
                               </span>
                               <button
+                                v-if="canTopUp(facility)"
                                 type="button"
                                 class="rounded-cx-sm bg-cx-ink px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shadow-cx cursor-pointer"
                                 @click="openTopUpModal(facility)"
@@ -2169,8 +2183,8 @@ onUnmounted(() => {
 
                         <!-- Balance or next invoice (plan-aware) -->
                         <td class="py-3.5 px-4 text-right">
-                          <span class="font-semibold text-sm inline-flex items-center gap-1 whitespace-nowrap" :class="tokenBalance(facility).known ? 'text-cx-brand' : 'text-cx-ink-3'">
-                            <span v-if="tokenBalance(facility).known"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
+                          <span class="font-semibold text-sm inline-flex items-center gap-1 whitespace-nowrap" :class="isTokenPlan(facility) && tokenBalance(facility).known ? 'text-cx-brand' : 'text-cx-ink-3'">
+                            <span v-if="isTokenPlan(facility) && tokenBalance(facility).known"><CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /></span>
                             <span>{{ balanceOrNextText(facility) }}</span>
                           </span>
                         </td>
@@ -2191,6 +2205,7 @@ onUnmounted(() => {
                               Payment verification pending
                             </span>
                             <button
+                              v-if="canTopUp(facility)"
                               type="button"
                               class="rounded-cx-sm bg-cx-ink px-2.5 py-1 text-xs font-semibold text-cx-contrast hover:bg-cx-ink-hover transition shadow-cx cursor-pointer"
                               @click="openTopUpModal(facility)"
@@ -3041,8 +3056,8 @@ onUnmounted(() => {
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-cx-ink-3">
                     <span class="font-mono">Facility ID {{ facilityId(facility) || 'not linked yet' }}</span>
                     <span v-if="facility.mfl_code" class="font-mono">MFL {{ facility.mfl_code }}</span>
-                    <span class="ml-auto font-medium" :class="tokenBalance(facility).known ? 'text-cx-success-ink' : 'text-cx-ink-3'" data-testid="facility-card-tokens">
-                      {{ tokenBalanceText(facility, ' tokens') }}
+                    <span class="ml-auto font-medium" :class="isTokenPlan(facility) && tokenBalance(facility).known ? 'text-cx-success-ink' : 'text-cx-ink-3'" data-testid="facility-card-tokens">
+                      {{ balanceOrNextText(facility) }}
                     </span>
                   </div>
                 </div>

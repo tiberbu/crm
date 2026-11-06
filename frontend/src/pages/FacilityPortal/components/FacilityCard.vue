@@ -5,7 +5,7 @@ import { computed } from 'vue'
 import CxIcon from './CxIcon.vue'
 import { facilityId } from '@/utils/facilityId'
 import { tokenBalance, tokenBalanceText } from '@/utils/tokenBalance'
-import { balanceOrNextLabel, balanceOrNextText, canTopUp, facilityPlanText, showsTokens } from '@/utils/portalCommercial'
+import { balanceOrNextLabel, balanceOrNextText, canTopUp, commercialOf, facilityPlanText, showsTokens } from '@/utils/portalCommercial'
 
 const props = defineProps({
   facility: { type: Object, required: true },
@@ -18,6 +18,7 @@ const props = defineProps({
 const emit = defineEmits(['open', 'top-up', 'pay'])
 
 const fid = computed(() => facilityId(props.facility))
+const isToken = computed(() => commercialOf(props.facility).plan_type === 'token')
 const balanceKnown = computed(() => tokenBalance(props.facility).known)
 const planText = computed(() => facilityPlanText(props.facility).join(' · '))
 const balanceLabel = computed(() => balanceOrNextLabel(props.facility))
@@ -119,16 +120,16 @@ const outstanding = computed(
         <dt class="shrink-0 text-cx-ink-3">{{ balanceLabel }}</dt>
         <dd
           class="inline-flex min-w-0 items-center gap-1 text-right font-semibold"
-          :class="balanceKnown ? 'text-cx-brand' : 'text-cx-ink-3'"
+          :class="isToken && balanceKnown ? 'text-cx-brand' : 'text-cx-ink-3'"
           :data-testid="`facility-tokens-${facility.mfl_code}`"
         >
-          <CxIcon v-if="balanceKnown" name="coins" class="size-4 shrink-0" />{{
+          <CxIcon v-if="isToken && balanceKnown" name="coins" class="size-4 shrink-0" />{{
             balanceValue
           }}
         </dd>
       </div>
       <div
-        v-if="alert?.enabled"
+        v-if="alert?.enabled && isToken"
         class="flex items-baseline justify-between gap-3 text-xs"
         :data-testid="`facility-alert-${facility.mfl_code}`"
       >

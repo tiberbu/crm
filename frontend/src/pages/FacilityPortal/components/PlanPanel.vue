@@ -21,6 +21,18 @@ const nextInvoiceText = computed(() => {
   if (!next?.date) return ''
   return `${next.projected ? 'Projected ' : ''}${formatDate(next.date)}`
 })
+const currentPeriodText = computed(() => {
+  const period = plan.value.current_period
+  if (!period) return ''
+  if (typeof period === 'object') {
+    const start = formatDate(period.start)
+    const end = formatDate(period.end)
+    if (!start && !end) return ''
+    if (start && end) return `${start} – ${end}`
+    return start || end
+  }
+  return formatDate(period)
+})
 const upcomingOpen = ref(false)
 const scheduleRows = computed(() => (plan.value.schedule || []).slice(0, 8))
 const hasFacilityAmounts = computed(
@@ -74,9 +86,9 @@ const hasFacilityAmounts = computed(
             <span v-if="plan.facility_annual_excl_vat != null">Annual {{ money(plan.facility_annual_excl_vat, plan.currency) }}</span>
           </dd>
         </div>
-        <div v-if="plan.current_period">
+        <div v-if="currentPeriodText">
           <dt class="text-xs font-semibold text-cx-ink-3">Current period</dt>
-          <dd class="mt-1 text-sm font-semibold text-cx-ink" data-testid="plan-current-period">{{ plan.current_period }}</dd>
+          <dd class="mt-1 text-sm font-semibold text-cx-ink" data-testid="plan-current-period">{{ currentPeriodText }}</dd>
         </div>
         <div v-if="nextInvoice">
           <dt class="text-xs font-semibold text-cx-ink-3">Next invoice</dt>
@@ -103,7 +115,7 @@ const hasFacilityAmounts = computed(
             <span class="font-semibold text-cx-ink">
               {{ row.label }}
               <span v-if="row.state === 'invoiced'" class="font-normal text-cx-ink-2"> · Invoiced</span>
-              <span v-else-if="row.state === 'failed'" class="font-normal text-cx-ink-2"> · Preparing</span>
+              <span v-else-if="row.state === 'preparing'" class="font-normal text-cx-ink-2"> · Preparing</span>
             </span>
             <span class="text-cx-ink-2">{{ row.projected ? 'Projected ' : '' }}{{ formatDate(row.invoice_date) }}</span>
             <strong class="shrink-0 text-cx-ink">{{ money(row.amount_incl_vat, plan.currency) }}</strong>

@@ -112,6 +112,9 @@ describe('portalCommercial', () => {
       false,
     )
     expect(canTopUp(network)).toBe(false)
+    // A time-bound plan is never a top-up target, even with a live token meter (I3).
+    expect(canTopUp({ ...network, commercial: { ...network.commercial, has_tokens: true } })).toBe(false)
+    expect(showsTokens({ ...network, commercial: { ...network.commercial, has_tokens: true } })).toBe(true)
   })
 
   it('deduplicates by name keeping the first row and order', () => {

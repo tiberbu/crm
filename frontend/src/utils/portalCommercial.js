@@ -65,6 +65,9 @@ export function showsTokens(facility) {
 
 export function canTopUp(facility) {
   const commercial = commercialOf(facility)
+  // A committed time-bound plan is never presented as top-up / choose-a-plan,
+  // even when the facility also has a token meter (SPEC 6, I3).
+  if (commercial.plan_type === 'time_bound') return false
   return (
     (commercial.plan_type === 'token' || commercial.has_tokens) ||
     (commercial.plan_type === 'unknown' && commercial.journey !== 'network_optin')

@@ -593,6 +593,7 @@ const timeBoundFacility = {
       term_label: '5 years',
       currency: 'KES',
       facilities_on_plan: 1,
+      current_period: { start: '2026-11-01', end: '2027-01-30' },
       next_invoice: {
         label: 'Year 1 · Quarter 1',
         date: '2027-01-30',
@@ -663,6 +664,12 @@ test('a time-bound opt-in facility shows its plan, the full journey, and no toke
   await expect(plan.getByTestId('plan-cycle')).toHaveText('Billed quarterly')
   await expect(plan.getByTestId('plan-term')).toHaveText('5 years')
   await expect(plan.getByTestId('plan-next-invoice')).toContainText('Year 1 · Quarter 1')
+  // current_period is an {start,end} object on the server; it must render formatted,
+  // never raw JSON (must-fix 6).
+  const period = plan.getByTestId('plan-current-period')
+  await expect(period).toBeVisible()
+  await expect(period).not.toContainText('{')
+  await expect(period).toContainText('2027')
 
   // Summary: plan + next invoice cards; no token cards.
   await expect(page.getByTestId('facility-plan-card')).toBeVisible()
@@ -683,11 +690,88 @@ test('a time-bound opt-in facility shows its plan, the full journey, and no toke
   await expect(page.getByTestId('stage-invoice')).toContainText('ACC-SINV-2026-00017')
   await expect(page.getByTestId('stage-payment')).toContainText('PG20261105')
 
+  // Cross-stage links target real per-row ids (jumpTo uses getElementById).
+  await expect(page.locator('#doc-SAL-QTN-2026-00001')).toHaveCount(1)
+  await expect(page.locator('#doc-SAL-ORD-2026-00035')).toHaveCount(1)
+  await expect(page.locator('#doc-ACC-SINV-2026-00017')).toHaveCount(1)
+  await page.getByTestId('stage-invoice').getByRole('button', { name: 'For order SAL-ORD-2026-00035' }).click()
+  await expect(page.locator('#doc-SAL-ORD-2026-00035')).toBeFocused()
+
   // The account-level order is surfaced, not dropped (I1).
   await expect(page.getByText('1 account-level records are not tied to one facility.')).toBeVisible()
 
   // No token copy anywhere on a time-bound facility.
   await expect(page.getByText(/tokens/i)).toHaveCount(0)
+})
+
+// A time-bound facility that also has a token meter: plan_type wins, so no token
+// summary cards and no token go-live block (must-fix 2, SPEC 6 "time-bound with tokens").
+const timeBoundWithTokensFacility = {
+  ...timeBoundFacility,
+  mfl_code: '7688',
+  facility_name: 'Opt-in Hybrid Clinic',
+  commercial: {
+    ...timeBoundFacility.commercial,
+    has_tokens: true,
+  },
+  token_balance: { status: 'ok', balance: 300, as_of: '2026-11-06 08:00:00' },
+  orders: [
+    {
+      name: 'SAL-ORD-2026-00041',
+      display_title: 'Year 1 · Quarter 1 subscription',
+      display_status: 'Confirmed',
+      doc_kind: 'fixed_period',
+      schedule_governed: true,
+      is_draft: false,
+      can_create_invoice: false,
+      facility_mfls: ['7688'],
+      transaction_date: '2026-11-01',
+      grand_total: 6960,
+      currency: 'KES',
+      quotation: 'SAL-QTN-2026-00001',
+    },
+  ],
+  invoices: [
+    {
+      name: 'ACC-SINV-2026-00018',
+      invoice_number: 'ACC-SINV-2026-00018',
+      amount: 0,
+      due_date: '2026-11-15',
+      facility_mfls: ['7688'],
+      sales_orders: ['SAL-ORD-2026-00041'],
+    },
+  ],
+  payments: [
+    {
+      name: 'PE-2',
+      mode_of_payment: 'M-Pesa',
+      reference_no: 'PG20261106',
+      posting_date: '2026-11-05',
+      invoice: 'ACC-SINV-2026-00018',
+      status: 'Recorded',
+      amount: 6960,
+    },
+  ],
+}
+
+test('a time-bound facility with a token meter still shows the plan, not token copy', async ({
+  page,
+}) => {
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: true, status: 'deployed', progress: 100 })),
+    timeBoundWithTokensFacility,
+  )
+
+  await expect(page.getByTestId('facility-plan-card')).toBeVisible()
+  await expect(page.getByTestId('facility-next-invoice')).toBeVisible()
+  // No token-centric summary, no token CTA, no token go-live block (the Care Tokens
+  // supplement in the plan panel is the only token mention and is accurate here).
+  await expect(page.getByTestId('facility-available-tokens')).toHaveCount(0)
+  await expect(page.getByTestId('facility-current-package')).toHaveCount(0)
+  await expect(page.getByTestId('token-alert-card')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Top up tokens/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Choose a plan/ })).toHaveCount(0)
 })
 
 const tokenFacility = {

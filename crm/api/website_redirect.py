@@ -1238,6 +1238,23 @@ def _user_ois_mfls_by_name(user: str, deals: list[dict]) -> dict:
 	return result
 
 
+def _facility_invoice_summary(fac_invoices) -> dict:
+	"""Invoice summary for one facility. ``invoice_name`` must point at an OPEN
+	invoice (``amount > 0``), because the M-Pesa pay action bills that invoice;
+	the oldest by due date may already be paid (SPEC review, must-fix 10)."""
+	open_invoice = next(
+		(inv for inv in fac_invoices if frappe.utils.flt(inv.get("amount")) > 0),
+		None,
+	)
+	return {
+		"has_outstanding": any(frappe.utils.flt(inv.get("amount")) > 0 for inv in fac_invoices),
+		"outstanding_amount": sum(frappe.utils.flt(inv.get("amount")) for inv in fac_invoices),
+		"currency": fac_invoices[0].get("currency") if fac_invoices else "KES",
+		"invoice_name": open_invoice.get("name") if open_invoice else None,
+		"count": len(fac_invoices),
+	}
+
+
 def _facility_commercial(
 	mfl,
 	package_df,
@@ -1255,6 +1272,23 @@ def _facility_commercial(
 	mfl_key = cstr(mfl or "").strip().casefold()
 	network_ctx = network_ctx_by_mfl.get(mfl_key)
 	item_code = cstr(package_df.get("cx_token_package_item") or "")
+	if not item_code:
+		# Fallback (SPEC 4.3): an Express Fixed/Token order created without a Deal
+		# Facility package row, or the OIS package, must still resolve the plan. Take
+		# the newest order that carries a package item.
+		dated = sorted(
+			(orders or []),
+			key=lambda o: (
+				cstr(o.get("transaction_date") or o.get("creation") or ""),
+				cstr(o.get("name") or ""),
+			),
+			reverse=True,
+		)
+		for order in dated:
+			code = cstr(order.get("crm_token_package_item") or "")
+			if code:
+				item_code = code
+				break
 	lookup = package_lookup([item_code]) if item_code else {}
 	pkg_info = dict(lookup.get(item_code.strip().casefold()) or {})
 	pkg_info["gross_total"] = package_df.get("cx_token_package_gross_total")
@@ -1565,13 +1599,7 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 					"amount": float(latest_order.get("grand_total") or 0),
 					"currency": latest_order.get("currency") or "KES",
 				} if latest_order else None,
-				"invoice_summary": {
-					"has_outstanding": any(frappe.utils.flt(inv.get("amount")) > 0 for inv in fac_invoices),
-					"outstanding_amount": sum(frappe.utils.flt(inv.get("amount")) for inv in fac_invoices),
-					"currency": fac_invoices[0].get("currency") if fac_invoices else "KES",
-					"invoice_name": fac_invoices[0].get("name") if fac_invoices else None,
-					"count": len(fac_invoices),
-				},
+				"invoice_summary": _facility_invoice_summary(fac_invoices),
 				"orders": fac_orders,
 				"invoices": fac_invoices,
 				"payments": fac_payments,
@@ -1624,13 +1652,7 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 					"package_gross_total": df.get("cx_token_package_gross_total"),
 					"package_currency": cstr(df.get("cx_token_package_currency") or ""),
 					"recent_purchase": None,
-					"invoice_summary": {
-						"has_outstanding": any(frappe.utils.flt(inv.get("amount")) > 0 for inv in fac_invoices),
-						"outstanding_amount": sum(frappe.utils.flt(inv.get("amount")) for inv in fac_invoices),
-						"currency": fac_invoices[0].get("currency") if fac_invoices else "KES",
-						"invoice_name": fac_invoices[0].get("name") if fac_invoices else None,
-						"count": len(fac_invoices),
-					},
+					"invoice_summary": _facility_invoice_summary(fac_invoices),
 					"orders": fac_orders,
 					"invoices": fac_invoices,
 					"payments": fac_payments,
@@ -1873,8 +1895,24 @@ def _ois_facility_commercial(submission, progress, ois_orders, ois_invoices, net
 		fac_invoices = for_facility(ois_invoices, mfl)
 		item_code = deal_package_codes.get(mfl_key) or cstr(progress_package.get("item_code") or "")
 		if not item_code and fac_orders:
-			item_code = cstr(fac_orders[0].get("crm_token_package_item") or "")
-		package_row = packages.get(item_code.strip().casefold()) if item_code else {}
+			dated = sorted(
+				fac_orders,
+				key=lambda o: (
+					cstr(o.get("transaction_date") or o.get("creation") or ""),
+					cstr(o.get("name") or ""),
+				),
+				reverse=True,
+			)
+			for order in dated:
+				code = cstr(order.get("crm_token_package_item") or "")
+				if code:
+					item_code = code
+					break
+		package_row = {}
+		if item_code:
+			key = item_code.strip().casefold()
+			# The order fallback item may not be in the prebuilt lookup (SPEC 4.3).
+			package_row = packages.get(key) or (package_lookup([item_code]) or {}).get(key) or {}
 		network_ctx = None if is_self_onboarding else network_ctx_by_mfl.get(mfl_key)
 		contact["commercial"] = build_commercial(
 			mfl,
