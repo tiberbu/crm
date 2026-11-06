@@ -2496,7 +2496,8 @@ onUnmounted(() => {
             <div class="max-w-3xl">
               <h1 class="text-4xl font-semibold text-cx-ink tracking-tight leading-tight">Plans & Pricing</h1>
               <p class="text-sm text-cx-ink-3 mt-2 leading-relaxed">
-                The plans you have committed to, and the token packages available to your facilities.
+                <template v-if="anyCanTopUp">The plans you have committed to, and the token packages available to your facilities.</template>
+                <template v-else>The plans you have committed to.</template>
               </p>
             </div>
 
