@@ -20,6 +20,15 @@ import {
   referenceFromSearch,
   verificationOutcome,
 } from '@/utils/portalOrderState'
+import {
+  accountLevelRows,
+  commercialOf,
+  dedupeByName,
+  facilityPayments,
+  mergeFacilityInvoices,
+  mergeFacilityOrders,
+  rowsForFacility,
+} from '@/utils/portalCommercial'
 
 function __(text, args) {
   let str =
@@ -285,6 +294,11 @@ const allFacilities = computed(() => {
           package_currency: submission.progress?.package?.currency || 'KES',
           recent_purchase: null,
           invoice_summary: null,
+          orders: (submission.open_orders || []).filter((order) => rowsForFacility([order], mfl).length),
+          invoices: (submission.open_invoices || []).filter((invoice) =>
+            rowsForFacility([invoice], mfl).length,
+          ),
+          payments: [],
           source_type: 'ois',
         })
       }
@@ -431,7 +445,7 @@ const allOrders = computed(() => {
       })
     }
   }
-  return list
+  return dedupeByName(list)
 })
 
 // Unified Invoices
@@ -457,7 +471,7 @@ const allInvoices = computed(() => {
       })
     }
   }
-  return list
+  return dedupeByName(list)
 })
 
 // Unified Payments
@@ -547,26 +561,18 @@ function closeNetworkSupportDrawer() {
   supportDrawerOpen.value = false
 }
 
-const drawerInvoices = computed(() => {
-  if (drawerFacility.value?.invoices) return drawerFacility.value.invoices
-  const mfl = String(drawerFacility.value?.mfl_code || '').toLowerCase()
-  return allInvoices.value.filter((inv) => String(inv.crm_token_facility_mfl || '').toLowerCase() === mfl)
-})
-const drawerOrders = computed(() => {
-  const mfl = String(drawerFacility.value?.mfl_code || '').toLowerCase()
-  return allOrders.value.filter((o) => String(o.crm_token_facility_mfl || '').toLowerCase() === mfl)
-})
-const drawerPayments = computed(() => {
-  const invoiceNames = new Set(drawerInvoices.value.map((invoice) => String(invoice.name)))
-  return allPayments.value.filter((payment) => {
-    const names = payment.invoice_names?.length
-      ? payment.invoice_names
-      : payment.invoice
-        ? [payment.invoice]
-        : []
-    return names.some((name) => invoiceNames.has(String(name)))
-  })
-})
+// Facility-scoped lists: the facility's own history plus the unified rows
+// attributed to it (SPEC 8 merged lists). Account-level rows are surfaced
+// separately so nothing disappears.
+const drawerInvoices = computed(() => mergeFacilityInvoices(drawerFacility.value, allInvoices.value))
+const drawerOrders = computed(() => mergeFacilityOrders(drawerFacility.value, allOrders.value))
+const drawerPayments = computed(() => facilityPayments(drawerFacility.value, allPayments.value, drawerInvoices.value))
+const drawerAccountLevelCount = computed(
+  () =>
+    accountLevelRows(drawerOrders.value).length +
+    accountLevelRows(drawerInvoices.value).length +
+    accountLevelRows(drawerPayments.value).length,
+)
 function invoiceForFacility(facility) {
   const invoiceName = facility.invoice_summary?.invoice_name
   return allInvoices.value.find((invoice) => invoice.name === invoiceName) || allInvoices.value.find(
