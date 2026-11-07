@@ -1485,7 +1485,8 @@ def set_admin_account_email(session_token: Any, email: Any):
 # nosemgrep: guest-whitelisted-method -- only public package metadata is returned after strict six-digit Network validation.
 @frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
 def get_catalog(partner_id: Any = None):
-	from crm.utils.token_bonus import PARTNER_COUPON, WELCOME_BONUS, bonus_settings
+	from crm.utils import coupons
+	from crm.utils.token_bonus import WELCOME_BONUS, bonus_settings
 
 	partner_id = _text(partner_id)
 	partner = _public_network(partner_id)
@@ -1495,6 +1496,15 @@ def get_catalog(partner_id: Any = None):
 		)
 	bonuses = bonus_settings()
 	packages = _catalog_packages()
+	# A live offer only: a revoked/expired coupon shows nothing (the network still validates).
+	# Never returns counts or limits on this guest endpoint.
+	offer = coupons.public_offer(partner["name"]) if partner else None
+	if offer and offer["value_type"] == "flat_tokens":
+		value = int(offer["value"])
+		cap = int(offer.get("max_tokens") or 0)
+		partner_coupon_tokens = min(value, cap) if cap else value
+	else:
+		partner_coupon_tokens = 0
 	return {
 		"success": True,
 		"data": {
@@ -1505,7 +1515,8 @@ def get_catalog(partner_id: Any = None):
 			"calculator_config": _calculator_config(),
 			"welcome_bonus_tokens": bonuses[WELCOME_BONUS],
 			# Only a coupon the client entered earns tokens, never the default Network.
-			"partner_coupon_tokens": bonuses[PARTNER_COUPON] if partner_id else 0,
+			"partner_coupon_tokens": partner_coupon_tokens,
+			"partner_coupon_offer": offer,
 		},
 	}
 
