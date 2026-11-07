@@ -1,0 +1,182 @@
+{
+ "actions": [],
+ "autoname": "format:CPR-{#####}",
+ "creation": "2026-11-07 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "coupon",
+  "network",
+  "bonus_type",
+  "section_break_facility",
+  "facility_mfl",
+  "facility_fid",
+  "customer",
+  "section_break_order",
+  "sales_order",
+  "sales_invoice",
+  "status",
+  "section_break_tokens",
+  "purchased_tokens",
+  "tokens_awarded",
+  "redeemed_on",
+  "granted_on",
+  "ledger_key",
+  "status_reason",
+  "facility_guard"
+ ],
+ "fields": [
+  {
+   "fieldname": "coupon",
+   "fieldtype": "Link",
+   "label": "Coupon",
+   "options": "CRM Coupon",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "network",
+   "fieldtype": "Link",
+   "label": "Network",
+   "options": "CRM Opt-In Network"
+  },
+  {
+   "fieldname": "bonus_type",
+   "fieldtype": "Data",
+   "label": "Bonus Type"
+  },
+  {
+   "fieldname": "section_break_facility",
+   "fieldtype": "Section Break",
+   "label": "Facility"
+  },
+  {
+   "fieldname": "facility_mfl",
+   "fieldtype": "Data",
+   "label": "Facility MFL Code",
+   "reqd": 1,
+   "index": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "facility_fid",
+   "fieldtype": "Data",
+   "label": "Facility ID",
+   "index": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "section_break_order",
+   "fieldtype": "Section Break",
+   "label": "Order"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "reqd": 1,
+   "index": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sales_invoice",
+   "fieldtype": "Link",
+   "label": "Sales Invoice",
+   "options": "Sales Invoice"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Reserved\nGranted\nReleased\nLapsed",
+   "default": "Reserved",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "section_break_tokens",
+   "fieldtype": "Section Break",
+   "label": "Tokens"
+  },
+  {
+   "fieldname": "purchased_tokens",
+   "fieldtype": "Int",
+   "label": "Purchased Tokens"
+  },
+  {
+   "fieldname": "tokens_awarded",
+   "fieldtype": "Int",
+   "label": "Tokens Awarded",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "redeemed_on",
+   "fieldtype": "Datetime",
+   "label": "Redeemed On"
+  },
+  {
+   "fieldname": "granted_on",
+   "fieldtype": "Datetime",
+   "label": "Granted On"
+  },
+  {
+   "fieldname": "ledger_key",
+   "fieldtype": "Data",
+   "label": "Ledger Key"
+  },
+  {
+   "fieldname": "status_reason",
+   "fieldtype": "Small Text",
+   "label": "Status Reason"
+  },
+  {
+   "fieldname": "facility_guard",
+   "fieldtype": "Data",
+   "label": "Facility Guard",
+   "unique": 1,
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "in_create": 1,
+ "is_submittable": 0,
+ "issingle": 0,
+ "istsable": 0,
+ "links": [],
+ "modified": "2026-11-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Coupon Redemption",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "share": 0
+  },
+  {
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "select": 1,
+   "share": 0
+  }
+ ],
+ "sort_field": "redeemed_on",
+ "sort_order": "DESC",
+ "track_changes": 1
+}
