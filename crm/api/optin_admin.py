@@ -14,6 +14,7 @@ import io
 import json
 import math
 import re
+import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -2331,10 +2332,25 @@ def lookup_hfr(mfl_code: Any):
 	from crm.api.hfr import search_facility
 
 	results = search_facility(mfl_code, search_by="mfl_code")
-	if not results:
+	# Never trust results[0]: use the hit whose MFL actually matches the input.
+	matched = [
+		r
+		for r in (results or [])
+		if frappe.utils.cstr(r.get("mfl_code")).strip().lower() == mfl_code.lower()
+	]
+	if not matched:
 		frappe.throw(_("Facility MFL %s not found in HFR") % mfl_code)
 
-	hit = results[0]
+	# Prefer hits that carry a deployment FID; conflicting FIDs for one MFL are
+	# treated as not found rather than guessing.
+	with_fid = [r for r in matched if frappe.utils.cstr(r.get("fid")).strip()]
+	if with_fid:
+		distinct = {frappe.utils.cstr(r.get("fid")).strip() for r in with_fid}
+		if len(distinct) > 1:
+			frappe.throw(_("Facility MFL %s not found in HFR") % mfl_code)
+		hit = with_fid[0]
+	else:
+		hit = matched[0]
 	keph_level_raw = frappe.utils.cstr(hit.get("level") or "").strip()
 	if keph_level_raw and not keph_level_raw.lower().startswith("level"):
 		keph_level = "Level %s" % keph_level_raw
@@ -2352,6 +2368,10 @@ def lookup_hfr(mfl_code: Any):
 # ---------------------------------------------------------------------------
 # CSV Import
 # ---------------------------------------------------------------------------
+
+# Cumulative time budget for best-effort, FID-only HFR lookups during a CSV
+# import. Lookups needed to resolve a missing name or level are not budgeted.
+_CSV_FID_LOOKUP_BUDGET_SECONDS = 10.0
 
 
 @frappe.whitelist()
@@ -2408,16 +2428,32 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 			if key is not None
 		}
 
+	# Resolve the register once, before any HFR call: a stored Facility ID always
+	# wins over a lookup, so the import can never re-key a facility.
+	rows = [
+		(idx, normalize_row(raw_row))
+		for idx, raw_row in enumerate(reader, start=2)  # row 1 is header
+	]
+	rows = [(idx, row) for idx, row in rows if any(row.values())]
+	# The register matches MFL case-insensitively but returns its own casing, so
+	# fold both sides; a differently cased CSV MFL must still seed from the register.
+	known_ids = {
+		key.casefold(): value
+		for key, value in facility_ids_by_mfl(row.get("mfl_code", "") for _, row in rows).items()
+	}
+
+	# FID-only lookups (name and level already present) are best effort: a hung
+	# registry must not stall the whole import, so they share a cumulative time
+	# budget. Only lookup time counts against it — time spent saving rows or in
+	# un-budgeted lookups does not.
+	fid_lookup_seconds = 0.0
+
 	errors = []
 	preview_rows = []
 	imported = 0
 	seen_mfl_codes = set()
 
-	for idx, raw_row in enumerate(reader, start=2):  # row 1 is header
-		row = normalize_row(raw_row)
-		if not any(row.values()):
-			continue
-
+	for idx, row in rows:
 		mfl_code = row.get("mfl_code", "")
 		contact_name = row.get("contact_name", "")
 		contact_email = row.get("contact_email", "").lower()
@@ -2428,7 +2464,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		preview = {
 			"row": idx,
 			"mfl_code": mfl_code,
-			"hfr_facility_id": row.get("hfr_facility_id", ""),
+			"hfr_facility_id": row.get("hfr_facility_id", "") or known_ids.get(mfl_code.casefold(), ""),
 			"facility_name": facility_name,
 			"organization": row.get("organization", ""),
 			"price_list_override": price_list_override,
@@ -2454,18 +2490,28 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		):
 			error = "price_list_override must be an enabled selling price list"
 
-		# HFR enrichment if fields missing. It is safe in preview mode because
+		# HFR enrichment if fields are missing. It is safe in preview mode because
 		# it does not write; it also ensures the count matches what can import.
-		if not error and (not facility_name or not keph_level):
-			try:
-				hfr = lookup_hfr(mfl_code)
-				facility_name = facility_name or hfr.get("facility_name") or ""
-				keph_level = keph_level or hfr.get("keph_level") or ""
-			except Exception:
-				# A facility name remains mandatory, but an absent KEPH level
-				# has the established Level 3 fallback used by this importer.
-				if not facility_name:
-					error = "facility_name could not be resolved (not in CSV and HFR lookup failed)"
+		# A missing Facility ID (after the register seed) also triggers a lookup,
+		# but it is best effort under a time budget so a hung registry cannot stall
+		# the whole import; the row then simply stays "not linked yet".
+		if not error and (not facility_name or not keph_level or not preview["hfr_facility_id"]):
+			fid_only = bool(facility_name and keph_level)
+			if not fid_only or fid_lookup_seconds < _CSV_FID_LOOKUP_BUDGET_SECONDS:
+				started = time.monotonic()
+				try:
+					hfr = lookup_hfr(mfl_code)
+					facility_name = facility_name or hfr.get("facility_name") or ""
+					keph_level = keph_level or hfr.get("keph_level") or ""
+					preview["hfr_facility_id"] = preview["hfr_facility_id"] or hfr.get("hfr_facility_id") or ""
+				except Exception:
+					# A facility name remains mandatory, but an absent KEPH level
+					# has the established Level 3 fallback used by this importer.
+					if not facility_name:
+						error = "facility_name could not be resolved (not in CSV and HFR lookup failed)"
+				finally:
+					if fid_only:
+						fid_lookup_seconds += time.monotonic() - started
 
 		organization = row.get("organization", "") or facility_name
 		preview.update({"facility_name": facility_name, "organization": organization})
@@ -2506,11 +2552,6 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		else:
 			imported += 1
 		preview_rows.append(preview)
-
-	# Rows without a Facility ID column show the one already on record for their MFL code.
-	known_ids = facility_ids_by_mfl(row["mfl_code"] for row in preview_rows if not row["hfr_facility_id"])
-	for row in preview_rows:
-		row["hfr_facility_id"] = row["hfr_facility_id"] or known_ids.get(row["mfl_code"], "")
 
 	return {
 		"imported": imported,
