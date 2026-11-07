@@ -51,13 +51,9 @@ def _package(item_code):
 
 def _order_tokens(doc):
 	"""Tokens a token order buys: each package line's tokens per unit × qty (a Custom line is 1 × tokens)."""
-	per_unit = {
-		_text(row.item_code): int(row.token_quantity or 0)
-		for row in frappe.get_single("CRM Opt-In Settings").get("token_packages") or []
-	}
-	return sum(
-		per_unit.get(_text(row.item_code), 0) * int(row.qty or 0) for row in doc.items if not row.get("crm_bonus_type")
-	)
+	from crm.utils.coupons import purchased_tokens
+
+	return purchased_tokens(doc)
 
 
 def _customer(submission):

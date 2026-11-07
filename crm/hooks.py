@@ -246,6 +246,9 @@ doc_events = {
 		# P-76: auto-assign the welcome bonus once a facility selects a package (when switched on).
 		"after_insert": ["crm.utils.token_bonus.auto_dispense_on_package_selection"],
 		"on_submit": ["crm.utils.token_bonus.auto_dispense_on_package_selection"],
+		# Coupon: claim the reserved redemption in the submit transaction; release it on cancel.
+		"before_submit": ["crm.utils.coupons.claim_on_submit"],
+		"on_cancel": ["crm.utils.coupons.release_on_cancel"],
 	},
 	# OpenMeter grants are keyed by FID, so token purchases carry it beside the MFL.
 	"Quotation": {
@@ -294,6 +297,7 @@ scheduler_events = {
 		"crm.telemetry.capture_feature_state",
 		"crm.api.quotes.check_quote_expiry",
 		"crm.automation.optin_billing.process_due_optin_billing",
+		"crm.utils.coupons.reconcile_redemptions",
 	],
 	"weekly": ["crm.api.event.trigger_weekly_event_notifications"],
 	"daily_long": ["crm.lead_syncing.background_sync.sync_leads_from_sources_daily"],
