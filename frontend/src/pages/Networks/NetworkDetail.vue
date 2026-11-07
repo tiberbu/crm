@@ -1281,16 +1281,67 @@
             <span v-else>{{ __('Lookup HFR') }}</span>
           </button>
           <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-gray-6">{{
-              __('Facility ID')
-            }}</label>
+            <label class="text-xs font-medium text-ink-gray-6">
+              {{ __('Facility ID') }}
+              <button
+                v-if="editingFacility && form.hfr_facility_id && !fidEditable"
+                class="ml-1 text-xs font-medium underline text-ink-gray-5 hover:text-ink-gray-7 dark:text-ink-gray-4"
+                @click="changeFacilityId"
+              >
+                {{ __('Change') }}
+              </button>
+            </label>
             <input
-              :value="form.hfr_facility_id || __('Filled in by Lookup HFR')"
+              v-model="form.hfr_facility_id"
               type="text"
-              readonly
+              :readonly="!fidEditable"
               data-testid="network-facility-id"
               class="w-48 rounded border border-outline-gray-2 bg-surface-gray-1 px-3 py-1.5 font-mono text-sm text-ink-gray-7 dark:bg-surface-gray-2 dark:text-ink-gray-4"
+              placeholder="FID-00-12345-1"
+              autocomplete="off"
+              @input="form.hfr_facility_id_source = ''"
             />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-ink-gray-6">{{
+              __('Owner ID number')
+            }}</label>
+            <div class="flex items-center gap-2">
+              <input
+                v-model="ownerId"
+                type="text"
+                class="w-32 rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+                placeholder="12345678"
+                autocomplete="off"
+              />
+              <button
+                class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-7 hover:bg-surface-gray-2 disabled:opacity-50 dark:bg-surface-gray-3 dark:text-ink-gray-4"
+                :disabled="ownerLookupLoading || !ownerId.trim()"
+                @click="lookupOwnerFacilities"
+              >
+                {{ __('Find by owner ID') }}
+              </button>
+            </div>
+            <div
+              v-if="ownerCandidates.length"
+              class="mt-1 max-h-40 overflow-auto rounded border border-outline-gray-2 bg-surface-white py-1 dark:bg-surface-gray-3"
+            >
+              <button
+                v-for="candidate in ownerCandidates"
+                :key="candidate.hfr_facility_id"
+                class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm text-ink-gray-8 hover:bg-surface-gray-2 dark:text-ink-gray-3"
+                @click="pickOwnerCandidate(candidate)"
+              >
+                <span class="font-mono">{{ candidate.hfr_facility_id }}</span>
+                <span class="truncate">
+                  {{ candidate.facility_name }}
+                  <template v-if="candidate.facility_level">
+                    · {{ __(candidate.facility_level) }}</template
+                  >
+                </span>
+              </button>
+            </div>
+            <p v-if="ownerLookupError" class="text-xs text-red-600">{{ ownerLookupError }}</p>
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-gray-6"
@@ -1622,6 +1673,7 @@
 import { ref, computed, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  call,
   createResource,
   Button,
   Dialog,
@@ -1630,6 +1682,7 @@ import {
   Switch,
   toast,
 } from 'frappe-ui'
+import { isValidFacilityId } from '@/utils/facilityId'
 import { copyToClipboard, validateIsImageFile } from '@/utils'
 
 const props = defineProps({
@@ -2212,6 +2265,8 @@ const hfrLoading = ref(false)
 const form = reactive({
   mfl_code: '',
   hfr_facility_id: '',
+  hfr_facility_id_source: '',
+  replace_facility_id: false,
   facility_name: '',
   organization: '',
   keph_level: '',
@@ -2259,6 +2314,8 @@ function clearFacilityScheduleOverride(year) {
 function resetForm() {
   form.mfl_code = ''
   form.hfr_facility_id = ''
+  form.hfr_facility_id_source = ''
+  form.replace_facility_id = false
   form.facility_name = ''
   form.organization = ''
   form.keph_level = ''
@@ -2270,6 +2327,10 @@ function resetForm() {
   organizationEdited.value = false
   formError.value = ''
   editingFacility.value = null
+  fidEditable.value = true
+  ownerId.value = ''
+  ownerCandidates.value = []
+  ownerLookupError.value = ''
 }
 
 function openAddForm() {
@@ -2291,6 +2352,12 @@ function editContact(row) {
     price_list_overrides: facilityScheduleOverrides(m),
     status: m.status ?? 'Active',
   })
+  form.hfr_facility_id_source = ''
+  form.replace_facility_id = false
+  fidEditable.value = !row.hfr_facility_id
+  ownerId.value = ''
+  ownerCandidates.value = []
+  ownerLookupError.value = ''
   editingFacility.value = row
   organizationEdited.value = true
   formError.value = ''
@@ -2302,7 +2369,68 @@ function cancelForm() {
   resetForm()
 }
 
+const fidEditable = ref(true)
+const ownerId = ref('')
+const ownerCandidates = ref([])
+const ownerLookupLoading = ref(false)
+const ownerLookupError = ref('')
+
 const hfrResource = createResource({ url: 'crm.api.optin_admin.lookup_hfr' })
+
+function changeFacilityId() {
+  if (
+    confirm(
+      __(
+        'Change this Facility ID? Metering data already imported under the old ID is not moved.',
+      ),
+    )
+  ) {
+    form.replace_facility_id = true
+    fidEditable.value = true
+  }
+}
+
+async function lookupOwnerFacilities() {
+  ownerLookupLoading.value = true
+  ownerLookupError.value = ''
+  ownerCandidates.value = []
+  try {
+    const result = await call('crm.api.optin_admin.lookup_owner_facilities', {
+      owner_id_number: ownerId.value.trim(),
+    })
+    if (result.status === 'ok') {
+      ownerCandidates.value = result.candidates || []
+    } else {
+      ownerLookupError.value = ownerLookupText(result.status)
+    }
+  } catch (e) {
+    ownerLookupError.value =
+      e?.messages?.[0] ??
+      __("The registry can't be reached right now. Try again later.")
+  } finally {
+    ownerId.value = ''
+    ownerLookupLoading.value = false
+  }
+}
+
+function pickOwnerCandidate(candidate) {
+  form.hfr_facility_id = candidate.hfr_facility_id
+  form.hfr_facility_id_source = 'hfr'
+  if (!form.facility_name) form.facility_name = candidate.facility_name
+  if (!form.keph_level) form.keph_level = candidate.facility_level
+  ownerCandidates.value = []
+  defaultOrganizationFromFacility()
+}
+
+function ownerLookupText(status) {
+  const text = {
+    no_facilities: __('No facilities were found for that ID. Check the number and try again.'),
+    invalid_id: __('Enter the ID number as it appears on the document.'),
+    unavailable: __("The registry can't be reached right now. Try again later."),
+    rate_limited: __('Too many searches. Try again shortly.'),
+  }
+  return text[status] || text.unavailable
+}
 
 async function lookupHFR() {
   if (!form.mfl_code.trim()) return
@@ -2312,6 +2440,7 @@ async function lookupHFR() {
     const result = await hfrResource.submit({ mfl_code: form.mfl_code.trim() })
     if (result) {
       form.hfr_facility_id = result.hfr_facility_id || form.hfr_facility_id
+      form.hfr_facility_id_source = 'hfr'
       form.facility_name = result.facility_name ?? form.facility_name
       form.keph_level = result.keph_level ?? form.keph_level
       defaultOrganizationFromFacility()
@@ -2358,6 +2487,10 @@ async function saveContact() {
     formError.value = __('Contact Phone is required.')
     return
   }
+  if (form.hfr_facility_id && !isValidFacilityId(form.hfr_facility_id)) {
+    formError.value = __('Enter a Facility ID like FID-00-12345-1.')
+    return
+  }
   formError.value = ''
   saveLoading.value = true
   const membership = {
@@ -2387,6 +2520,8 @@ async function saveContact() {
   const data = {
     mfl_code: form.mfl_code,
     hfr_facility_id: form.hfr_facility_id,
+    hfr_facility_id_source: form.hfr_facility_id_source,
+    replace_facility_id: form.replace_facility_id ? 1 : 0,
     facility_name: form.facility_name,
     organization: form.organization,
     keph_level: form.keph_level,

@@ -5,6 +5,8 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
+from crm.api import optin_admin
+from crm.api.optin_admin import lookup_owner_facilities, save_facility
 from crm.utils.facility_ids import (
 	facility_id_holders,
 	fill_facility_rows,
@@ -230,3 +232,133 @@ class TestFacilityIdLinking(IntegrationTestCase):
 		self.assertEqual([h["doctype"] for h in holders], [])
 		holders_any = facility_id_holders(FID_A)
 		self.assertEqual([h["doctype"] for h in holders_any], ["CRM Pre-Qualified Facility"])
+
+
+class TestOwnerFacilityLookupGuard(UnitTestCase):
+	def test_refuses_users_without_access(self):
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=False),
+			patch("crm.api.optin_admin._get_coordinator_networks", return_value=[]),
+		):
+			self.assertRaises(frappe.PermissionError, lookup_owner_facilities, "12345678")
+
+	def test_admin_lookup_passes_through(self):
+		with (
+			patch("crm.api.optin_admin._is_admin", return_value=True),
+			patch.object(
+				optin_admin, "owner_facility_candidates", return_value={"status": "ok", "candidates": []}
+			) as lookup,
+		):
+			self.assertEqual(lookup_owner_facilities("12345678"), {"status": "ok", "candidates": []})
+		lookup.assert_called_once_with("12345678")
+
+
+class TestSaveFacilityIdRules(IntegrationTestCase):
+	NETWORK = "fid-link-save"
+	MFL = "FIDSAVETEST01"
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		frappe.db.savepoint("save_facility_fid_test")
+		self.addCleanup(frappe.db.rollback, save_point="save_facility_fid_test")
+		self.addCleanup(frappe.set_user, "Administrator")
+		if not frappe.db.exists("CRM Opt-In Network", self.NETWORK):
+			frappe.get_doc(
+				{"doctype": "CRM Opt-In Network", "slug": self.NETWORK, "display_name": "FID Save Test", "enabled": 1}
+			).insert(ignore_permissions=True)
+		for name in frappe.get_all("CRM Pre-Qualified Facility", {"mfl_code": self.MFL}, pluck="name"):
+			frappe.delete_doc("CRM Pre-Qualified Facility", name, force=True, ignore_permissions=True)
+		self.facility = frappe.get_doc(
+			{
+				"doctype": "CRM Pre-Qualified Facility",
+				"mfl_code": self.MFL,
+				"facility_name": "FID Save Test Facility",
+				"keph_level": "Level 3",
+			}
+		)
+		self.facility.flags.skip_invitation = True
+		self.facility.insert(ignore_permissions=True)
+		self.lead = frappe.get_doc(
+			{"doctype": "CRM Lead", "first_name": "Save", "last_name": "Tester", "email": "save-fid-tester@example.com"}
+		)
+		self.lead.flags.ignore_permissions = True
+		self.lead.flags.ignore_links = True
+		self.lead.insert(ignore_permissions=True, ignore_links=True)
+		row = frappe.get_doc(
+			{
+				"doctype": "CRM Lead Facility",
+				"parent": self.lead.name,
+				"parenttype": "CRM Lead",
+				"parentfield": "facilities",
+				"mfl_code": self.MFL,
+			}
+		)
+		row.flags.ignore_permissions = True
+		row.flags.ignore_links = True
+		row.insert(ignore_permissions=True, ignore_links=True)
+		self.lead_row = row.name
+
+	def _save(self, **fields):
+		data = {
+			"name": self.facility.name,
+			"mfl_code": self.MFL,
+			"facility_name": self.facility.facility_name,
+			"keph_level": "Level 3",
+			"memberships": [
+				{
+					"network": self.NETWORK,
+					"status": "Active",
+					"contact_name": "Contact",
+					"contact_email": "save-fid-contact@example.com",
+					"contact_phone": "+254700000001",
+				}
+			],
+		}
+		data.update(fields)
+		return save_facility(data)
+
+	def test_typed_fid_is_saved_and_fills_rows(self):
+		self._save(hfr_facility_id="FID-00-SAVETEST-1")
+		self.facility.reload()
+		self.assertEqual(self.facility.hfr_facility_id, "FID-00-SAVETEST-1")
+		self.assertEqual(self.facility.hfr_sync_status, "Manual")
+		self.assertEqual(frappe.db.get_value("CRM Lead Facility", self.lead_row, "hfr_facility_id"), "FID-00-SAVETEST-1")
+
+	def test_invalid_fid_is_refused(self):
+		self.assertRaises(frappe.ValidationError, self._save, hfr_facility_id="FID-1")
+		self.facility.reload()
+		self.assertFalse(self.facility.hfr_facility_id)
+
+	def test_stored_fid_never_cleared_by_blank(self):
+		self._save(hfr_facility_id="FID-00-SAVETEST-1")
+		self._save(hfr_facility_id="")
+		self.facility.reload()
+		self.assertEqual(self.facility.hfr_facility_id, "FID-00-SAVETEST-1")
+
+	def test_replacing_a_stored_fid_needs_the_flag(self):
+		self._save(hfr_facility_id="FID-00-SAVETEST-1")
+		self.assertRaises(frappe.ValidationError, self._save, hfr_facility_id="FID-00-SAVETEST-2")
+		self.facility.reload()
+		self.assertEqual(self.facility.hfr_facility_id, "FID-00-SAVETEST-1")
+
+	def test_admin_replacement_updates_rows_holding_the_old_value(self):
+		self._save(hfr_facility_id="FID-00-SAVETEST-1")
+		self._save(hfr_facility_id="FID-00-SAVETEST-2", replace_facility_id=1)
+		self.facility.reload()
+		self.assertEqual(self.facility.hfr_facility_id, "FID-00-SAVETEST-2")
+		self.assertEqual(self.facility.hfr_sync_status, "Manual")
+		self.assertEqual(frappe.db.get_value("CRM Lead Facility", self.lead_row, "hfr_facility_id"), "FID-00-SAVETEST-2")
+
+	def test_fid_on_another_facility_is_refused(self):
+		other = frappe.get_doc(
+			{
+				"doctype": "CRM Pre-Qualified Facility",
+				"mfl_code": "FIDSAVETEST02",
+				"facility_name": "Other Facility",
+				"keph_level": "Level 3",
+				"hfr_facility_id": "FID-00-SAVETEST-1",
+			}
+		)
+		other.flags.skip_invitation = True
+		other.insert(ignore_permissions=True)
+		self.assertRaises(frappe.ValidationError, self._save, hfr_facility_id="FID-00-SAVETEST-1")
