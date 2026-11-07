@@ -94,3 +94,5 @@ crm.patches.v1_0.heal_orphaned_facility_memberships
 crm.patches.v1_0.split_mixed_journey_memberships
 crm.patches.v1_0.seed_default_onboarding_catalogue
 crm.patches.v1_0.add_welcome_bonus_auto_dispense
+crm.patches.v1_0.add_coupon_line_fields
+crm.patches.v1_0.seed_network_coupons
