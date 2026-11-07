@@ -59,7 +59,12 @@ def _get_coupon(name):
 	if not row:
 		frappe.throw(_("Coupon {0} does not exist.").format(name), frappe.ValidationError)
 	row["derived_status"] = derived_status(
-		row.status, row.valid_from, row.valid_to, frappe.utils.getdate(), row.max_redemptions, row.redeemed_count
+		row.status,
+		row.valid_from,
+		row.valid_to,
+		frappe.utils.getdate(),
+		row.max_redemptions,
+		row.redeemed_count,
 	)
 	return row
 
@@ -110,7 +115,12 @@ def list_coupons(network=None):
 	)
 	for row in rows:
 		row["derived_status"] = derived_status(
-			row.status, row.valid_from, row.valid_to, frappe.utils.getdate(), row.max_redemptions, row.redeemed_count
+			row.status,
+			row.valid_from,
+			row.valid_to,
+			frappe.utils.getdate(),
+			row.max_redemptions,
+			row.redeemed_count,
 		)
 	return {"coupons": rows}
 
@@ -214,7 +224,9 @@ def list_redemptions(coupon=None, network=None):
 		order_by="redeemed_on desc",
 	)
 	for row in rows:
-		row["coupon_title"] = frappe.db.get_value("CRM Coupon", row.coupon, "coupon_title") if row.coupon else None
+		row["coupon_title"] = (
+			frappe.db.get_value("CRM Coupon", row.coupon, "coupon_title") if row.coupon else None
+		)
 	return {"redemptions": rows}
 
 
@@ -229,7 +241,9 @@ def assign_coupon(coupon, facility_mfls, facility_fids=None):
 	if row.status != "Active":
 		frappe.throw(_("Only an active coupon can be assigned."), frappe.ValidationError)
 	if row.targeting != "Assigned Facilities":
-		frappe.throw(_("Assignments require a coupon with Assigned Facilities targeting."), frappe.ValidationError)
+		frappe.throw(
+			_("Assignments require a coupon with Assigned Facilities targeting."), frappe.ValidationError
+		)
 	facility_mfls = [m.strip() for m in cstr(facility_mfls or "").replace("\n", ",").split(",") if m.strip()]
 	facility_fids = facility_fids or {}
 	assigned, already = [], []
@@ -256,7 +270,10 @@ def list_assignments(coupon):
 	coupon = _text(coupon)
 	_assert_coupon_access(coupon)
 	rows = frappe.get_all(
-		"CRM Coupon Assignment", filters={"coupon": coupon}, fields=["coupon", "facility_mfl", "facility_fid"], ignore_permissions=True
+		"CRM Coupon Assignment",
+		filters={"coupon": coupon},
+		fields=["coupon", "facility_mfl", "facility_fid"],
+		ignore_permissions=True,
 	)
 	return {"assignments": rows}
 

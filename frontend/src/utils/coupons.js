@@ -42,7 +42,9 @@ export const COUPON_STATUS_THEME = {
 export function parseMflList(text) {
   const seen = new Set()
   const out = []
-  for (const part of String(text || '').replace(/\n/g, ',').split(',')) {
+  for (const part of String(text || '')
+    .replace(/\n/g, ',')
+    .split(',')) {
     const mfl = part.trim()
     if (mfl && !seen.has(mfl)) {
       seen.add(mfl)

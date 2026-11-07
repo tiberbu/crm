@@ -57,16 +57,24 @@ class TestDerivedStatus(UnitTestCase):
 		self.assertEqual(derived_status("Revoked", None, None, self._d("2026-01-01"), 0, 0), "Revoked")
 
 	def test_scheduled_before_start(self):
-		self.assertEqual(derived_status("Active", self._d("2026-06-01"), None, self._d("2026-01-01"), 0, 0), "Scheduled")
+		self.assertEqual(
+			derived_status("Active", self._d("2026-06-01"), None, self._d("2026-01-01"), 0, 0), "Scheduled"
+		)
 
 	def test_scheduled_inclusive_start_is_active(self):
-		self.assertEqual(derived_status("Active", self._d("2026-06-01"), None, self._d("2026-06-01"), 0, 0), "Active")
+		self.assertEqual(
+			derived_status("Active", self._d("2026-06-01"), None, self._d("2026-06-01"), 0, 0), "Active"
+		)
 
 	def test_expired_after_end(self):
-		self.assertEqual(derived_status("Active", None, self._d("2026-05-31"), self._d("2026-06-01"), 0, 0), "Expired")
+		self.assertEqual(
+			derived_status("Active", None, self._d("2026-05-31"), self._d("2026-06-01"), 0, 0), "Expired"
+		)
 
 	def test_expired_inclusive_end_is_active(self):
-		self.assertEqual(derived_status("Active", None, self._d("2026-05-31"), self._d("2026-05-31"), 0, 0), "Active")
+		self.assertEqual(
+			derived_status("Active", None, self._d("2026-05-31"), self._d("2026-05-31"), 0, 0), "Active"
+		)
 
 	def test_exhausted_at_limit(self):
 		self.assertEqual(derived_status("Active", None, None, self._d("2026-01-01"), 5, 5), "Exhausted")
@@ -78,7 +86,9 @@ class TestDerivedStatus(UnitTestCase):
 		self.assertEqual(derived_status("Active", None, None, self._d("2026-01-01"), 0, 999), "Active")
 
 	def test_priority_revoked_over_expired(self):
-		self.assertEqual(derived_status("Revoked", None, self._d("2020-01-01"), self._d("2026-01-01"), 0, 0), "Revoked")
+		self.assertEqual(
+			derived_status("Revoked", None, self._d("2020-01-01"), self._d("2026-01-01"), 0, 0), "Revoked"
+		)
 
 	def test_plain_active(self):
 		self.assertEqual(derived_status("Active", None, None, self._d("2026-01-01"), 0, 0), "Active")

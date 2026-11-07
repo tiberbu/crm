@@ -10,24 +10,38 @@ from crm.utils import coupons
 
 
 def _net(slug, partner_id, name):
-	return frappe.get_doc(
-		{"doctype": "CRM Opt-In Network", "slug": slug, "display_name": name, "partner_id": partner_id, "enabled": 1}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "CRM Opt-In Network",
+				"slug": slug,
+				"display_name": name,
+				"partner_id": partner_id,
+				"enabled": 1,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _coupon(network=None, value_type="flat_tokens", value=100, max_tokens=0, targeting=None, **kw):
-	return frappe.get_doc(
-		{
-			"doctype": "CRM Coupon",
-			"coupon_title": kw.pop("coupon_title", "test coupon"),
-			"network": network,
-			"value_type": value_type,
-			"value": value,
-			"max_tokens": max_tokens,
-			"targeting": targeting,
-			**kw,
-		}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "CRM Coupon",
+				"coupon_title": kw.pop("coupon_title", "test coupon"),
+				"network": network,
+				"value_type": value_type,
+				"value": value,
+				"max_tokens": max_tokens,
+				"targeting": targeting,
+				**kw,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _facility(mfl, network, customer, partner_coupon=True, level="Level 2"):
@@ -35,25 +49,29 @@ def _facility(mfl, network, customer, partner_coupon=True, level="Level 2"):
 	# dedicated "no-network" record (never blank).
 	if not network:
 		network = "no-network"
-	return frappe.get_doc(
-		{
-			"doctype": "CRM Pre-Qualified Facility",
-			"mfl_code": mfl,
-			"facility_name": "Coupon Facility %s" % mfl,
-			"keph_level": level,
-			"memberships": [
-				{
-					"network": network,
-					"customer": customer,
-					"status": "Active",
-					"partner_coupon": 1 if partner_coupon else 0,
-					"contact_name": "Owner",
-					"contact_email": "owner@example.test",
-					"contact_phone": "+254700000000",
-				}
-			],
-		}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "CRM Pre-Qualified Facility",
+				"mfl_code": mfl,
+				"facility_name": "Coupon Facility %s" % mfl,
+				"keph_level": level,
+				"memberships": [
+					{
+						"network": network,
+						"customer": customer,
+						"status": "Active",
+						"partner_coupon": 1 if partner_coupon else 0,
+						"contact_name": "Owner",
+						"contact_email": "owner@example.test",
+						"contact_phone": "+254700000000",
+					}
+				],
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 class TestCouponResolution(IntegrationTestCase):
@@ -113,9 +131,24 @@ class TestCouponResolution(IntegrationTestCase):
 	def test_revoked_expired_exhausted_do_not_fall_back(self):
 		self._set_global(150)
 		for slug, pid, mfl, mut in [
-			("res-rev", "920004", "920104", lambda c: frappe.db.set_value("CRM Coupon", c, "status", "Revoked")),
-			("res-exp", "920005", "920105", lambda c: frappe.db.set_value("CRM Coupon", c, "valid_to", "2020-01-01")),
-			("res-exh", "920006", "920106", lambda c: frappe.db.set_value("CRM Coupon", c, "redeemed_count", 5)),
+			(
+				"res-rev",
+				"920004",
+				"920104",
+				lambda c: frappe.db.set_value("CRM Coupon", c, "status", "Revoked"),
+			),
+			(
+				"res-exp",
+				"920005",
+				"920105",
+				lambda c: frappe.db.set_value("CRM Coupon", c, "valid_to", "2020-01-01"),
+			),
+			(
+				"res-exh",
+				"920006",
+				"920106",
+				lambda c: frappe.db.set_value("CRM Coupon", c, "redeemed_count", 5),
+			),
 		]:
 			net = _net(slug, pid, slug.title())
 			c = _coupon(net, "flat_tokens", 1000, max_redemptions=5)

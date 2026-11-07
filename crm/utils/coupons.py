@@ -43,12 +43,21 @@ def purchased_tokens(doc) -> int:
 		_text(row.item_code): int(row.token_quantity or 0)
 		for row in frappe.get_single("CRM Opt-In Settings").get("token_packages") or []
 	}
-	return sum(per_unit.get(_text(row.item_code), 0) * int(row.qty or 0) for row in doc.items if not row.get("crm_bonus_type"))
+	return sum(
+		per_unit.get(_text(row.item_code), 0) * int(row.qty or 0)
+		for row in doc.items
+		if not row.get("crm_bonus_type")
+	)
 
 
 def _derived(coupon) -> str:
 	return derived_status(
-		coupon.status, coupon.valid_from, coupon.valid_to, _today(), coupon.max_redemptions, coupon.redeemed_count
+		coupon.status,
+		coupon.valid_from,
+		coupon.valid_to,
+		_today(),
+		coupon.max_redemptions,
+		coupon.redeemed_count,
 	)
 
 
@@ -67,7 +76,10 @@ def _facility_has_coupon_line(facility_mfl, exclude_order=None) -> bool:
 	return bool(
 		frappe.db.exists(
 			"Sales Order Item",
-			{"parent": ["in", others], "crm_bonus_type": ["in", [token_bonus.PARTNER_COUPON, token_bonus.CRM_COUPON]]},
+			{
+				"parent": ["in", others],
+				"crm_bonus_type": ["in", [token_bonus.PARTNER_COUPON, token_bonus.CRM_COUPON]],
+			},
 		)
 	)
 
@@ -105,7 +117,18 @@ def resolve_coupon(customer, facility_mfl, facility_fid, purchased, exclude_orde
 		coupons = frappe.get_all(
 			"CRM Coupon",
 			filters={"network": network},
-			fields=["name", "status", "valid_from", "valid_to", "max_redemptions", "redeemed_count", "value_type", "value", "max_tokens", "client_label"],
+			fields=[
+				"name",
+				"status",
+				"valid_from",
+				"valid_to",
+				"max_redemptions",
+				"redeemed_count",
+				"value_type",
+				"value",
+				"max_tokens",
+				"client_label",
+			],
 			ignore_permissions=True,
 		)
 		label = frappe.db.get_value("CRM Opt-In Network", network, "display_name") or network
@@ -153,13 +176,32 @@ def _crm_coupon_candidates(facility_mfl):
 	"""Redeemable no-network coupons targeting this facility (assigned, then facility level)."""
 	assigned = {
 		row.coupon
-		for row in frappe.get_all("CRM Coupon Assignment", filters={"facility_mfl": facility_mfl}, fields=["coupon"], ignore_permissions=True)
+		for row in frappe.get_all(
+			"CRM Coupon Assignment",
+			filters={"facility_mfl": facility_mfl},
+			fields=["coupon"],
+			ignore_permissions=True,
+		)
 	}
 	level = _facility_level(facility_mfl)
 	all_coupons = frappe.get_all(
 		"CRM Coupon",
 		filters={"network": ["in", ["", None]]},
-		fields=["name", "status", "valid_from", "valid_to", "max_redemptions", "redeemed_count", "value_type", "value", "max_tokens", "targeting", "facility_levels", "client_label", "coupon_title"],
+		fields=[
+			"name",
+			"status",
+			"valid_from",
+			"valid_to",
+			"max_redemptions",
+			"redeemed_count",
+			"value_type",
+			"value",
+			"max_tokens",
+			"targeting",
+			"facility_levels",
+			"client_label",
+			"coupon_title",
+		],
 		ignore_permissions=True,
 	)
 	candidates = []
@@ -167,7 +209,9 @@ def _crm_coupon_candidates(facility_mfl):
 		if _derived(coupon) != "Active":
 			continue
 		is_assigned = coupon.name in assigned
-		is_level = coupon.targeting == "Facility Level" and level and _level_matches(coupon.facility_levels, level)
+		is_level = (
+			coupon.targeting == "Facility Level" and level and _level_matches(coupon.facility_levels, level)
+		)
 		if not (is_assigned or is_level):
 			continue
 		if coupon.targeting == "Coupon Code" and not is_assigned:
@@ -203,7 +247,18 @@ def public_offer(network):
 	coupons = frappe.get_all(
 		"CRM Coupon",
 		filters={"network": network},
-		fields=["name", "status", "valid_from", "valid_to", "max_redemptions", "redeemed_count", "value_type", "value", "max_tokens", "client_label"],
+		fields=[
+			"name",
+			"status",
+			"valid_from",
+			"valid_to",
+			"max_redemptions",
+			"redeemed_count",
+			"value_type",
+			"value",
+			"max_tokens",
+			"client_label",
+		],
 		ignore_permissions=True,
 	)
 	active = [c for c in coupons if _derived(c) == "Active"]
@@ -227,7 +282,11 @@ def public_offer(network):
 
 def claim_on_submit(doc, method=None):
 	"""Sales Order ``before_submit``: claim the coupon for a confirmed order in the submit transaction."""
-	rows = [row for row in doc.items if row.get("crm_bonus_type") in (token_bonus.PARTNER_COUPON, token_bonus.CRM_COUPON)]
+	rows = [
+		row
+		for row in doc.items
+		if row.get("crm_bonus_type") in (token_bonus.PARTNER_COUPON, token_bonus.CRM_COUPON)
+	]
 	if not rows:
 		return
 	if len(rows) > 1:
@@ -237,7 +296,9 @@ def claim_on_submit(doc, method=None):
 	fid = _text(doc.crm_token_facility_fid) or token_bonus._order_fid(doc)
 
 	# Idempotent: a live redemption for this order already exists.
-	if frappe.db.exists("CRM Coupon Redemption", {"sales_order": doc.name, "status": ["in", ["Reserved", "Granted"]]}):
+	if frappe.db.exists(
+		"CRM Coupon Redemption", {"sales_order": doc.name, "status": ["in", ["Reserved", "Granted"]]}
+	):
 		return
 
 	purchased = purchased_tokens(doc)
@@ -245,13 +306,32 @@ def claim_on_submit(doc, method=None):
 		coupon = frappe.db.get_value(
 			"CRM Coupon",
 			row.crm_coupon,
-			["status", "valid_from", "valid_to", "max_redemptions", "redeemed_count", "value_type", "value", "max_tokens", "network"],
+			[
+				"status",
+				"valid_from",
+				"valid_to",
+				"max_redemptions",
+				"redeemed_count",
+				"value_type",
+				"value",
+				"max_tokens",
+				"network",
+			],
 			as_dict=True,
 			for_update=True,
 		)
-		if not coupon or derived_status(
-			coupon.status, coupon.valid_from, coupon.valid_to, _today(), coupon.max_redemptions, coupon.redeemed_count
-		) != "Active":
+		if (
+			not coupon
+			or derived_status(
+				coupon.status,
+				coupon.valid_from,
+				coupon.valid_to,
+				_today(),
+				coupon.max_redemptions,
+				coupon.redeemed_count,
+			)
+			!= "Active"
+		):
 			frappe.throw(CouponUnavailable())
 		tokens = coupon_tokens(coupon.value_type, coupon.value, coupon.max_tokens, purchased)
 		if tokens <= 0:
@@ -294,7 +374,12 @@ def claim_on_submit(doc, method=None):
 
 def release_on_cancel(doc, method=None):
 	"""Sales Order ``on_cancel``: release the Reserved claim (Granted rows are untouched)."""
-	rows = frappe.get_all("CRM Coupon Redemption", {"sales_order": doc.name, "status": "Reserved"}, pluck="name", ignore_permissions=True)
+	rows = frappe.get_all(
+		"CRM Coupon Redemption",
+		{"sales_order": doc.name, "status": "Reserved"},
+		pluck="name",
+		ignore_permissions=True,
+	)
 	for name in rows:
 		_close(name, "Released", "Order cancelled")
 
@@ -344,7 +429,9 @@ def record_grant_outcome(redemption, outcome, *, tokens=None, invoice=None, reas
 			doc.tokens_awarded = int(tokens)
 		doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL: the count already reflects the claim
 	else:  # Lapsed
-		_close(redemption, "Lapsed", reason or "The coupon was revoked or expired before the invoice was paid.")
+		_close(
+			redemption, "Lapsed", reason or "The coupon was revoked or expired before the invoice was paid."
+		)
 		if invoice:
 			frappe.db.set_value("CRM Coupon Redemption", redemption, "sales_invoice", invoice)
 
@@ -366,16 +453,22 @@ def reconcile_redemptions():
 			status = coupon_grant_status(row.facility_fid)
 			if status.get("dispensed"):
 				source = status.get("source_name")
-				invoices = frappe.get_all("Sales Invoice", {"sales_order": row.sales_order}, pluck="name", ignore_permissions=True)
+				invoices = frappe.get_all(
+					"Sales Invoice", {"sales_order": row.sales_order}, pluck="name", ignore_permissions=True
+				)
 				if source in invoices:
 					record_grant_outcome(row.name, "Granted", invoice=source)
 				else:
-					_close(row.name, "Released", "The facility's coupon entitlement was used by another order.")
+					_close(
+						row.name, "Released", "The facility's coupon entitlement was used by another order."
+					)
 			elif status.get("status") in ("Pending", "Failed"):
 				pass  # the mediator retries
 			else:
 				if _coupon_revoked_or_expired(row.coupon) and _order_invoice_fully_paid(row.sales_order):
-					_close(row.name, "Lapsed", "The coupon was revoked or expired before the invoice was paid.")
+					_close(
+						row.name, "Lapsed", "The coupon was revoked or expired before the invoice was paid."
+					)
 		except Exception:
 			frappe.log_error(
 				title="Coupon reconcile: row failed",
@@ -390,7 +483,14 @@ def reconcile_redemptions():
 		ignore_permissions=True,
 	)
 	for coupon in coupons:
-		if derived_status(coupon.status, coupon.valid_from, coupon.valid_to, _today(), coupon.max_redemptions, coupon.redeemed_count) in ("Revoked", "Expired"):
+		if derived_status(
+			coupon.status,
+			coupon.valid_from,
+			coupon.valid_to,
+			_today(),
+			coupon.max_redemptions,
+			coupon.redeemed_count,
+		) in ("Revoked", "Expired"):
 			try:
 				token_bonus.drop_coupon_lines_from_drafts(coupon.name)
 			except Exception:
@@ -406,8 +506,18 @@ def _coupon_revoked_or_expired(coupon_name) -> bool:
 	if not coupon_name:
 		return False
 	coupon = frappe.db.get_value(
-		"CRM Coupon", coupon_name, ["status", "valid_from", "valid_to", "max_redemptions", "redeemed_count"], as_dict=True
+		"CRM Coupon",
+		coupon_name,
+		["status", "valid_from", "valid_to", "max_redemptions", "redeemed_count"],
+		as_dict=True,
 	)
 	if not coupon:
 		return False
-	return derived_status(coupon.status, coupon.valid_from, coupon.valid_to, _today(), coupon.max_redemptions, coupon.redeemed_count) in ("Revoked", "Expired")
+	return derived_status(
+		coupon.status,
+		coupon.valid_from,
+		coupon.valid_to,
+		_today(),
+		coupon.max_redemptions,
+		coupon.redeemed_count,
+	) in ("Revoked", "Expired")

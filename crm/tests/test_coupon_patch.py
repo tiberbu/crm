@@ -7,9 +7,19 @@ from crm.patches.v1_0 import seed_network_coupons
 
 
 def _net(slug, partner_id, name):
-	return frappe.get_doc(
-		{"doctype": "CRM Opt-In Network", "slug": slug, "display_name": name, "partner_id": partner_id, "enabled": 1}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "CRM Opt-In Network",
+				"slug": slug,
+				"display_name": name,
+				"partner_id": partner_id,
+				"enabled": 1,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 class TestCouponPatchSeeding(IntegrationTestCase):
@@ -22,7 +32,11 @@ class TestCouponPatchSeeding(IntegrationTestCase):
 
 	def _set(self, partner_coupon_tokens, default_id=""):
 		frappe.db.set_single_value(
-			"CRM Opt-In Settings", {"partner_coupon_tokens": partner_coupon_tokens, "facility_onboarding_default_partner_id": default_id}
+			"CRM Opt-In Settings",
+			{
+				"partner_coupon_tokens": partner_coupon_tokens,
+				"facility_onboarding_default_partner_id": default_id,
+			},
 		)
 		frappe.clear_document_cache("CRM Opt-In Settings", "CRM Opt-In Settings")
 

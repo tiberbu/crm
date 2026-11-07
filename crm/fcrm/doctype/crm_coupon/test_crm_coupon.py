@@ -58,7 +58,11 @@ class TestCRMCouponValidation(UnitTestCase):
 
 	def test_valid_to_must_be_after_valid_from(self):
 		with self.assertRaises(frappe.ValidationError):
-			self._validate(_doc(valid_from=frappe.utils.getdate("2026-06-01"), valid_to=frappe.utils.getdate("2026-05-01")))
+			self._validate(
+				_doc(
+					valid_from=frappe.utils.getdate("2026-06-01"), valid_to=frappe.utils.getdate("2026-05-01")
+				)
+			)
 
 	def test_max_redemptions_cannot_drop_below_redeemed(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -125,14 +129,30 @@ class TestCRMCouponImmutability(UnitTestCase):
 
 class TestCRMCouponOverlap(UnitTestCase):
 	def test_overlapping_active_coupon_rejected(self):
-		doc = _doc(network="NET-1", targeting=None, coupon_code=None, valid_from=frappe.utils.getdate("2026-01-01"), valid_to=frappe.utils.getdate("2026-12-31"))
-		other = frappe._dict(valid_from=frappe.utils.getdate("2026-06-01"), valid_to=frappe.utils.getdate("2026-09-30"))
+		doc = _doc(
+			network="NET-1",
+			targeting=None,
+			coupon_code=None,
+			valid_from=frappe.utils.getdate("2026-01-01"),
+			valid_to=frappe.utils.getdate("2026-12-31"),
+		)
+		other = frappe._dict(
+			valid_from=frappe.utils.getdate("2026-06-01"), valid_to=frappe.utils.getdate("2026-09-30")
+		)
 		with patch.object(frappe, "get_all", return_value=[other]):
 			with self.assertRaises(frappe.ValidationError):
 				doc._reject_network_overlap()
 
 	def test_revoked_or_disjoint_does_not_block(self):
-		doc = _doc(network="NET-1", targeting=None, coupon_code=None, valid_from=frappe.utils.getdate("2026-01-01"), valid_to=frappe.utils.getdate("2026-03-31"))
-		other = frappe._dict(valid_from=frappe.utils.getdate("2026-04-01"), valid_to=frappe.utils.getdate("2026-12-31"))
+		doc = _doc(
+			network="NET-1",
+			targeting=None,
+			coupon_code=None,
+			valid_from=frappe.utils.getdate("2026-01-01"),
+			valid_to=frappe.utils.getdate("2026-03-31"),
+		)
+		other = frappe._dict(
+			valid_from=frappe.utils.getdate("2026-04-01"), valid_to=frappe.utils.getdate("2026-12-31")
+		)
 		with patch.object(frappe, "get_all", return_value=[other]):
 			doc._reject_network_overlap()  # no raise (disjoint windows)

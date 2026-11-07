@@ -108,13 +108,19 @@ def _backfill_redemptions():
 
 		if coupon:
 			frappe.db.set_value(
-				"CRM Coupon", coupon, "redeemed_count", cint(frappe.db.get_value("CRM Coupon", coupon, "redeemed_count")) + 1,
+				"CRM Coupon",
+				coupon,
+				"redeemed_count",
+				cint(frappe.db.get_value("CRM Coupon", coupon, "redeemed_count")) + 1,
 				update_modified=False,
 			)
 			if status == "Reserved":
 				frappe.db.set_value("Sales Order Item", item.name, "crm_coupon", coupon)
 				invoice_items = frappe.get_all(
-					"Sales Invoice Item", filters={"so_detail": item.name}, pluck="name", ignore_permissions=True
+					"Sales Invoice Item",
+					filters={"so_detail": item.name},
+					pluck="name",
+					ignore_permissions=True,
 				)
 				for invoice_item in invoice_items:
 					frappe.db.set_value("Sales Invoice Item", invoice_item, "crm_coupon", coupon)

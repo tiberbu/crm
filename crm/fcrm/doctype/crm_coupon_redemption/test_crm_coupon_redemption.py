@@ -6,7 +6,9 @@ from crm.fcrm.doctype.crm_coupon_redemption.crm_coupon_redemption import CRMCoup
 
 
 def _redemption(status, mfl):
-	return SimpleNamespace(doctype="CRM Coupon Redemption", status=status, facility_mfl=mfl, facility_guard=None)
+	return SimpleNamespace(
+		doctype="CRM Coupon Redemption", status=status, facility_mfl=mfl, facility_guard=None
+	)
 
 
 class TestCRMCouponRedemptionGuard(UnitTestCase):

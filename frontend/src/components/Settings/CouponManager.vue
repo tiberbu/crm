@@ -55,11 +55,18 @@
         >
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="truncate font-semibold text-ink-gray-9" :title="coupon.coupon_title">
+              <p
+                class="truncate font-semibold text-ink-gray-9"
+                :title="coupon.coupon_title"
+              >
                 {{ coupon.coupon_title }}
               </p>
               <p class="truncate text-xs text-ink-gray-5">
-                {{ coupon.network ? networkLabel(coupon.network) : __('CRM coupon') }}
+                {{
+                  coupon.network
+                    ? networkLabel(coupon.network)
+                    : __('CRM coupon')
+                }}
               </p>
             </div>
             <Dropdown :options="actions(coupon)" placement="right">
@@ -79,15 +86,26 @@
               variant="subtle"
               data-testid="coupon-status-badge"
             />
-            <Badge v-if="coupon.coupon_code" :label="coupon.coupon_code" theme="gray" variant="outline" />
+            <Badge
+              v-if="coupon.coupon_code"
+              :label="coupon.coupon_code"
+              theme="gray"
+              variant="outline"
+            />
           </div>
-          <p class="mt-3 font-mono text-lg font-semibold" data-testid="coupon-value">
+          <p
+            class="mt-3 font-mono text-lg font-semibold"
+            data-testid="coupon-value"
+          >
             {{ couponValueLabel(coupon) }}
           </p>
           <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
             <dt class="text-ink-gray-5">{{ __('Redeemed') }}</dt>
             <dd class="text-right font-mono">
-              {{ coupon.redeemed_count }}{{ coupon.max_redemptions ? ` / ${coupon.max_redemptions}` : '' }}
+              {{ coupon.redeemed_count
+              }}{{
+                coupon.max_redemptions ? ` / ${coupon.max_redemptions}` : ''
+              }}
             </dd>
             <dt class="text-ink-gray-5">{{ __('Window') }}</dt>
             <dd class="text-right">
@@ -105,10 +123,7 @@
       :save="saveCoupon"
       :networks="networks"
     />
-    <CouponRedemptions
-      v-model="redemptionsOpen"
-      :coupon="redemptionsCoupon"
-    />
+    <CouponRedemptions v-model="redemptionsOpen" :coupon="redemptionsCoupon" />
     <Dialog
       v-model="revokeOpen"
       :options="{
@@ -159,7 +174,8 @@ const list = computed(() => resource.data?.coupons || [])
 
 const filter = ref('All')
 const filters = computed(() => {
-  const by = (status) => list.value.filter((c) => !status || c.derived_status === status).length
+  const by = (status) =>
+    list.value.filter((c) => !status || c.derived_status === status).length
   return [
     { label: `${__('All')} (${by('')})`, value: 'All' },
     { label: `${__('Active')} (${by('Active')})`, value: 'Active' },
@@ -167,12 +183,14 @@ const filters = computed(() => {
   ]
 })
 const coupons = computed(() =>
-  list.value.filter((c) => filter.value === 'All' || c.derived_status === filter.value),
+  list.value.filter(
+    (c) => filter.value === 'All' || c.derived_status === filter.value,
+  ),
 )
 
-const networks = computed(() =>
-  [...new Set(list.value.map((c) => c.network).filter(Boolean))],
-)
+const networks = computed(() => [
+  ...new Set(list.value.map((c) => c.network).filter(Boolean)),
+])
 function networkLabel(name) {
   const c = list.value.find((x) => x.network === name)
   return c?.client_label || name
@@ -192,7 +210,9 @@ async function run(method, params, done) {
     if (done) toast.success(done)
   } catch (error) {
     actionError.value =
-      error?.messages?.join(' ') || error?.message || __('Could not update the coupon')
+      error?.messages?.join(' ') ||
+      error?.message ||
+      __('Could not update the coupon')
     toast.error(actionError.value.replace(/<[^>]+>/g, ' '))
   }
 }
@@ -204,7 +224,11 @@ function openEditor(coupon) {
   editorOpen.value = true
 }
 async function saveCoupon(payload) {
-  await run('save_coupon', { name: payload.name || '', payload }, __('Coupon saved'))
+  await run(
+    'save_coupon',
+    { name: payload.name || '', payload },
+    __('Coupon saved'),
+  )
   editorOpen.value = false
 }
 
@@ -218,7 +242,11 @@ function showRedemptions(coupon) {
 const revokeOpen = ref(false)
 const revokeTarget = ref(null)
 async function doRevoke({ close }) {
-  await run('revoke_coupon', { name: revokeTarget.value.name, reason: '' }, __('Coupon revoked'))
+  await run(
+    'revoke_coupon',
+    { name: revokeTarget.value.name, reason: '' },
+    __('Coupon revoked'),
+  )
   close()
 }
 
@@ -229,19 +257,17 @@ function actions(coupon) {
       label: __('Redemptions'),
       onClick: () => showRedemptions(coupon),
     },
-    ...(
-      coupon.derived_status === 'Revoked'
-        ? []
-        : [
-            {
-              label: __('Revoke'),
-              onClick: () => {
-                revokeTarget.value = coupon
-                revokeOpen.value = true
-              },
+    ...(coupon.derived_status === 'Revoked'
+      ? []
+      : [
+          {
+            label: __('Revoke'),
+            onClick: () => {
+              revokeTarget.value = coupon
+              revokeOpen.value = true
             },
-          ]
-    ),
+          },
+        ]),
   ]
 }
 </script>

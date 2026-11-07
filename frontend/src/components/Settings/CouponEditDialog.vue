@@ -19,7 +19,11 @@
             type="select"
             :label="__('Network')"
             :options="networkOptions"
-            :description="__('Blank makes this a CRM coupon, not tied to a partner network.')"
+            :description="
+              __(
+                'Blank makes this a CRM coupon, not tied to a partner network.',
+              )
+            "
             data-testid="coupon-network"
           />
         </div>
@@ -74,7 +78,10 @@
           />
         </div>
 
-        <div v-if="!form.network" class="rounded-lg border border-outline-gray-2 p-4">
+        <div
+          v-if="!form.network"
+          class="rounded-lg border border-outline-gray-2 p-4"
+        >
           <p class="mb-3 text-sm font-semibold text-ink-gray-8">
             {{ __('Targeting (CRM coupons only)') }}
           </p>
@@ -101,10 +108,15 @@
             type="text"
             class="mt-3"
             :label="__('Coupon code')"
-            :description="__('Letters, numbers or dashes, 4 to 32. Never six digits.')"
+            :description="
+              __('Letters, numbers or dashes, 4 to 32. Never six digits.')
+            "
             data-testid="coupon-code"
           />
-          <p v-if="form.targeting === 'Assigned Facilities'" class="mt-3 text-sm text-ink-gray-5">
+          <p
+            v-if="form.targeting === 'Assigned Facilities'"
+            class="mt-3 text-sm text-ink-gray-5"
+          >
             {{
               __(
                 'Assign facilities from the coupon menu (Assign). A client who redeems this coupon at onboarding is assigned automatically.',
@@ -149,12 +161,7 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import {
-  Button,
-  Dialog,
-  ErrorMessage,
-  FormControl,
-} from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 
 const show = defineModel({ type: Boolean, default: false })
 const props = defineProps({
@@ -225,7 +232,8 @@ async function submit() {
     await props.save({ ...form })
     show.value = false
   } catch (e) {
-    error.value = e?.messages?.join(' ') || e?.message || __('Could not save the coupon')
+    error.value =
+      e?.messages?.join(' ') || e?.message || __('Could not save the coupon')
   } finally {
     saving.value = false
   }

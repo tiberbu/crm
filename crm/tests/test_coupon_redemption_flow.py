@@ -50,7 +50,13 @@ class TestCouponRedemptionFlow(IntegrationTestCase):
 		return name
 
 	def _coupon(self, **kw):
-		base = {"coupon_title": "flow coupon", "value_type": "flat_tokens", "value": 1000, "max_tokens": 0, "targeting": "Assigned Facilities"}
+		base = {
+			"coupon_title": "flow coupon",
+			"value_type": "flat_tokens",
+			"value": 1000,
+			"max_tokens": 0,
+			"targeting": "Assigned Facilities",
+		}
 		base.update(kw)
 		return frappe.get_doc({"doctype": "CRM Coupon", **base}).insert(ignore_permissions=True).name
 
@@ -58,7 +64,9 @@ class TestCouponRedemptionFlow(IntegrationTestCase):
 		c = self._coupon()
 		doc = _order("SO-C1", "930001", "FID-C1", self.customer, c, 999)
 		coupons.claim_on_submit(doc)
-		row = frappe.db.get_value("CRM Coupon Redemption", {"sales_order": "SO-C1"}, ["status", "tokens_awarded"], as_dict=True)
+		row = frappe.db.get_value(
+			"CRM Coupon Redemption", {"sales_order": "SO-C1"}, ["status", "tokens_awarded"], as_dict=True
+		)
 		self.assertEqual(row.status, "Reserved")
 		self.assertEqual(row.tokens_awarded, 1000)  # server value (1000) wins over stamped (999)
 		self.assertEqual(frappe.db.get_value("CRM Coupon", c, "redeemed_count"), 1)
@@ -89,7 +97,12 @@ class TestCouponRedemptionFlow(IntegrationTestCase):
 	def test_facility_guard_collision_is_unavailable(self):
 		c = self._coupon()
 		frappe.get_doc(
-			{"doctype": "CRM Coupon Redemption", "facility_mfl": "930005", "sales_order": "SO-OTHER", "status": "Reserved"}
+			{
+				"doctype": "CRM Coupon Redemption",
+				"facility_mfl": "930005",
+				"sales_order": "SO-OTHER",
+				"status": "Reserved",
+			}
 		).insert(ignore_permissions=True)
 		doc = _order("SO-C5", "930005", "FID-C5", self.customer, c, 1000)
 		with self.assertRaises(frappe.ValidationError):
@@ -117,7 +130,9 @@ class TestCouponRedemptionFlow(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("CRM Coupon", c, "redeemed_count"), 1)
 		coupons.release_on_cancel(frappe._dict(name="SO-C7"))
 		self.assertEqual(frappe.db.get_value("CRM Coupon", c, "redeemed_count"), 0)
-		row = frappe.db.get_value("CRM Coupon Redemption", {"sales_order": "SO-C7"}, ["status", "facility_guard"], as_dict=True)
+		row = frappe.db.get_value(
+			"CRM Coupon Redemption", {"sales_order": "SO-C7"}, ["status", "facility_guard"], as_dict=True
+		)
 		self.assertEqual(row.status, "Released")
 		self.assertFalse(row.facility_guard)  # guard cleared (NULL) so the facility is free
 
