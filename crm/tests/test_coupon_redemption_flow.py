@@ -81,7 +81,6 @@ class TestCouponRedemptionFlow(IntegrationTestCase):
 
 	def test_claim_uses_for_update_on_the_coupon_read(self):
 		c = self._coupon()
-		real = frappe.db.get_value("CRM Coupon", c, ["status", "valid_from", "valid_to", "max_redemptions", "redeemed_count", "value_type", "value", "max_tokens", "network"], as_dict=True)
 		with patch.object(coupons.frappe.db, "get_value", wraps=frappe.db.get_value) as spy:
 			coupons.claim_on_submit(_order("SO-C4", "930004", "FID-C4", self.customer, c, 1000))
 		coupon_reads = [call for call in spy.call_args_list if call.args and call.args[0] == "CRM Coupon"]

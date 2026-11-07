@@ -125,7 +125,7 @@ class TestCouponResolution(IntegrationTestCase):
 
 	def test_crm_assigned_coupon(self):
 		c = _coupon(None, "flat_tokens", 250, targeting="Assigned Facilities")
-		fac = _facility("920107", None, self.customer, partner_coupon=False)
+		_facility("920107", None, self.customer, partner_coupon=False)
 		frappe.get_doc(
 			{"doctype": "CRM Coupon Assignment", "coupon": c, "facility_mfl": "920107", "source": "Manual"}
 		).insert(ignore_permissions=True)
@@ -142,7 +142,7 @@ class TestCouponResolution(IntegrationTestCase):
 		self.assertEqual(r["coupon"], c)
 
 	def test_crm_coupon_no_match_gives_no_line(self):
-		c = _coupon(None, "flat_tokens", 300, targeting="Facility Level", facility_levels="Level 5")
+		_coupon(None, "flat_tokens", 300, targeting="Facility Level", facility_levels="Level 5")
 		_facility("920109", None, self.customer, partner_coupon=False, level="Level 2")
 		self.assertIsNone(coupons.resolve_coupon(self.customer, "920109", "FID-NOMATCH", 100))
 

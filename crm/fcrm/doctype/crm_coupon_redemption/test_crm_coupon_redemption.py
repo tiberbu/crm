@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+
 from frappe.tests import UnitTestCase
 
 from crm.fcrm.doctype.crm_coupon_redemption.crm_coupon_redemption import CRMCouponRedemption

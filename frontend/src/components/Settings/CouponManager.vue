@@ -147,11 +147,7 @@ import LucidePlus from '~icons/lucide/plus'
 import LucideEllipsis from '~icons/lucide/ellipsis'
 import CouponEditDialog from '@/components/Settings/CouponEditDialog.vue'
 import CouponRedemptions from '@/components/Settings/CouponRedemptions.vue'
-import {
-  COUPON_STATUS_THEME,
-  couponValueLabel,
-  derivedStatus,
-} from '@/utils/coupons'
+import { COUPON_STATUS_THEME, couponValueLabel } from '@/utils/coupons'
 
 const API = 'crm.api.coupons'
 

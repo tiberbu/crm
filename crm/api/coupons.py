@@ -75,7 +75,7 @@ def get_coupon(name):
 @frappe.whitelist()
 def list_coupons(network=None):
 	"""The coupons a user may see: admins all, coordinators only their networks."""
-	from crm.api.optin_admin import _get_coordinator_networks, _assert_network_access
+	from crm.api.optin_admin import _assert_network_access, _get_coordinator_networks
 
 	network = _text(network)
 	if network:

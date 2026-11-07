@@ -34,7 +34,7 @@ def _today():
 
 
 def purchased_tokens(doc) -> int:
-	"""Tokens a token order buys: each package line's tokens per unit × qty (a Custom line is 1 × tokens).
+	"""Tokens a token order buys: each package line's tokens per unit x qty (a Custom line is 1 x tokens).
 
 	Moved verbatim from ``customer_experience._order_tokens`` (which becomes a one-line delegate).
 	Excludes ``crm_bonus_type`` lines, so the base can never include the welcome bonus or the coupon.

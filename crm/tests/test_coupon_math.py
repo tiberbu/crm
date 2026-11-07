@@ -1,6 +1,7 @@
 """Pure unit tests for the shared coupon value math (no site required)."""
 
 import datetime
+
 from frappe.tests import UnitTestCase
 
 from crm.utils.coupon_math import coupon_tokens, derived_status

@@ -50,7 +50,7 @@ def _package(item_code):
 
 
 def _order_tokens(doc):
-	"""Tokens a token order buys: each package line's tokens per unit × qty (a Custom line is 1 × tokens)."""
+	"""Tokens a token order buys: each package line's tokens per unit x qty (a Custom line is 1 x tokens)."""
 	from crm.utils.coupons import purchased_tokens
 
 	return purchased_tokens(doc)

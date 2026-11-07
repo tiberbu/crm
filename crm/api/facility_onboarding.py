@@ -1721,7 +1721,7 @@ def _custom_package(amount: Any, flex: list[dict[str, Any]]) -> dict[str, Any]:
 		"description": "Value Express Flex Custom: %s Care Tokens at %s %.2f per token (%s rate)"
 		% ("{:,}".format(quote["tokens"]), row["currency"], quote["rate"], quote["tier"]),
 		"token_quantity": quote["tokens"],
-		# Invoiced per token: OpenMeter grants the row's 1 token × qty.
+		# Invoiced per token: OpenMeter grants the row's 1 token x qty.
 		"qty": quote["tokens"],
 		"rate": quote["rate"],
 		"price": quote["charge"],
@@ -1865,7 +1865,7 @@ def _facility_conflicts(facilities: list[dict[str, Any]], network: str | None, s
 		*(_ois_facility_codes(row.get("raw_json")) for row in ois_rows if _text(row.get("name")) in submitted)
 	) if submitted else set()
 
-	person_email = _text((((session or {}).get("person") or {}).get("email"))).lower()
+	person_email = _text(((session or {}).get("person") or {}).get("email")).lower()
 	existing_customer = _resolve_existing_customer(session, person_email)
 
 	deal_names = [name for name in submitted_values if frappe.db.exists("CRM Deal", name)]
@@ -1971,7 +1971,7 @@ def _check_onboarding_conflicts(session: dict[str, Any], selected: set[str], net
 					is_existing_identity = True
 					break
 	if not is_existing_identity:
-		account_email = _text(((session.get("person") or {}).get("email"))).lower()
+		account_email = _text((session.get("person") or {}).get("email")).lower()
 		if account_email and frappe.db.exists("User", {"email": account_email}):
 			is_existing_identity = True
 
