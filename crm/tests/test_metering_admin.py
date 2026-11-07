@@ -63,7 +63,9 @@ class TestMeteringAdmin(UnitTestCase):
 			self.assertRaises(frappe.PermissionError, metering_admin.get_deal_facilities, "CRM-DEAL-0001")
 
 	def test_facilities_are_listed_by_facility_id(self):
-		rows = [frappe._dict(hfr_facility_id=" FID-00-TEST-0001 ", facility_name="Test", mfl_code="1")]
+		rows = [
+			frappe._dict(name="ROW-1", hfr_facility_id=" FID-00-TEST-0001 ", facility_name="Test", mfl_code="1")
+		]
 		with (
 			patch("frappe.has_permission", return_value=True),
 			patch.object(metering_admin, "get_access", return_value={"can_manage": True}),
@@ -71,10 +73,97 @@ class TestMeteringAdmin(UnitTestCase):
 		):
 			self.assertEqual(
 				metering_admin.get_deal_facilities("CRM-DEAL-0001"),
-				[{"fid": "FID-00-TEST-0001", "facility_name": "Test", "mfl_code": "1"}],
+				[
+					{
+						"row_name": "ROW-1",
+						"fid": "FID-00-TEST-0001",
+						"facility_name": "Test",
+						"mfl_code": "1",
+					}
+				],
 			)
 
 	def test_reveal_is_post_only_and_rate_limited(self):
 		self.assertIn(metering_admin.reveal_key, frappe.whitelisted)
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[metering_admin.reveal_key], ["POST"])
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[metering_admin.run_action], ["POST"])
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[metering_admin.find_owner_facilities], ["POST"])
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[metering_admin.link_deal_facility], ["POST"])
+
+
+class TestMeteringFacilityLinking(UnitTestCase):
+	def test_endpoints_refuse_without_manage_access(self):
+		with (
+			patch("frappe.has_permission", return_value=True),
+			patch.object(metering_admin, "get_access", return_value=metering_admin.NO_ACCESS),
+		):
+			self.assertRaises(frappe.PermissionError, metering_admin.find_owner_facilities, "DEAL", "12345678")
+			self.assertRaises(frappe.PermissionError, metering_admin.link_deal_facility, "DEAL", "ROW", "FID-00-X")
+
+	def test_find_owner_facilities_returns_the_candidates(self):
+		candidates = MagicMock()
+		with (
+			patch("frappe.has_permission", return_value=True),
+			patch.object(metering_admin, "get_access", return_value={"can_manage": True}),
+			patch.object(metering_admin, "owner_facility_candidates", return_value={"status": "ok", "candidates": candidates}) as lookup,
+		):
+			self.assertEqual(metering_admin.find_owner_facilities("DEAL", "12345678"), {"status": "ok", "candidates": candidates})
+		lookup.assert_called_once_with("12345678")
+
+	def test_link_requires_a_row_of_that_deal(self):
+		with (
+			patch("frappe.has_permission", return_value=True),
+			patch.object(metering_admin, "get_access", return_value={"can_manage": True}),
+			patch("frappe.db.get_value", return_value=None),
+		):
+			self.assertRaises(frappe.ValidationError, metering_admin.link_deal_facility, "DEAL", "OTHER-ROW", "FID-00-X")
+
+	def test_link_maps_service_statuses(self):
+		record = MagicMock(return_value={"status": "in_use", "holders": [{"doctype": "CRM Deal", "name": "D", "mfl_code": "M"}]})
+		with (
+			patch("frappe.has_permission", return_value=True),
+			patch.object(metering_admin, "get_access", return_value={"can_manage": True}),
+			patch("frappe.db.get_value", return_value=frappe._dict(name="ROW", mfl_code="MFL-1")),
+			patch.object(metering_admin, "record_facility_id", new=record),
+		):
+			self.assertEqual(
+				metering_admin.link_deal_facility("DEAL", "ROW", "FID-00-X", source="hfr", confirm_shared=1),
+				{"status": "in_use", "holders": [{"doctype": "CRM Deal", "name": "D", "mfl_code": "M"}]},
+			)
+		record.assert_called_once_with(
+			"MFL-1", "FID-00-X", source="hfr", actor=frappe.session.user, allow_shared=True, deal_row="ROW"
+		)
+
+	def test_link_success_returns_linked_with_the_fid(self):
+		with (
+			patch("frappe.has_permission", return_value=True),
+			patch.object(metering_admin, "get_access", return_value={"can_manage": True}),
+			patch("frappe.db.get_value", return_value=frappe._dict(name="ROW", mfl_code="MFL-1")),
+			patch.object(
+				metering_admin, "record_facility_id", return_value={"status": "linked", "hfr_facility_id": "FID-00-X"}
+			),
+		):
+			self.assertEqual(metering_admin.link_deal_facility("DEAL", "ROW", "FID-00-X"), {"status": "linked", "fid": "FID-00-X"})
+
+	def test_link_rejects_invalid_and_conflicting_values(self):
+		with (
+			patch("frappe.has_permission", return_value=True),
+			patch.object(metering_admin, "get_access", return_value={"can_manage": True}),
+			patch("frappe.db.get_value", return_value=frappe._dict(name="ROW", mfl_code="MFL-1")),
+			patch.object(metering_admin, "record_facility_id", return_value={"status": "invalid"}),
+		):
+			self.assertRaises(frappe.ValidationError, metering_admin.link_deal_facility, "DEAL", "ROW", "FID-1")
+		with (
+			patch("frappe.has_permission", return_value=True),
+			patch.object(metering_admin, "get_access", return_value={"can_manage": True}),
+			patch("frappe.db.get_value", return_value=frappe._dict(name="ROW", mfl_code="MFL-1")),
+			patch.object(metering_admin, "record_facility_id", return_value={"status": "different_fid"}),
+		):
+			self.assertRaises(frappe.ValidationError, metering_admin.link_deal_facility, "DEAL", "ROW", "FID-00-Y")
+
+	def test_link_rejects_unknown_source(self):
+		with (
+			patch("frappe.has_permission", return_value=True),
+			patch.object(metering_admin, "get_access", return_value={"can_manage": True}),
+		):
+			self.assertRaises(frappe.ValidationError, metering_admin.link_deal_facility, "DEAL", "ROW", "FID-00-X", source="csv")
