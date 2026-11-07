@@ -758,6 +758,7 @@ describe('FacilityOnboardingLanding', () => {
             packages,
             welcome_bonus_tokens: 400,
             partner_coupon_tokens: 150,
+            partner_coupon_offer: { value_type: 'flat_tokens', value: 150, max_tokens: 0, label: 'Network A' },
           },
         },
       })
@@ -802,7 +803,7 @@ describe('FacilityOnboardingLanding', () => {
     await settle()
     expect(call.mock.calls.at(-1)[1]).toMatchObject({ partner_id: '909091' })
     expect(host.querySelector('[data-testid="partner-coupon-applied"]').textContent).toContain('+150')
-    expect(host.querySelector('[data-testid="package-bonus"]').textContent).toContain('+150 Partner Coupon tokens')
+    expect(host.querySelector('[data-testid="package-bonus"]').textContent).toContain('+150 tokens')
     // The choice survives reloading the catalogue for the coupon.
     expect(host.querySelector('.pkg.sel .nm').textContent).toBe(firstName)
     host.querySelector('[data-testid="partner-coupon-close"]').click()

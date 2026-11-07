@@ -331,7 +331,7 @@
                   <input id="partner-coupon-input" ref="couponInputRef" :value="partnerId" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]{6}" placeholder="123456" :aria-invalid="Boolean(partnerId && partnerId.length !== 6)" @input="onPartnerIdInput" @keydown.enter.prevent="closeCoupon" />
                   <span class="hint">{{ partnerId && partnerId.length !== 6 ? __('Enter all six digits, or clear the field to leave it blank.') : __('Leave it blank if you don’t have one.') }}</span>
                 </div>
-                <p v-if="couponApplied" class="ok" data-testid="partner-coupon-applied">✓ {{ __('Partner Coupon applied') }}<template v-if="catalog.network?.display_name"> · <span data-testid="partner-coupon-network">{{ catalog.network.display_name }}</span></template>: +{{ couponTokens.toLocaleString() }} {{ __('bonus tokens per facility with your first purchase') }}</p>
+                <p v-if="couponApplied" class="ok" data-testid="partner-coupon-applied">✓ {{ __('Partner Coupon applied') }}<template v-if="catalog.network?.display_name"> · <span data-testid="partner-coupon-network">{{ catalog.network.display_name }}</span></template>: +{{ couponOfferLabel }} {{ __('with your first purchase') }}</p>
                 <div style="display: flex; gap: 10px; margin-top: 10px">
                   <button type="button" class="btn primary small" data-testid="partner-coupon-close" @click="closeCoupon">{{ partnerId ? __('Done') : __('Close') }}</button>
                 </div>
@@ -610,6 +610,7 @@ import {
 import { FACILITY_PAGE_SIZE, facilityPage, filterFacilities } from '@/utils/facilityPager'
 import { facilityId } from '@/utils/facilityId'
 import { termsDocument, termsFileName } from '@/utils/termsDownload'
+import { couponValueLabel } from '@/utils/coupons'
 import {
   CUSTOM,
   customQuote,
@@ -724,10 +725,14 @@ watch(
 // Complimentary tokens the server will add to each facility's first paid Flex package.
 const welcomeBonusTokens = computed(() => Number(catalog.value.welcome_bonus_tokens) || 0)
 const couponTokens = computed(() => Number(catalog.value.partner_coupon_tokens) || 0)
+const couponOffer = computed(() => catalog.value.partner_coupon_offer || null)
+const couponOfferLabel = computed(() =>
+  couponOffer.value ? `${couponValueLabel(couponOffer.value)}` : '',
+)
 const couponApplied = computed(
   () =>
     partnerId.value.length === 6 &&
-    couponTokens.value > 0 &&
+    Boolean(couponOffer.value) &&
     !catalogBusy.value &&
     !catalogError.value &&
     Boolean(catalog.value.network?.name),
@@ -738,7 +743,7 @@ const bonusLine = computed(() => {
     parts.push(`+${welcomeBonusTokens.value.toLocaleString()} ${__('bonus tokens on your first purchase')}`)
   }
   if (couponApplied.value) {
-    parts.push(`+${couponTokens.value.toLocaleString()} ${__('Partner Coupon tokens')}`)
+    parts.push(`+${couponOfferLabel.value}`)
   }
   return parts.join(' · ')
 })
