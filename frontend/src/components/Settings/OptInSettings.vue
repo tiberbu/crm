@@ -176,11 +176,11 @@
             />
             <FormControl
               v-model="form.partner_coupon_tokens"
-              :label="__('Partner Coupon tokens')"
+              :label="__('Partner Coupon fallback tokens (deprecated)')"
               type="number"
               :description="
                 __(
-                  'Complimentary tokens for a facility onboarded with a Partner Coupon, added once to a paid package. 0 turns it off.',
+                  'Used only for a network that has never had a coupon of its own. Set per-network values in Settings › Coupons. 0 turns the fallback off.',
                 )
               "
               @update:modelValue="markDirty"

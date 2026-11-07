@@ -66,7 +66,8 @@ export function tokenLines(grants) {
   const coupon = []
   for (const grant of grants || []) {
     if (grant.grant_source === 'Token Purchase') purchase.push(grant)
-    else if (grant.grant_source === 'Partner Coupon') coupon.push(grant)
+    else if (grant.grant_source === 'Partner Coupon' || grant.grant_source === 'CRM Coupon')
+      coupon.push(grant)
   }
   return { purchase, coupon }
 }
