@@ -874,6 +874,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = [
@@ -958,6 +959,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = [
@@ -1013,6 +1015,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = []
@@ -1067,6 +1070,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = []
@@ -1112,6 +1116,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = [

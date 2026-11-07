@@ -31,6 +31,7 @@ import hashlib
 import hmac
 import json
 import random
+import secrets
 import time
 from collections import defaultdict
 from statistics import median
@@ -46,7 +47,12 @@ from crm.api._email import (
 	schedule_email_queue_redaction,
 )
 from crm.utils.error_types import ConfigurationError
-from crm.utils.facility_ids import facility_ids_by_mfl
+from crm.utils.facility_ids import (
+	facility_id_holders,
+	facility_ids_by_mfl,
+	owner_facility_candidates,
+	record_facility_id,
+)
 from crm.utils.jinja import render_terms_template
 from crm.utils.optin_bundles import (
 	billing_schedule,
@@ -226,6 +232,7 @@ def _deal_invitation_facilities(context):
 						"mfl_code": mfl_code,
 						"facility_name": facility_name,
 						"keph_level": keph_level,
+						"hfr_facility_id": frappe.utils.cstr(row.get("hfr_facility_id") or "").strip(),
 					}
 				)
 			)
@@ -1480,7 +1487,7 @@ def verify_otp(email: Any, network_slug: Any, otp: Any, deal_invitation: Any = N
 	facilities = [
 		{
 			"mfl_code": r.mfl_code,
-			"hfr_facility_id": facility_ids.get(frappe.utils.cstr(r.mfl_code).strip(), ""),
+			"hfr_facility_id": r.get("hfr_facility_id") or facility_ids.get(frappe.utils.cstr(r.mfl_code).strip(), ""),
 			"facility_name": r.facility_name,
 			"keph_level": r.keph_level,
 			"already_quoted": bool(quoted_map.get(r.mfl_code)),
@@ -1494,6 +1501,135 @@ def verify_otp(email: Any, network_slug: Any, otp: Any, deal_invitation: Any = N
 		"expiry": expiry,
 		"facilities": facilities,
 	}
+
+
+def _wizard_facilities(email, network_slug, deal_invitation):
+	"""The contact's facilities for the wizard: the invited Deal's rows, else all memberships."""
+	invitation = _decode_deal_invitation(deal_invitation, network_slug, email)
+	if invitation:
+		return _deal_invitation_facilities(invitation)
+	return _get_all_memberships(email, network_slug)
+
+
+def _owner_candidates_cache_key(signing_token):
+	return "optin_owner_candidates:%s" % _hmac_hex(_get_signing_key(), "owner-candidates:%s" % frappe.utils.cstr(signing_token))
+
+
+# nosemgrep: guest-whitelisted-method -- signing-token, email, network, and expiry are verified before any lookup; POST-only and rate-limited.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def lookup_owner_facilities(
+	signing_token: Any,
+	email: Any,
+	network_slug: Any,
+	expiry: Any,
+	owner_id_number: Any,
+	deal_invitation: Any = None,
+):
+	"""Find the contact's facilities in the registry by owner ID number.
+
+	Returns opaque candidates; the Facility ID is only revealed when one is linked. The owner ID
+	number is used for this search and is never stored. Continuing is never blocked.
+	"""
+	email = frappe.utils.cstr(email).strip().lower()
+	network_slug = frappe.utils.cstr(network_slug).strip()
+	_validate_signing_token(signing_token, email, network_slug, expiry)
+
+	client_ip = _get_client_ip()
+	rate_key = "optin_rate_olf:%s" % client_ip
+	call_count = int(frappe.cache().get_value(rate_key) or 0)
+	if call_count < 10:
+		frappe.cache().set_value(rate_key, call_count + 1, expires_in_sec=600)
+	cache_key = _owner_candidates_cache_key(signing_token)
+	per_token_count = int(frappe.cache().get_value(cache_key + ":rate") or 0)
+	if call_count >= 10 or per_token_count >= 5:
+		return {"status": "rate_limited", "candidates": []}
+	frappe.cache().set_value(cache_key + ":rate", per_token_count + 1, expires_in_sec=900)
+
+	facilities = _wizard_facilities(email, network_slug, deal_invitation)
+	register_ids = facility_ids_by_mfl([frappe.utils.cstr(r.mfl_code).strip() for r in facilities])
+	if all(
+		register_ids.get(frappe.utils.cstr(r.mfl_code).strip()) or frappe.utils.cstr(r.get("hfr_facility_id") or "").strip()
+		for r in facilities
+	):
+		return {"status": "no_unlinked", "candidates": []}
+
+	result = owner_facility_candidates(owner_id_number)
+	status = result["status"]
+	candidates = result["candidates"]
+	if status == "ok":
+		own_mfls = {frappe.utils.cstr(r.mfl_code).strip().casefold() for r in facilities}
+		kept = [
+			candidate
+			for candidate in candidates
+			if all(
+				frappe.utils.cstr(holder.get("mfl_code")).strip().casefold() in own_mfls
+				for holder in facility_id_holders(candidate["hfr_facility_id"], "")
+			)
+		]
+		if not kept:
+			return {"status": "no_facilities", "candidates": []}
+		candidates = kept
+
+	envelope = [{"candidate_id": secrets.token_urlsafe(12), "candidate": candidate} for candidate in candidates]
+	frappe.cache().set_value(cache_key, json.dumps(envelope), expires_in_sec=900)
+	return {
+		"status": status,
+		"candidates": [
+			{
+				"candidate_id": item["candidate_id"],
+				"facility_name": item["candidate"]["facility_name"],
+				"facility_level": item["candidate"]["facility_level"],
+				"facility_type": item["candidate"]["facility_type"],
+			}
+			for item in envelope
+		],
+	}
+
+
+# nosemgrep: guest-whitelisted-method -- signing-token, email, network, and expiry are verified; only the contact's own facilities may be linked; POST-only and rate-limited.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def link_facility_id(
+	signing_token: Any,
+	email: Any,
+	network_slug: Any,
+	expiry: Any,
+	mfl_code: Any,
+	candidate_id: Any,
+	deal_invitation: Any = None,
+):
+	"""Link a looked-up Facility ID to one of the contact's facilities."""
+	email = frappe.utils.cstr(email).strip().lower()
+	network_slug = frappe.utils.cstr(network_slug).strip()
+	_validate_signing_token(signing_token, email, network_slug, expiry)
+
+	client_ip = _get_client_ip()
+	rate_key = "optin_rate_lfi:%s" % client_ip
+	call_count = int(frappe.cache().get_value(rate_key) or 0)
+	if call_count >= 30:
+		return {"status": "rate_limited"}
+	frappe.cache().set_value(rate_key, call_count + 1, expires_in_sec=600)
+
+	own_mfls = {frappe.utils.cstr(r.mfl_code).strip().casefold() for r in _wizard_facilities(email, network_slug, deal_invitation)}
+	target = frappe.utils.cstr(mfl_code).strip()
+	if target.casefold() not in own_mfls:
+		return {"status": "not_allowed"}
+
+	raw = frappe.cache().get_value(_owner_candidates_cache_key(signing_token), expires=True)
+	try:
+		envelope = json.loads(raw) if raw else []
+	except (TypeError, ValueError):
+		envelope = []
+	candidate = next(
+		(item["candidate"] for item in envelope if item.get("candidate_id") == frappe.utils.cstr(candidate_id).strip()),
+		None,
+	)
+	if not candidate:
+		return {"status": "expired"}
+
+	result = record_facility_id(target, candidate["hfr_facility_id"], source="hfr", actor=email)
+	if result["status"] in ("linked", "already_linked"):
+		return {"status": "linked", "mfl_code": target, "hfr_facility_id": candidate["hfr_facility_id"]}
+	return {"status": "needs_coordinator"}
 
 
 # nosemgrep: guest-whitelisted-method -- signing-token, email, network, and expiry are verified before pricing is returned.

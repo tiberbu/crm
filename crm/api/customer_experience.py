@@ -963,6 +963,7 @@ def add_facility_from_hfr(
 		frappe.throw(_("MFL code or HFR Facility ID is required."), frappe.ValidationError)
 
 	from crm.api.hfr import get_facility_detail, search_facility
+	from crm.utils.facility_ids import is_valid_facility_id
 
 	facility_data = {}
 	if fid:
@@ -980,7 +981,7 @@ def add_facility_from_hfr(
 			frappe.ValidationError,
 		)
 	resolved_fid = _text(facility_data.get("hfr_facility_id")).strip()
-	if not re.fullmatch(r"FID-\d{2}-[\w-]+", resolved_fid, flags=re.IGNORECASE):
+	if not is_valid_facility_id(resolved_fid):
 		frappe.throw(
 			_("The Health Facility Registry record has no valid Facility ID (FID) for deployment lookup, so it was not linked."),
 			frappe.ValidationError,

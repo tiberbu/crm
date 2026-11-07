@@ -19,11 +19,19 @@ from typing import Any
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.utils.jinja import get_jenv
 from jinja2.exceptions import TemplateSyntaxError
 
 from crm.api._email import branded_email_html, create_transactional_communication
-from crm.utils.facility_ids import facility_ids_by_mfl
+from crm.utils.facility_ids import (
+	SYNC_STATUS,
+	facility_id_holders,
+	facility_ids_by_mfl,
+	fill_facility_rows,
+	is_valid_facility_id,
+	owner_facility_candidates,
+)
 from crm.utils.optin_bundles import membership_price_lists, normalize_price_lists
 from crm.utils.onboarding_source import (
 	NETWORK_OPTIN_CONTACT_SOURCE,
@@ -2040,10 +2048,14 @@ def save_facility(data: Any):
 	  mfl_code: str,
 	  facility_name: str,
 	  organization?: str,  # blank defaults to the facility name
-	  keph_level: str,
-	  memberships: [{network, price_list_override?, status, contact_name, contact_email, contact_phone}]
-	  ``price_list_override`` is optional on edits so contact updates cannot clear
-	  pricing accidentally; CSV/admin callers may send an explicit blank to clear it.
+	keph_level: str,
+	memberships: [{network, price_list_override?, status, contact_name, contact_email, contact_phone}]
+	``price_list_override`` is optional on edits so contact updates cannot clear
+	pricing accidentally; CSV/admin callers may send an explicit blank to clear it.
+	``hfr_facility_id`` is optional; a blank value never clears a stored one. Replacing a
+	stored one needs ``replace_facility_id`` and an administrator; either way the matching
+	Lead/Deal rows are filled and a conflicting stored ID is refused.
+	``hfr_facility_id_source`` ("hfr" or "manual") sets the honest sync status.
 	}
 	Max 2 memberships enforced.
 	"""
@@ -2116,10 +2128,20 @@ def save_facility(data: Any):
 	memberships = optin_memberships
 
 	doc.mfl_code = mfl_code or doc.mfl_code
-	# The Facility ID comes from the HFR lookup or the CSV; a blank value never clears a stored one.
-	hfr_facility_id = frappe.utils.cstr(data.get("hfr_facility_id") or "").strip()
-	if hfr_facility_id:
-		doc.hfr_facility_id = hfr_facility_id
+	# A stored Facility ID is never cleared by a blank value, and a different value is a
+	# deliberate replacement (admin only, confirmed) that also fills the matching rows.
+	new_fid = frappe.utils.cstr(data.get("hfr_facility_id") or "").strip()
+	old_fid = frappe.utils.cstr(doc.hfr_facility_id or "").strip()
+	fid_source = "hfr" if frappe.utils.cstr(data.get("hfr_facility_id_source")) == "hfr" else "manual"
+	if new_fid and new_fid.casefold() != old_fid.casefold():
+		if not is_valid_facility_id(new_fid):
+			frappe.throw(_("Enter a Facility ID like FID-00-12345-1."))
+		if old_fid and not (frappe.utils.cint(data.get("replace_facility_id")) and _is_admin()):
+			frappe.throw(_("This facility already has a Facility ID. Use Change to replace it."))
+		if facility_id_holders(new_fid, doc.mfl_code):
+			frappe.throw(_("Facility ID {0} is already on another facility.").format(new_fid))
+		doc.hfr_facility_id = new_fid
+		doc.hfr_sync_status = SYNC_STATUS[fid_source]
 	doc.facility_name = frappe.utils.cstr(data.get("facility_name") or doc.facility_name or "")
 	if "organization" in data:
 		doc.organization = frappe.utils.cstr(data.get("organization") or "").strip()
@@ -2214,7 +2236,12 @@ def save_facility(data: Any):
 			membership_values,
 		)
 
+	filled_fid = new_fid if (new_fid and new_fid.casefold() != old_fid.casefold()) else None
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	if filled_fid:
+		fill_facility_rows(
+			doc.mfl_code, filled_fid, sync_status=SYNC_STATUS[fid_source], replace_fid=old_fid or None
+		)
 	frappe.db.commit()
 
 	# New parent facilities send their invitations in after_insert. For an existing
@@ -2315,6 +2342,18 @@ def resend_facility_invitation(facility_name: Any, membership_name: Any):
 # ---------------------------------------------------------------------------
 # HFR Lookup
 # ---------------------------------------------------------------------------
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=600)
+def lookup_owner_facilities(owner_id_number: Any):
+	"""
+	Look up the owner's facilities in the Health Facility Registry by ID number, for the
+	network facility form. Returns {status, candidates} with the Facility ID included.
+	"""
+	if not _is_admin() and not _get_coordinator_networks():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	return owner_facility_candidates(owner_id_number)
 
 
 @frappe.whitelist()
