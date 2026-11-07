@@ -25,6 +25,7 @@ from crm.partner_portal.utils import (
 	resolve_or_create_facility,
 	store_idempotency,
 )
+from crm.utils.facility_ids import is_valid_facility_id, record_facility_id
 from crm.utils.onboarding_source import (
 	build_network_optin_invitation_url,
 	is_network_optin_membership,
@@ -48,6 +49,7 @@ def deal_won(
 	idempotency_key: Any = None,
 	send_email: Any = 1,
 	currency: Any = "KES",
+	hfr_facility_id: Any = None,
 	**kwargs,
 ) -> dict[str, Any]:
 	"""
@@ -65,6 +67,9 @@ def deal_won(
 	    idempotency_key: Client-provided idempotency key.
 	    send_email: Whether to dispatch invitation email (default 1 / True).
 	    currency: Pricing currency (default 'KES').
+	    hfr_facility_id: Optional Facility ID (also accepted on the facility dict;
+	        the parameter wins). Recorded on the facility in hfr_facility_id; a value
+	        that conflicts with the facility's record fails before any membership write.
 
 	Returns:
 	    Full deal-won enrollment payload including membership, pricing, and invitation status.
@@ -90,8 +95,25 @@ def deal_won(
 	if not name_val:
 		frappe.throw(_("A facility contact person name is required."), frappe.ValidationError)
 
+	# The Facility ID is validated before anything is written; a dict facility may carry it
+	# too, and the explicit parameter wins when both are sent.
+	facility_dict_fid = (
+		frappe.utils.cstr(facility.get("hfr_facility_id") or "").strip() if isinstance(facility, dict) else ""
+	)
+	fid_val = frappe.utils.cstr(hfr_facility_id or facility_dict_fid or "").strip()
+	if fid_val and not is_valid_facility_id(fid_val):
+		frappe.throw(_("Enter a Facility ID like FID-00-12345-1."), frappe.ValidationError)
+
 	# Resolve or create Pre-Qualified Facility
 	facility_doc = resolve_or_create_facility(facility, auto_create=True)
+	if fid_val:
+		fid_result = record_facility_id(facility_doc.mfl_code, fid_val, source="manual", actor=frappe.session.user)
+		if fid_result["status"] in ("different_fid", "in_use"):
+			frappe.throw(
+				_("Facility ID {0} does not match this facility's record.").format(fid_val), frappe.ValidationError
+			)
+		# The later facility_doc.save would otherwise write the stale blank value back.
+		facility_doc.reload()
 	currency_str = frappe.utils.cstr(currency or "KES").strip()
 
 	phone_val = frappe.utils.cstr(contact_phone or phone or "").strip()
@@ -195,6 +217,7 @@ def deal_won(
 			"facility_name": facility_doc.facility_name,
 			"mfl_code": facility_doc.mfl_code,
 			"keph_level": facility_doc.keph_level,
+			"hfr_facility_id": facility_doc.hfr_facility_id or "",
 		},
 		"network": {
 			"name": network_doc.name,
