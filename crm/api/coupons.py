@@ -1,5 +1,7 @@
 """Admin API for the coupon domain: manage, assign, redeem and release coupons."""
 
+from typing import Any
+
 import frappe
 from frappe import _
 from frappe.utils import cstr, now_datetime
@@ -70,7 +72,7 @@ def _get_coupon(name):
 
 
 @frappe.whitelist()
-def get_coupon(name):
+def get_coupon(name: Any):
 	"""The full coupon for the admin editor, plus its derived status."""
 	name = _text(name)
 	_assert_coupon_access(name)
@@ -78,7 +80,7 @@ def get_coupon(name):
 
 
 @frappe.whitelist()
-def list_coupons(network=None):
+def list_coupons(network: Any = None):
 	"""The coupons a user may see: admins all, coordinators only their networks."""
 	from crm.api.optin_admin import _assert_network_access, _get_coordinator_networks
 
@@ -126,7 +128,7 @@ def list_coupons(network=None):
 
 
 @frappe.whitelist()
-def save_coupon(name, payload):
+def save_coupon(name: Any, payload: Any):
 	"""Create or edit a coupon. Coordinators may only touch a coupon on their own network."""
 	from crm.api.optin_admin import _get_coordinator_networks
 
@@ -161,7 +163,7 @@ def save_coupon(name, payload):
 
 
 @frappe.whitelist()
-def revoke_coupon(name, reason=None):
+def revoke_coupon(name: Any, reason: Any = None):
 	"""Revoke a coupon (terminal). Revoked coupons stop new redemptions; granted tokens are never clawed back."""
 	name = _text(name)
 	_assert_coupon_access(name)
@@ -180,7 +182,7 @@ def revoke_coupon(name, reason=None):
 
 
 @frappe.whitelist()
-def list_redemptions(coupon=None, network=None):
+def list_redemptions(coupon: Any = None, network: Any = None):
 	"""Redemption records, filtered by coupon or network (a coordinator sees only their networks)."""
 	from crm.api.optin_admin import _get_coordinator_networks
 
@@ -231,7 +233,7 @@ def list_redemptions(coupon=None, network=None):
 
 
 @frappe.whitelist()
-def assign_coupon(coupon, facility_mfls, facility_fids=None):
+def assign_coupon(coupon: Any, facility_mfls: Any, facility_fids: Any = None):
 	"""Assign a CRM coupon to facilities (one row per MFL). Idempotent."""
 	coupon = _text(coupon)
 	_assert_coupon_access(coupon)
@@ -266,7 +268,7 @@ def assign_coupon(coupon, facility_mfls, facility_fids=None):
 
 
 @frappe.whitelist()
-def list_assignments(coupon):
+def list_assignments(coupon: Any):
 	coupon = _text(coupon)
 	_assert_coupon_access(coupon)
 	rows = frappe.get_all(
@@ -279,7 +281,7 @@ def list_assignments(coupon):
 
 
 @frappe.whitelist()
-def remove_assignment(coupon, facility_mfl):
+def remove_assignment(coupon: Any, facility_mfl: Any):
 	coupon = _text(coupon)
 	facility_mfl = _text(facility_mfl)
 	_assert_coupon_access(coupon)
@@ -291,7 +293,7 @@ def remove_assignment(coupon, facility_mfl):
 
 
 @frappe.whitelist()
-def redeem_code(code, customer, facility_mfl, facility_fid=None):
+def redeem_code(code: Any, customer: Any, facility_mfl: Any, facility_fid: Any = None):
 	"""Redeem a Coupon Code on behalf of a logged-in portal user's facility. Creates the assignment."""
 	from crm.api.website_redirect import require_portal_user
 
@@ -323,7 +325,7 @@ def redeem_code(code, customer, facility_mfl, facility_fid=None):
 
 
 @frappe.whitelist()
-def release_redemption(name, reason=None):
+def release_redemption(name: Any, reason: Any = None):
 	"""Release a Reserved redemption (admin lever for an order that will never be paid)."""
 	name = _text(name)
 	if not _is_admin():
@@ -333,7 +335,7 @@ def release_redemption(name, reason=None):
 
 
 @frappe.whitelist()
-def get_facility_coupons(customer, facility_mfl, facility_fid=None):
+def get_facility_coupons(customer: Any, facility_mfl: Any, facility_fid: Any = None):
 	"""The facility's current coupon (if it would apply) plus its redemption history, for the staff form."""
 	facility_mfl = _text(facility_mfl)
 	if not _is_admin() and not facility_mfl:
