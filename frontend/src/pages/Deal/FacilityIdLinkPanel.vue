@@ -65,7 +65,7 @@
           {{
             __(
               'This Facility ID is already on {0}. Link it anyway?',
-              confirmDialog.holders.map((holder) => `${holder.doctype} ${holder.name}`).join(', '),
+              [confirmDialog.holders.map((holder) => `${holder.doctype} ${holder.name}`).join(', ')],
             )
           }}
         </p>

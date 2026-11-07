@@ -2048,14 +2048,14 @@ def save_facility(data: Any):
 	  mfl_code: str,
 	  facility_name: str,
 	  organization?: str,  # blank defaults to the facility name
-  keph_level: str,
-  memberships: [{network, price_list_override?, status, contact_name, contact_email, contact_phone}]
-  ``price_list_override`` is optional on edits so contact updates cannot clear
-  pricing accidentally; CSV/admin callers may send an explicit blank to clear it.
-  ``hfr_facility_id`` is optional; a blank value never clears a stored one. Replacing a
-  stored one needs ``replace_facility_id`` and an administrator; either way the matching
-  Lead/Deal rows are filled and a conflicting stored ID is refused.
-  ``hfr_facility_id_source`` ("hfr" or "manual") sets the honest sync status.
+	keph_level: str,
+	memberships: [{network, price_list_override?, status, contact_name, contact_email, contact_phone}]
+	``price_list_override`` is optional on edits so contact updates cannot clear
+	pricing accidentally; CSV/admin callers may send an explicit blank to clear it.
+	``hfr_facility_id`` is optional; a blank value never clears a stored one. Replacing a
+	stored one needs ``replace_facility_id`` and an administrator; either way the matching
+	Lead/Deal rows are filled and a conflicting stored ID is refused.
+	``hfr_facility_id_source`` ("hfr" or "manual") sets the honest sync status.
 	}
 	Max 2 memberships enforced.
 	"""
@@ -2238,11 +2238,11 @@ def save_facility(data: Any):
 
 	filled_fid = new_fid if (new_fid and new_fid.casefold() != old_fid.casefold()) else None
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-	frappe.db.commit()
 	if filled_fid:
 		fill_facility_rows(
 			doc.mfl_code, filled_fid, sync_status=SYNC_STATUS[fid_source], replace_fid=old_fid or None
 		)
+	frappe.db.commit()
 
 	# New parent facilities send their invitations in after_insert. For an existing
 	# facility, explicitly invite memberships newly added through this admin flow.

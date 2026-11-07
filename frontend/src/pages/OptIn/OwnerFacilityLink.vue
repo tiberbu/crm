@@ -164,11 +164,12 @@ async function findFacilities() {
     status.value = result.status
     candidates.value = result.candidates || []
     Object.keys(picked).forEach((key) => delete picked[key])
-    if (result.status === 'ok') phase.value = 'results'
-    else statusText.value = textFor(result.status)
+    phase.value = 'results'
+    if (result.status !== 'ok') statusText.value = textFor(result.status)
   } catch (error) {
     status.value = 'unavailable'
     statusText.value = error?.messages?.[0] || textFor('unavailable')
+    phase.value = 'results'
   } finally {
     ownerId.value = ''
     busy.value = false

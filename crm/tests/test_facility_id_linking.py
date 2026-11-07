@@ -98,6 +98,7 @@ class TestFacilityIdLinking(IntegrationTestCase):
 					"doctype": "CRM Pre-Qualified Facility",
 					"mfl_code": mfl,
 					"facility_name": "Facility ID Link Test %s" % mfl,
+					"keph_level": "Level 3",
 					"hfr_facility_id": fid,
 				}
 			).insert(ignore_permissions=True)
@@ -126,7 +127,14 @@ class TestFacilityIdLinking(IntegrationTestCase):
 
 	def _insert_row(self, doctype, parent, parenttype, mfl):
 		row = frappe.get_doc(
-			{"doctype": doctype, "parent": parent, "parenttype": parenttype, "parentfield": "facilities", "mfl_code": mfl}
+			{
+				"doctype": doctype,
+				"parent": parent,
+				"parenttype": parenttype,
+				"parentfield": "facilities",
+				"mfl_code": mfl,
+				"hfr_facility_id": "",
+			}
 		)
 		row.flags.ignore_permissions = True
 		row.flags.ignore_links = True
@@ -155,7 +163,7 @@ class TestFacilityIdLinking(IntegrationTestCase):
 
 	def test_express_row_holding_the_fid_counts_as_holder(self):
 		frappe.get_doc(
-			{"doctype": "CRM Pre-Qualified Facility", "mfl_code": FID_A, "facility_name": "Express row"}
+			{"doctype": "CRM Pre-Qualified Facility", "mfl_code": FID_A, "facility_name": "Express row", "keph_level": "Level 3"}
 		).insert(ignore_permissions=True)
 		result = record_facility_id(MFL_A, FID_A, source="manual", actor="a")
 		self.assertEqual(result["status"], "in_use")
@@ -205,14 +213,14 @@ class TestFacilityIdLinking(IntegrationTestCase):
 		self.assertEqual(result, {"filled": 0, "skipped": 0, "deals": []})
 
 	def test_blank_mfl_deal_row_links_that_row_only(self):
-		other_row = self._insert_row("CRM Deal Facility", self.deal_name, "CRM Deal", MFL_OTHER)
-		result = record_facility_id("", FID_B, source="manual", actor="staff@example.test", deal_row=other_row)
+		blank_row = self._insert_row("CRM Deal Facility", self.deal_name, "CRM Deal", "")
+		result = record_facility_id("", FID_B, source="manual", actor="staff@example.test", deal_row=blank_row)
 		self.assertEqual(result["status"], "linked")
 		self.assertEqual(result["filled"], 1)
-		self.assertEqual(result["deals"], [self.deal_name])
-		self.assertEqual(frappe.db.get_value("CRM Deal Facility", other_row, "hfr_facility_id"), FID_B)
-		# MFL B rows and the register are untouched.
+		self.assertEqual(frappe.db.get_value("CRM Deal Facility", blank_row, "hfr_facility_id"), FID_B)
+		# The MFL-keyed rows and the register are untouched.
 		self.assertEqual(frappe.db.get_value("CRM Deal Facility", {"parent": self.deal_name, "mfl_code": MFL_B}, "hfr_facility_id"), "")
+		self.assertEqual(frappe.db.get_value("CRM Deal Facility", {"parent": self.deal_name, "mfl_code": MFL_OTHER}, "hfr_facility_id"), "")
 		self.assertEqual(frappe.db.get_value("CRM Pre-Qualified Facility", {"mfl_code": MFL_B}, "hfr_facility_id"), "")
 
 	def test_membership_rows_of_other_deals_are_untouched(self):
@@ -259,6 +267,9 @@ class TestSaveFacilityIdRules(IntegrationTestCase):
 
 	def setUp(self):
 		frappe.set_user("Administrator")
+		self._commit_patch = patch.object(frappe.db, "commit", lambda *args, **kwargs: None)
+		self._commit_patch.start()
+		self.addCleanup(self._commit_patch.stop)
 		frappe.db.savepoint("save_facility_fid_test")
 		self.addCleanup(frappe.db.rollback, save_point="save_facility_fid_test")
 		self.addCleanup(frappe.set_user, "Administrator")

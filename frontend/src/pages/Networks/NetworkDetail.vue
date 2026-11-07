@@ -1269,7 +1269,7 @@
           </div>
           <button
             class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-7 hover:bg-surface-gray-2 disabled:opacity-50 dark:bg-surface-gray-3 dark:text-ink-gray-4"
-            :disabled="hfrLoading"
+            :disabled="hfrLoading || !fidEditable"
             @click="lookupHFR"
           >
             <span v-if="hfrLoading" class="inline-flex items-center gap-1.5">
@@ -1316,7 +1316,7 @@
               />
               <button
                 class="rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-7 hover:bg-surface-gray-2 disabled:opacity-50 dark:bg-surface-gray-3 dark:text-ink-gray-4"
-                :disabled="ownerLookupLoading || !ownerId.trim()"
+                :disabled="ownerLookupLoading || !ownerId.trim() || !fidEditable"
                 @click="lookupOwnerFacilities"
               >
                 {{ __('Find by owner ID') }}
@@ -2487,7 +2487,12 @@ async function saveContact() {
     formError.value = __('Contact Phone is required.')
     return
   }
-  if (form.hfr_facility_id && !isValidFacilityId(form.hfr_facility_id)) {
+  const originalFid = (editingFacility.value?.hfr_facility_id ?? '').trim()
+  if (
+    form.hfr_facility_id.trim() !== originalFid &&
+    form.hfr_facility_id &&
+    !isValidFacilityId(form.hfr_facility_id)
+  ) {
     formError.value = __('Enter a Facility ID like FID-00-12345-1.')
     return
   }

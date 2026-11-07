@@ -95,7 +95,7 @@ def facility_id_holders(fid, mfl_code=None) -> list[dict]:
 	)
 	for row in register:
 		mfl = cstr(row.mfl_code).strip().casefold()
-		if mfl == exclude:
+		if exclude and mfl == exclude:
 			continue
 		if cstr(row.hfr_facility_id).strip().casefold() == target or mfl == target:
 			key = ("CRM Pre-Qualified Facility", row.name)
@@ -104,16 +104,17 @@ def facility_id_holders(fid, mfl_code=None) -> list[dict]:
 				holders.append(
 					{"doctype": "CRM Pre-Qualified Facility", "name": row.name, "mfl_code": cstr(row.mfl_code).strip()}
 				)
+	parenttype = {"CRM Lead Facility": "CRM Lead", "CRM Deal Facility": "CRM Deal"}
 	for doctype in ("CRM Lead Facility", "CRM Deal Facility"):
 		rows = frappe.get_all(
 			doctype,
-			filters={"hfr_facility_id": ["is", "set"]},
+			filters={"hfr_facility_id": ["is", "set"], "parenttype": parenttype[doctype]},
 			fields=["name", "parent", "mfl_code", "hfr_facility_id"],
 			ignore_permissions=True,  # SYSTEM-INTERNAL: read-only holders check.
 		)
 		for row in rows:
 			mfl = cstr(row.mfl_code).strip().casefold()
-			if mfl == exclude:
+			if exclude and mfl == exclude:
 				continue
 			if cstr(row.hfr_facility_id).strip().casefold() == target:
 				key = (doctype, row.parent)
@@ -143,10 +144,11 @@ def fill_facility_rows(mfl_code, fid, *, sync_status, replace_fid=None) -> dict:
 	if not mfl or not target:
 		return result
 	replace = cstr(replace_fid).strip().casefold() if replace_fid else ""
+	parenttype = {"CRM Lead Facility": "CRM Lead", "CRM Deal Facility": "CRM Deal"}
 	for doctype in ("CRM Lead Facility", "CRM Deal Facility"):
 		rows = frappe.get_all(
 			doctype,
-			filters={"mfl_code": mfl, "parenttype": doctype},
+			filters={"mfl_code": mfl, "parenttype": parenttype[doctype]},
 			fields=["name", "parent", "hfr_facility_id"],
 			ignore_permissions=True,  # SYSTEM-INTERNAL: fill scoped to one MFL.
 		)
@@ -206,6 +208,12 @@ def record_facility_id(mfl_code, fid, *, source, actor, allow_shared=False, deal
 		return result
 
 	if target.casefold() in recorded:
+		if register:
+			register_fid = cstr(frappe.db.get_value("CRM Pre-Qualified Facility", register, "hfr_facility_id")).strip()
+			if not register_fid:
+				frappe.db.set_value(
+					"CRM Pre-Qualified Facility", register, _fid_write_values(target, status), update_modified=False
+				)
 		fill = fill_facility_rows(mfl, target, sync_status=status)
 		result["status"] = "already_linked"
 		result["filled"] = fill["filled"]
@@ -224,11 +232,17 @@ def record_facility_id(mfl_code, fid, *, source, actor, allow_shared=False, deal
 		)
 	fill = fill_facility_rows(mfl, target, sync_status=status) if mfl else {"filled": 0, "skipped": 0, "deals": []}
 	if deal_row:
-		row_mfl = frappe.db.get_value("CRM Deal Facility", deal_row, "mfl_code")
-		if not cstr(row_mfl).strip():
+		row_values = frappe.db.get_value(
+			"CRM Deal Facility", deal_row, ["mfl_code", "hfr_facility_id", "parent"], as_dict=True
+		)
+		if row_values and not cstr(row_values.mfl_code).strip():
+			existing = cstr(row_values.hfr_facility_id).strip()
+			if existing and existing.casefold() != target.casefold():
+				result["status"] = "different_fid"
+				return result
 			frappe.db.set_value("CRM Deal Facility", deal_row, _fid_write_values(target, status), update_modified=False)
 			fill["filled"] += 1
-			fill["deals"].append(frappe.db.get_value("CRM Deal Facility", deal_row, "parent"))
+			fill["deals"].append(row_values.parent)
 
 	try:
 		label = "owner lookup" if source == "hfr" else "manual entry"
