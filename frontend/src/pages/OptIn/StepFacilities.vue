@@ -163,6 +163,9 @@
       </div>
     </div>
 
+    <!-- Facility ID linking for selected facilities that have no Facility ID yet -->
+    <OwnerFacilityLink v-if="needId.length > 0" :facilities="needId" :deal-invitation="dealInvitation" />
+
     <!-- Empty state (should not happen in pre-qualified mode) -->
     <div
       v-if="facilities.length === 0"
@@ -209,10 +212,12 @@
 import { ref, computed, onMounted } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useOptInStore } from './useOptInStore.js'
-import { facilityId } from '@/utils/facilityId'
+import { facilityId, facilitiesNeedingId } from '@/utils/facilityId'
+import OwnerFacilityLink from './OwnerFacilityLink.vue'
 
 const props = defineProps({
   facilities: { type: Array, default: () => [] },
+  dealInvitation: { type: String, default: '' },
 })
 
 const emit = defineEmits(['continue', 'back'])
@@ -228,6 +233,7 @@ const lockedCodes = computed(
     ),
 )
 const lockedCount = computed(() => lockedCodes.value.size)
+const needId = computed(() => facilitiesNeedingId(props.facilities, selected.value))
 
 const selected = ref(
   (store.selectedFacilities || [])

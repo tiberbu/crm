@@ -54,6 +54,7 @@
         <StepFacilities
           v-if="store.step === 2"
           :facilities="store.facilities"
+          :deal-invitation="dealInvitation"
           @continue="onFacilitiesSelected"
           @back="store.setStep(1)"
         />
