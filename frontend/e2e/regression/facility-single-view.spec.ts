@@ -58,6 +58,7 @@ async function openFacility(
   selectedFacility = facility,
   pollHandler?: (route: Route) => Promise<void>,
   accountExtra: Record<string, unknown> = {},
+  extraHandler?: (method: string, body: Record<string, unknown>, route: Route) => Promise<boolean>,
 ) {
   const statusCalls: Array<{ method: string; mfl_code?: string | null; http?: string }> = []
   await page.route('**/api/method/**', async (route) => {
@@ -95,6 +96,34 @@ async function openFacility(
       statusCalls.push({ method, mfl_code: mfl, http: route.request().method() })
       return pollHandler ? pollHandler(route) : route.fulfill({ status: 500, json: {} })
     }
+    if (extraHandler && (await extraHandler(method, body, route))) return
+    // Stand-in for crm.api.facility_documents: pages the fixture's own rows.
+    const fixtureRows = (kind: string) =>
+      ((selectedFacility as Record<string, unknown>)[`${kind}s`] as Array<Record<string, unknown>>) || []
+    if (method === 'crm.api.facility_documents.get_facility_document_counts') {
+      const invoices = fixtureRows('invoice')
+      return route.fulfill({
+        json: {
+          message: {
+            order: fixtureRows('order').length,
+            invoice: invoices.length,
+            invoiceDue: invoices.filter((row) => Number(row.amount) > 0).length,
+            payment: fixtureRows('payment').length,
+          },
+        },
+      })
+    }
+    if (method === 'crm.api.facility_documents.get_facility_documents') {
+      const needle = String(body.search || '').toLowerCase()
+      const rows = fixtureRows(String(body.kind))
+        .filter((row) => body.status !== 'outstanding' || Number(row.amount) > 0)
+        .filter((row) => !needle || JSON.stringify(row).toLowerCase().includes(needle))
+      const start = Number(body.start) || 0
+      const size = Number(body.page_length) || 20
+      return route.fulfill({
+        json: { message: { rows: rows.slice(start, start + size), total: rows.length, start, page_length: size, counts: {}, truncated: false } },
+      })
+    }
     return route.fulfill({ json: { message: { data: {} } } })
   })
 
@@ -117,7 +146,8 @@ test('shows the saved HFR FID and offers a retry when status lookup temporarily 
   })
 
   await expect(page.getByTestId('facility-header-ids').getByText('FID-29-88776-5', { exact: true })).toBeVisible()
-  await expect(page.getByText('A verified HFR FID is required for deployment status and setup.')).toHaveCount(0)
+  await expect(page.getByTestId('facility-fid-missing')).toHaveCount(0)
+  await expect(page.getByText(/not been verified against/)).toHaveCount(0)
   await expect(page.getByRole('alert')).toContainText('temporarily unavailable')
   await expect(page.getByRole('button', { name: 'Retry check' })).toBeVisible()
   expect(statusCalls[0]).toEqual({ method: 'crm.api.hfr.ensure_provisioning_draft', mfl_code: '88776' })
@@ -144,7 +174,8 @@ test('a status service mismatch names the FID the portal actually sent for resol
   await expect(page.getByTestId('facility-header-ids').getByText('FID-29-88776-5', { exact: true })).toBeVisible()
   await expect(page.getByText('FID lookup needs attention', { exact: true })).toBeVisible()
   await expect(page.getByText(/portal has HFR FID FID-29-88776-5/)).toBeVisible()
-  await expect(page.getByText('A verified HFR FID is required for deployment status and setup.')).toHaveCount(0)
+  await expect(page.getByTestId('facility-fid-missing')).toHaveCount(0)
+  await expect(page.getByText(/not been verified against/)).toHaveCount(0)
   expect(statusCalls[0].mfl_code).toBe('88776')
 })
 
@@ -676,25 +707,30 @@ test('a time-bound opt-in facility shows its plan, the full journey, and no toke
   await expect(page.getByTestId('facility-next-invoice')).toBeVisible()
   await expect(page.getByTestId('facility-available-tokens')).toHaveCount(0)
 
-  // Journey: all four stages, quote first, all complete.
-  const stepper = page.getByTestId('journey-stepper')
-  await expect(stepper.getByText('Quotes', { exact: true })).toBeVisible()
-  await expect(stepper.getByText('Orders', { exact: true })).toBeVisible()
-  await expect(stepper.getByText('Invoices', { exact: true })).toBeVisible()
-  await expect(stepper.getByText('Payments', { exact: true })).toBeVisible()
-  await expect(stepper.locator('[data-state="done"]')).toHaveCount(4)
+  // The first purchase cycle is complete (paid invoice, recorded payment): no stepper.
+  await expect(page.getByTestId('journey-stepper')).toHaveCount(0)
 
-  // Stage sections carry the documents; the quote links to its order.
+  // Each document type sits on its own tab; Overview (facility profile) opens first.
+  const tabs = page.getByTestId('facility-tabs')
+  await expect(tabs.getByRole('tab')).toHaveText([/Overview/, /Quotes/, /Orders/, /Invoices/, /Payments/, /Billing/])
+  await expect(page.getByTestId('facility-profile')).toBeVisible()
+  await expect(page.getByTestId('stage-order')).toHaveCount(0)
+
+  await page.getByTestId('facility-tab-quote').click()
   await expect(page.getByTestId('stage-quote')).toContainText('SAL-QTN-2026-00001')
+  await expect(page.getByTestId('facility-profile')).toHaveCount(0)
+  await page.getByTestId('facility-tab-order').click()
   await expect(page.getByTestId('stage-order')).toContainText('Year 1 · Quarter 1 subscription')
-  await expect(page.getByTestId('stage-invoice')).toContainText('ACC-SINV-2026-00017')
+  await page.getByTestId('facility-tab-payment').click()
   await expect(page.getByTestId('stage-payment')).toContainText('PG20261105')
+  await page.getByTestId('facility-tab-billing').click()
+  await expect(page.getByTestId('facility-billing')).toBeVisible()
 
-  // Cross-stage links target real per-row ids (jumpTo uses getElementById).
-  await expect(page.locator('#doc-SAL-QTN-2026-00001')).toHaveCount(1)
-  await expect(page.locator('#doc-SAL-ORD-2026-00035')).toHaveCount(1)
-  await expect(page.locator('#doc-ACC-SINV-2026-00017')).toHaveCount(1)
+  // Cross-links switch tab and focus the target row.
+  await page.getByTestId('facility-tab-invoice').click()
+  await expect(page.getByTestId('stage-invoice')).toContainText('ACC-SINV-2026-00017')
   await page.getByTestId('stage-invoice').getByRole('button', { name: 'For order SAL-ORD-2026-00035' }).click()
+  await expect(page.getByTestId('facility-tab-order')).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('#doc-SAL-ORD-2026-00035')).toBeFocused()
 
   // The account-level order is surfaced, not dropped (I1).
@@ -837,6 +873,9 @@ test('a token facility keeps token summary and a three-stage journey without a q
   await expect(stepper.getByText('Invoices', { exact: true })).toBeVisible()
   await expect(stepper.locator('[data-state="current"]')).toHaveCount(1)
 
+  // First purchase in progress: the stepper stays and its steps open their tab.
+  await stepper.getByTestId('journey-step-invoice').click()
+  await expect(page.getByTestId('facility-tab-invoice')).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('button', { name: 'Choose payment' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Top up tokens/ })).toBeVisible()
 })
@@ -896,4 +935,303 @@ test('an unplanned facility with a live token balance shows that balance', async
   await expect(page.getByTestId('facility-available-tokens')).toBeVisible()
   await expect(page.getByTestId('facility-available-tokens-value')).toContainText('75')
   await expect(page.getByRole('button', { name: /Top up tokens/ })).toBeVisible()
+})
+
+test('a manually entered FID shows no registry verification notice or sync badge', async ({ page }) => {
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: true, status: 'deployed', progress: 100 })),
+    { ...facility, hfr_sync_status: 'Manual' },
+  )
+
+  const profile = page.getByTestId('facility-profile')
+  await expect(profile.getByText('FID-29-88776-5', { exact: true })).toBeVisible()
+  await expect(page.getByText(/verified against the Health Facility Registry/)).toHaveCount(0)
+  await expect(profile.getByText('Manual', { exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('facility-fid-missing')).toHaveCount(0)
+})
+
+test('a facility without an FID asks for the HFR Facility ID without verification wording', async ({ page }) => {
+  await openFacility(
+    page,
+    async (route) =>
+      route.fulfill(
+        status({
+          configured: false,
+          status: 'not_linked',
+          message: 'An HFR Facility ID is required to look up HMIS implementation status.',
+          journey: { phase: 'not_linked', steps: [], poll: false },
+        }),
+      ),
+    { ...facility, facility_fid: '' },
+  )
+
+  const notice = page.getByTestId('facility-fid-missing')
+  await expect(notice).toContainText("Add this facility's HFR Facility ID to enable deployment and setup.")
+  await expect(notice).not.toContainText(/verified/i)
+  await expect(notice.getByRole('button', { name: 'Contact network support' })).toBeVisible()
+})
+
+// 100 records of each kind: the page stays short and every list pages 20 at a time.
+const busyFacility = {
+  ...tokenFacility,
+  mfl_code: '90100',
+  facility_name: 'Busy Records Clinic',
+  orders: Array.from({ length: 100 }, (_, i) => ({
+    name: `SAL-ORD-2026-${String(i).padStart(5, '0')}`,
+    doc_kind: 'token',
+    display_title: 'Starter',
+    display_status: 'Invoiced',
+    is_draft: false,
+    can_create_invoice: false,
+    facility_mfls: ['90100'],
+    transaction_date: `2026-${String((i % 9) + 1).padStart(2, '0')}-${String((i % 27) + 1).padStart(2, '0')}`,
+    grand_total: 1000 + i,
+    currency: 'KES',
+  })),
+  invoices: Array.from({ length: 100 }, (_, i) => ({
+    name: `ACC-INV-2026-${String(i).padStart(5, '0')}`,
+    invoice_number: `ACC-INV-2026-${String(i).padStart(5, '0')}`,
+    amount: i < 3 ? 500 : 0,
+    due_date: '2026-12-31',
+    posting_date: '2026-10-01',
+    facility_mfls: ['90100'],
+    sales_orders: [`SAL-ORD-2026-${String(i).padStart(5, '0')}`],
+  })),
+  payments: Array.from({ length: 100 }, (_, i) => ({
+    name: `PE-${i}`,
+    mode_of_payment: 'M-Pesa',
+    reference_no: `REF${String(i).padStart(4, '0')}`,
+    posting_date: '2026-10-02',
+    invoice: `ACC-INV-2026-${String(i).padStart(5, '0')}`,
+    status: 'Recorded',
+    amount: 1000,
+  })),
+}
+
+for (const mode of ['server', 'local'] as const) {
+  test(`100 orders, invoices and payments page 20 at a time on their own tabs (${mode})`, async ({ page }) => {
+    // Facilities without a customer (opt-in only) page the context rows locally.
+    await openFacility(
+      page,
+      async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+      busyFacility,
+      undefined,
+      mode === 'local' ? { customer: '' } : {},
+    )
+
+    const tabs = page.getByTestId('facility-tabs')
+    await expect(tabs.getByTestId('facility-tab-order')).toContainText('100')
+    await expect(tabs.getByTestId('facility-tab-invoice')).toContainText('3 due')
+
+    // The facility page no longer grows with history.
+    const height = await page.evaluate(() => document.documentElement.scrollHeight)
+    expect(height).toBeLessThan(4000)
+
+    await page.getByTestId('facility-tab-order').click()
+    const orders = page.getByTestId('stage-order')
+    await expect(orders.getByTestId('stage-order-rows').locator(':scope > li')).toHaveCount(20)
+    await expect(orders.getByTestId('stage-order-pager')).toContainText('Showing 1–20 of 100')
+    await orders.getByTestId('stage-order-next').click()
+    await expect(orders.getByTestId('stage-order-pager')).toContainText('Showing 21–40 of 100')
+    await orders.getByTestId('stage-order-search').fill('SAL-ORD-2026-0009')
+    await expect(orders.getByTestId('stage-order-rows').locator(':scope > li')).toHaveCount(10)
+    await expect(orders.getByTestId('stage-order-pager')).toHaveCount(0)
+
+    // Invoices open on "Needs action" when something is due, and the filter can show all.
+    await page.getByTestId('facility-tab-invoice').click()
+    const invoices = page.getByTestId('stage-invoice')
+    await expect(invoices.getByTestId('stage-invoice-rows').locator(':scope > li')).toHaveCount(3)
+    await invoices.getByTestId('stage-invoice-filter-all').click()
+    await expect(invoices.getByTestId('stage-invoice-pager')).toContainText('Showing 1–20 of 100')
+
+    // Search, filter and page survive a tab switch.
+    await page.getByTestId('facility-tab-order').click()
+    await expect(page.getByTestId('stage-order-search')).toHaveValue('SAL-ORD-2026-0009')
+
+    // A cross-link to a row on a later page opens that page and focuses the row.
+    await page.getByTestId('facility-tab-payment').click()
+    const payments = page.getByTestId('stage-payment')
+    await expect(payments.getByTestId('stage-payment-pager')).toContainText('Showing 1–20 of 100')
+    await payments.getByRole('button', { name: 'Pays invoice ACC-INV-2026-00000' }).click()
+    await expect(page.getByTestId('facility-tab-invoice')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('#doc-ACC-INV-2026-00000')).toBeFocused()
+  })
+}
+
+test('a customer-linked facility pages its records from the server', async ({ page }) => {
+  const requests: Array<Record<string, unknown>> = []
+  const linked = { ...tokenFacility, mfl_code: '90200', facility_name: 'Linked Account Clinic', customer: 'Regression Customer' }
+  const order = (i: number) => ({
+    name: `SAL-ORD-SRV-${String(i).padStart(4, '0')}`,
+    display_title: 'Starter',
+    display_status: 'Invoiced',
+    facility_mfls: ['90200'],
+    transaction_date: '2026-10-01',
+    grand_total: 100,
+    currency: 'KES',
+  })
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    linked,
+    undefined,
+    {},
+    async (method, body, route) => {
+      if (method === 'crm.api.facility_documents.get_facility_document_counts') {
+        await route.fulfill({ json: { message: { order: 250, invoice: 0, invoiceDue: 0, payment: 0 } } })
+        return true
+      }
+      if (method === 'crm.api.facility_documents.get_facility_documents') {
+        requests.push(body)
+        const start = Number(body.start) || 0
+        const rows = body.kind === 'order' ? Array.from({ length: 20 }, (_, i) => order(start + i)) : []
+        await route.fulfill({
+          json: { message: { rows, total: body.kind === 'order' ? 250 : 0, start, page_length: 20, counts: {}, truncated: false } },
+        })
+        return true
+      }
+      return false
+    },
+  )
+
+  await expect(page.getByTestId('facility-tab-order')).toContainText('250')
+  await page.getByTestId('facility-tab-order').click()
+  const orders = page.getByTestId('stage-order')
+  await expect(orders.getByTestId('stage-order-pager')).toContainText('Showing 1–20 of 250')
+  await orders.getByTestId('stage-order-next').click()
+  await expect(orders).toContainText('SAL-ORD-SRV-0020')
+  await expect(orders.getByTestId('stage-order-pager')).toContainText('Showing 21–40 of 250')
+  const orderRequests = requests.filter((body) => body.kind === 'order')
+  expect(orderRequests.map((body) => body.start)).toEqual([0, 20])
+  expect(orderRequests[0]).toMatchObject({ customer: 'Regression Customer', mfl_code: '90200', page_length: 20 })
+})
+
+test('mobile: tabs scroll and lists stay within the screen', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 })
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    busyFacility,
+  )
+  await page.getByTestId('facility-tab-invoice').click()
+  await expect(page.getByTestId('stage-invoice')).toBeVisible()
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(0)
+})
+
+test('"Review invoice" opens the Invoices tab', async ({ page }) => {
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    busyFacility,
+  )
+  await expect(page.getByTestId('facility-tab-overview')).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Review invoice' }).click()
+  await expect(page.getByTestId('facility-tab-invoice')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('stage-invoice')).toBeVisible()
+})
+
+// S4: the context row only carries actionable records plus record_counts; the
+// stepper and tab labels use the counts and the tabs page full history from the server.
+test('a slim context row still shows the full journey and history', async ({ page }) => {
+  const paid = Array.from({ length: 30 }, (_, i) => ({
+    name: `ACC-INV-SLIM-${String(i).padStart(3, '0')}`,
+    invoice_number: `ACC-INV-SLIM-${String(i).padStart(3, '0')}`,
+    amount: 0,
+    due_date: '2026-09-30',
+    posting_date: '2026-09-01',
+    facility_mfls: ['90300'],
+  }))
+  const due = { ...paid[0], name: 'ACC-INV-SLIM-DUE', invoice_number: 'ACC-INV-SLIM-DUE', amount: 900, due_date: '2026-12-31' }
+  const slim = {
+    ...tokenFacility,
+    mfl_code: '90300',
+    facility_name: 'Slim Row Clinic',
+    orders: [],
+    invoices: [due],
+    payments: [],
+    record_counts: { order: 31, order_draft: 0, invoice: 31, invoice_due: 1, payment: 30, payment_pending: 0 },
+  }
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    slim,
+    undefined,
+    {},
+    async (method, body, route) => {
+      if (method === 'crm.api.facility_documents.get_facility_document_counts') {
+        await route.fulfill({ json: { message: { order: 31, invoice: 31, invoiceDue: 1, payment: 30 } } })
+        return true
+      }
+      if (method === 'crm.api.facility_documents.get_facility_documents' && body.kind === 'invoice') {
+        const rows = body.status === 'outstanding' ? [due] : [due, ...paid]
+        const start = Number(body.start) || 0
+        await route.fulfill({
+          json: { message: { rows: rows.slice(start, start + 20), total: rows.length, start, page_length: 20, counts: {}, truncated: false } },
+        })
+        return true
+      }
+      return false
+    },
+  )
+
+  // Paid history exists (record_counts), so the stepper is gone and the tab says what is due.
+  await expect(page.getByTestId('journey-stepper')).toHaveCount(0)
+  await expect(page.getByTestId('facility-tab-invoice')).toContainText('31')
+  await expect(page.getByTestId('facility-tab-invoice-badge')).toHaveText('1 due')
+
+  await page.getByTestId('facility-tab-invoice').click()
+  const invoices = page.getByTestId('stage-invoice')
+  await expect(invoices.getByTestId('stage-invoice-rows').locator(':scope > li')).toHaveCount(1)
+  await invoices.getByTestId('stage-invoice-filter-all').click()
+  await expect(invoices.getByTestId('stage-invoice-pager')).toContainText('Showing 1–20 of 31')
+})
+
+// A returning customer with three documents at three different stages: no single
+// "current step"; each tab says what is waiting there.
+test('a returning customer with documents at different stages sees tab badges, not a stepper', async ({ page }) => {
+  const mixed = {
+    ...tokenFacility,
+    mfl_code: '90400',
+    facility_name: 'Mixed Stages Clinic',
+    orders: [
+      {
+        name: 'SAL-ORD-MIX-DRAFT',
+        display_title: 'Starter',
+        is_draft: true,
+        facility_mfls: ['90400'],
+        transaction_date: '2026-11-08',
+        grand_total: 12000,
+        currency: 'KES',
+      },
+    ],
+    invoices: [
+      { name: 'ACC-INV-MIX-DUE', invoice_number: 'ACC-INV-MIX-DUE', amount: 6000, due_date: '2026-12-31', facility_mfls: ['90400'] },
+      { name: 'ACC-INV-MIX-WAIT', invoice_number: 'ACC-INV-MIX-WAIT', amount: 3000, due_date: '2026-12-15', facility_mfls: ['90400'] },
+    ],
+    payments: [
+      { name: 'PE-MIX-PENDING', status: 'Pending Verification', invoice: 'ACC-INV-MIX-WAIT', mode_of_payment: 'M-Pesa Paybill', reference_no: 'MIX123', posting_date: '2026-11-08', amount: 3000 },
+    ],
+    record_counts: { order: 5, order_draft: 1, invoice: 6, invoice_due: 2, payment: 5, payment_pending: 1 },
+  }
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    mixed,
+    undefined,
+    {},
+    async (method, _body, route) => {
+      if (method === 'crm.api.facility_documents.get_facility_document_counts') {
+        await route.fulfill({ json: { message: { order: 5, invoice: 6, invoiceDue: 2, payment: 5 } } })
+        return true
+      }
+      return false
+    },
+  )
+
+  await expect(page.getByTestId('journey-stepper')).toHaveCount(0)
+  await expect(page.getByTestId('facility-tab-order-badge')).toHaveText('1 to review')
+  await expect(page.getByTestId('facility-tab-invoice-badge')).toHaveText('2 due')
+  await expect(page.getByTestId('facility-tab-payment-badge')).toHaveText('1 pending')
 })

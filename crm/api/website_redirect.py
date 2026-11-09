@@ -28,6 +28,7 @@ from crm.api.portal_commercial import (
 	enrich_orders,
 	for_facility,
 	package_lookup,
+	slim_facility_records,
 )
 
 
@@ -1616,6 +1617,7 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 				customer,
 				row,
 			)
+			slim_facility_records(row)
 			rows.append(row)
 
 		# Also collect from CRM Deal Facility for any deals under this customer
@@ -1669,6 +1671,7 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 					customer,
 					row,
 				)
+				slim_facility_records(row)
 				rows.append(row)
 
 		org_name = customer_legal_name

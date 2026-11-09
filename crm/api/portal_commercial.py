@@ -350,8 +350,10 @@ def enrich_invoices(rows, ois_mfls_by_name, account_mfls) -> list:
 	return [_public_row(row, _INVOICE_PUBLIC) for row in rows]
 
 
-def _account_payment_rows(customer, invoices_by_name) -> list:
-	"""All customer payments, with the facility MFLs of the invoices they settle."""
+def _account_payment_rows(customer, invoices_by_name, limit=200) -> list:
+	"""All customer payments, with the facility MFLs of the invoices they settle.
+
+	``limit=0`` reads every payment (paged facility lists, SPEC tabs S2)."""
 	if not customer or not frappe.db.exists("DocType", "Payment Entry"):
 		return []
 	fields = [
@@ -371,7 +373,7 @@ def _account_payment_rows(customer, invoices_by_name) -> list:
 			filters={"party": customer, "party_type": "Customer", "docstatus": ["in", [0, 1]]},
 			fields=fields,
 			order_by="posting_date desc, creation desc",
-			limit_page_length=200,
+			limit_page_length=limit,
 			ignore_permissions=True,
 		)
 	except Exception:
@@ -419,11 +421,10 @@ def _account_payment_rows(customer, invoices_by_name) -> list:
 	return result
 
 
-def account_billing(customer, account_mfls, ois_mfls_by_name) -> dict:
-	"""Full history for one customer: orders, invoices, payments (SPEC S2)."""
+def account_orders(customer, account_mfls, ois_mfls_by_name, limit=200) -> list:
+	"""Submitted and draft orders for one customer, attributed to facilities."""
 	if not customer or not frappe.db.exists("Customer", customer):
-		return {"orders": [], "invoices": [], "payments": []}
-
+		return []
 	order_fields = [
 		"name",
 		"transaction_date",
@@ -451,15 +452,20 @@ def account_billing(customer, account_mfls, ois_mfls_by_name) -> dict:
 			filters={"customer": customer, "docstatus": ["in", [0, 1]]},
 			fields=order_fields,
 			order_by="creation desc",
-			limit_page_length=200,
+			limit_page_length=limit,
 			ignore_permissions=True,
 		)
 	except Exception:
 		orders = []
-	orders = enrich_orders(
+	return enrich_orders(
 		orders, ois_mfls_by_name, account_mfls, package_lookup([o.get("crm_token_package_item") for o in orders])
 	)
 
+
+def account_invoices(customer, account_mfls, ois_mfls_by_name, limit=200) -> list:
+	"""Submitted invoices (paid and outstanding) for one customer, attributed to facilities."""
+	if not customer or not frappe.db.exists("Customer", customer):
+		return []
 	invoice_fields = [
 		"name",
 		"posting_date",
@@ -484,15 +490,58 @@ def account_billing(customer, account_mfls, ois_mfls_by_name) -> dict:
 			filters={"customer": customer, "docstatus": 1},
 			fields=invoice_fields,
 			order_by="due_date asc, posting_date asc",
-			limit_page_length=200,
+			limit_page_length=limit,
 			ignore_permissions=True,
 		)
 	except Exception:
 		invoices = []
-	invoices = enrich_invoices(invoices, ois_mfls_by_name, account_mfls)
+	return enrich_invoices(invoices, ois_mfls_by_name, account_mfls)
+
+
+def account_billing(customer, account_mfls, ois_mfls_by_name) -> dict:
+	"""Full history for one customer: orders, invoices, payments (SPEC S2)."""
+	if not customer or not frappe.db.exists("Customer", customer):
+		return {"orders": [], "invoices": [], "payments": []}
+	orders = account_orders(customer, account_mfls, ois_mfls_by_name)
+	invoices = account_invoices(customer, account_mfls, ois_mfls_by_name)
 	invoices_by_name = {row.get("name"): row for row in invoices}
 	payments = _account_payment_rows(customer, invoices_by_name)
 	return {"orders": orders, "invoices": invoices, "payments": payments}
+
+
+def summarize_facility_records(orders, invoices, payments) -> dict:
+	"""Counts for the facility page stepper and tab labels (S4 slim payload)."""
+	orders, invoices, payments = orders or [], invoices or [], payments or []
+	return {
+		"order": len(orders),
+		"order_draft": sum(1 for row in orders if row.get("is_draft")),
+		"invoice": len(invoices),
+		"invoice_due": sum(1 for row in invoices if flt(row.get("amount")) > 0),
+		"payment": len(payments),
+		"payment_pending": sum(1 for row in payments if row.get("status") == "Pending Verification"),
+	}
+
+
+def slim_facility_records(row: dict) -> dict:
+	"""Keep only the records the facility page needs outside its paged tabs.
+
+	The tabs page full history from ``crm.api.facility_documents``. The context row keeps
+	what the summary cards, go-live block, pay flows and stepper read: draft and
+	invoiceable orders plus the latest package order, outstanding invoices and pending
+	M-Pesa reports, together with ``record_counts`` for the stepper.
+	"""
+	orders = row.get("orders") or []
+	invoices = row.get("invoices") or []
+	payments = row.get("payments") or []
+	row["record_counts"] = summarize_facility_records(orders, invoices, payments)
+	package_order = next((order for order in orders if order.get("crm_token_package_item")), None)
+	kept_orders = [order for order in orders if order.get("is_draft") or order.get("can_create_invoice")]
+	if package_order is not None and package_order not in kept_orders:
+		kept_orders.append(package_order)
+	row["orders"] = kept_orders
+	row["invoices"] = [invoice for invoice in invoices if flt(invoice.get("amount")) > 0]
+	row["payments"] = [payment for payment in payments if payment.get("status") == "Pending Verification"]
+	return row
 
 
 def for_facility(rows, mfl) -> list:

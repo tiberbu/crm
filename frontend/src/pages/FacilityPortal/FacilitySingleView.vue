@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { call } from 'frappe-ui'
 import CxIcon from './components/CxIcon.vue'
 import TokenAlertCard from './components/TokenAlertCard.vue'
@@ -30,6 +30,8 @@ const props = defineProps({
   accountLevelCount: { type: Number, default: 0 },
   // The owner's low-token email alert for this facility, if any.
   tokenAlert: { type: Object, default: null },
+  // Tab to open first (overview | quote | order | invoice | payment | billing).
+  initialTab: { type: String, default: 'overview' },
 })
 const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay', 'review-order', 'create-invoice', 'open-billing', 'token-alert-saved'])
 const provisioning = ref(null)
@@ -568,8 +570,11 @@ const liveBalanceNote = computed(() => {
   return time ? `Care Tokens · updated ${time}` : 'Care Tokens'
 })
 
-function reviewInvoice() {
-  document.getElementById('facility-invoices')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+const billingJourney = ref(null)
+async function reviewInvoice() {
+  billingJourney.value?.selectTab('invoice')
+  await nextTick()
+  document.querySelector('[data-testid="facility-tabs"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 </script>
 
@@ -869,7 +874,9 @@ function reviewInvoice() {
     </section>
 
     <BillingJourney
+      ref="billingJourney"
       :facility="facility"
+      :initial-tab="initialTab"
       :orders="orders"
       :invoices="invoices"
       :payments="payments"
@@ -881,88 +888,86 @@ function reviewInvoice() {
       @create-invoice="emit('create-invoice', $event)"
       @pay="emit('pay', $event)"
       @open-billing="emit('open-billing')"
-    />
-
-    <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx" data-testid="facility-billing">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h2 class="text-lg font-semibold text-cx-ink">Billing information</h2>
-          <button type="button" class="inline-flex items-center gap-1 text-xs font-semibold text-cx-brand hover:underline" @click="emit('open-billing')">
-            Billing &amp; Invoices <CxIcon name="chevron-right" class="size-3.5" />
-          </button>
-        </div>
-        <div v-if="billingState === 'loading'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2" aria-busy="true">Loading billing details…</div>
-        <div v-else-if="billingState === 'none'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">Billing details appear here once this facility has a billing account.</div>
-        <div v-else-if="billingState === 'error'" class="flex flex-wrap items-center justify-between gap-2 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/60 p-4 text-xs text-cx-warning-ink" role="alert">
-          <span>We could not load the billing details.</span>
-          <button type="button" class="font-semibold underline" @click="loadBilling">Try again</button>
-        </div>
-        <dl v-else-if="billing" class="grid gap-4 sm:grid-cols-3">
-          <div class="rounded-cx-sm border border-cx-border-soft p-4">
-            <dt class="text-xs font-semibold text-cx-ink-3">Billed to</dt>
-            <dd v-if="billing.customer_name" class="mt-1 break-words text-sm font-semibold text-cx-ink" data-testid="billing-customer">{{ billing.customer_name }}</dd>
-            <dd v-else class="mt-1 text-sm text-cx-ink-2" data-testid="billing-customer">Added when you review your first order</dd>
-          </div>
-          <div class="rounded-cx-sm border border-cx-border-soft p-4">
-            <dt class="text-xs font-semibold text-cx-ink-3">KRA PIN</dt>
-            <dd v-if="billing.kra_pin" class="mt-1 font-mono text-sm font-semibold text-cx-ink">{{ billing.kra_pin }}</dd>
-            <dd v-else class="mt-1 text-sm text-cx-ink-2">Added when you review your first order</dd>
-          </div>
-          <div class="rounded-cx-sm border border-cx-border-soft p-4">
-            <dt class="text-xs font-semibold text-cx-ink-3">Billing address</dt>
-            <dd v-if="billingAddressLines.length" class="mt-1 text-sm font-semibold leading-snug text-cx-ink">
-              <span v-for="line in billingAddressLines" :key="line" class="block">{{ line }}</span>
-            </dd>
-            <dd v-else class="mt-1 text-sm text-cx-ink-2">Added when you review your first order</dd>
-          </div>
-        </dl>
-    </section>
-
-    <section class="cx-glass-panel mx-4 my-5 overflow-hidden rounded-cx border border-white/70 bg-cx-surface shadow-cx sm:mx-6 sm:my-6 sm:backdrop-blur-xl" data-testid="facility-profile">
-      <header class="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-6">
-        <div>
-          <p class="text-xs font-semibold text-cx-ink-3">Health Facility Registry</p>
-          <h3 class="mt-1 text-lg font-semibold text-cx-ink">Facility profile</h3>
-        </div>
-        <div class="flex items-center gap-2">
-          <span v-if="facility.hfr_sync_status" class="inline-flex items-center gap-1.5 rounded-full border border-cx-border-soft bg-cx-surface px-2.5 py-1 text-[11px] font-medium text-cx-ink-2">
-            <span class="size-1.5 rounded-full" :class="facility.hfr_sync_status === 'HFR Verified' ? 'bg-cx-success-ink' : 'bg-cx-warning-ink'" />
-            {{ facility.hfr_sync_status }}
-          </span>
-          <span v-if="facility.hfr_last_synced" class="text-xs text-cx-ink-2">Synced {{ facility.hfr_last_synced }}</span>
-        </div>
-      </header>
-
-      <div class="grid gap-px border-y border-white/60 bg-cx-border-soft/70 sm:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.6fr)]">
-        <div class="bg-cx-brand-soft/45 px-4 py-4 sm:px-6 sm:py-5">
-          <p class="text-xs font-semibold text-cx-ink-3">Facility ID</p>
-          <p v-if="deploymentFid" class="mt-1.5 break-all font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ deploymentFid }}</p>
-          <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to the Health Facility Registry yet</p>
-        </div>
-        <div class="bg-cx-surface px-4 py-4 sm:px-6 sm:py-5">
-          <p class="text-xs font-semibold text-cx-ink-3">MFL code</p>
-          <p class="mt-1.5 font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ facility.mfl_code || '—' }}</p>
-        </div>
-      </div>
-
-      <div class="grid sm:grid-cols-2 xl:grid-cols-4">
-        <div v-for="(group, index) in hfrProfileGroups" :key="group.title" class="min-w-0 px-4 py-4 sm:px-5 sm:py-5" :class="index ? 'border-t border-cx-border-soft sm:border-l xl:border-t-0' : ''">
-          <h4 class="mb-2 text-xs font-semibold text-cx-ink-3">{{ group.title }}</h4>
-          <dl v-if="group.items.length" class="divide-y divide-cx-border-soft/80">
-            <div v-for="item in group.items" :key="item.label" class="flex items-start justify-between gap-3 py-2 first:pt-1 last:pb-1">
-              <dt class="text-xs leading-relaxed text-cx-ink-3">{{ item.label }}</dt>
-              <dd class="max-w-[60%] break-words text-right text-xs font-medium leading-relaxed text-cx-ink">{{ item.value }}</dd>
+    >
+      <template #overview>
+        <section class="overflow-hidden rounded-cx border border-cx-border bg-cx-surface shadow-cx" data-testid="facility-profile">
+          <header class="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-6">
+            <div>
+              <p class="text-xs font-semibold text-cx-ink-3">Health Facility Registry</p>
+              <h3 class="mt-1 text-lg font-semibold text-cx-ink">Facility profile</h3>
             </div>
-          </dl>
-          <p v-else class="text-xs leading-relaxed text-cx-ink-2">No details recorded</p>
-        </div>
-      </div>
-      <div v-if="!deploymentFid || (facility.hfr_sync_status && facility.hfr_sync_status !== 'HFR Verified')" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6">
-        <p class="text-xs leading-relaxed text-cx-warning-ink">
-          {{ !deploymentFid ? 'A verified HFR FID is required for deployment status and setup.' : `FID ${deploymentFid} is saved, but this profile has not been verified against the Health Facility Registry.` }}
-        </p>
-        <button type="button" class="text-xs font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
-      </div>
-    </section>
+            <div class="flex items-center gap-2">
+              <span v-if="facility.hfr_last_synced" class="text-xs text-cx-ink-2">Synced {{ facility.hfr_last_synced }}</span>
+            </div>
+          </header>
+
+          <div class="grid gap-px border-y border-white/60 bg-cx-border-soft/70 sm:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.6fr)]">
+            <div class="bg-cx-brand-soft/45 px-4 py-4 sm:px-6 sm:py-5">
+              <p class="text-xs font-semibold text-cx-ink-3">Facility ID</p>
+              <p v-if="deploymentFid" class="mt-1.5 break-all font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ deploymentFid }}</p>
+              <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to the Health Facility Registry yet</p>
+            </div>
+            <div class="bg-cx-surface px-4 py-4 sm:px-6 sm:py-5">
+              <p class="text-xs font-semibold text-cx-ink-3">MFL code</p>
+              <p class="mt-1.5 font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ facility.mfl_code || '—' }}</p>
+            </div>
+          </div>
+
+          <div class="grid sm:grid-cols-2 xl:grid-cols-4">
+            <div v-for="(group, index) in hfrProfileGroups" :key="group.title" class="min-w-0 px-4 py-4 sm:px-5 sm:py-5" :class="index ? 'border-t border-cx-border-soft sm:border-l xl:border-t-0' : ''">
+              <h4 class="mb-2 text-xs font-semibold text-cx-ink-3">{{ group.title }}</h4>
+              <dl v-if="group.items.length" class="divide-y divide-cx-border-soft/80">
+                <div v-for="item in group.items" :key="item.label" class="flex items-start justify-between gap-3 py-2 first:pt-1 last:pb-1">
+                  <dt class="text-xs leading-relaxed text-cx-ink-3">{{ item.label }}</dt>
+                  <dd class="max-w-[60%] break-words text-right text-xs font-medium leading-relaxed text-cx-ink">{{ item.value }}</dd>
+                </div>
+              </dl>
+              <p v-else class="text-xs leading-relaxed text-cx-ink-2">No details recorded</p>
+            </div>
+          </div>
+          <div v-if="!deploymentFid" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6" data-testid="facility-fid-missing">
+            <p class="text-xs leading-relaxed text-cx-warning-ink">Add this facility's HFR Facility ID to enable deployment and setup.</p>
+            <button type="button" class="text-xs font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
+          </div>
+        </section>
+      </template>
+      <template #billing>
+        <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx" data-testid="facility-billing">
+            <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 class="text-lg font-semibold text-cx-ink">Billing information</h2>
+              <button type="button" class="inline-flex items-center gap-1 text-xs font-semibold text-cx-brand hover:underline" @click="emit('open-billing')">
+                Billing &amp; Invoices <CxIcon name="chevron-right" class="size-3.5" />
+              </button>
+            </div>
+            <div v-if="billingState === 'loading'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2" aria-busy="true">Loading billing details…</div>
+            <div v-else-if="billingState === 'none'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">Billing details appear here once this facility has a billing account.</div>
+            <div v-else-if="billingState === 'error'" class="flex flex-wrap items-center justify-between gap-2 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/60 p-4 text-xs text-cx-warning-ink" role="alert">
+              <span>We could not load the billing details.</span>
+              <button type="button" class="font-semibold underline" @click="loadBilling">Try again</button>
+            </div>
+            <dl v-else-if="billing" class="grid gap-4 sm:grid-cols-3">
+              <div class="rounded-cx-sm border border-cx-border-soft p-4">
+                <dt class="text-xs font-semibold text-cx-ink-3">Billed to</dt>
+                <dd v-if="billing.customer_name" class="mt-1 break-words text-sm font-semibold text-cx-ink" data-testid="billing-customer">{{ billing.customer_name }}</dd>
+                <dd v-else class="mt-1 text-sm text-cx-ink-2" data-testid="billing-customer">Added when you review your first order</dd>
+              </div>
+              <div class="rounded-cx-sm border border-cx-border-soft p-4">
+                <dt class="text-xs font-semibold text-cx-ink-3">KRA PIN</dt>
+                <dd v-if="billing.kra_pin" class="mt-1 font-mono text-sm font-semibold text-cx-ink">{{ billing.kra_pin }}</dd>
+                <dd v-else class="mt-1 text-sm text-cx-ink-2">Added when you review your first order</dd>
+              </div>
+              <div class="rounded-cx-sm border border-cx-border-soft p-4">
+                <dt class="text-xs font-semibold text-cx-ink-3">Billing address</dt>
+                <dd v-if="billingAddressLines.length" class="mt-1 text-sm font-semibold leading-snug text-cx-ink">
+                  <span v-for="line in billingAddressLines" :key="line" class="block">{{ line }}</span>
+                </dd>
+                <dd v-else class="mt-1 text-sm text-cx-ink-2">Added when you review your first order</dd>
+              </div>
+            </dl>
+        </section>
+      </template>
+    </BillingJourney>
+
 
     <div v-if="revealConfirmOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation" tabindex="-1" @click.self="revealConfirmOpen = false" @keydown.esc="revealConfirmOpen = false">
       <section role="dialog" aria-modal="true" aria-labelledby="hmis-reveal-confirm-title" class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl" data-testid="hmis-reveal-confirm">

@@ -180,35 +180,42 @@ export function orderStatus(order) {
   return order?.display_status || (order?.is_draft ? 'Needs your review' : 'Awaiting invoice')
 }
 
-function stageState(key, quotes, orders, invoices, payments) {
+// counts: the facility row's record_counts (S4). The context row only carries
+// actionable records, so counts say whether any (paid) history exists.
+function stageState(key, quotes, orders, invoices, payments, counts = {}) {
   if (key === 'quote') {
     if (quotes.some((quote) => quote.status_label === 'Accepted')) return 'done'
     return quotes.length ? 'pending' : 'upcoming'
   }
   if (key === 'order') {
-    const hasDraft = orders.some((order) => order.is_draft)
+    const hasDraft = orders.some((order) => order.is_draft) || Number(counts.order_draft) > 0
     if (hasDraft) return 'pending'
-    return orders.length ? 'done' : 'upcoming'
+    return orders.length || Number(counts.order) > 0 ? 'done' : 'upcoming'
   }
+  const anyDue = invoices.some((invoice) => Number(invoice.amount) > 0) || Number(counts.invoice_due) > 0
   if (key === 'invoice') {
-    if (invoices.length && invoices.every((invoice) => Number(invoice.amount) <= 0)) return 'done'
-    return invoices.some((invoice) => Number(invoice.amount) > 0) ? 'pending' : 'upcoming'
+    const anyInvoice = invoices.length > 0 || Number(counts.invoice) > 0
+    if (anyInvoice && !anyDue) return 'done'
+    return anyDue ? 'pending' : 'upcoming'
   }
-  const pendingReport = payments.some((payment) => payment.status === 'Pending Verification')
-  const outstanding = invoices.some((invoice) => Number(invoice.amount) > 0)
-  if (payments.length && !pendingReport && !outstanding) return 'done'
-  if (pendingReport || (payments.length && outstanding)) return 'pending'
+  const pendingReport =
+    payments.some((payment) => payment.status === 'Pending Verification') || Number(counts.payment_pending) > 0
+  const anyPayment = payments.length > 0 || Number(counts.payment) > 0
+  if (anyPayment && !pendingReport && !anyDue) return 'done'
+  if (pendingReport || (anyPayment && anyDue)) return 'pending'
   return 'upcoming'
 }
 
 // SPEC 7.2 stage states; returns the ordered visible stages with final state.
-export function stageStates({ showQuote, quotes, orders, invoices, payments }) {
+export function stageStates({ showQuote, quotes, orders, invoices, payments, counts }) {
   const stages = []
   if (showQuote) stages.push({ key: 'quote', title: 'Quotes', rows: quotes || [] })
   stages.push({ key: 'order', title: 'Orders', rows: orders || [] })
   stages.push({ key: 'invoice', title: 'Invoices', rows: invoices || [] })
   stages.push({ key: 'payment', title: 'Payments', rows: payments || [] })
-  const states = stages.map((stage) => stageState(stage.key, quotes, orders, invoices, payments))
+  const states = stages.map((stage) =>
+    stageState(stage.key, quotes || [], orders || [], invoices || [], payments || [], counts || {}),
+  )
   let firstPending = states.findIndex((state) => state === 'pending')
   if (firstPending === -1) {
     const firstUpcoming = states.findIndex((state) => state === 'upcoming')
@@ -220,6 +227,19 @@ export function stageStates({ showQuote, quotes, orders, invoices, payments }) {
     }
   }
   return stages.map((stage, index) => ({ ...stage, state: states[index] }))
+}
+
+// The quote → order → invoice → payment stepper only teaches the first purchase.
+// Once the facility has completed the cycle (a paid invoice or a recorded payment),
+// it is hidden: with documents at different stages a single "current step" misleads,
+// and the tab badges say what is waiting instead.
+export function journeyCompleted({ invoices = [], payments = [], counts = null } = {}) {
+  if (counts) {
+    if (Number(counts.invoice) > Number(counts.invoice_due || 0)) return true
+    if (Number(counts.payment) > Number(counts.payment_pending || 0)) return true
+  }
+  if ((invoices || []).some((invoice) => Number(invoice?.amount) <= 0)) return true
+  return (payments || []).some((payment) => payment && payment.status !== 'Pending Verification')
 }
 
 export function capRows(rows, expanded, limit = 5) {

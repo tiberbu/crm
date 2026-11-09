@@ -23,6 +23,7 @@ import {
   showsTokens,
   sortInvoices,
   stageStates,
+  journeyCompleted,
 } from '@/utils/portalCommercial'
 
 const network = {
@@ -202,6 +203,52 @@ describe('portalCommercial', () => {
     expect(orderStatus({})).toBe('Awaiting invoice')
     expect(orderStatus({ is_draft: true })).toBe('Needs your review')
     expect(orderStatus({ display_status: 'Confirmed' })).toBe('Confirmed')
+  })
+
+  it('treats the first purchase cycle as complete once anything is paid', () => {
+    // New facility: nothing yet, or only a draft order / unpaid invoice / pending report.
+    expect(journeyCompleted({})).toBe(false)
+    expect(journeyCompleted({ invoices: [{ amount: 500 }], payments: [{ status: 'Pending Verification' }] })).toBe(false)
+    expect(journeyCompleted({ counts: { invoice: 1, invoice_due: 1, payment: 1, payment_pending: 1 } })).toBe(false)
+    // A paid invoice or a recorded payment completes it (slim rows: from counts).
+    expect(journeyCompleted({ invoices: [{ amount: 0 }] })).toBe(true)
+    expect(journeyCompleted({ payments: [{ status: 'Recorded' }] })).toBe(true)
+    expect(journeyCompleted({ invoices: [{ amount: 500 }], counts: { invoice: 3, invoice_due: 1 } })).toBe(true)
+    expect(journeyCompleted({ counts: { invoice: 1, invoice_due: 1, payment: 2, payment_pending: 1 } })).toBe(true)
+  })
+
+  it('uses record_counts when the context row only carries actionable records (S4)', () => {
+    const keys = (result) => result.map((stage) => `${stage.key}:${stage.state}`)
+    // Fully paid history: no rows in context, counts show it exists.
+    expect(
+      keys(
+        stageStates({
+          showQuote: false,
+          quotes: [],
+          orders: [],
+          invoices: [],
+          payments: [],
+          counts: { order: 4, order_draft: 0, invoice: 4, invoice_due: 0, payment: 4, payment_pending: 0 },
+        }),
+      ),
+    ).toEqual(['order:done', 'invoice:done', 'payment:done'])
+    // One invoice due and paid ones in history: invoices are current.
+    expect(
+      keys(
+        stageStates({
+          showQuote: false,
+          quotes: [],
+          orders: [],
+          invoices: [{ amount: 500 }],
+          payments: [],
+          counts: { order: 3, invoice: 3, invoice_due: 1, payment: 2 },
+        }),
+      ),
+    ).toEqual(['order:done', 'invoice:current', 'payment:upcoming'])
+    // No counts: the old row-based behaviour is unchanged.
+    expect(
+      keys(stageStates({ showQuote: false, quotes: [], orders: [], invoices: [], payments: [] })),
+    ).toEqual(['order:current', 'invoice:upcoming', 'payment:upcoming'])
   })
 
   it('computes stage states per the SPEC 7.2 table', () => {

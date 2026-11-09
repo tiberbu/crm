@@ -57,6 +57,9 @@ This pattern guides future customer experience screens for Kenyan health facilit
 - Show deployment status and progress only from the HMIS setup service. Do not imply a draft setup has been deployed. The current status contract does not report service-unit inventory; display “Not reported” until that contract supplies it.
 - Use support descriptions that match the actual channel shown. Do not claim a named onboarding lead, emergency service, or staffed helpdesk when the page only provides a general email address.
 - On mobile, keep actions reachable, avoid dense filter rows, and ensure tables have a card or responsive alternative.
+- Put record histories (quotes, orders, invoices, payments) on their own tabs with counts, search and 20-row pages. Never stack them as full-width sections that grow with history. Customer-linked lists page on the server (`crm.api.facility_documents`).
+- Show progress steppers only while they teach a first-time flow. The facility purchase stepper disappears after the first paid invoice or recorded payment; after that, each tab's badge says what is waiting ("to review", "due", "pending"). Never pick one "current step" for several documents at different stages.
+- Do not show customers registry "verification" wording or the internal `hfr_sync_status` badge. That field records how an FID was entered, and every FID is issued by the regulator-run registry.
 
 ## Review checklist
 
