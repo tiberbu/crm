@@ -38,9 +38,11 @@ def _get_coupon(name):
 			"name",
 			"coupon_title",
 			"network",
+			"applies_to",
 			"value_type",
 			"value",
 			"max_tokens",
+			"fixed_discount_percent",
 			"valid_from",
 			"valid_to",
 			"status",
@@ -129,6 +131,8 @@ def list_coupons(network: Any = None):
 		"name",
 		"coupon_title",
 		"network",
+		"applies_to",
+		"fixed_discount_percent",
 		"value_type",
 		"value",
 		"max_tokens",
@@ -187,9 +191,11 @@ def save_coupon(name: Any, payload: Any):
 
 	coupon.coupon_title = _text(payload.get("coupon_title")) or coupon.name
 	coupon.network = network
-	coupon.value_type = _text(payload.get("value_type"))
-	coupon.value = payload.get("value")
+	coupon.applies_to = _text(payload.get("applies_to")) or coupon.get("applies_to") or "Flex"
+	coupon.value_type = _text(payload.get("value_type")) or None
+	coupon.value = payload.get("value") or 0
 	coupon.max_tokens = int(payload.get("max_tokens") or 0)
+	coupon.fixed_discount_percent = payload.get("fixed_discount_percent") or 0
 	coupon.valid_from = payload.get("valid_from") or None
 	coupon.valid_to = payload.get("valid_to") or None
 	coupon.max_redemptions = int(payload.get("max_redemptions") or 0)
@@ -289,7 +295,10 @@ def list_redemptions(coupon: Any = None, network: Any = None):
 			"sales_order",
 			"sales_invoice",
 			"status",
+			"plan",
 			"tokens_awarded",
+			"discount_percent",
+			"discount_amount",
 			"redeemed_on",
 			"granted_on",
 			"status_reason",
@@ -412,11 +421,24 @@ def get_facility_coupons(customer: Any, facility_mfl: Any, facility_fid: Any = N
 	facility_mfl = _text(facility_mfl)
 	if not _is_admin() and not facility_mfl:
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
-	resolved = coupons.resolve_coupon(customer, facility_mfl, _text(facility_fid), 0)
+	resolved = coupons.resolve_coupon(customer, facility_mfl, _text(facility_fid), 0) or coupons.resolve_coupon(
+		customer, facility_mfl, _text(facility_fid), 0, plan=coupons.PLAN_FIXED
+	)
 	rows = frappe.get_all(
 		"CRM Coupon Redemption",
 		filters={"facility_mfl": facility_mfl},
-		fields=["name", "coupon", "status", "tokens_awarded", "redeemed_on", "granted_on", "status_reason"],
+		fields=[
+			"name",
+			"coupon",
+			"status",
+			"plan",
+			"tokens_awarded",
+			"discount_percent",
+			"discount_amount",
+			"redeemed_on",
+			"granted_on",
+			"status_reason",
+		],
 		ignore_permissions=True,
 		order_by="redeemed_on desc",
 	)

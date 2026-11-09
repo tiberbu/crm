@@ -8,6 +8,9 @@
   "coupon",
   "network",
   "bonus_type",
+  "plan",
+  "discount_percent",
+  "discount_amount",
   "section_break_facility",
   "facility_mfl",
   "facility_fid",
@@ -43,6 +46,30 @@
    "fieldname": "bonus_type",
    "fieldtype": "Data",
    "label": "Bonus Type"
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Select",
+   "label": "Plan",
+   "options": "Flex\nFixed",
+   "default": "Flex",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "discount_percent",
+   "fieldtype": "Percent",
+   "label": "Discount (%)",
+   "read_only": 1,
+   "depends_on": "eval:doc.plan=='Fixed'"
+  },
+  {
+   "fieldname": "discount_amount",
+   "fieldtype": "Currency",
+   "label": "Discount Amount",
+   "read_only": 1,
+   "depends_on": "eval:doc.plan=='Fixed'"
   },
   {
    "fieldname": "section_break_facility",
@@ -149,7 +176,7 @@
  "issingle": 0,
  "istsable": 0,
  "links": [],
- "modified": "2026-11-07 00:00:00.000000",
+ "modified": "2026-11-09 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "FCRM",
  "name": "CRM Coupon Redemption",

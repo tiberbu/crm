@@ -42,8 +42,12 @@ class TestWelcomeBonusDispense(IntegrationTestCase):
 		self._settings(welcome_bonus_tokens=400, auto_dispense_welcome_bonus=1)
 		self.known = patch.object(metering_admin, "_known_facility", side_effect=lambda fid: fid == FID)
 		self.known.start()
+		# P-107: these tests are about dispensing, so the facility has bought a Flex package.
+		self.flex = patch.object(token_bonus, "has_flex_purchase", return_value=True)
+		self.flex.start()
 
 	def tearDown(self):
+		self.flex.stop()
 		self.known.stop()
 		frappe.db.rollback()
 		frappe.clear_document_cache("CRM Opt-In Settings", "CRM Opt-In Settings")

@@ -26,6 +26,11 @@ BONUS_ITEM = "CV-TOKEN-BONUS"
 WELCOME_BONUS = "Welcome Bonus"
 PARTNER_COUPON = "Partner Coupon"
 CRM_COUPON = "CRM Coupon"
+FIXED_DISCOUNT = "Fixed Discount"
+
+
+def NO_FLEX_PURCHASE_MESSAGE():
+	return _("Bonus tokens are given only to a facility that has bought a Flex token package.")
 
 
 def bonus_settings() -> dict[str, int]:
@@ -60,6 +65,8 @@ def dispense_welcome_bonus(facility_fid: str, source_doctype: str | None = None,
 	if not method:
 		frappe.throw(_("No metering app is installed on this site."))
 	facility_fid = cstr(facility_fid).strip()
+	if not has_flex_purchase(facility_fid):
+		frappe.throw(NO_FLEX_PURCHASE_MESSAGE())
 	outcome = method(facility_fid, bonus_settings()[WELCOME_BONUS], source_doctype=source_doctype, source_name=source_name)
 	if outcome.get("dispensed"):
 		drop_welcome_lines_from_drafts(facility_fid)
@@ -87,7 +94,7 @@ def drop_welcome_lines_from_drafts(facility_fid: str) -> list[str]:
 		if len(rows) == len(order.items):
 			continue
 		order.set("items", rows)
-		order.save(ignore_permissions=True)  # SYSTEM-INTERNAL: removes a zero-rated line only
+		order.save(ignore_permissions=True)  # SYSTEM-INTERNAL: removes a zero-rated line or a draft discount only
 		changed.append(name)
 	return changed
 
@@ -209,14 +216,55 @@ def eligible_bonuses(
 	return lines
 
 
-def _earns_bonus(package_item: str | None) -> bool:
-	"""Bonus tokens come with the Flex packages only, not a Custom amount or a Fixed fee."""
+def package_plan(package_item: str | None) -> str:
+	"""The catalogue plan of a package item: Flex, Fixed or Custom (Flex when unknown)."""
 	plan = frappe.db.get_value(
 		"CRM Token Package",
 		{"parenttype": "CRM Opt-In Settings", "item_code": cstr(package_item).strip()},
 		"plan",
 	)
-	return (plan or "Flex") == "Flex"
+	return cstr(plan).strip() or "Flex"
+
+
+def _earns_bonus(package_item: str | None) -> bool:
+	"""Bonus tokens come with the Flex packages only, not a Custom amount or a Fixed fee."""
+	return package_plan(package_item) == "Flex"
+
+
+def _flex_items() -> list[str]:
+	return frappe.get_all(
+		"CRM Token Package",
+		filters={"parenttype": "CRM Opt-In Settings", "plan": "Flex"},
+		pluck="item_code",
+		ignore_permissions=True,
+	)
+
+
+def has_flex_purchase(facility_fid: str | None = None, facility_mfl: str | None = None) -> bool:
+	"""P-107: the facility bought a Flex token package (a Flex package order that is not cancelled).
+
+	Bonus tokens (the welcome bonus and coupon tokens) are only ever given to such a facility.
+	"""
+	items = _flex_items()
+	if not items:
+		return False
+	keys = []
+	fid = cstr(facility_fid).strip()
+	mfl = cstr(facility_mfl).strip()
+	if fid and frappe.db.has_column("Sales Order", "crm_token_facility_fid"):
+		keys.append(("crm_token_facility_fid", fid))
+	if mfl:
+		keys.append(("crm_token_facility_mfl", mfl))
+	if fid and not mfl:
+		from crm.utils.token_facility import facility_mfls_for_fid
+
+		keys.extend(("crm_token_facility_mfl", m) for m in facility_mfls_for_fid(fid))
+	for field, value in keys:
+		if frappe.db.exists(
+			"Sales Order", {field: value, "docstatus": ["<", 2], "crm_token_package_item": ["in", items]}
+		):
+			return True
+	return False
 
 
 def apply_bonus_lines(order) -> list[dict]:
@@ -226,7 +274,11 @@ def apply_bonus_lines(order) -> list[dict]:
 	from crm.utils import coupons
 
 	order.set("items", [row for row in order.items if not row.get("crm_bonus_type")])
-	if not _earns_bonus(order.get("crm_token_package_item")):
+	_clear_fixed_discount(order)
+	plan = package_plan(order.get("crm_token_package_item"))
+	if plan == "Fixed":
+		return apply_fixed_discount(order)
+	if plan != "Flex":
 		return []
 	bonuses = eligible_bonuses(
 		order.customer,
@@ -260,6 +312,52 @@ def apply_bonus_lines(order) -> list[dict]:
 	return bonuses
 
 
+def _package_rows(order) -> list:
+	item = cstr(order.get("crm_token_package_item")).strip()
+	return [row for row in order.items if not row.get("crm_bonus_type") and (not item or row.item_code == item)]
+
+
+def _set_line_discount(row, percent: float) -> None:
+	"""Price the line at its list rate less ``percent`` (0 restores the list rate)."""
+	from frappe.utils import flt
+
+	list_rate = flt(row.get("price_list_rate")) or flt(row.get("rate"))
+	row.price_list_rate = list_rate
+	row.discount_percentage = flt(percent)
+	row.rate = flt(list_rate * (1 - flt(percent) / 100), 2)
+	row.discount_amount = flt(list_rate - row.rate, 2)
+	row.amount = flt(row.rate * flt(row.qty), 2)
+
+
+def _clear_fixed_discount(order) -> None:
+	"""Take a coupon discount off the package line, so it can be resolved again."""
+	for row in order.items:
+		if row.get("crm_coupon") and not row.get("crm_bonus_type"):
+			row.crm_coupon = None
+			_set_line_discount(row, 0)
+
+
+def apply_fixed_discount(order) -> list[dict]:
+	"""P-110: a Fixed order's coupon is a percentage off the Fixed package line, never tokens."""
+	from crm.utils import coupons
+
+	resolved = coupons.resolve_coupon(
+		order.customer,
+		order.get("crm_token_facility_mfl"),
+		cstr(order.get("crm_token_facility_fid")).strip() or None,
+		0,
+		exclude_order=order.name,
+		plan="Fixed",
+	)
+	if not resolved:
+		return []
+	percent = resolved["discount_percent"]
+	for row in _package_rows(order):
+		row.crm_coupon = resolved["coupon"]
+		_set_line_discount(row, percent)
+	return [{**resolved, "type": FIXED_DISCOUNT, "coupon_type": resolved["type"]}]
+
+
 def drop_coupon_lines_from_drafts(coupon: str) -> list[str]:
 	"""Take a coupon's line off unconfirmed orders once the coupon can no longer be confirmed.
 
@@ -280,9 +378,14 @@ def drop_coupon_lines_from_drafts(coupon: str) -> list[str]:
 			for row in order.items
 			if not (row.get("crm_bonus_type") in (PARTNER_COUPON, CRM_COUPON) and row.get("crm_coupon") == coupon)
 		]
-		if len(rows) == len(order.items):
+		discounted = [row for row in rows if row.get("crm_coupon") == coupon and not row.get("crm_bonus_type")]
+		if len(rows) == len(order.items) and not discounted:
 			continue
+		for row in discounted:
+			# A Fixed discount on a draft is taken off as well (P-112).
+			row.crm_coupon = None
+			_set_line_discount(row, 0)
 		order.set("items", rows)
-		order.save(ignore_permissions=True)  # SYSTEM-INTERNAL: removes a zero-rated line only
+		order.save(ignore_permissions=True)  # SYSTEM-INTERNAL: removes a zero-rated line or a draft discount only
 		changed.append(name)
 	return changed

@@ -97,3 +97,4 @@ crm.patches.v1_0.add_welcome_bonus_auto_dispense
 crm.patches.v1_0.backfill_optin_facility_ids
 crm.patches.v1_0.add_coupon_line_fields
 crm.patches.v1_0.seed_network_coupons
+crm.patches.v1_0.set_coupon_applies_to

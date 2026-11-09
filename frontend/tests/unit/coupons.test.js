@@ -113,3 +113,29 @@ describe('couponMatches', () => {
     expect(couponMatches(coupon, 'southern')).toBe(false)
   })
 })
+
+describe('couponValueLabel by plan (P-108)', () => {
+  it('reads a Fixed coupon as a discount', () => {
+    expect(
+      couponValueLabel({ applies_to: 'Fixed', fixed_discount_percent: 5 }),
+    ).toBe('5% off Fixed')
+  })
+  it('reads a Both coupon as tokens on Flex and a discount on Fixed', () => {
+    expect(
+      couponValueLabel({
+        applies_to: 'Both',
+        value_type: 'flat_tokens',
+        value: 1000,
+        fixed_discount_percent: 7.5,
+      }),
+    ).toBe('1,000 tokens on Flex · 7.5% off Fixed')
+  })
+  it('keeps Flex and plan-less coupons as their token value', () => {
+    expect(
+      couponValueLabel({ applies_to: 'Flex', value_type: 'flat_tokens', value: 500 }),
+    ).toBe('500 tokens')
+    expect(couponValueLabel({ value_type: 'flat_tokens', value: 500 })).toBe(
+      '500 tokens',
+    )
+  })
+})

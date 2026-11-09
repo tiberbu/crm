@@ -668,6 +668,7 @@ const canDispense = computed(
   () =>
     bonus.data?.available &&
     !bonus.data.dispensed &&
+    bonus.data.flex_purchase !== false &&
     bonus.data.configured_tokens > 0 &&
     !props.busy,
 )
@@ -705,6 +706,10 @@ const bonusStateText = computed(() => {
   if (!(state.configured_tokens > 0))
     return __(
       'The first-purchase bonus is set to 0 tokens in Settings › Opt-In.',
+    )
+  if (state.flex_purchase === false)
+    return __(
+      'Not dispensed. Bonus tokens are given only to a facility that has bought a Flex token package.',
     )
   if (state.status === 'Failed')
     return __('The last attempt failed: {0} You can try again.', [

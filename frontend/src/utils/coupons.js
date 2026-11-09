@@ -5,8 +5,8 @@ export const VALUE_TYPES = {
   percentage_of_purchase: '% of purchase',
 }
 
-/** Human value: "1,000 tokens" or "5% of purchase" or "5% of purchase (max 500)". */
-export function couponValueLabel(coupon) {
+/** Token value: "1,000 tokens" or "5% of purchase" or "5% of purchase (max 500)". */
+export function couponTokenLabel(coupon) {
   const value = Number(coupon?.value || 0)
   if (coupon?.value_type === 'percentage_of_purchase') {
     let label = `${value}% of purchase`
@@ -15,6 +15,29 @@ export function couponValueLabel(coupon) {
     return label
   }
   return `${value.toLocaleString()} tokens`
+}
+
+/** Fixed plan value: "5% off Fixed". */
+export function couponDiscountLabel(coupon) {
+  return `${Number(coupon?.fixed_discount_percent || 0)}% off Fixed`
+}
+
+/**
+ * Human value for the coupon's plans (P-108). A Flex coupon (and any coupon from before plans
+ * existed) reads as its token value; Fixed as "5% off Fixed"; Both as "1,000 tokens on Flex · 5% off Fixed".
+ */
+export function couponValueLabel(coupon) {
+  const plan = coupon?.applies_to || 'Flex'
+  if (plan === 'Fixed') return couponDiscountLabel(coupon)
+  if (plan === 'Both')
+    return `${couponTokenLabel(coupon)} on Flex · ${couponDiscountLabel(coupon)}`
+  return couponTokenLabel(coupon)
+}
+
+export const PLAN_LABELS = {
+  Flex: 'Flex',
+  Fixed: 'Fixed',
+  Both: 'Flex and Fixed',
 }
 
 /** The effective status shown in the list: Revoked > Inactive > Scheduled > Expired > Exhausted > Active. */

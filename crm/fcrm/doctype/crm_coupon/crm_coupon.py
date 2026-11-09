@@ -7,7 +7,16 @@ from frappe.utils import cint, cstr
 
 CODE_RE = re.compile(r"^[A-Z0-9-]{4,32}$")
 SIX_DIGITS_RE = re.compile(r"^\d{6}$")
-IMMUTABLE_FIELDS = ("network", "value_type", "value", "max_tokens", "targeting")
+IMMUTABLE_FIELDS = (
+	"network",
+	"applies_to",
+	"value_type",
+	"value",
+	"max_tokens",
+	"fixed_discount_percent",
+	"targeting",
+)
+PLANS = ("Flex", "Fixed", "Both")
 
 
 class CRMCoupon(Document):
@@ -32,6 +41,28 @@ class CRMCoupon(Document):
 		self.facility_levels = _normalise_facility_levels(self.facility_levels)
 
 	def _apply_field_rules(self):
+		self.applies_to = cstr(self.applies_to or "Flex").strip() or "Flex"
+		if self.applies_to not in PLANS:
+			frappe.throw(_("Applies To must be Flex, Fixed or Both."), frappe.ValidationError)
+		if self.applies_to == "Flex":
+			self.fixed_discount_percent = 0
+		else:
+			discount = float(self.fixed_discount_percent or 0)
+			if discount <= 0 or discount > 100:
+				frappe.throw(
+					_("For a Fixed plan the discount must be greater than 0% and at most 100%."),
+					frappe.ValidationError,
+				)
+		if self.applies_to == "Fixed":
+			# A Fixed-only coupon gives no tokens.
+			self.value_type = None
+			self.value = 0
+			self.max_tokens = 0
+		else:
+			self._apply_token_rules()
+		self._apply_common_rules()
+
+	def _apply_token_rules(self):
 		if self.value_type not in ("flat_tokens", "percentage_of_purchase"):
 			frappe.throw(
 				_("Value type must be flat tokens or a percentage of the purchase."), frappe.ValidationError
@@ -62,6 +93,7 @@ class CRMCoupon(Document):
 		else:
 			self.max_tokens = 0
 
+	def _apply_common_rules(self):
 		if self.valid_from and self.valid_to and self.valid_to < self.valid_from:
 			frappe.throw(_("Valid To must be on or after Valid From."), frappe.ValidationError)
 

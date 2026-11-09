@@ -149,7 +149,15 @@ def _welcome_bonus_view(fid: str) -> dict:
 	status = welcome_bonus_status(fid)
 	if status.get("source_doctype") == "User":
 		status["source_label"] = frappe.utils.get_fullname(status.get("source_name"))
-	return {**status, "configured_tokens": bonus_settings()[WELCOME_BONUS], "auto_dispense": auto_dispense_enabled()}
+	from crm.utils.token_bonus import has_flex_purchase
+
+	return {
+		**status,
+		"configured_tokens": bonus_settings()[WELCOME_BONUS],
+		"auto_dispense": auto_dispense_enabled(),
+		# P-107: bonus tokens only for a facility that bought a Flex package.
+		"flex_purchase": has_flex_purchase(fid),
+	}
 
 
 @frappe.whitelist(methods=["GET"])
