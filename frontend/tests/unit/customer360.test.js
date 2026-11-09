@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import {
+	TABS,
 	facilityLabelFor,
+	needsAttention,
+	paginate,
+	tabFromQuery,
 	invoiceState,
 	onboardingState,
 	paidState,
@@ -196,5 +200,57 @@ describe('selection <-> route query', () => {
 		expect(paramsForSelection({ kind: 'deal', name: 'D1' })).toEqual({ deal: 'D1' })
 		expect(queryForSelection(null)).toEqual({})
 		expect(paramsForSelection(null)).toBeNull()
+	})
+})
+
+describe('tabs', () => {
+	test('known tab keys pass, anything else is the overview', () => {
+		expect(TABS[0]).toBe('overview')
+		expect(tabFromQuery('billing')).toBe('billing')
+		expect(tabFromQuery(['quotes'])).toBe('quotes')
+		expect(tabFromQuery('nope')).toBe('overview')
+		expect(tabFromQuery(undefined)).toBe('overview')
+	})
+})
+
+describe('paginate', () => {
+	const rows = Array.from({ length: 23 }, (_, i) => i + 1)
+
+	test('pages of ten with a label range', () => {
+		expect(paginate(rows, 1)).toMatchObject({ page: 1, pages: 3, start: 1, end: 10, total: 23 })
+		expect(paginate(rows, 3).rows).toEqual([21, 22, 23])
+		expect(paginate(rows, 3)).toMatchObject({ start: 21, end: 23 })
+	})
+
+	test('out-of-range pages clamp and empty lists read 0 of 0', () => {
+		expect(paginate(rows, 9).page).toBe(3)
+		expect(paginate(rows, 0).page).toBe(1)
+		expect(paginate([], 1)).toMatchObject({ rows: [], page: 1, pages: 1, start: 0, end: 0, total: 0 })
+		expect(paginate(undefined).total).toBe(0)
+	})
+})
+
+describe('needsAttention', () => {
+	test('outstanding submitted invoices, most overdue first, and open orders', () => {
+		const data = {
+			invoices: [
+				{ name: 'A', docstatus: 1, outstanding: 10, days_overdue: 2 },
+				{ name: 'B', docstatus: 1, outstanding: 0 },
+				{ name: 'C', docstatus: 0, outstanding: 50 },
+				{ name: 'D', docstatus: 1, outstanding: 5, days_overdue: 30 },
+			],
+			orders: [{ name: 'O1', open: true }, { name: 'O2', open: false }],
+		}
+		const result = needsAttention(data)
+		expect(result.invoices.map((i) => i.name)).toEqual(['D', 'A'])
+		expect(result.invoiceTotal).toBe(2)
+		expect(result.orders.map((o) => o.name)).toEqual(['O1'])
+	})
+
+	test('caps each list and tolerates missing data', () => {
+		const orders = Array.from({ length: 5 }, (_, i) => ({ name: `O${i}`, open: true }))
+		expect(needsAttention({ orders }).orders).toHaveLength(3)
+		expect(needsAttention({ orders }).orderTotal).toBe(5)
+		expect(needsAttention(undefined)).toEqual({ invoices: [], invoiceTotal: 0, orders: [], orderTotal: 0 })
 	})
 })

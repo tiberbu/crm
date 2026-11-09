@@ -162,3 +162,51 @@ export function paramsForSelection(selection) {
 	}
 	return { [selection.kind]: selection.name }
 }
+
+/** Tab order on the 360 view (party record T2). */
+export const TABS = ['overview', 'orders', 'quotes', 'billing', 'facilities', 'deals']
+
+/** A valid tab key from a route query value; anything else is the Overview. */
+export function tabFromQuery(value) {
+	const key = String((Array.isArray(value) ? value[0] : value) || '').trim()
+	return TABS.includes(key) ? key : 'overview'
+}
+
+export const PAGE_SIZE = 10
+
+/**
+ * One page of rows plus its label data. Out-of-range pages clamp to the last page.
+ * Returns { rows, page, pages, start, end, total }.
+ */
+export function paginate(rows = [], page = 1, size = PAGE_SIZE) {
+	const list = rows || []
+	const total = list.length
+	const pages = Math.max(1, Math.ceil(total / size))
+	const current = Math.min(Math.max(1, Number(page) || 1), pages)
+	const offset = (current - 1) * size
+	return {
+		rows: list.slice(offset, offset + size),
+		page: current,
+		pages,
+		start: total ? offset + 1 : 0,
+		end: Math.min(offset + size, total),
+		total,
+	}
+}
+
+/**
+ * The Overview's "Needs attention" list: up to `limit` outstanding submitted invoices
+ * (most overdue first) and up to `limit` open orders.
+ */
+export function needsAttention(data = {}, limit = 3) {
+	const invoices = (data?.invoices || [])
+		.filter((inv) => inv.docstatus === 1 && (inv.outstanding || 0) > 0)
+		.sort((a, b) => (b.days_overdue || 0) - (a.days_overdue || 0))
+	const orders = (data?.orders || []).filter((order) => order.open)
+	return {
+		invoices: invoices.slice(0, limit),
+		invoiceTotal: invoices.length,
+		orders: orders.slice(0, limit),
+		orderTotal: orders.length,
+	}
+}

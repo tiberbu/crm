@@ -204,7 +204,7 @@
           {{ __('This record could not be opened.') }}
         </div>
         <div v-else-if="data" :class="{ 'opacity-60': dataResource.loading }">
-          <Customer360Sections :data="data" />
+          <Customer360Sections :data="data" :tab="activeTab" @update:tab="setTab" />
         </div>
         <div
           v-else-if="selected"
@@ -242,6 +242,7 @@ import {
 	paramsForSelection,
 	queryForSelection,
 	selectionFromQuery,
+	tabFromQuery,
 	unattributedCount,
 } from '@/utils/customer360.js'
 
@@ -253,8 +254,11 @@ const searched = ref(false)
 const resultsOpen = ref(false)
 const searchBox = ref(null)
 
-// The selection lives in the URL (?organization= · ?deal= · ?facility=&scope=).
+// The selection lives in the URL (?organization= · ?deal= · ?facility=&scope=), and so does the
+// open tab (?tab=). Only the selection triggers a fetch.
 const selected = computed(() => selectionFromQuery(route.query))
+const selectionKey = computed(() => JSON.stringify(paramsForSelection(selected.value)))
+const activeTab = computed(() => tabFromQuery(route.query.tab))
 
 const searchResource = createResource({
 	url: 'crm.api.customer_360.search_customer_360',
@@ -291,6 +295,7 @@ const scopeOptions = computed(() => [
 ])
 
 let debounceTimer = null
+let previousSelection = null
 watch(query, (value) => {
 	clearTimeout(debounceTimer)
 	const trimmed = (value || '').trim()
@@ -310,13 +315,17 @@ watch(query, (value) => {
 // Load the 360 whenever the selection in the URL changes (search pick, scope toggle,
 // back/forward, a shared link).
 watch(
-	selected,
-	(selection, previous) => {
+	selectionKey,
+	() => {
+		const selection = selected.value
 		const params = paramsForSelection(selection)
 		if (!params) {
+			previousSelection = null
 			dataResource.setData(null)
 			return
 		}
+		const previous = previousSelection
+		previousSelection = selection
 		// Switching scope on the same facility keeps the current view visible while loading.
 		const sameFacility =
 			previous?.kind === 'facility' &&
@@ -327,6 +336,20 @@ watch(
 	},
 	{ immediate: true },
 )
+
+function tabQuery(tab) {
+	return tab && tab !== 'overview' ? { tab } : {}
+}
+
+// The open tab is kept across the scope toggle; a new pick starts on the Overview.
+function setTab(tab) {
+	const selection = selected.value
+	if (!selection) return
+	router.replace({
+		name: 'Customer360',
+		query: { ...queryForSelection(selection), ...tabQuery(tab) },
+	})
+}
 
 function select(selection) {
 	resultsOpen.value = false
@@ -351,7 +374,7 @@ function setScope(scope) {
 	if (selection?.kind !== 'facility' || selection.scope === scope) return
 	router.replace({
 		name: 'Customer360',
-		query: queryForSelection({ ...selection, scope }),
+		query: { ...queryForSelection({ ...selection, scope }), ...tabQuery(activeTab.value) },
 	})
 }
 
