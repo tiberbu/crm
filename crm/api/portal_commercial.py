@@ -350,8 +350,10 @@ def enrich_invoices(rows, ois_mfls_by_name, account_mfls) -> list:
 	return [_public_row(row, _INVOICE_PUBLIC) for row in rows]
 
 
-def _account_payment_rows(customer, invoices_by_name) -> list:
-	"""All customer payments, with the facility MFLs of the invoices they settle."""
+def _account_payment_rows(customer, invoices_by_name, limit=200) -> list:
+	"""All customer payments, with the facility MFLs of the invoices they settle.
+
+	``limit=0`` reads every payment (paged facility lists, SPEC tabs S2)."""
 	if not customer or not frappe.db.exists("DocType", "Payment Entry"):
 		return []
 	fields = [
@@ -371,7 +373,7 @@ def _account_payment_rows(customer, invoices_by_name) -> list:
 			filters={"party": customer, "party_type": "Customer", "docstatus": ["in", [0, 1]]},
 			fields=fields,
 			order_by="posting_date desc, creation desc",
-			limit_page_length=200,
+			limit_page_length=limit,
 			ignore_permissions=True,
 		)
 	except Exception:
@@ -419,11 +421,10 @@ def _account_payment_rows(customer, invoices_by_name) -> list:
 	return result
 
 
-def account_billing(customer, account_mfls, ois_mfls_by_name) -> dict:
-	"""Full history for one customer: orders, invoices, payments (SPEC S2)."""
+def account_orders(customer, account_mfls, ois_mfls_by_name, limit=200) -> list:
+	"""Submitted and draft orders for one customer, attributed to facilities."""
 	if not customer or not frappe.db.exists("Customer", customer):
-		return {"orders": [], "invoices": [], "payments": []}
-
+		return []
 	order_fields = [
 		"name",
 		"transaction_date",
@@ -451,15 +452,20 @@ def account_billing(customer, account_mfls, ois_mfls_by_name) -> dict:
 			filters={"customer": customer, "docstatus": ["in", [0, 1]]},
 			fields=order_fields,
 			order_by="creation desc",
-			limit_page_length=200,
+			limit_page_length=limit,
 			ignore_permissions=True,
 		)
 	except Exception:
 		orders = []
-	orders = enrich_orders(
+	return enrich_orders(
 		orders, ois_mfls_by_name, account_mfls, package_lookup([o.get("crm_token_package_item") for o in orders])
 	)
 
+
+def account_invoices(customer, account_mfls, ois_mfls_by_name, limit=200) -> list:
+	"""Submitted invoices (paid and outstanding) for one customer, attributed to facilities."""
+	if not customer or not frappe.db.exists("Customer", customer):
+		return []
 	invoice_fields = [
 		"name",
 		"posting_date",
@@ -484,12 +490,20 @@ def account_billing(customer, account_mfls, ois_mfls_by_name) -> dict:
 			filters={"customer": customer, "docstatus": 1},
 			fields=invoice_fields,
 			order_by="due_date asc, posting_date asc",
-			limit_page_length=200,
+			limit_page_length=limit,
 			ignore_permissions=True,
 		)
 	except Exception:
 		invoices = []
-	invoices = enrich_invoices(invoices, ois_mfls_by_name, account_mfls)
+	return enrich_invoices(invoices, ois_mfls_by_name, account_mfls)
+
+
+def account_billing(customer, account_mfls, ois_mfls_by_name) -> dict:
+	"""Full history for one customer: orders, invoices, payments (SPEC S2)."""
+	if not customer or not frappe.db.exists("Customer", customer):
+		return {"orders": [], "invoices": [], "payments": []}
+	orders = account_orders(customer, account_mfls, ois_mfls_by_name)
+	invoices = account_invoices(customer, account_mfls, ois_mfls_by_name)
 	invoices_by_name = {row.get("name"): row for row in invoices}
 	payments = _account_payment_rows(customer, invoices_by_name)
 	return {"orders": orders, "invoices": invoices, "payments": payments}
