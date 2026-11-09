@@ -117,7 +117,8 @@ test('shows the saved HFR FID and offers a retry when status lookup temporarily 
   })
 
   await expect(page.getByTestId('facility-header-ids').getByText('FID-29-88776-5', { exact: true })).toBeVisible()
-  await expect(page.getByText('A verified HFR FID is required for deployment status and setup.')).toHaveCount(0)
+  await expect(page.getByTestId('facility-fid-missing')).toHaveCount(0)
+  await expect(page.getByText(/not been verified against/)).toHaveCount(0)
   await expect(page.getByRole('alert')).toContainText('temporarily unavailable')
   await expect(page.getByRole('button', { name: 'Retry check' })).toBeVisible()
   expect(statusCalls[0]).toEqual({ method: 'crm.api.hfr.ensure_provisioning_draft', mfl_code: '88776' })
@@ -144,7 +145,8 @@ test('a status service mismatch names the FID the portal actually sent for resol
   await expect(page.getByTestId('facility-header-ids').getByText('FID-29-88776-5', { exact: true })).toBeVisible()
   await expect(page.getByText('FID lookup needs attention', { exact: true })).toBeVisible()
   await expect(page.getByText(/portal has HFR FID FID-29-88776-5/)).toBeVisible()
-  await expect(page.getByText('A verified HFR FID is required for deployment status and setup.')).toHaveCount(0)
+  await expect(page.getByTestId('facility-fid-missing')).toHaveCount(0)
+  await expect(page.getByText(/not been verified against/)).toHaveCount(0)
   expect(statusCalls[0].mfl_code).toBe('88776')
 })
 
@@ -896,4 +898,39 @@ test('an unplanned facility with a live token balance shows that balance', async
   await expect(page.getByTestId('facility-available-tokens')).toBeVisible()
   await expect(page.getByTestId('facility-available-tokens-value')).toContainText('75')
   await expect(page.getByRole('button', { name: /Top up tokens/ })).toBeVisible()
+})
+
+test('a manually entered FID shows no registry verification notice or sync badge', async ({ page }) => {
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: true, status: 'deployed', progress: 100 })),
+    { ...facility, hfr_sync_status: 'Manual' },
+  )
+
+  const profile = page.getByTestId('facility-profile')
+  await expect(profile.getByText('FID-29-88776-5', { exact: true })).toBeVisible()
+  await expect(page.getByText(/verified against the Health Facility Registry/)).toHaveCount(0)
+  await expect(profile.getByText('Manual', { exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('facility-fid-missing')).toHaveCount(0)
+})
+
+test('a facility without an FID asks for the HFR Facility ID without verification wording', async ({ page }) => {
+  await openFacility(
+    page,
+    async (route) =>
+      route.fulfill(
+        status({
+          configured: false,
+          status: 'not_linked',
+          message: 'An HFR Facility ID is required to look up HMIS implementation status.',
+          journey: { phase: 'not_linked', steps: [], poll: false },
+        }),
+      ),
+    { ...facility, facility_fid: '' },
+  )
+
+  const notice = page.getByTestId('facility-fid-missing')
+  await expect(notice).toContainText("Add this facility's HFR Facility ID to enable deployment and setup.")
+  await expect(notice).not.toContainText(/verified/i)
+  await expect(notice.getByRole('button', { name: 'Contact network support' })).toBeVisible()
 })

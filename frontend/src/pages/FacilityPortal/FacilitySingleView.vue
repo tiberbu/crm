@@ -924,10 +924,6 @@ function reviewInvoice() {
           <h3 class="mt-1 text-lg font-semibold text-cx-ink">Facility profile</h3>
         </div>
         <div class="flex items-center gap-2">
-          <span v-if="facility.hfr_sync_status" class="inline-flex items-center gap-1.5 rounded-full border border-cx-border-soft bg-cx-surface px-2.5 py-1 text-[11px] font-medium text-cx-ink-2">
-            <span class="size-1.5 rounded-full" :class="facility.hfr_sync_status === 'HFR Verified' ? 'bg-cx-success-ink' : 'bg-cx-warning-ink'" />
-            {{ facility.hfr_sync_status }}
-          </span>
           <span v-if="facility.hfr_last_synced" class="text-xs text-cx-ink-2">Synced {{ facility.hfr_last_synced }}</span>
         </div>
       </header>
@@ -956,10 +952,8 @@ function reviewInvoice() {
           <p v-else class="text-xs leading-relaxed text-cx-ink-2">No details recorded</p>
         </div>
       </div>
-      <div v-if="!deploymentFid || (facility.hfr_sync_status && facility.hfr_sync_status !== 'HFR Verified')" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6">
-        <p class="text-xs leading-relaxed text-cx-warning-ink">
-          {{ !deploymentFid ? 'A verified HFR FID is required for deployment status and setup.' : `FID ${deploymentFid} is saved, but this profile has not been verified against the Health Facility Registry.` }}
-        </p>
+      <div v-if="!deploymentFid" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6" data-testid="facility-fid-missing">
+        <p class="text-xs leading-relaxed text-cx-warning-ink">Add this facility's HFR Facility ID to enable deployment and setup.</p>
         <button type="button" class="text-xs font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
       </div>
     </section>
