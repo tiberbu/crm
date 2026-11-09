@@ -78,6 +78,25 @@ Spec and roundtable: `_bmad-output/customer-360-facility-scope/`.
   view is always a subset of it.
 - The Deal › Customer 360 tab is unchanged (deal scope).
 
+## Tabbed layout (2026-11-09, round 2)
+
+Roundtable led by UX, business analysis and QA:
+`_bmad-output/customer-360-facility-scope/implementation-artifacts/party-2026-11-09-customer-360-tabs.md`.
+Stacking five unbounded lists made the page very long once a customer had many records. Now:
+
+- The four **KPI tiles** stay above everything, and each one opens its tab (Package Paid and
+  Outstanding → Billing, Pending Orders → Orders, Site Provisioning → Facilities).
+- frappe-ui **Tabs** (the same component as the Deal and Organization pages): **Overview ·
+  Orders · Quotes · Billing · Facilities · Deals**. Each label shows its count, and empty tabs
+  stay in place with an empty state.
+- **Overview** shows Needs attention (up to 3 outstanding invoices, most overdue first, and up to
+  3 open orders, each with "View all"), the Customer card and Partner Details.
+- Every list is **paginated at 10 rows** ("1–10 of 23", previous/next) and resets to page 1 when
+  the data changes. Table rows stay on one line; a narrow table scrolls sideways inside its card.
+- The nav page keeps the open tab in the URL (`?tab=billing`). It is kept across the facility /
+  all-facilities toggle, reload and back, and a new pick starts on the Overview. Changing tab
+  never re-fetches. The Deal › Customer 360 tab reuses the component with local tab state.
+
 ## Data contract
 
 `crm/api/customer_360.py`:
@@ -155,8 +174,9 @@ both setup projects run. The shared helpers were left untouched.
 - Frontend: `yarn test:run` 335/335 (scope/query helpers, quote state, facility labels).
 - Playwright (live, synthetic two-facility owner from `crm.tests.e2e_customer360_fixture`):
   `e2e/tests/customer360_facility_scope.spec.ts` (clear + close, facility scope → All
-  facilities → reload → back, owner view, four viewports with brand checks) and the existing
-  `e2e/tests/customer360.spec.ts` — 11/11 incl. auth setups.
+  facilities → reload, tabs with counts, KPI → tab, pagination past 10 rows, tab kept across
+  the scope toggle and reload, owner view, four viewports with brand, fit and single-line-row
+  checks) and the existing `e2e/tests/customer360.spec.ts` — 11/11 incl. auth setups.
 
 Running the journey:
 

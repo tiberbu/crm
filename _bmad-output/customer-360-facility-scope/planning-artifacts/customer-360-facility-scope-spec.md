@@ -73,3 +73,12 @@ scope: {
 - Switching to All facilities shows both facilities' records plus the account-level ones, with a Facility column.
 - The unattributed note appears in facility scope when account-level records exist.
 - The organisation and deal entries render as before (plus quotes and the facility column).
+
+## Round 2 — tabbed layout (2026-11-09)
+
+After reviewing the PR, the maintainer asked for a layout that stays short with many records.
+Decisions T1–T7 are in `../implementation-artifacts/party-2026-11-09-customer-360-tabs.md`: KPI
+tiles above the tabs, frappe-ui `Tabs` (Overview · Orders · Quotes · Billing · Facilities · Deals,
+each with a count), 10-row pagination, `?tab=` in the URL. No API change.
+Files: `Customer360Sections.vue` (primary), new `Customer360Pager.vue`, `customer360.js`
+(`TABS`, `tabFromQuery`, `paginate`, `needsAttention`), `Customer360.vue` (tab ↔ URL).
