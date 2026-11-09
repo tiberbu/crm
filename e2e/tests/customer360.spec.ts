@@ -79,8 +79,16 @@ test.describe('Customer 360', () => {
 		})
 		// A billing party forces get_customer_360 to run the real Sales Invoice /
 		// Payment Entry queries (a customer-less org skips them entirely).
+		// The site's default customer group may be a group node, which ERPNext rejects.
+		const groups = await request.get(
+			'/api/resource/Customer Group?filters=' +
+				encodeURIComponent(JSON.stringify([['is_group', '=', 0]])) +
+				'&limit_page_length=1',
+		)
+		const customerGroup = (await groups.json()).data?.[0]?.name
 		seededCustomer = await apiCreate(request, 'Customer', {
 			customer_name: customerName,
+			...(customerGroup ? { customer_group: customerGroup } : {}),
 		})
 		seededDeal = await apiCreate(request, 'CRM Deal', {
 			organization: orgName,
@@ -154,7 +162,7 @@ test.describe('Customer 360', () => {
 		await expect(p360.kpiSection).toBeVisible({ timeout: 15000 })
 	})
 
-	test('facility search hits open the parent customer 360', async ({ page }) => {
+	test('facility search hits open the facility, with its owner one toggle away', async ({ page }) => {
 		const p360 = new Customer360Page(page)
 		await p360.goto()
 
@@ -162,8 +170,16 @@ test.describe('Customer 360', () => {
 		await p360.search(facilityName)
 		await p360.openFacility(facilityName)
 
-		// Clicking it resolves to the parent organization's 360 view.
+		// Clicking it opens the facility's own scope; the owner is named in the scope bar.
 		await expect(p360.kpiSection).toBeVisible({ timeout: 15000 })
+		await expect(p360.scopeBar).toContainText(facilityName)
+		await expect(p360.scopeBar).toContainText(orgName)
+		await expect(p360.scopeOption('This facility')).toBeChecked()
+		await expect(page).toHaveURL(/scope=facility/)
+
+		// "All facilities" widens to the parent organization's 360 view.
+		await p360.scopeOption('All facilities').click()
+		await expect(page).toHaveURL(/scope=organization/)
 		await expect(page.getByText(orgName).first()).toBeVisible()
 	})
 
@@ -174,7 +190,7 @@ test.describe('Customer 360', () => {
 		await p360.searchInput.fill('ab')
 		// Under 3 characters the results panel must not appear.
 		await page.waitForTimeout(1200)
-		await expect(page.locator('.mx-6.mt-4')).toBeHidden()
+		await expect(p360.results).toBeHidden()
 	})
 
 	test('deal page exposes the Customer 360 tab for managers', async ({
@@ -194,33 +210,34 @@ test.describe('Customer 360', () => {
 			page.getByText('LIFEMED LTD').first(),
 		).toBeVisible({ timeout: 15000 })
 
-		// KPI tiles, provisioning and billing sections render.
+		// KPI tiles stay above the tabs; each list lives in its own tab.
+		const p360 = new Customer360Page(page)
 		await expect(
 			page.getByText('Package Paid', { exact: true }),
 		).toBeVisible()
 		await expect(
 			page.getByText('Site Provisioning', { exact: true }),
 		).toBeVisible()
-		await expect(
-			page.getByText('Facilities & Provisioning', { exact: true }),
-		).toBeVisible()
 
 		// The customer's facility is listed with its network membership.
+		await p360.openTab('Facilities')
 		await expect(page.getByText('CORE CLINIC').first()).toBeVisible()
-
-		// Detail rows deep-link into the Finance Cockpit record views.
-		const invoiceLink = page
-			.locator('a[href*="finance-cockpit#/invoices?doctype=Sales"]')
-			.first()
-		await expect(invoiceLink).toBeVisible()
-		await expect(
-			page.locator('a[href*="finance-cockpit#/orders?doctype=Sales"]').first(),
-		).toBeVisible()
 		await expect(
 			page.locator(
 				'a[href*="finance-cockpit#/quotes?doctype=CRM+Pre-Qualified"]',
 			).first(),
 		).toBeVisible()
+
+		// Detail rows deep-link into the Finance Cockpit record views.
+		await p360.openTab('Orders')
+		await expect(
+			page.locator('a[href*="finance-cockpit#/orders?doctype=Sales"]').first(),
+		).toBeVisible()
+		await p360.openTab('Billing')
+		const invoiceLink = page
+			.locator('a[href*="finance-cockpit#/invoices?doctype=Sales"]')
+			.first()
+		await expect(invoiceLink).toBeVisible()
 
 		// Clicking the invoice row opens its record in the Finance Cockpit.
 		const href = (await invoiceLink.getAttribute('href')) as string
