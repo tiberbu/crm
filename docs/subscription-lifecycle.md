@@ -46,6 +46,14 @@ every call, so access always ends at `expires_at`. Full contract: openmeter_medi
 Deal › **Metering** tab › the facility card's **Plan** section (OpenMeter Admins). See
 [deal-metering-tab.md](deal-metering-tab.md).
 
+## Open decisions (not built)
+
+Renewal reminders, automatic renewal invoices, a grace period, the CX Portal view, Opt-In network
+invoices, the welcome bonus on Fixed facilities and refunds on cancellation are open owner decisions.
+Each has its context, options and constraints in openmeter_mediator
+`_bmad-output/planning-artifacts/subscription-open-decisions.md` (D-1 to D-7). Read it before working
+on any of these, and record the decision there first.
+
 ## Deployment
 
 1. Metering app (openmeter_mediator): deploy and migrate (new doctype `OpenMeter Subscription`).
