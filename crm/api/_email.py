@@ -13,6 +13,8 @@ from here.
 
 from __future__ import annotations
 
+import re
+
 import frappe
 
 DEFAULT_BRAND_COLOUR = "#bc1823"  # Tiberbu CRM primary — used when a network has no colour set
@@ -172,14 +174,21 @@ def hex_to_rgba(hex_colour, alpha):
 	try:
 		r, g, b = (int(value[i : i + 2], 16) for i in (0, 2, 4))
 	except (ValueError, IndexError):
-		r, g, b = (185, 28, 28)  # DEFAULT_BRAND_COLOUR
+		r, g, b = (188, 24, 35)  # DEFAULT_BRAND_COLOUR
 	return "rgba(%d,%d,%d,%s)" % (r, g, b, alpha)
 
 
+_HEX_COLOUR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
 def valid_brand_colour(hex_colour):
-	"""Return a usable #RRGGBB brand colour, defaulting to the Tiberbu red."""
+	"""Return a usable #RGB/#RRGGBB brand colour, defaulting to the Tiberbu red.
+
+	The value is interpolated into inline email styles, so anything that is not a
+	strict hex literal falls back to the brand guide colour.
+	"""
 	value = frappe.utils.cstr(hex_colour).strip()
-	if value.startswith("#") and len(value) in (4, 7):
+	if _HEX_COLOUR_RE.match(value):
 		return value
 	return DEFAULT_BRAND_COLOUR
 
