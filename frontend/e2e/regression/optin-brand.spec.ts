@@ -63,11 +63,17 @@ async function brandViolations(page: Page): Promise<Violation[]> {
     const label = (el: Element) =>
       `${el.tagName.toLowerCase()}.${String((el as HTMLElement).className?.toString?.() || '').slice(0, 50)}`
     const rgb = (v: string) => (v.match(/[\d.]+/g) || []).map(Number)
-    // Off-brand tints that leaked in from the CX Portal material (teal/emerald, slate canvas).
+    // Off-brand tints: CX Portal material (teal/emerald, slate canvas) and the retired
+    // reds #C0101A and #b91c1c that the journey used before the brand guide red.
     const offBrand = (v: string) => {
       const [r, g, b, a = 1] = rgb(v)
       if (!v.startsWith('rgb') || a === 0) return false
-      return (r === 16 && g === 185 && b === 129) || (r === 244 && g === 246 && b === 248)
+      return (
+        (r === 16 && g === 185 && b === 129) ||
+        (r === 244 && g === 246 && b === 248) ||
+        (r === 192 && g === 16 && b === 26) ||
+        (r === 185 && g === 28 && b === 28)
+      )
     }
     for (const el of Array.from(document.querySelectorAll('body *'))) {
       const s = getComputedStyle(el)

@@ -154,7 +154,7 @@ const brandTint = computed(() => {
     const b = parseInt(full.slice(4, 6), 16)
     return `rgba(${r}, ${g}, ${b}, 0.1)`
   }
-  return 'rgba(192, 16, 26, 0.1)'
+  return 'rgba(188, 24, 35, 0.1)' // brand guide #bc1823
 })
 
 // Expanded value propositions — each pill from the old landing, now explained so
