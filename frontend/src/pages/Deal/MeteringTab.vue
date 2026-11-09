@@ -62,6 +62,7 @@
       @reveal="openReveal"
       @probe="sendProbe"
       @linked="onLinked"
+      @lifecycle="openReason"
     />
 
     <Dialog
@@ -83,6 +84,36 @@
             theme="red"
             :label="confirmDialog.confirmLabel"
             @click="confirmDialog.onConfirm"
+          />
+        </div>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model="reasonDialog.show"
+      :options="{ title: reasonDialog.title, size: 'md' }"
+      @after-leave="reasonDialog.reason = ''"
+    >
+      <template #body-content>
+        <p class="mb-3 text-base text-ink-gray-7">{{ reasonDialog.message }}</p>
+        <FormControl
+          v-model="reasonDialog.reason"
+          data-testid="lifecycle-reason"
+          type="textarea"
+          :label="__('Reason')"
+          :placeholder="__('Recorded on the facility for audit')"
+        />
+      </template>
+      <template #actions>
+        <div class="flex justify-end gap-2">
+          <Button :label="__('Keep as is')" @click="reasonDialog.show = false" />
+          <Button
+            data-testid="lifecycle-confirm"
+            variant="solid"
+            :label="reasonDialog.confirmLabel"
+            :loading="reasonDialog.loading"
+            :disabled="!reasonDialog.reason.trim()"
+            @click="confirmReason"
           />
         </div>
       </template>
@@ -313,6 +344,71 @@ async function runAction(action, fid = null, params = {}) {
   }
 }
 
+const REASON_TEXTS = {
+  cancel_subscription: {
+    title: __('Cancel the subscription?'),
+    message: (fid) =>
+      __(
+        "{0}'s Fixed subscription ends now, with any renewals already paid. HMIS loses access at once. Refunds are handled by Finance.",
+        [fid],
+      ),
+    confirmLabel: __('Cancel subscription'),
+    done: __('Subscription cancelled'),
+  },
+  suspend_site: {
+    title: __('Suspend this site?'),
+    message: (fid) =>
+      __(
+        'The gateway refuses every HMIS call from {0} within 5 minutes. Tokens and subscription terms are kept.',
+        [fid],
+      ),
+    confirmLabel: __('Suspend site'),
+    done: __('Site suspended'),
+  },
+  reactivate_site: {
+    title: __('Reactivate this site?'),
+    message: (fid) => __('The gateway accepts {0} again within 5 minutes.', [fid]),
+    confirmLabel: __('Reactivate site'),
+    done: __('Site reactivated'),
+  },
+}
+
+const reasonDialog = reactive({
+  show: false,
+  action: '',
+  fid: '',
+  title: '',
+  message: '',
+  confirmLabel: '',
+  reason: '',
+  loading: false,
+})
+
+function openReason({ action, fid }) {
+  const text = REASON_TEXTS[action]
+  if (!text) return
+  Object.assign(reasonDialog, {
+    show: true,
+    action,
+    fid,
+    title: text.title,
+    message: text.message(fid),
+    confirmLabel: text.confirmLabel,
+    reason: '',
+  })
+}
+
+async function confirmReason() {
+  reasonDialog.loading = true
+  const { action, fid } = reasonDialog
+  const result = await runAction(action, fid, { reason: reasonDialog.reason })
+  reasonDialog.loading = false
+  if (!result) return
+  reasonDialog.show = false
+  toast.success(REASON_TEXTS[action].done)
+  cards[fid]?.reload()
+}
+
 function setCard(fid, el) {
   if (!fid) return
   if (el) cards[fid] = el
@@ -337,6 +433,9 @@ async function runAndReload(action, fid) {
     else toast.success(__('Synced to OpenMeter'))
   } else if (action === 'retry_failed') {
     toast.success(__('{0} failed event(s) requeued', [result.requeued]))
+  } else if (action === 'refresh_plan') {
+    if (result.status === 'Synced') toast.success(__('Plan written to OpenMeter'))
+    else toast.error(result.error || result.reason || __('The plan was not written to OpenMeter.'))
   }
   cards[fid]?.reload()
 }

@@ -3,6 +3,7 @@ import {
   balanceStats,
   keyState,
   maskedKey,
+  planSummary,
   probeOutcome,
   tokenLines,
   tone,
@@ -152,5 +153,37 @@ describe('probeOutcome', () => {
       probeOutcome({ event: {}, delivery: { skipped: 'disabled' } }).message,
     ).toBe('disabled')
     expect(probeOutcome({}).delivered).toBe(false)
+  })
+})
+
+describe('planSummary', () => {
+  it('labels a live subscription and allows cancelling it', () => {
+    const plan = {
+      plan_type: 'subscription',
+      subscription: { status: 'active', expires_at: '2026-12-09T00:00:00Z' },
+      terms: [{ name: 'subscription:SINV-1' }],
+    }
+    const summary = planSummary(plan, 'Active')
+    expect(summary.label).toBe('Subscription (Fixed)')
+    expect(summary.subscriptionTone).toBe('green')
+    expect(summary.canCancel).toBe(true)
+    expect(summary.canSuspend).toBe(true)
+    expect(summary.canReactivate).toBe(false)
+    expect(summary.terms).toHaveLength(1)
+  })
+  it('does not offer cancelling a lapsed or cancelled subscription', () => {
+    for (const status of ['expired', 'cancelled']) {
+      const summary = planSummary({ plan_type: 'subscription', subscription: { status } }, 'Active')
+      expect(summary.canCancel).toBe(false)
+    }
+    expect(planSummary({ plan_type: 'subscription', subscription: { status: 'scheduled' } }).canCancel).toBe(true)
+  })
+  it('labels tokens and no plan, and offers reactivating a suspended site', () => {
+    expect(planSummary({ plan_type: 'tokens' }, 'Active').label).toBe('Tokens (Flex)')
+    const none = planSummary(null, 'Suspended')
+    expect(none.label).toBe('No plan yet')
+    expect(none.subscription).toBe(null)
+    expect(none.canReactivate).toBe(true)
+    expect(none.canSuspend).toBe(false)
   })
 })

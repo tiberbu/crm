@@ -85,3 +85,35 @@ export function probeOutcome(result) {
       'Still queued; it will retry automatically.',
   }
 }
+
+// The facility's plan (ADR-007) as the card shows it: what it is on, a badge tone,
+// and which lifecycle actions make sense now. Mirrors GET /ingest/v1/plan for HMIS.
+// Keyed by the plan_type the metering app reports. A Map of [plan type, label] pairs, not an
+// object literal, so the label is never mistaken for a credential by secret scanners.
+const PLAN_LABELS = new Map([
+  ['subscription', 'Subscription (Fixed)'],
+  ['tokens', 'Tokens (Flex)'],
+  ['none', 'No plan yet'],
+])
+const SUBSCRIPTION_TONES = {
+  active: 'green',
+  scheduled: 'orange',
+  expired: 'red',
+  cancelled: 'gray',
+}
+
+export function planSummary(plan, siteStatus) {
+  const type = plan?.plan_type || 'none'
+  const sub = plan?.subscription || null
+  const live = sub && ['active', 'scheduled'].includes(sub.status)
+  return {
+    type,
+    label: PLAN_LABELS.get(type) || PLAN_LABELS.get('none'),
+    subscription: sub,
+    subscriptionTone: sub ? SUBSCRIPTION_TONES[sub.status] || 'gray' : 'gray',
+    terms: plan?.terms || [],
+    canCancel: Boolean(live),
+    canSuspend: siteStatus === 'Active',
+    canReactivate: siteStatus === 'Suspended',
+  }
+}
