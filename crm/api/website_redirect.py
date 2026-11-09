@@ -20,6 +20,15 @@ from frappe import _
 from frappe.utils import cstr
 
 from crm.api.facility_onboarding import NO_NETWORK_SLUG
+from crm.api.portal_commercial import (
+	_append_mfl,
+	account_billing,
+	apply_live_balance,
+	enrich_invoices,
+	enrich_orders,
+	for_facility,
+	package_lookup,
+)
 
 
 PORTAL_ROUTE = "/cx-portal"
@@ -281,9 +290,9 @@ def _self_onboarding_progress(submission, contacts, opted_in, all_live):
 	elif invoices:
 		next_action = {"key": "pay_invoice", "label": "Pay your open invoice when you are ready"}
 	elif orders:
-		next_action = {"key": "review_order", "label": "Create an invoice for your token order"}
+		next_action = {"key": "review_order", "label": "Create an invoice for your order"}
 	elif not quote_ready:
-		next_action = {"key": "order_preparing", "label": "Your token quote and order are being prepared"}
+		next_action = {"key": "order_preparing", "label": "Your quote and order are being prepared"}
 	else:
 		next_action = {"key": "implementation", "label": "Your implementation is in progress"}
 
@@ -295,7 +304,7 @@ def _self_onboarding_progress(submission, contacts, opted_in, all_live):
 			"label": "Self-Onboarding request submitted",
 			"status": "complete" if cstr(getattr(submission, "status", "")) == "Processed" else "current",
 		},
-		{"key": "package", "label": "Token package selected", "status": "complete" if package_selected else "upcoming"},
+		{"key": "package", "label": "Package selected", "status": "complete" if package_selected else "upcoming"},
 		{"key": "order", "label": "Quote and order ready", "status": "complete" if quote_ready else ("current" if package_selected else "upcoming")},
 		{
 			"key": "payment",
@@ -1069,44 +1078,45 @@ def _portal_orders(submission) -> list[dict]:
 		return []
 
 
-def _customer_invoices(customer: str) -> list[dict]:
+def _customer_invoices(customer: str, ois_mfls_by_name: dict | None = None, account_mfls: list | None = None) -> list[dict]:
+	"""Submitted invoices with an outstanding amount, attributed to facilities (SPEC 5.2)."""
 	if not customer or not frappe.db.exists("Customer", customer):
 		return []
-	filters = [
-		["docstatus", "=", 1],
-		["outstanding_amount", ">", 0],
-		["customer", "=", customer],
-	]
 	fields = ["name", "posting_date", "due_date", "outstanding_amount", "grand_total", "currency"]
-	if frappe.db.has_column("Sales Invoice", "crm_token_facility_mfl"):
-		fields.append("crm_token_facility_mfl")
+	for col in (
+		"crm_token_facility_mfl",
+		"crm_token_package_item",
+		"crm_optin_submission",
+		"crm_optin_year",
+		"crm_optin_quarter",
+		"crm_optin_billing_key",
+	):
+		if frappe.db.has_column("Sales Invoice", col):
+			fields.append(col)
 	rows = frappe.get_list(
 		"Sales Invoice",
-		filters=filters,
+		filters=[
+			["docstatus", "=", 1],
+			["outstanding_amount", ">", 0],
+			["customer", "=", customer],
+		],
 		fields=fields,
 		order_by="due_date asc, posting_date asc",
 		limit_page_length=200,
 		ignore_permissions=True,
 	)
-	return [
-		{
-			"name": row.name,
-			"invoice_number": row.name,
-			"posting_date": str(row.posting_date or ""),
-			"due_date": str(row.due_date or ""),
-			"amount": float(row.outstanding_amount or 0),
-			"grand_total": float(row.grand_total or 0),
-			"currency": row.currency or "KES",
-			"status": "Outstanding",
-			"customer": customer,
-			"crm_token_facility_mfl": cstr(row.get("crm_token_facility_mfl") or ""),
-		}
-		for row in rows
-		if frappe.utils.flt(row.outstanding_amount) > 0
-	]
+	rows = enrich_invoices(
+		[row for row in rows if frappe.utils.flt(row.outstanding_amount) > 0],
+		ois_mfls_by_name or {},
+		account_mfls or [],
+	)
+	for row in rows:
+		row["customer"] = customer
+	return rows
 
 
-def _customer_orders(customer: str) -> list[dict]:
+def _customer_orders(customer: str, ois_mfls_by_name: dict | None = None, account_mfls: list | None = None) -> list[dict]:
+	"""Open and draft orders for this customer, attributed to facilities (SPEC 5.1)."""
 	if not customer or not frappe.db.exists("Customer", customer):
 		return []
 	fields = [
@@ -1118,7 +1128,17 @@ def _customer_orders(customer: str) -> list[dict]:
 		"status",
 		"docstatus",
 	]
-	for col in ("crm_token_facility_mfl", "crm_token_package_item", "crm_order_frequency", "crm_recurrence_period"):
+	for col in (
+		"crm_token_facility_mfl",
+		"crm_token_package_item",
+		"crm_order_frequency",
+		"crm_recurrence_period",
+		"crm_optin_submission",
+		"crm_optin_year",
+		"crm_optin_quarter",
+		"crm_optin_billing_key",
+		"crm_optin_quotation",
+	):
 		if frappe.db.has_column("Sales Order", col):
 			fields.append(col)
 	# Drafts are Express orders (and recurring repeats) waiting for the client's review.
@@ -1130,10 +1150,14 @@ def _customer_orders(customer: str) -> list[dict]:
 		limit_page_length=200,
 		ignore_permissions=True,
 	)
+	orders = enrich_orders(
+		orders,
+		ois_mfls_by_name or {},
+		account_mfls or [],
+		package_lookup([order.get("crm_token_package_item") for order in orders]),
+	)
 	for order in orders:
 		order["customer"] = customer
-		order["is_draft"] = order.pop("docstatus") == 0
-		order["can_create_invoice"] = not order["is_draft"] and cstr(order.get("status") or "").strip().casefold() not in {"closed", "on hold", "cancelled"}
 	return orders
 
 
@@ -1195,84 +1219,94 @@ def _is_pending_mpesa_report(payment_entry) -> bool:
 	return int(docstatus or 0) == 0 and remarks.startswith("M-Pesa Paybill payment ")
 
 
-def _facility_payment_history(customer: str, facility_mfl: str) -> list[dict]:
-	"""Return payments allocated to invoices tagged to one facility."""
-	if not frappe.db.has_column("Sales Invoice", "crm_token_facility_mfl"):
-		return []
-	invoices = frappe.get_all(
-		"Sales Invoice",
-		filters={"customer": customer, "crm_token_facility_mfl": facility_mfl},
-		fields=["name"],
-		limit_page_length=0,
-		ignore_permissions=True,
+def _user_ois_mfls_by_name(user: str, deals: list[dict]) -> dict:
+	"""Map OIS names to their snapshot facility MFLs, for read-time attribution (SPEC 4.1)."""
+	ois_numbers = [name for name in get_user_ois_numbers(user) if name]
+	for deal in deals:
+		submission = cstr(deal.get("optin_submission") or "").strip()
+		if submission and submission not in ois_numbers:
+			ois_numbers.append(submission)
+	result: dict[str, list[str]] = {}
+	for ois_number in ois_numbers:
+		row = frappe.db.get_value(OIS_DOCTYPE, ois_number, ["name", "raw_json"], as_dict=True)
+		if not row:
+			continue
+		mfls: list[str] = []
+		for snapshot in _submission_facilities(row):
+			_append_mfl(mfls, snapshot.get("mfl_code"))
+		result[row.name] = mfls
+	return result
+
+
+def _facility_invoice_summary(fac_invoices) -> dict:
+	"""Invoice summary for one facility. ``invoice_name`` must point at an OPEN
+	invoice (``amount > 0``), because the M-Pesa pay action bills that invoice;
+	the oldest by due date may already be paid (SPEC review, must-fix 10)."""
+	open_invoice = next(
+		(inv for inv in fac_invoices if frappe.utils.flt(inv.get("amount")) > 0),
+		None,
 	)
-	invoice_names = [row.name for row in invoices]
-	if not invoice_names or not frappe.db.exists("DocType", "Payment Entry Reference"):
-		return []
-	refs = frappe.get_all(
-		"Payment Entry Reference",
-		filters={"reference_doctype": "Sales Invoice", "reference_name": ["in", invoice_names]},
-		fields=["parent", "reference_name", "allocated_amount"],
-		limit_page_length=0,
-		ignore_permissions=True,
-	)
-	parent_names = list({row.parent for row in refs if row.parent})
-	if not parent_names:
-		return []
-	entries = frappe.get_all(
-		"Payment Entry",
-		filters={"name": ["in", parent_names], "party": customer, "party_type": "Customer", "docstatus": ["in", [0, 1]]},
-		fields=["name", "posting_date", "paid_amount", "received_amount", "mode_of_payment", "reference_no", "remarks", "docstatus"],
-		order_by="posting_date desc, creation desc",
-		limit_page_length=100,
-		ignore_permissions=True,
-	)
-	entry_by_name = {
-		row.name: row for row in entries if row.docstatus == 1 or _is_pending_mpesa_report(row)
+	return {
+		"has_outstanding": any(frappe.utils.flt(inv.get("amount")) > 0 for inv in fac_invoices),
+		"outstanding_amount": sum(frappe.utils.flt(inv.get("amount")) for inv in fac_invoices),
+		"currency": fac_invoices[0].get("currency") if fac_invoices else "KES",
+		"invoice_name": open_invoice.get("name") if open_invoice else None,
+		"count": len(fac_invoices),
 	}
-	return [
-		{
-			"name": entry_by_name[row.parent].name,
-			"invoice": row.reference_name,
-			"posting_date": str(entry_by_name[row.parent].posting_date or ""),
-			"amount": float(row.allocated_amount or 0),
-			"mode_of_payment": "M-Pesa Paybill" if _is_pending_mpesa_report(entry_by_name[row.parent]) else (entry_by_name[row.parent].mode_of_payment or "M-Pesa / Bank"),
-			"reference_no": entry_by_name[row.parent].reference_no or "",
-			"status": "Pending Verification" if _is_pending_mpesa_report(entry_by_name[row.parent]) else "Recorded",
-			"customer": customer,
-		}
-		for row in refs
-		if row.parent in entry_by_name
-	]
 
 
-def _facility_invoice_history(customer: str, facility_mfl: str) -> list[dict]:
-	"""Return paid and outstanding invoices carrying this facility's billing tag."""
-	if not frappe.db.has_column("Sales Invoice", "crm_token_facility_mfl"):
-		return []
-	rows = frappe.get_all(
-		"Sales Invoice",
-		filters={"customer": customer, "crm_token_facility_mfl": facility_mfl, "docstatus": ["in", [0, 1]]},
-		fields=["name", "posting_date", "due_date", "grand_total", "outstanding_amount", "currency", "status", "docstatus"],
-		order_by="posting_date desc, creation desc",
-		limit_page_length=100,
-		ignore_permissions=True,
+def _facility_commercial(
+	mfl,
+	package_df,
+	orders,
+	invoices,
+	network_ctx_by_mfl,
+	quote_cache,
+	is_self_onboarding,
+	customer,
+	row,
+) -> dict:
+	"""Compute and return the facility's ``commercial`` projection (SPEC 5.3)."""
+	from crm.api.portal_commercial import build_commercial, facility_quotes, package_lookup
+
+	mfl_key = cstr(mfl or "").strip().casefold()
+	network_ctx = network_ctx_by_mfl.get(mfl_key)
+	item_code = cstr(package_df.get("cx_token_package_item") or "")
+	if not item_code:
+		# Fallback (SPEC 4.3): an Express Fixed/Token order created without a Deal
+		# Facility package row, or the OIS package, must still resolve the plan. Take
+		# the newest order that carries a package item.
+		dated = sorted(
+			(orders or []),
+			key=lambda o: (
+				cstr(o.get("transaction_date") or o.get("creation") or ""),
+				cstr(o.get("name") or ""),
+			),
+			reverse=True,
+		)
+		for order in dated:
+			code = cstr(order.get("crm_token_package_item") or "")
+			if code:
+				item_code = code
+				break
+	lookup = package_lookup([item_code]) if item_code else {}
+	pkg_info = dict(lookup.get(item_code.strip().casefold()) or {})
+	pkg_info["gross_total"] = package_df.get("cx_token_package_gross_total")
+	pkg_info["currency"] = cstr(package_df.get("cx_token_package_currency") or "")
+	pkg_info["token_quantity"] = frappe.utils.cint(package_df.get("cx_token_package_quantity")) or pkg_info.get("token_quantity", 0)
+	quotes = facility_quotes(customer, mfl, network_ctx, quote_cache) if customer else []
+	return build_commercial(
+		mfl,
+		network_ctx,
+		pkg_info,
+		orders,
+		invoices,
+		quotes,
+		is_self_onboarding,
+		facility_row=row,
 	)
-	return [
-		{
-			"name": row.name,
-			"invoice_number": row.name,
-			"posting_date": str(row.posting_date or ""),
-			"due_date": str(row.due_date or ""),
-			"amount": float(row.outstanding_amount or 0),
-			"grand_total": float(row.grand_total or 0),
-			"currency": row.currency or "KES",
-			"status": "Outstanding" if frappe.utils.flt(row.outstanding_amount) > 0 else "Paid",
-			"customer": customer,
-			"crm_token_facility_mfl": facility_mfl,
-		}
-		for row in rows
-	]
+
+
 def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[dict]:
 	"""Project Customer, Deal, and Lead-linked facilities, orders, invoices, and payments granted to this user.
 
@@ -1311,7 +1345,7 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 		return []
 
 	deal_fields = ["name", "cx_customer", "organization"]
-	for fieldname in ("optin_network", "cx_onboarding_source", "cx_onboarding_package_item"):
+	for fieldname in ("optin_network", "cx_onboarding_source", "cx_onboarding_package_item", "optin_submission"):
 		if frappe.db.has_column("CRM Deal", fieldname):
 			deal_fields.append(fieldname)
 
@@ -1360,6 +1394,11 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 		cust = row.get("cx_customer")
 		if cust:
 			deals_by_customer.setdefault(cust, []).append(row)
+
+	ois_mfls_by_name = _user_ois_mfls_by_name(user, deals)
+	from crm.api.portal_commercial import network_plans_by_mfl
+
+	network_ctx_by_mfl = network_plans_by_mfl(list(ois_mfls_by_name.keys()))
 
 	memberships = []
 	if customer_names and frappe.db.has_column("CRM Facility Membership", "customer"):
@@ -1471,9 +1510,21 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 
 		customer_doc = frappe.db.get_value("Customer", customer, ["customer_name", "customer_type"], as_dict=True) or {}
 		customer_legal_name = cstr(customer_doc.get("customer_name") or customer)
-		open_orders = _customer_orders(customer)
-		open_invoices = _customer_invoices(customer)
+		customer_mfls: list[str] = []
+		for membership in memberships:
+			if membership.get("customer") != customer:
+				continue
+			facility = facility_by_name.get(membership.get("parent"))
+			if facility:
+				_append_mfl(customer_mfls, facility.get("mfl_code"))
+		for d in cust_deals:
+			for df in deal_facilities_by_deal.get(d.get("name"), []):
+				_append_mfl(customer_mfls, df.get("mfl_code"))
+		open_orders = _customer_orders(customer, ois_mfls_by_name, customer_mfls)
+		open_invoices = _customer_invoices(customer, ois_mfls_by_name, customer_mfls)
 		customer_payments = _customer_payments(customer)
+		billing = account_billing(customer, customer_mfls, ois_mfls_by_name)
+		quote_cache: dict = {}
 
 		rows = []
 		seen_mfls = set()
@@ -1509,10 +1560,11 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 				if past_orders:
 					latest_order = past_orders[0]
 
-			fac_invoices = _facility_invoice_history(customer, mfl_raw)
-			fac_payments = _facility_payment_history(customer, mfl_raw)
+			fac_invoices = for_facility(billing["invoices"], mfl_raw)
+			fac_payments = for_facility(billing["payments"], mfl_raw)
+			fac_orders = for_facility(billing["orders"], mfl_raw)[:100]
 
-			rows.append({
+			row = {
 				"facility_name": cstr(facility.get("facility_name") or "Facility"),
 				"mfl_code": mfl_raw,
 				**hfr_details(facility, package),
@@ -1547,16 +1599,24 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 					"amount": float(latest_order.get("grand_total") or 0),
 					"currency": latest_order.get("currency") or "KES",
 				} if latest_order else None,
-				"invoice_summary": {
-					"has_outstanding": bool(fac_invoices),
-					"outstanding_amount": sum(float(inv.get("amount") or 0) for inv in fac_invoices),
-					"currency": fac_invoices[0].get("currency") if fac_invoices else "KES",
-					"invoice_name": fac_invoices[0].get("name") if fac_invoices else None,
-					"count": len(fac_invoices),
-				},
+				"invoice_summary": _facility_invoice_summary(fac_invoices),
+				"orders": fac_orders,
 				"invoices": fac_invoices,
 				"payments": fac_payments,
-			})
+			}
+			row["commercial"] = _facility_commercial(
+				mfl_raw,
+				package,
+				fac_orders,
+				fac_invoices,
+				network_ctx_by_mfl,
+				quote_cache,
+				cstr(primary_deal.get("cx_onboarding_source") or "") == "facility_self_onboarding"
+				or (mfl_key not in network_ctx_by_mfl and bool(customer)),
+				customer,
+				row,
+			)
+			rows.append(row)
 
 		# Also collect from CRM Deal Facility for any deals under this customer
 		for d in cust_deals:
@@ -1567,7 +1627,10 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 					continue
 				if mfl_key:
 					seen_mfls.add(mfl_key)
-				rows.append({
+				fac_invoices = for_facility(billing["invoices"], mfl_raw)
+				fac_payments = for_facility(billing["payments"], mfl_raw)
+				fac_orders = for_facility(billing["orders"], mfl_raw)[:100]
+				row = {
 					"facility_name": cstr(df.get("facility_name") or "Facility"),
 					"mfl_code": mfl_raw,
 					**hfr_details(df),
@@ -1589,10 +1652,24 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 					"package_gross_total": df.get("cx_token_package_gross_total"),
 					"package_currency": cstr(df.get("cx_token_package_currency") or ""),
 					"recent_purchase": None,
-					"invoice_summary": {"has_outstanding": False, "outstanding_amount": 0, "currency": "KES", "invoice_name": None, "count": 0},
-					"invoices": _facility_invoice_history(customer, mfl_raw),
-					"payments": _facility_payment_history(customer, mfl_raw),
-				})
+					"invoice_summary": _facility_invoice_summary(fac_invoices),
+					"orders": fac_orders,
+					"invoices": fac_invoices,
+					"payments": fac_payments,
+				}
+				row["commercial"] = _facility_commercial(
+					mfl_raw,
+					df,
+					fac_orders,
+					fac_invoices,
+					network_ctx_by_mfl,
+					quote_cache,
+					cstr(d.get("cx_onboarding_source") or "") == "facility_self_onboarding"
+					or (mfl_key not in network_ctx_by_mfl and bool(customer)),
+					customer,
+					row,
+				)
+				rows.append(row)
 
 		org_name = customer_legal_name
 		if primary_deal:
@@ -1626,7 +1703,7 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 		seen_deals.add(d_name)
 		fac_rows = []
 		for df in deal_facilities_by_deal.get(d_name, []):
-			fac_rows.append({
+			row = {
 				"facility_name": cstr(df.get("facility_name") or "Facility"),
 				"mfl_code": cstr(df.get("mfl_code") or ""),
 				**hfr_details(df),
@@ -1649,7 +1726,22 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 				"package_currency": cstr(df.get("cx_token_package_currency") or ""),
 				"recent_purchase": None,
 				"invoice_summary": {"has_outstanding": False, "outstanding_amount": 0, "currency": "KES", "invoice_name": None, "count": 0},
-			})
+				"orders": [],
+				"invoices": [],
+				"payments": [],
+			}
+			row["commercial"] = _facility_commercial(
+				row["mfl_code"],
+				df,
+				[],
+				[],
+				network_ctx_by_mfl,
+				{},
+				cstr(deal_doc.get("cx_onboarding_source") or "") == "facility_self_onboarding",
+				"",
+				row,
+			)
+			fac_rows.append(row)
 
 		accounts.append({
 			"customer": d_name,
@@ -1680,8 +1772,9 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 			[row.get("mfl_code") for row in lead_fac_rows],
 			[lead_doc.get("organization")],
 		)
-		fac_rows = [
-			{
+		fac_rows = []
+		for lf in lead_fac_rows:
+			row = {
 				"facility_name": cstr(lf.get("facility_name") or "Facility"),
 				"mfl_code": cstr(lf.get("mfl_code") or ""),
 				**hfr_details(lf),
@@ -1707,9 +1800,14 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 				"package_currency": "KES",
 				"recent_purchase": None,
 				"invoice_summary": {"has_outstanding": False, "outstanding_amount": 0, "currency": "KES", "invoice_name": None, "count": 0},
+				"orders": [],
+				"invoices": [],
+				"payments": [],
 			}
-			for lf in lead_fac_rows
-		]
+			row["commercial"] = _facility_commercial(
+				row["mfl_code"], {}, [], [], network_ctx_by_mfl, {}, False, "", row
+			)
+			fac_rows.append(row)
 		accounts.append({
 			"customer": l_name,
 			"deal": "",
@@ -1726,6 +1824,9 @@ def _customer_portal_accounts(user: str, include_balances: bool = True) -> list[
 
 	if include_balances:
 		_attach_token_balances(accounts)
+		for account in accounts:
+			for facility in account.get("facilities") or []:
+				facility["commercial"] = apply_live_balance(facility.get("commercial") or {}, facility.get("token_balance"))
 	return accounts
 
 
@@ -1760,11 +1861,80 @@ def _attach_token_balances(accounts: list[dict]) -> None:
 			facility["token_balance"] = entry
 
 
+def _ois_facility_commercial(submission, progress, ois_orders, ois_invoices, network_ctx_by_mfl, quote_cache) -> None:
+	"""Set ``commercial`` on each OIS progress facility (SPEC S4, get_portal_context)."""
+	from crm.api.portal_commercial import build_commercial, facility_quotes, for_facility, package_lookup
+
+	is_self_onboarding = cstr(getattr(submission, "onboarding_source", "") or "").strip() == "token_self_onboarding"
+	progress_package = progress.get("package") if isinstance(progress.get("package"), dict) else {}
+	deal_name = cstr(getattr(submission, "deal", "") or "").strip()
+	customer = ""
+	deal_package_codes: dict[str, str] = {}
+	if deal_name:
+		customer = cstr(frappe.db.get_value("CRM Deal", deal_name, "cx_customer") or "")
+		for df in frappe.get_all(
+			"CRM Deal Facility",
+			filters={"parent": deal_name},
+			fields=["mfl_code", "cx_token_package_item"],
+			ignore_permissions=True,
+			limit_page_length=0,
+		):
+			code = cstr(df.get("cx_token_package_item") or "")
+			if code:
+				deal_package_codes[cstr(df.get("mfl_code") or "").strip().casefold()] = code
+	item_codes = list(deal_package_codes.values())
+	if progress_package.get("item_code"):
+		item_codes.append(cstr(progress_package.get("item_code")))
+	packages = package_lookup(item_codes)
+	for contact in progress.get("facilities") or []:
+		mfl = cstr(contact.get("mfl_code") or "")
+		if not mfl:
+			continue
+		mfl_key = mfl.strip().casefold()
+		fac_orders = for_facility(ois_orders, mfl)
+		fac_invoices = for_facility(ois_invoices, mfl)
+		item_code = deal_package_codes.get(mfl_key) or cstr(progress_package.get("item_code") or "")
+		if not item_code and fac_orders:
+			dated = sorted(
+				fac_orders,
+				key=lambda o: (
+					cstr(o.get("transaction_date") or o.get("creation") or ""),
+					cstr(o.get("name") or ""),
+				),
+				reverse=True,
+			)
+			for order in dated:
+				code = cstr(order.get("crm_token_package_item") or "")
+				if code:
+					item_code = code
+					break
+		package_row = {}
+		if item_code:
+			key = item_code.strip().casefold()
+			# The order fallback item may not be in the prebuilt lookup (SPEC 4.3).
+			package_row = packages.get(key) or (package_lookup([item_code]) or {}).get(key) or {}
+		network_ctx = None if is_self_onboarding else network_ctx_by_mfl.get(mfl_key)
+		contact["commercial"] = build_commercial(
+			mfl,
+			network_ctx,
+			package_row,
+			fac_orders,
+			fac_invoices,
+			facility_quotes(customer, mfl, network_ctx, quote_cache),
+			is_self_onboarding,
+			facility_row=contact,
+		)
+
+
 @frappe.whitelist(methods=["GET", "POST"])
 def get_portal_context():
 	"""Return legacy OIS and Customer enrollment scoped to the authenticated user."""
 	ois_numbers = require_portal_user()
 	customer_accounts = _customer_portal_accounts(frappe.session.user)
+	from crm.api.portal_commercial import network_plans_by_mfl
+
+	ois_network_ctx = network_plans_by_mfl(ois_numbers)
+	ois_quote_cache: dict = {}
 	rows = []
 	for ois_number in ois_numbers:
 		fields = [
@@ -1793,6 +1963,7 @@ def get_portal_context():
 			submission = frappe.get_doc(OIS_DOCTYPE, ois_number)
 			row["open_orders"] = _portal_orders(submission)
 			row["open_invoices"] = _portal_invoices(submission)
+			_ois_facility_commercial(submission, progress, row["open_orders"], row["open_invoices"], ois_network_ctx, ois_quote_cache)
 			rows.append(row)
 
 	calculator_config = {}

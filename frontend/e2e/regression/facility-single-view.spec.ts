@@ -57,6 +57,7 @@ async function openFacility(
   statusHandler: (route: Route) => Promise<void>,
   selectedFacility = facility,
   pollHandler?: (route: Route) => Promise<void>,
+  accountExtra: Record<string, unknown> = {},
 ) {
   const statusCalls: Array<{ method: string; mfl_code?: string | null; http?: string }> = []
   await page.route('**/api/method/**', async (route) => {
@@ -74,6 +75,7 @@ async function openFacility(
                   organization: 'Regression Organization',
                   network: 'CareVerse Partner Network',
                   facilities: [selectedFacility],
+                  ...accountExtra,
                 },
               ],
               ois: [],
@@ -562,4 +564,336 @@ test('a refused view explains why and shows no password', async ({ page }) => {
   await page.getByTestId('hmis-reveal-confirm').getByRole('button', { name: 'Show password' }).click()
   await expect(page.getByTestId('hmis-owner-password')).toContainText('already viewed')
   await expect(page.getByTestId('hmis-owner-password-dialog')).toHaveCount(0)
+})
+
+// ---------------------------------------------------------------------------
+// Plan-aware facility page (cx-facility-page-ui): the commercial projection
+// drives the summary, the plan panel, and the Quote -> Order -> Invoice ->
+// Payment journey in every journey.
+// ---------------------------------------------------------------------------
+
+const timeBoundFacility = {
+  ...facility,
+  mfl_code: '7687',
+  facility_name: 'Opt-in Network Clinic',
+  hfr_facility_id: 'FID-29-7687-1',
+  commercial: {
+    journey: 'network_optin',
+    journey_label: 'Network Opt-In',
+    plan_type: 'time_bound',
+    has_tokens: false,
+    unavailable: false,
+    plan: {
+      name: 'Network subscription',
+      source: 'optin_contract',
+      status: 'Active',
+      cycle: 'Quarterly',
+      cycle_label: 'Billed quarterly',
+      term_years: 5,
+      term_label: '5 years',
+      currency: 'KES',
+      facilities_on_plan: 1,
+      current_period: { start: '2026-11-01', end: '2027-01-30' },
+      next_invoice: {
+        label: 'Year 1 · Quarter 1',
+        date: '2027-01-30',
+        amount_incl_vat: 6960,
+        projected: true,
+      },
+      schedule: [
+        { label: 'Year 1 · Quarter 2', invoice_date: '2027-04-30', amount_incl_vat: 6960, projected: true, state: 'scheduled' },
+      ],
+    },
+    quotes: [
+      { name: 'SAL-QTN-2026-00001', label: 'Year 1', status_label: 'Accepted', amount: 27840, currency: 'KES' },
+    ],
+  },
+  orders: [
+    {
+      name: 'SAL-ORD-2026-00035',
+      display_title: 'Year 1 · Quarter 1 subscription',
+      display_status: 'Confirmed',
+      doc_kind: 'subscription',
+      schedule_governed: true,
+      is_draft: false,
+      can_create_invoice: false,
+      facility_mfls: ['7687'],
+      transaction_date: '2026-11-01',
+      grand_total: 6960,
+      currency: 'KES',
+      quotation: 'SAL-QTN-2026-00001',
+    },
+  ],
+  invoices: [
+    {
+      name: 'ACC-SINV-2026-00017',
+      invoice_number: 'ACC-SINV-2026-00017',
+      amount: 0,
+      due_date: '2026-11-15',
+      facility_mfls: ['7687'],
+      sales_orders: ['SAL-ORD-2026-00035'],
+    },
+  ],
+  payments: [
+    {
+      name: 'PE-1',
+      mode_of_payment: 'M-Pesa',
+      reference_no: 'PG20261105',
+      posting_date: '2026-11-05',
+      invoice: 'ACC-SINV-2026-00017',
+      status: 'Recorded',
+      amount: 6960,
+    },
+  ],
+}
+
+test('a time-bound opt-in facility shows its plan, the full journey, and no token copy', async ({ page }) => {
+  // An account-level order (no facility_mfls) must surface via the notice, not vanish.
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: true, status: 'deployed', progress: 100 })),
+    timeBoundFacility,
+    undefined,
+    { open_orders: [{ name: 'SAL-ORD-ACCT-1', transaction_date: '2026-10-01', grand_total: 500, currency: 'KES' }] },
+  )
+
+  // Plan panel: committed plan, not tokens.
+  const plan = page.getByTestId('plan-panel')
+  await expect(plan.getByTestId('plan-name')).toHaveText('Network subscription')
+  await expect(plan.getByTestId('plan-status')).toHaveText('Active')
+  await expect(plan.getByTestId('plan-cycle')).toHaveText('Billed quarterly')
+  await expect(plan.getByTestId('plan-term')).toHaveText('5 years')
+  await expect(plan.getByTestId('plan-next-invoice')).toContainText('Year 1 · Quarter 1')
+  // current_period is an {start,end} object on the server; it must render formatted,
+  // never raw JSON (must-fix 6).
+  const period = plan.getByTestId('plan-current-period')
+  await expect(period).toBeVisible()
+  await expect(period).not.toContainText('{')
+  await expect(period).toContainText('2027')
+
+  // Summary: plan + next invoice cards; no token cards.
+  await expect(page.getByTestId('facility-plan-card')).toBeVisible()
+  await expect(page.getByTestId('facility-next-invoice')).toBeVisible()
+  await expect(page.getByTestId('facility-available-tokens')).toHaveCount(0)
+
+  // Journey: all four stages, quote first, all complete.
+  const stepper = page.getByTestId('journey-stepper')
+  await expect(stepper.getByText('Quotes', { exact: true })).toBeVisible()
+  await expect(stepper.getByText('Orders', { exact: true })).toBeVisible()
+  await expect(stepper.getByText('Invoices', { exact: true })).toBeVisible()
+  await expect(stepper.getByText('Payments', { exact: true })).toBeVisible()
+  await expect(stepper.locator('[data-state="done"]')).toHaveCount(4)
+
+  // Stage sections carry the documents; the quote links to its order.
+  await expect(page.getByTestId('stage-quote')).toContainText('SAL-QTN-2026-00001')
+  await expect(page.getByTestId('stage-order')).toContainText('Year 1 · Quarter 1 subscription')
+  await expect(page.getByTestId('stage-invoice')).toContainText('ACC-SINV-2026-00017')
+  await expect(page.getByTestId('stage-payment')).toContainText('PG20261105')
+
+  // Cross-stage links target real per-row ids (jumpTo uses getElementById).
+  await expect(page.locator('#doc-SAL-QTN-2026-00001')).toHaveCount(1)
+  await expect(page.locator('#doc-SAL-ORD-2026-00035')).toHaveCount(1)
+  await expect(page.locator('#doc-ACC-SINV-2026-00017')).toHaveCount(1)
+  await page.getByTestId('stage-invoice').getByRole('button', { name: 'For order SAL-ORD-2026-00035' }).click()
+  await expect(page.locator('#doc-SAL-ORD-2026-00035')).toBeFocused()
+
+  // The account-level order is surfaced, not dropped (I1).
+  await expect(page.getByText('1 account-level records are not tied to one facility.')).toBeVisible()
+
+  // No token copy anywhere on a time-bound facility.
+  await expect(page.getByText(/tokens/i)).toHaveCount(0)
+})
+
+// A time-bound facility that also has a token meter: plan_type wins, so no token
+// summary cards and no token go-live block (must-fix 2, SPEC 6 "time-bound with tokens").
+const timeBoundWithTokensFacility = {
+  ...timeBoundFacility,
+  mfl_code: '7688',
+  facility_name: 'Opt-in Hybrid Clinic',
+  commercial: {
+    ...timeBoundFacility.commercial,
+    has_tokens: true,
+  },
+  token_balance: { status: 'ok', balance: 300, as_of: '2026-11-06 08:00:00' },
+  orders: [
+    {
+      name: 'SAL-ORD-2026-00041',
+      display_title: 'Year 1 · Quarter 1 subscription',
+      display_status: 'Confirmed',
+      doc_kind: 'subscription',
+      schedule_governed: true,
+      is_draft: false,
+      can_create_invoice: false,
+      facility_mfls: ['7688'],
+      transaction_date: '2026-11-01',
+      grand_total: 6960,
+      currency: 'KES',
+      quotation: 'SAL-QTN-2026-00001',
+    },
+  ],
+  invoices: [
+    {
+      name: 'ACC-SINV-2026-00018',
+      invoice_number: 'ACC-SINV-2026-00018',
+      amount: 0,
+      due_date: '2026-11-15',
+      facility_mfls: ['7688'],
+      sales_orders: ['SAL-ORD-2026-00041'],
+    },
+  ],
+  payments: [
+    {
+      name: 'PE-2',
+      mode_of_payment: 'M-Pesa',
+      reference_no: 'PG20261106',
+      posting_date: '2026-11-05',
+      invoice: 'ACC-SINV-2026-00018',
+      status: 'Recorded',
+      amount: 6960,
+    },
+  ],
+}
+
+test('a time-bound facility with a token meter still shows the plan, not token copy', async ({
+  page,
+}) => {
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: true, status: 'deployed', progress: 100 })),
+    timeBoundWithTokensFacility,
+  )
+
+  await expect(page.getByTestId('facility-plan-card')).toBeVisible()
+  await expect(page.getByTestId('facility-next-invoice')).toBeVisible()
+  // SPEC 6 "Time-bound with tokens": the summary is the plan (no token summary cards),
+  // but the live token meter still works — Top up CTA and the low-token alert are shown,
+  // and the go-live token block is hidden.
+  await expect(page.getByTestId('facility-available-tokens')).toHaveCount(0)
+  await expect(page.getByTestId('facility-current-package')).toHaveCount(0)
+  await expect(page.getByTestId('token-alert-card')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Top up tokens/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Choose a plan/ })).toHaveCount(0)
+})
+
+const tokenFacility = {
+  ...facility,
+  mfl_code: '90001',
+  facility_name: 'Token Express Clinic',
+  hfr_facility_id: '',
+  token_package: 'Starter',
+  token_quantity: 100,
+  token_balance: { status: 'ok', balance: 42, as_of: '2026-11-06 08:00:00' },
+  commercial: {
+    journey: 'self_onboarding',
+    journey_label: 'Self-Onboarding',
+    plan_type: 'token',
+    has_tokens: true,
+    unavailable: false,
+    plan: { name: 'Starter', source: 'token_package', cycle: '', cycle_label: '', next_invoice: null },
+    quotes: [],
+  },
+  orders: [
+    {
+      name: 'SAL-ORD-2026-00099',
+      doc_kind: 'token',
+      crm_token_package_item: 'TOK-A',
+      display_title: 'Starter',
+      display_status: 'Invoiced',
+      is_draft: false,
+      can_create_invoice: false,
+      facility_mfls: ['90001'],
+      transaction_date: '2026-10-20',
+      grand_total: 12000,
+      currency: 'KES',
+    },
+  ],
+  invoices: [
+    {
+      name: 'ACC-INV-2026-00099',
+      invoice_number: 'ACC-INV-2026-00099',
+      amount: 12000,
+      due_date: '2026-12-31',
+      facility_mfls: ['90001'],
+      sales_orders: ['SAL-ORD-2026-00099'],
+    },
+  ],
+  payments: [],
+}
+
+test('a token facility keeps token summary and a three-stage journey without a quote', async ({ page }) => {
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    tokenFacility,
+  )
+
+  await expect(page.getByTestId('facility-available-tokens')).toContainText('42')
+  await expect(page.getByTestId('facility-current-package')).toContainText('Starter')
+  await expect(page.getByTestId('facility-plan-card')).toHaveCount(0)
+
+  const stepper = page.getByTestId('journey-stepper')
+  await expect(stepper.getByText('Quotes', { exact: true })).toHaveCount(0)
+  await expect(stepper.getByText('Orders', { exact: true })).toBeVisible()
+  await expect(stepper.getByText('Invoices', { exact: true })).toBeVisible()
+  await expect(stepper.locator('[data-state="current"]')).toHaveCount(1)
+
+  await expect(page.getByRole('button', { name: 'Choose payment' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Top up tokens/ })).toBeVisible()
+})
+
+const unplannedFacility = {
+  ...facility,
+  mfl_code: '55555',
+  facility_name: 'Unplanned Clinic',
+  hfr_facility_id: '',
+  commercial: {
+    journey: 'unknown',
+    journey_label: '',
+    plan_type: 'unknown',
+    has_tokens: false,
+    unavailable: false,
+    plan: { name: '', source: 'none', cycle: '', cycle_label: '', next_invoice: null },
+    quotes: [],
+  },
+  orders: [],
+  invoices: [],
+  payments: [],
+}
+
+test('a facility without a plan shows the plan-less summary and a choose-a-plan action', async ({ page }) => {
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    unplannedFacility,
+  )
+
+  await expect(page.getByTestId('facility-plan-card')).toContainText('Not set up yet')
+  await expect(page.getByTestId('plan-panel')).toContainText('No plan yet')
+  await expect(page.getByRole('button', { name: 'Choose a plan' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /Top up tokens/ })).toHaveCount(0)
+})
+
+// An unknown facility with a live token meter (has_tokens) still shows its balance;
+// the summary falls to the token branch, not "Not set up yet" (review finding 2).
+const unknownWithBalanceFacility = {
+  ...unplannedFacility,
+  mfl_code: '55556',
+  facility_name: 'Metered Unplanned Clinic',
+  commercial: {
+    ...unplannedFacility.commercial,
+    has_tokens: true,
+  },
+  token_balance: { status: 'ok', balance: 75, as_of: '2026-11-06 08:00:00' },
+}
+
+test('an unplanned facility with a live token balance shows that balance', async ({ page }) => {
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    unknownWithBalanceFacility,
+  )
+
+  await expect(page.getByTestId('facility-available-tokens')).toBeVisible()
+  await expect(page.getByTestId('facility-available-tokens-value')).toContainText('75')
+  await expect(page.getByRole('button', { name: /Top up tokens/ })).toBeVisible()
 })
