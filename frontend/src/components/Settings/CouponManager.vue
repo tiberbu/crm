@@ -28,17 +28,32 @@
       <LoadingIndicator class="size-6" />
     </div>
     <div v-else class="flex flex-1 flex-col gap-6 overflow-y-auto px-2 pb-6">
-      <TabButtons
-        v-model="filter"
-        :buttons="filters"
-        data-testid="coupon-filter"
-      />
+      <div class="flex flex-wrap items-center gap-3">
+        <TabButtons
+          v-model="filter"
+          :buttons="filters"
+          data-testid="coupon-filter"
+        />
+        <TextInput
+          v-model="search"
+          type="search"
+          class="w-full sm:w-72"
+          :placeholder="__('Search by partner network, title or code')"
+          data-testid="coupon-search"
+        >
+          <template #prefix><LucideSearch class="size-4" /></template>
+        </TextInput>
+      </div>
 
       <p
         v-if="!coupons.length"
         class="rounded-lg border border-dashed border-outline-gray-2 px-4 py-8 text-center text-sm text-ink-gray-5"
       >
-        {{ __('No coupons here yet.') }}
+        {{
+          search.trim()
+            ? __('No coupons match "{0}".', [search.trim()])
+            : __('No coupons here yet.')
+        }}
       </p>
 
       <div
@@ -62,11 +77,7 @@
                 {{ coupon.coupon_title }}
               </p>
               <p class="truncate text-xs text-ink-gray-5">
-                {{
-                  coupon.network
-                    ? networkLabel(coupon.network)
-                    : __('CRM coupon')
-                }}
+                {{ coupon.network ? coupon.network_name : __('CRM coupon') }}
               </p>
             </div>
             <Dropdown :options="actions(coupon)" placement="right">
@@ -111,6 +122,20 @@
             <dd class="text-right">
               {{ windowLabel(coupon) }}
             </dd>
+            <dt class="text-ink-gray-5">{{ __('Created') }}</dt>
+            <dd class="text-right" data-testid="coupon-created">
+              {{ auditLabel(coupon.created_by_name, coupon.creation) }}
+            </dd>
+            <template v-if="coupon.status === 'Revoked'">
+              <dt class="text-ink-gray-5">{{ __('Revoked') }}</dt>
+              <dd class="text-right" data-testid="coupon-revoked">
+                {{ auditLabel(coupon.revoked_by_name, coupon.revoked_on) }}
+              </dd>
+              <template v-if="coupon.revocation_reason">
+                <dt class="text-ink-gray-5">{{ __('Reason') }}</dt>
+                <dd class="text-right">{{ coupon.revocation_reason }}</dd>
+              </template>
+            </template>
           </dl>
         </article>
       </div>
@@ -128,9 +153,6 @@
       v-model="revokeOpen"
       :options="{
         title: __('Revoke {0}?', [revokeTarget?.coupon_title]),
-        message: __(
-          'New orders and payments will no longer use this coupon. Tokens already granted are never taken back.',
-        ),
         actions: [
           {
             label: __('Revoke'),
@@ -140,7 +162,24 @@
           },
         ],
       }"
-    />
+    >
+      <template #body-content>
+        <p class="text-p-base text-ink-gray-7">
+          {{
+            __(
+              'New orders and payments will no longer use this coupon. Tokens already granted are never taken back. This cannot be undone; to pause a coupon, disable it instead.',
+            )
+          }}
+        </p>
+        <FormControl
+          v-model="revokeReason"
+          class="mt-4"
+          type="textarea"
+          :label="__('Reason (optional)')"
+          data-testid="coupon-revoke-reason"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -153,16 +192,24 @@ import {
   Dropdown,
   ErrorMessage,
   LoadingIndicator,
+  FormControl,
   TabButtons,
+  TextInput,
   call,
   createResource,
   toast,
 } from 'frappe-ui'
 import LucidePlus from '~icons/lucide/plus'
 import LucideEllipsis from '~icons/lucide/ellipsis'
+import LucideSearch from '~icons/lucide/search'
 import CouponEditDialog from '@/components/Settings/CouponEditDialog.vue'
 import CouponRedemptions from '@/components/Settings/CouponRedemptions.vue'
-import { COUPON_STATUS_THEME, couponValueLabel } from '@/utils/coupons'
+import { formatDate } from '@/utils'
+import {
+  COUPON_STATUS_THEME,
+  couponMatches,
+  couponValueLabel,
+} from '@/utils/coupons'
 
 const API = 'crm.api.coupons'
 
@@ -173,17 +220,23 @@ const resource = createResource({
 const list = computed(() => resource.data?.coupons || [])
 
 const filter = ref('All')
+const search = ref('')
+const searched = computed(() =>
+  list.value.filter((c) => couponMatches(c, search.value)),
+)
 const filters = computed(() => {
   const by = (status) =>
-    list.value.filter((c) => !status || c.derived_status === status).length
+    searched.value.filter((c) => !status || c.derived_status === status).length
   return [
     { label: `${__('All')} (${by('')})`, value: 'All' },
-    { label: `${__('Active')} (${by('Active')})`, value: 'Active' },
-    { label: `${__('Revoked')} (${by('Revoked')})`, value: 'Revoked' },
+    ...['Active', 'Inactive', 'Revoked'].map((status) => ({
+      label: `${__(status)} (${by(status)})`,
+      value: status,
+    })),
   ]
 })
 const coupons = computed(() =>
-  list.value.filter(
+  searched.value.filter(
     (c) => filter.value === 'All' || c.derived_status === filter.value,
   ),
 )
@@ -191,9 +244,9 @@ const coupons = computed(() =>
 const networks = computed(() => [
   ...new Set(list.value.map((c) => c.network).filter(Boolean)),
 ])
-function networkLabel(name) {
-  const c = list.value.find((x) => x.network === name)
-  return c?.client_label || name
+function auditLabel(who, when) {
+  const date = when ? formatDate(when, 'D MMM YYYY') : ''
+  return [who, date].filter(Boolean).join(' · ') || '—'
 }
 function windowLabel(coupon) {
   const from = coupon.valid_from ? `from ${coupon.valid_from}` : 'any time'
@@ -227,7 +280,9 @@ async function saveCoupon(payload) {
   await run(
     'save_coupon',
     { name: payload.name || '', payload },
-    __('Coupon saved'),
+    payload.name
+      ? __('Coupon saved')
+      : __('Coupon created as inactive. Enable it when it is ready.'),
   )
   editorOpen.value = false
 }
@@ -241,10 +296,11 @@ function showRedemptions(coupon) {
 
 const revokeOpen = ref(false)
 const revokeTarget = ref(null)
+const revokeReason = ref('')
 async function doRevoke({ close }) {
   await run(
     'revoke_coupon',
-    { name: revokeTarget.value.name, reason: '' },
+    { name: revokeTarget.value.name, reason: revokeReason.value },
     __('Coupon revoked'),
   )
   close()
@@ -257,13 +313,33 @@ function actions(coupon) {
       label: __('Redemptions'),
       onClick: () => showRedemptions(coupon),
     },
-    ...(coupon.derived_status === 'Revoked'
+    ...(coupon.status === 'Revoked'
       ? []
       : [
+          coupon.status === 'Inactive'
+            ? {
+                label: __('Enable'),
+                onClick: () =>
+                  run(
+                    'enable_coupon',
+                    { name: coupon.name },
+                    __('Coupon enabled'),
+                  ),
+              }
+            : {
+                label: __('Disable'),
+                onClick: () =>
+                  run(
+                    'disable_coupon',
+                    { name: coupon.name },
+                    __('Coupon disabled'),
+                  ),
+              },
           {
             label: __('Revoke'),
             onClick: () => {
               revokeTarget.value = coupon
+              revokeReason.value = ''
               revokeOpen.value = true
             },
           },
