@@ -4,7 +4,7 @@ import { extname, join } from 'path'
 import { fileURLToPath } from 'url'
 import type { Page, Route } from '@playwright/test'
 
-// Serves the built CX Portal and facility onboarding bundles so specs run the real UI with only Frappe's JSON API mocked.
+// Serves the built CX Portal, facility onboarding and network opt-in bundles so specs run the real UI with only Frappe's JSON API mocked.
 const BUILD = fileURLToPath(
   new URL('../../../crm/public/frontend', import.meta.url),
 ).replace(/\/$/, '')
@@ -29,6 +29,7 @@ export async function startPortalServer(): Promise<{
     if (url.pathname === '/cx-portal') file = join(BUILD, 'cx-portal.html')
     else if (url.pathname === '/facility-onboarding')
       file = join(BUILD, 'facility-onboarding.html')
+    else if (url.pathname === '/opt-in') file = join(BUILD, 'opt-in.html')
     else if (url.pathname.startsWith(ASSET_PREFIX))
       file = join(BUILD, url.pathname.slice(ASSET_PREFIX.length))
     if (!file || !file.startsWith(BUILD) || !existsSync(file)) {

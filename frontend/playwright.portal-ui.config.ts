@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e/regression',
   testMatch:
-    /(portal-layout|token-alerts|onboarding-layout|portal-typography)\.spec\.ts/,
+    /(portal-layout|token-alerts|onboarding-layout|portal-typography|optin-brand)\.spec\.ts/,
   fullyParallel: true,
   timeout: 60000,
   reporter: 'list',
