@@ -1,6 +1,7 @@
-"""Public landing page for Tiberbu CRM (site root, set via `home_page = "index"`).
+"""Public CareverseHIMS Value Express landing page.
 
-Guests see the branded splash; logged-in users are redirected to the SPA (`/crm`).
+Guests see the Value Express sales page; logged-in users are routed to the
+experience permitted for their account.
 
 Root-resolution note: `home_page = "index"` alone is NOT enough — Frappe's
 `get_home_page()` still resolves '/' to a System User's `default_workspace`
@@ -8,71 +9,70 @@ Root-resolution note: `home_page = "index"` alone is NOT enough — Frappe's
 `before_request` hook (crm/api/route_guard.py) forces '/' -> index on every request so
 this redirect actually runs for workspace-having users, closing a desk-fence bypass.
 """
+
+import hashlib
+import os
+from functools import lru_cache
+
 import frappe
 from frappe import _
 
+from crm.api.landing import CONTACT_TOPICS, get_landing_settings, get_value_express_offer
+from crm.api.website_redirect import get_portal_route
 from crm.branding import apply_brand_context, get_configured_app_brand
 
 no_cache = True
+
+ONBOARDING = "/facility-onboarding"
+
+
+CSS_FILES = ("value-express.css", "value-express-landing.css")
+
+
+def _css_version() -> str:
+	"""A content hash for the stylesheet links: the CDN caches /assets for a year, so a changed
+	file needs a new URL to reach visitors. Keyed on the files' mtimes so an edit is picked up
+	without restarting the workers."""
+	paths = tuple(frappe.get_app_path("crm", "public", "css", name) for name in CSS_FILES)
+	return _css_digest(tuple((path, os.stat(path).st_mtime_ns) for path in paths))
+
+
+@lru_cache(maxsize=4)
+def _css_digest(stamps: tuple) -> str:
+	digest = hashlib.sha256()
+	for path, _mtime in stamps:
+		with open(path, "rb") as css:
+			digest.update(css.read())
+	return digest.hexdigest()[:10]
+
+
+def _amount(value) -> str:
+	return "{:,.0f}".format(float(value or 0))
 
 
 def get_context(context):
 	# Logged-in users belong in the app, not on the marketing splash.
 	if frappe.session.user != "Guest":
-		frappe.local.flags.redirect_location = "/crm"
+		frappe.local.flags.redirect_location = get_portal_route() or "/crm"
 		raise frappe.Redirect
 
 	brand = get_configured_app_brand()
 	context.no_cache = 1
 	context.no_header = True
 	context.no_breadcrumbs = True
-	context.title = _("{0} - {1}").format(brand["app_name"], brand["tagline"])
+	context.title = _("CareverseHIMS Value Express: get digital, get SHA ready")
 	apply_brand_context(context, brand, surface="splash")
 
-	# Primary CTA (E3-S2): "Request a Demo" -> the public CRM form that creates a real
-	# CRM Lead via the native Web Form engine (crm/www/crm_form.py + crm/api/form.py).
-	# Falls back to /login if an admin hasn't published the form yet.
-	context.cta_text = "Request a Demo"
-	context.cta_link = _demo_form_route()
-	context.cta_secondary_text = "Sign In"
-	context.cta_secondary_link = "/login"
-
-	context.features = [
-		{
-			"title": "Unified Patient Relationships",
-			"description": "One record for every lead, referral, and patient interaction across the Careverse HMIS.",
-		},
-		{
-			"title": "Sales & Referral Pipelines",
-			"description": "Track deals, referral sources, and follow-ups with a pipeline built for healthcare growth.",
-		},
-		{
-			"title": "Integrated Telephony",
-			"description": "Click-to-call, screen-pop, and call logging — inbound and outbound — from within the CRM.",
-		},
-		{
-			"title": "Support Automation",
-			"description": "SLAs, assignment rules, and onboarding journeys keep every patient and partner cared for.",
-		},
-	]
-
-	return context
-
-
-def _demo_form_route() -> str:
-	"""Route to the published 'Request a Demo' CRM form, or /login if none is published.
-
-	Matches any published FCRM Web Form targeting CRM Lead (route defaults to
-	'request-a-demo'); degrades to /login so the CTA is never a dead link.
-	"""
+	context.onboarding_url = ONBOARDING
+	context.signin_link = "/login?redirect-to=/cx-portal"
+	context.landing = get_landing_settings()
+	context.contact_topics = CONTACT_TOPICS
+	context.amount = _amount
+	context.css_version = _css_version()
 	try:
-		route = frappe.db.get_value(
-			"Web Form",
-			{"module": "FCRM", "doc_type": "CRM Lead", "crm_published": 1},
-			"route",
-		)
-		if route:
-			return f"/crm-form/{route}"
+		context.offer = get_value_express_offer()
 	except Exception:
-		pass
-	return "/login"
+		# Prices are a hint here; never let catalogue problems take the landing page down.
+		frappe.log_error(title="Landing page Value Express offer")
+		context.offer = {"flex": [], "fixed": [], "custom": None, "from_price": 0, "currency": "KES", "calculator": {}}
+	return context

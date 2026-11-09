@@ -1,0 +1,137 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-30 00:00:00.000000",
+ "description": "A facility owner's low-token email alert. Owners manage it from the CX Portal facility page.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "facility_name",
+  "mfl_code",
+  "hfr_facility_id",
+  "column_break_alert",
+  "enabled",
+  "threshold",
+  "section_break_state",
+  "below_threshold",
+  "last_balance",
+  "column_break_state",
+  "last_checked_at",
+  "alert_sent_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Owner",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "facility_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Facility"
+  },
+  {
+   "fieldname": "mfl_code",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "MFL Code",
+   "reqd": 1
+  },
+  {
+   "fieldname": "hfr_facility_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Facility ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_alert",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "description": "Email the owner when the facility's live token balance is at or below this number.",
+   "fieldname": "threshold",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Threshold (tokens)",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_state",
+   "fieldtype": "Section Break",
+   "label": "Alert state"
+  },
+  {
+   "default": "0",
+   "description": "Set when the alert email is sent; cleared when the balance rises above the threshold, so the owner gets one email per drop.",
+   "fieldname": "below_threshold",
+   "fieldtype": "Check",
+   "label": "Alert sent for current drop",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_balance",
+   "fieldtype": "Float",
+   "label": "Last live balance",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_checked_at",
+   "fieldtype": "Datetime",
+   "label": "Last checked",
+   "read_only": 1
+  },
+  {
+   "fieldname": "alert_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Alert sent",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Facility Token Alert",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "facility_name",
+ "track_changes": 1
+}

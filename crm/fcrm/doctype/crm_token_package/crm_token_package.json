@@ -1,0 +1,124 @@
+{
+ "actions": [],
+ "creation": "2026-10-06 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "display_name",
+  "plan",
+  "facility_levels",
+  "token_quantity",
+  "billing_period",
+  "description",
+  "coverage_summary",
+  "coverage_metrics",
+  "status",
+  "enabled",
+  "discontinued_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Service Item",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Facility-facing name",
+   "reqd": 1
+  },
+  {
+   "default": "Flex",
+   "description": "Flex: a prepaid token package card. Fixed: a monthly fee for the facility levels listed below, with no tokens. Custom: the item used when a facility enters its own amount; set Tokens to 1 (one token per unit).",
+   "fieldname": "plan",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Plan",
+   "options": "Flex\nFixed\nCustom",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.plan=='Fixed'",
+   "description": "Facility levels this Fixed fee applies to, one per line, written as in the registry (for example Level 3B).",
+   "fieldname": "facility_levels",
+   "fieldtype": "Small Text",
+   "label": "Facility levels",
+   "mandatory_depends_on": "eval:doc.plan=='Fixed'"
+  },
+  {
+   "fieldname": "token_quantity",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Tokens",
+   "reqd": 1
+  },
+  {
+   "default": "Monthly",
+   "fieldname": "billing_period",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Billing period",
+   "options": "Monthly\nQuarterly\nSemi-annual\nAnnual",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Facility-facing description",
+   "reqd": 1
+  },
+  {
+   "fieldname": "coverage_summary",
+   "fieldtype": "Small Text",
+   "label": "Coverage summary",
+   "reqd": 1
+  },
+  {
+   "fieldname": "coverage_metrics",
+   "fieldtype": "Code",
+   "label": "Coverage metrics",
+   "options": "JSON",
+   "description": "Optional structured metrics used by the portal to explain workload coverage."
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Active\nDisabled\nDiscontinued",
+   "default": "Active",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "read_only": 1,
+   "description": "Kept equal to Status = Active."
+  },
+  {
+   "fieldname": "discontinued_on",
+   "fieldtype": "Date",
+   "label": "Discontinued On",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-27 20:42:43.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Token Package",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

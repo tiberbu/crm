@@ -1,0 +1,26 @@
+import './index.css'
+
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import { FrappeUI, setConfig, frappeRequest } from 'frappe-ui'
+
+import OptInWizard from './pages/OptIn/OptInWizard.vue'
+import translationPlugin from './translation'
+
+const el = document.getElementById('optin-app')
+const params = new URLSearchParams(window.location.search)
+const rawDatasetNetwork = el && el.dataset.network ? el.dataset.network.trim() : ''
+const datasetNetwork = rawDatasetNetwork.startsWith('{{') ? '' : rawDatasetNetwork
+const networkSlug = datasetNetwork || params.get('network') || ''
+const dealInvitation = params.get('deal_invitation') || ''
+
+
+const pinia = createPinia()
+const app = createApp(OptInWizard, { networkSlug, dealInvitation })
+
+setConfig('resourceFetcher', frappeRequest)
+app.use(FrappeUI)
+app.use(pinia)
+app.use(translationPlugin)
+
+app.mount(el || '#optin-app')

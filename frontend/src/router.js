@@ -97,10 +97,64 @@ const routes = [
     props: true,
   },
   {
+    alias: '/quotes',
+    path: '/quotes',
+    name: 'Quotes',
+    component: () => import('@/pages/Quotes/QuotesList.vue'),
+  },
+  {
+    path: '/opt-in-submissions',
+    name: 'OptInSubmissions',
+    component: () => import('@/pages/OptInSubmissions.vue'),
+  },
+  {
+    path: '/opt-in-dashboard',
+    name: 'OptInDashboard',
+    component: () => import('@/pages/OptInDashboard.vue'),
+  },
+  {
+    path: '/networks',
+    name: 'Networks',
+    component: () => import('@/pages/Networks/NetworkManagement.vue'),
+  },
+  {
+    path: '/networks/new',
+    name: 'NewNetwork',
+    component: () => import('@/pages/Networks/NetworkDetail.vue'),
+    props: { networkSlug: 'new' },
+  },
+  {
+    path: '/networks/:networkSlug',
+    name: 'NetworkDetail',
+    component: () => import('@/pages/Networks/NetworkDetail.vue'),
+    props: true,
+  },
+  {
+    path: '/prequalified-facilities',
+    name: 'PrequalifiedFacilities',
+    component: () => import('@/pages/PrequalifiedFacilities.vue'),
+  },
+  {
+    path: '/item-prices',
+    name: 'NetworkPricing',
+    component: () => import('@/pages/ItemPrices.vue'),
+    meta: { salesManagerOnly: true },
+  },
+  {
+    path: '/opt-in-terms',
+    name: 'OptInTerms',
+    component: () => import('@/pages/OptInTerms.vue'),
+  },
+  {
     alias: '/call-logs',
     path: '/call-logs/view/:viewType?',
     name: 'Call Logs',
     component: () => import('@/pages/CallLogs.vue'),
+  },
+  {
+    path: '/customer-360',
+    name: 'Customer360',
+    component: () => import('@/pages/Customer360.vue'),
   },
   {
     path: '/calendar',
@@ -159,7 +213,7 @@ router.beforeEach(async (to, from, next) => {
   router.previousRoute = from
 
   const { isLoggedIn, user } = sessionStore()
-  const { users, isCrmUser, isAdmin } = usersStore()
+  const { users, isCrmUser, isAdmin, isManager } = usersStore()
 
   if (isLoggedIn && !users.fetched) {
     try {
@@ -170,6 +224,10 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const isAdminUser = isLoggedIn && (isAdmin() || user === 'Administrator')
+
+  if (isLoggedIn && to.meta?.salesManagerOnly && !isManager()) {
+    return next({ name: 'Not Permitted' })
+  }
 
   // Only admins who haven't finished may reach the wizard, even via direct URL.
   if (isLoggedIn && to.name === 'Onboarding') {
@@ -199,8 +257,23 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
-  if (isLoggedIn && to.name !== 'Not Permitted' && !isCrmUser()) {
-    next({ name: 'Not Permitted' })
+  if (isLoggedIn && !isCrmUser()) {
+    try {
+      const portalRoute = await call(
+        'crm.api.website_redirect.get_current_user_portal_route',
+      )
+      if (portalRoute === '/cx-portal') {
+        window.location.replace(portalRoute)
+        return
+      }
+    } catch (error) {
+      // Keep the CRM access boundary if the server cannot confirm portal access.
+    }
+    if (to.name === 'Not Permitted') {
+      next()
+    } else {
+      next({ name: 'Not Permitted' })
+    }
   } else if (to.name === 'Home' && isLoggedIn) {
     const { views, getDefaultView } = viewsStore()
     await views.promise
@@ -229,7 +302,13 @@ router.beforeEach(async (to, from, next) => {
     next({ name: 'Invalid Page' })
   } else if (['Deal', 'Lead'].includes(to.name) && !to.hash) {
     let storageKey = to.name === 'Deal' ? 'lastDealTab' : 'lastLeadTab'
-    const activeTab = localStorage.getItem(storageKey) || 'activity'
+    // The Quote is the primary decision surface for every Deal, including
+    // Opt-In requests. An explicit hash still wins, so notification and
+    // activity deep links remain intact.
+    const activeTab =
+      to.name === 'Deal'
+        ? 'quoting'
+        : localStorage.getItem(storageKey) || 'activity'
     const hash = '#' + activeTab
     next({ ...to, hash })
   } else if (

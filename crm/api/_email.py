@@ -1,0 +1,395 @@
+"""
+crm/api/_email.py — Shared branded transactional-email builder.
+
+All CRM transactional emails (opt-in OTP, contract invitation / OTP / approval)
+render through branded_email_html() so every message honours the opt-in network's
+logo, display name, primary colour and footer — and stays visually aligned with
+the Network opt-in email. Table-based markup for broad email-client support.
+
+The colour helpers here are the single source of truth; crm/api/optin.py keeps
+its own local copies for its already-shipped OTP path — new code should import
+from here.
+"""
+
+from __future__ import annotations
+
+import re
+
+import frappe
+
+DEFAULT_BRAND_COLOUR = "#bc1823"  # Tiberbu CRM primary — used when a network has no colour set
+
+OTP_QUEUE_REDACTION = "OTP email content redacted after delivery."
+
+
+def create_transactional_communication(
+	reference_doctype,
+	reference_name,
+	*,
+	subject,
+	content,
+	recipients,
+	links=None,
+	attachments=None,
+):
+	"""Create a CRM-visible communication and link it to related records.
+
+	``frappe.sendmail`` creates an Email Queue row but does not create a
+	Communication.  Transactional messages therefore disappear from CRM's Email
+	tab unless callers create the communication explicitly.  The primary
+	reference is the Deal; optional timeline links make the same message visible
+	on the Contract and its Opt-In Submission as well.
+
+	This helper is best-effort so email delivery is never blocked by an optional
+	activity log on older sites or mocked test documents.
+	"""
+	reference_doctype = frappe.utils.cstr(reference_doctype or "").strip()
+	reference_name = frappe.utils.cstr(reference_name or "").strip()
+	if not reference_doctype or not reference_name:
+		return ""
+	try:
+		if not frappe.db.exists(reference_doctype, reference_name):
+			return ""
+		comm = frappe.new_doc("Communication")
+		comm.update(
+			{
+				"communication_type": "Automated Message",
+				"communication_medium": "Email",
+				"sent_or_received": "Sent",
+				"subject": subject,
+				"content": content,
+				"sender": frappe.session.user,
+				"recipients": ", ".join(recipients or []),
+				"reference_doctype": reference_doctype,
+				"reference_name": reference_name,
+				"has_attachment": 1 if attachments else 0,
+			}
+		)
+		seen = {(reference_doctype, reference_name)}
+		for link_doctype, link_name in links or []:
+			link_doctype = frappe.utils.cstr(link_doctype or "").strip()
+			link_name = frappe.utils.cstr(link_name or "").strip()
+			if not link_doctype or not link_name or (link_doctype, link_name) in seen:
+				continue
+			comm.append(
+				"timeline_links",
+				{
+					"link_doctype": link_doctype,
+					"link_name": link_name,
+					"communication_date": frappe.utils.now_datetime(),
+				},
+			)
+			seen.add((link_doctype, link_name))
+		comm.insert(ignore_permissions=True)  # SYSTEM-INTERNAL: transactional audit
+		if attachments:
+			from frappe.core.doctype.communication.email import add_attachments
+
+			add_attachments(comm.name, attachments)
+		return comm.name
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"crm transactional email: communication log failed for %s %s"
+			% (reference_doctype, reference_name),
+		)
+		return ""
+
+
+def schedule_email_queue_redaction(queue, replacement=OTP_QUEUE_REDACTION):
+	"""Scrub a delivered OTP's MIME body from Email Queue after send.
+
+	The recipient must receive the real code, but CRM operators should never be
+	able to recover it from Email Queue. Frappe's queue sender commits while it is
+	preparing and finalising SMTP delivery, so a plain second ``after_commit``
+	callback would run before the message is sent. Replace the queue sender's
+	callback with a wrapper so redaction always happens after delivery (or a send
+	failure).
+	"""
+	queue_doc = queue if callable(getattr(queue, "send", None)) else None
+	queue_name = getattr(queue, "name", queue) if queue is not None else ""
+	if not isinstance(queue_name, str):
+		return
+	queue_name = queue_name.strip()
+	if not queue_name:
+		return
+
+	def redact():
+		try:
+			if frappe.db.exists("Email Queue", queue_name):
+				frappe.db.set_value("Email Queue", queue_name, "message", replacement)
+				frappe.db.commit()
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"crm transactional email: OTP queue redaction failed for %s" % queue_name,
+			)
+
+	def send_then_redact():
+		try:
+			# Frappe 15 already sent a now=True email inside sendmail() and recorded
+			# "Sent" only in the database, so the in-memory queue_doc still looks
+			# unsent. Send from a fresh copy so a delivered email is never sent twice.
+			if frappe.db.get_value("Email Queue", queue_name, "status") in ("Not Sent", "Partially Sent"):
+				frappe.get_doc("Email Queue", queue_name).send()
+		finally:
+			redact()
+
+	try:
+		if queue_doc:
+			callbacks = getattr(frappe.db.after_commit, "_functions", None)
+			if callbacks is not None:
+				for index, callback in enumerate(callbacks):
+					if (
+						getattr(callback, "__self__", None) is queue_doc
+						and getattr(callback, "__name__", "") == "send"
+					):
+						callbacks[index] = send_then_redact
+						break
+				else:
+					callbacks.append(send_then_redact)
+			else:
+				frappe.db.after_commit.add(send_then_redact)
+		else:
+			frappe.db.after_commit.add(redact)
+	except Exception:
+		# Background/test contexts may not expose CallbackManager. Redact directly
+		# where possible rather than retaining a secret in the queue.
+		try:
+			if queue_doc:
+				frappe.db.after_commit.add(send_then_redact)
+			else:
+				redact()
+		except Exception:
+			if queue_doc:
+				send_then_redact()
+			else:
+				redact()
+
+
+def hex_to_rgba(hex_colour, alpha):
+	"""Convert '#RRGGBB' / '#RGB' to 'rgba(r,g,b,alpha)'. Falls back to the brand red."""
+	value = frappe.utils.cstr(hex_colour).strip().lstrip("#")
+	if len(value) == 3:
+		value = "".join(ch * 2 for ch in value)
+	try:
+		r, g, b = (int(value[i : i + 2], 16) for i in (0, 2, 4))
+	except (ValueError, IndexError):
+		r, g, b = (188, 24, 35)  # DEFAULT_BRAND_COLOUR
+	return "rgba(%d,%d,%d,%s)" % (r, g, b, alpha)
+
+
+_HEX_COLOUR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+def valid_brand_colour(hex_colour):
+	"""Return a usable #RGB/#RRGGBB brand colour, defaulting to the Tiberbu red.
+
+	The value is interpolated into inline email styles, so anything that is not a
+	strict hex literal falls back to the brand guide colour.
+	"""
+	value = frappe.utils.cstr(hex_colour).strip()
+	if _HEX_COLOUR_RE.match(value):
+		return value
+	return DEFAULT_BRAND_COLOUR
+
+
+def _header_html(display_name, logo_url, brand):
+	if logo_url:
+		abs_logo = logo_url if logo_url.startswith("http") else frappe.utils.get_url(logo_url)
+		return (
+			'<img src="%s" alt="%s" height="44" '
+			'style="max-height:44px;width:auto;border:0;outline:none;text-decoration:none" />'
+			% (abs_logo, frappe.utils.escape_html(display_name))
+		)
+	return (
+		'<div style="font-size:20px;font-weight:700;color:%s;'
+		'letter-spacing:-.02em;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'
+		'\'Segoe UI\',Roboto,Arial,sans-serif">%s</div>'
+		% (brand, frappe.utils.escape_html(display_name))
+	)
+
+
+def branded_email_html(
+	network=None,
+	*,
+	heading,
+	intro_html="",
+	highlight_html="",
+	cta_label="",
+	cta_url="",
+	note_html="",
+):
+	"""
+	Build a branded, table-based transactional email.
+
+	network       — CRM Opt-In Network dict (display_name, logo_url, primary_colour,
+	                contact_email, footer_legal_name) or None for CareverseHIMS defaults.
+	heading       — the bold H1 line (plain text, escaped by caller if needed).
+	intro_html    — the introductory paragraph(s) (trusted HTML).
+	highlight_html— optional boxed content, e.g. an OTP code block (trusted HTML).
+	cta_label/url — optional primary call-to-action button.
+	note_html     — optional small-print note below the body (trusted HTML).
+	"""
+	display_name = (network.get("display_name") if network else "") or "CareverseHIMS"
+	logo_url = (network.get("logo_url") if network else "") or ""
+	contact_email = (network.get("contact_email") if network else "") or ""
+	footer_legal = (network.get("footer_legal_name") if network else "") or ""
+	brand = valid_brand_colour(network.get("primary_colour") if network else "")
+
+	header = _header_html(display_name, logo_url, brand)
+
+	highlight_row = ""
+	if highlight_html:
+		highlight_row = '<tr><td align="center" style="padding:24px 32px 4px">%s</td></tr>' % highlight_html
+
+	cta_row = ""
+	if cta_label and cta_url:
+		cta_row = (
+			'<tr><td align="center" style="padding:22px 32px 4px">'
+			'<a href="%s" style="display:inline-block;background:%s;color:#ffffff;'
+			"font-size:15px;font-weight:600;text-decoration:none;padding:13px 34px;"
+			'border-radius:10px;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Arial,sans-serif">%s</a>'
+			"</td></tr>" % (cta_url, brand, frappe.utils.escape_html(cta_label))
+		)
+
+	note_row = ""
+	if note_html:
+		note_row = (
+			'<p style="margin:0;font-size:13px;color:#667075;line-height:1.65;'
+			'font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Arial,sans-serif">%s</p>'
+			% note_html
+		)
+
+	help_line = ""
+	if contact_email:
+		help_line = (
+			'<p style="font-size:12px;line-height:1.5;color:#667075;margin:0 0 6px;'
+			'font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Arial,sans-serif">Need help? Contact '
+			'<a href="mailto:%s" style="color:%s;text-decoration:none">%s</a></p>'
+			% (contact_email, brand, contact_email)
+		)
+
+	footer_bits = [b for b in (footer_legal, "Powered by Tiberbu Healthnet Solutions") if b]
+	footer_line = frappe.utils.escape_html(" · ".join(footer_bits))
+
+	return """\
+<div style="background:#f5f7fa;margin:0;padding:24px 12px;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
+  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f5f7fa">
+    <tr><td align="center" style="padding:40px 16px">
+      <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="width:100%%;max-width:560px;background:#ffffff;border:1px solid #e8e8e8;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
+        <tr><td style="height:4px;line-height:4px;font-size:0;background:%(brand)s">&nbsp;</td></tr>
+        <tr><td align="left" style="padding:28px 40px 20px">%(header)s</td></tr>
+        <tr><td style="padding:0 40px"><div style="border-top:1px solid #e8e8e8;font-size:0;line-height:0">&nbsp;</div></td></tr>
+        <tr><td align="left" style="padding:28px 40px 0">
+          <h1 style="margin:0;font-size:22px;line-height:1.3;font-weight:700;letter-spacing:-.02em;color:#1f272e;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">%(heading)s</h1>
+        </td></tr>
+        <tr><td align="left" style="padding:12px 40px 0">
+          <div style="margin:0;font-size:15px;line-height:1.65;color:#4c5257;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">%(intro_html)s</div>
+        </td></tr>
+        %(highlight_row)s
+        %(cta_row)s
+        <tr><td align="left" style="padding:18px 40px 24px;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">%(note_row)s</td></tr>
+        <tr><td style="padding:0 40px"><div style="border-top:1px solid #e8e8e8;font-size:0;line-height:0">&nbsp;</div></td></tr>
+        <tr><td align="left" style="padding:18px 40px 24px">
+          %(help_line)s
+          <p style="margin:0;font-size:11px;line-height:1.5;color:#8c8c8c;font-family:InterVar,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">%(footer_line)s</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</div>""" % {
+		"brand": brand,
+		"header": header,
+		"heading": frappe.utils.escape_html(heading),
+		"intro_html": intro_html,
+		"highlight_row": highlight_row,
+		"cta_row": cta_row,
+		"note_row": note_row,
+		"help_line": help_line,
+		"footer_line": footer_line,
+	}
+
+
+def otp_code_block(otp, network=None):
+	"""Return the boxed OTP-code highlight used inside branded_email_html."""
+	brand = valid_brand_colour(network.get("primary_colour") if network else "")
+	tint = hex_to_rgba(brand, "0.08")
+	return (
+		'<div style="display:inline-block;background:%s;border:1px solid %s;border-radius:10px;padding:16px 30px">'
+		"<span style=\"font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:34px;"
+		'font-weight:700;letter-spacing:8px;color:#111827">%s</span></div>'
+		% (tint, brand, frappe.utils.escape_html(otp))
+	)
+
+
+def internal_signatory_reminder_html(
+	network=None,
+	*,
+	signatory_name,
+	role,
+	facility_label,
+	action_url,
+	pending_items=None,
+):
+	"""Render the login-only reminder sent to CRM-user signatories.
+
+	Internal signatories do not receive a public contract invitation.  This
+	message deliberately links to the permission-scoped CRM queue instead, so a
+	forwarded email cannot expose a contract or bypass the normal CRM session.
+	When several contracts are waiting, ``pending_items`` keeps them in one
+	readable workload email rather than sending one message per contract.
+	"""
+	name = frappe.utils.escape_html(signatory_name or "there")
+	items = list(pending_items or [])
+	if not items:
+		items = [{"facility_label": facility_label, "role": role}]
+
+	rows = []
+	for item in items:
+		if not isinstance(item, dict):
+			continue
+		facility = frappe.utils.escape_html(item.get("facility_label") or facility_label or "your facility")
+		role_label = frappe.utils.escape_html(item.get("role") or role or "signatory")
+		contract = frappe.utils.escape_html(item.get("contract") or "")
+		contract_ref = (
+			"<span style='display:block;color:#9ca3af;font-size:11px;margin-top:2px'>Contract %s</span>"
+			% contract
+			if contract
+			else ""
+		)
+		rows.append(
+			"<li style='margin:0 0 10px;padding:0 0 10px;border-bottom:1px solid #eceef0'>"
+			"<strong style='display:block;color:#111827;font-size:14px'>%s</strong>"
+			"<span style='display:block;color:#6b7280;font-size:12px;margin-top:2px'>%s</span>%s</li>"
+			% (facility, role_label, contract_ref)
+		)
+	if not rows:
+		rows.append(
+			"<li style='margin:0;color:#6b7280'>No pending contract details are available. "
+			"Open CRM to review your queue.</li>"
+		)
+	count = len(rows)
+	plural = "s" if count != 1 else ""
+	workload = (
+		"<div style='margin:18px 0 4px;text-align:left;background:#f8fafc;border:1px solid #eceef0;"
+		"border-radius:10px;padding:14px 16px'>"
+		"<p style='margin:0 0 10px;color:#374151;font-size:12px;font-weight:700;text-transform:uppercase;"
+		"letter-spacing:.04em'>Pending workload</p>"
+		"<ul style='list-style:none;margin:0;padding:0'>%s</ul></div>" % "".join(rows)
+	)
+	return branded_email_html(
+		network,
+		heading="Your approvals are waiting",
+		intro_html=(
+			"<p style='margin:0 0 6px'>Hello %s,</p>"
+			"<p style='margin:0'>You have <strong>%d pending contract approval%s</strong> "
+			"in CRM. Sign in to review the quote and complete your secure signature.</p>%s"
+			% (name, count, plural, workload)
+		),
+		cta_label="Open pending approvals",
+		cta_url=action_url,
+		note_html=(
+			"This is a secure CRM reminder; no contract link is included. "
+			"You can open the same pending-action list from CRM at any time."
+		),
+	)

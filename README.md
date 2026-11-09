@@ -79,6 +79,31 @@ The motivation behind building Frappe CRM stems from the need for a simple, cust
 -   **WhatsApp:** Integrate WhatsApp to send and receive messages from the CRM. [Frappe WhatsApp](https://github.com/shridarpatil/frappe_whatsapp) is used for this integration.
 -   **ERPNext:** Integrate with [ERPNext](https://erpnext.com) to extend the CRM capabilities to include invoicing, accounting, and more.
 
+### Tiberbu CX Portal
+
+The CX Portal facility portfolio, Health Facility Registry lookup, and HMIS
+implementation status integration are documented in
+[`docs/cx-portal-ux-design-pattern.md`](docs/cx-portal-ux-design-pattern.md),
+[`docs/cx-portal-health-facility-registry-and-portfolio-prd.md`](docs/cx-portal-health-facility-registry-and-portfolio-prd.md),
+and the proposed HIE APISIX contract in
+[`docs/cx-portal-provisioning-gateway-api.md`](docs/cx-portal-provisioning-gateway-api.md).
+The setup-side API source contract is maintained in the bench handoff
+[`EXTERNAL_PROVISIONING_API (1).md`](../../EXTERNAL_PROVISIONING_API%20(1).md).
+
+Operator and facility-owner walkthroughs for facility self-onboarding, CRM,
+Tiberbu Express (formerly Customer Experience), and Finance Cockpit are collected in the
+[`Tiberbu Solution Guides`](docs/user-guides/README.md). Each solution has its
+own guide, with user steps, stakeholder controls, screenshots, and handoff
+ownership.
+
+### Tiberbu Partner Portal APIs
+
+Partner Portal endpoints for custom Year 1–5 pricing negotiation, facility pricing lookup,
+and the Deal-Won Opt-In onboarding journey with automated contract invitation emails are documented in:
+- [`Partner Portal Opt-In & Custom Pricing APIs`](docs/partner-portal-optin-apis.md)
+- Implementation package: `crm/partner_portal/`
+- Test suite: `crm/tests/test_partner_portal.py`
+
 ### Under the Hood
 
 - [Frappe Framework](https://github.com/frappe/frappe): A full-stack web application framework.

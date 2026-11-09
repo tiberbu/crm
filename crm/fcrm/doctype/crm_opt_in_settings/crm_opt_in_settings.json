@@ -1,0 +1,240 @@
+{
+ "actions": [],
+ "creation": "2026-08-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "optin_signing_key",
+  "col_break_1",
+  "default_price_list",
+  "sales_tax_template",
+  "section_break_tc",
+  "active_tc_document",
+  "self_onboarding_allowed_facility_levels",
+  "section_break_contract_automation",
+  "auto_generate_contract_on_submission",
+  "col_break_2",
+  "default_lead_owner",
+  "tiberbu_signatory",
+  "section_break_tiberbu_approver",
+  "tiberbu_signing_requirement",
+  "tiberbu_contacts",
+  "tiberbu_signatory_name",
+  "tiberbu_signatory_email",
+  "tiberbu_signatory_phone",
+  "section_break_tiberbu_approval",
+  "tiberbu_approver_name",
+  "tiberbu_approver_email",
+  "tiberbu_approver_phone",
+  "section_break_landing_page",
+  "landing_certificate_url",
+  "landing_certificate_id",
+  "landing_certificate_valid_until",
+  "col_break_landing_page",
+  "landing_contact_phones",
+  "landing_contact_email",
+  "landing_contact_hours"
+ ],
+ "fields": [
+  {
+   "fieldname": "optin_signing_key",
+   "fieldtype": "Password",
+   "label": "Opt-In Signing Key",
+   "description": "HMAC signing key for OTP and magic links. Auto-generated on first use."
+  },
+  {
+   "fieldname": "col_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_price_list",
+   "fieldtype": "Data",
+   "label": "Default Price List",
+   "default": "Negotiated Year 1"
+  },
+  {
+   "fieldname": "sales_tax_template",
+   "fieldtype": "Link",
+   "label": "VAT Taxes and Charges Template",
+   "options": "Sales Taxes and Charges Template",
+   "description": "Exclusive VAT template applied to all Opt-In quotations, totals, emails, and contracts."
+  },
+  {
+   "fieldname": "section_break_tc",
+   "fieldtype": "Section Break",
+   "label": "Terms & Conditions"
+  },
+  {
+   "fieldname": "active_tc_document",
+   "fieldtype": "Data",
+   "label": "Default Terms and Conditions",
+   "description": "Configured default Terms and Conditions document for standard opt-in and as the fallback for token-based self-onboarding."
+  },
+  {
+   "fieldname": "self_onboarding_allowed_facility_levels",
+   "fieldtype": "Text",
+   "label": "Allowed Facility Levels for Token Self-Onboarding",
+   "description": "Enter one HFR Facility Level per line. Matching ignores surrounding whitespace and letter case. Leave blank to allow no facility levels."
+  },
+  {
+   "fieldname": "section_break_contract_automation",
+   "fieldtype": "Section Break",
+   "label": "Contract Automation"
+  },
+  {
+   "default": "1",
+   "description": "When enabled, a completed Opt-In submission creates a contract and immediately sends the Facility Signatory invitation using the existing contract workflow.",
+   "fieldname": "auto_generate_contract_on_submission",
+   "fieldtype": "Check",
+   "label": "Automatically Generate and Send Contract"
+  },
+  {
+   "fieldname": "col_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_lead_owner",
+   "fieldtype": "Link",
+   "label": "Default Lead Owner",
+   "options": "User"
+  },
+  {
+   "fieldname": "tiberbu_signatory",
+   "fieldtype": "Link",
+   "label": "Tiberbu Signatory",
+   "options": "User",
+   "description": "Tiberbu-side user who co-signs every executed contract. Invited with a 7-day link together with every remaining signatory as soon as the facility signatory has signed; signs via the same OTP + signature-pad portal."
+  },
+  {
+   "fieldname": "section_break_tiberbu_approver",
+   "fieldtype": "Section Break",
+   "label": "Tiberbu Signing and Approval Contacts"
+  },
+  {
+   "fieldname": "tiberbu_signing_requirement",
+   "fieldtype": "Select",
+   "label": "Tiberbu signing requirement",
+   "options": "All must sign\nAt least one must sign",
+   "default": "All must sign",
+   "description": "Controls the Tiberbu Signatory rows below. Facility, witness, and network signatories remain required."
+  },
+  {
+   "fieldname": "tiberbu_contacts",
+   "fieldtype": "Table",
+   "label": "Tiberbu signing and approval contacts",
+   "options": "CRM Tiberbu Contact",
+   "description": "Add one row per Tiberbu signatory or approver. Contacts can be external and do not need CRM User accounts."
+  },
+  {
+   "fieldname": "tiberbu_signatory_name",
+   "fieldtype": "Data",
+   "label": "Default Tiberbu Signatory Name",
+   "description": "Default contract signatory name. Use this for an external contact, or leave blank to use the selected User."
+  },
+  {
+   "fieldname": "tiberbu_signatory_email",
+   "fieldtype": "Data",
+   "label": "Default Tiberbu Signatory Email",
+   "options": "Email",
+   "description": "Default contract signatory email. Contact fields take precedence over the legacy User selection."
+  },
+  {
+   "fieldname": "tiberbu_signatory_phone",
+   "fieldtype": "Data",
+   "label": "Default Tiberbu Signatory Phone",
+   "options": "Phone",
+   "description": "Default contract signatory mobile number for SMS notifications."
+  },
+  {
+   "fieldname": "section_break_tiberbu_approval",
+   "fieldtype": "Section Break",
+   "label": "Approval Contact"
+  },
+  {
+   "fieldname": "tiberbu_approver_name",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Name",
+   "description": "Default approver name for approval notifications. This may be an external contact without a CRM User account."
+  },
+  {
+   "fieldname": "tiberbu_approver_email",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Email",
+   "options": "Email",
+   "description": "Default email for approval notifications."
+  },
+  {
+   "fieldname": "tiberbu_approver_phone",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Phone",
+   "options": "Phone",
+   "description": "Default mobile number for approval SMS, in international format where possible."
+  },
+  {
+   "fieldname": "section_break_landing_page",
+   "fieldtype": "Section Break",
+   "label": "Landing Page",
+   "description": "Shown on the public Tiberbu Express landing page. Leave a field empty to hide its block."
+  },
+  {
+   "fieldname": "landing_certificate_url",
+   "fieldtype": "Data",
+   "label": "DHA Certificate URL",
+   "options": "URL",
+   "description": "Public DHA registry page that verifies the certificate."
+  },
+  {
+   "fieldname": "landing_certificate_id",
+   "fieldtype": "Data",
+   "label": "DHA Certificate ID"
+  },
+  {
+   "fieldname": "landing_certificate_valid_until",
+   "fieldtype": "Date",
+   "label": "DHA Certificate Valid Until"
+  },
+  {
+   "fieldname": "col_break_landing_page",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "landing_contact_phones",
+   "fieldtype": "Small Text",
+   "label": "Contact Phone Numbers",
+   "description": "One number per line, in international format."
+  },
+  {
+   "fieldname": "landing_contact_email",
+   "fieldtype": "Data",
+   "label": "Contact Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "landing_contact_hours",
+   "fieldtype": "Data",
+   "label": "Contact Hours",
+   "description": "For example: Mon–Fri, 9:00–17:00 EAT."
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-25 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Opt-In Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

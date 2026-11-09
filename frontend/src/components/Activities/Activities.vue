@@ -386,6 +386,18 @@
         @afterSave="(data) => emit('afterSave', data)"
       />
     </div>
+    <div v-else-if="title == 'Metering'" class="h-full">
+      <MeteringTab :deal-id="docname" />
+    </div>
+    <div v-else-if="title == 'Quoting'" class="h-full">
+      <QuotingTab
+        :deal-id="docname"
+        @email-dispatched="emit('email-dispatched')"
+      />
+    </div>
+    <div v-else-if="title == 'Customer 360'" class="h-full overflow-hidden">
+      <Customer360Tab :deal-id="docname" />
+    </div>
     <EmptyState
       v-else
       :title="emptyText"
@@ -440,9 +452,7 @@
 <script setup>
 import ActivityHeader from '@/components/Activities/ActivityHeader.vue'
 import EmailArea from '@/components/Activities/EmailArea.vue'
-import CommentArea from '@/components/Activities/CommentArea.vue'
 import CallArea from '@/components/Activities/CallArea.vue'
-import NoteArea from '@/components/Activities/NoteArea.vue'
 import TaskArea from '@/components/Activities/TaskArea.vue'
 import AttachmentArea from '@/components/Activities/AttachmentArea.vue'
 import DataFields from '@/components/Activities/DataFields.vue'
@@ -490,6 +500,7 @@ import {
   computed,
   h,
   markRaw,
+  defineAsyncComponent,
   watch,
   nextTick,
   onMounted,
@@ -508,12 +519,31 @@ const props = defineProps({
   tabs: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['beforeSave', 'afterSave'])
+const emit = defineEmits(['beforeSave', 'afterSave', 'email-dispatched'])
 
 const route = useRoute()
 
 const reload = defineModel('reload', { type: Boolean, default: false })
 const tabIndex = defineModel('tabIndex', { type: Number, default: 0 })
+
+// Quote and contract rendering is one of the heaviest Deal surfaces. Keep it
+// out of the initial Activity/Lead bundle and load it only when the Quote tab
+// is selected. The component contract and route remain unchanged.
+const QuotingTab = defineAsyncComponent(
+  () => import('@/pages/Deal/QuotingTab.vue'),
+)
+const MeteringTab = defineAsyncComponent(
+  () => import('@/pages/Deal/MeteringTab.vue'),
+)
+const Customer360Tab = defineAsyncComponent(
+  () => import('@/pages/Deal/Customer360Tab.vue'),
+)
+const CommentArea = defineAsyncComponent(
+  () => import('@/components/Activities/CommentArea.vue'),
+)
+const NoteArea = defineAsyncComponent(
+  () => import('@/components/Activities/NoteArea.vue'),
+)
 
 const { document: _document } = useDocument(props.doctype, props.docname)
 

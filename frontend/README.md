@@ -6,6 +6,14 @@ apps with Vue 3 and the Frappe UI package.
 This boilerplate sets up Vue 3, Vue Router, TailwindCSS, and Frappe UI out of
 the box.
 
+## CX Portal
+
+The facility portal uses name-only search for the local portfolio and keeps MFL,
+FID, and registration-number lookup inside Health Facility Registry discovery.
+Its single-facility view and HMIS provisioning status contract are described in
+[`../docs/cx-portal-provisioning-gateway-api.md`](../docs/cx-portal-provisioning-gateway-api.md)
+and [`../docs/cx-portal-ux-design-pattern.md`](../docs/cx-portal-ux-design-pattern.md).
+
 ## Usage
 
 This template is meant to be cloned inside an existing Frappe App. Assuming your

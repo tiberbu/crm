@@ -1,0 +1,301 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-08-06 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "deal",
+  "column_break_onb1",
+  "status",
+  "details_section",
+  "submitted_by_role",
+  "submitted_by",
+  "column_break_onb2",
+  "onboarding_lead",
+  "tech_team_assignee",
+  "dates_section",
+  "requested_go_live_date",
+  "column_break_onb3",
+  "careverse_provisioned_date",
+  "careverse_org_account",
+  "notes_section",
+  "notes",
+  "tech_notes",
+  "section_approval",
+  "network_approver_1",
+  "network_approver_1_approved",
+  "network_approver_1_at",
+  "col_break_approval",
+  "network_approver_2",
+  "network_approver_2_approved",
+  "network_approver_2_at",
+  "section_tiberbu_approval",
+  "tiberbu_approver_name",
+  "tiberbu_approver_email",
+  "tiberbu_approver_phone",
+  "tiberbu_approver",
+  "tiberbu_approver_approved",
+  "tiberbu_approver_at",
+  "approval_status",
+  "rejection_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "ONB-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Deal",
+   "options": "CRM Deal",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_onb1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Submitted",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Submitted\nAllocated\nIn Progress\nComplete",
+   "reqd": 1
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "Details"
+  },
+  {
+   "fieldname": "submitted_by_role",
+   "fieldtype": "Select",
+   "label": "Submitted By Role",
+   "options": "Partner RM\nSales Manager",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitted_by",
+   "fieldtype": "Link",
+   "label": "Submitted By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_onb2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "onboarding_lead",
+   "fieldtype": "Link",
+   "label": "Onboarding Lead",
+   "options": "User"
+  },
+  {
+   "fieldname": "tech_team_assignee",
+   "fieldtype": "Link",
+   "label": "Tech Team Assignee",
+   "options": "User"
+  },
+  {
+   "fieldname": "dates_section",
+   "fieldtype": "Section Break",
+   "label": "Dates"
+  },
+  {
+   "fieldname": "requested_go_live_date",
+   "fieldtype": "Date",
+   "label": "Requested Go-Live Date"
+  },
+  {
+   "fieldname": "column_break_onb3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "careverse_provisioned_date",
+   "fieldtype": "Date",
+   "label": "CareVerse Provisioned Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "careverse_org_account",
+   "fieldtype": "Data",
+   "label": "CareVerse Org Account",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes_section",
+   "fieldtype": "Section Break",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Long Text",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "tech_notes",
+   "fieldtype": "Long Text",
+   "label": "Tech Notes"
+  },
+  {
+   "fieldname": "section_approval",
+   "fieldtype": "Section Break",
+   "label": "Network Approval"
+  },
+  {
+   "fieldname": "network_approver_1",
+   "fieldtype": "Link",
+   "label": "Network Approver 1",
+   "options": "User"
+  },
+  {
+   "fieldname": "network_approver_1_approved",
+   "fieldtype": "Check",
+   "label": "Approved",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "network_approver_1_at",
+   "fieldtype": "Datetime",
+   "label": "Approved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_break_approval",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "network_approver_2",
+   "fieldtype": "Link",
+   "label": "Network Approver 2",
+   "options": "User"
+  },
+  {
+   "fieldname": "network_approver_2_approved",
+   "fieldtype": "Check",
+   "label": "Approved",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "network_approver_2_at",
+   "fieldtype": "Datetime",
+   "label": "Approved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_tiberbu_approval",
+   "fieldtype": "Section Break",
+   "label": "Tiberbu Approval"
+  },
+  {
+   "fieldname": "tiberbu_approver_name",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Name",
+   "description": "Name of the Tiberbu approver. Use this for an approver who does not have a CRM User account."
+  },
+  {
+   "fieldname": "tiberbu_approver_email",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Email",
+   "options": "Email",
+   "description": "Email used for the approval notification."
+  },
+  {
+   "fieldname": "tiberbu_approver_phone",
+   "fieldtype": "Data",
+   "label": "Tiberbu Approver Phone",
+   "options": "Phone",
+   "description": "Mobile number used for the approval SMS, in international format where possible."
+  },
+  {
+   "fieldname": "tiberbu_approver",
+   "fieldtype": "Link",
+   "label": "Tiberbu Approver (legacy CRM User)",
+   "options": "User",
+   "description": "Backward-compatible fallback for installations that still nominate a CRM User. Prefer the contact fields above for an external approver."
+  },
+  {
+   "fieldname": "tiberbu_approver_approved",
+   "fieldtype": "Check",
+   "label": "Approved",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tiberbu_approver_at",
+   "fieldtype": "Datetime",
+   "label": "Approved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approval_status",
+   "fieldtype": "Select",
+   "label": "Approval Status",
+   "options": "Pending\nPartially Approved\nApproved\nRejected",
+   "default": "Pending",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "rejection_reason",
+   "fieldtype": "Small Text",
+   "label": "Rejection Reason",
+   "depends_on": "eval:doc.approval_status == \"Rejected\""
+  }
+ ],
+ "issingle": 0,
+ "links": [],
+ "modified": "2026-08-06 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Onboarding Request",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Sales Manager"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Partner RM"
+  },
+  {
+   "read": 1,
+   "write": 1,
+   "role": "Onboarding Lead"
+  },
+  {
+   "read": 1,
+   "role": "Finance Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "deal",
+ "track_changes": 1
+}

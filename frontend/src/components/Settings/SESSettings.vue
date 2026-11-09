@@ -6,7 +6,11 @@
           {{ __('AWS SES') }}
         </h2>
         <p class="text-p-base text-ink-gray-6">
-          {{ __('Configure AWS Simple Email Service for outbound and inbound email') }}
+          {{
+            __(
+              'Configure AWS Simple Email Service for outbound and inbound email',
+            )
+          }}
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -26,34 +30,47 @@
       </div>
     </div>
 
-    <div v-if="settings.loading" class="flex flex-1 items-center justify-center">
+    <div
+      v-if="settings.loading"
+      class="flex flex-1 items-center justify-center"
+    >
       <LoadingIndicator class="size-8" />
     </div>
 
     <div v-else class="flex-1 overflow-y-auto flex flex-col">
-
       <!-- Enable toggle -->
       <div class="flex items-center justify-between py-3 px-2">
         <div class="flex flex-col">
-          <div class="text-p-base-medium text-ink-gray-7">{{ __('Enable SES Override') }}</div>
+          <div class="text-p-base-medium text-ink-gray-7">
+            {{ __('Enable SES Override') }}
+          </div>
           <div class="text-p-sm text-ink-gray-5">
-            {{ __('Route all CRM outbound email through AWS SES instead of SMTP') }}
+            {{
+              __('Route all CRM outbound email through AWS SES instead of SMTP')
+            }}
           </div>
         </div>
-        <Switch v-model="form.enabled" size="sm" @update:modelValue="markDirty" />
+        <Switch
+          v-model="form.enabled"
+          size="sm"
+          @update:modelValue="markDirty"
+        />
       </div>
 
       <template v-if="form.enabled">
-
         <!-- Outbound -->
         <div class="h-px border-t mx-2 border-outline-elevation-2" />
         <div class="px-2 pt-4 pb-2">
-          <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3">
+          <div
+            class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3"
+          >
             {{ __('Outbound') }}
           </div>
           <div class="flex flex-col gap-3">
             <div class="flex items-center gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('AWS Region') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                __('AWS Region')
+              }}</label>
               <FormControl
                 v-model="form.aws_region"
                 type="text"
@@ -80,12 +97,16 @@
         <!-- Sender Identity -->
         <div class="h-px border-t mx-2 border-outline-elevation-2" />
         <div class="px-2 pt-4 pb-2">
-          <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3">
+          <div
+            class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3"
+          >
             {{ __('Sender Identity') }}
           </div>
           <div class="flex flex-col gap-3">
             <div class="flex items-start gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{ __('Sender Email') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{
+                __('Sender Email')
+              }}</label>
               <div class="flex-1 flex flex-col gap-1">
                 <FormControl
                   v-model="form.default_sender_email"
@@ -95,12 +116,18 @@
                   @input="markDirty"
                 />
                 <p class="text-p-xs text-ink-gray-5">
-                  {{ __('SES-verified address used as the From address. With SES on, no outgoing Email Account is required for sending.') }}
+                  {{
+                    __(
+                      'SES-verified address used as the From address. With SES on, no outgoing Email Account is required for sending.',
+                    )
+                  }}
                 </p>
               </div>
             </div>
             <div class="flex items-center gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Sender Name') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                __('Sender Name')
+              }}</label>
               <div class="flex-1 flex flex-col gap-1">
                 <FormControl
                   v-model="form.default_sender_name"
@@ -110,12 +137,21 @@
                   @input="markDirty"
                 />
                 <p class="text-p-xs text-ink-gray-5">
-                  {{ __('Fixed From name for all outbound email. Leave blank to auto-compose per sender.') }}
+                  {{
+                    __(
+                      'Fixed From name for all outbound email. Leave blank to auto-compose per sender.',
+                    )
+                  }}
                 </p>
               </div>
             </div>
-            <div v-if="!form.default_sender_name" class="flex items-start gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{ __('Team Label') }}</label>
+            <div
+              v-if="!form.default_sender_name"
+              class="flex items-start gap-4"
+            >
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{
+                __('Team Label')
+              }}</label>
               <div class="flex-1 flex flex-col gap-1">
                 <FormControl
                   v-model="form.sender_team_label"
@@ -125,7 +161,11 @@
                   @input="markDirty"
                 />
                 <p class="text-p-xs text-ink-gray-5">
-                  {{ __("Used only when Sender Name is blank: composes '{User} from {Team Label}', e.g. 'Salim from Careverse Team'. Falls back to the brand name; never shows 'None'.") }}
+                  {{
+                    __(
+                      "Used only when Sender Name is blank: composes '{User} from {Team Label}', e.g. 'Salim from Careverse Team'. Falls back to the brand name; never shows 'None'.",
+                    )
+                  }}
                 </p>
               </div>
             </div>
@@ -135,12 +175,16 @@
         <!-- Reliability -->
         <div class="h-px border-t mx-2 border-outline-elevation-2" />
         <div class="px-2 pt-4 pb-2">
-          <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3">
+          <div
+            class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3"
+          >
             {{ __('Reliability') }}
           </div>
           <div class="flex flex-col gap-3">
             <div class="flex items-center gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Retry Mode') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                __('Retry Mode')
+              }}</label>
               <FormControl
                 v-model="form.retry_mode"
                 type="select"
@@ -150,7 +194,9 @@
               />
             </div>
             <div class="flex items-center gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Max Attempts') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                __('Max Attempts')
+              }}</label>
               <FormControl
                 v-model="form.total_max_attempts"
                 type="number"
@@ -164,15 +210,23 @@
         <!-- AWS Credentials -->
         <div class="h-px border-t mx-2 border-outline-elevation-2" />
         <div class="px-2 pt-4 pb-2">
-          <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3">
+          <div
+            class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3"
+          >
             {{ __('AWS Credentials') }}
           </div>
           <div class="flex flex-col gap-3">
             <div class="flex items-center justify-between py-1">
               <div class="flex flex-col">
-                <div class="text-p-sm text-ink-gray-7">{{ __('Use Explicit Credentials') }}</div>
+                <div class="text-p-sm text-ink-gray-7">
+                  {{ __('Use Explicit Credentials') }}
+                </div>
                 <div class="text-p-xs text-ink-gray-5">
-                  {{ __('Off = use EC2/ECS instance profile or environment (recommended for production)') }}
+                  {{
+                    __(
+                      'Off = use EC2/ECS instance profile or environment (recommended for production)',
+                    )
+                  }}
                 </div>
               </div>
               <Switch
@@ -183,7 +237,9 @@
             </div>
             <template v-if="form.use_explicit_credentials">
               <div class="flex items-center gap-4">
-                <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Access Key ID') }}</label>
+                <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                  __('Access Key ID')
+                }}</label>
                 <FormControl
                   v-model="form.access_key_id"
                   type="text"
@@ -192,12 +248,18 @@
                 />
               </div>
               <div class="flex items-center gap-4">
-                <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Secret Access Key') }}</label>
+                <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                  __('Secret Access Key')
+                }}</label>
                 <div class="flex-1 flex flex-col gap-1">
                   <FormControl
                     v-model="form.secret_access_key"
                     type="password"
-                    :placeholder="form.has_secret_access_key ? __('●●●●●● (set — enter to change)') : ''"
+                    :placeholder="
+                      form.has_secret_access_key
+                        ? __('●●●●●● (set — enter to change)')
+                        : ''
+                    "
                     class="flex-1"
                     @input="markDirty"
                   />
@@ -206,12 +268,18 @@
               <div class="flex items-center gap-4">
                 <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">
                   {{ __('Session Token') }}
-                  <span class="text-ink-gray-4 ml-1">{{ __('(optional)') }}</span>
+                  <span class="text-ink-gray-4 ml-1">{{
+                    __('(optional)')
+                  }}</span>
                 </label>
                 <FormControl
                   v-model="form.session_token"
                   type="password"
-                  :placeholder="form.has_session_token ? __('●●●●●● (set — enter to change)') : ''"
+                  :placeholder="
+                    form.has_session_token
+                      ? __('●●●●●● (set — enter to change)')
+                      : ''
+                  "
                   class="flex-1"
                   @input="markDirty"
                 />
@@ -223,7 +291,9 @@
         <!-- Inbound Email -->
         <div class="h-px border-t mx-2 border-outline-elevation-2" />
         <div class="px-2 pt-4 pb-2">
-          <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3">
+          <div
+            class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3"
+          >
             {{ __('Inbound Email') }}
           </div>
           <div class="flex flex-col gap-3">
@@ -240,7 +310,11 @@
                   @update:modelValue="markDirty"
                 />
                 <p class="text-p-xs text-ink-gray-5">
-                  {{ __('Email Account (IMAP) polled for inbound replies to leads and deals. Inbound still requires a real, pollable account.') }}
+                  {{
+                    __(
+                      'Email Account (IMAP) polled for inbound replies to leads and deals. Inbound still requires a real, pollable account.',
+                    )
+                  }}
                 </p>
               </div>
             </div>
@@ -248,22 +322,44 @@
             <template v-if="form.inbound_email_account">
               <div class="flex items-center justify-between py-1">
                 <div class="flex flex-col">
-                  <div class="text-p-sm text-ink-gray-7">{{ __('Enable Incoming') }}</div>
-                  <div class="text-p-xs text-ink-gray-5">{{ __('Pull emails from this account on schedule.') }}</div>
+                  <div class="text-p-sm text-ink-gray-7">
+                    {{ __('Enable Incoming') }}
+                  </div>
+                  <div class="text-p-xs text-ink-gray-5">
+                    {{ __('Pull emails from this account on schedule.') }}
+                  </div>
                 </div>
-                <Switch v-model="form.enable_incoming" size="sm" @update:modelValue="markDirty" />
+                <Switch
+                  v-model="form.enable_incoming"
+                  size="sm"
+                  @update:modelValue="markDirty"
+                />
               </div>
 
               <div class="flex items-center justify-between py-1">
                 <div class="flex flex-col">
-                  <div class="text-p-sm text-ink-gray-7">{{ __('Default Incoming') }}</div>
-                  <div class="text-p-xs text-ink-gray-5">{{ __('All company replies land here. Only one account can be default.') }}</div>
+                  <div class="text-p-sm text-ink-gray-7">
+                    {{ __('Default Incoming') }}
+                  </div>
+                  <div class="text-p-xs text-ink-gray-5">
+                    {{
+                      __(
+                        'All company replies land here. Only one account can be default.',
+                      )
+                    }}
+                  </div>
                 </div>
-                <Switch v-model="form.default_incoming" size="sm" @update:modelValue="markDirty" />
+                <Switch
+                  v-model="form.default_incoming"
+                  size="sm"
+                  @update:modelValue="markDirty"
+                />
               </div>
 
               <div class="flex items-center gap-4">
-                <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{ __('Append Emails To') }}</label>
+                <label class="text-p-sm text-ink-gray-7 w-44 shrink-0">{{
+                  __('Append Emails To')
+                }}</label>
                 <div class="flex-1 flex flex-col gap-1">
                   <FormControl
                     v-model="form.append_to"
@@ -280,8 +376,16 @@
 
               <div class="flex items-center justify-between py-1">
                 <div class="flex flex-col">
-                  <div class="text-p-sm text-ink-gray-7">{{ __('Create Lead from Incoming Emails') }}</div>
-                  <div class="text-p-xs text-ink-gray-5">{{ __('Auto-create a lead when an email arrives from an unknown contact.') }}</div>
+                  <div class="text-p-sm text-ink-gray-7">
+                    {{ __('Create Lead from Incoming Emails') }}
+                  </div>
+                  <div class="text-p-xs text-ink-gray-5">
+                    {{
+                      __(
+                        'Auto-create a lead when an email arrives from an unknown contact.',
+                      )
+                    }}
+                  </div>
                 </div>
                 <Switch
                   v-model="form.create_lead_from_incoming_email"
@@ -296,12 +400,16 @@
         <!-- Inbound (AWS) -->
         <div class="h-px border-t mx-2 border-outline-elevation-2" />
         <div class="px-2 pt-4 pb-2">
-          <div class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3">
+          <div
+            class="text-xs-medium text-ink-gray-5 uppercase tracking-wider mb-3"
+          >
             {{ __('Inbound (AWS)') }}
           </div>
           <div class="flex flex-col gap-3">
             <div class="flex items-start gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{ __('Inbound Region') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{
+                __('Inbound Region')
+              }}</label>
               <FormControl
                 v-model="form.inbound_region"
                 type="text"
@@ -311,7 +419,9 @@
               />
             </div>
             <div class="flex items-start gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{ __('Inbound Domain') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{
+                __('Inbound Domain')
+              }}</label>
               <div class="flex-1 flex flex-col gap-1">
                 <FormControl
                   v-model="form.inbound_domain"
@@ -321,12 +431,18 @@
                   @input="markDirty"
                 />
                 <p class="text-p-xs text-ink-gray-5">
-                  {{ __('Domain that receives email. Must have MX record pointing to SES inbound endpoint.') }}
+                  {{
+                    __(
+                      'Domain that receives email. Must have MX record pointing to SES inbound endpoint.',
+                    )
+                  }}
                 </p>
               </div>
             </div>
             <div class="flex items-start gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{ __('S3 Bucket Name') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{
+                __('S3 Bucket Name')
+              }}</label>
               <FormControl
                 v-model="form.s3_bucket_name"
                 type="text"
@@ -336,7 +452,9 @@
               />
             </div>
             <div class="flex items-start gap-4">
-              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{ __('SNS Topic ARN') }}</label>
+              <label class="text-p-sm text-ink-gray-7 w-44 shrink-0 pt-0.5">{{
+                __('SNS Topic ARN')
+              }}</label>
               <div class="flex-1 flex flex-col gap-1">
                 <FormControl
                   v-model="form.sns_topic_arn"
@@ -356,7 +474,11 @@
                 variant="outline"
                 :label="__('Provision AWS Infrastructure')"
                 :loading="provisioning"
-                :disabled="!form.inbound_region || !form.inbound_domain || !form.s3_bucket_name"
+                :disabled="
+                  !form.inbound_region ||
+                  !form.inbound_domain ||
+                  !form.s3_bucket_name
+                "
                 @click="provision"
               />
               <span v-if="provisionSuccess" class="text-p-sm text-green-600">
@@ -366,7 +488,6 @@
             <ErrorMessage v-if="provisionError" :message="provisionError" />
           </div>
         </div>
-
       </template>
     </div>
 
@@ -493,7 +614,9 @@ function provision() {
 
 function save() {
   if (form.enabled && !form.default_sender_email?.trim()) {
-    saveError.value = __('Sender Email is required when SES Override is enabled.')
+    saveError.value = __(
+      'Sender Email is required when SES Override is enabled.',
+    )
     toast.error(saveError.value)
     return
   }

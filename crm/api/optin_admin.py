@@ -1,0 +1,2868 @@
+"""
+crm/api/optin_admin.py — Internal admin API for Opt-In Network and Facility management.
+
+RBAC:
+  - System Manager / Sales Manager: full access to all networks and facilities.
+  - Network Coordinator: read/write only for networks where they appear in the
+    coordinators child table. Determined by _get_coordinator_networks(user).
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import json
+import math
+import re
+import time
+from decimal import Decimal, InvalidOperation
+from typing import Any
+
+import frappe
+from frappe import _
+from frappe.rate_limiter import rate_limit
+from frappe.utils.jinja import get_jenv
+from jinja2.exceptions import TemplateSyntaxError
+
+from crm.api._email import branded_email_html, create_transactional_communication
+from crm.utils.facility_ids import (
+	SYNC_STATUS,
+	facility_id_holders,
+	facility_ids_by_mfl,
+	fill_facility_rows,
+	is_valid_facility_id,
+	owner_facility_candidates,
+)
+from crm.utils.optin_bundles import membership_price_lists, normalize_price_lists
+from crm.utils.onboarding_source import (
+	NETWORK_OPTIN_CONTACT_SOURCE,
+	SELF_ONBOARDING_CONTACT_SOURCE,
+	is_self_onboarding_contact,
+)
+
+_OPTIN_TERMS_EXPRESSIONS = {
+	"network.display_name",
+	"date",
+	"contact.email",
+	"customer_name",
+	"customer_email_display",
+	"facility_name",
+	"facility_keph_level_display",
+	"facility_mfl_code_display",
+	"price_list_display",
+	"quote_display",
+	"pricing_table",
+	"optional_services_table",
+	"vat_label",
+	"grand_total_monthly_display",
+	"grand_total_annual_display",
+	"commitment_years",
+	"commitment_years_label",
+	"contract_commitment_excl_vat",
+	"contract_commitment_incl_vat",
+	"contract_commitment_incl_vat_display",
+	"first_invoice_offset_months",
+	"first_invoice_offset_label",
+	"invoice_issue_timing_label",
+	"year_one_grand_total_monthly_display",
+	"bank_account_name",
+	"bank_name",
+	"bank_account_number",
+	"bank_branch",
+	"bank_gl_account",
+}
+
+
+def _is_admin(user=None):
+	user = user or frappe.session.user
+	roles = frappe.get_roles(user)
+	return "System Manager" in roles or "Sales Manager" in roles or user == "Administrator"
+
+
+def _get_coordinator_networks(user=None):
+	"""Return list of network slugs where user is a coordinator. Empty = no access."""
+	user = user or frappe.session.user
+	rows = frappe.get_list(
+		"CRM Network Coordinator",
+		filters={"user": user, "parenttype": "CRM Opt-In Network"},
+		fields=["parent"],
+		ignore_permissions=True,  # SYSTEM-INTERNAL
+	)
+	return [r.parent for r in rows]
+
+
+def _assert_network_access(network_slug):
+	"""Raise PermissionError if current user has no access to this network."""
+	if _is_admin():
+		return
+	allowed = _get_coordinator_networks()
+	if network_slug not in allowed:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+
+def _validate_opted_in_price_list_override(existing_membership, requested_override):
+	"""Keep facility pricing immutable once its membership has opted in.
+
+	The contact editor omits the override for opted-in facilities, but this guard
+	also protects older clients and direct API callers from changing the effective
+	price list outside the quotation workflow.
+	"""
+	if not existing_membership or existing_membership.get("status") != "Opted In":
+		return
+
+	existing_override = frappe.utils.cstr(existing_membership.get("price_list_override") or "").strip()
+	requested_override = frappe.utils.cstr(requested_override or "").strip()
+	if requested_override != existing_override:
+		frappe.throw(
+			_(
+				"The facility price list is locked after Opt-In. Update pricing from the quotation before the facility signs."
+			),
+			frappe.ValidationError,
+		)
+
+
+def _normalize_price_list_overrides(value):
+	"""Validate a year -> selling Price List map for facility overrides."""
+	if isinstance(value, str):
+		try:
+			value = json.loads(value or "{}")
+		except (TypeError, ValueError, json.JSONDecodeError):
+			value = {}
+	if isinstance(value, list):
+		value = {row.get("year_number"): row.get("price_list") for row in value if isinstance(row, dict)}
+	if not isinstance(value, dict):
+		return {}
+	result = {}
+	for year, price_list in value.items():
+		year = frappe.utils.cint(year)
+		price_list = frappe.utils.cstr(price_list or "").strip()
+		if not year or not price_list:
+			continue
+		if not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
+			frappe.throw(_("Select an enabled selling price list for year {0}.").format(year))
+		result[str(year)] = price_list
+	return result
+
+
+def _network_contract_schedule_years(network):
+	"""Return the contract years a facility is allowed to override for a network."""
+	fields = ["price_list_override"]
+	try:
+		if frappe.db.has_column("CRM Opt-In Network", "price_lists_json"):
+			fields.append("price_lists_json")
+	except Exception:
+		pass
+	rows = frappe.get_list(
+		"CRM Opt-In Network",
+		filters={"name": network},
+		fields=fields,
+		limit=1,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: caller already has network write access
+	)
+	if not rows:
+		return {1}
+	plans = normalize_price_lists(rows[0].get("price_lists_json"), rows[0].get("price_list_override"))
+	return {frappe.utils.cint(plan.get("year_number")) for plan in plans if plan.get("year_number")} or {1}
+
+
+def _require_optin_settings_manager():
+	"""Only system administrators may change the global Opt-In agreement."""
+	if (
+		"System Manager" not in frappe.get_roles(frappe.session.user)
+		and frappe.session.user != "Administrator"
+	):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+
+def _normalize_optin_terms_template(terms):
+	"""Keep the supported dynamic values while preserving other braces as legal text."""
+
+	def replace_expression(match):
+		expression = match.group(1).strip()
+		if expression in _OPTIN_TERMS_EXPRESSIONS:
+			return "{{ %s }}" % expression
+		return "&#123;&#123;%s&#125;&#125;" % match.group(1)
+
+	terms = re.sub(r"{{(.*?)}}", replace_expression, terms, flags=re.DOTALL)
+	terms = re.sub(
+		r"{%(.*?)%}",
+		lambda match: "&#123;&#37;%s&#37;&#125;" % match.group(1),
+		terms,
+		flags=re.DOTALL,
+	)
+	terms = re.sub(
+		r"{#(.*?)#}",
+		lambda match: "&#123;&#35;%s&#35;&#125;" % match.group(1),
+		terms,
+		flags=re.DOTALL,
+	)
+	return terms
+
+
+# ---------------------------------------------------------------------------
+# Network CRUD
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def list_networks(
+	page: Any = 0,
+	page_size: Any = 20,
+	search: Any = None,
+	enabled: Any = None,
+	opted_in: Any = None,
+	facility_level: Any = None,
+	facility: Any = None,
+):
+	"""Return permission-scoped Opt-In Networks with contact counts and filters."""
+	page = max(int(page or 0), 0)
+	page_size = min(max(int(page_size or 20), 1), 100)
+
+	if _is_admin() or frappe.has_permission("CRM Opt-In Network", "read"):
+		filters = {}
+	else:
+		allowed = _get_coordinator_networks()
+		if not allowed:
+			return {"rows": [], "total": 0}
+		filters = {"name": ["in", allowed]}
+
+	enabled = frappe.utils.cstr(enabled).strip()
+	if enabled in ("0", "1"):
+		filters["enabled"] = frappe.utils.cint(enabled)
+
+	# Opt-in status is derived from membership rows, not the network's enabled
+	# flag. Keep this filter separate so a configured-but-unused network is
+	# clearly distinguishable from one with at least one completed submission.
+	opted_in = frappe.utils.cstr(opted_in).strip()
+	if opted_in in ("0", "1"):
+		opted_memberships = frappe.get_list(
+			"CRM Facility Membership",
+			filters={
+				"parenttype": "CRM Pre-Qualified Facility",
+				"status": "Opted In",
+			},
+			fields=["network"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: resolves status filter
+		)
+		opted_networks = {row.network for row in opted_memberships if row.network}
+		all_networks = frappe.get_list(
+			"CRM Opt-In Network",
+			filters=filters,
+			fields=["name"],
+			limit_page_length=0,
+		)
+		candidate_names = {row.name for row in all_networks}
+		matching_names = (
+			candidate_names & opted_networks if opted_in == "1" else candidate_names - opted_networks
+		)
+		if not matching_names:
+			return {"rows": [], "total": 0}
+		filters["name"] = ["in", list(matching_names)]
+
+	facility_level = frappe.utils.cstr(facility_level).strip()
+	facility = frappe.utils.cstr(facility).strip()
+	if facility_level or facility:
+		facility_filters = {}
+		if facility_level:
+			facility_filters["keph_level"] = facility_level
+		facility_or_filters = None
+		if facility:
+			facility_like = "%%%s%%" % facility
+			facility_or_filters = [
+				["facility_name", "like", facility_like],
+				["mfl_code", "like", facility_like],
+				["hfr_facility_id", "like", facility_like],
+				["organization", "like", facility_like],
+			]
+		facilities = frappe.get_list(
+			"CRM Pre-Qualified Facility",
+			filters=facility_filters,
+			or_filters=facility_or_filters,
+			fields=["name"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: only resolves filter scope
+		)
+		if not facilities:
+			return {"rows": [], "total": 0}
+		memberships = frappe.get_list(
+			"CRM Facility Membership",
+			filters={
+				"parenttype": "CRM Pre-Qualified Facility",
+				"parent": ["in", [row.name for row in facilities]],
+			},
+			fields=["network"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: only resolves filter scope
+		)
+		matching_networks = {row.network for row in memberships if row.network}
+		if not matching_networks:
+			return {"rows": [], "total": 0}
+		if filters.get("name"):
+			matching_networks &= set(filters["name"][1])
+		if not matching_networks:
+			return {"rows": [], "total": 0}
+		filters["name"] = ["in", list(matching_networks)]
+
+	search = frappe.utils.cstr(search).strip()
+	search_or_filters = None
+	if search:
+		search_like = "%%%s%%" % search
+		search_or_filters = [
+			["display_name", "like", search_like],
+			["slug", "like", search_like],
+			["partner_id", "like", search_like],
+			["contact_email", "like", search_like],
+		]
+
+	rows = frappe.get_list(
+		"CRM Opt-In Network",
+		filters=filters,
+		fields=[
+			"name",
+			"slug",
+			"display_name",
+			"partner_id",
+			"enabled",
+			"contact_email",
+			"footer_legal_name",
+			"logo_url",
+			"primary_colour",
+			"price_list_override",
+			"first_invoice_offset_months",
+			"invoice_on_contract_signature",
+		],
+		or_filters=search_or_filters,
+		order_by="display_name asc",
+		limit_start=page * page_size,
+		limit_page_length=page_size,
+	)
+	network_names = [row.name for row in rows]
+	contact_counts = {}
+	contact_memberships = []
+	if network_names:
+		contact_memberships = frappe.get_list(
+			"CRM Facility Membership",
+			filters={
+				"parenttype": "CRM Pre-Qualified Facility",
+				"network": ["in", network_names],
+			},
+			fields=["network", "status"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: only counts visible networks
+		)
+		for membership in contact_memberships:
+			contact_counts[membership.network] = contact_counts.get(membership.network, 0) + 1
+	opted_in_counts = {}
+	for membership in contact_memberships:
+		if membership.get("status") == "Opted In":
+			opted_in_counts[membership.network] = opted_in_counts.get(membership.network, 0) + 1
+	for row in rows:
+		row["contact_count"] = contact_counts.get(row.name, 0)
+		row["opted_in_count"] = opted_in_counts.get(row.name, 0)
+		row["opted_in"] = bool(row["opted_in_count"])
+		row["optin_status"] = "Opted In" if row["opted_in"] else "Not Opted In"
+
+	total = len(
+		frappe.get_list(
+			"CRM Opt-In Network",
+			filters=filters,
+			or_filters=search_or_filters,
+			fields=["name"],
+			limit_page_length=0,
+		)
+	)
+	return {"rows": rows, "total": total}
+
+
+@frappe.whitelist()
+def save_network(data: Any):
+	"""Create or update a CRM Opt-In Network. data is a JSON-serialisable dict."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	if isinstance(data, str):
+		data = json.loads(data)
+
+	price_list_override = frappe.utils.cstr(data.get("price_list_override") or "").strip()
+	if price_list_override and not frappe.db.exists(
+		"Price List", {"name": price_list_override, "selling": 1, "enabled": 1}
+	):
+		frappe.throw(_("Select an enabled selling price list."))
+	data["price_list_override"] = price_list_override
+	if "first_invoice_offset_months" in data:
+		data["first_invoice_offset_months"] = max(
+			frappe.utils.cint(data.get("first_invoice_offset_months")) or 3, 1
+		)
+	if "invoice_on_contract_signature" in data:
+		raw_signature_rule = data.get("invoice_on_contract_signature")
+		data["invoice_on_contract_signature"] = int(
+			raw_signature_rule is True
+			or frappe.utils.cint(raw_signature_rule) == 1
+			or frappe.utils.cstr(raw_signature_rule).strip().lower() in {"true", "yes", "on"}
+		)
+	for price_field in ("optional_services_price_list",):
+		value = frappe.utils.cstr(data.get(price_field) or "").strip()
+		if value and not frappe.db.exists("Price List", {"name": value, "selling": 1, "enabled": 1}):
+			frappe.throw(
+				_("Select an enabled selling price list for {0}.").format(price_field.replace("_", " "))
+			)
+		data[price_field] = value
+	if "price_lists" in data:
+		plans = data.get("price_lists") or []
+		if not isinstance(plans, list):
+			frappe.throw(_("Yearly price lists must be a list."))
+		normalized_plans = []
+		seen_years = set()
+		for index, row in enumerate(plans, 1):
+			if not isinstance(row, dict):
+				frappe.throw(_("Yearly price list rows must be objects."))
+			year = max(frappe.utils.cint(row.get("year_number")) or index, 1)
+			value = frappe.utils.cstr(row.get("price_list") or "").strip()
+			if year in seen_years or not value:
+				continue
+			if not frappe.db.exists("Price List", {"name": value, "selling": 1, "enabled": 1}):
+				frappe.throw(_("Select an enabled selling price list for year {0}.").format(year))
+			seen_years.add(year)
+			normalized_plans.append(
+				{
+					"year_number": year,
+					"price_list": value,
+					"label": frappe.utils.cstr(row.get("label") or "Year %s" % year).strip(),
+					"enabled": bool(row.get("enabled", True)),
+				}
+			)
+		data["price_lists_json"] = json.dumps(sorted(normalized_plans, key=lambda row: row["year_number"]))
+
+	name = data.get("name")
+	if name and frappe.db.exists("CRM Opt-In Network", name):
+		doc = frappe.get_doc("CRM Opt-In Network", name)
+	else:
+		doc = frappe.new_doc("CRM Opt-In Network")
+
+	for field in (
+		"slug",
+		"display_name",
+		"partner_id",
+		"enabled",
+		"contact_email",
+		"footer_legal_name",
+		"logo_url",
+		"primary_colour",
+		"price_list_override",
+		"price_lists_json",
+		"first_invoice_offset_months",
+		"invoice_on_contract_signature",
+		"optional_services_price_list",
+		"custom_header_copy",
+	):
+		if field in data:
+			setattr(doc, field, data[field])
+
+	child_fields = {
+		"partner_logos": ("partner_name", "logo", "website"),
+		"coordinators": ("user",),
+		"network_signers": ("full_name", "email", "phone"),
+	}
+	for fieldname, allowed_fields in child_fields.items():
+		if fieldname in data:
+			rows = data[fieldname] or []
+			if not isinstance(rows, list):
+				frappe.throw(_("{0} must be a list.").format(fieldname))
+			if any(not isinstance(row, dict) for row in rows):
+				frappe.throw(_("{0} contains an invalid row.").format(fieldname))
+			if fieldname == "network_signers":
+				signer_emails = [frappe.utils.cstr(row.get("email") or "").strip().lower() for row in rows]
+				if any(not email for email in signer_emails):
+					frappe.throw(_("Every network signatory must have an email address."))
+				if len(signer_emails) != len(set(signer_emails)):
+					frappe.throw(_("Each network signatory email must be unique."))
+			doc.set(
+				fieldname,
+				[
+					{field: frappe.utils.cstr(row.get(field) or "").strip() for field in allowed_fields}
+					for row in rows
+				],
+			)
+
+	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+	return {"name": doc.name}
+
+
+@frappe.whitelist()
+def sync_configured_pricing(network: Any, submission: Any = None):
+	"""Add missing yearly quotes for processed Opt-Ins in one network.
+
+	Only Sales Managers/System Managers can run reconciliation. Each submission
+	uses its own savepoint, so one stale facility or missing price cannot leave
+	partial quotations on another submission. Fully executed contracts are reported
+	(as locked) and never rewritten.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	network = frappe.utils.cstr(network or "").strip()
+	if not network:
+		frappe.throw(_("A network is required."), frappe.ValidationError)
+	submission_name = frappe.utils.cstr(submission or "").strip()
+	if submission_name:
+		rows = [{"name": submission_name}]
+	else:
+		rows = frappe.get_list(
+			"CRM Opt-In Submission",
+			filters={"network_slug": network, "status": "Processed"},
+			fields=["name"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: manager reconciliation
+		)
+	from crm.api.optin import sync_submission_configured_pricing
+
+	result = {
+		"network": network,
+		"total": len(rows),
+		"updated": 0,
+		"unchanged": 0,
+		"locked": 0,
+		"skipped": 0,
+		"failed": 0,
+		"details": [],
+	}
+	for row in rows:
+		name = frappe.utils.cstr(row.get("name") or "").strip()
+		if not name:
+			continue
+		save_point = "optin_sync_%s" % re.sub(r"[^a-zA-Z0-9_]", "_", name)
+		frappe.db.savepoint(save_point)
+		try:
+			item = sync_submission_configured_pricing(name)
+			status = item.get("status")
+			if status == "updated":
+				result["updated"] += 1
+			elif status == "unchanged":
+				result["unchanged"] += 1
+			elif status == "locked":
+				result["locked"] += 1
+			else:
+				result["skipped"] += 1
+			result["details"].append({"submission": name, **item})
+		except Exception as exc:
+			frappe.db.rollback(save_point=save_point)
+			result["failed"] += 1
+			result["details"].append(
+				{"submission": name, "status": "failed", "reason": frappe.utils.cstr(exc)[:500]}
+			)
+			frappe.log_error(frappe.get_traceback(), "optin_admin.sync_configured_pricing: %s" % name)
+	frappe.db.commit()
+	return result
+
+
+@frappe.whitelist()
+def delete_network(name: Any):
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	name = frappe.utils.cstr(name)
+	# Check no facilities reference this network
+	count = len(
+		frappe.get_list(
+			"CRM Facility Membership",
+			filters={"network": name, "parenttype": "CRM Pre-Qualified Facility"},
+			fields=["name"],
+			limit_page_length=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+	)
+	if count:
+		frappe.throw(_("Cannot delete network: facilities are assigned to it. Remove all memberships first."))
+	frappe.delete_doc("CRM Opt-In Network", name, ignore_permissions=True)
+	frappe.db.commit()
+	return {"deleted": name}
+
+
+# ---------------------------------------------------------------------------
+# Opt-In terms and conditions
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def list_optin_terms():
+	"""List agreements that can be selected as the Opt-In default."""
+	_require_optin_settings_manager()
+	active = frappe.db.get_single_value("CRM Opt-In Settings", "active_tc_document") or ""
+	rows = frappe.get_list(
+		"Terms and Conditions",
+		fields=["name", "title", "modified"],
+		order_by="modified desc",
+		limit_page_length=0,
+	)
+	return {
+		"active": active,
+		"rows": [
+			{
+				"name": row.name,
+				"title": row.title or row.name,
+				"modified": row.modified,
+				"active": row.name == active,
+			}
+			for row in rows
+		],
+	}
+
+
+@frappe.whitelist()
+def get_optin_terms(name: Any):
+	_require_optin_settings_manager()
+	doc = frappe.get_doc("Terms and Conditions", frappe.utils.cstr(name).strip())
+	return {"name": doc.name, "title": doc.title, "terms": doc.terms or ""}
+
+
+@frappe.whitelist()
+def save_optin_terms(name: Any = None, title: Any = None, terms: Any = None):
+	"""Create or update an Opt-In agreement and return its document name."""
+	_require_optin_settings_manager()
+	title = frappe.utils.cstr(title).strip()
+	terms = frappe.utils.cstr(terms)
+	if not title:
+		frappe.throw(_("A document title is required."))
+	if not terms.strip():
+		frappe.throw(_("Terms and Conditions content is required."))
+
+	original_terms = terms
+	terms = _normalize_optin_terms_template(terms)
+	try:
+		get_jenv(restrict_globals=True).from_string(terms)
+	except TemplateSyntaxError as error:
+		frappe.throw(
+			_("Could not save the agreement because a template delimiter is incomplete on line {0}.").format(
+				error.lineno or 1
+			)
+		)
+
+	name = frappe.utils.cstr(name).strip()
+	if name:
+		doc = frappe.get_doc("Terms and Conditions", name)
+		doc.title = title
+		doc.terms = terms
+		doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	else:
+		doc = frappe.get_doc(
+			{"doctype": "Terms and Conditions", "title": title, "selling": 1, "terms": terms}
+		)
+		doc.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+	return {"name": doc.name, "terms": terms, "normalized": terms != original_terms}
+
+
+@frappe.whitelist()
+def set_default_optin_terms(name: Any):
+	"""Set the agreement that every new Opt-In submission must render and accept."""
+	_require_optin_settings_manager()
+	name = frappe.utils.cstr(name).strip()
+	if not frappe.db.exists("Terms and Conditions", name):
+		frappe.throw(_("Terms and Conditions document not found."))
+	settings = frappe.get_single("CRM Opt-In Settings")
+	settings.active_tc_document = name
+	settings.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+	return {"name": name}
+
+
+@frappe.whitelist()
+def get_optin_settings():
+	"""Return non-secret global configuration used by the Opt-In process."""
+	_require_optin_settings_manager()
+	settings = frappe.get_single("CRM Opt-In Settings")
+	meta = frappe.get_meta("CRM Opt-In Settings")
+	token_packages = []
+	if meta.has_field("token_packages"):
+		token_packages = [
+			{
+				"item_code": frappe.utils.cstr(row.get("item_code") or "").strip(),
+				"display_name": frappe.utils.cstr(row.get("display_name") or "").strip(),
+				"plan": frappe.utils.cstr(row.get("plan") or "Flex").strip(),
+				"facility_levels": frappe.utils.cstr(row.get("facility_levels") or "").strip(),
+				"description": frappe.utils.cstr(row.get("description") or "").strip(),
+				"token_quantity": int(row.get("token_quantity") or 0),
+				"billing_period": frappe.utils.cstr(row.get("billing_period") or "Monthly").strip(),
+				"coverage_summary": frappe.utils.cstr(row.get("coverage_summary") or "").strip(),
+				"coverage_metrics": frappe.utils.cstr(row.get("coverage_metrics") or "").strip(),
+				"enabled": int(row.get("enabled") or 0),
+				"status": frappe.utils.cstr(row.get("status") or "").strip(),
+			}
+			for row in (settings.get("token_packages") or [])
+		]
+	return {
+		"default_price_list": settings.default_price_list or "",
+		"optional_services_price_list": settings.get("optional_services_price_list") or "",
+		"sales_tax_template": settings.sales_tax_template or "",
+		"active_tc_document": settings.active_tc_document or "",
+		"self_onboarding_tc_document": settings.get("self_onboarding_tc_document") or "",
+		"default_lead_owner": settings.default_lead_owner or "",
+		"tiberbu_signatory": settings.tiberbu_signatory or "",
+		"tiberbu_signatory_name": settings.get("tiberbu_signatory_name") or "",
+		"tiberbu_signatory_email": settings.get("tiberbu_signatory_email") or "",
+		"tiberbu_signatory_phone": settings.get("tiberbu_signatory_phone") or "",
+		"tiberbu_approver_name": settings.get("tiberbu_approver_name") or "",
+		"tiberbu_approver_email": settings.get("tiberbu_approver_email") or "",
+		"tiberbu_approver_phone": settings.get("tiberbu_approver_phone") or "",
+		"tiberbu_signing_requirement": settings.get("tiberbu_signing_requirement") or "All must sign",
+		"tiberbu_contacts": [
+			{
+				"role": frappe.utils.cstr(row.get("role") or "").strip(),
+				"full_name": frappe.utils.cstr(row.get("full_name") or "").strip(),
+				"email": frappe.utils.cstr(row.get("email") or "").strip().lower(),
+				"phone": frappe.utils.cstr(row.get("phone") or "").strip(),
+			}
+			for row in (settings.get("tiberbu_contacts") or [])
+		],
+		"token_price_list": settings.get("token_price_list") or "",
+		"facility_onboarding_default_partner_id": settings.get("facility_onboarding_default_partner_id")
+		or "",
+		"self_onboarding_allowed_facility_levels": settings.get("self_onboarding_allowed_facility_levels")
+		or "",
+		"token_sales_order_validity_days": int(settings.get("token_sales_order_validity_days") or 30),
+		"token_invoice_due_days": int(settings.get("token_invoice_due_days") or 30),
+		"welcome_bonus_tokens": frappe.utils.cint(settings.get("welcome_bonus_tokens")),
+		"partner_coupon_tokens": frappe.utils.cint(settings.get("partner_coupon_tokens")),
+		"auto_dispense_welcome_bonus": bool(frappe.utils.cint(settings.get("auto_dispense_welcome_bonus"))),
+		"token_calculator": _token_calculator_view(),
+		"token_packages": token_packages,
+	}
+
+
+def _token_calculator_view() -> dict[str, Any]:
+	"""The usage rates the token calculator estimates with: monthly fee, bill value and service tokens."""
+	from crm.api.facility_onboarding import _calculator_config
+
+	config = _calculator_config()
+	return {
+		"monthly_platform_fee": frappe.utils.cint(config.get("monthly_platform_fee")),
+		"bill_value_per_token": frappe.utils.flt(config.get("bill_value_per_token")),
+		"service_points": [
+			{
+				"id": frappe.utils.cstr(point.get("id")),
+				"name": frappe.utils.cstr(point.get("name")),
+				"tokens": frappe.utils.cint(point.get("tokens")),
+				"default_frequency": frappe.utils.flt(point.get("default_frequency")),
+				"applies_to": [scope for scope in point.get("applies_to") or [] if scope in ("opd", "ipd")],
+			}
+			for point in config.get("service_points") or []
+			if isinstance(point, dict)
+		],
+	}
+
+
+def _whole_number(value: Any, label: str, low: int, high: int) -> int:
+	try:
+		number = Decimal(str(value if value not in (None, "") else "x"))
+	except InvalidOperation:
+		number = None
+	if number is None or number != number.to_integral_value() or not low <= number <= high:
+		frappe.throw(_("{0} must be a whole number from {1} to {2}.").format(label, f"{low:,}", f"{high:,}"))
+	return int(number)
+
+
+def _normalize_token_calculator(payload: Any) -> dict[str, Any]:
+	"""Validate the calculator rates from Settings › Opt-In Process."""
+	if not isinstance(payload, dict):
+		frappe.throw(_("Token calculator settings must be an object."))
+	fee = _whole_number(payload.get("monthly_platform_fee"), _("Monthly system access fee (tokens)"), 0, 1_000_000)
+	bill_value = _whole_number(payload.get("bill_value_per_token"), _("Bill value per token (KES)"), 1, 1_000_000)
+	points = payload.get("service_points")
+	if not isinstance(points, list) or any(not isinstance(point, dict) for point in points):
+		frappe.throw(_("Service tokens must be a list of services."))
+	normalized, seen = [], set()
+	for point in points:
+		name = frappe.utils.cstr(point.get("name")).strip()
+		if not name:
+			frappe.throw(_("Each service needs a name."))
+		point_id = frappe.utils.cstr(point.get("id")).strip() or frappe.scrub(name)
+		if point_id in seen:
+			frappe.throw(_("{0} is listed twice.").format(name))
+		seen.add(point_id)
+		applies_to = [scope for scope in ("opd", "ipd") if scope in (point.get("applies_to") or [])]
+		if not applies_to:
+			frappe.throw(_("{0}: choose OPD, IPD or both.").format(name))
+		try:
+			frequency = Decimal(str(point.get("default_frequency") if point.get("default_frequency") not in (None, "") else "x"))
+		except InvalidOperation:
+			frequency = None
+		if frequency is None or not 0 <= frequency <= 10:
+			frappe.throw(_("{0}: uses per patient must be a number from 0 to 10.").format(name))
+		normalized.append(
+			{
+				"id": point_id,
+				"name": name,
+				"tokens": _whole_number(point.get("tokens"), _("{0} tokens").format(name), 0, 10_000),
+				"default_frequency": float(frequency),
+				"applies_to": applies_to,
+			}
+		)
+	return {"monthly_platform_fee": fee, "bill_value_per_token": bill_value, "service_points": normalized}
+
+
+def _apply_token_calculator(doc, calculator: dict[str, Any]):
+	"""Store the fee and bill value in their fields and the services in the calculator JSON.
+
+	Presets and each service's description stay as they were.
+	"""
+	from crm.api.facility_onboarding import _default_calculator_config
+
+	try:
+		stored = json.loads(doc.get("token_calc_parameters_json") or "{}")
+	except ValueError:
+		stored = {}
+	if not isinstance(stored, dict):
+		stored = {}
+	stored = {**_default_calculator_config(), **stored}
+	previous = {
+		point.get("id"): point for point in stored.get("service_points") or [] if isinstance(point, dict)
+	}
+	stored["service_points"] = [{**previous.get(point["id"], {}), **point} for point in calculator["service_points"]]
+	stored["monthly_platform_fee"] = calculator["monthly_platform_fee"]
+	stored["bill_value_per_token"] = float(calculator["bill_value_per_token"])
+	doc.token_calc_monthly_platform_fee = calculator["monthly_platform_fee"]
+	doc.token_calc_bill_value_per_token = calculator["bill_value_per_token"]
+	doc.token_calc_parameters_json = json.dumps(stored, indent=2)
+
+
+@frappe.whitelist()
+def update_optin_settings(settings: Any):
+	"""Update the non-secret global defaults for all new Opt-In submissions."""
+	_require_optin_settings_manager()
+	if isinstance(settings, str):
+		settings = json.loads(settings)
+	settings = settings or {}
+
+	default_price_list = frappe.utils.cstr(settings.get("default_price_list")).strip()
+	optional_services_price_list = frappe.utils.cstr(settings.get("optional_services_price_list")).strip()
+	sales_tax_template = frappe.utils.cstr(settings.get("sales_tax_template")).strip()
+	active_tc_document = frappe.utils.cstr(settings.get("active_tc_document")).strip()
+	self_onboarding_tc_document = frappe.utils.cstr(settings.get("self_onboarding_tc_document")).strip()
+	default_lead_owner = frappe.utils.cstr(settings.get("default_lead_owner")).strip()
+	tiberbu_signatory = frappe.utils.cstr(settings.get("tiberbu_signatory")).strip()
+	tiberbu_signatory_name = frappe.utils.cstr(settings.get("tiberbu_signatory_name")).strip()
+	tiberbu_signatory_email = frappe.utils.cstr(settings.get("tiberbu_signatory_email")).strip().lower()
+	tiberbu_signatory_phone = frappe.utils.cstr(settings.get("tiberbu_signatory_phone")).strip()
+	tiberbu_approver_name = frappe.utils.cstr(settings.get("tiberbu_approver_name")).strip()
+	tiberbu_approver_email = frappe.utils.cstr(settings.get("tiberbu_approver_email")).strip().lower()
+	tiberbu_approver_phone = frappe.utils.cstr(settings.get("tiberbu_approver_phone")).strip()
+	tiberbu_signing_requirement = frappe.utils.cstr(
+		settings.get("tiberbu_signing_requirement") or "All must sign"
+	).strip()
+	token_price_list = frappe.utils.cstr(settings.get("token_price_list") or "").strip()
+	default_partner_id = frappe.utils.cstr(
+		settings.get("facility_onboarding_default_partner_id") or ""
+	).strip()
+	allowed_facility_levels = (
+		_normalize_facility_level_allowlist(settings.get("self_onboarding_allowed_facility_levels"))
+		if "self_onboarding_allowed_facility_levels" in settings
+		else None
+	)
+	token_sales_order_validity_days = int(settings.get("token_sales_order_validity_days") or 30)
+	token_invoice_due_days = int(settings.get("token_invoice_due_days") or 30)
+	bonus_tokens = {}
+	for fieldname, label in (
+		("welcome_bonus_tokens", _("First-purchase bonus tokens")),
+		("partner_coupon_tokens", _("Partner Coupon tokens")),
+	):
+		if fieldname not in settings:
+			continue
+		try:
+			bonus_tokens[fieldname] = int(settings.get(fieldname) or 0)
+		except (TypeError, ValueError):
+			bonus_tokens[fieldname] = -1
+		if not 0 <= bonus_tokens[fieldname] <= 1_000_000:
+			frappe.throw(_("{0} must be a whole number from 0 to 1,000,000.").format(label))
+	token_calculator = (
+		_normalize_token_calculator(settings.get("token_calculator")) if "token_calculator" in settings else None
+	)
+	# Settings › Packages owns the catalogue; an Opt-In save only replaces it when it sends it.
+	packages_sent = "token_packages" in settings
+	token_packages = settings.get("token_packages") or []
+	if tiberbu_signing_requirement not in ("All must sign", "At least one must sign"):
+		frappe.throw(_("Choose whether all Tiberbu signatories or at least one must sign."))
+	tiberbu_contacts = settings.get("tiberbu_contacts")
+	if tiberbu_contacts is not None:
+		if not isinstance(tiberbu_contacts, list) or any(
+			not isinstance(row, dict) for row in tiberbu_contacts
+		):
+			frappe.throw(_("Tiberbu contacts must be a list of contact rows."))
+		normalized_contacts = []
+		seen_contacts = set()
+		for row in tiberbu_contacts:
+			role = frappe.utils.cstr(row.get("role") or "").strip().title()
+			name = frappe.utils.cstr(row.get("full_name") or "").strip()
+			email = frappe.utils.cstr(row.get("email") or "").strip().lower()
+			phone = frappe.utils.cstr(row.get("phone") or "").strip()
+			if role not in ("Signatory", "Approver") or not name or not email:
+				frappe.throw(_("Each Tiberbu contact needs a role, name, and email."))
+			key = (role, email)
+			if key in seen_contacts:
+				frappe.throw(_("Each Tiberbu contact email must be unique within its role."))
+			seen_contacts.add(key)
+			normalized_contacts.append({"role": role, "full_name": name, "email": email, "phone": phone})
+	else:
+		normalized_contacts = None
+
+	if default_price_list and not frappe.db.exists(
+		"Price List", {"name": default_price_list, "selling": 1, "enabled": 1}
+	):
+		frappe.throw(_("Select an enabled selling price list."))
+	if optional_services_price_list and not frappe.db.exists(
+		"Price List", {"name": optional_services_price_list, "selling": 1, "enabled": 1}
+	):
+		frappe.throw(_("Select an enabled selling price list for optional services."))
+	if token_sales_order_validity_days < 1 or token_sales_order_validity_days > 365:
+		frappe.throw(_("Sales Order validity must be between 1 and 365 days."))
+	if token_invoice_due_days < 1 or token_invoice_due_days > 365:
+		frappe.throw(_("Invoice payment terms must be between 1 and 365 days."))
+	if default_partner_id and (
+		len(default_partner_id) != 6
+		or not default_partner_id.isdigit()
+		or not frappe.db.exists("CRM Opt-In Network", {"partner_id": default_partner_id, "enabled": 1})
+	):
+		frappe.throw(_("Default Partner ID must be the six-digit ID of an enabled Network."))
+	if token_price_list and not frappe.db.exists(
+		"Price List", {"name": token_price_list, "selling": 1, "enabled": 1}
+	):
+		frappe.throw(_("Select an enabled selling Price List for token packages."))
+	if not isinstance(token_packages, list) or any(not isinstance(row, dict) for row in token_packages):
+		frappe.throw(_("Token packages must be a list of package rows."))
+	normalized_token_packages = []
+	seen_token_items = set()
+	for row in token_packages:
+		item_code = frappe.utils.cstr(row.get("item_code") or "").strip()
+		display_name = frappe.utils.cstr(row.get("display_name") or "").strip()
+		description = frappe.utils.cstr(row.get("description") or "").strip()
+		coverage_summary = frappe.utils.cstr(row.get("coverage_summary") or "").strip()
+		billing_period = frappe.utils.cstr(row.get("billing_period") or "Monthly").strip()
+		coverage_metrics = frappe.utils.cstr(row.get("coverage_metrics") or "").strip()
+		try:
+			token_quantity = int(row.get("token_quantity") or 0)
+		except (TypeError, ValueError):
+			token_quantity = 0
+		if not all((item_code, display_name, description, coverage_summary)):
+			frappe.throw(_("Each token package needs an item, name, description, and coverage summary."))
+		plan = frappe.utils.cstr(row.get("plan") or "Flex").strip()
+		facility_levels = frappe.utils.cstr(row.get("facility_levels") or "").strip()
+		if plan not in ("Flex", "Fixed", "Custom"):
+			frappe.throw(_("Choose Flex, Fixed or Custom as the package plan."))
+		# A Fixed fee buys platform access, not tokens.
+		if token_quantity < 1 and plan != "Fixed":
+			frappe.throw(_("Each token package must contain at least one token."))
+		if plan == "Fixed" and not facility_levels:
+			frappe.throw(_("A Fixed package needs the facility levels it applies to."))
+		if billing_period not in ("Monthly", "Quarterly", "Semi-annual", "Annual"):
+			frappe.throw(_("Choose a valid token package billing period."))
+		if item_code in seen_token_items:
+			frappe.throw(_("Each token service item may appear only once in the catalogue."))
+		seen_token_items.add(item_code)
+		item = frappe.db.get_value("Item", item_code, ["disabled", "is_sales_item"], as_dict=True)
+		if not item or item.disabled or not item.is_sales_item:
+			frappe.throw(_("Token package item {0} must be an enabled sales item.").format(item_code))
+		if token_price_list and not frappe.db.exists(
+			"Item Price", {"item_code": item_code, "price_list": token_price_list}
+		):
+			frappe.throw(_("Add an Item Price for {0} to the selected token Price List.").format(item_code))
+		normalized_token_packages.append(
+			{
+				"item_code": item_code,
+				"display_name": display_name,
+				"plan": plan,
+				"facility_levels": facility_levels if plan == "Fixed" else "",
+				"description": description,
+				"token_quantity": token_quantity,
+				"billing_period": billing_period,
+				"coverage_summary": coverage_summary,
+				"coverage_metrics": coverage_metrics,
+				"enabled": int(bool(row.get("enabled", 1))),
+				**({"status": row["status"]} if row.get("status") in ("Active", "Disabled", "Discontinued") else {}),
+			}
+		)
+	if normalized_token_packages and not token_price_list:
+		frappe.throw(_("Select one token selling Price List before adding packages."))
+	if sales_tax_template:
+		from crm.utils.quotation_tax import get_vat_tax_configuration
+
+		get_vat_tax_configuration(tax_template=sales_tax_template)
+	if active_tc_document and not frappe.db.exists("Terms and Conditions", active_tc_document):
+		frappe.throw(_("Terms and Conditions document not found."))
+	if self_onboarding_tc_document and not frappe.db.exists(
+		"Terms and Conditions", self_onboarding_tc_document
+	):
+		frappe.throw(_("Terms and Conditions document not found."))
+	for field, user in (("Default Lead Owner", default_lead_owner), ("Tiberbu Signatory", tiberbu_signatory)):
+		if user and not frappe.db.exists("User", {"name": user, "enabled": 1}):
+			frappe.throw(_("{0} must be an enabled user.").format(field))
+	if any((tiberbu_signatory_name, tiberbu_signatory_email, tiberbu_signatory_phone)) and not all(
+		(tiberbu_signatory_name, tiberbu_signatory_email)
+	):
+		frappe.throw(_("Default Tiberbu signatory name and email are required when using a contact."))
+	if any((tiberbu_approver_name, tiberbu_approver_email, tiberbu_approver_phone)) and not all(
+		(tiberbu_approver_name, tiberbu_approver_email, tiberbu_approver_phone)
+	):
+		frappe.throw(
+			_("Tiberbu Approver name, email, and phone are required for dual-channel notifications.")
+		)
+
+	doc = frappe.get_single("CRM Opt-In Settings")
+	doc.default_price_list = default_price_list
+	if frappe.get_meta("CRM Opt-In Settings").has_field("optional_services_price_list"):
+		doc.optional_services_price_list = optional_services_price_list
+	doc.sales_tax_template = sales_tax_template
+	doc.active_tc_document = active_tc_document
+	if frappe.get_meta("CRM Opt-In Settings").has_field("self_onboarding_tc_document"):
+		doc.self_onboarding_tc_document = self_onboarding_tc_document
+	doc.default_lead_owner = default_lead_owner
+	doc.tiberbu_signatory = tiberbu_signatory
+	doc.tiberbu_signatory_name = tiberbu_signatory_name
+	doc.tiberbu_signatory_email = tiberbu_signatory_email
+	doc.tiberbu_signatory_phone = tiberbu_signatory_phone
+	doc.tiberbu_approver_name = tiberbu_approver_name
+	doc.tiberbu_approver_email = tiberbu_approver_email
+	doc.tiberbu_approver_phone = tiberbu_approver_phone
+	doc.tiberbu_signing_requirement = tiberbu_signing_requirement
+	if normalized_contacts is not None and frappe.get_meta("CRM Opt-In Settings").has_field(
+		"tiberbu_contacts"
+	):
+		doc.set("tiberbu_contacts", normalized_contacts)
+	if frappe.get_meta("CRM Opt-In Settings").has_field("token_price_list"):
+		doc.token_price_list = token_price_list
+	if frappe.get_meta("CRM Opt-In Settings").has_field("facility_onboarding_default_partner_id"):
+		doc.facility_onboarding_default_partner_id = default_partner_id
+	if allowed_facility_levels is not None and frappe.get_meta("CRM Opt-In Settings").has_field(
+		"self_onboarding_allowed_facility_levels"
+	):
+		doc.self_onboarding_allowed_facility_levels = allowed_facility_levels
+	if frappe.get_meta("CRM Opt-In Settings").has_field("token_price_list"):
+		doc.token_sales_order_validity_days = token_sales_order_validity_days
+		for fieldname, value in bonus_tokens.items():
+			if doc.meta.has_field(fieldname):
+				doc.set(fieldname, value)
+		if "auto_dispense_welcome_bonus" in settings and doc.meta.has_field("auto_dispense_welcome_bonus"):
+			doc.auto_dispense_welcome_bonus = 1 if frappe.utils.cint(settings.get("auto_dispense_welcome_bonus")) else 0
+		doc.token_invoice_due_days = token_invoice_due_days
+		if packages_sent:
+			doc.set("token_packages", normalized_token_packages)
+	if token_calculator is not None and doc.meta.has_field("token_calc_parameters_json"):
+		_apply_token_calculator(doc, token_calculator)
+	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+
+
+@frappe.whitelist()
+def list_optin_tax_templates():
+	"""List the enabled company VAT templates available to Opt-In Settings."""
+	_require_optin_settings_manager()
+	from crm.utils.quotation_tax import list_company_tax_templates
+
+	return [{"value": row.name, "label": row.name} for row in list_company_tax_templates()]
+
+
+# ---------------------------------------------------------------------------
+# Negotiated price lists and item prices
+# ---------------------------------------------------------------------------
+
+
+def _normalize_facility_level_allowlist(value):
+	"""Keep one trimmed, non-empty entry per facility level, case-insensitively."""
+	result = []
+	seen = set()
+	for line in frappe.utils.cstr(value or "").splitlines():
+		level = line.strip()
+		key = level.casefold()
+		if level and key not in seen:
+			result.append(level)
+			seen.add(key)
+	return "\n".join(result)
+
+
+def _is_standard_selling_price_list(name):
+	"""Return whether ``name`` is ERPNext's generic selling list."""
+	return frappe.utils.cstr(name or "").strip().casefold() == "standard selling"
+
+
+def _get_negotiated_price_list(name):
+	name = frappe.utils.cstr(name).strip()
+	if not name:
+		frappe.throw(_("A price list is required."))
+	price_list = frappe.get_doc("Price List", name)
+	if _is_standard_selling_price_list(price_list.name) or not price_list.selling or not price_list.enabled:
+		frappe.throw(_("Select an enabled selling price list other than Standard Selling."))
+	return price_list
+
+
+def _get_selling_price_list(name):
+	"""Return any selling Price List for catalogue read operations.
+
+	The catalogue can inspect Standard Selling and disabled historical lists, but
+	write operations continue to use ``_get_negotiated_price_list`` so Opt-In
+	pricing cannot accidentally be moved onto ERPNext's generic list.
+	"""
+	name = frappe.utils.cstr(name).strip()
+	if not name:
+		frappe.throw(_("A price list is required."))
+	price_list = frappe.get_doc("Price List", name)
+	if not frappe.utils.cint(price_list.selling):
+		frappe.throw(_("Select a selling price list."))
+	return price_list
+
+
+def _price_list_assignments():
+	"""Return effective price-list assignments for network facility memberships."""
+	membership_fields = ["parent", "network"]
+	try:
+		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
+			membership_fields.append("price_list_override")
+		if frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json"):
+			membership_fields.append("price_list_overrides_json")
+	except Exception:
+		pass
+	memberships = frappe.get_list(
+		"CRM Facility Membership",
+		filters={"parenttype": "CRM Pre-Qualified Facility"},
+		fields=membership_fields,
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: scope metadata for managers
+	)
+	network_fields = ["name", "slug", "price_list_override"]
+	try:
+		if frappe.db.has_column("CRM Opt-In Network", "price_lists_json"):
+			network_fields.append("price_lists_json")
+	except Exception:
+		pass
+	networks = frappe.get_list(
+		"CRM Opt-In Network",
+		fields=network_fields,
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: scope metadata for managers
+	)
+	network_lists = {
+		network.name: {
+			"slug": network.get("slug") or network.name,
+			"price_list": network.get("price_list_override") or "",
+			"price_lists": [
+				row["price_list"]
+				for row in normalize_price_lists(
+					network.get("price_lists_json"), network.get("price_list_override") or ""
+				)
+				if row.get("price_list")
+			],
+		}
+		for network in networks
+	}
+	default_price_list = (
+		frappe.db.get_single_value("CRM Opt-In Settings", "default_price_list") or "Negotiated Year 1"
+	)
+	assignments = {}
+	for membership in memberships:
+		network = network_lists.get(membership.network, {})
+		configured_lists = set(network.get("price_lists") or [])
+		configured_lists.update(
+			membership_price_lists(
+				membership.get("price_list_overrides_json"), membership.get("price_list_override") or ""
+			).values()
+		)
+		if not configured_lists:
+			configured_lists.add(network.get("price_list") or default_price_list)
+		if not configured_lists or not membership.parent:
+			continue
+		for price_list in configured_lists:
+			assignment = assignments.setdefault(
+				price_list,
+				{"facilities": set(), "networks": set(), "facility_networks": set()},
+			)
+			assignment["facilities"].add(membership.parent)
+			assignment["networks"].add(network.get("slug") or membership.network)
+			assignment["facility_networks"].add(
+				(membership.parent, network.get("slug") or membership.network)
+			)
+	return assignments
+
+
+@frappe.whitelist()
+def list_negotiated_price_lists():
+	"""Return enabled Opt-In selling price lists for configuration."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	rows = frappe.get_list(
+		"Price List",
+		filters=[
+			["selling", "=", 1],
+			["enabled", "=", 1],
+			["name", "!=", "Standard Selling"],
+		],
+		fields=["name", "currency", "creation", "modified", "owner", "modified_by"],
+		order_by="name asc",
+		limit_page_length=0,
+	)
+	# Keep the exclusion case-insensitive even on sites whose database collation
+	# treats the ``!=`` filter as case-sensitive.
+	rows = [row for row in rows if not _is_standard_selling_price_list(row.name)]
+
+	assignments = _price_list_assignments()
+
+	return [
+		{
+			"value": row.name,
+			"label": row.name,
+			"currency": row.currency,
+			"creation": row.creation,
+			"modified": row.modified,
+			"owner": row.owner,
+			"modified_by": row.modified_by,
+			"facility_count": len(assignments.get(row.name, {}).get("facilities", set())),
+			"network_count": len(assignments.get(row.name, {}).get("networks", set())),
+		}
+		for row in rows
+	]
+
+
+@frappe.whitelist()
+def list_selling_price_lists():
+	"""Return every selling Price List for the Item Catalogue selector.
+
+	Unlike network Opt-In configuration, catalogue users need to inspect prices
+	from Standard Selling and disabled historical lists as well. Those lists are
+	shown read-only in the UI; write endpoints still require an enabled,
+	non-Standard Selling list.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	rows = frappe.get_list(
+		"Price List",
+		filters=[["selling", "=", 1]],
+		fields=["name", "currency", "enabled", "creation", "modified", "owner", "modified_by"],
+		order_by="name asc",
+		limit_page_length=0,
+	)
+	assignments = _price_list_assignments()
+	return [
+		{
+			"value": row.name,
+			"label": row.name,
+			"currency": row.currency,
+			"enabled": bool(frappe.utils.cint(row.get("enabled"))),
+			"creation": row.creation,
+			"modified": row.modified,
+			"owner": row.owner,
+			"modified_by": row.modified_by,
+			"facility_count": len(assignments.get(row.name, {}).get("facilities", set())),
+			"network_count": len(assignments.get(row.name, {}).get("networks", set())),
+		}
+		for row in rows
+	]
+
+
+@frappe.whitelist()
+def list_optional_services_price_lists():
+	"""Return every enabled selling list for the optional-services catalogue.
+
+	Unlike subscription pricing, Standard Selling is a valid source for optional
+	hardware and services, so this deliberately does not use the negotiated-list
+	filter.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	rows = frappe.get_list(
+		"Price List",
+		filters=[["selling", "=", 1], ["enabled", "=", 1]],
+		fields=["name", "currency"],
+		order_by="name asc",
+		limit_page_length=0,
+	)
+	return [{"value": row.name, "label": row.name, "currency": row.currency} for row in rows]
+
+
+@frappe.whitelist()
+def list_price_list_facilities(price_list: Any, page: Any = None, page_length: Any = None):
+	"""Return facilities using a negotiated list, including their network scope.
+
+	The original no-pagination response remains a list for existing callers. New
+	callers can pass ``page``/``page_length`` to receive a bounded page and total,
+	which keeps large catalogue views responsive without changing the data scope.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	price_list = _get_negotiated_price_list(price_list)
+	assignment = _price_list_assignments().get(price_list.name, {})
+	pairs = assignment.get("facility_networks", set())
+	if not pairs:
+		return []
+	facility_names = {facility for facility, _network in pairs}
+	facilities = {
+		row.name: row
+		for row in frappe.get_list(
+			"CRM Pre-Qualified Facility",
+			filters={"name": ["in", list(facility_names)]},
+			fields=["name", "facility_name", "organization", "mfl_code", "keph_level"],
+			limit_page_length=0,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: manager catalogue scope
+		)
+	}
+	rows = [
+		{
+			"name": facility_name,
+			"facility_name": facilities[facility_name].facility_name,
+			"organization": facilities[facility_name].organization or facilities[facility_name].facility_name,
+			"mfl_code": facilities[facility_name].mfl_code,
+			"keph_level": facilities[facility_name].keph_level,
+			"network": network,
+			"price_list": price_list.name,
+		}
+		for facility_name, network in sorted(
+			pairs,
+			key=lambda pair: (
+				facilities.get(pair[0], {}).get("facility_name", pair[0]),
+				pair[1],
+			),
+		)
+		if facility_name in facilities
+	]
+	if page is None and page_length is None:
+		return rows
+
+	page = max(frappe.utils.cint(page) or 1, 1)
+	page_length = min(max(frappe.utils.cint(page_length) or 50, 1), 100)
+	start = (page - 1) * page_length
+	end = start + page_length
+	return {
+		"rows": rows[start:end],
+		"total": len(rows),
+		"page": page,
+		"page_length": page_length,
+		"has_more": end < len(rows),
+	}
+
+
+@frappe.whitelist()
+def get_facility_sample_quote(facility: Any, network: Any = None, price_list: Any = None):
+	"""Return a non-persisted quotation preview for one or all contract schedules."""
+	facility = frappe.utils.cstr(facility).strip()
+	network = frappe.utils.cstr(network).strip()
+	if not facility:
+		frappe.throw(_("A facility is required."))
+	if not _is_admin() and network:
+		_assert_network_access(network)
+	if not _is_admin() and not network:
+		frappe.throw(_("A network is required."), frappe.PermissionError)
+
+	facility_doc = frappe.get_doc("CRM Pre-Qualified Facility", facility)
+	membership = next(
+		(member for member in facility_doc.memberships or [] if not network or member.network == network),
+		None,
+	)
+	if not membership:
+		frappe.throw(_("This facility is not attached to the selected network."))
+
+	network_doc = None
+	if network:
+		network_rows = frappe.get_list(
+			"CRM Opt-In Network",
+			filters={"slug": network, "enabled": 1},
+			fields=["name", "slug", "display_name", "price_list_override", "price_lists_json"],
+			limit_page_length=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL: access was checked above
+		)
+		if not network_rows:
+			frappe.throw(_("Network not found."))
+		network_doc = network_rows[0]
+
+	settings_default = frappe.db.get_single_value("CRM Opt-In Settings", "default_price_list")
+	requested_price_list = frappe.utils.cstr(price_list).strip()
+	if requested_price_list:
+		# The catalogue's price-list inspector deliberately asks for one explicit
+		# schedule. Keep that focused view compatible while the Prequalified
+		# Contacts action (which omits this argument) previews every contract year.
+		schedules = [{"year_number": 1, "label": "Year 1", "price_list": requested_price_list}]
+	else:
+		network_plans = normalize_price_lists(
+			network_doc.get("price_lists_json") if network_doc else "",
+			network_doc.get("price_list_override") if network_doc else "",
+		)
+		facility_overrides = membership_price_lists(
+			membership.get("price_list_overrides_json"), membership.get("price_list_override")
+		)
+		if network_plans:
+			schedules = [
+				{
+					"year_number": plan["year_number"],
+					"label": plan["label"],
+					"price_list": facility_overrides.get(plan["year_number"]) or plan["price_list"],
+				}
+				for plan in network_plans
+			]
+		else:
+			schedules = [
+				{
+					"year_number": 1,
+					"label": "Year 1",
+					"price_list": facility_overrides.get(1) or settings_default or "Negotiated Year 1",
+				}
+			]
+
+	for schedule in schedules:
+		if not frappe.db.exists("Price List", {"name": schedule["price_list"], "selling": 1, "enabled": 1}):
+			frappe.throw(
+				_("The contract schedule for year {0} is not enabled.").format(schedule["year_number"])
+			)
+
+	from crm.api.optin import _keph_to_item_code
+	from crm.api.quotes import _get_item_price
+	from crm.utils.quotation_tax import calculate_vat_totals
+
+	item_code = _keph_to_item_code(facility_doc.keph_level)
+	item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
+	yearly_quotes = []
+	for schedule in schedules:
+		monthly_net = _get_item_price(item_code, schedule["price_list"])
+		monthly_totals = calculate_vat_totals(monthly_net)
+		annual_net = round(monthly_net * 12, 2)
+		annual_totals = calculate_vat_totals(annual_net)
+		yearly_quotes.append(
+			{
+				"year_number": schedule["year_number"],
+				"label": schedule["label"],
+				"price_list": schedule["price_list"],
+				"item_code": item_code,
+				"item_name": item_name,
+				"monthly_net": monthly_totals.net_total,
+				"monthly_vat": monthly_totals.vat_amount,
+				"monthly_gross": monthly_totals.grand_total,
+				"annual_net": annual_totals.net_total,
+				"annual_vat": annual_totals.vat_amount,
+				"annual_gross": annual_totals.grand_total,
+				"vat_rate": monthly_totals.vat_rate,
+				"vat_label": monthly_totals.vat_label,
+			}
+		)
+
+	first_schedule = yearly_quotes[0]
+	return {
+		"facility": facility_doc.facility_name,
+		"organization": facility_doc.organization or facility_doc.facility_name,
+		"mfl_code": facility_doc.mfl_code,
+		"keph_level": facility_doc.keph_level,
+		"network": network_doc.display_name if network_doc else network,
+		**first_schedule,
+		"yearly_quotes": yearly_quotes,
+		"contract_total_net": round(sum(row["annual_net"] for row in yearly_quotes), 2),
+		"contract_total_vat": round(sum(row["annual_vat"] for row in yearly_quotes), 2),
+		"contract_total_gross": round(sum(row["annual_gross"] for row in yearly_quotes), 2),
+	}
+
+
+@frappe.whitelist()
+def list_item_prices(price_list: Any):
+	"""Return only selling Item Prices linked to the selected Price List."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	price_list = _get_selling_price_list(price_list)
+	return frappe.get_list(
+		"Item Price",
+		filters={"price_list": price_list.name, "selling": 1},
+		fields=["name", "item_code", "item_name", "uom", "currency", "price_list_rate"],
+		order_by="item_code asc",
+		limit_page_length=0,
+	)
+
+
+def _log_price_list_event(price_list: str, content: str) -> None:
+	"""Write a price-list audit comment in the same transaction as the change."""
+	if not price_list or not content:
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Comment",
+			"comment_type": "Comment",
+			"reference_doctype": "Price List",
+			"reference_name": price_list,
+			"content": content,
+		}
+	).insert(ignore_permissions=True)  # SYSTEM-INTERNAL: manager catalogue audit
+
+
+@frappe.whitelist()
+def update_item_price(price_list: Any, item_price: Any, target_price_list: Any = None, rate: Any = None):
+	"""Move or remove an Item Price from the selected negotiated list.
+
+	An empty target removes the Item Price. A non-empty target moves it to another
+	enabled negotiated selling list. Both operations are audited and committed as
+	one transaction; a failed audit leaves the price unchanged.
+	"""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	source = _get_negotiated_price_list(price_list)
+	item_price_name = frappe.utils.cstr(item_price or "").strip()
+	if not item_price_name:
+		frappe.throw(_("An item price is required."))
+
+	item_price_doc = frappe.get_doc("Item Price", item_price_name)
+	if item_price_doc.price_list != source.name or not frappe.utils.cint(item_price_doc.selling):
+		frappe.throw(_("This item price is not part of the selected price list."))
+
+	target_name = frappe.utils.cstr(target_price_list or "").strip()
+	if target_name == source.name:
+		frappe.throw(_("Choose another price list or Remove from this list."))
+
+	if not target_name:
+		frappe.delete_doc("Item Price", item_price_name, ignore_permissions=True)
+		_log_price_list_event(
+			source.name,
+			_("Removed item price %(item)s from %(price_list)s.")
+			% {"item": item_price_doc.item_code, "price_list": source.name},
+		)
+		frappe.db.commit()
+		return {
+			"action": "removed",
+			"item_price": item_price_name,
+			"source": source.name,
+		}
+
+	target = _get_negotiated_price_list(target_name)
+	duplicate = frappe.db.exists(
+		"Item Price",
+		{"price_list": target.name, "item_code": item_price_doc.item_code, "selling": 1},
+	)
+	if duplicate and duplicate != item_price_name:
+		frappe.throw(
+			_("An item price for %(item)s already exists in %(price_list)s.")
+			% {"item": item_price_doc.item_code, "price_list": target.name}
+		)
+
+	if rate is not None and rate != "":
+		try:
+			rate = float(rate)
+		except (TypeError, ValueError):
+			frappe.throw(_("Enter a valid price."))
+		if not math.isfinite(rate) or rate < 0:
+			frappe.throw(_("Enter a non-negative finite price."))
+		item_price_doc.price_list_rate = rate
+
+	previous = source.name
+	item_price_doc.price_list = target.name
+	item_price_doc.currency = target.currency or item_price_doc.currency or "KES"
+	item_price_doc.save(ignore_permissions=True)
+	_log_price_list_event(
+		previous,
+		_("Moved item price %(item)s to %(price_list)s.")
+		% {"item": item_price_doc.item_code, "price_list": target.name},
+	)
+	_log_price_list_event(
+		target.name,
+		_("Added item price %(item)s from %(price_list)s.")
+		% {"item": item_price_doc.item_code, "price_list": previous},
+	)
+	frappe.db.commit()
+	return {
+		"action": "moved",
+		"item_price": item_price_name,
+		"source": previous,
+		"target": target.name,
+	}
+
+
+@frappe.whitelist()
+def list_sellable_items(search: Any = None):
+	"""Return CRM-selectable ERPNext service items for negotiated pricing."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	filters = {"disabled": 0, "is_sales_item": 1}
+	if search:
+		filters["item_name"] = ["like", "%%%s%%" % frappe.utils.cstr(search).strip()]
+	return frappe.get_list(
+		"Item",
+		filters=filters,
+		fields=["name as value", "item_name", "stock_uom"],
+		order_by="item_name asc",
+		limit_page_length=200,
+	)
+
+
+@frappe.whitelist()
+def create_sellable_item(item_code: Any, item_name: Any, stock_uom: Any = "Nos"):
+	"""Create a sales item from the Opt-In catalogue without exposing ERPNext CRUD."""
+	if not _is_admin():
+		frappe.throw("Not permitted", frappe.PermissionError)
+	item_code = frappe.utils.cstr(item_code or "").strip()
+	item_name = frappe.utils.cstr(item_name or "").strip()
+	stock_uom = frappe.utils.cstr(stock_uom or "Nos").strip() or "Nos"
+	if not item_code or not item_name:
+		frappe.throw("Item code and item name are required.")
+	if frappe.db.exists("Item", item_code):
+		frappe.throw("An item with this code already exists.")
+
+	item = frappe.get_doc(
+		{
+			"doctype": "Item",
+			"item_code": item_code,
+			"item_name": item_name,
+			"item_group": "Services",
+			"stock_uom": stock_uom,
+			"is_sales_item": 1,
+			"is_stock_item": 0,
+		}
+	)
+	item.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+	return {"value": item.name, "item_name": item.item_name, "stock_uom": item.stock_uom}
+
+
+@frappe.whitelist()
+def create_negotiated_price_list(name: Any):
+	"""Create an empty, KES-denominated Opt-In selling price list."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	name = frappe.utils.cstr(name).strip()
+	if _is_standard_selling_price_list(name):
+		frappe.throw(_("Standard Selling is reserved for ERPNext defaults. Choose another name."))
+	if frappe.db.exists("Price List", name):
+		frappe.throw(_("A price list with this name already exists."))
+	price_list = frappe.get_doc(
+		{
+			"doctype": "Price List",
+			"price_list_name": name,
+			"currency": "KES",
+			"selling": 1,
+			"buying": 0,
+			"enabled": 1,
+		}
+	)
+	price_list.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return {"name": price_list.name}
+
+
+@frappe.whitelist()
+def duplicate_negotiated_price_list(source: Any, name: Any):
+	"""Copy an Opt-In selling price list and all of its item prices."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	source = _get_negotiated_price_list(source)
+	name = frappe.utils.cstr(name).strip()
+	if _is_standard_selling_price_list(name):
+		frappe.throw(_("Standard Selling is reserved for ERPNext defaults. Choose another name."))
+	if frappe.db.exists("Price List", name):
+		frappe.throw(_("A price list with this name already exists."))
+
+	price_list = frappe.get_doc(
+		{
+			"doctype": "Price List",
+			"price_list_name": name,
+			"currency": source.currency or "KES",
+			"selling": 1,
+			"buying": 0,
+			"enabled": 1,
+		}
+	)
+	price_list.insert(ignore_permissions=True)
+
+	# Keep the fields that describe an Item Price across ERPNext v15/v16. The
+	# common fields are enough for the editor, while dates/customer/batch context
+	# preserve a complete copy when those optional columns exist on the site.
+	item_price_fields = [
+		"item_code",
+		"uom",
+		"packing_unit",
+		"item_name",
+		"brand",
+		"item_description",
+		"customer",
+		"supplier",
+		"batch_no",
+		"currency",
+		"price_list_rate",
+		"valid_from",
+		"lead_time_days",
+		"valid_upto",
+		"note",
+		"reference",
+	]
+	# Meta.get_fieldnames() is not available on Frappe v15/v16 Meta objects.
+	# `fields` is the stable metadata surface across both versions.
+	available_fields = set()
+	for field in getattr(frappe.get_meta("Item Price"), "fields", []):
+		fieldname = frappe.utils.cstr(getattr(field, "fieldname", "")).strip()
+		if fieldname:
+			available_fields.add(fieldname)
+	source_rows = frappe.get_list(
+		"Item Price",
+		filters={"price_list": source.name, "selling": 1},
+		fields=["name", *[field for field in item_price_fields if field in available_fields]],
+		order_by="item_code asc, name asc",
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL
+	)
+	for source_row in source_rows:
+		values = {
+			field: source_row.get(field)
+			for field in item_price_fields
+			if field in available_fields and source_row.get(field) is not None
+		}
+		values.update({"doctype": "Item Price", "price_list": price_list.name, "selling": 1, "buying": 0})
+		if not values.get("currency"):
+			values["currency"] = price_list.currency or "KES"
+		if not values.get("uom"):
+			values["uom"] = frappe.db.get_value("Item", values["item_code"], "stock_uom") or "Nos"
+		frappe.get_doc(values).insert(ignore_permissions=True)
+
+	frappe.db.commit()
+	return {"name": price_list.name, "source": source.name, "copied": len(source_rows)}
+
+
+@frappe.whitelist()
+def save_item_price(price_list: Any, item_code: Any, rate: Any):
+	"""Create or update a selling Item Price in a negotiated price list."""
+	if not _is_admin():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	price_list = _get_negotiated_price_list(price_list)
+	item_code = frappe.utils.cstr(item_code).strip()
+	if not frappe.db.exists("Item", item_code):
+		frappe.throw(_("Item not found."))
+	try:
+		rate = float(rate)
+	except (TypeError, ValueError):
+		frappe.throw(_("Enter a valid price."))
+	if not math.isfinite(rate) or rate < 0:
+		frappe.throw(_("Enter a non-negative finite price."))
+
+	existing = frappe.db.exists(
+		"Item Price", {"price_list": price_list.name, "item_code": item_code, "selling": 1}
+	)
+	item_price = frappe.get_doc("Item Price", existing) if existing else frappe.new_doc("Item Price")
+	item_price.price_list = price_list.name
+	item_price.item_code = item_code
+	item_price.price_list_rate = rate
+	item_price.currency = price_list.currency or "KES"
+	item_price.selling = 1
+	item_price.buying = 0
+	item_price.uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
+	item_price.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"name": item_price.name}
+
+
+@frappe.whitelist()
+def save_item_prices(price_list: Any, prices: Any):
+	"""Create/update several Item Prices in one atomic Opt-In catalogue action."""
+	if not _is_admin():
+		frappe.throw("Not permitted", frappe.PermissionError)
+	if isinstance(prices, str):
+		try:
+			prices = json.loads(prices)
+		except (TypeError, ValueError):
+			frappe.throw("Prices must be a list.")
+	if not isinstance(prices, list):
+		frappe.throw("Prices must be a list.")
+
+	price_list = _get_negotiated_price_list(price_list)
+	saved = 0
+	seen = set()
+	for row in prices:
+		if not isinstance(row, dict):
+			continue
+		item_code = frappe.utils.cstr(row.get("item_code") or "").strip()
+		if not item_code or item_code in seen:
+			continue
+		seen.add(item_code)
+		if not frappe.db.exists("Item", item_code):
+			frappe.throw("Item not found: %s" % item_code)
+		try:
+			rate = float(row.get("rate"))
+		except (TypeError, ValueError):
+			frappe.throw("Enter a valid price for %s." % item_code)
+		if not math.isfinite(rate) or rate < 0:
+			frappe.throw("Enter a non-negative finite price for %s." % item_code)
+
+		existing = frappe.db.exists(
+			"Item Price", {"price_list": price_list.name, "item_code": item_code, "selling": 1}
+		)
+		item_price = frappe.get_doc("Item Price", existing) if existing else frappe.new_doc("Item Price")
+		item_price.price_list = price_list.name
+		item_price.item_code = item_code
+		item_price.price_list_rate = rate
+		item_price.currency = price_list.currency or "KES"
+		item_price.selling = 1
+		item_price.buying = 0
+		item_price.uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
+		item_price.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+		saved += 1
+
+	frappe.db.commit()
+	return {"name": price_list.name, "saved": saved}
+
+
+# ---------------------------------------------------------------------------
+# Facility CRUD
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def list_facilities(
+	network: Any = None,
+	status: Any = None,
+	opted_in: Any = None,
+	facility: Any = None,
+	facility_level: Any = None,
+	organization: Any = None,
+	contact: Any = None,
+	invite_status: Any = None,
+	page: Any = 0,
+	page_size: Any = 20,
+):
+	"""Return a permission-scoped, paginated facility list with contact filters."""
+	page = max(int(page or 0), 0)
+	page_size = min(max(int(page_size or 20), 1), 100)
+
+	if not _is_admin() and not frappe.has_permission("CRM Pre-Qualified Facility", "read"):
+		allowed_networks = _get_coordinator_networks()
+		if not allowed_networks:
+			return {"rows": [], "total": 0}
+		# If network filter is set, check it's in allowed list
+		if network and network not in allowed_networks:
+			return {"rows": [], "total": 0}
+		target_networks = [network] if network else allowed_networks
+	else:
+		target_networks = [network] if network else None
+
+	# Get facility names that have memberships in target networks
+	mem_filters = {"parenttype": "CRM Pre-Qualified Facility"}
+	if target_networks:
+		mem_filters["network"] = ["in", target_networks]
+	status = frappe.utils.cstr(status).strip()
+	if status:
+		mem_filters["status"] = status
+
+	# The contact list is principally an opt-in view. Keep the old `status`
+	# argument for API compatibility, but expose a categorical filter that does
+	# not leak the internal Active/Declined enrollment states to the UI.
+	opted_in = frappe.utils.cstr(opted_in).strip().lower()
+
+	contact = frappe.utils.cstr(contact).strip()
+	contact_or_filters = None
+	if contact:
+		contact_like = "%%%s%%" % contact
+		contact_or_filters = [
+			["contact_name", "like", contact_like],
+			["contact_email", "like", contact_like],
+			["contact_phone", "like", contact_like],
+		]
+
+	membership_fields = [
+		"name",
+		"parent",
+		"network",
+		"status",
+		"contact_name",
+		"contact_email",
+		"contact_phone",
+		"invite_email_queue",
+		"invite_sent_at",
+	]
+	try:
+		if frappe.db.has_column("CRM Facility Membership", "customer"):
+			membership_fields.append("customer")
+		if frappe.db.has_column("CRM Facility Membership", "price_list_override"):
+			membership_fields.insert(3, "price_list_override")
+		if frappe.db.has_column("CRM Facility Membership", "price_list_overrides_json"):
+			membership_fields.insert(4, "price_list_overrides_json")
+		if frappe.db.has_column("CRM Facility Membership", "go_live"):
+			membership_fields.append("go_live")
+	except Exception:
+		pass
+
+	mem_rows = frappe.get_list(
+		"CRM Facility Membership",
+		filters=mem_filters,
+		or_filters=contact_or_filters,
+		fields=membership_fields,
+		ignore_permissions=True,  # SYSTEM-INTERNAL
+		limit_page_length=0,
+	)
+
+	if not mem_rows:
+		return {"rows": [], "total": 0}
+
+	if opted_in in ("1", "true"):
+		mem_rows = [row for row in mem_rows if row.get("status") == "Opted In"]
+	elif opted_in in ("0", "false"):
+		mem_rows = [row for row in mem_rows if row.get("status") != "Opted In"]
+	if not mem_rows:
+		return {"rows": [], "total": 0}
+
+	# Email Queue is deliberately resolved in one read. This keeps invitation
+	# filters and the displayed state consistent without an N+1 lookup per row.
+	queue_names = {row.invite_email_queue for row in mem_rows if row.invite_email_queue}
+	queue_statuses = {}
+	if queue_names:
+		queue_statuses = {
+			row.name: row.status
+			for row in frappe.get_list(
+				"Email Queue",
+				filters={"name": ["in", list(queue_names)]},
+				fields=["name", "status"],
+				ignore_permissions=True,  # SYSTEM-INTERNAL: status for linked invitation queues only
+			)
+		}
+
+	def invitation_status(membership):
+		return queue_statuses.get(membership.invite_email_queue, "Not Sent")
+
+	invite_status = frappe.utils.cstr(invite_status).strip()
+	if invite_status:
+		wanted_invite_status = invite_status.casefold()
+		mem_rows = [row for row in mem_rows if invitation_status(row).casefold() == wanted_invite_status]
+		if not mem_rows:
+			return {"rows": [], "total": 0}
+
+	# Group memberships by parent facility
+	from collections import defaultdict
+
+	mem_by_parent = defaultdict(list)
+	for m in mem_rows:
+		mem_by_parent[m.parent].append(m)
+
+	parent_names = list(mem_by_parent.keys())
+
+	facility_filters = {"name": ["in", parent_names]}
+	facility_level = frappe.utils.cstr(facility_level).strip()
+	if facility_level:
+		facility_filters["keph_level"] = facility_level
+
+	organization = frappe.utils.cstr(organization).strip()
+	if organization:
+		facility_filters["organization"] = ["like", "%%%s%%" % organization]
+
+	facility = frappe.utils.cstr(facility).strip()
+	facility_or_filters = None
+	if facility:
+		facility_like = "%%%s%%" % facility
+		facility_or_filters = [
+			["facility_name", "like", facility_like],
+			["mfl_code", "like", facility_like],
+			["hfr_facility_id", "like", facility_like],
+			["organization", "like", facility_like],
+		]
+
+	matching_facility_rows = frappe.get_list(
+		"CRM Pre-Qualified Facility",
+		filters=facility_filters,
+		or_filters=facility_or_filters,
+		fields=["name"],
+		order_by="facility_name asc",
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL
+	)
+	matching_names = [row.name for row in matching_facility_rows]
+	if not matching_names:
+		return {"rows": [], "total": 0}
+
+	page_names = matching_names[page * page_size : (page + 1) * page_size]
+	fac_rows_by_name = {
+		row.name: row
+		for row in frappe.get_list(
+			"CRM Pre-Qualified Facility",
+			filters={"name": ["in", page_names]},
+			fields=["name", "mfl_code", "hfr_facility_id", "facility_name", "organization", "keph_level"],
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+	}
+
+	result = []
+	portal_links = {}
+
+	def portal_link(membership, mfl_code, facility_name=None):
+		key = (membership.network, mfl_code)
+		if key not in portal_links:
+			link = _customer_experience_link(
+				_processed_ois_for_facility(membership.network, mfl_code)
+			)
+			if not link.get("linked"):
+				fac_doc = fac_rows_by_name.get(facility_name) if facility_name else None
+				is_self = bool(getattr(membership, "customer", None) or (isinstance(membership, dict) and membership.get("customer")))
+				if not is_self and fac_doc:
+					is_self = bool(fac_doc.get("is_self_onboarded") if isinstance(fac_doc, dict) else getattr(fac_doc, "is_self_onboarded", 0))
+				if is_self:
+					email = frappe.utils.cstr(getattr(membership, "contact_email", "") or (isinstance(membership, dict) and membership.get("contact_email", "")) or "").strip().lower()
+					user_name = frappe.db.get_value("User", {"email": email}, "name") if email and hasattr(frappe.db, "get_value") else None
+					link = {
+						"linked": bool(user_name),
+						"user": user_name,
+						"ois_numbers": [],
+						"invitation_status": "Already active" if user_name else "Not linked",
+						"invitation_sent_at": getattr(membership, "invite_sent_at", None) or (isinstance(membership, dict) and membership.get("invite_sent_at")),
+						"is_self_onboarded": True,
+					}
+			portal_links[key] = link
+		return portal_links[key]
+
+	for facility_name in page_names:
+		fac = fac_rows_by_name[facility_name]
+		result.append(
+			{
+				"name": fac.name,
+				"mfl_code": fac.mfl_code,
+				"hfr_facility_id": fac.hfr_facility_id or "",
+				"facility_name": fac.facility_name,
+				"organization": fac.organization or fac.facility_name,
+				"keph_level": fac.keph_level,
+				"memberships": [
+					{
+						"customer_experience": portal_link(m, fac.mfl_code, fac.name),
+						"network": m.network,
+						"name": m.name,
+						"price_list_override": m.get("price_list_override") or "",
+						"price_list_overrides_json": m.get("price_list_overrides_json") or "{}",
+						"status": m.status,
+						"contact_name": m.contact_name,
+						"contact_email": m.contact_email,
+						"contact_phone": m.contact_phone,
+						"contact_source": (
+							SELF_ONBOARDING_CONTACT_SOURCE
+							if is_self_onboarding_contact(m)
+							else NETWORK_OPTIN_CONTACT_SOURCE
+						),
+						"invite_email_queue": m.invite_email_queue,
+						"invite_sent_at": m.invite_sent_at,
+						"invite_status": invitation_status(m),
+						"go_live": bool(frappe.utils.cint(m.get("go_live"))),
+						"progress": {
+							"opt_in": m.status == "Opted In",
+							"go_live": bool(frappe.utils.cint(m.get("go_live"))),
+						},
+					}
+					for m in mem_by_parent[fac.name]
+				],
+			}
+		)
+
+	return {"rows": result, "total": len(matching_names)}
+
+
+@frappe.whitelist()
+def save_facility(data: Any):
+	"""
+	Create or update a CRM Pre-Qualified Facility with its memberships.
+	data shape: {
+	  name?: str,  # existing doc name (for update)
+	  mfl_code: str,
+	  facility_name: str,
+	  organization?: str,  # blank defaults to the facility name
+	keph_level: str,
+	memberships: [{network, price_list_override?, status, contact_name, contact_email, contact_phone}]
+	``price_list_override`` is optional on edits so contact updates cannot clear
+	pricing accidentally; CSV/admin callers may send an explicit blank to clear it.
+	``hfr_facility_id`` is optional; a blank value never clears a stored one. Replacing a
+	stored one needs ``replace_facility_id`` and an administrator; either way the matching
+	Lead/Deal rows are filled and a conflicting stored ID is refused.
+	``hfr_facility_id_source`` ("hfr" or "manual") sets the honest sync status.
+	}
+	Max 2 memberships enforced.
+	"""
+	if isinstance(data, str):
+		data = json.loads(data)
+
+	# RBAC: coordinators can only save facilities in their networks
+	mem_networks = [m.get("network") for m in (data.get("memberships") or [])]
+	if not _is_admin():
+		allowed = _get_coordinator_networks()
+		for net in mem_networks:
+			if net and net not in allowed:
+				frappe.throw(_("Not permitted for network %s") % net, frappe.PermissionError)
+
+	memberships = data.get("memberships") or []
+	if len(memberships) > 2:
+		frappe.throw(_("A facility may belong to at most 2 networks."))
+
+	for membership in memberships:
+		price_list_override = frappe.utils.cstr(membership.get("price_list_override") or "").strip()
+		if price_list_override and not frappe.db.exists(
+			"Price List", {"name": price_list_override, "selling": 1, "enabled": 1}
+		):
+			frappe.throw(_("Select an enabled selling price list for the facility override."))
+
+	name = data.get("name")
+	mfl_code = frappe.utils.cstr(data.get("mfl_code") or "").strip()
+
+	is_new_facility = False
+	if name and frappe.db.exists("CRM Pre-Qualified Facility", name):
+		doc = frappe.get_doc("CRM Pre-Qualified Facility", name)
+	elif mfl_code:
+		# Check for existing by mfl_code
+		existing = frappe.get_all(
+			"CRM Pre-Qualified Facility",
+			filters={"mfl_code": mfl_code},
+			pluck="name",
+			limit=1,
+		)
+		doc = (
+			frappe.get_doc("CRM Pre-Qualified Facility", existing[0])
+			if existing
+			else frappe.new_doc("CRM Pre-Qualified Facility")
+		)
+	else:
+		doc = frappe.new_doc("CRM Pre-Qualified Facility")
+	is_new_facility = doc.is_new()
+	# This form manages Network Opt-In rows. Self-Onboarding (Partner Coupon) rows are only
+	# edited when the caller names one, and then only their contact name, phone and status.
+	existing_memberships = {
+		m.network: m for m in (doc.memberships or []) if not is_self_onboarding_contact(m)
+	}
+	existing_networks = set(existing_memberships)
+	coupon_rows = {m.name: m for m in (doc.memberships or []) if is_self_onboarding_contact(m)}
+	coupon_edits = []
+	optin_memberships = []
+	for membership in memberships:
+		coupon_row = coupon_rows.get(frappe.utils.cstr(membership.get("membership_name")).strip())
+		if not coupon_row:
+			optin_memberships.append(membership)
+			continue
+		existing_email = frappe.utils.cstr(coupon_row.contact_email or "").strip().lower()
+		requested_email = frappe.utils.cstr(membership.get("contact_email") or "").strip().lower()
+		if requested_email != existing_email:
+			frappe.throw(
+				_("The email on a verified Self-Onboarding account cannot be changed here."),
+				frappe.ValidationError,
+			)
+		coupon_edits.append((coupon_row, membership))
+	memberships = optin_memberships
+
+	doc.mfl_code = mfl_code or doc.mfl_code
+	# A stored Facility ID is never cleared by a blank value, and a different value is a
+	# deliberate replacement (admin only, confirmed) that also fills the matching rows.
+	new_fid = frappe.utils.cstr(data.get("hfr_facility_id") or "").strip()
+	old_fid = frappe.utils.cstr(doc.hfr_facility_id or "").strip()
+	fid_source = "hfr" if frappe.utils.cstr(data.get("hfr_facility_id_source")) == "hfr" else "manual"
+	if new_fid and new_fid.casefold() != old_fid.casefold():
+		if not is_valid_facility_id(new_fid):
+			frappe.throw(_("Enter a Facility ID like FID-00-12345-1."))
+		if old_fid and not (frappe.utils.cint(data.get("replace_facility_id")) and _is_admin()):
+			frappe.throw(_("This facility already has a Facility ID. Use Change to replace it."))
+		if facility_id_holders(new_fid, doc.mfl_code):
+			frappe.throw(_("Facility ID {0} is already on another facility.").format(new_fid))
+		doc.hfr_facility_id = new_fid
+		doc.hfr_sync_status = SYNC_STATUS[fid_source]
+	doc.facility_name = frappe.utils.cstr(data.get("facility_name") or doc.facility_name or "")
+	if "organization" in data:
+		doc.organization = frappe.utils.cstr(data.get("organization") or "").strip()
+	doc.keph_level = frappe.utils.cstr(data.get("keph_level") or doc.keph_level or "")
+
+	# Rebuild memberships: keep existing rows not in the new set (other network), update/add for this set
+	new_network_set = {m.get("network") for m in memberships if m.get("network")}
+	# Remove membership rows for networks being replaced
+	doc.memberships = [
+		m
+		for m in (doc.memberships or [])
+		if m.network not in new_network_set or is_self_onboarding_contact(m)
+	]
+	for coupon_row, mem_data in coupon_edits:
+		coupon_row.contact_name = frappe.utils.cstr(mem_data.get("contact_name") or coupon_row.contact_name)
+		coupon_row.contact_phone = frappe.utils.cstr(mem_data.get("contact_phone") or coupon_row.contact_phone)
+		coupon_row.status = mem_data.get("status") or coupon_row.status
+	try:
+		membership_has_override = frappe.db.has_column("CRM Facility Membership", "price_list_override")
+		membership_has_overrides = frappe.db.has_column(
+			"CRM Facility Membership", "price_list_overrides_json"
+		)
+		membership_has_go_live = frappe.db.has_column("CRM Facility Membership", "go_live")
+	except Exception:
+		membership_has_override = False
+		membership_has_overrides = False
+		membership_has_go_live = False
+	for mem_data in memberships:
+		net = frappe.utils.cstr(mem_data.get("network") or "").strip()
+		if not net:
+			continue
+		membership_values = {
+			"network": net,
+			"status": mem_data.get("status") or "Active",
+			"contact_name": frappe.utils.cstr(mem_data.get("contact_name") or ""),
+			"contact_email": frappe.utils.cstr(mem_data.get("contact_email") or "").lower(),
+			"contact_phone": frappe.utils.cstr(mem_data.get("contact_phone") or ""),
+		}
+		if membership_has_override:
+			# Preserve an existing override when the caller omits the field, while
+			# pre-opt-in edits and CSV/admin callers may clear or replace it explicitly.
+			if "price_list_override" in mem_data:
+				if net in existing_memberships:
+					_validate_opted_in_price_list_override(
+						existing_memberships[net], mem_data.get("price_list_override")
+					)
+				membership_values["price_list_override"] = frappe.utils.cstr(
+					mem_data.get("price_list_override") or ""
+				).strip()
+			elif net in existing_memberships:
+				membership_values["price_list_override"] = frappe.utils.cstr(
+					existing_memberships[net].get("price_list_override") or ""
+				).strip()
+		if membership_has_overrides:
+			requested_overrides = mem_data.get("price_list_overrides")
+			if requested_overrides is not None:
+				candidate = _normalize_price_list_overrides(requested_overrides)
+				allowed_years = _network_contract_schedule_years(net)
+				unexpected_years = sorted(
+					frappe.utils.cint(year)
+					for year in candidate
+					if frappe.utils.cint(year) not in allowed_years
+				)
+				if unexpected_years:
+					frappe.throw(
+						_(
+							"Facility contract schedules can only be overridden for configured years: {0}."
+						).format(", ".join(str(year) for year in unexpected_years))
+					)
+				if net in existing_memberships and existing_memberships[net].get("status") == "Opted In":
+					previous = _normalize_price_list_overrides(
+						existing_memberships[net].get("price_list_overrides_json")
+					)
+					if candidate != previous:
+						frappe.throw(
+							_(
+								"Facility yearly price lists are locked after Opt-In. Update pricing from the quotation."
+							)
+						)
+				membership_values["price_list_overrides_json"] = json.dumps(candidate, separators=(",", ":"))
+			elif net in existing_memberships:
+				membership_values["price_list_overrides_json"] = (
+					existing_memberships[net].get("price_list_overrides_json") or ""
+				)
+		if membership_has_go_live:
+			if "go_live" in mem_data:
+				membership_values["go_live"] = frappe.utils.cint(mem_data.get("go_live"))
+			elif net in existing_memberships:
+				membership_values["go_live"] = frappe.utils.cint(existing_memberships[net].get("go_live"))
+		doc.append(
+			"memberships",
+			membership_values,
+		)
+
+	filled_fid = new_fid if (new_fid and new_fid.casefold() != old_fid.casefold()) else None
+	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	if filled_fid:
+		fill_facility_rows(
+			doc.mfl_code, filled_fid, sync_status=SYNC_STATUS[fid_source], replace_fid=old_fid or None
+		)
+	frappe.db.commit()
+
+	# New parent facilities send their invitations in after_insert. For an existing
+	# facility, explicitly invite memberships newly added through this admin flow.
+	if not is_new_facility:
+		for membership in doc.memberships or []:
+			if (
+				membership.network in new_network_set
+				and membership.network not in existing_networks
+				and not is_self_onboarding_contact(membership)
+			):
+				from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility import (
+					_send_membership_invitation,
+				)
+
+				try:
+					_send_membership_invitation(doc, membership)
+				except Exception:
+					frappe.log_error(
+						frappe.get_traceback(),
+						"optin_admin.save_facility: invitation email failed",
+					)
+
+	return {"name": doc.name}
+
+
+@frappe.whitelist()
+def set_facility_go_live(facility_name: Any, network: Any, go_live: Any):
+	"""Mark one opted-in facility contact as implemented and ready to go live."""
+	facility_name = frappe.utils.cstr(facility_name).strip()
+	network = frappe.utils.cstr(network).strip()
+	if not facility_name or not network:
+		frappe.throw(_("Facility and network are required."), frappe.ValidationError)
+	if not frappe.db.has_column("CRM Facility Membership", "go_live"):
+		frappe.throw(_("Go Live is unavailable until the site is migrated."), frappe.ValidationError)
+
+	_assert_network_access(network)
+	doc = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
+	membership = next((row for row in doc.memberships or [] if row.network == network), None)
+	if not membership:
+		frappe.throw(_("This facility is not a contact for the selected network."), frappe.DoesNotExistError)
+	if membership.status != "Opted In":
+		frappe.throw(
+			_("Complete Opt-In before marking a facility ready for Go Live."), frappe.ValidationError
+		)
+
+	membership.go_live = frappe.utils.cint(go_live)
+	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL: network access was checked above
+	frappe.db.commit()
+	return {"go_live": bool(membership.go_live)}
+
+
+@frappe.whitelist()
+def delete_facility(name: Any):
+	name = frappe.utils.cstr(name)
+	if not _is_admin():
+		# Check coordinator has access to this facility's networks
+		fac = frappe.get_doc("CRM Pre-Qualified Facility", name)
+		allowed = _get_coordinator_networks()
+		fac_networks = [m.network for m in (fac.memberships or [])]
+		if not any(n in allowed for n in fac_networks):
+			frappe.throw(_("Not permitted"), frappe.PermissionError)
+	frappe.delete_doc("CRM Pre-Qualified Facility", name, ignore_permissions=True)
+	frappe.db.commit()
+	return {"deleted": name}
+
+
+def _get_invitation_status(queue_name):
+	if not queue_name:
+		return "Not sent"
+	return frappe.db.get_value("Email Queue", queue_name, "status") or "Not sent"
+
+
+@frappe.whitelist()
+def resend_facility_invitation(facility_name: Any, membership_name: Any):
+	"""Resend an opt-in invitation for one facility membership and return queue state."""
+	facility_name = frappe.utils.cstr(facility_name).strip()
+	membership_name = frappe.utils.cstr(membership_name).strip()
+	facility = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
+	membership = next((m for m in (facility.memberships or []) if m.name == membership_name), None)
+	if not membership:
+		frappe.throw(_("Facility membership not found."))
+
+	_assert_network_access(membership.network)
+
+	from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility import (
+		_send_membership_invitation,
+	)
+
+	queue = _send_membership_invitation(facility, membership)
+	return {
+		"queue_name": queue.name,
+		"status": _get_invitation_status(queue.name),
+		"sent_at": frappe.utils.now_datetime(),
+	}
+
+
+# ---------------------------------------------------------------------------
+# HFR Lookup
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=600)
+def lookup_owner_facilities(owner_id_number: Any):
+	"""
+	Look up the owner's facilities in the Health Facility Registry by ID number, for the
+	network facility form. Returns {status, candidates} with the Facility ID included.
+	"""
+	if not _is_admin() and not _get_coordinator_networks():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	return owner_facility_candidates(owner_id_number)
+
+
+@frappe.whitelist()
+def lookup_hfr(mfl_code: Any):
+	"""
+	Look up a facility in the Health Facility Registry by MFL code.
+	Delegates to crm.api.hfr.search_facility which reads CRM HFR Settings
+	(hfr_url, hfr_fetch_path, JWT credentials). Returns {mfl_code, hfr_facility_id, facility_name, keph_level}.
+	"""
+	mfl_code = frappe.utils.cstr(mfl_code).strip()
+	if not mfl_code:
+		frappe.throw(_("MFL code is required"))
+
+	from crm.api.hfr import search_facility
+
+	results = search_facility(mfl_code, search_by="mfl_code")
+	# Never trust results[0]: use the hit whose MFL actually matches the input.
+	matched = [
+		r
+		for r in (results or [])
+		if frappe.utils.cstr(r.get("mfl_code")).strip().lower() == mfl_code.lower()
+	]
+	if not matched:
+		frappe.throw(_("Facility MFL %s not found in HFR") % mfl_code)
+
+	# Prefer hits that carry a deployment FID; conflicting FIDs for one MFL are
+	# treated as not found rather than guessing.
+	with_fid = [r for r in matched if frappe.utils.cstr(r.get("fid")).strip()]
+	if with_fid:
+		distinct = {frappe.utils.cstr(r.get("fid")).strip() for r in with_fid}
+		if len(distinct) > 1:
+			frappe.throw(_("Facility MFL %s not found in HFR") % mfl_code)
+		hit = with_fid[0]
+	else:
+		hit = matched[0]
+	keph_level_raw = frappe.utils.cstr(hit.get("level") or "").strip()
+	if keph_level_raw and not keph_level_raw.lower().startswith("level"):
+		keph_level = "Level %s" % keph_level_raw
+	else:
+		keph_level = keph_level_raw
+
+	return {
+		"mfl_code": hit.get("mfl_code") or mfl_code,
+		"hfr_facility_id": frappe.utils.cstr(hit.get("fid")).strip(),
+		"facility_name": hit.get("name") or "",
+		"keph_level": keph_level,
+	}
+
+
+# ---------------------------------------------------------------------------
+# CSV Import
+# ---------------------------------------------------------------------------
+
+# Cumulative time budget for best-effort, FID-only HFR lookups during a CSV
+# import. Lookups needed to resolve a missing name or level are not budgeted.
+_CSV_FID_LOOKUP_BUDGET_SECONDS = 10.0
+
+
+@frappe.whitelist()
+def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
+	"""
+	Parse and import a CSV of pre-qualified facilities for a network.
+
+	Expected CSV columns (order flexible, matched by header name):
+	  mfl_code, facility_name (optional — auto-filled from HFR if blank),
+	  keph_level (optional — auto-filled from HFR if blank),
+	  organization (optional — defaults to facility_name), price_list_override
+	  (optional — defaults to the network price list), contact_name, contact_email,
+	  contact_phone
+
+	Returns:
+	  {
+	    imported: int,
+	    valid_count: int,
+	    error_count: int,
+	    rows: [{row, mfl_code, facility_name, organization, price_list_override, contact_email, error}],
+	    errors: [{row: int, mfl_code: str, message: str}],
+	    dry_run: bool
+	  }
+	"""
+	_assert_network_access(network_slug)
+
+	dry_run = bool(frappe.utils.cint(dry_run))
+
+	if isinstance(csv_data, str):
+		raw = csv_data
+	else:
+		raw = frappe.utils.cstr(csv_data)
+
+	# Excel commonly writes a UTF-8 BOM. Strip it before DictReader sees the
+	# header or otherwise `mfl_code` becomes an unrecognised column.
+	reader = csv.DictReader(io.StringIO(raw.lstrip("\ufeff")))
+
+	def normalize_header(value):
+		return re.sub(r"\s+", "_", frappe.utils.cstr(value or "").lstrip("\ufeff").strip().lower())
+
+	headers = {normalize_header(header) for header in reader.fieldnames or [] if header}
+	required_headers = {"mfl_code", "contact_name", "contact_email", "contact_phone"}
+	missing_headers = sorted(required_headers - headers)
+	if missing_headers:
+		frappe.throw(_("CSV is missing required columns: {0}").format(", ".join(missing_headers)))
+
+	def normalize_row(row):
+		# DictReader uses None as the key when a row has more columns than its
+		# header. Ignore the overflow value and report normal field errors
+		# instead of failing the entire upload with an AttributeError.
+		return {
+			normalize_header(key): frappe.utils.cstr(value or "").strip()
+			for key, value in row.items()
+			if key is not None
+		}
+
+	# Resolve the register once, before any HFR call: a stored Facility ID always
+	# wins over a lookup, so the import can never re-key a facility.
+	rows = [
+		(idx, normalize_row(raw_row))
+		for idx, raw_row in enumerate(reader, start=2)  # row 1 is header
+	]
+	rows = [(idx, row) for idx, row in rows if any(row.values())]
+	# The register matches MFL case-insensitively but returns its own casing, so
+	# fold both sides; a differently cased CSV MFL must still seed from the register.
+	known_ids = {
+		key.casefold(): value
+		for key, value in facility_ids_by_mfl(row.get("mfl_code", "") for _, row in rows).items()
+	}
+
+	# FID-only lookups (name and level already present) are best effort: a hung
+	# registry must not stall the whole import, so they share a cumulative time
+	# budget. Only lookup time counts against it — time spent saving rows or in
+	# un-budgeted lookups does not.
+	fid_lookup_seconds = 0.0
+
+	errors = []
+	preview_rows = []
+	imported = 0
+	seen_mfl_codes = set()
+
+	for idx, row in rows:
+		mfl_code = row.get("mfl_code", "")
+		contact_name = row.get("contact_name", "")
+		contact_email = row.get("contact_email", "").lower()
+		contact_phone = row.get("contact_phone", "")
+		price_list_override = row.get("price_list_override", "")
+		facility_name = row.get("facility_name", "")
+		keph_level = row.get("keph_level", "")
+		preview = {
+			"row": idx,
+			"mfl_code": mfl_code,
+			"hfr_facility_id": row.get("hfr_facility_id", "") or known_ids.get(mfl_code.casefold(), ""),
+			"facility_name": facility_name,
+			"organization": row.get("organization", ""),
+			"price_list_override": price_list_override,
+			"contact_email": contact_email,
+			"error": None,
+		}
+		error = None
+
+		if not mfl_code:
+			error = "mfl_code is required"
+		elif mfl_code in seen_mfl_codes:
+			error = "duplicate mfl_code in this CSV"
+		if not error and not contact_name:
+			error = "contact_name is required"
+		if not error and not contact_email:
+			error = "contact_email is required"
+		if not error and not contact_phone:
+			error = "contact_phone is required"
+		if (
+			not error
+			and price_list_override
+			and not frappe.db.exists("Price List", {"name": price_list_override, "selling": 1, "enabled": 1})
+		):
+			error = "price_list_override must be an enabled selling price list"
+
+		# HFR enrichment if fields are missing. It is safe in preview mode because
+		# it does not write; it also ensures the count matches what can import.
+		# A missing Facility ID (after the register seed) also triggers a lookup,
+		# but it is best effort under a time budget so a hung registry cannot stall
+		# the whole import; the row then simply stays "not linked yet".
+		if not error and (not facility_name or not keph_level or not preview["hfr_facility_id"]):
+			fid_only = bool(facility_name and keph_level)
+			if not fid_only or fid_lookup_seconds < _CSV_FID_LOOKUP_BUDGET_SECONDS:
+				started = time.monotonic()
+				try:
+					hfr = lookup_hfr(mfl_code)
+					facility_name = facility_name or hfr.get("facility_name") or ""
+					keph_level = keph_level or hfr.get("keph_level") or ""
+					preview["hfr_facility_id"] = preview["hfr_facility_id"] or hfr.get("hfr_facility_id") or ""
+				except Exception:
+					# A facility name remains mandatory, but an absent KEPH level
+					# has the established Level 3 fallback used by this importer.
+					if not facility_name:
+						error = "facility_name could not be resolved (not in CSV and HFR lookup failed)"
+				finally:
+					if fid_only:
+						fid_lookup_seconds += time.monotonic() - started
+
+		organization = row.get("organization", "") or facility_name
+		preview.update({"facility_name": facility_name, "organization": organization})
+
+		if not error and not facility_name:
+			error = "facility_name could not be resolved (not in CSV and HFR lookup failed)"
+
+		if not error:
+			seen_mfl_codes.add(mfl_code)
+
+		if not error and not dry_run:
+			try:
+				save_facility(
+					{
+						"mfl_code": mfl_code,
+						"hfr_facility_id": preview["hfr_facility_id"],
+						"facility_name": facility_name,
+						"organization": organization,
+						"keph_level": keph_level or "Level 3",
+						"memberships": [
+							{
+								"network": network_slug,
+								"price_list_override": price_list_override,
+								"status": "Active",
+								"contact_name": contact_name,
+								"contact_email": contact_email,
+								"contact_phone": contact_phone,
+							}
+						],
+					}
+				)
+			except Exception as exc:
+				error = frappe.utils.cstr(exc)
+
+		if error:
+			preview["error"] = error
+			errors.append({"row": idx, "mfl_code": mfl_code, "message": error})
+		else:
+			imported += 1
+		preview_rows.append(preview)
+
+	return {
+		"imported": imported,
+		"valid_count": imported,
+		"error_count": len(errors),
+		"rows": preview_rows,
+		"errors": errors,
+		"dry_run": dry_run,
+	}
+
+
+@frappe.whitelist()
+def csv_template():
+	"""Return the CSV template as a string for download."""
+	return "mfl_code,hfr_facility_id,facility_name,organization,price_list_override,keph_level,contact_name,contact_email,contact_phone\n22999,FID-00-22999-1,Example Hospital,Example Hospital Group,,Level 4,Jane Example,jane@example.test,0700000000\n"
+
+
+def _processed_ois_for_facility(network, mfl_code):
+	"""Find processed OIS records containing a facility MFL code."""
+	if not frappe.db.exists("DocType", "CRM Opt-In Submission"):
+		return []
+	fields = ["name", "raw_json", "deal", "contract", "submitted_at"]
+	for fieldname in (
+		"portal_user",
+		"portal_invitation_status",
+		"portal_invitation_sent_at",
+		"portal_invitation_error",
+	):
+		try:
+			if frappe.db.has_column("CRM Opt-In Submission", fieldname):
+				fields.append(fieldname)
+		except Exception:
+			pass
+	rows = frappe.get_list(
+		"CRM Opt-In Submission",
+		filters={"network_slug": network, "status": "Processed"},
+		fields=fields,
+		order_by="submitted_at desc, creation desc",
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: coordinator action is scoped above
+	)
+	mfl_code = frappe.utils.cstr(mfl_code or "").strip()
+	matched = []
+	for row in rows:
+		try:
+			payload = frappe.parse_json(row.raw_json or "{}")
+		except Exception:
+			continue
+		if not isinstance(payload, dict):
+			continue
+		facilities = (
+			payload.get("pricing") or payload.get("facilities") or payload.get("selected_facilities") or []
+		)
+		# Pricing can be a yearly-plan list; flatten its facility rows before matching.
+		if (
+			isinstance(facilities, list)
+			and facilities
+			and isinstance(facilities[0], dict)
+			and facilities[0].get("facilities")
+		):
+			facilities = [item for plan in facilities for item in (plan.get("facilities") or [])]
+		for facility in facilities if isinstance(facilities, list) else []:
+			if frappe.utils.cstr((facility or {}).get("mfl_code") or "").strip() == mfl_code:
+				matched.append(row)
+	return matched
+
+
+def _submission_for_facility(network, mfl_code):
+	"""Find the newest processed OIS containing a facility MFL code."""
+	rows = _processed_ois_for_facility(network, mfl_code)
+	return rows[0] if rows else None
+
+
+def _customer_experience_link(submissions):
+	"""Return a safe summary of the OIS-to-Website User link for admin UI."""
+	if not submissions:
+		return {
+			"linked": False,
+			"user": None,
+			"ois_numbers": [],
+			"invitation_status": "Not linked",
+			"invitation_sent_at": None,
+		}
+
+	user_names = [
+		frappe.utils.cstr(row.get("portal_user") or "").strip()
+		for row in submissions
+		if frappe.utils.cstr(row.get("portal_user") or "").strip()
+	]
+	if not user_names:
+		for row in submissions:
+			user_name = frappe.db.get_value(
+				"User Permission",
+				{
+					"allow": "CRM Opt-In Submission",
+					"for_value": row.name,
+				},
+				"user",
+			)
+			if user_name:
+				user_names.append(user_name)
+
+	statuses = [frappe.utils.cstr(row.get("portal_invitation_status") or "") for row in submissions]
+	status = next((value for value in statuses if value in ("Sent", "Already active")), None)
+	return {
+		"linked": bool(user_names),
+		"user": user_names[0] if user_names else None,
+		"ois_numbers": [row.name for row in submissions],
+		"invitation_status": status or (statuses[0] if statuses else "Not linked"),
+		"invitation_sent_at": next(
+			(
+				row.get("portal_invitation_sent_at")
+				for row in submissions
+				if row.get("portal_invitation_sent_at")
+			),
+			None,
+		),
+	}
+
+
+@frappe.whitelist()
+def invite_facility_to_customer_experience(facility_name: Any, membership_name: Any = None):
+	"""Idempotently link a Network Contact's email to its processed OIS records."""
+	facility_name = frappe.utils.cstr(facility_name or "").strip()
+	membership_name = frappe.utils.cstr(membership_name or "").strip()
+	if not facility_name:
+		frappe.throw(_("Facility is required."), frappe.ValidationError)
+
+	facility = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
+	membership = next(
+		(row for row in (facility.memberships or []) if (not membership_name or row.name == membership_name)),
+		None,
+	)
+	if not membership:
+		frappe.throw(_("The selected network contact was not found."), frappe.DoesNotExistError)
+	_assert_network_access(membership.network)
+	if membership.status == "Declined":
+		frappe.throw(
+			_("A declined network contact cannot be invited to Tiberbu Express."), frappe.ValidationError
+		)
+
+	recipient = frappe.utils.cstr(membership.contact_email or "").strip().lower()
+	if not recipient or "@" not in recipient:
+		frappe.throw(_("Add a valid contact email before inviting this facility."), frappe.ValidationError)
+
+	submissions = _processed_ois_for_facility(membership.network, facility.mfl_code)
+	if not submissions:
+		from crm.fcrm.doctype.crm_pre_qualified_facility.crm_pre_qualified_facility import (
+			is_self_onboarded_facility,
+			_send_membership_invitation,
+		)
+		if is_self_onboarded_facility(facility):
+			_send_membership_invitation(facility, membership, express=True)
+			user_name = frappe.db.get_value("User", {"email": recipient}, "name") if hasattr(frappe.db, "get_value") else None
+			return {
+				"status": "linked" if user_name else "sent",
+				"user": user_name or recipient,
+				"ois": [],
+				"idempotent": bool(user_name),
+				"results": [{"status": "linked" if user_name else "sent", "user": user_name}],
+			}
+		frappe.throw(
+			_("No processed Opt-In Request was found for this facility in the selected network."),
+			frappe.ValidationError,
+		)
+
+	# Reuse the same identity and permission path used by self-onboarding. The
+	# explicit contact email is the username for a newly created Website User;
+	# the existing OIS link remains authoritative on repeated invitations.
+	from crm.api.website_redirect import ensure_website_user_for_ois
+
+	results = [
+		ensure_website_user_for_ois(
+			submission,
+			email=recipient,
+			display_name=frappe.utils.cstr(membership.contact_name or "").strip(),
+		)
+		for submission in submissions
+	]
+	failed = [result for result in results if result.get("status") in ("blocked", "failed")]
+	if failed:
+		frappe.throw(failed[0].get("reason") or _("The Tiberbu Express invitation could not be created."))
+
+	users = list(dict.fromkeys(result.get("user") for result in results if result.get("user")))
+	status = "sent" if any(result.get("status") == "sent" for result in results) else "linked"
+	return {
+		"status": status,
+		"user": users[0] if users else None,
+		"ois": [submission.name for submission in submissions],
+		"idempotent": status == "linked",
+		"results": results,
+	}
+
+
+@frappe.whitelist()
+def send_payment_link(facility_name: Any, membership_name: Any = None):
+	"""Email the public invoice checkout link to an opted-in facility contact."""
+	facility_name = frappe.utils.cstr(facility_name or "").strip()
+	membership_name = frappe.utils.cstr(membership_name or "").strip()
+	if not facility_name:
+		frappe.throw(_("Facility is required."), frappe.ValidationError)
+	if membership_name:
+		membership = frappe.get_doc("CRM Facility Membership", membership_name)
+		if membership.parent != facility_name:
+			frappe.throw(_("The membership does not belong to this facility."), frappe.ValidationError)
+	else:
+		rows = frappe.get_list(
+			"CRM Facility Membership",
+			filters={"parent": facility_name, "parenttype": "CRM Pre-Qualified Facility"},
+			fields=["name"],
+			limit_page_length=1,
+			ignore_permissions=True,
+		)
+		if not rows:
+			frappe.throw(_("No network membership was found for this facility."), frappe.ValidationError)
+		membership = frappe.get_doc("CRM Facility Membership", rows[0].name)
+	_assert_network_access(membership.network)
+	if membership.status != "Opted In":
+		frappe.throw(_("A payment link is available after Opt-In is complete."), frappe.ValidationError)
+	recipient = frappe.utils.cstr(membership.contact_email or "").strip().lower()
+	if not recipient:
+		frappe.throw(_("Add a contact email before sending a payment link."), frappe.ValidationError)
+	facility = frappe.get_doc("CRM Pre-Qualified Facility", facility_name)
+	submission = _submission_for_facility(membership.network, facility.mfl_code)
+	if not submission:
+		frappe.throw(_("No completed Opt-In was found for this facility."), frappe.ValidationError)
+	url = "%s/payment-checkout?ois=%s" % (frappe.utils.get_url(), submission.name)
+	network = (
+		frappe.db.get_value(
+			"CRM Opt-In Network",
+			membership.network,
+			["display_name", "primary_colour", "logo_url", "contact_email", "footer_legal_name"],
+			as_dict=True,
+		)
+		or {}
+	)
+	brand = network.get("display_name") or membership.network or "CareverseHIMS"
+	subject = "%s — secure invoice payment link · %s" % (brand, submission.name)
+	message = branded_email_html(
+		network,
+		heading="Your secure invoice payment link",
+		intro_html=(
+			"<p style='margin:0 0 8px'>Hello %s,</p>"
+			"<p style='margin:0'>Use this protected link to review invoices for <strong>%s</strong>. "
+			"You will verify access with a one-time code sent to the facility signatory.</p>"
+		)
+		% (
+			frappe.utils.escape_html(membership.contact_name or "there"),
+			frappe.utils.escape_html(facility.facility_name or "your facility"),
+		),
+		cta_label="Review invoices and pay",
+		cta_url=url,
+		note_html=(
+			"The link is safe to keep. Payment options appear only after a submitted invoice is ready; "
+			"bank transfers remain pending until finance reconciles them."
+		),
+	)
+	communication = create_transactional_communication(
+		"CRM Opt-In Submission",
+		submission.name,
+		subject=subject,
+		content="Secure invoice payment link sent to %s." % frappe.utils.escape_html(recipient),
+		recipients=[recipient],
+		links=[("CRM Deal", submission.deal)] if submission.deal else None,
+	)
+	frappe.sendmail(
+		recipients=[recipient],
+		subject=subject,
+		message=message,
+		**({"communication": communication} if communication else {}),
+		reference_doctype="CRM Opt-In Submission",
+		reference_name=submission.name,
+		now=True,
+	)
+	return {"sent_to": recipient, "submission": submission.name}

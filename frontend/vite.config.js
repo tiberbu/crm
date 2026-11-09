@@ -13,6 +13,19 @@ export default defineConfig(async ({ mode }) => {
       vueJsx(),
       VitePWA({
         registerType: 'autoUpdate',
+        // Workbox intentionally skips the few multi-megabyte translation and
+        // route chunks from precaching. They are fetched normally on demand;
+        // do not fail the production build when Workbox reports that choice.
+        showMaximumFileSizeToCacheInBytesWarning: true,
+        // The CRM is served by Frappe's multi-entry shells (crm.html,
+        // finance-cockpit.html, opt-in.html, and sign-contract.html), not by a
+        // single static index.html. Workbox's default navigation fallback
+        // points at index.html, which is not the navigation entry served by
+        // Frappe and previously was not reliably precached. Keep the
+        // manifest/PWA metadata, but let Frappe serve each HTML entry normally.
+        workbox: {
+          navigateFallback: null,
+        },
         devOptions: {
           enabled: true,
         },
@@ -128,6 +141,20 @@ export default defineConfig(async ({ mode }) => {
   // above. Chunk-size warning is cosmetic; raise the threshold to quiet it.
   config.build = config.build || {}
   config.build.chunkSizeWarningLimit = 3000
+
+  // Finance Cockpit: second Vite entry builds a self-contained bundle for the
+  // Frappe Desk Page at /app/finance-cockpit. Output goes to the same public/frontend/
+  // directory and is served at /assets/crm/frontend/.
+  config.build.rollupOptions = config.build.rollupOptions || {}
+  config.build.rollupOptions.input = {
+    main: path.resolve(__dirname, 'index.html'),
+    'finance-cockpit': path.resolve(__dirname, 'finance-cockpit.html'),
+    'opt-in': path.resolve(__dirname, 'opt-in.html'),
+    'facility-onboarding': path.resolve(__dirname, 'facility-onboarding.html'),
+    'cx-portal': path.resolve(__dirname, 'cx-portal.html'),
+    'sign-contract': path.resolve(__dirname, 'sign-contract.html'),
+    'payment-checkout': path.resolve(__dirname, 'payment-checkout.html'),
+  }
 
   return config
 })

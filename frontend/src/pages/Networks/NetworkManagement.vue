@@ -1,0 +1,367 @@
+<template>
+  <div class="flex h-full flex-col overflow-hidden">
+    <!-- Header -->
+    <div
+      class="flex items-center justify-between gap-2 border-b border-outline-gray-2 px-3 py-3 sm:px-5"
+    >
+      <h1 class="text-xl font-semibold text-ink-gray-9">
+        {{ __('Opt-In Networks') }}
+      </h1>
+      <Button
+        variant="solid"
+        size="sm"
+        @click="router.push({ name: 'NewNetwork' })"
+        >{{ __('Add Network') }}</Button
+      >
+    </div>
+
+    <div
+      class="grid grid-cols-2 gap-2 border-b border-outline-gray-2 px-3 py-3 sm:flex sm:flex-wrap sm:items-end sm:px-5"
+    >
+      <label
+        class="col-span-2 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6 sm:col-span-1"
+      >
+        {{ __('Search') }}
+        <input
+          v-model="search"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3 sm:w-44"
+          :placeholder="__('Name, Partner ID, slug or email')"
+          @keyup.enter="applyFilters"
+          @input="scheduleSearch"
+        />
+      </label>
+      <label
+        class="col-span-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+      >
+        {{ __('Status') }}
+        <select
+          v-model="enabled"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          @change="applyFilters"
+        >
+          <option value="">{{ __('All statuses') }}</option>
+          <option value="1">{{ __('Enabled') }}</option>
+          <option value="0">{{ __('Disabled') }}</option>
+        </select>
+      </label>
+      <label
+        class="col-span-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+      >
+        {{ __('Opt-in') }}
+        <select
+          v-model="optedIn"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          @change="applyFilters"
+        >
+          <option value="">{{ __('All opt-in states') }}</option>
+          <option value="1">{{ __('Opted in') }}</option>
+          <option value="0">{{ __('Not opted in') }}</option>
+        </select>
+      </label>
+      <label
+        class="col-span-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6"
+      >
+        {{ __('Facility level') }}
+        <select
+          v-model="facilityLevel"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3"
+          @change="applyFilters"
+        >
+          <option value="">{{ __('All levels') }}</option>
+          <option v-for="level in facilityLevels" :key="level" :value="level">
+            {{ level }}
+          </option>
+        </select>
+      </label>
+      <label
+        class="col-span-2 flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-gray-6 sm:col-span-1"
+      >
+        {{ __('Facility') }}
+        <input
+          v-model="facility"
+          class="h-8 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-white px-2 text-sm text-ink-gray-8 dark:bg-surface-gray-3 dark:text-ink-gray-3 sm:w-44"
+          :placeholder="__('Name, Facility ID, MFL or organization')"
+          @keyup.enter="applyFilters"
+          @input="scheduleSearch"
+        />
+      </label>
+      <div class="col-span-2 flex gap-2 sm:col-span-1">
+        <Button
+          class="flex-1 sm:flex-none"
+          size="sm"
+          variant="subtle"
+          @click="applyFilters"
+          >{{ __('Apply') }}</Button
+        >
+        <Button
+          class="flex-1 sm:flex-none"
+          size="sm"
+          variant="ghost"
+          @click="clearFilters"
+          >{{ __('Clear') }}</Button
+        >
+      </div>
+    </div>
+
+    <!-- Table area -->
+    <div class="flex-1 overflow-auto">
+      <div
+        class="flex items-center justify-between border-b border-outline-gray-2 px-3 py-2 text-xs text-ink-gray-5 sm:px-5"
+        aria-live="polite"
+      >
+        <span v-if="listResource.loading">{{ __('Updating results…') }}</span>
+        <span v-else>{{ __('{0} networks', [total]) }}</span>
+        <span v-if="search" class="max-w-[60%] truncate text-ink-gray-6">
+          {{ __('For “{0}”', [search]) }}
+        </span>
+      </div>
+      <div
+        v-if="listResource.loading"
+        class="flex items-center justify-center py-16"
+      >
+        <div
+          class="h-6 w-6 animate-spin rounded-full border-2 border-red-600 border-t-transparent"
+        />
+      </div>
+
+      <div
+        v-else-if="!rows.length"
+        class="flex flex-col items-center justify-center py-16 text-center"
+      >
+        <p class="text-sm font-medium text-ink-gray-5">
+          {{ __('No networks found') }}
+        </p>
+        <p class="mt-1 text-xs text-ink-gray-4">
+          {{
+            __(
+              'Create a network to configure Tiberbu Express, pricing, branding, coordinators, and signatories.',
+            )
+          }}
+        </p>
+      </div>
+
+      <table v-else class="w-full text-sm">
+        <thead
+          class="sticky top-0 z-10 bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5"
+        >
+          <tr>
+            <th class="px-5 py-2.5 text-left font-medium">
+              {{ __('Display Name') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">{{ __('Slug') }}</th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Partner ID') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Status') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Opt-in') }}
+            </th>
+            <th class="px-3 py-2.5 text-right font-medium">
+              {{ __('Contacts') }}
+            </th>
+            <th class="px-4 py-2.5 text-left font-medium">
+              {{ __('Contact Email') }}
+            </th>
+            <th class="px-4 py-2.5 text-right font-medium"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-outline-elevation-2">
+          <tr
+            v-for="row in rows"
+            :key="row.name"
+            class="cursor-pointer transition-colors hover:bg-surface-gray-1"
+            @click="openNetwork(row)"
+          >
+            <td class="px-5 py-3 font-medium text-ink-gray-9">
+              {{ row.display_name }}
+            </td>
+            <td class="px-4 py-3 font-mono text-xs text-ink-gray-6">
+              {{ row.slug }}
+            </td>
+            <td class="px-4 py-3 font-mono text-xs text-ink-gray-7">
+              {{ row.partner_id || '—' }}
+            </td>
+            <td class="px-4 py-3">
+              <span :class="statusPill(row.enabled)">
+                {{ row.enabled ? __('Enabled') : __('Disabled') }}
+              </span>
+            </td>
+            <td class="px-4 py-3">
+              <span :class="optInPill(row.opted_in)">
+                {{ row.opted_in ? __('Opted in') : __('Not opted in') }}
+              </span>
+              <p class="mt-1 text-xs text-ink-gray-5">
+                {{
+                  __('{0} of {1} facilities', [
+                    row.opted_in_count || 0,
+                    row.contact_count || 0,
+                  ])
+                }}
+              </p>
+            </td>
+            <td class="px-3 py-3 text-right text-xs font-medium tabular-nums text-ink-gray-6">
+              {{ row.contact_count || 0 }}
+            </td>
+            <td class="px-4 py-3 text-xs text-ink-gray-6">
+              {{ row.contact_email || '—' }}
+            </td>
+            <td class="px-4 py-3 text-right text-ink-gray-4">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="inline h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Pagination -->
+      <div
+        v-if="total > pageSize"
+        class="flex items-center justify-between border-t border-outline-gray-2 px-5 py-3"
+      >
+        <span class="text-xs text-ink-gray-5">
+          {{
+            __('Showing {0}–{1} of {2}', [
+              page * pageSize + 1,
+              Math.min((page + 1) * pageSize, total),
+              total,
+            ])
+          }}
+        </span>
+        <div class="flex gap-2">
+          <Button
+            size="sm"
+            variant="subtle"
+            :disabled="page === 0"
+            @click="prevPage"
+            >{{ __('Prev') }}</Button
+          >
+          <Button
+            size="sm"
+            variant="subtle"
+            :disabled="(page + 1) * pageSize >= total"
+            @click="nextPage"
+            >{{ __('Next') }}</Button
+          >
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
+import { createResource, Button } from 'frappe-ui'
+
+const router = useRouter()
+
+const page = ref(0)
+const pageSize = 20
+const search = ref('')
+const enabled = ref('')
+const optedIn = ref('')
+const facilityLevel = ref('')
+const facility = ref('')
+const facilityLevels = [
+  'Level 2',
+  'Level 3',
+  'Level 3C',
+  'Level 3A',
+  'Level 3B',
+  'Level 4',
+  'Level 4B',
+  'Level 5A',
+  'Level 5',
+]
+const listResource = createResource({
+  url: 'crm.api.optin_admin.list_networks',
+  makeParams: () => ({
+    page: page.value,
+    page_size: pageSize,
+    search: search.value || null,
+    enabled: enabled.value || null,
+    opted_in: optedIn.value || null,
+    facility_level: facilityLevel.value || null,
+    facility: facility.value || null,
+  }),
+  auto: true,
+})
+
+const rows = computed(() => listResource.data?.rows ?? [])
+const total = computed(() => listResource.data?.total ?? 0)
+
+watch(page, () => listResource.reload())
+
+function openNetwork(row) {
+  router.push({ name: 'NetworkDetail', params: { networkSlug: row.slug } })
+}
+
+function prevPage() {
+  page.value--
+}
+
+function nextPage() {
+  page.value++
+}
+
+let searchTimer = null
+
+function scheduleSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    searchTimer = null
+    applyFilters()
+  }, 300)
+}
+
+function applyFilters() {
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+  if (page.value !== 0) {
+    page.value = 0
+    return
+  }
+  listResource.reload()
+}
+
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+})
+
+function clearFilters() {
+  search.value = ''
+  enabled.value = ''
+  optedIn.value = ''
+  facilityLevel.value = ''
+  facility.value = ''
+  applyFilters()
+}
+
+function statusPill(enabled) {
+  const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
+  return enabled
+    ? `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`
+    : `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`
+}
+
+function optInPill(opted) {
+  const base = 'rounded-full px-2 py-0.5 text-xs font-medium'
+  return opted
+    ? `${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400`
+    : `${base} bg-surface-gray-2 text-ink-gray-6 dark:bg-surface-gray-4 dark:text-ink-gray-4`
+}
+</script>

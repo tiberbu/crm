@@ -66,7 +66,6 @@ require_type_annotated_api_methods = True
 
 # include js in doctype views
 doctype_js = {
-	"Quotation": "public/js/erpnext_quotation_prefill.js",
 	"Sales Order": "public/js/erpnext_sales_order_customer.js",
 	"CRM Lead": "public/js/domain_enrichment.js",
 	"CRM Organization": "public/js/domain_enrichment.js",
@@ -81,8 +80,14 @@ doctype_js = {
 
 # Tiberbu CRM (E2-S1): public landing page at site root. `home_page` overrides Website
 # Settings (verified: frappe website/utils.py get_home_page). Guests -> /index (branded
-# landing); logged-in users are bounced to /crm by index.py before workspace resolution.
+# landing); logged-in users are routed by index.py to their permitted application.
 home_page = "index"
+
+# Website Users provisioned from a completed facility Opt-In are redirected by
+# the native Frappe login flow to the customer portal.  The hook only sets
+# Frappe's one-shot post-login route; credentials, 2FA, and the login method
+# remain upstream behavior.
+on_login = ["crm.api.website_redirect.on_login"]
 
 # website user home page (by Role)
 # role_home_page = {
@@ -91,6 +96,11 @@ home_page = "index"
 
 website_route_rules = [
 	{"from_route": "/crm/<path:app_path>", "to_route": "crm"},
+	{"from_route": "/facility-onboarding", "to_route": "facility-onboarding"},
+	{"from_route": "/cx-portal", "to_route": "cx-portal"},
+	# Compatibility route for invitations or bookmarks issued before the portal
+	# was named Customer Experience.
+	{"from_route": "/portal", "to_route": "cx-portal"},
 	{"from_route": "/crm-form/<route>", "to_route": "crm_form"},
 	# E2-S1: route /login to the branded login page (shadows stock login *page* only;
 	# the /api/method/login *method* is untouched).
@@ -107,10 +117,9 @@ website_route_rules = [
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# "methods": "crm.utils.jinja_methods",
-# "filters": "crm.utils.jinja_filters"
-# }
+jinja = {
+	"methods": "crm.utils.jinja",
+}
 
 # Setup wizard
 # setup_wizard_requires = "assets/crm/js/setup_wizard.js"
@@ -160,9 +169,11 @@ permission_query_conditions = {
 	"CRM Lead": "crm.permissions.org_hierarchy.get_lead_permission_query_conditions",
 	"CRM Deal": "crm.permissions.org_hierarchy.get_deal_permission_query_conditions",
 	"CRM Notification": "crm.fcrm.doctype.crm_notification.crm_notification.get_permission_query_conditions",
+	"CRM Pre-Qualified Facility": "crm.permissions.pre_qualified.get_permission_query",
 }
 
 has_permission = {
+	"Payment Entry": "crm.finance.workflow.payment_entry_has_permission",
 	"CRM Lead": "crm.permissions.org_hierarchy.has_lead_permission",
 	"CRM Deal": "crm.permissions.org_hierarchy.has_deal_permission",
 	"CRM Notification": "crm.fcrm.doctype.crm_notification.crm_notification.has_permission",
@@ -217,6 +228,11 @@ doc_events = {
 			"crm.automation.support_journey.on_deal_update",
 		],
 	},
+	"CRM Opt-In Submission": {
+		# Direct imports/CRM inserts receive the same asynchronous hand-off as the
+		# public wizard. The public endpoint opts out and processes synchronously.
+		"after_insert": ["crm.api.optin.enqueue_submission_processing"],
+	},
 	# E7: missed-call recovery — seed a callback task for a missed inbound Avaya call.
 	"CRM Call Log": {
 		"after_insert": ["crm.automation.support_journey.on_call_log_update"],
@@ -226,6 +242,20 @@ doc_events = {
 		"before_validate": [
 			"crm.fcrm.doctype.erpnext_crm_settings.erpnext_crm_settings.create_customer_on_sales_order"
 		],
+		"validate": ["crm.utils.token_facility.stamp_facility_fid"],
+		# P-76: auto-assign the welcome bonus once a facility selects a package (when switched on).
+		"after_insert": ["crm.utils.token_bonus.auto_dispense_on_package_selection"],
+		"on_submit": ["crm.utils.token_bonus.auto_dispense_on_package_selection"],
+		# Coupon: claim the reserved redemption in the submit transaction; release it on cancel.
+		"before_submit": ["crm.utils.coupons.claim_on_submit"],
+		"on_cancel": ["crm.utils.coupons.release_on_cancel"],
+	},
+	# OpenMeter grants are keyed by FID, so token purchases carry it beside the MFL.
+	"Quotation": {
+		"validate": ["crm.utils.token_facility.stamp_facility_fid"],
+	},
+	"Sales Invoice": {
+		"validate": ["crm.utils.token_facility.stamp_facility_fid"],
 	},
 	"Item": {
 		"after_insert": ["crm.integrations.erpnext.item.after_insert"],
@@ -250,6 +280,9 @@ doc_events = {
 		"before_validate": ["crm.api.live_demo.validate_user"],
 		"validate_reset_password": ["crm.api.live_demo.validate_reset_password"],
 	},
+	"Payment Entry": {
+		"on_submit": ["crm.finance.payment_hooks.on_payment_entry_submit"],
+	},
 }
 
 # Scheduled Tasks
@@ -262,6 +295,9 @@ scheduler_events = {
 		"crm.api.event.trigger_daily_event_notifications",
 		"crm.fcrm.doctype.crm_view_settings.crm_view_settings.clear_old_versions",
 		"crm.telemetry.capture_feature_state",
+		"crm.api.quotes.check_quote_expiry",
+		"crm.automation.optin_billing.process_due_optin_billing",
+		"crm.utils.coupons.reconcile_redemptions",
 	],
 	"weekly": ["crm.api.event.trigger_weekly_event_notifications"],
 	"daily_long": ["crm.lead_syncing.background_sync.sync_leads_from_sources_daily"],
@@ -270,7 +306,11 @@ scheduler_events = {
 	"cron": {
 		"*/5 * * * *": ["crm.lead_syncing.background_sync.sync_leads_from_sources_5_minutes"],
 		"*/10 * * * *": ["crm.lead_syncing.background_sync.sync_leads_from_sources_10_minutes"],
-		"*/15 * * * *": ["crm.lead_syncing.background_sync.sync_leads_from_sources_15_minutes"],
+		"*/15 * * * *": [
+			"crm.lead_syncing.background_sync.sync_leads_from_sources_15_minutes",
+			"crm.api.token_alerts.check_token_alerts",
+		],
+		"0 */2 * * *": ["crm.api.contracts.send_internal_signatory_reminders"],
 	},
 }
 
@@ -310,6 +350,14 @@ ignore_links_on_delete = ["Failed Lead Sync Log"]
 # pin_home_page_to_landing MUST run first: it forces '/' -> index so a System User's
 # default_workspace can't resolve the root to /desk/<workspace> and slip past the guard.
 before_request = [
+	# Re-apply the SES QueueBuilder patch on every web request. The top-level
+	# import side-effect above is unreliable: in production (developer_mode off)
+	# frappe.get_hooks() serves the hooks dict from the shared redis "app_hooks"
+	# cache WITHOUT importing crm.hooks, so a freshly-started web/worker process
+	# may never run the module-level patch. apply_queue_builder_patches() is
+	# idempotent (guards on a per-class flag), so this is a cheap no-op after the
+	# first call. Kept FIRST so guard_desk_access's redirect can't short-circuit it.
+	"crm.email.queue_patch.apply_queue_builder_patches",
 	"crm.api.route_guard.pin_home_page_to_landing",
 	"crm.api.route_guard.guard_desk_access",
 ]
@@ -317,7 +365,12 @@ before_request = [
 
 # Job Events
 # ----------
-# before_job = ["crm.utils.before_job"]
+# Background jobs (enqueued OTP dispatch on the "short" queue, opt-in confirmation
+# emails, and the scheduled email-queue flush) run in long-lived RQ workers that
+# read hooks from the warm redis cache and never import crm.hooks — so without this
+# the SES patch is absent and frappe.sendmail throws OutgoingEmailError at
+# queue-build time (nothing is even queued). Idempotent; see before_request note.
+before_job = ["crm.email.queue_patch.apply_queue_builder_patches"]
 # after_job = ["crm.utils.after_job"]
 
 # User Data Protection
@@ -353,10 +406,24 @@ before_request = [
 
 after_migrate = [
 	"crm.fcrm.doctype.fcrm_settings.fcrm_settings.after_migrate",
+	"crm.finance.setup.ensure_network_payout_mappings",
+	"crm.finance.setup.ensure_optin_supplier_attribution_fields",
 	"crm.api.whatsapp.add_roles",
 	"crm.domain_enrichment.install.seed_default_rules_and_mappings",
 	"crm.install.add_default_scripts",
 	"crm.install.add_web_form_custom_fields",
+	"crm.setup.optin.ensure_signing_key",
+	"crm.setup.optin.ensure_default_terms",
+	"crm.setup.optin.ensure_contract_print_format",
+	"crm.finance.print_formats.ensure_finance_print_formats",
+	"crm.setup.optin.ensure_lead_source",
+]
+
+fixtures = [
+	{"dt": "Role", "filters": [["name", "=", "Partner RM"]]},
+	{"dt": "Workflow", "filters": [["name", "=", "CRM Lead Approval"]]},
+	{"dt": "Print Format", "filters": [["name", "in", ["CRM Quote Standard", "CRM Contract Standard"]]]},
+	{"dt": "CRM Product", "filters": [["product_code", "like", "CV-%"]]},
 ]
 
 standard_dropdown_items = [

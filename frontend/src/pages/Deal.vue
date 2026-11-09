@@ -42,27 +42,68 @@
       </Dropdown>
     </template>
   </LayoutHeader>
-  <div v-if="doc.name" class="flex h-full overflow-hidden">
-    <Tabs
-      v-model="tabIndex"
-      as="div"
-      :tabs="tabs"
-      class="flex flex-1 overflow-hidden flex-col [&_[role='tab']]:px-0 [&_[role='tab']]:shrink-0 [&_[role='tablist']]:px-5 [&_[role='tablist']::-webkit-scrollbar]:h-0 [&_[role='tablist']]:min-h-[45px] [&_[role='tablist']]:gap-7.5 [&_[role='tabpanel']:not([hidden])]:flex [&_[role='tabpanel']:not([hidden])]:grow"
+  <div
+    v-if="doc.name"
+    class="relative flex h-full min-h-0 flex-col overflow-hidden lg:flex-row"
+  >
+    <div
+      class="flex shrink-0 items-center justify-between gap-3 border-b border-outline-gray-2 bg-surface-white px-4 py-2.5 dark:bg-surface-gray-1 lg:hidden"
     >
-      <template #tab-panel>
-        <Activities
-          ref="activities"
-          v-model:reload="reload"
-          v-model:tabIndex="tabIndex"
-          doctype="CRM Deal"
-          :docname="dealId"
-          :tabs="tabs"
-          @beforeSave="beforeStatusChange"
-          @afterSave="reloadResources"
-        />
-      </template>
-    </Tabs>
-    <Resizer side="right" class="flex flex-col justify-between border-l">
+      <div class="min-w-0">
+        <p class="truncate text-sm font-semibold text-ink-gray-9">
+          {{ title }}
+        </p>
+        <p class="truncate text-xs text-ink-gray-5">
+          {{ organization?.name || __('Deal workspace') }}
+        </p>
+      </div>
+      <div class="flex shrink-0 items-center gap-2">
+        <Button
+          variant="solid"
+          size="sm"
+          icon="lucide-file-text"
+          :aria-label="__('Open quote')"
+          @click="changeTabTo('quoting')"
+        >
+          {{ __('Quote') }}
+        </Button>
+        <Button
+          variant="subtle"
+          size="sm"
+          icon="lucide-panel-right"
+          :aria-label="__('Open deal details')"
+          @click="showMobileDetails = true"
+        >
+          {{ __('Details') }}
+        </Button>
+      </div>
+    </div>
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <Tabs
+        v-model="tabIndex"
+        as="div"
+        :tabs="tabs"
+        class="flex min-h-0 flex-1 flex-col overflow-hidden [&_[role='tab']]:shrink-0 [&_[role='tab']]:px-0 [&_[role='tablist']]:sticky [&_[role='tablist']]:top-0 [&_[role='tablist']]:z-10 [&_[role='tablist']]:min-h-[45px] [&_[role='tablist']]:gap-5 [&_[role='tablist']]:overflow-x-auto [&_[role='tablist']]:bg-surface-white [&_[role='tablist']]:px-4 [&_[role='tablist']::-webkit-scrollbar]:h-0 [&_[role='tabpanel']:not([hidden])]:flex [&_[role='tabpanel']:not([hidden])]:grow sm:[&_[role='tablist']]:gap-7.5 sm:[&_[role='tablist']]:px-5"
+      >
+        <template #tab-panel>
+          <Activities
+            ref="activities"
+            v-model:reload="reload"
+            v-model:tabIndex="tabIndex"
+            doctype="CRM Deal"
+            :docname="dealId"
+            :tabs="tabs"
+            @beforeSave="beforeStatusChange"
+            @afterSave="reloadResources"
+            @email-dispatched="reload = true"
+          />
+        </template>
+      </Tabs>
+    </div>
+    <Resizer
+      side="right"
+      class="hidden flex-col justify-between border-l lg:flex"
+    >
       <div
         class="flex h-[45px] cursor-copy items-center border-b px-5 py-2.5 text-lg-medium text-ink-gray-9"
         @click="copyToClipboard(dealId)"
@@ -290,33 +331,53 @@
           </template>
         </SidePanelLayout>
         <!-- Facilities section -->
-        <div v-if="hfrEnabled && document.doc?.facilities?.length" class="border-t px-4 py-3 shrink-0">
-          <div class="text-p-xs-medium uppercase tracking-wider text-ink-gray-4 mb-2">
+        <div
+          v-if="hfrEnabled && document.doc?.facilities?.length"
+          class="border-t px-4 py-3 shrink-0"
+        >
+          <div
+            class="text-p-xs-medium uppercase tracking-wider text-ink-gray-4 mb-2"
+          >
             {{ __('Facilities ({0})', [document.doc.facilities.length]) }}
           </div>
           <div class="flex flex-col gap-1.5">
             <div
               v-for="row in document.doc.facilities"
               :key="row.name || row.hfr_facility_id"
-              class="rounded-lg border border-outline-gray-2 bg-surface-white
-                     dark:bg-surface-gray-2 px-3 py-2"
+              class="rounded-lg border border-outline-gray-2 bg-surface-white dark:bg-surface-gray-2 px-3 py-2"
             >
               <div class="flex items-start gap-2">
                 <div class="flex flex-col flex-1 min-w-0">
-                  <span class="text-p-sm-medium text-ink-gray-8 truncate">{{ row.facility_name }}</span>
+                  <span class="text-p-sm-medium text-ink-gray-8 truncate">{{
+                    row.facility_name
+                  }}</span>
                   <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    <span v-if="row.mfl_code"
-                          class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3
-                                 text-ink-gray-6 rounded px-1.5 py-0.5">
+                    <span
+                      v-if="row.hfr_facility_id"
+                      class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6 rounded px-1.5 py-0.5"
+                    >
+                      {{ __('Facility ID') }} {{ row.hfr_facility_id }}
+                    </span>
+                    <span
+                      v-if="row.mfl_code"
+                      class="text-p-xs bg-surface-gray-2 dark:bg-surface-gray-3 text-ink-gray-6 rounded px-1.5 py-0.5"
+                    >
                       MFL {{ row.mfl_code }}
                     </span>
-                    <span v-if="row.hfr_county" class="text-p-xs text-ink-gray-5">{{ row.hfr_county }}</span>
+                    <span
+                      v-if="row.hfr_county"
+                      class="text-p-xs text-ink-gray-5"
+                      >{{ row.hfr_county }}</span
+                    >
                     <span
                       class="text-p-xs rounded px-1.5 py-0.5"
-                      :class="row.hfr_sync_status === 'HFR Verified'
-                        ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                        : 'bg-surface-gray-2 text-ink-gray-5'"
-                    >{{ row.hfr_sync_status || 'Manual' }}</span>
+                      :class="
+                        row.hfr_sync_status === 'HFR Verified'
+                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                          : 'bg-surface-gray-2 text-ink-gray-5'
+                      "
+                      >{{ row.hfr_sync_status || 'Manual' }}</span
+                    >
                   </div>
                 </div>
                 <Button
@@ -335,8 +396,115 @@
       </div>
     </Resizer>
   </div>
+  <Dialog
+    v-model="showMobileDetails"
+    :options="{ title: __('Deal details'), size: 'md' }"
+  >
+    <template #body-content>
+      <div class="space-y-5">
+        <section>
+          <p
+            class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+          >
+            {{ __('Organization') }}
+          </p>
+          <p class="mt-1 text-base font-semibold text-ink-gray-9">
+            {{ organization?.name || __('Not set') }}
+          </p>
+          <p v-if="doc.email" class="mt-1 break-all text-sm text-ink-gray-6">
+            {{ doc.email }}
+          </p>
+        </section>
+        <section>
+          <div class="flex items-center justify-between">
+            <p
+              class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+            >
+              {{ __('Contacts') }}
+            </p>
+            <span class="text-xs text-ink-gray-5">{{
+              dealContacts.data?.length || 0
+            }}</span>
+          </div>
+          <div
+            v-if="dealContacts.data?.length"
+            class="mt-2 divide-y divide-outline-elevation-2 rounded-lg border border-outline-gray-2"
+          >
+            <div
+              v-for="contact in dealContacts.data"
+              :key="contact.name"
+              class="flex min-w-0 items-center gap-3 px-3 py-3"
+            >
+              <Avatar
+                :label="contact.full_name"
+                :image="contact.image"
+                size="md"
+              />
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium text-ink-gray-8">
+                  {{ contact.full_name }}
+                  <span
+                    v-if="contact.is_primary"
+                    class="ml-1 text-xs text-ink-blue-6"
+                    >{{ __('Primary') }}</span
+                  >
+                </p>
+                <p
+                  v-if="contact.email"
+                  class="truncate text-xs text-ink-gray-5"
+                >
+                  {{ contact.email }}
+                </p>
+                <p
+                  v-if="contact.mobile_no"
+                  class="truncate text-xs text-ink-gray-5"
+                >
+                  {{ contact.mobile_no }}
+                </p>
+              </div>
+            </div>
+          </div>
+          <p
+            v-else
+            class="mt-2 rounded-lg bg-surface-gray-1 px-3 py-3 text-sm text-ink-gray-5"
+          >
+            {{ __('No contacts added') }}
+          </p>
+        </section>
+        <section v-if="document.doc?.facilities?.length">
+          <div class="flex items-center justify-between">
+            <p
+              class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+            >
+              {{ __('Facilities') }}
+            </p>
+            <span class="text-xs text-ink-gray-5">{{
+              document.doc.facilities.length
+            }}</span>
+          </div>
+          <div class="mt-2 space-y-2">
+            <div
+              v-for="row in document.doc.facilities"
+              :key="row.name || row.hfr_facility_id"
+              class="rounded-lg border border-outline-gray-2 px-3 py-2.5"
+            >
+              <p class="truncate text-sm font-medium text-ink-gray-8">
+                {{ row.facility_name }}
+              </p>
+              <p class="mt-0.5 text-xs text-ink-gray-5">
+                <span v-if="row.hfr_facility_id">{{ __('Facility ID') }} {{ row.hfr_facility_id }} · </span>
+                <span v-if="row.mfl_code">MFL {{ row.mfl_code }}</span>
+                <span v-if="row.mfl_code && row.hfr_county"> · </span>
+                <span v-if="row.hfr_county">{{ row.hfr_county }}</span>
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </template>
+  </Dialog>
   <ErrorPage
-    v-else-if="errorTitle"
+    v-if="!doc.name && errorTitle"
     :errorTitle="errorTitle"
     :errorMessage="errorMessage"
   />
@@ -404,6 +572,8 @@ import LinkIcon from '@/components/Icons/LinkIcon.vue'
 import ArrowUpRightIcon from '@/components/Icons/ArrowUpRightIcon.vue'
 import SuccessIcon from '@/components/Icons/SuccessIcon.vue'
 import AttachmentIcon from '@/components/Icons/AttachmentIcon.vue'
+import LightningIcon from '@/components/Icons/LightningIcon.vue'
+import ScanSearchIcon from '~icons/lucide/scan-search'
 import LayoutHeader from '@/components/LayoutHeader.vue'
 import Activities from '@/components/Activities/Activities.vue'
 import OrganizationModal from '@/components/Modals/OrganizationModal.vue'
@@ -430,6 +600,8 @@ import { statusesStore } from '@/stores/statuses'
 import { getMeta } from '@/stores/meta'
 import { useDocument } from '@/data/document'
 import { whatsappEnabled } from '@/composables/whatsapp'
+import { useMeteringAccess } from '@/composables/meteringAccess'
+import { usersStore } from '@/stores/users'
 import { callEnabled } from '@/composables/telephony'
 import { useBroadcast } from '@/composables/useBroadcast'
 import {
@@ -437,6 +609,7 @@ import {
   Dropdown,
   Tooltip,
   Avatar,
+  Dialog,
   Tabs,
   Breadcrumbs,
   call,
@@ -499,7 +672,9 @@ const resyncDealRowResource = createResource({
   },
   onError(err) {
     resyncingRow.value = null
-    toast.error((err && err.messages && err.messages[0]) || __('Re-sync failed'))
+    toast.error(
+      (err && err.messages && err.messages[0]) || __('Re-sync failed'),
+    )
   },
 })
 
@@ -584,6 +759,7 @@ onBeforeUnmount(() => {
 const reload = ref(false)
 const showOrganizationModal = ref(false)
 const showFilesUploader = ref(false)
+const showMobileDetails = ref(false)
 const _organization = ref({})
 
 const breadcrumbs = computed(() => {
@@ -634,8 +810,17 @@ usePageMeta(() => {
   }
 })
 
+const meteringAccess = useMeteringAccess()
+const { isManager } = usersStore()
+
 const tabs = computed(() => {
   let tabOptions = [
+    {
+      // Keep the route key stable so existing deep links and saved tab state continue to work.
+      name: 'Quoting',
+      label: __('Quote'),
+      icon: AttachmentIcon,
+    },
     {
       name: 'Activity',
       label: __('Activity'),
@@ -687,11 +872,25 @@ const tabs = computed(() => {
       icon: WhatsAppIcon,
       condition: () => whatsappEnabled.value,
     },
+    {
+      // OpenMeter Probe activities, for OpenMeter Admins when the metering app is installed.
+      name: 'Metering',
+      label: __('Metering'),
+      icon: LightningIcon,
+      condition: () => meteringAccess.canManage.value,
+    },
+    {
+      // 360-degree customer view: partner origin, payment, orders, provisioning, billing.
+      name: 'Customer 360',
+      label: __('Customer 360'),
+      icon: ScanSearchIcon,
+      condition: () => isManager(),
+    },
   ]
   return tabOptions.filter((tab) => (tab.condition ? tab.condition() : true))
 })
 
-const { tabIndex } = useActiveTabManager(tabs, 'lastDealTab')
+const { tabIndex, changeTabTo } = useActiveTabManager(tabs, 'lastDealTab')
 
 const sections = createResource({
   url: 'crm.fcrm.doctype.crm_fields_layout.crm_fields_layout.get_sidepanel_sections',

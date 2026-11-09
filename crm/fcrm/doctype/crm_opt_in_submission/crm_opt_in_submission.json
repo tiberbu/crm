@@ -1,0 +1,243 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-08-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "status",
+  "network_slug",
+  "submitter_email",
+  "submitter_name",
+  "submitter_phone",
+  "signatory_mode",
+  "terms_acknowledgement",
+  "facility_signatory_name",
+  "facility_signatory_email",
+  "facility_signatory_phone",
+  "facility_witness_name",
+  "facility_witness_email",
+  "facility_witness_phone",
+  "submitted_at",
+  "section_break_confirmation",
+  "confirmation_email_queue",
+  "confirmation_email_queued_at",
+  "section_break_contract_delivery",
+  "contract",
+  "contract_invitation_email_queue",
+  "contract_invitation_queued_at",
+  "col_break_1",
+  "lead",
+  "deal",
+  "has_duplicate_mfl",
+  "section_break_data",
+  "raw_json",
+  "section_break_error",
+  "error_log"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Naming Series",
+   "options": "OIS-.YYYY.-"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nProcessing\nProcessed\nFailed",
+   "default": "Pending",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "network_slug",
+   "fieldtype": "Data",
+   "label": "Network Slug",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "submitter_email",
+   "fieldtype": "Data",
+   "label": "Submitter Email",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "submitter_name",
+   "fieldtype": "Data",
+   "label": "Submitter Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitter_phone",
+   "fieldtype": "Data",
+   "label": "Submitter Phone",
+   "read_only": 1
+  },
+  {
+   "default": "self",
+   "fieldname": "signatory_mode",
+   "fieldtype": "Select",
+   "label": "Signatory Mode",
+   "options": "self\ndelegate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "terms_acknowledgement",
+   "fieldtype": "Data",
+   "label": "Terms Acknowledgement",
+   "read_only": 1
+  },
+  {
+   "fieldname": "facility_signatory_name",
+   "fieldtype": "Data",
+   "label": "Facility Signatory Name"
+  },
+  {
+   "fieldname": "facility_signatory_email",
+   "fieldtype": "Data",
+   "label": "Facility Signatory Email"
+  },
+  {
+   "fieldname": "facility_signatory_phone",
+   "fieldtype": "Data",
+   "label": "Facility Signatory Phone"
+  },
+  {
+   "fieldname": "facility_witness_name",
+   "fieldtype": "Data",
+   "label": "Facility Witness Name"
+  },
+  {
+   "fieldname": "facility_witness_email",
+   "fieldtype": "Data",
+   "label": "Facility Witness Email"
+  },
+  {
+   "fieldname": "facility_witness_phone",
+   "fieldtype": "Data",
+   "label": "Facility Witness Phone"
+  },
+  {
+   "fieldname": "submitted_at",
+   "fieldtype": "Datetime",
+   "label": "Submitted At"
+  },
+  {
+   "fieldname": "section_break_confirmation",
+   "fieldtype": "Section Break",
+   "label": "Confirmation Email"
+  },
+  {
+   "fieldname": "confirmation_email_queue",
+   "fieldtype": "Link",
+   "label": "Confirmation Email Queue",
+   "options": "Email Queue",
+   "read_only": 1
+  },
+  {
+   "fieldname": "confirmation_email_queued_at",
+   "fieldtype": "Datetime",
+   "label": "Confirmation Email Queued At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_contract_delivery",
+   "fieldtype": "Section Break",
+   "label": "Contract Delivery"
+  },
+  {
+   "fieldname": "contract",
+   "fieldtype": "Link",
+   "label": "CRM Contract",
+   "options": "CRM Contract",
+   "read_only": 1
+  },
+  {
+   "fieldname": "contract_invitation_email_queue",
+   "fieldtype": "Link",
+   "label": "Contract Invitation Email Queue",
+   "options": "Email Queue",
+   "read_only": 1
+  },
+  {
+   "fieldname": "contract_invitation_queued_at",
+   "fieldtype": "Datetime",
+   "label": "Contract Invitation Queued At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "lead",
+   "fieldtype": "Link",
+   "label": "CRM Lead",
+   "options": "CRM Lead"
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "label": "CRM Deal",
+   "options": "CRM Deal"
+  },
+  {
+   "fieldname": "has_duplicate_mfl",
+   "fieldtype": "Check",
+   "label": "Has Duplicate MFL"
+  },
+  {
+   "fieldname": "section_break_data",
+   "fieldtype": "Section Break",
+   "label": "Submission Data"
+  },
+  {
+   "fieldname": "raw_json",
+   "fieldtype": "Long Text",
+   "label": "Raw JSON"
+  },
+  {
+   "fieldname": "section_break_error",
+   "fieldtype": "Section Break",
+   "label": "Error"
+  },
+  {
+   "fieldname": "error_log",
+   "fieldtype": "Text",
+   "label": "Error Log"
+  }
+ ],
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-08-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Opt-In Submission",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales User",
+   "select": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

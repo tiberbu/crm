@@ -18,17 +18,17 @@ from frappe import _
 
 @frappe.whitelist(allow_guest=True)
 def handle_request(**kwargs):
-    """Inbound Avaya webhook — not yet implemented (E5/E6 gated)."""
-    frappe.throw(
-        _("Avaya inbound webhook is not yet configured. Complete E5 setup once credentials are provided."),
-        title=_("Avaya Not Connected"),
-    )
+	"""Inbound Avaya webhook — not yet implemented (E5/E6 gated)."""
+	frappe.throw(
+		_("Avaya inbound webhook is not yet configured. Complete E5 setup once credentials are provided."),
+		title=_("Avaya Not Connected"),
+	)
 
 
 @frappe.whitelist()
 def make_a_call(to_number: str):
-    """Outbound click-to-dial — not yet implemented (E5/E6 gated)."""
-    frappe.throw(
-        _("Avaya calling is not yet connected. Configure CRM Avaya Settings once credentials are provided."),
-        title=_("Avaya Not Connected"),
-    )
+	"""Outbound click-to-dial — not yet implemented (E5/E6 gated)."""
+	frappe.throw(
+		_("Avaya calling is not yet connected. Configure CRM Avaya Settings once credentials are provided."),
+		title=_("Avaya Not Connected"),
+	)

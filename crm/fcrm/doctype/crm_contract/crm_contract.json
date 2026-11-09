@@ -1,0 +1,225 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-08-24 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "contract_date",
+  "deal",
+  "quote",
+  "pricing_section",
+  "initial_price_list",
+  "negotiated_price_list",
+  "price_list_history",
+  "col_break_1",
+  "status",
+  "workflow_state",
+  "tiberbu_signing_requirement",
+  "executed_contract_sent_at",
+  "excluded_signatories",
+  "section_break_body",
+  "contract_html",
+  "tc_document",
+  "tc_document_hash",
+  "section_break_network",
+  "network_slug",
+  "section_break_sigs",
+  "signatories"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Naming Series",
+   "options": "CONT-"
+  },
+  {
+   "fieldname": "contract_date",
+   "fieldtype": "Date",
+   "label": "Contract Date"
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "label": "CRM Deal",
+   "options": "CRM Deal",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "quote",
+   "fieldtype": "Link",
+   "label": "Quotation",
+   "options": "Quotation",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "pricing_section",
+   "fieldtype": "Section Break",
+   "label": "Contract Schedule History",
+   "collapsible": 0
+  },
+  {
+   "fieldname": "initial_price_list",
+   "fieldtype": "Data",
+   "label": "Original Contract Schedule",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "negotiated_price_list",
+   "fieldtype": "Data",
+   "label": "Agreed Contract Schedule",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "price_list_history",
+   "fieldtype": "Long Text",
+   "label": "Contract Schedule History",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nAwaiting Signatures\nFully Executed\nCancelled",
+   "default": "Draft",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tiberbu_signing_requirement",
+   "fieldtype": "Select",
+   "label": "Tiberbu signing requirement",
+   "options": "All must sign\nAt least one must sign",
+   "default": "All must sign",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Snapshot of the setting used when this contract was generated."
+  },
+  {
+   "fieldname": "executed_contract_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Executed contract sent at",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "excluded_signatories",
+   "fieldtype": "Long Text",
+   "label": "Excluded Signatories",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Internal per-contract exclusions for signatories removed before signing."
+  },
+  {
+   "fieldname": "section_break_body",
+   "fieldtype": "Section Break",
+   "label": "Contract Body"
+  },
+  {
+   "fieldname": "contract_html",
+   "fieldtype": "Long Text",
+   "label": "Contract HTML"
+  },
+  {
+   "fieldname": "tc_document",
+   "fieldtype": "Data",
+   "label": "T&C Document"
+  },
+  {
+   "fieldname": "tc_document_hash",
+   "fieldtype": "Data",
+   "label": "T&C Document Hash"
+  },
+  {
+   "fieldname": "section_break_network",
+   "fieldtype": "Section Break",
+   "label": "Network"
+  },
+  {
+   "fieldname": "network_slug",
+   "fieldtype": "Data",
+   "label": "Network Slug"
+  },
+  {
+   "fieldname": "section_break_sigs",
+   "fieldtype": "Section Break",
+   "label": "Signatories"
+  },
+  {
+   "fieldname": "signatories",
+   "fieldtype": "Table",
+   "label": "Signatories",
+   "options": "CRM Contract Signatory"
+  }
+ ],
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-08-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Contract",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

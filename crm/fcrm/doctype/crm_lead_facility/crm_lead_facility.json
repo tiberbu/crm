@@ -14,16 +14,25 @@
   "facility_owner_type",
   "regulatory_body",
   "registration_number",
+  "board_registration_number",
+  "kra_pin",
   "operational_status",
   "hfr_county",
   "hfr_sub_county",
+  "hfr_constituency",
   "hfr_ward",
   "latitude",
   "longitude",
   "license_number",
+  "license_type",
   "license_expiry",
   "facility_standing",
   "number_of_beds",
+  "number_of_cots",
+  "open_whole_day",
+  "open_weekends",
+  "open_public_holidays",
+  "open_late_night",
   "hfr_sync_status",
   "hfr_last_synced"
  ],
@@ -31,7 +40,7 @@
   {
    "fieldname": "hfr_facility_id",
    "fieldtype": "Data",
-   "label": "HFR Facility ID",
+   "label": "HFR Facility ID / FID",
    "in_list_view": 1,
    "search_index": 1
   },
@@ -148,6 +157,51 @@
    "fieldtype": "Datetime",
    "label": "Last Synced",
    "read_only": 1
+  },
+  {
+   "fieldname": "board_registration_number",
+   "fieldtype": "Data",
+   "label": "Board Registration Number"
+  },
+  {
+   "fieldname": "kra_pin",
+   "fieldtype": "Data",
+   "label": "KRA PIN"
+  },
+  {
+   "fieldname": "hfr_constituency",
+   "fieldtype": "Data",
+   "label": "Constituency"
+  },
+  {
+   "fieldname": "license_type",
+   "fieldtype": "Data",
+   "label": "License Type"
+  },
+  {
+   "fieldname": "number_of_cots",
+   "fieldtype": "Int",
+   "label": "Number of Cots"
+  },
+  {
+   "fieldname": "open_whole_day",
+   "fieldtype": "Check",
+   "label": "Open Whole Day"
+  },
+  {
+   "fieldname": "open_weekends",
+   "fieldtype": "Check",
+   "label": "Open Weekends"
+  },
+  {
+   "fieldname": "open_public_holidays",
+   "fieldtype": "Check",
+   "label": "Open Public Holidays"
+  },
+  {
+   "fieldname": "open_late_night",
+   "fieldtype": "Check",
+   "label": "Open Late Night"
   }
  ],
  "istable": 1,

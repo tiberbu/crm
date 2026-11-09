@@ -56,6 +56,7 @@
       iconLeft="plus"
       @click="showFilesUploader = true"
     />
+    <div v-else-if="title == 'Metering'" />
     <div v-else-if="title == 'WhatsApp'" class="flex gap-2 shrink-0">
       <Button
         :label="__('Send Template')"

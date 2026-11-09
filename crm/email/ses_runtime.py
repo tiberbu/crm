@@ -9,6 +9,7 @@ The send stack (`crm.email.ses_send`), the Email Queue subclass
 (`crm.email.email_queue`), and the QueueBuilder patch (`crm.email.queue_patch`)
 all consume `get_ses_runtime_config()`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -74,12 +75,8 @@ def _build_config() -> AwsSesRuntimeConfig:
 	session_token = ""
 	if use_explicit:
 		access_key_id = cstr(doc.get("access_key_id") or "").strip()
-		secret_access_key = cstr(
-			doc.get_password("secret_access_key", raise_exception=False) or ""
-		).strip()
-		session_token = cstr(
-			doc.get_password("session_token", raise_exception=False) or ""
-		).strip()
+		secret_access_key = cstr(doc.get_password("secret_access_key", raise_exception=False) or "").strip()
+		session_token = cstr(doc.get_password("session_token", raise_exception=False) or "").strip()
 
 	retry_mode = cstr(doc.get("retry_mode") or DEFAULT_RETRY_MODE).strip().lower()
 	if retry_mode not in _VALID_RETRY_MODES:

@@ -1,0 +1,642 @@
+<template>
+  <div class="mx-auto w-full max-w-lg px-4 py-6">
+    <h2 class="mb-1 text-xl font-semibold text-gray-900 dark:text-white">
+      Review Your Details
+    </h2>
+    <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
+      Please confirm the information below before proceeding to Terms &amp;
+      Conditions.
+    </p>
+
+    <!-- Contact section -->
+    <div
+      class="mb-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800"
+    >
+      <div class="mb-3 flex items-center justify-between">
+        <h3
+          class="text-sm font-semibold text-ink-gray-6"
+        >
+          Contact
+        </h3>
+        <button
+          class="text-xs underline"
+          :style="{ color: 'var(--brand-primary)' }"
+          @click="emit('edit-contact')"
+        >
+          Edit
+        </button>
+      </div>
+      <div class="space-y-1.5 text-sm">
+        <div class="flex gap-2">
+          <span class="w-28 flex-shrink-0 text-gray-400 dark:text-gray-500"
+            >Name</span
+          >
+          <span class="font-medium text-gray-900 dark:text-white">
+            {{
+              [store.contact.first_name, store.contact.last_name]
+                .filter(Boolean)
+                .join(' ') || '—'
+            }}
+          </span>
+        </div>
+        <div class="flex gap-2">
+          <span class="w-28 flex-shrink-0 text-gray-400 dark:text-gray-500"
+            >Email</span
+          >
+          <span class="font-medium text-gray-900 dark:text-white">{{
+            store.contact.email || '—'
+          }}</span>
+        </div>
+        <div v-if="store.contact.mobile_no" class="flex gap-2">
+          <span class="w-28 flex-shrink-0 text-gray-400 dark:text-gray-500"
+            >Mobile</span
+          >
+          <span class="font-medium text-gray-900 dark:text-white">{{
+            store.contact.mobile_no
+          }}</span>
+        </div>
+        <div v-if="store.contact.organisation" class="flex gap-2">
+          <span class="w-28 flex-shrink-0 text-gray-400 dark:text-gray-500"
+            >Organisation</span
+          >
+          <span class="font-medium text-gray-900 dark:text-white">{{
+            store.contact.organisation
+          }}</span>
+        </div>
+        <div v-if="store.contact.role" class="flex gap-2">
+          <span class="w-28 flex-shrink-0 text-gray-400 dark:text-gray-500"
+            >Role</span
+          >
+          <span class="font-medium text-gray-900 dark:text-white">{{
+            store.contact.role
+          }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Signatory choice. The fast self-signing route is the default, but the
+         delegated route stays visible so ICT/support colleagues do not have to
+         infer that they can nominate the authorised signatory. -->
+    <div
+      class="mb-4 flex overflow-hidden rounded-xl border border-gray-200 shadow-sm dark:border-gray-700"
+    >
+      <div
+        class="w-1.5 shrink-0"
+        style="background-color: var(--brand-primary)"
+      />
+      <div
+        class="flex-1 p-5"
+        style="
+          background-color: color-mix(
+            in srgb,
+            var(--brand-primary) 6%,
+            transparent
+          );
+        "
+      >
+        <div class="mb-4">
+          <h3
+            class="text-sm font-semibold"
+            style="color: var(--brand-primary)"
+          >
+            Who will sign the agreement?
+          </h3>
+          <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+            Choose the person authorised to bind your organisation to this
+            agreement.
+          </p>
+        </div>
+
+        <div
+          class="grid gap-3 sm:grid-cols-2"
+          role="radiogroup"
+          aria-label="Who will sign the agreement"
+        >
+          <label
+            :class="[
+              'cursor-pointer rounded-xl border bg-white p-4 transition dark:bg-gray-800',
+              signatoryMode === 'self'
+                ? 'shadow-sm'
+                : 'border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
+            ]"
+            :style="
+              signatoryMode === 'self'
+                ? {
+                    borderColor: 'var(--brand-primary)',
+                    boxShadow:
+                      '0 0 0 1px color-mix(in srgb, var(--brand-primary) 25%, transparent)',
+                  }
+                : undefined
+            "
+          >
+            <span class="flex items-start gap-3">
+              <input
+                v-model="signatoryMode"
+                type="radio"
+                value="self"
+                class="mt-0.5 h-4 w-4 shrink-0 accent-[color:var(--brand-primary)]"
+              />
+              <span>
+                <span
+                  class="block text-sm font-semibold text-gray-900 dark:text-white"
+                >
+                  I am authorised to sign
+                </span>
+                <span
+                  class="mt-1 block text-xs leading-relaxed text-gray-500 dark:text-gray-400"
+                >
+                  Choose this if you can bind your organisation to this
+                  agreement.
+                </span>
+              </span>
+            </span>
+          </label>
+
+          <label
+            :class="[
+              'cursor-pointer rounded-xl border bg-white p-4 transition dark:bg-gray-800',
+              signatoryMode === 'delegate'
+                ? 'shadow-sm'
+                : 'border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500',
+            ]"
+            :style="
+              signatoryMode === 'delegate'
+                ? {
+                    borderColor: 'var(--brand-primary)',
+                    boxShadow:
+                      '0 0 0 1px color-mix(in srgb, var(--brand-primary) 25%, transparent)',
+                  }
+                : undefined
+            "
+          >
+            <span class="flex items-start gap-3">
+              <input
+                v-model="signatoryMode"
+                type="radio"
+                value="delegate"
+                class="mt-0.5 h-4 w-4 shrink-0 accent-[color:var(--brand-primary)]"
+              />
+              <span>
+                <span
+                  class="block text-sm font-semibold text-gray-900 dark:text-white"
+                >
+                  Someone else is authorised to sign
+                </span>
+                <span
+                  class="mt-1 block text-xs leading-relaxed text-gray-500 dark:text-gray-400"
+                >
+                  Choose this if you are completing the Opt-In for an authorised
+                  colleague.
+                </span>
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div
+          v-if="signatoryMode === 'delegate'"
+          class="mt-4 rounded-xl border border-gray-200 bg-white/70 p-4 dark:border-gray-700 dark:bg-gray-900/40"
+        >
+          <p class="text-sm font-semibold text-gray-900 dark:text-white">
+            Authorised signatory
+          </p>
+          <p
+            class="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400"
+          >
+            We will email this person the Opt-In summary and a secure link to
+            review and sign the agreement.
+          </p>
+          <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label
+                class="mb-1 block text-xs font-semibold text-gray-800 dark:text-gray-200"
+              >
+                Signatory name <span class="text-red-500">*</span>
+              </label>
+              <input
+                v-model="signatoryName"
+                type="text"
+                placeholder="Full legal name"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+                style="--tw-ring-color: var(--brand-primary)"
+              />
+            </div>
+            <div>
+              <label
+                class="mb-1 block text-xs font-semibold text-gray-800 dark:text-gray-200"
+              >
+                Signatory email <span class="text-red-500">*</span>
+              </label>
+              <input
+                v-model="signatoryEmail"
+                type="email"
+                placeholder="signatory@hospital.or.ke"
+                :class="[
+                  'w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500',
+                  signatoryEmailError
+                    ? 'border-red-400 dark:border-red-600'
+                    : 'border-gray-300 dark:border-gray-600',
+                ]"
+                style="--tw-ring-color: var(--brand-primary)"
+              />
+              <p v-if="signatoryEmailError" class="mt-1 text-xs text-red-500">
+                {{ signatoryEmailError }}
+              </p>
+            </div>
+            <div>
+              <label
+                class="mb-1 block text-xs font-semibold text-gray-800 dark:text-gray-200"
+              >
+                Signatory phone
+              </label>
+              <input
+                v-model="signatoryPhone"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="+254 7xx xxx xxx"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+                style="--tw-ring-color: var(--brand-primary)"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Facility Witness section — captured here so it flows straight onto the
+         contract the CRM team generates later (no chasing the facility for it). -->
+    <div
+      class="mb-4 flex overflow-hidden rounded-xl border border-gray-200 shadow-sm dark:border-gray-700"
+    >
+      <div
+        class="w-1.5 shrink-0"
+        style="background-color: var(--brand-primary)"
+      />
+      <div
+        class="flex-1 p-5"
+        style="
+          background-color: color-mix(
+            in srgb,
+            var(--brand-primary) 6%,
+            transparent
+          );
+        "
+      >
+        <div class="mb-4">
+          <h3
+            class="text-sm font-semibold"
+            style="color: var(--brand-primary)"
+          >
+            Facility witness
+          </h3>
+          <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+            A colleague at your facility who will witness the signing of your
+            agreement.
+            <span class="font-medium text-gray-700 dark:text-gray-200"
+              >Both fields are required.</span
+            >
+          </p>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <label
+              class="mb-1 block text-xs font-semibold text-gray-800 dark:text-gray-200"
+            >
+              Witness Name <span class="text-red-500">*</span>
+            </label>
+            <input
+              v-model="witnessName"
+              type="text"
+              placeholder="Full legal name"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+              style="--tw-ring-color: var(--brand-primary)"
+            />
+          </div>
+          <div>
+            <label
+              class="mb-1 block text-xs font-semibold text-gray-800 dark:text-gray-200"
+            >
+              Witness Email <span class="text-red-500">*</span>
+            </label>
+            <input
+              v-model="witnessEmail"
+              type="email"
+              placeholder="witness@hospital.or.ke"
+              :class="[
+                'w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500',
+                witnessEmailError
+                  ? 'border-red-400 dark:border-red-600'
+                  : 'border-gray-300 dark:border-gray-600',
+              ]"
+              style="--tw-ring-color: var(--brand-primary)"
+            />
+            <p v-if="witnessEmailError" class="mt-1 text-xs text-red-500">
+              {{ witnessEmailError }}
+            </p>
+          </div>
+          <div>
+            <label
+              class="mb-1 block text-xs font-semibold text-gray-800 dark:text-gray-200"
+            >
+              Witness Phone
+            </label>
+            <input
+              v-model="witnessPhone"
+              type="tel"
+              inputmode="tel"
+              autocomplete="tel"
+              placeholder="+254 7xx xxx xxx"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500"
+              style="--tw-ring-color: var(--brand-primary)"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Facilities section -->
+    <div
+      class="mb-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800"
+    >
+      <div class="mb-3 flex items-center justify-between">
+        <h3
+          class="text-sm font-semibold text-ink-gray-6"
+        >
+          Facilities ({{ store.selectedFacilities.length }})
+        </h3>
+        <button
+          class="text-xs underline"
+          :style="{ color: 'var(--brand-primary)' }"
+          @click="emit('edit-facilities')"
+        >
+          Edit
+        </button>
+      </div>
+      <div class="space-y-2">
+        <div
+          v-for="fac in store.selectedFacilities"
+          :key="fac.mfl_code"
+          class="flex items-center justify-between text-sm"
+        >
+          <div>
+            <p class="font-medium text-gray-900 dark:text-white">
+              {{ fac.facility_name }}
+            </p>
+            <p class="text-xs text-gray-400 dark:text-gray-500">
+              Facility ID {{ facilityId(fac) || 'not linked yet' }} · MFL {{ fac.mfl_code }}
+            </p>
+          </div>
+          <span
+            :class="[
+              'rounded-full px-2 py-0.5 text-xs font-semibold',
+              kephBadgeClass(fac.keph_level),
+            ]"
+          >
+            {{ fac.keph_level }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pricing summary -->
+    <div
+      v-if="store.pricing"
+      class="mb-6 flex overflow-hidden rounded-xl border border-gray-200 shadow-sm dark:border-gray-700"
+    >
+      <div
+        class="w-1.5 shrink-0"
+        style="background-color: var(--brand-primary)"
+      />
+      <div
+        class="flex-1 p-5"
+        style="
+          background-color: color-mix(
+            in srgb,
+            var(--brand-primary) 6%,
+            transparent
+          );
+        "
+      >
+        <div class="mb-2 flex items-center justify-between">
+          <h3
+            class="text-sm font-semibold text-ink-gray-6"
+          >
+            Commitment summary
+          </h3>
+          <button
+            class="text-xs underline"
+            :style="{ color: 'var(--brand-primary)' }"
+            @click="emit('edit-facilities')"
+          >
+            Edit
+          </button>
+        </div>
+        <p
+          class="text-xs font-semibold text-ink-gray-6"
+        >
+          Total contract commitment · incl. VAT
+        </p>
+        <p
+          class="mt-0.5 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white"
+        >
+          {{
+            fmtKes(
+              store.pricing.commitment_annual ??
+                store.pricing.grand_total_annual,
+            )
+          }}
+        </p>
+        <div
+          class="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
+        >
+          <span class="text-gray-500 dark:text-gray-400"
+            >{{ store.pricing.selected_years?.length || 1 }}-year selected
+            term</span
+          >
+          <span class="font-semibold text-gray-800 dark:text-gray-200">
+            {{ fmtKes(store.pricing.commitment_net_annual) }} excl. VAT
+          </span>
+          <span class="text-gray-500 dark:text-gray-400">
+            VAT
+            {{
+              fmtKes(
+                (store.pricing.commitment_annual ?? 0) -
+                  (store.pricing.commitment_net_annual ?? 0),
+              )
+            }}
+          </span>
+        </div>
+        <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+          Year 1: {{ fmtKes(store.pricing.grand_total_annual) }} incl. VAT ·
+          rates are locked at submission.
+        </p>
+        <div
+          v-if="store.pricing.plans?.length > 1"
+          class="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700"
+        >
+          <p
+            class="text-xs font-semibold text-ink-gray-6"
+          >
+            Yearly quotations
+          </p>
+          <div class="mt-2 grid gap-2 sm:grid-cols-2">
+            <div
+              v-for="plan in store.pricing.plans"
+              :key="plan.year_number"
+              class="flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 text-sm dark:bg-gray-900/50"
+            >
+              <span class="font-medium text-gray-800 dark:text-gray-200">{{
+                plan.label || `Year ${plan.year_number}`
+              }}</span>
+              <span class="font-semibold text-gray-900 dark:text-white">{{
+                fmtKes(plan.grand_total_annual)
+              }}</span>
+            </div>
+          </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Each amount above is an annual figure. The commitment above is the
+            sum of all selected years, inclusive of VAT.
+          </p>
+        </div>
+        <div
+          v-if="store.optionalItems?.length"
+          class="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700"
+        >
+          <p
+            class="text-xs font-semibold text-ink-gray-6"
+          >
+            Optional services noted
+          </p>
+          <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+            {{ store.optionalItems.map((item) => item.item_name).join(', ') }}
+          </p>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Our team will quote these separately.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer nav -->
+    <div class="flex items-center justify-between">
+      <button
+        class="rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+        @click="emit('back')"
+      >
+        Back
+      </button>
+      <button
+        :disabled="!canContinue"
+        class="rounded-xl px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        style="background-color: var(--brand-primary)"
+        @click="emit('continue')"
+      >
+        Continue to Terms &amp; Conditions
+      </button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+import { useOptInStore } from './useOptInStore.js'
+import { facilityId } from '@/utils/facilityId'
+
+const emit = defineEmits([
+  'continue',
+  'back',
+  'edit-contact',
+  'edit-facilities',
+])
+
+const store = useOptInStore()
+
+const signatoryMode = computed({
+  get: () => store.signatoryMode,
+  set: (val) => store.setSignatoryMode(val),
+})
+
+const signatoryName = computed({
+  get: () => store.signatory.name,
+  set: (val) => store.setSignatory({ name: val }),
+})
+const signatoryEmail = computed({
+  get: () => store.signatory.email,
+  set: (val) => store.setSignatory({ email: val }),
+})
+const signatoryPhone = computed({
+  get: () => store.signatory.phone,
+  set: (val) => store.setSignatory({ phone: val }),
+})
+
+// Witness fields write straight through to the store so the value survives
+// back-nav and rides along in the submit payload (StepCommit).
+const witnessName = computed({
+  get: () => store.witness.name,
+  set: (val) => store.setWitness({ name: val }),
+})
+const witnessEmail = computed({
+  get: () => store.witness.email,
+  set: (val) => store.setWitness({ email: val }),
+})
+const witnessPhone = computed({
+  get: () => store.witness.phone,
+  set: (val) => store.setWitness({ phone: val }),
+})
+
+function validEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+const witnessEmailError = computed(() => {
+  const email = (store.witness.email || '').trim()
+  if (!email) return ''
+  return validEmail(email) ? '' : 'Please enter a valid email address.'
+})
+
+const signatoryEmailError = computed(() => {
+  if (signatoryMode.value !== 'delegate') return ''
+  const email = (store.signatory.email || '').trim()
+  if (!email) return ''
+  return validEmail(email) ? '' : 'Please enter a valid email address.'
+})
+
+const witnessValid = computed(
+  () =>
+    (store.witness.name || '').trim() !== '' &&
+    validEmail((store.witness.email || '').trim()),
+)
+
+const signatoryValid = computed(() => {
+  if (signatoryMode.value === 'self') return true
+  return (
+    (store.signatory.name || '').trim() !== '' &&
+    validEmail((store.signatory.email || '').trim())
+  )
+})
+
+const canContinue = computed(() => witnessValid.value && signatoryValid.value)
+
+function kephBadgeClass(keph) {
+  const level = (keph || '')
+    .replace(/^Level\s+/i, '')
+    .trim()
+    .toUpperCase()
+  if (['5', '6'].includes(level))
+    return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  if (['3A', '4', '4B'].includes(level))
+    return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+  return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+}
+
+function fmtKes(v) {
+  const n = parseFloat(v || 0)
+  return new Intl.NumberFormat('en-KE', {
+    style: 'currency',
+    currency: 'KES',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n)
+}
+</script>
