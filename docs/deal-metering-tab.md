@@ -17,6 +17,7 @@ One card per deal facility, Facility ID first:
 | Onboarding | Status, sync status and access; **Sync to OpenMeter**; **Send probe event** (checks the round trip) |
 | Site key | Masked prefix, issue date and delivery; **Issue site key**; **Reveal full key** (Administrator) |
 | Welcome bonus | Whether the facility's one-time welcome bonus is out, when and how (by whom, auto-assigned with which order, or with which paid invoice); **Dispense N bonus tokens**, disabled for good once dispensed. See [welcome-bonus-dispense.md](./welcome-bonus-dispense.md) |
+| Plan | Tokens (Flex), Subscription (Fixed) or none; for a subscription its status, package, activation and expiry, and each paid term with its invoice. **Cancel subscription**, **Suspend site**, **Reactivate site** (each needs a reason) and **Refresh plan**. See [subscription-lifecycle.md](./subscription-lifecycle.md) |
 | Balances | Granted, used this period, remaining and overage; grants; **Re-issue expiring grants** |
 | Delivery | Queued, delivered and failed counts; recent events; **Retry failed events** |
 
@@ -32,8 +33,9 @@ CRM never imports the metering app. `crm/api/metering_admin.py` calls these hook
 |---|---|---|
 | `crm_metering_admin_access` | — | `{can_manage, can_reveal}` |
 | `crm_metering_admin_facility` | `fid` | `{fid, imported, ...probe data}` |
-| `crm_metering_admin_action` | `action, fid=None, params={}` | the action's result |
+| `crm_metering_admin_action` | `action, fid=None, params={}` | the action's result (`cancel_subscription`, `suspend_site` and `reactivate_site` need `params.reason`) |
 | `crm_metering_admin_reveal_key` | `fid, password` | `{key, header, endpoint, status}` |
+| `crm_get_facility_plan` | `fid` | `{fid, plan_type, subscription, terms}` (also inside the facility data as `plan`) |
 | `crm_welcome_bonus_status` | `fid` | `{fid, dispensed, status, tokens, dispensed_at, source_doctype, source_name, error}` |
 | `crm_dispense_welcome_bonus` | `fid, tokens, source_doctype=None, source_name=None` | the status above plus `changed` and `reason` |
 
