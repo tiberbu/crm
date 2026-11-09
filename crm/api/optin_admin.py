@@ -14,16 +14,25 @@ import io
 import json
 import math
 import re
+import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.utils.jinja import get_jenv
 from jinja2.exceptions import TemplateSyntaxError
 
 from crm.api._email import branded_email_html, create_transactional_communication
-from crm.utils.facility_ids import facility_ids_by_mfl
+from crm.utils.facility_ids import (
+	SYNC_STATUS,
+	facility_id_holders,
+	facility_ids_by_mfl,
+	fill_facility_rows,
+	is_valid_facility_id,
+	owner_facility_candidates,
+)
 from crm.utils.optin_bundles import membership_price_lists, normalize_price_lists
 from crm.utils.onboarding_source import (
 	NETWORK_OPTIN_CONTACT_SOURCE,
@@ -2040,10 +2049,14 @@ def save_facility(data: Any):
 	  mfl_code: str,
 	  facility_name: str,
 	  organization?: str,  # blank defaults to the facility name
-	  keph_level: str,
-	  memberships: [{network, price_list_override?, status, contact_name, contact_email, contact_phone}]
-	  ``price_list_override`` is optional on edits so contact updates cannot clear
-	  pricing accidentally; CSV/admin callers may send an explicit blank to clear it.
+	keph_level: str,
+	memberships: [{network, price_list_override?, status, contact_name, contact_email, contact_phone}]
+	``price_list_override`` is optional on edits so contact updates cannot clear
+	pricing accidentally; CSV/admin callers may send an explicit blank to clear it.
+	``hfr_facility_id`` is optional; a blank value never clears a stored one. Replacing a
+	stored one needs ``replace_facility_id`` and an administrator; either way the matching
+	Lead/Deal rows are filled and a conflicting stored ID is refused.
+	``hfr_facility_id_source`` ("hfr" or "manual") sets the honest sync status.
 	}
 	Max 2 memberships enforced.
 	"""
@@ -2116,10 +2129,20 @@ def save_facility(data: Any):
 	memberships = optin_memberships
 
 	doc.mfl_code = mfl_code or doc.mfl_code
-	# The Facility ID comes from the HFR lookup or the CSV; a blank value never clears a stored one.
-	hfr_facility_id = frappe.utils.cstr(data.get("hfr_facility_id") or "").strip()
-	if hfr_facility_id:
-		doc.hfr_facility_id = hfr_facility_id
+	# A stored Facility ID is never cleared by a blank value, and a different value is a
+	# deliberate replacement (admin only, confirmed) that also fills the matching rows.
+	new_fid = frappe.utils.cstr(data.get("hfr_facility_id") or "").strip()
+	old_fid = frappe.utils.cstr(doc.hfr_facility_id or "").strip()
+	fid_source = "hfr" if frappe.utils.cstr(data.get("hfr_facility_id_source")) == "hfr" else "manual"
+	if new_fid and new_fid.casefold() != old_fid.casefold():
+		if not is_valid_facility_id(new_fid):
+			frappe.throw(_("Enter a Facility ID like FID-00-12345-1."))
+		if old_fid and not (frappe.utils.cint(data.get("replace_facility_id")) and _is_admin()):
+			frappe.throw(_("This facility already has a Facility ID. Use Change to replace it."))
+		if facility_id_holders(new_fid, doc.mfl_code):
+			frappe.throw(_("Facility ID {0} is already on another facility.").format(new_fid))
+		doc.hfr_facility_id = new_fid
+		doc.hfr_sync_status = SYNC_STATUS[fid_source]
 	doc.facility_name = frappe.utils.cstr(data.get("facility_name") or doc.facility_name or "")
 	if "organization" in data:
 		doc.organization = frappe.utils.cstr(data.get("organization") or "").strip()
@@ -2214,7 +2237,12 @@ def save_facility(data: Any):
 			membership_values,
 		)
 
+	filled_fid = new_fid if (new_fid and new_fid.casefold() != old_fid.casefold()) else None
 	doc.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	if filled_fid:
+		fill_facility_rows(
+			doc.mfl_code, filled_fid, sync_status=SYNC_STATUS[fid_source], replace_fid=old_fid or None
+		)
 	frappe.db.commit()
 
 	# New parent facilities send their invitations in after_insert. For an existing
@@ -2317,6 +2345,18 @@ def resend_facility_invitation(facility_name: Any, membership_name: Any):
 # ---------------------------------------------------------------------------
 
 
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=600)
+def lookup_owner_facilities(owner_id_number: Any):
+	"""
+	Look up the owner's facilities in the Health Facility Registry by ID number, for the
+	network facility form. Returns {status, candidates} with the Facility ID included.
+	"""
+	if not _is_admin() and not _get_coordinator_networks():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	return owner_facility_candidates(owner_id_number)
+
+
 @frappe.whitelist()
 def lookup_hfr(mfl_code: Any):
 	"""
@@ -2331,10 +2371,25 @@ def lookup_hfr(mfl_code: Any):
 	from crm.api.hfr import search_facility
 
 	results = search_facility(mfl_code, search_by="mfl_code")
-	if not results:
+	# Never trust results[0]: use the hit whose MFL actually matches the input.
+	matched = [
+		r
+		for r in (results or [])
+		if frappe.utils.cstr(r.get("mfl_code")).strip().lower() == mfl_code.lower()
+	]
+	if not matched:
 		frappe.throw(_("Facility MFL %s not found in HFR") % mfl_code)
 
-	hit = results[0]
+	# Prefer hits that carry a deployment FID; conflicting FIDs for one MFL are
+	# treated as not found rather than guessing.
+	with_fid = [r for r in matched if frappe.utils.cstr(r.get("fid")).strip()]
+	if with_fid:
+		distinct = {frappe.utils.cstr(r.get("fid")).strip() for r in with_fid}
+		if len(distinct) > 1:
+			frappe.throw(_("Facility MFL %s not found in HFR") % mfl_code)
+		hit = with_fid[0]
+	else:
+		hit = matched[0]
 	keph_level_raw = frappe.utils.cstr(hit.get("level") or "").strip()
 	if keph_level_raw and not keph_level_raw.lower().startswith("level"):
 		keph_level = "Level %s" % keph_level_raw
@@ -2352,6 +2407,10 @@ def lookup_hfr(mfl_code: Any):
 # ---------------------------------------------------------------------------
 # CSV Import
 # ---------------------------------------------------------------------------
+
+# Cumulative time budget for best-effort, FID-only HFR lookups during a CSV
+# import. Lookups needed to resolve a missing name or level are not budgeted.
+_CSV_FID_LOOKUP_BUDGET_SECONDS = 10.0
 
 
 @frappe.whitelist()
@@ -2408,16 +2467,32 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 			if key is not None
 		}
 
+	# Resolve the register once, before any HFR call: a stored Facility ID always
+	# wins over a lookup, so the import can never re-key a facility.
+	rows = [
+		(idx, normalize_row(raw_row))
+		for idx, raw_row in enumerate(reader, start=2)  # row 1 is header
+	]
+	rows = [(idx, row) for idx, row in rows if any(row.values())]
+	# The register matches MFL case-insensitively but returns its own casing, so
+	# fold both sides; a differently cased CSV MFL must still seed from the register.
+	known_ids = {
+		key.casefold(): value
+		for key, value in facility_ids_by_mfl(row.get("mfl_code", "") for _, row in rows).items()
+	}
+
+	# FID-only lookups (name and level already present) are best effort: a hung
+	# registry must not stall the whole import, so they share a cumulative time
+	# budget. Only lookup time counts against it — time spent saving rows or in
+	# un-budgeted lookups does not.
+	fid_lookup_seconds = 0.0
+
 	errors = []
 	preview_rows = []
 	imported = 0
 	seen_mfl_codes = set()
 
-	for idx, raw_row in enumerate(reader, start=2):  # row 1 is header
-		row = normalize_row(raw_row)
-		if not any(row.values()):
-			continue
-
+	for idx, row in rows:
 		mfl_code = row.get("mfl_code", "")
 		contact_name = row.get("contact_name", "")
 		contact_email = row.get("contact_email", "").lower()
@@ -2428,7 +2503,7 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		preview = {
 			"row": idx,
 			"mfl_code": mfl_code,
-			"hfr_facility_id": row.get("hfr_facility_id", ""),
+			"hfr_facility_id": row.get("hfr_facility_id", "") or known_ids.get(mfl_code.casefold(), ""),
 			"facility_name": facility_name,
 			"organization": row.get("organization", ""),
 			"price_list_override": price_list_override,
@@ -2454,18 +2529,28 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		):
 			error = "price_list_override must be an enabled selling price list"
 
-		# HFR enrichment if fields missing. It is safe in preview mode because
+		# HFR enrichment if fields are missing. It is safe in preview mode because
 		# it does not write; it also ensures the count matches what can import.
-		if not error and (not facility_name or not keph_level):
-			try:
-				hfr = lookup_hfr(mfl_code)
-				facility_name = facility_name or hfr.get("facility_name") or ""
-				keph_level = keph_level or hfr.get("keph_level") or ""
-			except Exception:
-				# A facility name remains mandatory, but an absent KEPH level
-				# has the established Level 3 fallback used by this importer.
-				if not facility_name:
-					error = "facility_name could not be resolved (not in CSV and HFR lookup failed)"
+		# A missing Facility ID (after the register seed) also triggers a lookup,
+		# but it is best effort under a time budget so a hung registry cannot stall
+		# the whole import; the row then simply stays "not linked yet".
+		if not error and (not facility_name or not keph_level or not preview["hfr_facility_id"]):
+			fid_only = bool(facility_name and keph_level)
+			if not fid_only or fid_lookup_seconds < _CSV_FID_LOOKUP_BUDGET_SECONDS:
+				started = time.monotonic()
+				try:
+					hfr = lookup_hfr(mfl_code)
+					facility_name = facility_name or hfr.get("facility_name") or ""
+					keph_level = keph_level or hfr.get("keph_level") or ""
+					preview["hfr_facility_id"] = preview["hfr_facility_id"] or hfr.get("hfr_facility_id") or ""
+				except Exception:
+					# A facility name remains mandatory, but an absent KEPH level
+					# has the established Level 3 fallback used by this importer.
+					if not facility_name:
+						error = "facility_name could not be resolved (not in CSV and HFR lookup failed)"
+				finally:
+					if fid_only:
+						fid_lookup_seconds += time.monotonic() - started
 
 		organization = row.get("organization", "") or facility_name
 		preview.update({"facility_name": facility_name, "organization": organization})
@@ -2506,11 +2591,6 @@ def import_facilities_csv(csv_data: Any, network_slug: Any, dry_run: Any = 0):
 		else:
 			imported += 1
 		preview_rows.append(preview)
-
-	# Rows without a Facility ID column show the one already on record for their MFL code.
-	known_ids = facility_ids_by_mfl(row["mfl_code"] for row in preview_rows if not row["hfr_facility_id"])
-	for row in preview_rows:
-		row["hfr_facility_id"] = row["hfr_facility_id"] or known_ids.get(row["mfl_code"], "")
 
 	return {
 		"imported": imported,

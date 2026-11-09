@@ -280,6 +280,7 @@ class TestOptInFacilityCsvImport(UnitTestCase):
 
 		with (
 			patch("crm.api.optin_admin._assert_network_access") as assert_access,
+			patch("crm.api.hfr.search_facility", return_value=[]),
 			patch("crm.api.optin_admin.save_facility") as save_facility,
 		):
 			result = import_facilities_csv(csv_data, "network-a", dry_run=1)
@@ -301,7 +302,10 @@ class TestOptInFacilityCsvImport(UnitTestCase):
 			"1003,Missing Phone Clinic,Level 3,Sam Doe,sam@example.com,\n"
 		)
 
-		with patch("crm.api.optin_admin._assert_network_access"):
+		with (
+			patch("crm.api.optin_admin._assert_network_access"),
+			patch("crm.api.hfr.search_facility", return_value=[]),
+		):
 			result = import_facilities_csv(csv_data, "network-a", dry_run=1)
 
 		self.assertEqual(result["valid_count"], 1)
@@ -318,6 +322,7 @@ class TestOptInFacilityCsvImport(UnitTestCase):
 
 		with (
 			patch("crm.api.optin_admin._assert_network_access"),
+			patch("crm.api.hfr.search_facility", return_value=[]),
 			patch("crm.api.optin_admin.save_facility") as save_facility,
 		):
 			result = import_facilities_csv(csv_data, "network-a", dry_run=0)
@@ -706,6 +711,7 @@ class TestOptInPriceListTools(UnitTestCase):
 
 		with (
 			patch("crm.api.optin_admin._assert_network_access"),
+			patch("crm.api.hfr.search_facility", return_value=[]),
 			patch("crm.api.optin_admin.frappe.db.exists", return_value=True),
 			patch("crm.api.optin_admin.save_facility") as save_facility,
 		):
@@ -874,6 +880,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = [
@@ -958,6 +965,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = [
@@ -1013,6 +1021,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = []
@@ -1067,6 +1076,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = []
@@ -1112,6 +1122,7 @@ class TestOptInPriceListTools(UnitTestCase):
 			mfl_code = "1001"
 			facility_name = "First Clinic"
 			keph_level = "Level 3"
+			hfr_facility_id = ""
 
 			def __init__(self):
 				self.memberships = [

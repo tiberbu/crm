@@ -83,6 +83,33 @@ One row, one journey, permanently.
   Customer and pricing into an opt-in row (keeps pricing and invitation history) and a coupon
   row (keeps Customer and coupon flag). The dev site had none.
 
+## Facility ID
+
+Metering, tokens and provisioning key on the Health Facility Registry ID (`hfr_facility_id`),
+not the MFL code. The field is stored once on the pre-qualified facility register and read from
+there everywhere a facility appears; the same field is carried onto Lead and Deal facility rows
+when a journey creates them.
+
+- **Where it comes from.** The Opt-In processor copies it from the canonical payload onto the
+  Lead rows (which `convert_to_deal` then carries to the Deal). The CSV import keeps a
+  registry-resolved FID and seeds blank cells from the register. The opt-in wizard offers an
+  owner-lookup panel: the contact enters the owner's ID number once, picks from the registry
+  candidates (opaque until linked) and links the Facility ID to their facility.
+- **Owner lookup.** `lookup_owner_facilities` (guest, POST-only, signing-token verified,
+  rate-limited) and `crm.api.optin_admin.lookup_owner_facilities` (staff, POST-only) both call
+  the registry's `fetch-facilities-by-owner`. The owner ID number is used for the search and is
+  never stored, logged or returned.
+- **Recording.** All writes go through `crm.utils.facility_ids.record_facility_id` /
+  `fill_facility_rows`: a blank FID never clears a stored one, a different stored value is never
+  silently replaced (replacement is an explicit, admin-confirmed action on the network facility
+  form), and a Facility ID already held by a different MFL is refused — guests and partners
+  outright, staff after an explicit "link anyway" confirmation on the Metering tab.
+- **Repair.** The Metering tab's former "This facility has no Facility ID" dead end is a link
+  panel: type the ID or find it by owner ID. The backfill patch
+  `backfill_optin_facility_ids` fills blank FIDs on existing Lead/Deal rows from the register.
+- **Honest status.** `hfr_sync_status` says "HFR Verified" only when the ID came from the
+  registry and "Manual" when it was typed; nothing is claimed that was not checked.
+
 ## Panel decisions (Party Mode)
 
 Led by the Solutions Architect, Business Analyst, UI/UX Expert, QA Lead and Security Expert.

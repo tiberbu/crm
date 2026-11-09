@@ -78,8 +78,8 @@ const pageDescription = computed(() => {
 
         <div class="grid gap-3 text-xs sm:grid-cols-3">
           <div class="rounded-cx-sm border border-cx-border-soft bg-cx-well p-3">
-            <span class="block text-xs text-cx-ink-3">Package</span>
-            <strong class="text-cx-ink">{{ req.package?.display_name || 'Not selected' }}</strong>
+            <span class="block text-xs text-cx-ink-3">Plan</span>
+            <strong class="text-cx-ink">{{ req.package?.display_name || req.plan_name || 'Not selected' }}</strong>
             <span v-if="req.package?.token_quantity" class="mt-0.5 block text-xs text-cx-ink-3">
               <CxIcon name="coins" class="inline-block size-4 align-[-0.15em]" /> {{ req.package.token_quantity }} tokens
             </span>

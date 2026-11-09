@@ -35,13 +35,13 @@
       </div>
     </div>
 
-    <p v-if="!facility.fid" class="mt-3 text-base text-ink-gray-7">
-      {{
-        __(
-          "This facility has no Facility ID. Add it on the deal's facility row before metering it.",
-        )
-      }}
-    </p>
+    <FacilityIdLinkPanel
+      v-if="!facility.fid"
+      class="mt-3"
+      :deal-id="dealId"
+      :facility="facility"
+      @linked="$emit('linked', facility.row_name)"
+    />
     <div
       v-else-if="probe.loading && !data"
       class="mt-3 text-base text-ink-gray-6"
@@ -487,9 +487,11 @@ import {
   welcomeBonusVia,
 } from '@/utils/metering'
 import { cockpitRecordHref } from '@/pages/FinanceCockpit/composables/useFinanceNavigation.js'
+import FacilityIdLinkPanel from './FacilityIdLinkPanel.vue'
 
 const props = defineProps({
   facility: { type: Object, required: true },
+  dealId: { type: String, default: '' },
   canReveal: { type: Boolean, default: false },
   busy: { type: String, default: null },
 })
@@ -501,6 +503,7 @@ const emit = defineEmits([
   'reveal',
   'probe',
   'reissue',
+  'linked',
 ])
 
 const probe = createResource({

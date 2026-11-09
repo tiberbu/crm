@@ -150,26 +150,46 @@ def _record_link(doctype, name):
 def _order_rows(submission):
 	if not frappe.db.has_column("Sales Order", "crm_optin_submission"):
 		return []
+	fields = [
+		"name",
+		"transaction_date",
+		"delivery_date",
+		"grand_total",
+		"currency",
+		"status",
+		"docstatus",
+		# Required for OIS attribution in enrich_orders (SPEC 4.1 rule 3).
+		"crm_optin_submission",
+	]
+	for col in (
+		"crm_token_facility_mfl",
+		"crm_token_package_item",
+		"crm_optin_year",
+		"crm_optin_quarter",
+		"crm_optin_billing_key",
+		"crm_optin_quotation",
+	):
+		if frappe.db.has_column("Sales Order", col):
+			fields.append(col)
 	orders = frappe.get_list(
 		"Sales Order",
 		filters={"crm_optin_submission": submission.name, "docstatus": 1, "per_billed": ["<", 100]},
-		fields=[
-			"name",
-			"transaction_date",
-			"delivery_date",
-			"grand_total",
-			"currency",
-			"status",
-			"crm_token_facility_mfl",
-			"crm_token_package_item",
-		],
+		fields=fields,
 		order_by="creation desc",
 		limit_page_length=200,
 		ignore_permissions=True,
 	)
-	for order in orders:
-		order["can_create_invoice"] = _invoice_status_allows(order.get("status"))
-	return orders
+	from crm.api.portal_commercial import enrich_orders, package_lookup
+	from crm.api.website_redirect import _submission_facilities
+
+	ois_mfls_by_name = {
+		submission.name: [
+			cstr(snapshot.get("mfl_code")).strip()
+			for snapshot in _submission_facilities(submission)
+			if cstr(snapshot.get("mfl_code")).strip()
+		]
+	}
+	return enrich_orders(orders, ois_mfls_by_name, [], package_lookup([order.get("crm_token_package_item") for order in orders]))
 
 
 def _invoice_status_allows(status):
@@ -849,7 +869,23 @@ def start_token_payment(sales_order: Any):
 		return _start_or_resume_payment(order)
 
 
+def _order_is_schedule_governed(order_name) -> bool:
+	"""True when only the Network schedule may invoice this order (SPEC I7)."""
+	from crm.utils.portal_commercial import is_schedule_governed
+
+	fields = []
+	for col in ("crm_optin_billing_key", "crm_optin_year"):
+		if frappe.db.has_column("Sales Order", col):
+			fields.append(col)
+	if not fields:
+		return False
+	row = frappe.db.get_value("Sales Order", order_name, fields, as_dict=True) or {}
+	return is_schedule_governed(row.get("crm_optin_billing_key"), row.get("crm_optin_year"))
+
+
 def _start_or_resume_payment(order):
+	if _order_is_schedule_governed(order.name):
+		frappe.throw(_("This invoice is issued on your billing schedule."), frappe.ValidationError)
 	key = _text(order.crm_token_purchase_key)
 	existing_filters = {}
 	if _text(order.get("crm_optin_submission")):
@@ -959,6 +995,7 @@ def add_facility_from_hfr(
 		frappe.throw(_("MFL code or HFR Facility ID is required."), frappe.ValidationError)
 
 	from crm.api.hfr import get_facility_detail, search_facility
+	from crm.utils.facility_ids import is_valid_facility_id
 
 	facility_data = {}
 	if fid:
@@ -976,7 +1013,7 @@ def add_facility_from_hfr(
 			frappe.ValidationError,
 		)
 	resolved_fid = _text(facility_data.get("hfr_facility_id")).strip()
-	if not re.fullmatch(r"FID-\d{2}-[\w-]+", resolved_fid, flags=re.IGNORECASE):
+	if not is_valid_facility_id(resolved_fid):
 		frappe.throw(
 			_("The Health Facility Registry record has no valid Facility ID (FID) for deployment lookup, so it was not linked."),
 			frappe.ValidationError,

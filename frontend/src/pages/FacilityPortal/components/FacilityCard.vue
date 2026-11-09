@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import CxIcon from './CxIcon.vue'
 import { facilityId } from '@/utils/facilityId'
 import { tokenBalance, tokenBalanceText } from '@/utils/tokenBalance'
+import { balanceOrNextLabel, balanceOrNextText, canTopUp, commercialOf, facilityPlanText, showsTokens } from '@/utils/portalCommercial'
 
 const props = defineProps({
   facility: { type: Object, required: true },
@@ -17,7 +18,12 @@ const props = defineProps({
 const emit = defineEmits(['open', 'top-up', 'pay'])
 
 const fid = computed(() => facilityId(props.facility))
+const isToken = computed(() => commercialOf(props.facility).plan_type === 'token')
 const balanceKnown = computed(() => tokenBalance(props.facility).known)
+const planText = computed(() => facilityPlanText(props.facility).join(' · '))
+const balanceLabel = computed(() => balanceOrNextLabel(props.facility))
+const balanceValue = computed(() => balanceOrNextText(props.facility))
+const allowTopUp = computed(() => canTopUp(props.facility))
 const outstanding = computed(
   () => props.facility.invoice_summary?.has_outstanding,
 )
@@ -90,9 +96,9 @@ const outstanding = computed(
       class="mt-4 space-y-1.5 rounded-cx-sm border border-cx-border-soft bg-cx-well p-3 text-xs"
     >
       <div class="flex items-baseline justify-between gap-3">
-        <dt class="shrink-0 text-cx-ink-3">Active plan</dt>
-        <dd class="min-w-0 text-right font-semibold text-cx-ink">
-          {{ facility.token_package || 'None' }}
+        <dt class="shrink-0 text-cx-ink-3">Plan</dt>
+        <dd class="min-w-0 text-right font-semibold text-cx-ink" data-testid="facility-card-plan">
+          {{ planText }}
         </dd>
       </div>
       <div
@@ -111,19 +117,19 @@ const outstanding = computed(
         </dd>
       </div>
       <div class="flex items-baseline justify-between gap-3">
-        <dt class="shrink-0 text-cx-ink-3">Available tokens</dt>
+        <dt class="shrink-0 text-cx-ink-3">{{ balanceLabel }}</dt>
         <dd
           class="inline-flex min-w-0 items-center gap-1 text-right font-semibold"
-          :class="balanceKnown ? 'text-cx-brand' : 'text-cx-ink-3'"
+          :class="isToken && balanceKnown ? 'text-cx-brand' : 'text-cx-ink-3'"
           :data-testid="`facility-tokens-${facility.mfl_code}`"
         >
-          <CxIcon v-if="balanceKnown" name="coins" class="size-4 shrink-0" />{{
-            tokenBalanceText(facility, ' tokens')
+          <CxIcon v-if="isToken && balanceKnown" name="coins" class="size-4 shrink-0" />{{
+            balanceValue
           }}
         </dd>
       </div>
       <div
-        v-if="alert?.enabled"
+        v-if="alert?.enabled && showsTokens(facility)"
         class="flex items-baseline justify-between gap-3 text-xs"
         :data-testid="`facility-alert-${facility.mfl_code}`"
       >
@@ -177,6 +183,7 @@ const outstanding = computed(
         </span>
         <div class="flex items-center gap-2">
           <button
+            v-if="allowTopUp"
             type="button"
             class="flex-1 whitespace-nowrap rounded-cx-sm bg-cx-ink px-3 py-2 text-xs font-semibold text-cx-contrast transition hover:bg-cx-ink-hover"
             @click.stop="emit('top-up', facility)"

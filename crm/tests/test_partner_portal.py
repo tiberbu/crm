@@ -14,7 +14,7 @@ import json
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import UnitTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from crm.partner_portal.deal import deal_won
 from crm.partner_portal.pricing import (
@@ -327,3 +327,63 @@ class TestPartnerPortal(UnitTestCase):
 				contact_person="Jane Doe",
 				contact_email="jane@example.com",
 			)
+
+
+class TestDealWonFacilityId(IntegrationTestCase):
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self._commit_patch = patch.object(frappe.db, "commit", lambda *args, **kwargs: None)
+		self._commit_patch.start()
+		self.addCleanup(self._commit_patch.stop)
+		frappe.db.savepoint("deal_won_fid_test")
+		self.addCleanup(frappe.db.rollback, save_point="deal_won_fid_test")
+		self.addCleanup(frappe.set_user, "Administrator")
+		if not frappe.db.exists("CRM Opt-In Network", "test-partner-portal-network"):
+			net = frappe.new_doc("CRM Opt-In Network")
+			net.name = "test-partner-portal-network"
+			net.slug = "test-partner-portal-network"
+			net.display_name = "Test Partner Network"
+			net.partner_id = "889977"
+			net.enabled = 1
+			net.insert(ignore_permissions=True)
+		self.mfl = "MFL-DWFID-%s" % frappe.generate_hash(length=6)
+
+	def _deal_won(self, **kwargs):
+		args = {
+			"facility": {"mfl_code": self.mfl, "facility_name": "Deal Won FID Test", "keph_level": "Level 3"},
+			"partner_id": "889977",
+			"price_lists": {"1": 27500},
+			"contact_email": "deal-won-fid@example.com",
+			"contact_person": "FID Contact",
+			"contact_phone": "+254711223344",
+			"send_email": 0,
+		}
+		args.update(kwargs)
+		return deal_won(**args)
+
+	def test_omitting_the_fid_behaves_as_before(self):
+		res = self._deal_won()
+		self.assertTrue(res["success"])
+		self.assertEqual(res["facility"]["hfr_facility_id"], "")
+
+	def test_valid_fid_lands_on_the_register_and_survives_the_save(self):
+		res = self._deal_won(hfr_facility_id="FID-00-DWFID-1")
+		self.assertEqual(res["facility"]["hfr_facility_id"], "FID-00-DWFID-1")
+		fac = frappe.get_doc("CRM Pre-Qualified Facility", res["facility"]["name"])
+		self.assertEqual(fac.hfr_facility_id, "FID-00-DWFID-1")
+		self.assertEqual(fac.hfr_sync_status, "Manual")
+
+	def test_dict_fid_is_recorded_and_the_parameter_wins(self):
+		res = self._deal_won(
+			facility={"mfl_code": self.mfl, "facility_name": "Deal Won FID Test", "keph_level": "Level 3", "hfr_facility_id": "FID-00-DWFID-2"},
+			hfr_facility_id="FID-00-DWFID-3",
+		)
+		self.assertEqual(res["facility"]["hfr_facility_id"], "FID-00-DWFID-3")
+
+	def test_invalid_fid_fails_before_any_membership_write(self):
+		self.assertRaises(frappe.ValidationError, self._deal_won, hfr_facility_id="FID-1")
+		self.assertFalse(frappe.db.exists("CRM Pre-Qualified Facility", {"mfl_code": self.mfl}))
+
+	def test_conflicting_fid_fails_against_the_stored_record(self):
+		self._deal_won(hfr_facility_id="FID-00-DWFID-1")
+		self.assertRaises(frappe.ValidationError, self._deal_won, hfr_facility_id="FID-00-DWFID-9")

@@ -56,6 +56,7 @@ from crm.api.optin import (
 	_get_membership,
 	_get_all_memberships,
 	_invoice_schedule_for_plan,
+	_lead_facility_row,
 	_note_contract_handoff_skipped,
 	_prepare_submission_payload,
 	_process_submission,
@@ -76,11 +77,35 @@ from crm.api.optin import (
 	verify_prequalified,
 	_mark_opted_in_facilities,
 	send_deal_optin_invitation,
+	link_facility_id,
+	lookup_owner_facilities,
 )
 from crm.patches.v1_0.seed_negotiated_price_lists import PRICE_LISTS
 from crm.setup.optin import ensure_internal_signatory_reminder_job
 from crm.utils.jinja import get_contract_network_for_print, render_current_terms_for_contract
 from crm.utils.optin_bundles import billing_schedule
+
+
+class TestLeadFacilityRow(UnitTestCase):
+	def test_row_carrying_a_facility_id_claims_hfr_verified(self):
+		row = _lead_facility_row(
+			{"mfl_code": "MFL-001", "facility_name": "Clinic", "keph_level": "Level 3", "hfr_facility_id": "FID-00-1"}
+		)
+		self.assertEqual(row["hfr_facility_id"], "FID-00-1")
+		self.assertEqual(row["hfr_sync_status"], "HFR Verified")
+
+	def test_row_without_a_facility_id_stays_unverified(self):
+		row = _lead_facility_row(
+			{"mfl_code": "MFL-001", "facility_name": "Clinic", "keph_level": "Level 3", "hfr_facility_id": ""}
+		)
+		self.assertEqual(row["hfr_facility_id"], "")
+		self.assertEqual(row["hfr_sync_status"], "")
+
+	def test_row_tolerates_a_missing_facility_id_key(self):
+		row = _lead_facility_row({"mfl_code": "MFL-001"})
+		self.assertEqual(row["hfr_facility_id"], "")
+		self.assertEqual(row["hfr_sync_status"], "")
+		self.assertEqual(row["mfl_code"], "MFL-001")
 
 
 class TestOptInInvitationAccess(UnitTestCase):
@@ -436,6 +461,34 @@ class TestOptInSignatoryHandoff(UnitTestCase):
 			{"name": "Dr Ada Signer", "email": "ada@example.com", "phone": "+254700000002"},
 		)
 		self.assertEqual(payload["terms_acknowledgement"], "signatory_nomination")
+
+	def test_facility_rows_carry_the_register_facility_id_from_the_beginning(self):
+		with (
+			patch("crm.api.optin.get_pricing", return_value=self._pricing_result()),
+			patch("crm.api.optin._get_network_doc", return_value=frappe._dict()),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin.frappe.db.get_single_value", return_value="Tiberbu Healthnet"),
+			patch("crm.api.optin.facility_ids_by_mfl", return_value={"MFL-001": "FID-00-TEST-1"}),
+		):
+			payload = _prepare_submission_payload(
+				self._payload(), "token", "ivy@example.com", "network-a", 9999999999
+			)
+
+		self.assertEqual(payload["facilities"][0]["hfr_facility_id"], "FID-00-TEST-1")
+
+	def test_facility_rows_without_a_register_facility_id_are_left_blank(self):
+		with (
+			patch("crm.api.optin.get_pricing", return_value=self._pricing_result()),
+			patch("crm.api.optin._get_network_doc", return_value=frappe._dict()),
+			patch("crm.api.optin.frappe.db.exists", return_value=True),
+			patch("crm.api.optin.frappe.db.get_single_value", return_value="Tiberbu Healthnet"),
+			patch("crm.api.optin.facility_ids_by_mfl", return_value={}),
+		):
+			payload = _prepare_submission_payload(
+				self._payload(), "token", "ivy@example.com", "network-a", 9999999999
+			)
+
+		self.assertEqual(payload["facilities"][0]["hfr_facility_id"], "")
 
 	def test_selected_facility_supplier_is_preserved_in_canonical_pricing(self):
 		payload = self._prepare(
@@ -2921,3 +2974,183 @@ class TestOptInTeardown(UnitTestCase):
 			frappe.db.delete("CRM Deal", {"name": deal.name})
 			frappe.db.delete("CRM Organization", {"name": organization.name})
 			frappe.db.commit()
+
+
+class TestOptInOwnerFacilityLinking(UnitTestCase):
+	EMAIL = "owner.example@test.io"
+	SLUG = "network-a"
+
+	def _facilities(self):
+		return [
+			frappe._dict({"mfl_code": "MFL-OWN-1", "facility_name": "Alpha", "keph_level": "Level 3", "hfr_facility_id": ""}),
+			frappe._dict({"mfl_code": "MFL-OWN-2", "facility_name": "Beta", "keph_level": "Level 4", "hfr_facility_id": "FID-00-BETA"}),
+		]
+
+	def _cache(self):
+		class FakeCache:
+			"""Emulates frappe.cache, the module-level object on this Frappe fork."""
+
+			def __init__(self):
+				self.kv = {}
+				self.hashes = {}
+
+			def __call__(self):
+				return self
+
+			def set_value(self, key, val, user=None, expires_in_sec=None, shared=False):
+				self.kv[key] = val
+
+			def get_value(self, key, generator=None, user=None, expires=False, shared=False):
+				if key in self.kv:
+					return self.kv[key]
+				return generator() if callable(generator) else None
+
+			def delete_value(self, keys, user=None, make_keys=True, shared=False):
+				self.kv.pop(keys, None)
+
+			def hset(self, name, key, value, shared=False, *args, **kwargs):
+				if key is not None:
+					self.hashes[(name, key)] = value
+
+			def hget(self, name, key, generator=None, shared=False):
+				return self.hashes.get((name, key))
+
+			def hdel(self, name, key, shared=False):
+				self.hashes.pop((name, key), None)
+
+		return FakeCache()
+
+	def _patched(self, facilities=None, candidates=None, holders=None):
+		facilities = facilities if facilities is not None else self._facilities()
+		candidates = (
+			candidates
+			if candidates is not None
+			else [
+				{"hfr_facility_id": "FID-00-ALPHA", "facility_name": "Alpha", "facility_level": "Level 3", "facility_type": "Hospital"},
+			]
+		)
+		fake_cache = self._cache()
+		return (
+			patch("crm.api.optin._validate_signing_token"),
+			patch("crm.api.optin._wizard_facilities", return_value=facilities),
+			patch("crm.api.optin.owner_facility_candidates", return_value={"status": "ok" if candidates else "no_facilities", "candidates": candidates}),
+			patch("crm.api.optin.facility_id_holders", return_value=holders or []),
+			patch("crm.api.optin.record_facility_id"),
+			patch("crm.api.optin.frappe.cache", new=fake_cache),
+		)
+
+	def test_lookups_are_post_only(self):
+		for func in (lookup_owner_facilities, link_facility_id):
+			self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[func], ["POST"])
+
+	def test_bad_token_raises_and_makes_no_hfr_call(self):
+		lookup = MagicMock()
+		with (
+			patch("crm.api.optin._validate_signing_token", side_effect=frappe.AuthenticationError("bad")),
+			patch("crm.api.optin.owner_facility_candidates", new=lookup),
+			patch("crm.api.optin._wizard_facilities", return_value=self._facilities()),
+			patch("crm.api.optin.frappe.cache", new=self._cache()),
+		):
+			with self.assertRaises(frappe.AuthenticationError):
+				lookup_owner_facilities("t", self.EMAIL, self.SLUG, 9999999999, "12345678")
+		lookup.assert_not_called()
+
+	def test_lookup_returns_opaque_candidates_without_fid(self):
+		(p1, p2, p3, p4, p5, p6) = self._patched()
+		with (p1, p2, p3, p4, p5, p6):
+			result = lookup_owner_facilities("tok", " OWNER.Example@Test.io ", self.SLUG, 9999999999, "12345678")
+		self.assertEqual(result["status"], "ok")
+		self.assertEqual(len(result["candidates"]), 1)
+		candidate = result["candidates"][0]
+		self.assertEqual(set(candidate), {"candidate_id", "facility_name", "facility_level", "facility_type"})
+		self.assertNotIn("hfr_facility_id", json.dumps(result))
+
+	def test_owner_id_is_absent_from_cache_and_response(self):
+		(p1, p2, p3, p4, p5, p6) = self._patched()
+		with (p1, p2, p3, p4, p5, p6):
+			result = lookup_owner_facilities("tok", self.EMAIL, self.SLUG, 9999999999, "12345678")
+		self.assertNotIn("12345678", json.dumps(result))
+
+	def test_all_linked_contact_gets_no_unlinked(self):
+		facilities = self._facilities()
+		facilities[0]["hfr_facility_id"] = "FID-00-ALPHA"
+		(p1, p2, p3, p4, p5, p6) = self._patched(facilities=facilities)
+		with (p1, p2, p3, p4, p5, p6):
+			result = lookup_owner_facilities("tok", self.EMAIL, self.SLUG, 9999999999, "12345678")
+		self.assertEqual(result["status"], "no_unlinked")
+
+	def test_candidate_with_external_holder_is_dropped(self):
+		(p1, p2, p3, p4, p5, p6) = self._patched(holders=[{"doctype": "CRM Deal", "name": "D", "mfl_code": "MFL-OTHER"}])
+		with (p1, p2, p3, p4, p5, p6):
+			result = lookup_owner_facilities("tok", self.EMAIL, self.SLUG, 9999999999, "12345678")
+		self.assertEqual(result["status"], "no_facilities")
+
+	def test_link_only_allows_the_contacts_own_mfl(self):
+		record = MagicMock()
+		facilities = self._facilities()
+		fake_cache = self._cache()
+		with (
+			patch("crm.api.optin._validate_signing_token"),
+			patch("crm.api.optin._wizard_facilities", return_value=facilities),
+			patch(
+				"crm.api.optin.owner_facility_candidates",
+				return_value={"status": "ok", "candidates": []},
+			),
+			patch("crm.api.optin.facility_id_holders", return_value=[]),
+			patch("crm.api.optin.record_facility_id", new=record),
+			patch("crm.api.optin.frappe.cache", new=fake_cache),
+		):
+			result = link_facility_id("tok", self.EMAIL, self.SLUG, 9999999999, "MFL-OTHER", "cid")
+		self.assertEqual(result, {"status": "not_allowed"})
+		record.assert_not_called()
+
+	def test_link_with_unknown_candidate_is_expired(self):
+		(p1, p2, p3, p4, p5, p6) = self._patched()
+		with (p1, p2, p3, p4, p5, p6):
+			result = link_facility_id("tok", self.EMAIL, self.SLUG, 9999999999, "MFL-OWN-1", "invented")
+		self.assertEqual(result, {"status": "expired"})
+
+	def test_link_success_round_trip(self):
+		facilities = self._facilities()
+		fake_cache = self._cache()
+		with (
+			patch("crm.api.optin._validate_signing_token"),
+			patch("crm.api.optin._wizard_facilities", return_value=facilities),
+			patch(
+				"crm.api.optin.owner_facility_candidates",
+				return_value={
+					"status": "ok",
+					"candidates": [{"hfr_facility_id": "FID-00-ALPHA", "facility_name": "Alpha", "facility_level": "Level 3", "facility_type": "Hospital"}],
+				},
+			),
+			patch("crm.api.optin.facility_id_holders", return_value=[]),
+			patch("crm.api.optin.record_facility_id", return_value={"status": "linked", "filled": 1}) as record,
+			patch("crm.api.optin.frappe.cache", new=fake_cache),
+		):
+			lookup = lookup_owner_facilities("tok", self.EMAIL, self.SLUG, 9999999999, "12345678")
+			cid = lookup["candidates"][0]["candidate_id"]
+			result = link_facility_id("tok", self.EMAIL, self.SLUG, 9999999999, "MFL-OWN-1", cid)
+		self.assertEqual(result, {"status": "linked", "mfl_code": "MFL-OWN-1", "hfr_facility_id": "FID-00-ALPHA"})
+		record.assert_called_once_with("MFL-OWN-1", "FID-00-ALPHA", source="hfr", actor=self.EMAIL)
+
+	def test_link_conflict_becomes_needs_coordinator_without_details(self):
+		facilities = self._facilities()
+		fake_cache = self._cache()
+		with (
+			patch("crm.api.optin._validate_signing_token"),
+			patch("crm.api.optin._wizard_facilities", return_value=facilities),
+			patch(
+				"crm.api.optin.owner_facility_candidates",
+				return_value={
+					"status": "ok",
+					"candidates": [{"hfr_facility_id": "FID-00-ALPHA", "facility_name": "Alpha", "facility_level": "Level 3", "facility_type": "Hospital"}],
+				},
+			),
+			patch("crm.api.optin.facility_id_holders", return_value=[]),
+			patch("crm.api.optin.record_facility_id", return_value={"status": "in_use", "holders": [{"name": "secret"}]}),
+			patch("crm.api.optin.frappe.cache", new=fake_cache),
+		):
+			lookup = lookup_owner_facilities("tok", self.EMAIL, self.SLUG, 9999999999, "12345678")
+			cid = lookup["candidates"][0]["candidate_id"]
+			result = link_facility_id("tok", self.EMAIL, self.SLUG, 9999999999, "MFL-OWN-1", cid)
+		self.assertEqual(result, {"status": "needs_coordinator"})
