@@ -56,6 +56,7 @@ class TestCouponRedemptionFlow(IntegrationTestCase):
 			"value": 1000,
 			"max_tokens": 0,
 			"targeting": "Assigned Facilities",
+			"status": "Active",
 		}
 		base.update(kw)
 		return frappe.get_doc({"doctype": "CRM Coupon", **base}).insert(ignore_permissions=True).name

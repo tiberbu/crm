@@ -55,6 +55,10 @@ class TestDerivedStatus(UnitTestCase):
 
 	def test_revoked_wins(self):
 		self.assertEqual(derived_status("Revoked", None, None, self._d("2026-01-01"), 0, 0), "Revoked")
+		# Inactive wins over the date window and the redemption limit.
+		self.assertEqual(
+			derived_status("Inactive", self._d("2026-06-01"), None, self._d("2026-01-01"), 1, 1), "Inactive"
+		)
 
 	def test_scheduled_before_start(self):
 		self.assertEqual(

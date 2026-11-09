@@ -99,11 +99,11 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Active\nRevoked",
+   "options": "Inactive\nActive\nRevoked",
    "read_only": 1,
-   "default": "Active",
+   "default": "Inactive",
    "in_list_view": 1,
-   "description": "Changed only by Revoke. Revoked is terminal."
+   "description": "New coupons start Inactive. Enable/Disable switch Inactive and Active; Revoke is terminal."
   },
   {
    "fieldname": "redeemed_count",
