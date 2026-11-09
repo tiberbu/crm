@@ -614,7 +614,10 @@ function pendingPaymentForFacility(facility) {
   const invoice = invoiceForFacility(facility)
   return invoice ? pendingPaymentForInvoice(invoice) : null
 }
-function openFacilityDrawer(facility) {
+// Facility page tab to open first; dashboard invoice items open the Invoices tab.
+const drawerTab = ref('overview')
+function openFacilityDrawer(facility, tab = 'overview') {
+  drawerTab.value = tab
   facilityDrawerMfl.value = facility.mfl_code
   activeView.value = 'facility_detail'
 }
@@ -626,7 +629,7 @@ function openAttentionFacility(item) {
   const facility = allFacilities.value.find(
     (row) => String(row.mfl_code || '').toLowerCase() === String(item.mfl_code || '').toLowerCase(),
   )
-  if (facility) openFacilityDrawer(facility)
+  if (facility) openFacilityDrawer(facility, 'invoice')
 }
 function closeFacilityDrawer() {
   facilityDrawerMfl.value = ''
@@ -1825,6 +1828,7 @@ onUnmounted(() => {
             :busy-order="busyId"
             :account-level-count="drawerAccountLevelCount"
             :token-alert="tokenAlerts[drawerFacility.mfl_code] || null"
+            :initial-tab="drawerTab"
             @back="closeFacilityDrawer"
             @open-top-up="openTopUpModal"
             @open-support="openNetworkSupportDrawer"
