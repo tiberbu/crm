@@ -9,7 +9,10 @@ Deal (inquiry-call scenario) or from the Customer 360 nav page (customer without
 - partner attribution (Value Express opt-in network and/or legacy CRM Partner via lead)
 - customer-wide package payment state + pending orders
 - per-facility provisioning status (memberships) + per-deal onboarding requests
-- billing (invoices, outstanding, payments)
+- quotes, orders and billing (invoices, outstanding, payments)
+- facility scope: one facility's records (attributed with the CX portal rule), with the
+  owner organization's full picture one toggle away
+  (planning artifact _bmad-output/customer-360-facility-scope)
 
 Rules enforced (mirror crm/api/lifecycle.py):
 - @frappe.whitelist() on the public API.
@@ -27,7 +30,10 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import date_diff, getdate, nowdate
+from frappe.utils import cstr, date_diff, getdate, nowdate
+
+from crm.utils.portal_commercial import attribute_facilities
+from crm.utils.token_facility import facility_mfls_for_fid
 
 MANAGER_ROLES = ("System Manager", "Sales Manager")
 
@@ -42,25 +48,37 @@ def _can_read(doctype: str) -> bool:
 
 
 @frappe.whitelist()
-def get_customer_360(organization: str = None, deal: str = None) -> dict:
+def get_customer_360(
+	organization: str | None = None,
+	deal: str | None = None,
+	facility: str | None = None,
+	scope: str | None = None,
+) -> dict:
 	"""
-	Return the 360-degree picture for a customer, either deal-scoped or org-centric.
+	Return the 360-degree picture for a customer: deal-scoped, org-centric or facility-scoped.
 
 	    {
 	      "organization": {...} | None,
 	      "deal": {...} | None,
 	      "partners": [{kind, ref, name, ...}],
 	      "summary": {package_paid, paid_amount, open_orders, open_amount,
-                     sites_total, sites_live, outstanding, invoices},
-	      "orders": [...], "invoices": [...], "payments": [...],
-	      "facilities": [...], "onboarding": [...], "deals": [...]
+	             sites_total, sites_live, outstanding, invoices, quotes},
+	      "orders": [...], "quotes": [...], "invoices": [...], "payments": [...],
+	      "facilities": [...], "onboarding": [...], "deals": [...],
+	      "scope": {mode, facility, can_widen, unattributed}
 	    }
+
+	``facility`` (a CRM Pre-Qualified Facility name) opens the facility lens: ``scope`` defaults
+	to ``"facility"`` and keeps only that facility's records; ``scope="organization"`` widens to
+	its owner organization's full picture. Orders, quotes and invoices are attributed to
+	facilities with the CX portal rule (``attribute_facilities``, SPEC 4.1).
 
 	Missing links resolve to None/[]; an incomplete chain never raises.
 	"""
 	organization = (organization or "").strip()
 	deal = (deal or "").strip()
-	if not organization and not deal:
+	facility = (facility or "").strip()
+	if not organization and not deal and not facility:
 		frappe.throw(_("Missing customer reference"), frappe.ValidationError)
 
 	if deal:
@@ -73,25 +91,70 @@ def get_customer_360(organization: str = None, deal: str = None) -> dict:
 	elif not _is_manager():
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
+	facility_ref = None
+	if facility:
+		facility_ref = _resolve_facility_ref(facility)
+		if not facility_ref:
+			frappe.throw(_("Facility not found"), frappe.DoesNotExistError)
+		if not organization and not deal:
+			organization = facility_ref["organization"] or ""
+	mode = "facility" if facility_ref and (scope or "facility") != "organization" else "organization"
+	if facility_ref and not organization and not deal:
+		mode = "facility"  # no owner to widen to
+
 	organization_data = _resolve_organization(organization)
 	deal_data = _resolve_deal(deal) if deal else None
-	partners = _resolve_partners(deal, organization)
-	orders, invoices, payments = _resolve_finance(organization, deal)
-	facilities = _resolve_facilities(organization)
-	onboarding = _resolve_onboarding(deal, organization)
-	deals = _resolve_deals(organization)
+	all_facilities = _resolve_facilities(organization)
+	if facility_ref and not any(row["name"] == facility_ref["name"] for row in all_facilities):
+		all_facilities.extend(_facility_rows([facility_ref["name"]]))
+	org_deals = [deal] if deal else _org_deal_names(organization)
+
+	facility_keys: set[str] = set()
+	facility_deals: list[str] = []
+	if facility_ref:
+		facility_keys = _facility_keys(facility_ref)
+		facility_deals = _facility_deal_names(facility_ref, facility_keys, org_deals, all_facilities)
+	finance_deals = list(dict.fromkeys(org_deals + facility_deals))
+	customers = _billing_customers(organization, finance_deals, all_facilities)
+	account_mfls = [row["mfl_code"] for row in all_facilities if row.get("mfl_code")]
+	orders, quotes, invoices, payments = _resolve_finance(finance_deals, customers, account_mfls)
+
+	unattributed = {"orders": 0, "quotes": 0, "invoices": 0}
+	if mode == "facility":
+		orders, unattributed["orders"] = _scope_rows(orders, facility_keys)
+		quotes, unattributed["quotes"] = _scope_rows(quotes, facility_keys)
+		invoices, unattributed["invoices"] = _scope_rows(invoices, facility_keys)
+		in_scope = {row["name"] for row in invoices}
+		payments = [row for row in payments if in_scope.intersection(row.get("invoices") or [])]
+		facilities = [row for row in all_facilities if row["name"] == facility_ref["name"]]
+		networks = [m["network"] for row in facilities for m in row["memberships"] if m.get("network")]
+		partners = _resolve_partners(None, organization, deal_names=facility_deals, networks=networks)
+		deals = _resolve_deals(organization, names=facility_deals)
+		onboarding = _resolve_onboarding(facility_deals)
+	else:
+		facilities = all_facilities
+		partners = _resolve_partners(deal, organization)
+		deals = _resolve_deals(organization)
+		onboarding = _resolve_onboarding(org_deals)
 
 	return {
 		"organization": organization_data,
 		"deal": deal_data,
 		"partners": partners,
-		"summary": _build_summary(orders, invoices, facilities),
+		"summary": _build_summary(orders, invoices, facilities, quotes),
 		"orders": orders,
+		"quotes": quotes,
 		"invoices": invoices,
 		"payments": payments,
 		"facilities": facilities,
 		"onboarding": onboarding,
 		"deals": deals,
+		"scope": {
+			"mode": mode,
+			"facility": facility_ref,
+			"can_widen": bool(facility_ref and organization_data),
+			"unattributed": unattributed,
+		},
 	}
 
 
@@ -115,9 +178,7 @@ def search_customer_360(query: str, limit: int = 10) -> dict:
 			order_by="creation desc",
 			limit_page_length=limit,
 		)
-		result["organizations"] = [
-			{"name": r.name, "label": r.organization_name or r.name} for r in rows
-		]
+		result["organizations"] = [{"name": r.name, "label": r.organization_name or r.name} for r in rows]
 	if _can_read("CRM Deal"):
 		rows = frappe.get_list(
 			"CRM Deal",
@@ -168,10 +229,15 @@ def search_customer_360(query: str, limit: int = 10) -> dict:
 						if len(result["deals"]) >= limit:
 							break
 	if _can_read("CRM Pre-Qualified Facility"):
+		# One query: a facility matches on its name, MFL code or Facility ID (HFR FID).
 		rows = frappe.get_list(
 			"CRM Pre-Qualified Facility",
-			filters={"facility_name": ["like", like]},
-			fields=["name", "facility_name", "mfl_code", "organization"],
+			or_filters={
+				"facility_name": ["like", like],
+				"mfl_code": ["like", like],
+				"hfr_facility_id": ["like", like],
+			},
+			fields=["name", "facility_name", "mfl_code", "hfr_facility_id", "organization"],
 			order_by="creation desc",
 			limit_page_length=limit,
 		)
@@ -181,29 +247,12 @@ def search_customer_360(query: str, limit: int = 10) -> dict:
 				"name": r.name,
 				"label": r.facility_name or r.name,
 				"mfl_code": r.mfl_code,
+				"hfr_facility_id": r.get("hfr_facility_id") or "",
 				"organization": org_map.get(r.organization),
+				"organization_name": r.organization or "",
 			}
 			for r in rows
 		]
-		if query.isdigit():
-			rows = frappe.get_list(
-				"CRM Pre-Qualified Facility",
-				filters={"mfl_code": ["like", like]},
-				fields=["name", "facility_name", "mfl_code", "organization"],
-				limit_page_length=limit,
-			)
-			org_map.update(_org_doc_names([row.organization for row in rows if row.organization]))
-			existing = {row["name"] for row in result["facilities"]}
-			for r in rows:
-				if r.name not in existing:
-					result["facilities"].append(
-						{
-							"name": r.name,
-							"label": r.facility_name or r.name,
-							"mfl_code": r.mfl_code,
-							"organization": org_map.get(r.organization),
-						}
-					)
 	return result
 
 
@@ -268,8 +317,11 @@ def _resolve_deal(deal: str) -> dict | None:
 	}
 
 
-def _resolve_partners(deal: str | None, organization: str) -> list[dict]:
-	"""Partner attribution for one deal, or the union across the customer's deals."""
+def _resolve_partners(
+	deal: str | None, organization: str, deal_names: list[str] | None = None, networks=()
+) -> list[dict]:
+	"""Partner attribution for one deal, the union across the customer's deals, or — in
+	facility scope — the facility's membership networks plus the facility's deals."""
 	partners: list[dict] = []
 	seen: set[str] = set()
 
@@ -322,7 +374,8 @@ def _resolve_partners(deal: str | None, organization: str) -> list[dict]:
 		row = frappe.db.get_value(
 			"CRM Deal",
 			deal_name,
-			["organization", "lead"] + (["optin_network"] if frappe.db.has_column("CRM Deal", "optin_network") else []),
+			["organization", "lead"]
+			+ (["optin_network"] if frappe.db.has_column("CRM Deal", "optin_network") else []),
 			as_dict=True,
 		)
 		if not row:
@@ -334,7 +387,12 @@ def _resolve_partners(deal: str | None, organization: str) -> list[dict]:
 			if partner:
 				add_legacy(partner)
 
-	if deal:
+	for network in networks or ():
+		add_network(network)
+	if deal_names is not None:
+		for deal_name in deal_names:
+			from_deal(deal_name)
+	elif deal:
 		from_deal(deal)
 	else:
 		for deal_name in _org_deal_names(organization):
@@ -355,13 +413,31 @@ def _org_deal_names(organization: str) -> list[str]:
 	return [row.name for row in rows]
 
 
-def _resolve_deals(organization: str) -> list[dict]:
-	if not organization or not _can_read("CRM Deal"):
+def _resolve_deals(organization: str, names: list[str] | None = None) -> list[dict]:
+	"""The organization's deals, or (facility scope) exactly the named deals."""
+	if not _can_read("CRM Deal"):
+		return []
+	if names is not None:
+		if not names:
+			return []
+		deal_filters = {"name": ["in", names]}
+	elif organization:
+		deal_filters = {"organization": organization}
+	else:
 		return []
 	rows = frappe.get_list(
 		"CRM Deal",
-		filters={"organization": organization},
-		fields=["name", "status", "deal_value", "currency", "deal_owner", "closed_date", "source", "creation"],
+		filters=deal_filters,
+		fields=[
+			"name",
+			"status",
+			"deal_value",
+			"currency",
+			"deal_owner",
+			"closed_date",
+			"source",
+			"creation",
+		],
 		order_by="creation desc",
 		limit_page_length=0,
 	)
@@ -371,15 +447,13 @@ def _resolve_deals(organization: str) -> list[dict]:
 	if network_field:
 		with_net = frappe.get_list(
 			"CRM Deal",
-			filters={"organization": organization, network_field: ["is", "set"]},
+			filters={**deal_filters, network_field: ["is", "set"]},
 			fields=["name", network_field],
 			limit_page_length=0,
 		)
 		if with_net and _can_read("CRM Opt-In Network"):
 			for row in with_net:
-				display = frappe.db.get_value(
-					"CRM Opt-In Network", row.get(network_field), "display_name"
-				)
+				display = frappe.db.get_value("CRM Opt-In Network", row.get(network_field), "display_name")
 				if display:
 					network_names[row.name] = display
 	return [
@@ -397,15 +471,22 @@ def _resolve_deals(organization: str) -> list[dict]:
 	]
 
 
-def _resolve_finance(organization: str, deal: str | None):
-	"""Customer-wide orders, invoices and payments for the customer's deals."""
-	deals = [deal] if deal else _org_deal_names(organization)
-	if not deals:
-		return [], [], []
+ITEM_MFL_FIELD = "crm_optin_facility_mfl_code"
+HEADER_MFL_FIELD = "crm_token_facility_mfl"
+
+
+def _resolve_finance(deals: list[str], customer_names: list[str], account_mfls: list[str]):
+	"""Orders, quotes, invoices and payments for the deals and billing customers.
+
+	Every order, quote and invoice row carries ``facility_mfls`` (the CX portal rule,
+	SPEC 4.1); every payment carries the ``invoices`` it settles.
+	"""
+	if not deals and not customer_names:
+		return [], [], [], []
 
 	# Opt-In Submissions for these deals (orders and invoices are stamped with them).
 	ois_names = []
-	if _can_read("CRM Opt-In Submission"):
+	if deals and _can_read("CRM Opt-In Submission"):
 		ois_names = [
 			row.name
 			for row in frappe.get_list(
@@ -416,81 +497,98 @@ def _resolve_finance(organization: str, deal: str | None):
 			)
 		]
 
-	# Quotations for these deals (invoice fallback + order fallback).
-	quote_names = []
-	if _can_read("Quotation") and frappe.db.has_column("Quotation", "crm_deal"):
-		quote_names = [
-			row.name
-			for row in frappe.get_list(
-				"Quotation",
-				filters={"crm_deal": ["in", deals]},
-				fields=["name"],
-				limit_page_length=0,
-			)
-		]
-
-	# ERPNext customer references stamped on these deals (billing party).
-	customer_names = []
-	if frappe.db.has_column("CRM Deal", "cx_customer"):
-		rows = frappe.get_list(
-			"CRM Deal",
-			filters={"organization": organization, "cx_customer": ["is", "set"]},
-			fields=["cx_customer"],
-			limit_page_length=0,
-		)
-		customer_names = sorted({row.cx_customer for row in rows if row.cx_customer})
-
-	orders = _resolve_orders(ois_names, quote_names)
+	quotes = _resolve_quotes(deals, customer_names)
+	quote_names = [row["name"] for row in quotes]
+	orders = _resolve_orders(ois_names, quote_names, customer_names)
 	invoices = _resolve_invoices(ois_names, quote_names, customer_names)
 	payments = _resolve_payments(customer_names)
-	return orders, invoices, payments
+	refs = _payment_invoice_refs([row["name"] for row in payments])
+	for row in payments:
+		row["invoices"] = refs.get(row["name"], [])
+
+	ois_mfls = _ois_facility_mfls(
+		sorted({row.get("_ois") for row in orders + quotes + invoices if row.get("_ois")} | set(ois_names))
+	)
+	for doctype, item_doctype, rows in (
+		("Quotation", "Quotation Item", quotes),
+		("Sales Order", "Sales Order Item", orders),
+		("Sales Invoice", "Sales Invoice Item", invoices),
+	):
+		item_mfls = _item_facility_mfls(doctype, item_doctype, [row["name"] for row in rows])
+		for row in rows:
+			row["facility_mfls"] = attribute_facilities(
+				row.pop("_header_mfl", ""),
+				item_mfls.get(row["name"], []),
+				ois_mfls.get(row.pop("_ois", "") or "", []),
+				account_mfls,
+			)
+	return orders, quotes, invoices, payments
 
 
-def _resolve_orders(ois_names: list[str], quote_names: list[str]) -> list[dict]:
+def _optional_columns(doctype: str, columns) -> list[str]:
+	return [column for column in columns if frappe.db.has_column(doctype, column)]
+
+
+def _collect(doctype: str, candidates: list[dict], fields: list[str], limit: int) -> list:
+	"""Run each candidate filter and keep the first occurrence of every document."""
+	rows, seen = [], set()
+	for filters in candidates:
+		for row in frappe.get_list(
+			doctype, filters=filters, fields=fields, order_by="creation desc", limit_page_length=limit
+		):
+			if row.name not in seen:
+				rows.append(row)
+				seen.add(row.name)
+	return rows
+
+
+def _resolve_quotes(deals: list[str], customer_names: list[str]) -> list[dict]:
+	if not _can_read("Quotation"):
+		return []
+	candidates = []
+	if deals and frappe.db.has_column("Quotation", "crm_deal"):
+		candidates.append({"crm_deal": ["in", deals]})
+	if customer_names:
+		candidates.append({"quotation_to": "Customer", "party_name": ["in", customer_names]})
+	if not candidates:
+		return []
+	fields = ["name", "transaction_date", "valid_till", "grand_total", "currency", "status", "docstatus"]
+	fields += _optional_columns("Quotation", (HEADER_MFL_FIELD, "crm_optin_submission"))
+	return [
+		{
+			"name": row.name,
+			"transaction_date": row.transaction_date,
+			"valid_till": row.valid_till,
+			"grand_total": row.grand_total,
+			"currency": row.currency,
+			"status": row.status,
+			"docstatus": row.docstatus,
+			"_header_mfl": row.get(HEADER_MFL_FIELD),
+			"_ois": row.get("crm_optin_submission"),
+		}
+		for row in _collect("Quotation", candidates, fields, 200)
+	]
+
+
+def _resolve_orders(
+	ois_names: list[str], quote_names: list[str], customer_names: list[str] = ()
+) -> list[dict]:
 	if not _can_read("Sales Order"):
 		return []
-	rows = []
+	candidates = []
 	if ois_names and frappe.db.has_column("Sales Order", "crm_optin_submission"):
-		rows.extend(
-			frappe.get_list(
-				"Sales Order",
-				filters={"crm_optin_submission": ["in", ois_names]},
-				fields=[
-					"name",
-					"transaction_date",
-					"grand_total",
-					"currency",
-					"status",
-					"per_billed",
-				]
-				+ (
-					["crm_token_facility_mfl", "crm_token_package_item"]
-					if frappe.db.has_column("Sales Order", "crm_token_package_item")
-					else []
-				),
-				order_by="creation desc",
-				limit_page_length=200,
-			)
-		)
+		candidates.append({"crm_optin_submission": ["in", ois_names]})
 	if quote_names and frappe.db.has_column("Sales Order", "crm_optin_quotation"):
-		existing = {row.name for row in rows}
-		for row in frappe.get_list(
-			"Sales Order",
-			filters={"crm_optin_quotation": ["in", quote_names]},
-			fields=[
-				"name",
-				"transaction_date",
-				"grand_total",
-				"currency",
-				"status",
-				"per_billed",
-			],
-			order_by="creation desc",
-			limit_page_length=200,
-		):
-			if row.name not in existing:
-				rows.append(row)
-				existing.add(row.name)
+		candidates.append({"crm_optin_quotation": ["in", quote_names]})
+	if customer_names:
+		# Value Express draft orders are raised against the billing customer only.
+		candidates.append({"customer": ["in", list(customer_names)], "docstatus": ["<", 2]})
+	if not candidates:
+		return []
+	fields = ["name", "transaction_date", "grand_total", "currency", "status", "per_billed"]
+	fields += _optional_columns(
+		"Sales Order", ("crm_token_facility_mfl", "crm_token_package_item", "crm_optin_submission")
+	)
 	return [
 		{
 			"name": row.name,
@@ -502,8 +600,10 @@ def _resolve_orders(ois_names: list[str], quote_names: list[str]) -> list[dict]:
 			"open": (row.per_billed or 0) < 100,
 			"crm_token_facility_mfl": row.get("crm_token_facility_mfl"),
 			"crm_token_package_item": row.get("crm_token_package_item"),
+			"_header_mfl": row.get(HEADER_MFL_FIELD),
+			"_ois": row.get("crm_optin_submission"),
 		}
-		for row in rows
+		for row in _collect("Sales Order", candidates, fields, 200)
 	]
 
 
@@ -519,28 +619,17 @@ def _resolve_invoices(ois_names: list[str], quote_names: list[str], customer_nam
 		candidates.append({"customer": ["in", customer_names]})
 	if not candidates:
 		return []
-	rows = []
-	seen = set()
-	for filters in candidates:
-		for row in frappe.get_list(
-			"Sales Invoice",
-			filters=filters,
-			fields=[
-				"name",
-				"creation",
-				"grand_total",
-				"currency",
-				"outstanding_amount",
-				"due_date",
-				"docstatus",
-				"status",
-			],
-			order_by="creation desc",
-			limit_page_length=200,
-		):
-			if row.name not in seen:
-				rows.append(row)
-				seen.add(row.name)
+	fields = [
+		"name",
+		"creation",
+		"grand_total",
+		"currency",
+		"outstanding_amount",
+		"due_date",
+		"docstatus",
+		"status",
+	]
+	fields += _optional_columns("Sales Invoice", (HEADER_MFL_FIELD, "crm_optin_submission"))
 	today = nowdate()
 	return [
 		{
@@ -554,8 +643,10 @@ def _resolve_invoices(ois_names: list[str], quote_names: list[str], customer_nam
 			"status": row.status,
 			"paid": row.docstatus == 1 and (row.outstanding_amount or 0) <= 0,
 			"days_overdue": max(0, int(date_diff(today, getdate(row.due_date)))) if row.due_date else 0,
+			"_header_mfl": row.get(HEADER_MFL_FIELD),
+			"_ois": row.get("crm_optin_submission"),
 		}
-		for row in rows
+		for row in _collect("Sales Invoice", candidates, fields, 200)
 	]
 
 
@@ -590,19 +681,183 @@ def _resolve_payments(customer_names: list[str]) -> list[dict]:
 	]
 
 
+def _payment_invoice_refs(payment_names: list[str]) -> dict:
+	"""Map each payment to the Sales Invoices it settles (read through the parent's permission)."""
+	result: dict[str, list] = {}
+	if not payment_names:
+		return result
+	for row in frappe.get_list(
+		"Payment Entry",
+		filters=[
+			["name", "in", payment_names],
+			["Payment Entry Reference", "reference_doctype", "=", "Sales Invoice"],
+		],
+		fields=["name", "`tabPayment Entry Reference`.`reference_name` as reference_name"],
+		limit_page_length=0,
+	):
+		bucket = result.setdefault(row.name, [])
+		if row.get("reference_name") and row.reference_name not in bucket:
+			bucket.append(row.reference_name)
+	return result
+
+
+def _item_facility_mfls(doctype: str, item_doctype: str, names: list[str]) -> dict:
+	"""Map each document to the facility codes on its item lines (one read, parent-permissioned)."""
+	result: dict[str, list] = {}
+	if not names or not frappe.db.has_column(item_doctype, ITEM_MFL_FIELD):
+		return result
+	for row in frappe.get_list(
+		doctype,
+		filters={"name": ["in", names]},
+		fields=["name", "`tab%s`.`%s` as item_mfl" % (item_doctype, ITEM_MFL_FIELD)],
+		limit_page_length=0,
+	):
+		code = cstr(row.get("item_mfl")).strip()
+		bucket = result.setdefault(row.name, [])
+		if code and code not in bucket:
+			bucket.append(code)
+	return result
+
+
+def _ois_facility_mfls(ois_names: list[str]) -> dict:
+	"""Map each Opt-In Submission to the facility codes in its facility snapshot."""
+	if not ois_names or not _can_read("CRM Opt-In Submission"):
+		return {}
+	from crm.api.website_redirect import _submission_facilities
+
+	result = {}
+	for row in frappe.get_list(
+		"CRM Opt-In Submission",
+		filters={"name": ["in", ois_names]},
+		fields=["name", "raw_json"],
+		limit_page_length=0,
+	):
+		result[row.name] = [
+			cstr(snapshot.get("mfl_code")).strip()
+			for snapshot in _submission_facilities(row)
+			if cstr(snapshot.get("mfl_code")).strip()
+		]
+	return result
+
+
+def _billing_customers(organization: str, deals: list[str], facilities: list[dict]) -> list[str]:
+	"""ERPNext Customers billed for this view: the deals' (and the org's) ``cx_customer`` plus
+	the in-view facilities' membership customer (Partner Coupon / self-onboarding rows)."""
+	names: set[str] = set()
+	if frappe.db.has_column("CRM Deal", "cx_customer") and _can_read("CRM Deal"):
+		candidates = []
+		if organization:
+			candidates.append({"organization": organization, "cx_customer": ["is", "set"]})
+		if deals:
+			candidates.append({"name": ["in", deals], "cx_customer": ["is", "set"]})
+		for filters in candidates:
+			for row in frappe.get_list(
+				"CRM Deal", filters=filters, fields=["cx_customer"], limit_page_length=0
+			):
+				if row.get("cx_customer"):
+					names.add(row.cx_customer)
+	for row in facilities:
+		for membership in row.get("memberships") or []:
+			if membership.get("customer"):
+				names.add(membership["customer"])
+	return sorted(names)
+
+
+def _scope_rows(rows: list[dict], facility_keys: set[str]) -> tuple[list[dict], int]:
+	"""Keep the rows attributed to the facility; count the ones tied to no facility at all."""
+	kept = [
+		row
+		for row in rows
+		if any(cstr(mfl).strip().casefold() in facility_keys for mfl in row.get("facility_mfls") or [])
+	]
+	unattributed = sum(1 for row in rows if not row.get("facility_mfls"))
+	return kept, unattributed
+
+
+def _resolve_facility_ref(facility: str) -> dict | None:
+	"""The selected facility's identity and owner organization (CRM Organization doc name)."""
+	if not facility or not _can_read("CRM Pre-Qualified Facility"):
+		return None
+	rows = frappe.get_list(
+		"CRM Pre-Qualified Facility",
+		filters={"name": facility},
+		fields=["name", "facility_name", "mfl_code", "hfr_facility_id", "organization"],
+		limit_page_length=1,
+	)
+	if not rows:
+		return None
+	row = rows[0]
+	org_label = row.get("organization") or ""
+	return {
+		"name": row.name,
+		"facility_name": row.get("facility_name") or row.name,
+		"mfl_code": row.get("mfl_code") or "",
+		"hfr_facility_id": row.get("hfr_facility_id") or "",
+		"organization": _org_doc_names([org_label]).get(org_label) if org_label else None,
+		"organization_name": org_label,
+	}
+
+
+def _facility_keys(facility_ref: dict) -> set[str]:
+	"""Casefolded MFL codes that identify the facility: its own plus every MFL CRM records
+	for its Facility ID (older documents are keyed by MFL only)."""
+	keys = {cstr(facility_ref.get("mfl_code")).strip().casefold()}
+	if facility_ref.get("hfr_facility_id"):
+		keys.update(mfl.casefold() for mfl in facility_mfls_for_fid(facility_ref["hfr_facility_id"]))
+	keys.discard("")
+	return keys
+
+
+def _facility_deal_names(
+	facility_ref: dict, facility_keys: set[str], org_deals: list[str], facilities: list[dict]
+) -> list[str]:
+	"""Deals whose facility table lists this facility (by MFL or Facility ID). When the owner
+	has exactly one facility, every owner deal is that facility's deal."""
+	if len(facilities) == 1 and facilities[0]["name"] == facility_ref["name"]:
+		return list(org_deals)
+	if not _can_read("CRM Deal"):
+		return []
+	candidates = []
+	mfls = [facility_ref.get("mfl_code")] + [key for key in facility_keys]
+	mfls = sorted({cstr(mfl).strip() for mfl in mfls if cstr(mfl).strip()})
+	if mfls:
+		candidates.append([["CRM Deal Facility", "mfl_code", "in", mfls]])
+	if facility_ref.get("hfr_facility_id"):
+		candidates.append([["CRM Deal Facility", "hfr_facility_id", "=", facility_ref["hfr_facility_id"]]])
+	names: list[str] = []
+	for filters in candidates:
+		for row in frappe.get_list(
+			"CRM Deal",
+			filters=filters,
+			fields=["name"],
+			order_by="`tabCRM Deal`.`creation` desc",
+			limit_page_length=0,
+		):
+			if row.name not in names:
+				names.append(row.name)
+	return names
+
+
 def _resolve_facilities(organization: str) -> list[dict]:
 	if not organization or not _can_read("CRM Pre-Qualified Facility"):
 		return []
-	name = _org_name(organization)
+	return _facility_rows(None, organization_label=_org_name(organization))
+
+
+def _facility_rows(names: list[str] | None, organization_label: str = "") -> list[dict]:
+	"""Facility rows with their memberships, by organization label or by facility names."""
+	if not _can_read("CRM Pre-Qualified Facility"):
+		return []
+	filters = {"name": ["in", names]} if names is not None else {"organization": organization_label}
 	rows = frappe.get_list(
 		"CRM Pre-Qualified Facility",
-		filters={"organization": name},
-		fields=["name", "mfl_code", "facility_name", "keph_level", "is_self_onboarded"],
+		filters=filters,
+		fields=["name", "mfl_code", "facility_name", "keph_level", "is_self_onboarded", "hfr_facility_id"],
 		order_by="creation desc",
 		limit_page_length=100,
 	)
 	network_names = {}
-	if _can_read("CRM Opt-In Network"):
+	if rows and _can_read("CRM Opt-In Network"):
 		for row in frappe.get_list(
 			"CRM Opt-In Network", fields=["name", "display_name"], limit_page_length=0
 		):
@@ -623,6 +878,7 @@ def _resolve_facilities(organization: str) -> list[dict]:
 					"go_live": bool(m.go_live),
 					"opted_in": m.status == "Opted In",
 					"self_onboarding": bool(getattr(m, "customer", None)),
+					"customer": getattr(m, "customer", None) or None,
 					"contact_name": m.contact_name,
 					"contact_phone": m.contact_phone,
 				}
@@ -631,6 +887,7 @@ def _resolve_facilities(organization: str) -> list[dict]:
 			{
 				"name": row.name,
 				"mfl_code": row.mfl_code,
+				"hfr_facility_id": row.get("hfr_facility_id") or "",
 				"facility_name": row.facility_name or row.name,
 				"keph_level": row.keph_level,
 				"is_self_onboarded": bool(row.is_self_onboarded),
@@ -640,11 +897,8 @@ def _resolve_facilities(organization: str) -> list[dict]:
 	return facilities
 
 
-def _resolve_onboarding(deal: str | None, organization: str) -> list[dict]:
-	if not _can_read("CRM Onboarding Request"):
-		return []
-	deals = [deal] if deal else _org_deal_names(organization)
-	if not deals:
+def _resolve_onboarding(deals: list[str]) -> list[dict]:
+	if not deals or not _can_read("CRM Onboarding Request"):
 		return []
 	fields = ["name", "deal", "status", "approval_status", "careverse_provisioned_date"]
 	rows = frappe.get_list(
@@ -666,12 +920,12 @@ def _resolve_onboarding(deal: str | None, organization: str) -> list[dict]:
 	]
 
 
-def _build_summary(orders: list[dict], invoices: list[dict], facilities: list[dict]) -> dict:
+def _build_summary(
+	orders: list[dict], invoices: list[dict], facilities: list[dict], quotes: list[dict] | None = None
+) -> dict:
 	submitted = [row for row in invoices if row["docstatus"] == 1]
 	paid_invoices = [row for row in submitted if (row["outstanding"] or 0) <= 0]
-	paid_amount = round(
-		sum((row["grand_total"] or 0) - (row["outstanding"] or 0) for row in submitted), 2
-	)
+	paid_amount = round(sum((row["grand_total"] or 0) - (row["outstanding"] or 0) for row in submitted), 2)
 	outstanding = round(sum((row["outstanding"] or 0) for row in submitted), 2)
 	open_orders = [row for row in orders if row["open"]]
 	sites_total = 0
@@ -692,4 +946,5 @@ def _build_summary(orders: list[dict], invoices: list[dict], facilities: list[di
 		"sites_live": sites_live,
 		"outstanding": outstanding,
 		"invoices": len(invoices),
+		"quotes": len(quotes or []),
 	}
