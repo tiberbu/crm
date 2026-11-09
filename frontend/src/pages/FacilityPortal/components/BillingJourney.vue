@@ -7,6 +7,7 @@ import { invoiceStatus } from '@/utils/portalOrderState'
 import { facilityTabs, tabIndex, tabKey } from '@/utils/facilityTabs'
 import {
   commercialOf,
+  journeyCompleted,
   formatDate,
   money,
   orderStatus,
@@ -46,6 +47,16 @@ const stages = computed(() =>
   }),
 )
 
+// Show the stepper only until the first purchase cycle is complete (see journeyCompleted).
+const showStepper = computed(
+  () =>
+    !journeyCompleted({
+      invoices: props.invoices,
+      payments: props.payments,
+      counts: props.facility?.record_counts || null,
+    }),
+)
+
 const invoicedOrderNames = computed(() => {
   const names = new Set()
   for (const invoice of props.invoices) {
@@ -74,6 +85,9 @@ const counts = computed(() => ({
   invoiceDue: recordCounts.value ? Number(recordCounts.value.invoice_due) || 0 : localDue.value,
   payment: recordCounts.value ? Number(recordCounts.value.payment) || 0 : props.payments.length,
   ...(server.value && serverCounts.value ? serverCounts.value : {}),
+  // Drafts and pending M-Pesa reports always travel in the context row.
+  orderDraft: props.orders.filter((order) => order.is_draft).length,
+  paymentPending: props.payments.filter((payment) => payment.status === 'Pending Verification').length,
 }))
 const tabs = computed(() => facilityTabs({ showQuote: showQuote.value, counts: counts.value }))
 
@@ -241,7 +255,7 @@ defineExpose({ selectTab: selectStage })
 
 <template>
   <div class="space-y-5" data-testid="billing-journey">
-    <ol aria-label="Billing progress" class="grid gap-2 sm:grid-cols-4" data-testid="journey-stepper">
+    <ol v-if="showStepper" aria-label="Billing progress" class="grid gap-2 sm:grid-cols-4" data-testid="journey-stepper">
       <li
         v-for="stage in stages"
         :key="stage.key"
@@ -286,9 +300,10 @@ defineExpose({ selectTab: selectStage })
             :class="selected ? 'bg-cx-brand-soft text-cx-brand-ink' : 'bg-cx-well text-cx-ink-2'"
           >{{ tab.count }}</span>
           <span
-            v-if="tab.due"
-            class="rounded-full border border-cx-warning-border bg-cx-warning-soft px-1.5 py-0.5 text-[11px] font-semibold text-cx-warning-ink"
-          >{{ tab.due }} due</span>
+            v-if="tab.badge"
+            class="whitespace-nowrap rounded-full border border-cx-warning-border bg-cx-warning-soft px-1.5 py-0.5 text-[11px] font-semibold text-cx-warning-ink"
+            :data-testid="`facility-tab-${tab.key}-badge`"
+          >{{ tab.badge }}</span>
         </button>
       </template>
       <template #tab-panel="{ tab }">

@@ -13,13 +13,23 @@ const TAB_LABELS = {
   billing: 'Billing',
 }
 
-// counts: { quote, order, invoice, invoiceDue, payment } — missing counts render no badge.
+// Action badge per tab: what still needs the customer's attention on that tab. With
+// several documents at different stages, each tab says what is waiting there.
+const BADGES = {
+  order: { countKey: 'orderDraft', text: (n) => `${n} to review` },
+  invoice: { countKey: 'invoiceDue', text: (n) => `${n} due` },
+  payment: { countKey: 'paymentPending', text: (n) => `${n} pending` },
+}
+
+// counts: { quote, order, orderDraft, invoice, invoiceDue, payment, paymentPending };
+// a missing count renders no number.
 export function facilityTabs({ showQuote = false, counts = {} } = {}) {
   const keys = ['overview', ...(showQuote ? ['quote'] : []), 'order', 'invoice', 'payment', 'billing']
   return keys.map((key) => {
     const count = Number.isFinite(counts[key]) ? counts[key] : null
-    const due = key === 'invoice' && Number(counts.invoiceDue) > 0 ? Number(counts.invoiceDue) : 0
-    return { key, label: TAB_LABELS[key], count, due }
+    const rule = BADGES[key]
+    const waiting = rule ? Number(counts[rule.countKey]) || 0 : 0
+    return { key, label: TAB_LABELS[key], count, badge: waiting > 0 ? rule.text(waiting) : '' }
   })
 }
 

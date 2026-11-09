@@ -707,13 +707,8 @@ test('a time-bound opt-in facility shows its plan, the full journey, and no toke
   await expect(page.getByTestId('facility-next-invoice')).toBeVisible()
   await expect(page.getByTestId('facility-available-tokens')).toHaveCount(0)
 
-  // Journey: all four stages, quote first, all complete.
-  const stepper = page.getByTestId('journey-stepper')
-  await expect(stepper.getByText('Quotes', { exact: true })).toBeVisible()
-  await expect(stepper.getByText('Orders', { exact: true })).toBeVisible()
-  await expect(stepper.getByText('Invoices', { exact: true })).toBeVisible()
-  await expect(stepper.getByText('Payments', { exact: true })).toBeVisible()
-  await expect(stepper.locator('[data-state="done"]')).toHaveCount(4)
+  // The first purchase cycle is complete (paid invoice, recorded payment): no stepper.
+  await expect(page.getByTestId('journey-stepper')).toHaveCount(0)
 
   // Each document type sits on its own tab; Overview (facility profile) opens first.
   const tabs = page.getByTestId('facility-tabs')
@@ -731,8 +726,8 @@ test('a time-bound opt-in facility shows its plan, the full journey, and no toke
   await page.getByTestId('facility-tab-billing').click()
   await expect(page.getByTestId('facility-billing')).toBeVisible()
 
-  // The stepper selects a tab; cross-links switch tab and focus the target row.
-  await page.getByTestId('journey-step-invoice').click()
+  // Cross-links switch tab and focus the target row.
+  await page.getByTestId('facility-tab-invoice').click()
   await expect(page.getByTestId('stage-invoice')).toContainText('ACC-SINV-2026-00017')
   await page.getByTestId('stage-invoice').getByRole('button', { name: 'For order SAL-ORD-2026-00035' }).click()
   await expect(page.getByTestId('facility-tab-order')).toHaveAttribute('aria-selected', 'true')
@@ -878,7 +873,9 @@ test('a token facility keeps token summary and a three-stage journey without a q
   await expect(stepper.getByText('Invoices', { exact: true })).toBeVisible()
   await expect(stepper.locator('[data-state="current"]')).toHaveCount(1)
 
-  await page.getByTestId('facility-tab-invoice').click()
+  // First purchase in progress: the stepper stays and its steps open their tab.
+  await stepper.getByTestId('journey-step-invoice').click()
+  await expect(page.getByTestId('facility-tab-invoice')).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('button', { name: 'Choose payment' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Top up tokens/ })).toBeVisible()
 })
@@ -1179,16 +1176,62 @@ test('a slim context row still shows the full journey and history', async ({ pag
     },
   )
 
-  const stepper = page.getByTestId('journey-stepper')
-  await expect(stepper.locator('li[data-state]')).toHaveCount(3)
-  await expect(stepper.locator('li').nth(0)).toHaveAttribute('data-state', 'done')
-  await expect(stepper.locator('li').nth(1)).toHaveAttribute('data-state', 'current')
+  // Paid history exists (record_counts), so the stepper is gone and the tab says what is due.
+  await expect(page.getByTestId('journey-stepper')).toHaveCount(0)
   await expect(page.getByTestId('facility-tab-invoice')).toContainText('31')
-  await expect(page.getByTestId('facility-tab-invoice')).toContainText('1 due')
+  await expect(page.getByTestId('facility-tab-invoice-badge')).toHaveText('1 due')
 
   await page.getByTestId('facility-tab-invoice').click()
   const invoices = page.getByTestId('stage-invoice')
   await expect(invoices.getByTestId('stage-invoice-rows').locator(':scope > li')).toHaveCount(1)
   await invoices.getByTestId('stage-invoice-filter-all').click()
   await expect(invoices.getByTestId('stage-invoice-pager')).toContainText('Showing 1–20 of 31')
+})
+
+// A returning customer with three documents at three different stages: no single
+// "current step"; each tab says what is waiting there.
+test('a returning customer with documents at different stages sees tab badges, not a stepper', async ({ page }) => {
+  const mixed = {
+    ...tokenFacility,
+    mfl_code: '90400',
+    facility_name: 'Mixed Stages Clinic',
+    orders: [
+      {
+        name: 'SAL-ORD-MIX-DRAFT',
+        display_title: 'Starter',
+        is_draft: true,
+        facility_mfls: ['90400'],
+        transaction_date: '2026-11-08',
+        grand_total: 12000,
+        currency: 'KES',
+      },
+    ],
+    invoices: [
+      { name: 'ACC-INV-MIX-DUE', invoice_number: 'ACC-INV-MIX-DUE', amount: 6000, due_date: '2026-12-31', facility_mfls: ['90400'] },
+      { name: 'ACC-INV-MIX-WAIT', invoice_number: 'ACC-INV-MIX-WAIT', amount: 3000, due_date: '2026-12-15', facility_mfls: ['90400'] },
+    ],
+    payments: [
+      { name: 'PE-MIX-PENDING', status: 'Pending Verification', invoice: 'ACC-INV-MIX-WAIT', mode_of_payment: 'M-Pesa Paybill', reference_no: 'MIX123', posting_date: '2026-11-08', amount: 3000 },
+    ],
+    record_counts: { order: 5, order_draft: 1, invoice: 6, invoice_due: 2, payment: 5, payment_pending: 1 },
+  }
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    mixed,
+    undefined,
+    {},
+    async (method, _body, route) => {
+      if (method === 'crm.api.facility_documents.get_facility_document_counts') {
+        await route.fulfill({ json: { message: { order: 5, invoice: 6, invoiceDue: 2, payment: 5 } } })
+        return true
+      }
+      return false
+    },
+  )
+
+  await expect(page.getByTestId('journey-stepper')).toHaveCount(0)
+  await expect(page.getByTestId('facility-tab-order-badge')).toHaveText('1 to review')
+  await expect(page.getByTestId('facility-tab-invoice-badge')).toHaveText('2 due')
+  await expect(page.getByTestId('facility-tab-payment-badge')).toHaveText('1 pending')
 })

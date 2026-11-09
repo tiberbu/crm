@@ -27,13 +27,24 @@ describe('facilityTabs', () => {
     ])
   })
 
-  it('carries counts and the invoices-due badge', () => {
-    const tabs = facilityTabs({ counts: { order: 12, invoice: 100, invoiceDue: 2, payment: 0 } })
+  it('carries counts and an action badge per tab', () => {
+    const tabs = facilityTabs({
+      counts: { order: 12, orderDraft: 1, invoice: 100, invoiceDue: 2, payment: 0, paymentPending: 0 },
+    })
     const byKey = Object.fromEntries(tabs.map((tab) => [tab.key, tab]))
-    expect(byKey.order.count).toBe(12)
-    expect(byKey.invoice).toMatchObject({ count: 100, due: 2 })
-    expect(byKey.payment.count).toBe(0)
-    expect(byKey.overview.count).toBeNull()
+    expect(byKey.order).toMatchObject({ count: 12, badge: '1 to review' })
+    expect(byKey.invoice).toMatchObject({ count: 100, badge: '2 due' })
+    expect(byKey.payment).toMatchObject({ count: 0, badge: '' })
+    expect(byKey.overview).toMatchObject({ count: null, badge: '' })
+  })
+
+  it('shows three documents at three stages as three badges', () => {
+    const tabs = facilityTabs({ counts: { orderDraft: 1, invoiceDue: 1, paymentPending: 1 } })
+    expect(tabs.filter((tab) => tab.badge).map((tab) => `${tab.key}:${tab.badge}`)).toEqual([
+      'order:1 to review',
+      'invoice:1 due',
+      'payment:1 pending',
+    ])
   })
 
   it('maps keys to frappe-ui index-based tabs and back', () => {

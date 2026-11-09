@@ -229,6 +229,19 @@ export function stageStates({ showQuote, quotes, orders, invoices, payments, cou
   return stages.map((stage, index) => ({ ...stage, state: states[index] }))
 }
 
+// The quote → order → invoice → payment stepper only teaches the first purchase.
+// Once the facility has completed the cycle (a paid invoice or a recorded payment),
+// it is hidden: with documents at different stages a single "current step" misleads,
+// and the tab badges say what is waiting instead.
+export function journeyCompleted({ invoices = [], payments = [], counts = null } = {}) {
+  if (counts) {
+    if (Number(counts.invoice) > Number(counts.invoice_due || 0)) return true
+    if (Number(counts.payment) > Number(counts.payment_pending || 0)) return true
+  }
+  if ((invoices || []).some((invoice) => Number(invoice?.amount) <= 0)) return true
+  return (payments || []).some((payment) => payment && payment.status !== 'Pending Verification')
+}
+
 export function capRows(rows, expanded, limit = 5) {
   return expanded ? rows : rows.slice(0, limit)
 }
