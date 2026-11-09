@@ -3,6 +3,7 @@
 import unittest
 
 from crm.api.facility_documents import page_rows, sort_invoices
+from crm.api.portal_commercial import slim_facility_records
 
 
 def _invoice(name, amount, due="", posted=""):
@@ -70,6 +71,39 @@ class PageRowsTests(unittest.TestCase):
 			[r["name"] for r in page_rows(rows, kind="payment", status="all", search="sinv-9", start=0, page_length=5)["rows"]],
 			["PE-1"],
 		)
+
+
+class SlimFacilityRecordsTests(unittest.TestCase):
+	def _row(self):
+		orders = [
+			{"name": "SO-DRAFT", "is_draft": True},
+			{"name": "SO-INVOICEABLE", "can_create_invoice": True},
+			{"name": "SO-PKG", "crm_token_package_item": "TOK-A"},
+			{"name": "SO-OLD-PKG", "crm_token_package_item": "TOK-B"},
+		] + [{"name": "SO-DONE-%d" % i} for i in range(60)]
+		invoices = [{"name": "SINV-DUE", "amount": 50}] + [{"name": "SINV-PAID-%d" % i, "amount": 0} for i in range(80)]
+		payments = [{"name": "PE-PENDING", "status": "Pending Verification"}] + [
+			{"name": "PE-%d" % i, "status": "Recorded"} for i in range(80)
+		]
+		return {"orders": orders, "invoices": invoices, "payments": payments}
+
+	def test_keeps_only_actionable_records(self):
+		row = slim_facility_records(self._row())
+		self.assertEqual([o["name"] for o in row["orders"]], ["SO-DRAFT", "SO-INVOICEABLE", "SO-PKG"])
+		self.assertEqual([i["name"] for i in row["invoices"]], ["SINV-DUE"])
+		self.assertEqual([p["name"] for p in row["payments"]], ["PE-PENDING"])
+
+	def test_counts_cover_the_full_history(self):
+		row = slim_facility_records(self._row())
+		self.assertEqual(
+			row["record_counts"],
+			{"order": 64, "order_draft": 1, "invoice": 81, "invoice_due": 1, "payment": 81, "payment_pending": 1},
+		)
+
+	def test_empty_row(self):
+		row = slim_facility_records({})
+		self.assertEqual((row["orders"], row["invoices"], row["payments"]), ([], [], []))
+		self.assertEqual(row["record_counts"]["order"], 0)
 
 
 if __name__ == "__main__":

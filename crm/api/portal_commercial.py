@@ -509,6 +509,41 @@ def account_billing(customer, account_mfls, ois_mfls_by_name) -> dict:
 	return {"orders": orders, "invoices": invoices, "payments": payments}
 
 
+def summarize_facility_records(orders, invoices, payments) -> dict:
+	"""Counts for the facility page stepper and tab labels (S4 slim payload)."""
+	orders, invoices, payments = orders or [], invoices or [], payments or []
+	return {
+		"order": len(orders),
+		"order_draft": sum(1 for row in orders if row.get("is_draft")),
+		"invoice": len(invoices),
+		"invoice_due": sum(1 for row in invoices if flt(row.get("amount")) > 0),
+		"payment": len(payments),
+		"payment_pending": sum(1 for row in payments if row.get("status") == "Pending Verification"),
+	}
+
+
+def slim_facility_records(row: dict) -> dict:
+	"""Keep only the records the facility page needs outside its paged tabs.
+
+	The tabs page full history from ``crm.api.facility_documents``. The context row keeps
+	what the summary cards, go-live block, pay flows and stepper read: draft and
+	invoiceable orders plus the latest package order, outstanding invoices and pending
+	M-Pesa reports, together with ``record_counts`` for the stepper.
+	"""
+	orders = row.get("orders") or []
+	invoices = row.get("invoices") or []
+	payments = row.get("payments") or []
+	row["record_counts"] = summarize_facility_records(orders, invoices, payments)
+	package_order = next((order for order in orders if order.get("crm_token_package_item")), None)
+	kept_orders = [order for order in orders if order.get("is_draft") or order.get("can_create_invoice")]
+	if package_order is not None and package_order not in kept_orders:
+		kept_orders.append(package_order)
+	row["orders"] = kept_orders
+	row["invoices"] = [invoice for invoice in invoices if flt(invoice.get("amount")) > 0]
+	row["payments"] = [payment for payment in payments if payment.get("status") == "Pending Verification"]
+	return row
+
+
 def for_facility(rows, mfl) -> list:
 	"""Keep only the rows attributed to this facility (case-insensitive)."""
 	key = cstr(mfl or "").strip().casefold()
