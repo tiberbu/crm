@@ -1,6 +1,6 @@
 # CX facility page — tabbed records and registry notice removal
 
-Status: **Implemented** (S1–S3); S4 deferred, see *Delivery notes* · Date: 2026-11-09 · Scope: CX portal facility page
+Status: **Implemented** (S1–S4) · Date: 2026-11-09 · Scope: CX portal facility page
 (`frontend/src/pages/FacilityPortal/FacilitySingleView.vue` and `components/BillingJourney.vue`).
 
 Reviewed in a BMAD round-table (UX, PM, Architect, Dev, Analyst). Two problems:
@@ -165,20 +165,27 @@ page and server rows live in a map `BillingJourney` provides, and switching tabs
 | S1 | Remove the registry notice and the CX sync badge, and reword the no-FID line (F1.1–F1.3) | Done |
 | S2 | `get_facility_documents` and `get_facility_document_counts` paged endpoints, with authorization and Python tests | Done |
 | S3 | Tabbed facility page: tabs with counts, paged and searchable lists, invoice filter, stepper → tab, cross-links → tab + page + highlight, `initialTab` | Done |
-| S4 | Slim `get_portal_context` to summary data | Deferred (see below) |
+| S4 | Slim the `get_portal_context` facility rows to actionable records plus `record_counts` | Done |
 
 ## Delivery notes
 
-- **S4 deferred, on purpose.** `get_portal_context` facility rows still carry their orders,
-  invoices and payments. The journey stepper, the summary cards ("Amount to pay"), the
-  go-live block, the pay flows and the dashboard all read them. Removing them is a separate,
-  wider change. Customer-linked facility tabs no longer depend on those capped lists, so
-  history is complete today. Slimming the payload is a follow-up, to be measured first.
+- **S4: slim context rows.** For customer-linked facilities, `get_portal_context` now sends
+  only what the page reads outside its tabs (`portal_commercial.slim_facility_records`):
+  - `orders`: draft orders, invoiceable orders, and the latest package order;
+  - `invoices`: outstanding invoices only;
+  - `payments`: M-Pesa reports pending verification only;
+  - `record_counts`: `{order, order_draft, invoice, invoice_due, payment, payment_pending}` over the full attributed history.
+
+  The plan projection (`commercial`) and `invoice_summary` are still computed from the full lists
+  on the server before slimming. The journey stepper (`stageStates`) and the tab labels read
+  `record_counts`. Opt-in-only facility rows (no customer) are unchanged, because they page locally.
+  Account-level lists (`open_orders`, `open_invoices`, `payments`) used by the dashboard and the
+  Billing view are unchanged.
 - `JourneyStage.vue` (show-5 / "Show all" expander) is removed; `FacilityDocumentList.vue` replaces it.
 
 ## Verification (2026-11-09)
 
-- Frontend unit tests: `yarn test:run`, 304 passed, including 8 new `facilityTabs` tests.
+- Frontend unit tests: `yarn test:run`, 305 passed, including 8 new `facilityTabs` tests and a `stageStates` counts test.
 - Facility page browser suite (`npx playwright test -c playwright.facility.config.ts
   e2e/regression/facility-single-view.spec.ts`), run against the built bundle with the API faked: all
   passed. It covers 100 orders, invoices and payments on both the server and local paths (page height
@@ -186,11 +193,17 @@ page and server rows live in a map `BillingJourney` provides, and switching tabs
   to a later page), server paging requests, a 375px layout with no horizontal scroll,
   "Review invoice" → Invoices, and no verification wording or badge for a `Manual` FID.
 - Python: `crm.tests.test_facility_documents` (9) and `crm.tests.test_facility_documents_pure`
-  (7), all passed. They ran on the dev site through the scratch runner, with commits stubbed, network and jobs blocked,
+  (10, including `slim_facility_records`), all passed. They ran on the dev site through the scratch runner, with commits stubbed, network and jobs blocked,
   everything rolled back, and the before/after row-count snapshot unchanged.
 - The `account_billing` refactor gives identical output: a digest of 7 customers / 86 rows was the same before and after.
 - Live comparison as real portal users (read-only, rolled back): 28 customer-linked facilities,
   server counts and invoice lists matched the portal context, 0 mismatches.
+- S4 checks on the dev site (read-only, rolled back):
+  - with the real `stageStates`, stepper states on full rows and on slimmed rows plus counts were
+    identical for 28 real facilities, with and without a quote stage;
+  - `record_counts` equalled the server counts for all 28;
+  - across 25 portal users, the facilities payload went from 104 KB to 93 KB. Dev history is
+    small; the saving grows with history, because paid records no longer travel.
 - Pre-existing, unrelated: `e2e/regression/facility-onboarding-network.spec.ts` (6 tests)
   also fails on `develop` without these changes ("Start your onboarding" button not found).
 
