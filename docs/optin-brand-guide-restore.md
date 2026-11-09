@@ -33,8 +33,37 @@ Kept: the native, keyboard-accessible facility checkbox from `9e1966bb` (UX PRD
 requires keyboard and touch selection). Semantic status colours (error/amber/green)
 are unchanged.
 
-Follow-up (not in this change): Pricing and Review use uppercase `tracking-wider`
-eyebrows. The typography spec prefers sentence case.
+## Round 2: app-wide brand assets and sentence case
+
+The Admin workspace favicon reported on 2026-11-09 was a separate, older drift. The
+fork never replaced the upstream Frappe CRM raster assets:
+
+| Asset | Was | Now |
+|---|---|---|
+| `crm/public/manifest/apple-icon-180.png` (Admin SPA favicon and touch icon, used when FCRM Settings has no favicon) | Frappe CRM magenta `#EF0BF5` | Tiberbu mark `#BC1823` |
+| `manifest-icon-192/512.maskable.png` (PWA install icons) | magenta | full-bleed brand red, glyph inside the maskable safe zone |
+| 34 × `apple-splash-*.jpg` (iOS launch screens) | magenta mark on white | Tiberbu mark on white, same position and size |
+| `crm/public/images/logo.png` | magenta | Tiberbu mark |
+| `frontend/public/favicon.png` (CX Portal alternate icon) | Frappe "F" in navy | Tiberbu mark |
+| `crm/public/finance-cockpit/favicon.svg` | blue `#2563eb` | brand red `#BC1823` |
+
+Also in this round:
+
+- `Networks/NetworkDetail.vue`: new networks defaulted to `#e53e3e`, which is how
+  off-brand reds were saved into network records. The default and placeholder are now `#bc1823`.
+- Opt-in labels are sentence case. Uppercase/tracking eyebrows were removed in Landing,
+  Pricing, Review and Success, and labels moved to the brand `ink-gray-6`. Copy changes:
+  "Registered facilities", "Facility witness", "Commitment summary", "KEPH level".
+- Opt-in radios and checkboxes use the brand colour. The forms plugin painted checked
+  controls blue.
+- `e2e/regression/brand-assets.spec.ts` samples every favicon, PWA icon and splash
+  screen and fails unless the dominant colour is the brand red. It fails on the old
+  magenta icon (`240,12,246`). `optin-brand.spec.ts` now also fails on uppercase labels
+  and on non-brand radios or checkboxes.
+
+Data note: one existing network record on the dev site has `primary_colour = #e53e3e`,
+probably saved through the old default. Partner colours are partner data, so it was
+left as is. Clear the field to fall back to the brand red.
 
 ## Verification
 
@@ -44,7 +73,8 @@ eyebrows. The typography spec prefers sentence case.
   tints, InterVar only, weights ≤ 600 and sizes ≥ 11px. It also asserts the brand red
   on the CTA, the fallback for a non-hex partner colour, and that a valid partner hex
   is still honoured.
-- Full UI suite: `npx playwright test -c playwright.portal-ui.config.ts` gives **84 passed**
+- Full UI suite: `npx playwright test -c playwright.portal-ui.config.ts` gives **126 passed**
+  (asset checks run on one viewport; the other 126 are deliberate skips)
   (opt-in brand, CX Portal layout and typography, onboarding layout, token alerts).
 - Unit tests: `yarn test:run` gives **307 passed**.
 - Python: `valid_brand_colour` was checked on the dev site with `#bc1823`, `#abc`,
