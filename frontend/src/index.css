@@ -469,31 +469,6 @@ html {
   transform: translateY(-1px);
 }
 
-/* The network opt-in wizard keeps each partner's brand color while using the
-   same restrained glass material as the signed-in owner portal. */
-.cx-enrollment {
-  background-color: #f4f6f8;
-  background-image:
-    radial-gradient(circle at 82% 8%, color-mix(in srgb, var(--brand-primary, #c0101a) 7%, transparent), transparent 28rem),
-    radial-gradient(circle at 8% 76%, rgba(16, 185, 129, 0.035), transparent 25rem);
-}
-
-.cx-enrollment-glass {
-  border-color: rgba(255, 255, 255, 0.82);
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 18px 48px rgba(28, 35, 45, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
-  backdrop-filter: blur(18px) saturate(135%);
-}
-
-@media (max-width: 639px) {
-  .cx-enrollment-glass {
-    background: rgba(255, 255, 255, 0.92);
-    -webkit-backdrop-filter: blur(12px) saturate(125%);
-    backdrop-filter: blur(12px) saturate(125%);
-  }
-}
-
 .cx-portal .cx-toast {
   position: fixed;
   top: 1rem;

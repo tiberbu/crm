@@ -606,7 +606,7 @@ const paystack = computed(() => checkout.value?.paystack || { enabled: false })
 const brandName = computed(() => network.value.display_name || 'CareverseHIMS')
 const brandColor = computed(() => {
   const colour = network.value.primary_colour
-  return /^#[0-9a-f]{6}$/i.test(colour || '') ? colour : '#b91c1c'
+  return /^#[0-9a-f]{6}$/i.test(colour || '') ? colour : '#bc1823'
 })
 
 const checkoutStage = computed(() => {

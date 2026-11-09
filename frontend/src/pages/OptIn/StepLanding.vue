@@ -16,13 +16,13 @@
           class="flex h-16 w-16 items-center justify-center rounded-2xl"
           style="background-color: var(--brand-primary)"
         >
-          <span class="text-2xl font-black text-white">C</span>
+          <span class="text-2xl font-semibold text-white">C</span>
         </div>
       </div>
 
       <!-- Headline -->
       <h1
-        class="mb-3 text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white"
+        class="mb-3 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white"
       >
         {{ networkConfig ? networkConfig.display_name : 'CareverseHIMS' }}
       </h1>

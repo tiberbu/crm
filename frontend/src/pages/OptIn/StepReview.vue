@@ -1,6 +1,6 @@
 <template>
   <div class="mx-auto w-full max-w-lg px-4 py-6">
-    <h2 class="mb-1 text-xl font-bold text-gray-900 dark:text-white">
+    <h2 class="mb-1 text-xl font-semibold text-gray-900 dark:text-white">
       Review Your Details
     </h2>
     <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
@@ -96,7 +96,7 @@
       >
         <div class="mb-4">
           <h3
-            class="text-sm font-bold uppercase tracking-wider"
+            class="text-sm font-semibold uppercase tracking-wider"
             style="color: var(--brand-primary)"
           >
             Who will sign the agreement?
@@ -285,7 +285,7 @@
       >
         <div class="mb-4">
           <h3
-            class="text-sm font-bold uppercase tracking-wider"
+            class="text-sm font-semibold uppercase tracking-wider"
             style="color: var(--brand-primary)"
           >
             Facility Witness
@@ -438,7 +438,7 @@
           Total contract commitment · incl. VAT
         </p>
         <p
-          class="mt-0.5 text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white"
+          class="mt-0.5 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white"
         >
           {{
             fmtKes(

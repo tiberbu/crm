@@ -1,6 +1,6 @@
 <template>
   <div class="mx-auto w-full max-w-5xl px-4 py-6">
-    <h2 class="mb-1 text-xl font-bold text-gray-900 dark:text-white">
+    <h2 class="mb-1 text-xl font-semibold text-gray-900 dark:text-white">
       Your Package Pricing
     </h2>
     <p class="mb-5 text-sm text-gray-500 dark:text-gray-400">
@@ -170,7 +170,7 @@
                   >Invoice</span
                 >
               </div>
-              <p class="mt-2 text-sm font-bold text-gray-900 dark:text-white">
+              <p class="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
                 {{ fmtKes(row.amount_incl_vat) }}
               </p>
               <p class="text-[11px] text-gray-500 dark:text-gray-400">
@@ -266,7 +266,7 @@
                   Total contract commitment · incl. VAT
                 </p>
                 <p
-                  class="mt-0.5 text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white"
+                  class="mt-0.5 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white"
                 >
                   {{ fmtKes(commitmentAnnual) }}
                 </p>
@@ -306,7 +306,7 @@
           >
             Active year · Year {{ activePlan.year_number || 1 }}
           </p>
-          <p class="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
+          <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
             {{ fmtKes(activePlan.grand_total_annual) }}
           </p>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -428,18 +428,18 @@
             <tr class="border-t-2 border-gray-200 dark:border-gray-600">
               <td
                 colspan="2"
-                class="px-4 py-3 text-right text-sm font-bold text-gray-900 dark:text-white"
+                class="px-4 py-3 text-right text-sm font-semibold text-gray-900 dark:text-white"
               >
                 Grand Total (incl. VAT)
               </td>
               <td
-                class="px-4 py-3 text-right text-base font-bold"
+                class="px-4 py-3 text-right text-base font-semibold"
                 :style="{ color: 'var(--brand-primary)' }"
               >
                 {{ fmtKes(activePlan.grand_total_monthly) }}
               </td>
               <td
-                class="px-4 py-3 text-right text-base font-bold"
+                class="px-4 py-3 text-right text-base font-semibold"
                 :style="{ color: 'var(--brand-primary)' }"
               >
                 {{ fmtKes(activePlan.grand_total_annual) }}
