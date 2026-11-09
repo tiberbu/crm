@@ -86,3 +86,21 @@ BASE_URL=http://<site> E2E_MAP_HOST_TO_LOCALHOST=<site> E2E_ADMIN_EMAIL=<admin> 
 E2E_ADMIN_PASSWORD=... E2E_EXPOSED_OPENMETER_URL=https://<openmeter-host> \
 npx playwright test --config e2e/metering/playwright.config.ts openmeter_setup_checklist
 ```
+
+## Subscription lifecycle journey (openmeter_mediator ADR-007)
+
+`subscription_lifecycle.spec.ts`: a fully paid Fixed-package invoice shows on Deal › Metering as an
+active subscription with its activation, expiry and term; the admin suspends and reactivates the
+site and cancels the subscription, each with a reason. It also checks the Plan section against the
+brand guide (InterVar, weight ≤ 600). OpenMeter may be off on the site; HMIS's view
+(`GET /ingest/v1/plan`) is covered by the gateway's tests and the `hmis-essentials` Postman collection.
+
+```bash
+bench --site <site> execute crm.tests.e2e_subscription_fixture.setup \
+    --kwargs '{"run_id": "0001", "admin_password": "..."}'
+# from its result:
+BASE_URL=https://<crm-site> E2E_SUB_DEAL=<deal> E2E_SUB_FID=<fid> E2E_SUB_INVOICE=<invoice> \
+E2E_ADMIN_PASSWORD=... npx playwright test --config e2e/metering/playwright.config.ts subscription_lifecycle
+```
+
+Use a new `run_id` for each run: the journey cancels the subscription it checks.
