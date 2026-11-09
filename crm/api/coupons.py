@@ -57,6 +57,10 @@ def _get_coupon(name):
 			"revocation_reason",
 			"owner",
 			"creation",
+			"enabled_on",
+			"enabled_by",
+			"disabled_on",
+			"disabled_by",
 		],
 		as_dict=True,
 	)
@@ -93,7 +97,8 @@ def _add_audit_labels(rows):
 	for row in rows:
 		row["network_name"] = (names.get(row.network) or row.network) if row.get("network") else None
 		row["created_by_name"] = get_fullname(row.owner) if row.get("owner") else None
-		row["revoked_by_name"] = get_fullname(row.revoked_by) if row.get("revoked_by") else None
+		for who in ("revoked_by", "enabled_by", "disabled_by"):
+			row[f"{who}_name"] = get_fullname(row[who]) if row.get(who) else None
 
 
 @frappe.whitelist()
@@ -141,6 +146,10 @@ def list_coupons(network: Any = None):
 		"revoked_on",
 		"revoked_by",
 		"revocation_reason",
+		"enabled_on",
+		"enabled_by",
+		"disabled_on",
+		"disabled_by",
 	]
 	rows = frappe.get_all(
 		"CRM Coupon", filters=filters, fields=fields, ignore_permissions=True, order_by="modified desc"
@@ -205,6 +214,9 @@ def _set_enabled(name, enabled):
 	if status != target:
 		doc = frappe.get_doc("CRM Coupon", name)
 		doc.status = target
+		prefix = "enabled" if enabled else "disabled"
+		doc.set(f"{prefix}_on", now_datetime())
+		doc.set(f"{prefix}_by", frappe.session.user)
 		# Saving runs validate, so enabling still refuses a window that overlaps a live coupon.
 		doc.save(ignore_permissions=True)
 	return {"name": name, "status": target}

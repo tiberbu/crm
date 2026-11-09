@@ -142,6 +142,10 @@ const ROWS = [
     network_name: 'Southern Partners',
     status: 'Active',
     derived_status: 'Active',
+    enabled_by_name: 'Network Lead',
+    enabled_on: '2026-11-02 08:00:00',
+    disabled_by_name: 'Ops Lead',
+    disabled_on: '2026-11-01 18:00:00',
   },
   {
     ...base,
@@ -182,6 +186,14 @@ describe('CouponManager', () => {
       inactive.querySelector('[data-testid="coupon-created"]').textContent,
     ).toContain('Admin User')
     expect(inactive.querySelector('[data-testid="coupon-revoked"]')).toBeNull()
+    expect(inactive.querySelector('[data-testid="coupon-enabled"]')).toBeNull()
+    const active = cards(el)[1]
+    expect(
+      active.querySelector('[data-testid="coupon-enabled"]').textContent,
+    ).toContain('Network Lead')
+    expect(
+      active.querySelector('[data-testid="coupon-disabled"]').textContent,
+    ).toContain('Ops Lead')
     const revokedRow = revoked.querySelector('[data-testid="coupon-revoked"]')
     expect(revokedRow.textContent).toContain('Ops Lead')
     expect(revoked.textContent).toContain('Ended early')

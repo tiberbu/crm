@@ -73,8 +73,20 @@ class TestCouponApi(IntegrationTestCase):
 		)["name"]
 		self.assertEqual(api.enable_coupon(name)["status"], "Active")
 		self.assertEqual(api.get_coupon(name)["derived_status"], "Active")
+		row = api.get_coupon(name)
+		self.assertTrue(row["enabled_on"])
+		self.assertEqual(row["enabled_by"], "Administrator")
+		self.assertTrue(row["enabled_by_name"])
+		self.assertIsNone(row["disabled_on"])
 		self.assertEqual(api.disable_coupon(name)["status"], "Inactive")
-		self.assertEqual(api.get_coupon(name)["derived_status"], "Inactive")
+		row = api.get_coupon(name)
+		self.assertEqual(row["derived_status"], "Inactive")
+		self.assertTrue(row["disabled_on"])
+		self.assertEqual(row["disabled_by"], "Administrator")
+		# A no-op toggle does not move the timestamps.
+		before = row["disabled_on"]
+		api.disable_coupon(name)
+		self.assertEqual(api.get_coupon(name)["disabled_on"], before)
 		api.revoke_coupon(name, "policy")
 		row = api.get_coupon(name)
 		self.assertEqual(row["revocation_reason"], "policy")

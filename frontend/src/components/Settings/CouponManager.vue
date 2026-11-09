@@ -126,6 +126,18 @@
             <dd class="text-right" data-testid="coupon-created">
               {{ auditLabel(coupon.created_by_name, coupon.creation) }}
             </dd>
+            <template v-if="coupon.enabled_on">
+              <dt class="text-ink-gray-5">{{ __('Last enabled') }}</dt>
+              <dd class="text-right" data-testid="coupon-enabled">
+                {{ auditLabel(coupon.enabled_by_name, coupon.enabled_on) }}
+              </dd>
+            </template>
+            <template v-if="coupon.disabled_on">
+              <dt class="text-ink-gray-5">{{ __('Last disabled') }}</dt>
+              <dd class="text-right" data-testid="coupon-disabled">
+                {{ auditLabel(coupon.disabled_by_name, coupon.disabled_on) }}
+              </dd>
+            </template>
             <template v-if="coupon.status === 'Revoked'">
               <dt class="text-ink-gray-5">{{ __('Revoked') }}</dt>
               <dd class="text-right" data-testid="coupon-revoked">
