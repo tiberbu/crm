@@ -96,6 +96,147 @@
         </div>
       </div>
 
+      <div class="mt-5" data-testid="facility-plan">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-base-semibold text-ink-gray-8">{{ __('Plan') }}</span>
+            <Badge
+              data-testid="plan-type"
+              :label="__(plan.label)"
+              theme="gray"
+            />
+            <Badge
+              v-if="plan.subscription"
+              data-testid="subscription-status"
+              :label="__(capitalise(plan.subscription.status))"
+              :theme="plan.subscriptionTone"
+            />
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <Button
+              v-if="plan.canCancel"
+              data-testid="cancel-subscription"
+              :label="__('Cancel subscription')"
+              :tooltip="__(
+                'End the Fixed subscription now, including renewals already paid. HMIS loses access at once. Refunds are handled by Finance.',
+              )"
+              :loading="busy === 'cancel_subscription'"
+              @click="emit('lifecycle', { action: 'cancel_subscription', fid: facility.fid })"
+            />
+            <Button
+              v-if="plan.canSuspend"
+              data-testid="suspend-site"
+              :label="__('Suspend site')"
+              :tooltip="__(
+                'Refuse all HMIS calls for this facility at the gateway, whatever its plan. Tokens and subscription terms are kept.',
+              )"
+              :loading="busy === 'suspend_site'"
+              @click="emit('lifecycle', { action: 'suspend_site', fid: facility.fid })"
+            />
+            <Button
+              v-if="plan.canReactivate"
+              data-testid="reactivate-site"
+              :label="__('Reactivate site')"
+              :tooltip="__('Lift the suspension. HMIS is accepted again within 5 minutes.')"
+              :loading="busy === 'reactivate_site'"
+              @click="emit('lifecycle', { action: 'reactivate_site', fid: facility.fid })"
+            />
+            <Button
+              :label="__('Refresh plan')"
+              :tooltip="__(
+                'Write this plan into OpenMeter again, where HMIS reads it (GET /ingest/v1/plan). Safe to repeat.',
+              )"
+              :loading="busy === 'refresh_plan'"
+              @click="run('refresh_plan')"
+            />
+          </div>
+        </div>
+        <dl
+          v-if="plan.subscription"
+          class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm lg:grid-cols-4"
+        >
+          <div>
+            <dt class="text-ink-gray-6">{{ __('Package') }}</dt>
+            <dd class="text-ink-gray-8">
+              {{ plan.subscription.package || '—' }}
+              <span v-if="plan.subscription.billing_period">
+                · {{ __(plan.subscription.billing_period) }}</span
+              >
+            </dd>
+          </div>
+          <div>
+            <dt class="text-ink-gray-6">{{ __('Activated') }}</dt>
+            <dd data-testid="subscription-activated" class="text-ink-gray-8">
+              {{ formatDate(plan.subscription.activated_at) || '—' }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-ink-gray-6">
+              {{
+                plan.subscription.status === 'cancelled'
+                  ? __('Ended')
+                  : plan.subscription.status === 'expired'
+                    ? __('Expired')
+                    : __('Expires')
+              }}
+            </dt>
+            <dd data-testid="subscription-expires" class="text-ink-gray-8">
+              {{ formatDate(plan.subscription.expires_at) || '—' }}
+            </dd>
+          </div>
+          <div v-if="plan.subscription.cancelled_at">
+            <dt class="text-ink-gray-6">{{ __('Cancelled') }}</dt>
+            <dd class="text-ink-gray-8">
+              {{ formatDate(plan.subscription.cancelled_at) }}
+            </dd>
+          </div>
+        </dl>
+        <p v-else class="mt-2 text-sm text-ink-gray-7">
+          {{
+            plan.type === 'tokens'
+              ? __('Prepaid tokens. They never expire; only an exhausted balance stops clinical work.')
+              : __('No paid package yet. A fully paid Fixed invoice starts a subscription; a paid Flex invoice grants tokens.')
+          }}
+        </p>
+        <table
+          v-if="plan.terms.length"
+          class="mt-2 w-full text-sm"
+          data-testid="subscription-terms"
+        >
+          <thead class="text-left text-ink-gray-6">
+            <tr>
+              <th class="py-1 font-normal">{{ __('Invoice') }}</th>
+              <th class="py-1 font-normal">{{ __('Starts') }}</th>
+              <th class="py-1 font-normal">{{ __('Ends') }}</th>
+              <th class="py-1 font-normal">{{ __('Status') }}</th>
+            </tr>
+          </thead>
+          <tbody class="text-ink-gray-8">
+            <tr
+              v-for="term in plan.terms"
+              :key="term.name"
+              class="border-t border-outline-gray-1"
+            >
+              <td class="py-1">
+                <a
+                  v-if="term.invoice"
+                  :href="recordHref('Sales Invoice', term.invoice)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-ink-blue-6 hover:underline"
+                  >{{ term.invoice }}</a
+                >
+              </td>
+              <td class="py-1">{{ formatDate(term.starts_at) }}</td>
+              <td class="py-1">{{ formatDate(term.ends_at) }}</td>
+              <td class="py-1" :title="term.cancel_reason || ''">
+                {{ __(term.status) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <div class="mt-5" data-testid="token-grants">
         <div class="text-base-semibold text-ink-gray-8">
           {{ __('Token grants') }}
@@ -482,6 +623,7 @@ import {
   balanceStats,
   keyState,
   maskedKey,
+  planSummary,
   tokenLines,
   tone,
   welcomeBonusVia,
@@ -504,6 +646,7 @@ const emit = defineEmits([
   'probe',
   'reissue',
   'linked',
+  'lifecycle',
 ])
 
 const probe = createResource({
@@ -591,6 +734,11 @@ function recordHref(doctype, name) {
 const data = computed(() => probe.data)
 const site = computed(() => data.value?.site || {})
 const stats = computed(() => balanceStats(data.value))
+const plan = computed(() => planSummary(data.value?.plan, site.value.status))
+
+function capitalise(text) {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : ''
+}
 const errors = computed(() => Object.entries(data.value?.errors || {}))
 const keyMode = computed(() =>
   keyState(site.value, props.canReveal && data.value?.can_reveal_key),

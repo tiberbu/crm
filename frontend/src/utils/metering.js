@@ -85,3 +85,33 @@ export function probeOutcome(result) {
       'Still queued; it will retry automatically.',
   }
 }
+
+// The facility's plan (ADR-007) as the card shows it: what it is on, a badge tone,
+// and which lifecycle actions make sense now. Mirrors GET /ingest/v1/plan for HMIS.
+const PLAN_LABELS = {
+  subscription: 'Subscription (Fixed)',
+  tokens: 'Tokens (Flex)',
+  none: 'No plan yet',
+}
+const SUBSCRIPTION_TONES = {
+  active: 'green',
+  scheduled: 'orange',
+  expired: 'red',
+  cancelled: 'gray',
+}
+
+export function planSummary(plan, siteStatus) {
+  const type = plan?.plan_type || 'none'
+  const sub = plan?.subscription || null
+  const live = sub && ['active', 'scheduled'].includes(sub.status)
+  return {
+    type,
+    label: PLAN_LABELS[type] || PLAN_LABELS.none,
+    subscription: sub,
+    subscriptionTone: sub ? SUBSCRIPTION_TONES[sub.status] || 'gray' : 'gray',
+    terms: plan?.terms || [],
+    canCancel: Boolean(live),
+    canSuspend: siteStatus === 'Active',
+    canReactivate: siteStatus === 'Suspended',
+  }
+}
