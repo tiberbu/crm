@@ -1,4 +1,8 @@
 # Tiberbu CRM — Partner Portal Integration Reference
+
+> **Retired / out of scope:** Historical integration material only. Do not use
+> this contract for facility onboarding; use the Network-owned six-digit
+> Partner ID and Customer Experience scope.
 **Version:** 1.1  
 **Base URL:** `https://crm.tiberbu.app`  
 **Protocol:** HTTPS only  

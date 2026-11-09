@@ -2,225 +2,582 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ title }}</title>
-    <meta name="description" content="{{ app_name }} — {{ tagline }}. The sales and customer-support layer for the Careverse HMIS.">
-
+    <meta name="description" content="CareverseHIMS Value Express: a simple, affordable HIMS package for Level 2 and Level 3 outpatient facilities. Guided self-onboarding, SHA eClaims, free virtual training and support.">
     <link rel="icon" type="image/svg+xml" href="{{ favicon or '/assets/crm/images/tiberbu-mark.svg' }}">
-    <link rel="stylesheet" href="/assets/crm/css/tiberbu-brand.css">
-    <style>
-        :root {
-            --brand: {{ brand_primary or '#bc1823' }};
-            --brand-dark: {{ brand_primary_dark or '#8f111b' }};
-            /* black + ink-gray ramp mirrored from frappe-ui (ink-gray-9/8/7/6/5) for
-               visual consistency with the CRM SPA */
-            --black: #171717;              /* = surface-gray-10, the SPA primary */
-            --ink-9: #1f272e;
-            --ink-7: #4c5257;
-            --ink-6: #667075;
-            --ink-5: #8b9096;
-            --line: rgba(23,23,23,0.08);
-            /* glass */
-            --glass-bg: rgba(255,255,255,0.55);
-            --glass-strong: rgba(255,255,255,0.72);
-            --glass-border: 1px solid rgba(255,255,255,0.6);
-            --glass-shadow: 0 10px 40px rgba(23,23,23,0.07);
-            --glass-inset: inset 0 1px 0 rgba(255,255,255,0.7);
-            --radius: 16px;
-            --focus: 0 0 0 3px rgba(188,24,35,0.22);
-            --font: 'InterVar','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-        }
-        *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-        html { scroll-behavior:smooth; }
-        body {
-            font-family:var(--font); color:var(--ink-9); line-height:1.5;
-            -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
-            /* ONE restrained scene device: a single soft red wash, top-left */
-            background:
-                radial-gradient(60% 50% at 12% 6%, rgba(188,24,35,0.08) 0%, transparent 58%),
-                linear-gradient(180deg, #ffffff 0%, #f4f5f7 100%);
-            background-attachment: fixed;
-            min-height:100vh;
-        }
-        a { text-decoration:none; color:inherit; }
-        .wrap { max-width:1120px; margin:0 auto; padding:0 24px; }
-        :where(a, button):focus-visible { outline:none; box-shadow:var(--focus); border-radius:11px; }
-
-        /* ---------- glass nav ---------- */
-        .nav {
-            position:sticky; top:0; z-index:20;
-            background: var(--glass-bg);
-            -webkit-backdrop-filter: blur(16px) saturate(160%);
-            backdrop-filter: blur(16px) saturate(160%);
-            border-bottom: 1px solid rgba(255,255,255,0.5);
-        }
-        .nav-inner { display:flex; align-items:center; justify-content:space-between; height:64px; }
-        .brand { display:flex; align-items:center; gap:11px; }
-        .brand img { height:32px; width:32px; border-radius:8px; }
-        .brand span { font-size:16px; font-weight:600; letter-spacing:-0.01em; }
-        .nav-cta {
-            display:inline-flex; align-items:center; height:38px; padding:0 18px; border-radius:10px;
-            font-size:14px; font-weight:600; color:#fff; background:var(--black);
-            transition:background .12s, transform .06s;
-        }
-        .nav-cta:hover { background:#000; transform:translateY(-1px); }
-
-        /* ---------- hero (tighter rhythm; sentence-case; weight 800 not 900) ---------- */
-        .hero { text-align:center; padding: clamp(64px, 10vh, 104px) 0 clamp(40px, 6vh, 60px); }
-        .eyebrow {
-            display:inline-flex; align-items:center; gap:8px;
-            font-size:13px; font-weight:600; color:var(--brand);
-            padding:6px 14px; border-radius:999px;
-            background: rgba(188,24,35,0.07); border:1px solid rgba(188,24,35,0.14);
-            margin-bottom:24px;
-        }
-        .eyebrow .dot { width:6px; height:6px; border-radius:50%; background:var(--brand); }
-        .hero h1 {
-            font-size: clamp(2.1rem, 4vw, 3rem); line-height:1.12; font-weight:600; letter-spacing:-0.02em;
-            max-width:860px; margin:0 auto 20px; color:var(--black);
-        }
-        .hero h1 .accent { color:var(--brand); }
-        .hero p.lead { font-size: clamp(1rem, 1.3vw, 1.15rem); color:var(--ink-6); line-height:1.6; max-width:600px; margin:0 auto 30px; }
-        /* primary dominates; secondary is a quiet text link (not a co-equal button) */
-        .cta-row { display:flex; gap:20px; justify-content:center; align-items:center; flex-wrap:wrap; }
-        .btn-primary {
-            display:inline-flex; align-items:center; justify-content:center; height:50px; padding:0 30px;
-            border-radius:12px; font-size:15px; font-weight:600; color:#fff; background:var(--brand);
-            box-shadow:0 10px 26px rgba(188,24,35,0.24); transition:background .12s, transform .06s;
-        }
-        .btn-primary:hover { background:var(--brand-dark); transform:translateY(-1px); }
-        .link-secondary { font-size:15px; font-weight:600; color:var(--ink-7); display:inline-flex; align-items:center; gap:6px; }
-        .link-secondary:hover { color:var(--black); }
-        .link-secondary svg { width:16px; height:16px; }
-
-        /* ---------- borrowed: one quiet trust strip (careverse hero-social-proof), minimal ---------- */
-        .trust { display:flex; justify-content:center; gap:36px; flex-wrap:wrap; margin-top:34px; }
-        .trust-item { text-align:center; }
-        .trust-num { font-size:22px; font-weight:600; color:var(--black); letter-spacing:-0.02em; }
-        .trust-lbl { font-size:12.5px; color:var(--ink-5); margin-top:2px; }
-
-        /* ---------- feature cards: distinct icons, normalized copy ---------- */
-        .features { padding: clamp(40px,7vh,64px) 0 clamp(72px,11vh,104px); }
-        .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; }
-        .feature {
-            padding:24px 22px;
-            background: var(--glass-bg);
-            -webkit-backdrop-filter: blur(18px) saturate(160%);
-            backdrop-filter: blur(18px) saturate(160%);
-            border: var(--glass-border); border-radius: var(--radius);
-            box-shadow: var(--glass-shadow), var(--glass-inset);
-        }
-        .feature .ic {
-            width:40px; height:40px; border-radius:11px; margin-bottom:15px;
-            background: var(--black);
-            display:flex; align-items:center; justify-content:center;
-        }
-        .feature .ic svg { width:19px; height:19px; stroke:#fff; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
-        .feature h3 { font-size:15.5px; font-weight:600; margin-bottom:7px; color:var(--ink-9); }
-        .feature p { font-size:13.5px; color:var(--ink-6); line-height:1.55; }
-
-        /* ---------- black structural CTA band (brings BLACK into the palette) ---------- */
-        .cta-band { background: var(--black); color:#fff; }
-        .cta-band .wrap { padding: clamp(48px,8vh,72px) 24px; text-align:center; }
-        .cta-band h2 { font-size: clamp(1.6rem,3vw,2.1rem); font-weight:600; letter-spacing:-0.02em; margin-bottom:12px; }
-        .cta-band p { color:rgba(255,255,255,0.7); font-size:15px; margin-bottom:26px; }
-        .cta-band .btn-primary { box-shadow:0 10px 26px rgba(188,24,35,0.4); }
-
-        /* ---------- footer ---------- */
-        .ft { border-top:1px solid var(--line); padding:26px 0; }
-        .ft-inner { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; font-size:13px; color:var(--ink-5); }
-        .ft a { color:var(--ink-7); font-weight:600; }
-        .ft a:hover { color:var(--black); }
-
-        @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-            .nav, .feature { background:#ffffff; }
-        }
-        @media (max-width: 900px) { .grid { grid-template-columns:repeat(2,1fr); } }
-        @media (max-width: 560px) { .grid { grid-template-columns:1fr; } .trust { gap:24px; } }
-        @media (prefers-reduced-motion: reduce) {
-            html { scroll-behavior:auto; }
-            *, *::before, *::after { transition-duration:.001ms !important; }
-        }
-    </style>
+    <link rel="preload" href="/assets/crm/fonts/value-express/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/assets/crm/fonts/value-express/source-sans-3-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/assets/crm/css/value-express.css?v={{ css_version }}">
+    <link rel="stylesheet" href="/assets/crm/css/value-express-landing.css?v={{ css_version }}">
 </head>
-<body>
-    <nav class="nav">
-        <div class="wrap nav-inner">
-            <div class="brand">
-                {% if brand_logo %}<img src="{{ brand_logo }}" alt="{{ app_name }}">{% endif %}
-                <span>{{ app_name or 'Tiberbu CRM' }}</span>
-            </div>
-            <a class="nav-cta" href="{{ cta_secondary_link }}">{{ cta_secondary_text }}</a>
-        </div>
-    </nav>
+{%- set cur = offer.currency or 'KES' -%}
+{%- set fixed = offer.fixed or [] -%}
+{%- set flex = offer.flex or [] -%}
+<body class="vx">
 
-    <header class="hero">
-        <div class="wrap">
-            <div class="eyebrow"><span class="dot"></span> {{ tagline or 'Powering better health' }}</div>
-            <h1>The CRM built for <span class="accent">better health outcomes</span></h1>
-            <p class="lead">
-                {{ app_name or 'Tiberbu CRM' }} unifies leads, referrals, telephony and support
-                around the Careverse HMIS — so your teams grow revenue and care together.
-            </p>
-            <div class="cta-row">
-                <a class="btn-primary" href="{{ cta_link }}">{{ cta_text }}</a>
-                <a class="link-secondary" href="{{ cta_secondary_link }}">
-                    {{ cta_secondary_text }}
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                </a>
-            </div>
+<header class="site"><div class="wrap">
+  <a class="lockup" href="#top" aria-label="Tiberbu CareverseHIMS Value Express">{% with clip_id = "tbclip-head" %}{% include "templates/includes/value_express/wordmark.html" %}{% endwith %}<span class="prod">CareverseHIMS<b>Value Express</b></span></a>
+  <nav class="top" aria-label="Sections">
+    <a href="#how">How it works</a><a href="#benefits">Benefits</a><a href="#fit">Is it for me?</a><a href="#plans">Plans</a><a href="#flex">Flex tokens</a><a href="#calculator">Calculator</a><a href="#contact">Support</a>
+  </nav>
+  <a class="signin" href="{{ signin_link }}">Sign in</a>
+  <a class="btn primary small" href="{{ onboarding_url }}" data-testid="header-get-started">Get started</a>
+</div></header>
 
-            <!-- borrowed (careverse hero social-proof), minimal + sentence case -->
-            <div class="trust">
-                <div class="trust-item"><div class="trust-num">1</div><div class="trust-lbl">Unified platform</div></div>
-                <div class="trust-item"><div class="trust-num">Dual-mode</div><div class="trust-lbl">Avaya telephony</div></div>
-                <div class="trust-item"><div class="trust-num">SLA-driven</div><div class="trust-lbl">Support automation</div></div>
-            </div>
-        </div>
-    </header>
+<main id="top">
+<div class="callbar" data-testid="callbar"><div class="wrap callbar-inner">
+  {% if landing.phones %}<span class="lbl">Call us</span><span class="callbar-phones">{% for phone in landing.phones %}<a class="mono" href="tel:{{ phone.tel }}">{{ phone.label }}</a>{% if not loop.last %}<span aria-hidden="true">·</span>{% endif %}{% endfor %}</span>{% endif %}
+  {% if landing.hours %}<span class="callbar-hours">{{ landing.hours }}</span>{% endif %}
+  <a class="callbar-cta" href="#contact">Talk to us →</a>
+</div></div>
 
-    <section class="features">
-        <div class="wrap">
-            <div class="grid">
-                <!-- distinct icons per card (fixes identical-checkmark issue) -->
-                <div class="feature">
-                    <div class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-                    <h3>Unified relationships</h3>
-                    <p>One record per lead, referral and patient across the Careverse HMIS.</p>
-                </div>
-                <div class="feature">
-                    <div class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
-                    <h3>Sales &amp; referral pipelines</h3>
-                    <p>Track deals, sources and follow-ups in a pipeline built for health.</p>
-                </div>
-                <div class="feature">
-                    <div class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
-                    <h3>Integrated telephony</h3>
-                    <p>Click-to-call, screen-pop and logging — inbound and outbound.</p>
-                </div>
-                <div class="feature">
-                    <div class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
-                    <h3>Support automation</h3>
-                    <p>SLAs, assignment rules and onboarding journeys, out of the box.</p>
-                </div>
-            </div>
+<section class="hero"><div class="wrap">
+  <div class="hero-grid">
+    <div class="stack" style="gap:22px">
+      <span class="eyebrow"><span class="secno">01</span>Tiberbu CareverseHIMS Value Express</span>
+      <h1>Get digital. Get SHA &amp; Private Insurance ready. <span class="accent">Go live within hours.</span></h1>
+      <p class="lede">A simple, affordable CareverseHIMS package designed for Level 2 and Level 3 outpatient facilities.</p>
+      <p class="lede" style="margin-top:-8px">Get started quickly with guided self-onboarding, SHA eClaims capabilities, free virtual training and dedicated onboarding support.</p>
+      <div class="ctas">
+        <a class="btn primary" href="{{ onboarding_url }}" data-testid="hero-get-started">Get started</a>
+        <a class="btn ghost" href="#how">See how it works</a>
+      </div>
+    </div>
+    <figure style="margin:0">
+      <div class="app" role="img" aria-label="Illustration of the CareverseHIMS dashboard: today's patients, bills and SHA claims, and the patient queue">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>CareverseHIMS · Example Medical Centre</span><b class="tk">2,689 tokens</b></div>
+        <div class="body" aria-hidden="true">
+          <div class="side"><span class="on">Dashboard</span><span>Registration</span><span>Consultation</span><span>Laboratory</span><span>Pharmacy</span><span>Billing</span><span>SHA claims</span></div>
+          <div class="main">
+            <h4>Today</h4>
+            <div class="kpis"><div><small>Patients</small><b>18</b></div><div><small>Billed</small><b>27,400</b></div><div><small>SHA claims</small><b>6 sent</b></div></div>
+            <h4>Patient queue</h4>
+            <table><tbody>
+              <tr><td>OP-0143 · Consultation</td><td><span class="st">With clinician</span></td></tr>
+              <tr><td>OP-0144 · Laboratory</td><td><span class="st ok">Results ready</span></td></tr>
+              <tr><td>OP-0145 · Pharmacy</td><td><span class="st">Dispensing</span></td></tr>
+              <tr><td>OP-0146 · Billing</td><td><span class="st ok">SHA claim sent</span></td></tr>
+            </tbody></table>
+          </div>
         </div>
-    </section>
+      </div>
+      <figcaption class="appcap">Illustration of the CareverseHIMS dashboard</figcaption>
+    </figure>
+  </div>
 
-    <!-- BLACK structural band — brings black into the red/black/white system -->
-    <section class="cta-band">
-        <div class="wrap">
-            <h2>Ready to see it in action?</h2>
-            <p>Request a demo and we'll tailor {{ app_name or 'Tiberbu CRM' }} to your team.</p>
-            <a class="btn-primary" href="{{ cta_link }}">{{ cta_text }}</a>
-        </div>
-    </section>
+  {% if offer.from_price %}
+  <div class="pricebar">
+    <div class="from"><small>CareverseHIMS Value Express</small>from {{ cur }} {{ amount(offer.from_price) }}</div>
+    <p><strong>Pay as you use. Your tokens don't expire while your account remains active.</strong>Get started with CareverseHIMS without committing to a fixed monthly subscription. Prepay, use the system as your facility operates, monitor your balance and top up whenever you need more.</p>
+    <a class="btn primary" href="{{ onboarding_url }}?plan=flex">Get started</a>
+  </div>
+  {% endif %}
+  <div class="badges">
+    <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4"/><rect x="3" y="4" width="18" height="16" rx="3"/></svg>SHA eClaims Ready</div>
+    <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.6 10.6l6.8-3.2M8.6 13.4l6.8 3.2"/></svg>{% if landing.certificate_url %}<a class="badge-link" href="{{ landing.certificate_url }}" target="_blank" rel="noopener"{% if landing.certificate_id %} title="Certificate {{ landing.certificate_id }}"{% endif %}>DHA HIE Compliant</a>{% else %}<span>DHA HIE Compliant</span>{% endif %}</div>
+    <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Go Live Within Hours</div>
+    <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="2" y="14" width="5" height="6" rx="2"/><rect x="17" y="14" width="5" height="6" rx="2"/></svg>24/7 Remote Support</div>
+  </div>
+</div></section>
 
-    <footer class="ft">
-        <div class="wrap ft-inner">
-            <span>&copy; {{ app_name or 'Tiberbu CRM' }}</span>
-            <a href="{{ cta_secondary_link }}">Sign in</a>
-        </div>
-    </footer>
+<section class="band alt" id="how"><div class="wrap">
+  <span class="eyebrow"><span class="secno">02</span>Go live within hours</span>
+  <h2 style="margin-top:10px">From enquiry to live in four simple steps</h2>
+  <div class="steps">
+    <div class="step"><div class="n">01</div><h3>Register</h3><p>Create your facility account.</p></div>
+    <div class="step"><div class="n">02</div><h3>Configure</h3><p>Add your facility information, services and users.</p></div>
+    <div class="step"><div class="n">03</div><h3>Train</h3><p>Join free virtual CareverseHIMS training.</p></div>
+    <div class="step"><div class="n">04</div><h3>Go live</h3><p>Start operating digitally and submitting SHA claims.</p></div>
+  </div>
+  <p class="nolist">No lengthy procurement. No complex implementation. No weeks of waiting.</p>
+  <p style="color:var(--ink-2);font-size:.88rem;margin-top:8px">Go-live timing depends on successful facility verification, payment, configuration and user readiness.</p>
+</div></section>
+
+<section class="band" id="benefits"><div class="wrap">
+  <span class="eyebrow"><span class="secno">03</span>What you get</span>
+  <h2 style="margin-top:10px">What Value Express gives your facility</h2>
+  <div class="vgrid">
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg></div><h3>Run your facility digitally</h3><p>Manage registration, consultations, billing, pharmacy, clinical information and day-to-day facility operations from one system.</p></div>
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5M9 14l2 2 4-4"/></svg></div><h3>Submit SHA claims</h3><p>Capture the required information and prepare and submit SHA eClaims digitally.</p></div>
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg></div><h3>Get connected</h3><p>Use a platform designed to support Kenya's national digital health interoperability environment.</p></div>
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div><h3>Know how your facility is performing</h3><p>Give facility owners greater visibility over patients, services, revenue, claims and operational activity.</p></div>
+    <div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z"/></svg></div><h3>Get continuous support</h3><p>Receive onboarding assistance, recurring virtual training and 24/7 remote support.</p></div>
+  </div>
+</div></section>
+
+<section class="band alt" id="fit"><div class="wrap">
+  <span class="eyebrow"><span class="secno">04</span>Is this package for me?</span>
+  <h2 style="margin-top:10px">Value Express is built for you if…</h2>
+  <div class="fit">
+    <ul class="checks">
+      <li>You operate a Level 2 or Level 3 outpatient facility</li>
+      <li>You need to digitise your facility quickly</li>
+      <li>You want to start submitting SHA claims</li>
+      <li>You do not want a lengthy HIMS implementation project</li>
+      <li>You need an affordable starting point</li>
+      <li>You want training and support included</li>
+    </ul>
+    <div class="enquiry">
+      <span class="tag" style="align-self:flex-start">Inpatient facilities</span>
+      <h3>Running a larger hospital?</h3>
+      <p style="color:var(--ink-2)">Inpatient hospitals, multi-facility groups and facilities with theatre, complex workflows or extensive integrations are better served by CareverseHIMS Advanced or Enterprise. Tell us about your facility and our team will assess the right fit.</p>
+      <a href="#contact" data-topic="CareverseHIMS Advanced &amp; Enterprise" data-testid="enterprise-enquiry">Submit an enquiry for CareverseHIMS Advanced &amp; Enterprise →</a>
+    </div>
+  </div>
+</div></section>
+
+<section class="band" id="plans"><div class="wrap">
+  <span class="eyebrow"><span class="secno">05</span>Pricing</span>
+  <h2 style="margin-top:10px">Choose how you want to pay</h2>
+  <p class="lede" style="margin-top:12px">{% if fixed %}Both plans include the Value Express platform, SHA eClaims, virtual training and remote support. The difference is how you pay.{% else %}Value Express Flex includes the platform, SHA eClaims, virtual training and remote support. You pay for what you use.{% endif %}</p>
+  <div class="plans{% if not fixed %} single{% endif %}" style="margin-top:28px">
+    {% if fixed %}
+    <article class="plan" data-testid="plan-fixed">
+      <div class="name"><small>Value Express Fixed</small>Predictable monthly cost</div>
+      <div class="tiers" style="--cols:{{ offer.fixed_columns or 2 }}">{% for tier in fixed %}<div data-testid="fixed-tier"><span>{{ tier.label }}</span><b>{{ tier.currency }} {{ amount(tier.price) }}</b><span>{{ tier.per }}</span></div>{% endfor %}</div>
+      <p style="color:var(--ink-2)">Best for facilities looking for predictable monthly costs, with no token balances to monitor and no top-ups to make.</p>
+      <ul><li>Full Value Express platform access</li><li>SHA eClaims capabilities</li><li>Guided self-onboarding and activation support</li><li>Recurring virtual CareverseHIMS training</li><li>Continuous remote support</li><li>Predictable monthly spend</li></ul>
+      <div class="flow"><span>Subscribe</span><i>→</i><span>Activate CareverseHIMS</span><i>→</i><span>Use the platform</span><i>→</i><span>Pay the same monthly subscription</span></div>
+      <a class="btn ghost" href="{{ onboarding_url }}?plan=fixed">Get started</a>
+    </article>
+    {% endif %}
+    <article class="plan flex" data-testid="plan-flex">
+      <div class="name"><small>Value Express Flex</small>Pay as you use</div>
+      {% if offer.from_price %}<div class="big">From {{ cur }} {{ amount(offer.from_price) }} <small>in tokens</small></div>{% endif %}
+      <p style="color:var(--ink-2)">Pay according to how you use CareverseHIMS.</p>
+      <ul><li>Lower starting commitment</li><li>Payment aligned to actual activity</li><li>Same CareverseHIMS platform</li>{% if fixed %}<li>Move to Fixed as usage grows</li>{% endif %}</ul>
+      <div class="flow"><span>Buy Careverse Tokens</span><i>→</i><span>Use CareverseHIMS</span><i>→</i><span>Top up when required</span></div>
+      <a class="btn primary" href="{{ onboarding_url }}?plan=flex">Get started</a>
+    </article>
+  </div>
+  <p class="estimate">Not sure which fits? <a href="#calculator">Estimate your usage and costs →</a></p>
+
+  {% if fixed %}
+  <h3 style="margin-top:44px">Compare Fixed and Flex</h3>
+  <div class="tablewrap"><table class="cmp">
+    <thead><tr><th scope="col"></th><th scope="col">Value Express Fixed</th><th scope="col">Value Express Flex</th></tr></thead>
+    <tbody>
+      <tr><td>Starting price</td>{%- set entry = (fixed|sort(attribute="monthly"))[0] -%}<td class="mono">{{ entry.currency }} {{ amount(entry.price) }} {{ entry.per }}</td><td class="mono">{{ cur }} {{ amount(offer.from_price) }}</td></tr>
+      <tr><td>Model</td><td>Fixed monthly</td><td>Pay as you use</td></tr>
+      <tr><td>Billing</td><td>Monthly subscription</td><td>Prepaid tokens</td></tr>
+      <tr><td>Best for</td><td>Predictable or higher usage</td><td>Smaller or variable volumes</td></tr>
+      <tr><td>Top-ups</td><td>Not normally required</td><td>Required when your token balance runs low</td></tr>
+      <tr><td>Packages</td><td>{% for tier in fixed %}{{ tier.label }}{% if not loop.last %}{% if loop.revindex == 2 %} and {% else %}, {% endif %}{% endif %}{% endfor %}</td><td>{% for card in flex %}{{ card.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if offer.custom %} and Custom{% endif %}</td></tr>
+      <tr><td>Platform access</td><td>Included</td><td>Included while sufficiently funded</td></tr>
+      <tr><td>Cost predictability</td><td>Fixed</td><td>Depends on usage</td></tr>
+      <tr><td>CareverseHIMS</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+      <tr><td>SHA eClaims</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+      <tr><td>Virtual training</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+      <tr><td>Remote support</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="choose">
+    <div><h3>Choose Fixed if…</h3><ul class="checks"><li>Your usage is predictable or consistently higher</li><li>You want a fixed monthly operating cost</li><li>You don't want to monitor token balances</li><li>You prefer straightforward monthly budgeting</li><li>Your Flex spend is approaching the Fixed price</li></ul></div>
+    <div><h3>Choose Flex if…</h3><ul class="checks"><li>You want the lowest possible entry point</li><li>Your patient volumes are low or variable</li><li>You want payment linked to usage</li><li>You are beginning your digital journey</li><li>You prefer to scale gradually</li></ul></div>
+  </div>
+  <div class="journey"><span class="lbl">Recommended journey</span><div class="flow"><span>Start on Flex</span><i>→</i><span>Grow usage</span><i>→</i><span>Move to Fixed when it becomes more economical</span></div></div>
+  {% endif %}
+</div></section>
+
+<section class="band tint" id="flex"><div class="wrap">
+  <div class="flexhead">
+    <div><span class="eyebrow"><span class="secno">06</span>CareverseHIMS Value Express Flex</span><h2 style="margin-top:10px">Start small. Pay as you use. Grow at your own pace.</h2></div>
+    <div class="stack"><p class="lede">Value Express Flex gives outpatient facilities access to CareverseHIMS through a simple prepaid token model.</p>
+    <p style="color:var(--ink-2)">Instead of committing to a fixed monthly subscription, your facility buys Careverse Tokens in advance and uses them as transactions are completed. Purchased tokens do not expire while your account remains active, and you can top up whenever you need more.</p></div>
+  </div>
+
+  <nav class="pills" aria-label="Flex topics"><a href="#flex-how">Getting tokens</a><a href="#flex-usage">Token usage</a><a href="#flex-packages">Packages</a><a href="#flex-rules">Token rules</a></nav>
+  <div class="why">
+    <div><h3>Low entry cost</h3><p>Start with an affordable prepaid package rather than a large upfront system commitment.</p></div>
+    <div><h3>Pay for actual activity</h3><p>Tokens are consumed as your facility uses applicable services.</p></div>
+    <div><h3>No token expiry</h3><p>Purchased tokens remain available for as long as your customer account remains active.</p></div>
+    <div><h3>Top up anytime</h3><p>Add tokens whenever you need them, from a minimum top-up of {{ amount(offer.min_tokens or 1000) }} tokens.</p></div>
+    <div><h3>Complete visibility</h3><p>Track your available token balance and manage consumption as your facility grows.</p></div>
+    <div><h3>{% if fixed %}Grow into Fixed{% else %}Grow at your pace{% endif %}</h3><p>{% if fixed %}Keep topping up as you grow, or move to Value Express Fixed for predictable monthly spend.{% else %}Keep topping up as your facility grows, at the package rate that suits your volume.{% endif %}</p></div>
+  </div>
+
+  <div class="sub" id="flex-how"><h3>Getting tokens</h3>
+    <div class="how">
+      <div><b>1</b><h3>Choose &amp; pay</h3><p>Select your prepaid Value Express token package and make payment.</p></div>
+      <div><b>2</b><h3>Get your tokens</h3><p>Once payment is confirmed, the tokens are credited to your CareverseHIMS account.</p></div>
+      <div><b>3</b><h3>Use CareverseHIMS</h3><p>Tokens are deducted automatically as eligible transactions are completed.</p></div>
+      <div><b>4</b><h3>Top up &amp; keep going</h3><p>Monitor your balance and top up when required. Full access continues while you have enough tokens.</p></div>
+    </div>
+  </div>
+
+  <div class="sub" id="flex-usage"><h3>How your tokens are used</h3>
+    <div class="usage">
+      <div><span class="tag" style="align-self:flex-start">1 · System access</span><div class="rate">{{ amount(offer.access_tokens) }} tokens<br>per funded month</div><p>A fixed system access charge is deducted at the beginning of each month in which the account is funded. It keeps your facility's access to the Value Express platform and its capabilities.</p></div>
+      <div><span class="tag" style="align-self:flex-start">2 · Service usage</span><div class="rate">Per completed<br>transaction</div><p>Tokens are deducted when an applicable transaction is completed at a service point, based on the published token schedule.</p><div class="formula">{% for point in (offer.calculator.service_points or []) %}{{ point.name.split(' (')[0].split(' /')[0] }} {{ point.tokens }}{% if not loop.last %} · {% endif %}{% endfor %}</div></div>
+      <div><span class="tag" style="align-self:flex-start">3 · Patient bill</span><div class="rate">1 token per<br>{{ cur }} {{ amount(offer.bill_value_per_token) }} billed</div><p>An additional charge based on the patient's total bill.</p><div class="formula">Bill tokens = total bill ÷ {{ amount(offer.bill_value_per_token) }}, rounded up</div></div>
+    </div>
+    <p class="both">Where a transaction attracts both a service-point charge and a patient-bill charge, both deductions apply.</p>
+    <div class="ledgerrow">
+      <div class="stack"><h3>What this looks like on your balance</h3><p>Every deduction appears on your token statement, with what was charged and why. This is a facility's first day on Flex Growth.</p><p>The system access charge comes off first. Service points and the patient bill follow as work is completed.</p></div>
+      <aside class="ledger" aria-label="Example token ledger">
+        <div class="lh"><b>Token balance · Flex Growth</b><span class="tag">Example</span></div>
+        <ol>
+          <li><span>Growth package purchased<small>KES 15,000 · 2,800 tokens</small></span><span class="amt plus">+2,800</span></li>
+          <li><span>First-purchase bonus<small>One-time welcome tokens</small></span><span class="amt plus">+400</span></li>
+          <li><span>System access, November<small>Deducted on the 1st of each funded month</small></span><span class="amt minus">−500</span></li>
+          <li><span>Consultation completed<small>Service point</small></span><span class="amt minus">−3</span></li>
+          <li><span>Laboratory order completed<small>Service point</small></span><span class="amt minus">−6</span></li>
+          <li><span>Patient bill KES 1,400<small>1 token per KES 750, rounded up</small></span><span class="amt minus">−2</span></li>
+        </ol>
+        <div class="bal"><span>Available balance</span><b>2,689</b></div>
+      </aside>
+    </div>
+  </div>
+
+  {% if flex or offer.custom %}
+  <div class="sub" id="flex-packages"><h3>Simple prepaid packages</h3>
+    <div class="pkgs" data-testid="flex-grid" style="--cols:{{ offer.flex_columns or 4 }}">
+      {% for card in flex %}
+      <div class="pkg{% if card.recommended %} rec{% endif %}" data-testid="flex-package">{% if card.recommended %}<span class="rectag">Popular</span>{% endif %}<div class="k">Value Express Flex<b>{{ card.name }}</b></div><p>{{ card.description }}</p><div class="p">{{ card.currency }} {{ amount(card.price) }}</div><dl><dt>Tokens</dt><dd>{{ amount(card.tokens) }}</dd>{% if card.suitability %}<dt class="suits">Suits</dt><dd class="suits">{{ card.suitability }}</dd>{% endif %}<dt>Price per token</dt><dd>{{ card.currency }} {{ "%.2f"|format(card.rate) }}</dd></dl>{% if card.more_percent %}<span class="more">Includes {{ card.more_percent }}% more tokens</span>{% endif %}{% if offer.welcome_bonus %}<span class="bonus">+{{ amount(offer.welcome_bonus) }} bonus tokens on first purchase</span>{% endif %}<a href="{{ onboarding_url }}?plan=flex&amp;package={{ card.item_code|urlencode }}">Get started →</a></div>
+      {% endfor %}
+      {% if offer.custom %}
+      <div class="pkg" data-testid="custom-package"><div class="k">Value Express Flex<b>{{ offer.custom.display_name }}</b></div><p>Set your own amount. Tokens are worked out at the rate of the package your amount reaches.</p>
+        <label class="lbl" for="cu-kes">Your amount ({{ offer.custom.currency }})</label><input class="cuin" id="cu-kes" type="number" min="{{ offer.custom.min_amount|int }}" step="500" value="{{ (offer.custom.min_amount|int) + 1000 }}" inputmode="numeric" aria-describedby="cu-err">
+        <dl><dt>Tokens</dt><dd id="cu-t">—</dd><dt class="suits">Suits</dt><dd class="suits">Any size — set your own amount</dd><dt>Price per token</dt><dd id="cu-r">—</dd><dt>You pay</dt><dd id="cu-c">—</dd></dl>
+        <span class="more" id="cu-tier"></span><span class="cuerr" id="cu-err" hidden>Minimum {{ offer.custom.currency }} {{ amount(offer.custom.min_amount) }} ({{ amount(offer.custom.min_tokens) }} tokens).</span>
+        <a id="cu-go" href="{{ onboarding_url }}?plan=custom">Get started →</a></div>
+      {% endif %}
+    </div>
+  </div>
+  <p class="disclaim" style="margin-top:16px">Prices exclude VAT. Token use depends on completed service-point transactions and patient-bill value.{% if offer.welcome_bonus %} First-purchase offer: {% for card in flex %}{{ card.name }}{% if not loop.last %}{% if loop.revindex == 2 %} and {% else %}, {% endif %}{% endif %}{% endfor %} currently include {{ amount(offer.welcome_bonus) }} bonus tokens on the first purchase, subject to the applicable offer and terms.{% endif %}</p>
+  {% endif %}
+
+  <div class="sub">
+    <div class="alert" role="note"><b>When your balance reaches zero</b><p>System access is limited until more tokens are credited. Full access resumes as soon as you top up, so top up before your balance runs out.</p></div>
+    <details class="rules" id="flex-rules"><summary>All token rules (12)</summary>
+      <ol class="rulelist">
+        <li><b>Prepaid.</b> Tokens are credited to the customer account once payment has been confirmed.</li>
+        <li><b>Monthly system access.</b> A fixed {{ amount(offer.access_tokens) }}-token system access charge is deducted at the beginning of each funded month.</li>
+        <li><b>No expiry.</b> Purchased tokens do not expire while the customer account remains active.</li>
+        <li><b>Transaction usage.</b> Service-point tokens are deducted for each applicable completed transaction according to the prevailing token schedule.</li>
+        <li><b>Patient billing.</b> An additional 1 token per {{ cur }} {{ amount(offer.bill_value_per_token) }} of the total patient bill, rounded up, applies.</li>
+        <li><b>Cumulative usage.</b> Where an encounter attracts both a service-point charge and a patient-bill charge, both deductions apply.</li>
+        <li><b>Insufficient balance.</b> When the token balance reaches zero or becomes negative, system access is limited until more tokens are credited.</li>
+        <li><b>Easy reactivation.</b> Full system access resumes once enough tokens have been credited.</li>
+        <li><b>Top-ups.</b> Top up at any time at the prevailing package or agreed commercial rate, with a minimum top-up of {{ amount(offer.min_tokens or 1000) }} tokens.</li>
+        <li><b>OPD protection.</b> OPD-only facilities are not charged tokens for inpatient admissions or medical/surgical procedures.</li>
+        <li><b>Pricing.</b> All prices are in Kenya Shillings (KES). Statutory taxes are added where required.</li>
+        <li><b>Commercial protection.</b> Token allocations and service applicability may only be varied through a written commercial agreement.</li>
+      </ol>
+    </details>
+  </div>
+</div></section>
+
+<section class="band" id="calculator"><div class="wrap">
+  <span class="eyebrow"><span class="secno">07</span>CareverseHIMS Value Express Token Calculator</span>
+  <h2 style="margin-top:10px">Know what you need. Pay for what you use.</h2>
+  <p class="lede" style="margin-top:12px">Enter a few details about your facility to estimate your monthly token use and see which starting package fits.</p>
+  <div class="howcalc">
+    <div><b>1. Tell us about your facility</b>Select your facility level and expected monthly activity.</div>
+    <div><b>2. Estimate your usage</b>We work out the Careverse Tokens your services would use.</div>
+    <div><b>3. See your recommended package</b>Your monthly token need and a Flex starting package{% if fixed %}, compared with Fixed{% endif %}.</div>
+    <div><b>4. Get started</b>Buy your package. Tokens are credited once payment is confirmed.</div>
+  </div>
+
+  <div class="calc">
+    <form class="panel stack" id="calcForm" style="gap:18px" onsubmit="return false">
+      {% if offer.calculator.presets %}
+      <div class="field"><span class="lbl">Start from a typical facility</span>
+        <div class="presets" role="group" aria-label="Typical facilities">{% for preset in offer.calculator.presets %}<button type="button" data-preset="{{ loop.index0 }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ preset.label }}<small>{% if preset.description %}{{ preset.description }}{% else %}About {{ preset.daily_patients }} patients a day{% endif %}</small></button>{% endfor %}</div></div>
+      {% endif %}
+      <div class="field"><span class="lbl">Facility level</span>
+        <div class="seg" role="group" aria-label="Facility level"><button type="button" data-level="Level 2" aria-pressed="true">Level 2</button><button type="button" data-level="Level 3" aria-pressed="false">Level 3</button></div></div>
+      <div class="row2">
+        <div class="field"><label for="c-ppd">Patients per day</label><input id="c-ppd" type="number" min="1" max="500" value="10" inputmode="numeric"></div>
+        <div class="field"><label for="c-days">Operating days / month</label><input id="c-days" type="number" min="1" max="31" value="{{ offer.calculator.operating_days or 24 }}" inputmode="numeric"></div>
+      </div>
+      <div class="field"><label for="c-bill">Average patient bill ({{ cur }})</label><input id="c-bill" type="number" min="0" step="50" value="{{ (offer.calculator.avg_bill or 1500)|int }}" inputmode="numeric"></div>
+      <details class="tune"><summary>Fine-tune the services your patients use</summary>
+        <p class="hint">Share of patients who use each service. Leave these as they are if you're not sure.</p>
+        <div class="mix" id="mix"></div></details>
+    </form>
+
+    <div class="panel result" aria-live="polite">
+      <span class="lbl">Estimated monthly need</span>
+      <div class="total"><b id="r-total" class="mono">0</b><span>tokens / month</span></div>
+      <div class="bars" id="r-bars"></div>
+      <div class="legend" id="r-legend"></div>
+      <div class="cmpcost{% if not fixed %} single{% endif %}">
+        <div id="r-flexbox"><span class="lbl">Flex</span><b id="r-flex">—</b><small id="r-flexnote"></small></div>
+        {% if fixed %}<div id="r-fixbox"><span class="lbl">Fixed</span><b id="r-fix">—</b><small id="r-fixnote">Same amount every month</small></div>{% endif %}
+      </div>
+      <div class="verdict"><b id="r-verdict"></b><p id="r-why" style="margin-top:6px;opacity:.9;font-size:.93rem"></p></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px"><a class="btn primary" id="r-go" href="{{ onboarding_url }}">Get started</a><a class="btn ghost" href="#contact">Ask our team</a><small class="gonote" id="r-gonote"></small></div>
+      <p class="disclaim">Estimates use the current token schedule and are indicative only. Actual use depends on completed service-point transactions and patient bill values. Prices exclude VAT.</p>
+    </div>
+  </div>
+</div></section>
+
+<section class="band alt" id="contact"><div class="wrap contact">
+  <div class="stack">
+    <span class="eyebrow"><span class="secno">08</span>Need guided onboarding support?</span>
+    <h2>Talk to the Value Express team</h2>
+    <p class="lede">Our team helps facilities with onboarding, packages and going live.{% if landing.phones %} Call us{% if landing.hours %} during office hours{% endif %}, or send a message and we'll get back to you.{% else %} Send a message and we'll get back to you.{% endif %}</p>
+    {% if landing.phones or landing.hours or landing.email %}
+    <div class="panel" style="padding:18px" data-testid="contact-details">
+      {% if landing.phones %}<span class="lbl">Call us</span><ul class="call" style="list-style:none;padding:0;margin:4px 0 0">{% for phone in landing.phones %}<li><a class="mono" href="tel:{{ phone.tel }}">{{ phone.label }}</a></li>{% endfor %}</ul>{% endif %}
+      {% if landing.hours %}<span class="lbl" style="display:block;margin-top:12px">Office hours</span><p style="margin-top:4px">{{ landing.hours }}</p>{% endif %}
+      {% if landing.email %}<span class="lbl" style="display:block;margin-top:12px">Email</span><p style="margin-top:4px"><a href="mailto:{{ landing.email }}">{{ landing.email }}</a></p>{% endif %}
+      <span class="lbl" style="display:block;margin-top:12px">Remote support</span><p style="margin-top:4px">24/7 for live facilities</p>
+    </div>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <form class="cform" id="contactForm" novalidate>
+      <div class="row2">
+        <div class="field"><label for="f-name">Your name</label><input id="f-name" name="full_name" required autocomplete="name" maxlength="140" aria-describedby="f-name-err"><p class="field-error" id="f-name-err" hidden></p></div>
+        <div class="field"><label for="f-phone">Phone number <small>(optional)</small></label><input id="f-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" placeholder="07XX XXX XXX"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="f-email">Email</label><input id="f-email" name="email" type="email" required autocomplete="email" maxlength="140" aria-describedby="f-email-err"><p class="field-error" id="f-email-err" hidden></p></div>
+        <div class="field"><label for="f-fac">Facility name <small>(optional)</small></label><input id="f-fac" name="organization" autocomplete="organization" maxlength="140"></div>
+      </div>
+      <div class="field"><label for="f-topic">How can we help?</label>
+        <select id="f-topic" name="topic">{% for topic in contact_topics %}<option value="{{ topic }}">{{ topic }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="f-msg">Message</label><textarea id="f-msg" name="message" rows="4" required maxlength="2000" aria-describedby="f-msg-err"></textarea><p class="field-error" id="f-msg-err" hidden></p></div>
+      <div class="hp" aria-hidden="true"><label for="f-web">Website</label><input id="f-web" name="website" tabindex="-1" autocomplete="off"></div>
+      <button class="btn primary" type="submit" style="justify-self:start">Send message</button>
+      <p class="status" id="contact-status" role="alert"></p>
+    </form>
+    <div class="done" id="contact-done" hidden tabindex="-1">Thank you, your message is with our team. We'll get back to you by email or phone. <button class="btn link" type="button" id="contact-again">Send another message</button></div>
+  </div>
+</div></section>
+</main>
+
+<div class="talkwrap" data-testid="talk-us">
+  <button type="button" class="talk-fab" id="talk-fab" aria-expanded="false" aria-controls="talk-card" data-testid="talk-us-fab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg><span>Talk to us</span></button>
+  <div class="talk-card" id="talk-card" aria-label="Contact the Value Express team" hidden data-testid="talk-us-card">
+    <button type="button" class="talk-close" aria-label="Close contact details" data-testid="talk-us-close">×</button>
+    <b>Talk to the Value Express team</b>
+    {% if landing.phones %}<span class="lbl">Call us</span><ul class="call" style="list-style:none;padding:0;margin:4px 0 0">{% for phone in landing.phones %}<li><a class="mono" href="tel:{{ phone.tel }}">{{ phone.label }}</a></li>{% endfor %}</ul>{% endif %}
+    {% if landing.hours %}<span class="lbl" style="display:block;margin-top:10px">Office hours</span><p style="margin-top:2px">{{ landing.hours }}</p>{% endif %}
+    {% if landing.email %}<span class="lbl" style="display:block;margin-top:10px">Email</span><p style="margin-top:2px"><a href="mailto:{{ landing.email }}">{{ landing.email }}</a></p>{% endif %}
+    <a class="talk-go" href="#contact">Send a message →</a>
+  </div>
+</div>
+
+<section id="terms" style="padding-block:36px"><div class="wrap"><details class="rules"><summary>Commercial notes and terms</summary><ol class="rulelist">
+  <li>Prices and package allocations are subject to the applicable quotation, order form or onboarding record.</li>
+  <li>Applicable statutory taxes are added where required.</li>
+  <li>Token schedules, transaction applicability and promotional bonuses may only be varied through published terms or a written commercial agreement.</li>
+  <li>Go-live timing depends on successful facility verification, payment, configuration and user readiness.</li>
+  <li>The exact scope of DHA HIE connectivity and SHA eClaims functionality is subject to applicable national interfaces, accreditation requirements and platform availability.</li>
+  <li>The full Terms and Conditions are shown, and must be accepted, before you submit your onboarding request.</li>
+</ol></details></div></section>
+<footer><div class="wrap"><span class="lockup" style="color:var(--navy)">{% with clip_id = "tbclip-foot" %}{% include "templates/includes/value_express/wordmark.html" %}{% endwith %}</span><span>CareverseHIMS Value Express · Prices in {{ cur }}, excluding VAT</span><span class="footlinks">{% if landing.certificate_url %}<a href="{{ landing.certificate_url }}" target="_blank" rel="noopener">DHA certificate</a>{% endif %}<a href="/opt-in">Network Opt-In</a><a href="{{ signin_link }}">Sign in</a><a href="/login?redirect-to=/crm">Staff access</a></span></div></footer>
+
+<script type="application/json" id="vx-offer">{{ {"calculator": offer.calculator, "custom": offer.custom, "onboarding": onboarding_url, "currency": cur} | tojson }}</script>
+<script>
+(function(){
+  var data = JSON.parse(document.getElementById('vx-offer').textContent);
+  var C = data.calculator || {}, ONB = data.onboarding, CUR = data.currency;
+  var fmt = function(n){ return Math.round(n).toLocaleString('en-KE'); };
+  var $ = function(id){ return document.getElementById(id); };
+  var COLORS = ['var(--navy)','#7a8aa8','#e3912b','#2f9e8f','#8e63d6','#c95c8a','#5b8fd6','#9a7b4f'];
+
+  // ---- deep links into collapsed blocks open them
+  var opener = {'#terms':'#terms details','#flex-rules':'#flex-rules'}[location.hash];
+  if (opener) document.querySelector(opener).open = true;
+
+  // ---- calculator: the published token schedule, the Flex packages and the Fixed fee by level
+  var SP = (C.service_points || []).map(function(p, i){
+    return {id: p.id, name: p.name, tokens: +p.tokens || 0, freq: Math.round((+p.default_frequency || 0) * 100), always: (+p.default_frequency || 0) >= 1, c: COLORS[i % COLORS.length]};
+  });
+  var PKGS = (C.packages || []).slice().sort(function(a, b){ return a.price - b.price; });
+  var FIXED = C.fixed || {};
+  var ACCESS = +C.access || 0, PER_BILL = +C.bill_value_per_token || 1;
+  var level = 'Level 2';
+  var mix = $('mix');
+  var setLevel = function(l){ level = l; document.querySelectorAll('[data-level]').forEach(function(x){ x.setAttribute('aria-pressed', x.dataset.level === l); }); };
+  var clearPreset = function(){ document.querySelectorAll('[data-preset]').forEach(function(x){ x.setAttribute('aria-pressed', 'false'); }); };
+  SP.forEach(function(s){
+    if (s.always) return;
+    var d = document.createElement('div'); d.className = 'm';
+    d.innerHTML = '<label for="mx-' + s.id + '"></label><input id="mx-' + s.id + '" type="range" min="0" max="100" step="5"><output for="mx-' + s.id + '"></output>';
+    d.querySelector('label').textContent = s.name;
+    var small = document.createElement('small'); small.textContent = s.tokens + ' tokens each'; d.querySelector('label').appendChild(small);
+    mix.appendChild(d);
+    s.el = d.querySelector('input'); s.out = d.querySelector('output');
+    s.el.value = s.freq; s.out.textContent = s.freq + '%';
+    s.el.addEventListener('input', function(){ s.freq = +s.el.value; s.out.textContent = s.el.value + '%'; clearPreset(); calc(); });
+  });
+  function applyPreset(i){
+    var p = (C.presets || [])[i]; if (!p) return;
+    setLevel(p.facility_level || (p.facility_type === 'ipd' ? 'Level 3' : 'Level 2'));
+    $('c-ppd').value = p.daily_patients || 10;
+    $('c-days').value = p.operating_days || C.operating_days || 24;
+    $('c-bill').value = p.avg_bill || C.avg_bill || 1500;
+    document.querySelectorAll('[data-preset]').forEach(function(x){ x.setAttribute('aria-pressed', +x.dataset.preset === +i); });
+    calc();
+  }
+  document.querySelectorAll('[data-preset]').forEach(function(b){ b.onclick = function(){ applyPreset(b.dataset.preset); }; });
+  document.querySelectorAll('[data-level]').forEach(function(b){ b.onclick = function(){ setLevel(b.dataset.level); clearPreset(); calc(); }; });
+  ['c-ppd','c-days','c-bill'].forEach(function(id){ $(id).addEventListener('input', function(){ clearPreset(); calc(); }); });
+
+  function calc(){
+    if (!PKGS.length) return;
+    var ppd = Math.max(0, +$('c-ppd').value || 0);
+    var days = Math.min(31, Math.max(0, +$('c-days').value || 0));
+    var bill = Math.max(0, +$('c-bill').value || 0);
+    var patients = ppd * days;
+    var parts = SP.map(function(s){ return {name: s.name, c: s.c, v: patients * s.tokens * s.freq / 100}; });
+    var billTok = patients * Math.ceil(bill / PER_BILL);
+    var used = parts.reduce(function(a, p){ return a + p.v; }, 0) + billTok;
+    var total = Math.ceil(used + ACCESS);
+    $('r-total').textContent = fmt(total);
+    var segs = [{name: 'System access', v: ACCESS, c: 'var(--red)'}].concat(parts.filter(function(p){ return p.v > 0; }), [{name: 'Patient bill', v: billTok, c: '#b8a24a'}]);
+    $('r-bars').innerHTML = ''; $('r-legend').innerHTML = '';
+    segs.forEach(function(s){
+      var bar = document.createElement('span'); bar.style.width = (s.v / total * 100).toFixed(2) + '%'; bar.style.background = s.c; bar.title = s.name + ': ' + fmt(s.v); $('r-bars').appendChild(bar);
+      var key = document.createElement('span'); var dot = document.createElement('i'); dot.style.background = s.c; key.appendChild(dot); key.appendChild(document.createTextNode(s.name + ' ' + fmt(s.v))); $('r-legend').appendChild(key);
+    });
+    // Flex: price the month at the rate of the smallest package that covers it (the largest package above that).
+    var pkg = PKGS.filter(function(p){ return p.tokens >= total; })[0] || PKGS[PKGS.length - 1];
+    var rate = pkg.price / pkg.tokens, flexCost = total * rate, fixCost = FIXED[level];
+    var months = pkg.tokens / total, biggest = PKGS[PKGS.length - 1];
+    $('r-flex').textContent = CUR + ' ' + fmt(flexCost) + '/mo';
+    $('r-flexnote').textContent = total <= biggest.tokens
+      ? pkg.name + ' (' + fmt(pkg.tokens) + ' tokens, ' + CUR + ' ' + fmt(pkg.price) + ') lasts about ' + (months >= 1 ? months.toFixed(1) + ' months' : Math.round(months * days) + ' operating days')
+      : 'More than ' + biggest.name + ' covers. ' + biggest.name + ' plus top-ups at ' + CUR + ' ' + rate.toFixed(2) + '/token';
+    var perPatient = used / (patients || 1);
+    var flexWins = !fixCost || flexCost < fixCost;
+    var near = fixCost && flexWins && flexCost >= 0.85 * fixCost;
+    if ($('r-fix')) {
+      $('r-fix').textContent = fixCost ? CUR + ' ' + fmt(fixCost) + '/mo' : '—';
+      $('r-fixnote').textContent = level + ' · same amount every month';
+      $('r-flexbox').classList.toggle('win', flexWins);
+      $('r-fixbox').classList.toggle('win', !flexWins);
+    }
+    var bigRate = biggest.price / biggest.tokens;
+    var be = fixCost ? ((fixCost / bigRate) - ACCESS) / (perPatient || 1) / (days || 1) : 0;
+    $('r-verdict').textContent = !flexWins ? 'Value Express Fixed costs less for you' : near ? 'Flex ' + pkg.name + " works, but you're close to the Fixed price" : 'Start with Value Express Flex ' + pkg.name;
+    $('r-why').textContent = !flexWins
+      ? 'At about ' + perPatient.toFixed(1) + ' tokens per patient, Flex would cost more than ' + CUR + ' ' + fmt(fixCost) + ' a month. Fixed is cheaper above roughly ' + Math.max(1, Math.round(be)) + ' patients a day, with no balances to monitor or top-ups to make.'
+      : near
+      ? 'Your estimated Flex spend is within 15% of the ' + level + ' Fixed fee of ' + CUR + ' ' + fmt(fixCost) + '. If your volumes are steady, Fixed gives you the same cost every month with no top-ups.'
+      : 'Each patient uses about ' + perPatient.toFixed(1) + ' tokens, plus ' + fmt(ACCESS) + ' tokens a month for system access.' + (fixCost ? ' That costs less than the ' + level + ' Fixed fee.' : '');
+    // carry the result into onboarding
+    $('r-go').href = flexWins ? ONB + '?plan=flex&package=' + encodeURIComponent(pkg.item_code) : ONB + '?plan=fixed';
+    $('r-gonote').textContent = 'Opens onboarding with Value Express ' + (flexWins ? 'Flex ' + pkg.name : 'Fixed') + ' preselected.';
+  }
+  if ((C.presets || []).length) applyPreset(0); else calc();
+
+  // ---- Custom: priced at the published rate of the highest package the amount reaches
+  var CU = data.custom, cuIn = $('cu-kes');
+  function custom(){
+    var kes = Math.max(0, Math.floor(+cuIn.value || 0));
+    var tiers = CU.tiers, tier = tiers[0];
+    tiers.forEach(function(t){ if (kes >= t.from_amount) tier = t; });
+    // Whole cents so the tokens match the server's rounding.
+    var tokens = Math.floor(Math.round(kes * 100) / Math.round(tier.rate * 100)), bad = tokens < CU.min_tokens;
+    cuIn.setAttribute('aria-invalid', bad); $('cu-err').hidden = !bad;
+    $('cu-t').textContent = bad ? '—' : fmt(tokens);
+    $('cu-r').textContent = CU.currency + ' ' + tier.rate.toFixed(2);
+    $('cu-c').textContent = bad ? '—' : CU.currency + ' ' + (tokens * tier.rate).toLocaleString('en-KE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    $('cu-tier').textContent = tier.name + ' rate · no first-purchase bonus';
+    var go = $('cu-go'); go.href = ONB + '?plan=custom&amount=' + kes;
+    if (bad) { go.setAttribute('aria-disabled', 'true'); go.style.pointerEvents = 'none'; go.style.opacity = .5; }
+    else { go.removeAttribute('aria-disabled'); go.style.pointerEvents = ''; go.style.opacity = ''; }
+  }
+  if (CU && cuIn) { cuIn.addEventListener('input', custom); custom(); }
+
+  // ---- section nav: highlight the section in view and show reading progress
+  var nav = document.querySelector('nav.top'), hdr = document.querySelector('header.site');
+  var links = Array.prototype.slice.call(nav.querySelectorAll('a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+  var last = null;
+  var onScroll = function(){
+    var y = window.scrollY + 140, cur = null;
+    secs.forEach(function(s){ if (s.getBoundingClientRect().top + window.scrollY <= y) cur = s; });
+    var id = cur ? '#' + cur.id : null;
+    if (id !== last) {
+      last = id;
+      links.forEach(function(a){ a.classList.toggle('on', a.getAttribute('href') === id); });
+      var on = links.filter(function(a){ return a.classList.contains('on'); })[0];
+      if (on && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = on.offsetLeft - nav.offsetLeft - 16;
+    }
+    var h = document.documentElement.scrollHeight - window.innerHeight;
+    hdr.style.setProperty('--p', (h > 0 ? Math.min(100, window.scrollY / h * 100) : 0) + '%');
+  };
+  window.addEventListener('scroll', onScroll, {passive: true}); onScroll();
+
+  // ---- contact form: creates a CRM Lead and emails the Value Express team
+  var form = $('contactForm'), status = $('contact-status'), done = $('contact-done');
+  var topic = $('f-topic');
+  document.querySelectorAll('[data-topic]').forEach(function(a){ a.addEventListener('click', function(){ topic.value = a.dataset.topic; }); });
+  var rules = {
+    full_name: function(v){ return v ? '' : 'Enter your name.'; },
+    email: function(v, input){ return !v ? 'Enter your email address.' : (input.checkValidity() ? '' : 'Enter an email address like name@example.com.'); },
+    message: function(v){ return v ? '' : 'Tell us how we can help.'; }
+  };
+  var check = function(name){
+    var input = form.elements[name], text = rules[name](input.value.trim(), input), error = $(input.id + '-err');
+    input.setAttribute('aria-invalid', text ? 'true' : 'false');
+    if (error) { error.textContent = text; error.hidden = !text; }
+    return text;
+  };
+  Object.keys(rules).forEach(function(name){
+    form.elements[name].addEventListener('input', function(){ if (form.elements[name].getAttribute('aria-invalid') === 'true') check(name); });
+  });
+  form.addEventListener('submit', function(event){
+    event.preventDefault();
+    status.textContent = ''; status.className = 'status';
+    var first = null;
+    Object.keys(rules).forEach(function(name){ if (check(name) && !first) first = form.elements[name]; });
+    if (first) { first.focus(); return; }
+    var button = form.querySelector('button[type=submit]');
+    button.disabled = true; button.textContent = 'Sending…';
+    fetch('/api/method/crm.api.landing.submit_contact', {method: 'POST', headers: {'Accept': 'application/json'}, body: new FormData(form)})
+      .then(function(response){
+        return response.json().catch(function(){ return {}; }).then(function(body){
+          if (response.ok) return;
+          var text = response.status === 429 ? 'Too many messages from this connection. Please call us instead.' : 'We could not send your message. Check the details or call us.';
+          try { var server = JSON.parse(JSON.parse(body._server_messages || '[]')[0] || '{}').message; if (server && response.status === 417) text = server; } catch (e) {}
+          throw new Error(text);
+        });
+      })
+      .then(function(){ form.reset(); form.hidden = true; done.hidden = false; done.focus(); })
+      .catch(function(error){ status.textContent = error.message; status.classList.add('err'); })
+      .finally(function(){ button.disabled = false; button.textContent = 'Send message'; });
+  });
+  $('contact-again').addEventListener('click', function(){ done.hidden = true; form.hidden = false; form.elements.full_name.focus(); });
+
+  // ---- talk to us: floating quick access to the contact details, shown after the hero, hidden over the contact section
+  var talk = document.querySelector('.talkwrap');
+  if (talk && 'IntersectionObserver' in window) {
+    var fab = $('talk-fab'), card = $('talk-card'), closeBtn = talk.querySelector('.talk-close');
+    var heroIn = true, contactIn = false;
+    var closeCard = function(){
+      if (card.hidden) return;
+      card.hidden = true; talk.classList.remove('open'); fab.setAttribute('aria-expanded', 'false');
+    };
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.target.id === 'contact') contactIn = e.isIntersecting;
+        else heroIn = e.isIntersecting;
+      });
+      var show = !heroIn && !contactIn;
+      talk.classList.toggle('on', show);
+      if (!show) closeCard();
+    });
+    io.observe(document.querySelector('section.hero'));
+    io.observe(document.getElementById('contact'));
+    fab.addEventListener('click', function(){
+      if (card.hidden) { card.hidden = false; talk.classList.add('open'); fab.setAttribute('aria-expanded', 'true'); }
+      else closeCard();
+    });
+    closeBtn.addEventListener('click', function(){ closeCard(); fab.focus(); });
+    document.addEventListener('click', function(e){ if (talk.classList.contains('open') && !talk.contains(e.target)) closeCard(); });
+    document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && talk.classList.contains('open')) { closeCard(); fab.focus(); } });
+  }
+})();
+</script>
 </body>
 </html>

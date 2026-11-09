@@ -77,10 +77,13 @@
               <SidebarItem
                 v-for="link in section.views"
                 :key="link.key"
-                :to="link.to"
+                :to="isLinkDisabled(link) ? undefined : link.to"
                 :label="__(link.label)"
                 :active="activeItem === link.key"
-                @click="selectItem($event, link.key)"
+                :class="
+                  isLinkDisabled(link) ? 'pointer-events-none opacity-40' : ''
+                "
+                @click="selectItem($event, link.key, link)"
               >
                 <template #prefix>
                   <Icon :icon="link.icon" class="size-4 text-ink-gray-7" />
@@ -152,7 +155,7 @@
   </div>
 
   <template v-if="!mobile">
-    <Settings />
+    <Settings v-if="settingsLoaded" />
     <HelpModal
       v-if="showHelpModal"
       v-model="showHelpModal"
@@ -174,6 +177,8 @@
 <script setup>
 import BrushCleaningIcon from '~icons/lucide/brush-cleaning'
 import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
+import OptInIcon from '~icons/lucide/clipboard-list'
+import ScanSearchIcon from '~icons/lucide/scan-search'
 import CRMLogo from '@/components/Icons/CRMLogo.vue'
 import InviteIcon from '@/components/Icons/InviteIcon.vue'
 import ConvertIcon from '@/components/Icons/ConvertIcon.vue'
@@ -197,7 +202,6 @@ import CollapseSidebar from '@/components/Icons/CollapseSidebar.vue'
 import NotificationsIcon from '@/components/Icons/NotificationsIcon.vue'
 import HelpIcon from '@/components/Icons/HelpIcon.vue'
 import Notifications from '@/components/Notifications.vue'
-import Settings from '@/components/Settings/Settings.vue'
 import { viewsStore } from '@/stores/views'
 import {
   unreadNotificationsCount,
@@ -227,7 +231,15 @@ import {
 import router from '@/router'
 import { useStorage } from '@vueuse/core'
 import { useDemoData } from '@/composables/demoData'
-import { ref, reactive, computed, markRaw, onMounted, watch } from 'vue'
+import {
+  ref,
+  reactive,
+  computed,
+  markRaw,
+  onMounted,
+  watch,
+  defineAsyncComponent,
+} from 'vue'
 import { useRoute } from 'vue-router'
 
 const props = defineProps({
@@ -247,6 +259,17 @@ const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 // The mobile drawer pins the sidebar open, so it is never visually collapsed
 // even when the stored rail state says otherwise.
 const isCollapsed = computed(() => isSidebarCollapsed.value && !props.mobile)
+
+// Settings pulls in many administration screens and is rarely opened during
+// a normal CRM session. Defer that graph until the user opens Settings, then
+// keep it mounted so switching the dialog does not discard in-progress edits.
+const Settings = defineAsyncComponent(
+  () => import('@/components/Settings/Settings.vue'),
+)
+const settingsLoaded = ref(showSettings.value)
+watch(showSettings, (opened) => {
+  if (opened) settingsLoaded.value = true
+})
 
 const isFCSite = ref(window.is_fc_site)
 const isDemoSite = ref(window.is_demo_site)
@@ -295,6 +318,60 @@ const links = [
     condition: () => !props.mobile,
   },
   {
+    label: 'Quotes',
+    icon: DealsIcon,
+    to: 'Quotes',
+  },
+  {
+    label: 'Finance Cockpit',
+    icon: LucideLayoutDashboard,
+    to: '/finance-cockpit',
+    externalUrl: '/finance-cockpit',
+    condition: () => hasAccountingRole(),
+  },
+  {
+    label: 'Opt-In Dashboard',
+    icon: LucideLayoutDashboard,
+    to: 'OptInDashboard',
+    gated: true,
+  },
+  {
+    // Exec pick-up queue for staged self opt-in submissions (oh-s2-1). Read is
+    // granted to System Manager + Sales User by the CRM Opt-In Submission
+    // doctype; `gated` renders it visible-but-disabled for anyone else.
+    label: 'Opt-In Requests',
+    icon: OptInIcon,
+    to: 'OptInSubmissions',
+    gated: true,
+  },
+  {
+    label: 'Networks',
+    icon: OptInIcon,
+    to: 'Networks',
+    gated: true,
+  },
+  {
+    label: 'Item Catalogue',
+    icon: OptInIcon,
+    to: 'NetworkPricing',
+    condition: () => isManager(),
+    gated: true,
+  },
+  {
+    label: 'Terms & Conditions',
+    icon: NoteIcon,
+    to: 'OptInTerms',
+    condition: () => isAdmin(),
+  },
+  {
+    // 360-degree customer view: search an org, deal or facility and trace
+    // partner origin, payment, orders, provisioning and billing in one place.
+    label: 'Customer 360',
+    icon: ScanSearchIcon,
+    to: 'Customer360',
+    condition: () => isAdmin(),
+  },
+  {
     label: 'Call Logs',
     icon: PhoneIcon,
     to: 'Call Logs',
@@ -318,7 +395,9 @@ const allViews = computed(() => {
           label: link.label,
           icon: link.icon,
           key: link.to,
-          to: { name: link.to },
+          to: link.externalUrl ? undefined : { name: link.to },
+          externalUrl: link.externalUrl,
+          gated: link.gated,
         })),
     },
   ]
@@ -387,7 +466,7 @@ function currentRouteKey() {
 // move the highlight here.
 const activeItem = ref(currentRouteKey())
 
-function selectItem(event, key) {
+function selectItem(event, key, link = null) {
   if (
     event.metaKey ||
     event.ctrlKey ||
@@ -402,6 +481,9 @@ function selectItem(event, key) {
   // the drawer's navigation watcher never fires. Close it here too.
   if (props.mobile) {
     mobileSidebarOpened.value = false
+  }
+  if (link?.externalUrl) {
+    window.location.assign(link.externalUrl)
   }
 }
 
@@ -425,7 +507,25 @@ function toggleHelpModal() {
 
 // onboarding
 const { user } = sessionStore()
-const { users, isManager } = usersStore()
+const { users, isManager, isAdmin, isSalesUser } = usersStore()
+
+function hasAccountingRole() {
+  const roles = window.user?.roles || []
+  return (
+    window.user?.name === 'Administrator' ||
+    roles.includes('Accounts User') ||
+    roles.includes('Accounts Manager')
+  )
+}
+
+// A `gated` nav item is visible-but-disabled (never hidden — project rule) when
+// the user lacks read access. CRM Opt-In Submission grants read to System
+// Manager + Sales User; mirrors the role-helper gating already used for other
+// sidebar items (e.g. Clear Demo Data → isManager()). Managers also need access
+// to manager-only catalogue and Opt-In administration surfaces.
+function isLinkDisabled(link) {
+  return !!link.gated && !(isAdmin() || isSalesUser() || isManager())
+}
 const { isOnboardingStepsCompleted, setUp } = useOnboarding('frappecrm')
 
 async function getFirstLead() {

@@ -22,7 +22,9 @@ import CallUI from '@/components/Telephony/CallUI.vue'
   border-bottom: 1px solid var(--glass-border-color);
 }
 
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
   .crm-app-header {
     background: var(--surface-gray-1);
   }

@@ -269,7 +269,12 @@ function updateColumn(d, fetchNewColumns = false) {
   let data = { kanban_columns: _columns, fetchNewColumns }
 
   if (toColumn != fromColumn) {
-    data = { item: itemName, to: toColumn, from: fromColumn, kanban_columns: _columns }
+    data = {
+      item: itemName,
+      to: toColumn,
+      from: fromColumn,
+      kanban_columns: _columns,
+    }
   }
 
   emit('update', data)

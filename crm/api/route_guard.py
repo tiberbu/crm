@@ -30,8 +30,11 @@ Portability: zero frontend coupling — only the ``hooks.py`` wiring differs per
 Runs on every request but exits immediately for non-desk paths (a couple of string
 comparisons, no DB or role lookup), so the overhead is negligible.
 """
+
 import frappe
 from werkzeug.routing import RequestRedirect
+
+from crm.finance.access import has_access
 
 # The account that may ALWAYS reach Desk. Hardcoded floor by design: it can never be
 # removed via config, so a bad/empty site_config can't lock everyone out. A username
@@ -39,6 +42,8 @@ from werkzeug.routing import RequestRedirect
 # System Manager in get_roles()" gotcha.
 DESK_ADMIN_USER = "Administrator"
 
+# Finance Cockpit page path — allow through for Finance roles without full desk access
+FINANCE_COCKPIT_PATH = "/app/finance-cockpit"
 # site_config.json key holding EXTRA usernames permitted to reach Desk, e.g.:
 #   "desk_access_users": ["ops@example.com", "sre@example.com"]
 # Lives in site_config (not a DocType) on purpose: the allowlist gates System Managers,
@@ -60,7 +65,7 @@ def _desk_allowed_users() -> set:
 	allowed = {DESK_ADMIN_USER}
 	try:
 		configured = frappe.conf.get(DESK_ACCESS_USERS_KEY)
-		if isinstance(configured, (list, tuple)):
+		if isinstance(configured, list | tuple):
 			allowed.update(u.strip() for u in configured if isinstance(u, str) and u.strip())
 	except Exception:
 		# Any failure resolving config -> Administrator-only (fail-safe, deny-first).
@@ -71,6 +76,10 @@ def _desk_allowed_users() -> set:
 def is_desk_allowed(user: str | None) -> bool:
 	"""Public predicate: may ``user`` reach Desk? (username check, server-authoritative)."""
 	return bool(user) and user in _desk_allowed_users()
+
+
+def _has_finance_cockpit_role(user: str) -> bool:
+	return has_access(user=user)
 
 
 def _is_desk_path(path: str) -> bool:
@@ -126,16 +135,27 @@ def guard_desk_access():
 	if is_desk_allowed(user):
 		return
 
+	# Finance Cockpit: allow Accounts users to reach /app/finance-cockpit.
+	# Use exact-or-slash anchoring (same discipline as _is_desk_path) to avoid
+	# prefix false-positives from routes that merely start with the same string.
+	p = (request_path or "").rstrip("/")
+	if p == FINANCE_COCKPIT_PATH or p.startswith(FINANCE_COCKPIT_PATH + "/"):
+		if _has_finance_cockpit_role(user):
+			return
+
 	# Non-allow-listed user attempting desk access -> branded unauthorized page.
+	# Preserve the requested surface so the page can explain the actual boundary
+	# instead of showing the old generic "desk administrators only" message.
+	resource = "finance" if p == FINANCE_COCKPIT_PATH or p.startswith(FINANCE_COCKPIT_PATH + "/") else "desk"
 	# Audit trail: log the blocked attempt (no secrets/PII beyond user + path).
 	try:
-		frappe.logger("desk_access_guard").info(f"Blocked desk access: user={user} path={request_path}")
+		frappe.logger("desk_access_guard").info("Blocked desk access: user=%s path=%s", user, request_path)
 	except Exception:
 		# Logging must never break the guard.
 		pass
 
 	# Raise a werkzeug redirect (see module docstring): the only mechanism that actually
 	# redirects a web-page GET from a before_request hook. 303 => browser re-fetches with GET.
-	exc = RequestRedirect(UNAUTHORIZED_ROUTE)
+	exc = RequestRedirect(f"{UNAUTHORIZED_ROUTE}?resource={resource}")
 	exc.code = 303
 	raise exc

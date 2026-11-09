@@ -1,7 +1,9 @@
 import { defineConfig } from 'vitest/config'
+import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
 export default defineConfig({
+  plugins: [vue()],
   test: {
     globals: true,
     environment: 'happy-dom',
@@ -21,8 +23,13 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, 'src') },
+      // unplugin-icons is a build plugin; unit tests render every icon as an empty stub.
+      {
+        find: /^~icons\/.*/,
+        replacement: path.resolve(__dirname, 'tests/fixtures/icon-stub.js'),
+      },
+    ],
   },
 })

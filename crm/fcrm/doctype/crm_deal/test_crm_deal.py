@@ -380,6 +380,20 @@ class TestCRMDeal(IntegrationTestCase):
 		deal.reload()
 		self.assertTrue(deal.closed_date)
 
+	def test_won_deal_can_be_created(self):
+		"""A direct Won insert must exist before its onboarding job is queued."""
+		if not frappe.db.exists("CRM Deal Status", "Won"):
+			frappe.get_doc({"doctype": "CRM Deal Status", "name": "Won", "type": "Won"}).insert()
+
+		deal = create_test_deal(
+			organization="Direct Won Deal Org",
+			status="Won",
+			expected_deal_value=10_000,
+			expected_closure_date="2026-12-31",
+		)
+
+		self.assertTrue(deal.name)
+
 	def test_forecasting_fields_validation(self):
 		"""Test forecasting fields validation when enabled"""
 		# Enable forecasting

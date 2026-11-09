@@ -1,0 +1,96 @@
+/* CareverseHIMS Value Express: design tokens, fonts and the pieces the landing page and
+   onboarding share. Light and dark themes; red is reserved for brand and errors, navy for
+   focus and selection. */
+
+@font-face {
+	font-family: "Bricolage Grotesque";
+	font-style: normal;
+	font-weight: 600 800;
+	font-display: swap;
+	src: url("/assets/crm/fonts/value-express/bricolage-grotesque-latin.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Source Sans 3";
+	font-style: normal;
+	font-weight: 400 700;
+	font-display: swap;
+	src: url("/assets/crm/fonts/value-express/source-sans-3-latin.woff2") format("woff2");
+}
+@font-face {
+	font-family: "JetBrains Mono";
+	font-style: normal;
+	font-weight: 500 700;
+	font-display: swap;
+	src: url("/assets/crm/fonts/value-express/jetbrains-mono-latin.woff2") format("woff2");
+}
+
+:root {
+	--bg: #f5f7fa; --surface: #ffffff; --sunk: #eef1f6; --ink: #1d2433; --ink-2: #525d72; --line: #dfe4ec;
+	--navy: #303b51; --navy-ink: #ffffff; --red: #e31e26; --red-ink: #c3161d; --red-wash: #fdeeef; --red-line: #f5c9cc;
+	--ok: #17784a; --ok-wash: #e5f4ec; --warn: #8a5a00; --warn-wash: #fff4dc;
+	--tint: #e8edf5;
+	/* Primary buttons carry white text at 6.4:1. */
+	--btn: #bc1823; --btn-hover: #9a1219;
+	--sel: #303b51; --sel-wash: #e3e8f1;
+	--f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+	--f-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+	--f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+	--r: 14px;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--bg: #0f131b; --surface: #171d29; --sunk: #121722; --ink: #e7ebf2; --ink-2: #a3adbf; --line: #2a3345;
+		--navy: #c9d3e6; --navy-ink: #0f131b; --red: #ff5a60; --red-ink: #ff7a7f; --red-wash: #341a1e; --red-line: #5a2a30;
+		--ok: #5fd29a; --ok-wash: #15301f; --warn: #f2c46b; --warn-wash: #33290f;
+		--tint: #141b28; --btn: #c3161d; --btn-hover: #a51219; --sel: #c9d3e6; --sel-wash: #1f2840;
+		color-scheme: dark;
+	}
+}
+:root[data-theme="dark"] {
+	--bg: #0f131b; --surface: #171d29; --sunk: #121722; --ink: #e7ebf2; --ink-2: #a3adbf; --line: #2a3345;
+	--navy: #c9d3e6; --navy-ink: #0f131b; --red: #ff5a60; --red-ink: #ff7a7f; --red-wash: #341a1e; --red-line: #5a2a30;
+	--ok: #5fd29a; --ok-wash: #15301f; --warn: #f2c46b; --warn-wash: #33290f;
+	--tint: #141b28; --btn: #c3161d; --btn-hover: #a51219; --sel: #c9d3e6; --sel-wash: #1f2840;
+	color-scheme: dark;
+}
+
+.vx { background: var(--bg); color: var(--ink); font-family: var(--f-body); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+.vx *, .vx *::before, .vx *::after { box-sizing: border-box; }
+.vx h1, .vx h2, .vx h3, .vx h4 { font-family: var(--f-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; color: inherit; }
+.vx p { margin: 0; }
+.vx a { color: var(--red-ink); }
+.vx :focus-visible { outline: 3px solid var(--sel); outline-offset: 2px; border-radius: 6px; }
+.vx .wrap { max-width: 1160px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.vx .mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.vx .muted { color: var(--ink-2); }
+.vx .stack { display: flex; flex-direction: column; gap: 14px; }
+.vx .eyebrow { font: 700 0.78rem/1 var(--f-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--red-ink); }
+.vx .lede { color: var(--ink-2); font-size: 1.1rem; max-width: 62ch; }
+.vx .tag { display: inline-block; font: 700 0.66rem/1 var(--f-body); letter-spacing: 0.1em; text-transform: uppercase; padding: 5px 8px; border-radius: 6px; background: var(--sunk); color: var(--ink-2); }
+.vx .secno { display: inline-block; font-family: var(--f-mono); letter-spacing: 0; color: var(--ink-2); border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 3px 7px; margin-right: 10px; font-size: 0.72rem; vertical-align: 1px; }
+
+.vx .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 22px; border-radius: 12px; font: 700 0.95rem/1 var(--f-body); letter-spacing: 0.02em; text-decoration: none; border: 2px solid transparent; cursor: pointer; transition: transform 0.15s, background 0.15s; }
+.vx .btn:hover { transform: translateY(-1px); }
+.vx .btn.primary { background: var(--btn); color: #fff; }
+.vx .btn.primary:hover { background: var(--btn-hover); }
+.vx .btn.primary:disabled, .vx .btn.primary[aria-disabled="true"] { background: var(--sunk); color: var(--ink-2); cursor: not-allowed; transform: none; }
+.vx .btn.ghost { border-color: var(--line); color: var(--ink); background: var(--surface); }
+.vx .btn.ghost:hover { border-color: var(--ink-2); }
+.vx .btn.small { min-height: 40px; padding: 0 16px; font-size: 0.85rem; }
+.vx .btn.link { background: none; border: 0; color: var(--red-ink); padding: 0; min-height: auto; text-decoration: underline; text-underline-offset: 4px; }
+
+.vx .lockup { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--navy); }
+.vx .lockup .wm { height: 24px; width: auto; display: block; }
+.vx .lockup .prod { border-left: 1.5px solid var(--line); padding-left: 12px; font: 700 0.68rem/1.15 var(--f-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+.vx .lockup .prod b { display: block; color: var(--red-ink); font-size: 0.78rem; }
+@media (max-width: 460px) { .vx .lockup .prod { display: none; } }
+
+.vx .field { display: flex; flex-direction: column; gap: 6px; }
+.vx .field label, .vx .lbl { font: 700 0.78rem var(--f-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.vx .field input, .vx .field select, .vx .field textarea { font: 600 1rem var(--f-body); color: var(--ink); background: var(--bg); border: 1.5px solid var(--line); border-radius: 10px; padding: 11px 12px; width: 100%; }
+.vx .field input:focus, .vx .field select:focus, .vx .field textarea:focus { outline: none; border-color: var(--sel); box-shadow: 0 0 0 4px var(--sel-wash); }
+.vx .field [aria-invalid="true"] { border-color: var(--red); }
+.vx .field .hint { font-size: 0.85rem; color: var(--ink-2); }
+.vx .field-error { font-size: 0.85rem; font-weight: 600; color: var(--red-ink); }
+
+@media (prefers-reduced-motion: reduce) { .vx * { transition: none !important; scroll-behavior: auto !important; } }

@@ -1,5 +1,5 @@
 <template>
-  <div class="flex pr-3">
+  <div class="crm-mobile-app-header flex min-h-11 shrink-0 pr-3">
     <div class="z-20 ml-2 flex items-center justify-center">
       <Button
         class="size-7"

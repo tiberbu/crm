@@ -30,6 +30,7 @@
           :doc="lead.doc"
           childDoctype="CRM Lead Facility"
           class="mb-4"
+          @update:facilities="updateLeadFacilities"
         />
 
         <div>
@@ -90,8 +91,11 @@ const isLeadCreating = ref(false)
 
 const { document: lead, triggerOnBeforeCreate } = useDocument('CRM Lead')
 
-const isEnriching = ref(false)
+function updateLeadFacilities(facilities) {
+  lead.doc.facilities = facilities
+}
 
+const isEnriching = ref(false)
 
 // Prefill the form from the company website (Domain Enrichment) — synchronous,
 // no document is created until the user clicks Create.

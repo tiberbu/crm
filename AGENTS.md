@@ -72,6 +72,65 @@ yarn test          # watch mode
 - Only pure utility functions are unit-tested (no Vue component tests yet)
 - Add tests in `tests/unit/` when adding pure logic to `src/utils/`
 
+### Python (Frappe) tests
+
+Run with `scripts/run-crm-tests.sh`, which always passes `--app crm`:
+
+```bash
+scripts/run-crm-tests.sh <site> --module crm.tests.test_optin
+```
+
+> **Hard rule:** never run `bench run-tests` on a site without `--app crm`.
+> Without it, Frappe's test runner runs **every** installed app's `before_tests`
+> hook — and ERPNext's hook runs `delete from tabItem Price`, wiping all item
+> prices on the site, and also resets Selling/Stock test defaults (this happened
+> on 2026-11-05 and blanked the public facility-onboarding package catalogue).
+> On the reference/dev site prefer not running the suite at all; the site's
+> `allow_tests` config must stay `false` outside of an explicit, approved test run.
+
+---
+
+## Brand guide and UI/UX spec — strict adherence
+
+The brand guide and the UI/UX specs are binding, not inspiration. No change may
+introduce colours, fonts, font sizes or weights that they do not define.
+
+**Sources of truth**
+
+| Rule | Source |
+|---|---|
+| Brand red `#bc1823` (hover `#a3141d`), neutrals, status colours | `crm/public/css/tiberbu-brand.css`, `docs/tiberbu-crm-centralized-theme-spec.md` |
+| Font: local InterVar only (no Google Fonts); weights 400–600, **nothing above 600**; frappe-ui type scale | `docs/tiberbu-crm-typography-perf-spec.md` |
+| CX Portal tokens (`--cx-*`, `text-cx-*`): **CX Portal only** | `docs/cx-portal-ux-design-pattern.md` |
+| Opt-in journey (invite email → `/opt-in` wizard → contract → checkout) | `docs/optin-executive-ux-prd.md` |
+| Favicons, PWA icons, iOS splash screens, `logo.png` | Tiberbu mark `crm/public/images/tiberbu-mark.svg` (red `#BC1823`); never the upstream Frappe CRM magenta mark or the Frappe "F" |
+
+**Rules**
+
+- One surface, one design language. Never borrow another surface's material
+  (e.g. CX glass, gradients or `--cx-*` tokens on the opt-in wizard). This is how
+  the 2026-10-20 opt-in colour regression happened.
+- Every fallback brand colour (Vue, Python, email HTML) is `#bc1823`. Python
+  uses `crm.api._email.DEFAULT_BRAND_COLOUR` / `valid_brand_colour`; do not add
+  new hex literals for the brand.
+- A partner `primary_colour` is used only if it is a strict `#rgb`/`#rrggbb`
+  literal; anything else falls back to the brand red.
+- Status colours (error/warning/success) are semantic only, never decorative.
+- Labels are sentence case: no `uppercase` eyebrows. Native radios/checkboxes take
+  the brand colour, never the forms-plugin blue.
+- New-record defaults (e.g. a network's `primary_colour`) use the brand red.
+
+**Post-implementation check (required before claiming any UI change is done)**
+
+1. Run the Playwright UI suite. It must pass at all four viewports:
+   `cd frontend && SCREENSHOT_DIR=<dir> npx playwright test -c playwright.portal-ui.config.ts`.
+   `optin-brand.spec.ts` asserts the brand rules for every opt-in step;
+   `brand-assets.spec.ts` asserts every favicon, PWA icon and splash screen is brand red.
+2. Look at the screenshots of every changed screen and confirm the colours,
+   font family, font sizes and weights match the sources above.
+3. When you add or restyle a surface, extend a brand spec to cover it.
+4. In the PR description, state that the brand check was done and give its result.
+
 ---
 
 ## Commit style
@@ -90,6 +149,20 @@ Pre-commit hooks run prettier + eslint + oxlint automatically. If they modify a 
 
 ---
 
+## Pull requests
+
+- Use the existing `feature_branch`; do not create another feature branch unless the
+  maintainer explicitly asks.
+- Open or update the pull request from `feature_branch` **against `develop`**. Do
+  not push feature work directly to `develop`.
+- When asked to commit or push, also update the pull request description. It must
+  state the user-visible changes, API/data or migration impact, configuration
+  requirements, and the verification commands/results.
+- Keep the PR review-ready: summarize follow-up or deployment work explicitly
+  rather than leaving reviewers to infer it from commits.
+
+---
+
 ## Docs structure
 
 ```
@@ -102,3 +175,15 @@ archives/        — old docs preserved verbatim
 
 When a phase completes: move its spec from PLAN.md to ARCHIVE.md, update SPEC.md if
 the API surface changed.
+
+---
+
+# CRM agent working notes
+
+- Treat the user's request as the implementation scope and keep the change
+  focused. Preserve unrelated worktree changes.
+- Product and technical knowledge lives in `docs/`; retain existing planning
+  artifacts when changing the development workflow.
+- Use Context7 MCP for current framework or library documentation when relevant.
+- Verify changes with the smallest useful build or command checks. Do not claim
+  end-to-end behavior is verified without exercising the actual flow.

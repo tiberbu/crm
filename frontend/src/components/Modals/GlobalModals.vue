@@ -15,15 +15,10 @@
     v-if="showChangePasswordModal"
     v-model="showChangePasswordModal"
   />
-  <AboutModal v-model="showAboutModal" />
-  <FieldLayoutDialogContainer />
+  <AboutModal v-if="showAboutModal" v-model="showAboutModal" />
+  <FieldLayoutDialogContainer v-if="fieldLayoutDialogs.length" />
 </template>
 <script setup>
-import FieldLayoutDialogContainer from '@/components/Modals/FieldLayoutDialogContainer.vue'
-import ChangePasswordModal from '@/components/Modals/ChangePasswordModal.vue'
-import CreateDocumentModal from '@/components/Modals/CreateDocumentModal.vue'
-import QuickEntryModal from '@/components/Modals/QuickEntryModal.vue'
-import AboutModal from '@/components/Modals/AboutModal.vue'
 import {
   showCreateDocumentModal,
   createDocumentDoctype,
@@ -36,4 +31,25 @@ import {
   showAboutModal,
   showChangePasswordModal,
 } from '@/composables/modals'
+import { fieldLayoutDialogs } from '@/utils/renderFieldLayoutDialog'
+import { defineAsyncComponent } from 'vue'
+
+// These modals are app-wide entry points but are not needed for the initial
+// route. Loading them on demand keeps the shell responsive without changing
+// their public composable APIs or behavior once opened.
+const CreateDocumentModal = defineAsyncComponent(
+  () => import('@/components/Modals/CreateDocumentModal.vue'),
+)
+const QuickEntryModal = defineAsyncComponent(
+  () => import('@/components/Modals/QuickEntryModal.vue'),
+)
+const ChangePasswordModal = defineAsyncComponent(
+  () => import('@/components/Modals/ChangePasswordModal.vue'),
+)
+const AboutModal = defineAsyncComponent(
+  () => import('@/components/Modals/AboutModal.vue'),
+)
+const FieldLayoutDialogContainer = defineAsyncComponent(
+  () => import('@/components/Modals/FieldLayoutDialogContainer.vue'),
+)
 </script>

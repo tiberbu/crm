@@ -49,6 +49,7 @@
 <script setup>
 import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
 import LucideNetwork from '~icons/lucide/network'
+import LucidePackage from '~icons/lucide/package'
 import MonitorCogIcon from '~icons/lucide/monitor-cog'
 import LucideTextCursorInput from '~icons/lucide/text-cursor-input'
 import SlidersIcon from '@/components/Icons/SlidersIcon.vue'
@@ -81,6 +82,9 @@ import TelephonyPage from '@/components/Settings/Telephony/TelephonyPage.vue'
 import EmailConfig from '@/components/Settings/EmailConfig.vue'
 import SESSettings from '@/components/Settings/SESSettings.vue'
 import HFRSettings from '@/components/Settings/HFRSettings.vue'
+import OptInSettings from '@/components/Settings/OptInSettings.vue'
+import PackageCatalogue from '@/components/Settings/PackageCatalogue.vue'
+import CouponManager from '@/components/Settings/CouponManager.vue'
 import Icon from '@/components/Icon.vue'
 import { usersStore } from '@/stores/users'
 import {
@@ -95,7 +99,7 @@ import AssignmentRulePage from './AssignmentRules/AssignmentRulePage.vue'
 import ShieldCheck from '~icons/lucide/shield-check'
 import SlaConfig from './Sla/SlaConfig.vue'
 
-const { isManager, getUser } = usersStore()
+const { isAdmin, isManager, getUser } = usersStore()
 
 const user = computed(() => getUser() || {})
 
@@ -148,6 +152,11 @@ const tabs = computed(() => {
           label: __('Calendar'),
           icon: CalendarIcon,
           component: markRaw(CalendarSettings),
+        },
+        {
+          label: __('Packages'),
+          icon: LucidePackage,
+          component: markRaw(PackageCatalogue),
         },
       ],
       condition: () => isManager(),
@@ -261,6 +270,18 @@ const tabs = computed(() => {
           icon: 'lucide-hospital',
           component: markRaw(HFRSettings),
           condition: () => isManager(),
+        },
+        {
+          label: __('Opt-In Process'),
+          icon: 'clipboard-list',
+          component: markRaw(OptInSettings),
+          condition: () => isAdmin(),
+        },
+        {
+          label: __('Coupons'),
+          icon: 'ticket',
+          component: markRaw(CouponManager),
+          condition: () => isAdmin(),
         },
       ],
     },

@@ -47,7 +47,10 @@
               type="select"
               :options="[
                 { label: __('Cloud (AXP)'), value: 'Cloud (AXP)' },
-                { label: __('On-Prem (Aura/AES)'), value: 'On-Prem (Aura/AES)' },
+                {
+                  label: __('On-Prem (Aura/AES)'),
+                  value: 'On-Prem (Aura/AES)',
+                },
               ]"
               required
             />
@@ -177,7 +180,9 @@
                 {{ __('Record Calls') }}
               </div>
               <div class="text-p-sm text-ink-gray-5 truncate">
-                {{ __('Enable call recording for incoming and outgoing calls') }}
+                {{
+                  __('Enable call recording for incoming and outgoing calls')
+                }}
               </div>
             </div>
             <div>

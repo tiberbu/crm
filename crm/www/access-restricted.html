@@ -68,6 +68,39 @@
         .btn-ghost:hover { background:rgba(255,255,255,0.6); color:var(--ink); }
         :where(a, button):focus-visible { outline:none; box-shadow:0 0 0 3px rgba(188,24,35,0.22); }
 
+        /* Finance-grade access surface: explain the boundary and the next action. */
+        .access-shell { width:min(1080px, calc(100% - 48px)); margin:0 auto; padding:32px 0 48px; }
+        .access-masthead { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:64px; }
+        .access-security { display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; font-weight:600; }
+        .access-security::before { content:""; width:7px; height:7px; border-radius:50%; background:#c88719; box-shadow:0 0 0 4px rgba(200,135,25,.12); }
+        .access-grid { display:grid; grid-template-columns:minmax(0,1.08fr) minmax(340px,.92fr); gap:72px; align-items:start; }
+        .access-eyebrow { margin:0 0 14px; color:var(--brand); font-size:12px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
+        .access-heading { max-width:560px; margin:0; font-size:clamp(32px,5vw,54px); line-height:1.04; letter-spacing:-.045em; font-weight:700; }
+        .access-lead { max-width:540px; margin:24px 0 0; color:var(--muted); font-size:17px; line-height:1.65; }
+        .access-next { max-width:540px; margin:28px 0 0; padding:16px 18px; border-left:3px solid var(--brand); background:rgba(188,24,35,.08); color:var(--ink); font-size:14px; line-height:1.55; }
+        .access-next strong { display:block; margin-bottom:4px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--brand-dark); }
+        .access-card { padding:28px; border:1px solid #dfe4e8; border-radius:16px; background:#fff; box-shadow:0 16px 40px rgba(23,33,43,.08); text-align:left; }
+        .access-card-title { margin:0; font-size:16px; font-weight:700; }
+        .access-card-subtitle { margin:6px 0 22px; color:var(--muted); font-size:13px; line-height:1.5; }
+        .access-details { display:grid; gap:0; margin:0 0 24px; border-top:1px solid #dfe4e8; }
+        .access-detail { display:flex; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid #dfe4e8; font-size:13px; }
+        .access-detail dt { color:var(--muted); }
+        .access-detail dd { margin:0; text-align:right; font-weight:650; overflow-wrap:anywhere; }
+        .access-roles { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+        .access-role { padding:4px 8px; border-radius:999px; background:#eef1f3; color:#46515b; font-size:11px; font-weight:650; }
+        .access-actions { display:grid; gap:10px; }
+        .access-fine-print { margin:18px 0 0; color:var(--muted); font-size:11px; line-height:1.5; text-align:center; }
+        .access-status { min-height:18px; margin-top:10px; color:var(--brand-dark); font-size:12px; text-align:center; }
+        @media (max-width:760px) {
+            .access-shell { width:min(100% - 32px, 560px); padding-top:22px; }
+            .access-masthead { margin-bottom:44px; }
+            .access-security { display:none; }
+            .access-grid { grid-template-columns:1fr; gap:34px; }
+            .access-heading { font-size:38px; }
+            .access-lead { font-size:15px; }
+            .access-card { padding:22px; }
+        }
+
         @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
             .card { background:#ffffff; }
         }
@@ -75,28 +108,42 @@
     </style>
 </head>
 <body>
-    <main class="card" role="alert" aria-labelledby="restricted-title">
-        <div class="brand">
-            {% if brand_logo %}<img src="{{ brand_logo }}" alt="{{ app_name }}">{% endif %}
-            <span>{{ app_name or 'Tiberbu CRM' }}</span>
-        </div>
+    <main class="access-shell" aria-labelledby="restricted-title">
+        <header class="access-masthead">
+            <div class="brand">
+                {% if brand_logo %}<img src="{{ brand_logo }}" alt="">{% endif %}
+                <span>{{ app_name or 'Tiberbu CRM' }}</span>
+            </div>
+            <div class="access-security">Access check</div>
+        </header>
 
-        <div class="icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-        </div>
+        <div class="access-grid">
+            <section>
+                <p class="access-eyebrow">{{ resource_eyebrow or 'Workspace access' }}</p>
+                <h1 id="restricted-title" class="access-heading">{{ resource_title or 'Access is restricted' }}</h1>
+                <p class="access-lead">{{ resource_message or "Your account is signed in, but it does not have access to this area." }}</p>
+                <div class="access-next">
+                    <strong>What to do next</strong>
+                    {{ resource_next_step or 'Return to an available workspace or contact your administrator.' }}
+                </div>
+            </section>
 
-        <h1 id="restricted-title">Access Restricted</h1>
-        <p class="lead">
-            You don't have permission to access the administration desk.
-            This area is reserved for system administrators.
-        </p>
-
-        <div class="actions">
-            <a class="btn btn-primary" href="{{ home_route or '/crm' }}">Go to {{ app_name or 'Tiberbu CRM' }}</a>
-            <button type="button" class="btn btn-ghost" id="signOut">Sign out</button>
+            <section class="access-card" aria-label="Access details">
+                <h2 class="access-card-title">Access details</h2>
+                <p class="access-card-subtitle">This decision is based on your signed-in account and native application permissions.</p>
+                <dl class="access-details">
+                    <div class="access-detail"><dt>Requested area</dt><dd>{{ resource_label or 'Workspace' }}</dd></div>
+                    <div class="access-detail"><dt>Signed in as</dt><dd>{{ signed_in_user }}</dd></div>
+                    <div class="access-detail"><dt>Required access</dt><dd>{{ required_roles or 'An authorized application role' }}</dd></div>
+                    {% if user_roles %}<div class="access-detail"><dt>Current roles</dt><dd class="access-roles">{% for role in user_roles %}<span class="access-role">{{ role }}</span>{% endfor %}</dd></div>{% endif %}
+                </dl>
+                <div class="access-actions">
+                    <a class="btn btn-primary" href="{{ home_route or '/crm' }}">{{ home_label or 'Return to CRM' }}</a>
+                    <button type="button" class="btn btn-ghost" id="signOut">Sign out</button>
+                </div>
+                <p class="access-fine-print">If you believe this is incorrect, share the requested area and your account name with your administrator.</p>
+                <p class="access-status" id="status" role="status" aria-live="polite"></p>
+            </section>
         </div>
     </main>
 
@@ -105,8 +152,12 @@
         // /api/method/logout is POST-only; a GET anchor 403s. POST with the CSRF token,
         // then land on the branded login. Falls back to the stock /logout page on error.
         var btn = document.getElementById('signOut');
+        var status = document.getElementById('status');
         if (!btn) return;
         btn.addEventListener('click', function () {
+            btn.disabled = true;
+            btn.setAttribute('aria-busy', 'true');
+            if (status) status.textContent = 'Signing out…';
             fetch('/api/method/logout', {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -114,7 +165,9 @@
             }).then(function () {
                 window.location.href = '/login';
             }).catch(function () {
-                window.location.href = '/logout';
+                if (status) status.textContent = 'Sign out could not be completed. Please try again.';
+                btn.disabled = false;
+                btn.removeAttribute('aria-busy');
             });
         });
     })();

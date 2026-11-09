@@ -10,10 +10,12 @@ tags
 node_modules
 crm/public/frontend
 crm/www/crm.html
+crm/www/finance-cockpit.html
 build
 frontend/coverage
 
 e2e/.auth
+e2e/proof
 test-results
 playwright-report
 package-lock.json
@@ -27,4 +29,17 @@ CLAUDE.md
 AGENTS.md
 .claude
 .pi
+
+# BMAD prompt-routing instructions and generated Claude skills are team-shared.
+!AGENTS.md
+!CLAUDE.md
+!.claude/
+!.claude/skills/
+!.claude/skills/**
 .patch
+*.pdf
+*.docx
+*.xlsx
+_bmad-output/
+mockups/
+crm/www/finance-mockups/

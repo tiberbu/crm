@@ -8,6 +8,8 @@ from frappe.translate import get_messages_for_boot, get_translated_doctypes
 from frappe.utils import cint, get_system_timezone
 from frappe.utils.telemetry import capture
 
+from crm.api.website_redirect import PORTAL_ROUTE, get_portal_route
+
 no_cache = 1
 
 
@@ -23,7 +25,10 @@ def get_context():
 	# Authenticated but without CRM access (e.g. a Website User) -> branded access page
 	# instead of the stock PermissionError screen.
 	if not check_app_permission():
-		frappe.local.flags.redirect_location = "/access-restricted"
+		if get_portal_route():
+			frappe.local.flags.redirect_location = PORTAL_ROUTE
+			raise frappe.Redirect
+		frappe.local.flags.redirect_location = "/access-restricted?resource=crm"
 		raise frappe.Redirect
 
 	frappe.db.commit()
@@ -57,6 +62,10 @@ def get_boot():
 			"is_fc_site": is_fc_site(),
 			"translated_doctypes": get_translated_doctypes(),
 			"translated_messages": get_messages_for_boot(),
+			"user": {
+				"name": frappe.session.user,
+				"roles": frappe.get_roles(frappe.session.user),
+			},
 			"timezone": {
 				"system": get_system_timezone(),
 				"user": frappe.db.get_value("User", frappe.session.user, "time_zone")

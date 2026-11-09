@@ -5,14 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --base=/assets/crm/frontend/ && yarn copy-html-entry",
-    "copy-html-entry": "cp ../crm/public/frontend/index.html ../crm/www/crm.html",
+    "build": "vite build --base=/assets/crm/frontend/ && npm run copy-html-entry",
+    "copy-html-entry": "cp ../crm/public/frontend/index.html ../crm/www/crm.html && cp ../crm/public/frontend/finance-cockpit.html ../crm/www/finance-cockpit.html",
     "serve": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@antv/g2": "^5.4.0",
     "@framework/ui": "link:../../frappe/ui",
     "@tiptap/core": "^3.26.0",
     "@tiptap/extension-paragraph": "^3.26.0",
@@ -41,7 +42,6 @@
   },
   "resolutions": {
     "dompurify": "3.4.0",
-    "brace-expansion": "2.1.0",
     "picomatch": "4.0.4",
     "prosemirror-model": "1.25.9",
     "prosemirror-view": "1.41.9"

@@ -30,6 +30,7 @@
           :doc="organization.doc"
           childDoctype="CRM Org Facility"
           class="mb-4"
+          @update:facilities="updateOrganizationFacilities"
         />
 
         <FieldLayout
@@ -98,8 +99,11 @@ const error = ref(null)
 const { document: organization, triggerOnBeforeCreate } =
   useDocument('CRM Organization')
 
-const isEnriching = ref(false)
+function updateOrganizationFacilities(facilities) {
+  organization.doc.facilities = facilities
+}
 
+const isEnriching = ref(false)
 
 // Prefill the form from the company website (Domain Enrichment) — synchronous,
 // no document is created until the user clicks Create.

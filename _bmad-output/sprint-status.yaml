@@ -1,15 +1,17 @@
 # Sprint Status
-# Project: crm (Tiberbu CRM fork)
+# Project: tiberbu Express — CRM implementation
 # Tracking: Claude Code Studio
-# Updated: 2026-08-01
+# Updated: 2026-10-25
 
 summary:
-  total: 18
-  ready-for-dev: 14
-  in-progress: 0
-  review: 0
-  done: 3
-  cancelled: 0
+  total: 179
+  ready-for-dev: 32
+  in-progress: 9
+  review: 108
+  done: 12
+  cancelled: 7
+  qa: 2
+  superseded: 9
 
 development_status:
 
@@ -79,12 +81,252 @@ development_status:
   # Phase 5 — QA
   hfr-c5-qa-refactor: review                     # [qa] Migration + multi-facility + convert-to-deal + re-sync
 
-  # Chain: epic-partner-portal
-  epic-partner-portal: ready-for-dev
+  # Chain: epic-finance-cockpit (BRD + ADR confirmed 2026-08-06)
+  epic-finance-cockpit: in-progress
 
-  partner-portal-e1-api-leads: ready-for-dev              # [dev-story] Partner API: create/get/list/update leads
-  partner-portal-e1-api-deals: ready-for-dev              # [dev-story] Partner API: create/get/list/update deals
-  partner-portal-e1-api-contacts: ready-for-dev           # [dev-story] Partner API: create/list/link contacts
-  partner-portal-e2-webhooks: ready-for-dev               # [dev-story] Outbound webhooks: lead/deal lifecycle events
-  partner-portal-e3-ref-data: ready-for-dev               # [dev-story] Reference data endpoints + rate limiting
-  partner-portal-qa: ready-for-dev                        # [qa] Partner portal full flow QA
+  # Sprint 1 — Foundation
+  fc-s1-1-crm-partner-doctype: review               # [dev-story] CRM Partner + CRM Rebate Structure DocTypes; partner field on CRM Lead
+  fc-s1-2-lead-approval-workflow: review             # [dev-story] Frappe Workflow on CRM Lead: Draft→Pending→Approved/Rejected; Partner RM vs Sales Manager routing
+  fc-s1-3-cockpit-page-shell: review                # [dev-story] Frappe Page registration; Vue sidebar + topbar + company switcher + mobile hamburger
+  fc-s1-4-kpi-strip: review                         # [dev-story] get_finance_kpis API; KPI tiles + period selector; role-scoped + company-aware
+
+  # Sprint 2 — Inbox + AR/AP worklists + Onboarding Request
+  fc-s2-1-pending-actions-inbox: review              # [dev-story] get_pending_actions API; Inbox UI with 13 item types; urgency bands; role-scoped
+  fc-s2-2-receivables-section: review                # [dev-story] AR Invoices + Sales Orders + Payments + Customers; FinanceTable + StatusPill components
+  fc-s2-3-payables-section: review                   # [dev-story] AP Invoices + Purchase Orders + Supplier Payments + Suppliers; approve_purchase_invoice
+  fc-s2-4-onboarding-request-doctype: review         # [dev-story] CRM Onboarding Request DocType; auto-create on Deal Won; provisioning_complete endpoint
+
+  # Sprint 3 — Expenses, Banking, Partner & Commission
+  fc-s3-1-rebate-commission-doctypes: review        # [dev-story] CRM Partner Rebate Voucher + CRM Sales Commission DocTypes; Payment Entry on_submit hook
+  fc-s3-2-expenses-section: review                  # [dev-story] Expense Claims + Employee Advances + Expense Journals; hrms_adapter.py
+  fc-s3-3-partner-commission-section: in-progress   # [dev-story] canonical Network rebate rate, Supplier/payroll recipient mappings, Network links, and seeded Payment Entry approval workflow; native payout posting still awaits Finance accounting policy
+  fc-s3-4-banking-section: review                   # [dev-story] Bank Accounts + Bank Transactions; reconciliation link
+
+  # Sprint 4 — Dashboard charts, Reports, GL/Assets/Liabilities
+  fc-s4-1-dashboard-charts: review                  # [dev-story] Cashflow + AR Aging + AP Aging + P&L charts; get_dashboard_charts API; lazy-loaded
+  fc-s4-2-reports-panel: review                     # [dev-story] 32 report links in 6 groups; reportsConfig.js; role-scoped; pre-filtered URLs
+  fc-s4-3-gl-liabilities-assets: review             # [dev-story] GL viewer + Journal Entries + Period Closing; Subscriptions + Deferred; Asset Register
+
+  # Sprint 5 — Scoped views, Global search, Setup, erpnext_adapter
+  fc-s5-1-scoped-views: review                      # [dev-story] SalesManagerView + PartnerRmView; restricted sidebar; read-only commission/rebate lists
+  fc-s5-2-global-search: review                     # [dev-story] Ctrl+K command palette; global_search API; role-scoped results; keyboard navigation
+  fc-s5-3-setup-erpnext-adapter: review             # [dev-story] Setup section links (Finance Manager only); erpnext_adapter.py cross-site wrapper
+
+  # Sprint 6 — Create-From (mapped-doc) flows
+  fc-s6-1-create-from-mapped-docs: review           # [dev-story] Orders "Create from Quote" + Invoices "Create from Quote"/"Create from Order" via native ERPNext mappers; inline submitted-source picker (company+docstatus=1, name+party search); FinanceForm seed path
+
+  # Sprint 7 — Finance workspace UX and ERPNext alignment (2026-10-12)
+  # Implementation ready for owner review: fc-s7-1 through fc-s7-7. Latest run: 52 Finance backend tests passed, 1 migrated-workflow assertion skipped; frontend: 143 passed; production build passed.
+  fc-s7-1-kpi-aggregate-fix: review                # [dev-story] permission-safe v15/v16 SUMs for KPIs and Finance reports; repair Today 500
+  fc-s7-2-quotation-submit-readonly: review         # [dev-story] Finance can submit eligible draft quotation without edit/new/delete; authenticated screenshot unavailable
+  fc-s7-3-payment-mode-account-alignment: review # [dev-story] resolve company Mode of Payment account before Payment Entry; account-driven reference requirements; 9 focused tests, bench restart, and production build passed
+  fc-s7-4-payment-entry-details-links: review # [dev-story] company-scoped party/account/reference links and Receive/Pay/Transfer context; production build passed; screenshot unavailable because local route redirects to login
+  fc-s7-5-company-refresh-scope: review              # [dev-story] clear/refetch mounted Finance views and payment composer on Company change; production build passed, authenticated screenshot unavailable
+  fc-s7-6-company-scoped-payment-selectors: review        # [dev-story] return only customers with eligible invoices in the active Company
+  fc-s7-7-quotation-context-panel: review            # [dev-story] Facility/Opt-In/Network context, native SO fallback, company validation; 4 focused tests and blind review passed
+  fc-s7-8-optin-handoff-proof: in-progress           # [dev-story] 4 orchestration tests pass; native document-level proof remains; shared cr-dev was not mutated
+  fc-s7-9-finance-workspace-remediation: in-progress # [dev-story] payment-based rebate/commission rules, per-facility Supplier, canonical-link conflict inventory, CRM Setup forms and finance list updates; FE 173 and focused BE 23 pass, build passes; cr-dev UI/data walkthrough pending
+
+  # QA — full cockpit integration pass (all 18 stories complete)
+  fc-qa-full-cockpit: qa                 # [qa] Full Finance Cockpit end-to-end QA pass: all roles, all sections, mobile, dark/light mode
+
+  # Chain: epic-partner-portal — retired 2026-10-06. Customer Experience is
+  # the only external authenticated surface; retain the artifacts as history.
+  epic-partner-portal: cancelled
+
+  partner-portal-e1-api-leads: cancelled                  # [descoped] Legacy partner API; no new implementation
+  partner-portal-e1-api-deals: cancelled                  # [descoped] Legacy partner API; no new implementation
+  partner-portal-e1-api-contacts: cancelled               # [descoped] Legacy partner API; no new implementation
+  partner-portal-e2-webhooks: cancelled                   # [descoped] Legacy partner API; no new implementation
+  partner-portal-e3-ref-data: cancelled                   # [descoped] Legacy partner API; no new implementation
+  partner-portal-qa: cancelled                            # [descoped] Partner Portal surface retired
+
+  # Chain: epic-crm-quote-builder (BRD + ADR + PRD confirmed 2026-08-07)
+  epic-crm-quote-builder: in-progress
+
+  # Sprint 1 — Backend Foundation
+  qb-s1-1-crm-quote-doctypes: review                # [dev-story] CRM Quote + Facility + Add-on + Renewal DocTypes; 15 product catalogue SKUs; Sales Invoice custom fields patch
+  qb-s1-2-quote-api: review                         # [dev-story] crm/api/quotes.py: all API methods, pricing engine, RBAC scoping; invoice_adapter.py
+  qb-s1-3-print-format: review                      # [dev-story] CRM Quote Standard print format: complete, test, migrate; PDF download verified
+  qb-s1-4-remove-legacy-redirect: review             # [dev-story] Remove doctype_js Quotation hook; deprecate erpnext_quotation_prefill.js
+
+  # Sprint 2 — Quote Builder UI
+  qb-s2-1-quoting-tab-and-list: review              # [dev-story] Quoting tab on Deal.vue; QuotingTab.vue; /crm/quotes global list view; Finance Cockpit handoff banner
+  qb-s2-2-builder-step1-facilities: review          # [dev-story] QuoteBuilder.vue overlay shell; Step 1 facility cards with tier pills + live subtotal
+  qb-s2-3-builder-steps2-3: review                  # [dev-story] Step 2 add-ons table; Step 3 discount sliders + payment terms + live pricing + 5-yr TCO
+  qb-s2-4-builder-step4-actions: review             # [dev-story] Step 4 review preview; Send/Accept/Reject wiring; PDF download
+
+  # Sprint 3 — Integration + QA
+  qb-s3-1-erpnext-handoff: review                   # [dev-story] accept_quote → Sales Invoice → Finance Cockpit AR; crm_deal + crm_quote fields verified
+  qb-s3-2-qa-full-pass: qa               # [qa] 19/20 pass; T-UI-12 mobile fix applied (MobileDeal.vue Quoting tab); rebuild clean
+
+  # Chain: epic-optin-portal (BRD-OPTIN-001 · ADR-003 — 24 Aug 2026)
+  epic-optin-portal: in-progress
+
+  # Sprint 1 — Prerequisites (DocTypes + RBAC + price lists)
+  optin-s0-1: review        # [dev-story] DocTypes: CRM Opt-In Network + CRM Pre-Qualified Facility + CRM Opt-In Submission; bench migrate ✓ all 3 tables present
+  optin-s0-2: review        # [dev-story] Network Coordinator role + assigned_network User field + permission_query_conditions; bench migrate ✓ role+field exist, hooks.py wired
+  optin-s0-3: review        # [dev-story] Patch: 7 KEPH Items × 5 Negotiated Price Lists = 35 Item Price records; idempotent; bench migrate ✓ count=7
+
+  # Sprint 2 — API layer
+  optin-s1-1: review         # [dev-story] crm/api/optin.py: get_settings, verify_prequalified, verify_otp, get_pricing, get_terms_text, submit_async, get_job_status, save_partial, resume; _process_submission background job
+
+  # Sprint 3 — Vue wizard
+  optin-s2-1: review         # [dev-story] Vue wizard 8 steps + Frappe Web Page /opt-in shell; OTP gate, facility cards, pricing, T&C scroll-lock, commit, progress ticks, success screen
+
+  # Sprint 4 — UX + delivery polish (careverse_fixes 26 Aug 2026)
+  optin-s3-1: review         # [dev-story] Branded post-submission confirmation email: network logo/colour, reference badge, facilities-registered table, annual+VAT pricing summary, "what happens next" steps, help/footer — replaces plain <p> email. now=True. Proven: _confirmation_email_html renders ref+VAT total(167,040=144k*1.16)+brand+facility
+  optin-s3-2: review         # [dev-story] now=True on ALL opt-in/contract/quote sendmail (optin OTP+resume+confirmation, contracts invite+approver+OTP, quotes send+expiry) to bypass Email Queue flush delay — matches proven event.py/crm_invitation.py pattern
+  optin-s3-3: review         # [dev-story] StepLanding.vue: expand 3 value-prop pills into explained feature cards (icon+title+one-line) so user understands what they're starting; brand-tinted icons; dark/light parity
+  optin-s3-4: review         # [dev-story] CRM Opt-In Partner child DocType → partner_logos Table on CRM Opt-In Network; get_settings exposes absolute logo URLs; "Trusted by our partners" strip on wizard landing. Proven: migrate ✓ child table in DB, get_settings(demo-network) returns 2 logos
+  optin-s3-5: review         # [dev-story] Lock already-quoted facilities on the wizard: _get_quoted_facility_map correlates pre-qualified mfl_code → CRM Deal Facility → deals with a CRM Quote; verify_otp emits already_quoted+quoted_deal; get_pricing skips locked codes (server-side guard); StepFacilities.vue non-interactive locked cards (lock icon, "Already quoted on deal X" pill, excluded from Select-All), explanatory banner
+
+  # Chain: epic-contract-signing (BRD-CONTRACT-001 · ADR-004 — 24 Aug 2026)
+  epic-contract-signing: ready-for-dev
+
+  # cs-s1-1 already done — CRM Contract + CRM Contract Signatory DocTypes migrated
+  cs-s1-1-contract-doctypes: done                  # [dev-story] CRM Contract + CRM Contract Signatory; 3-approver fields on CRM Onboarding Request; migrated
+
+  # Sprint 1 — Contract API
+  cs-s1-2-contracts-api: ready-for-dev              # [dev-story] crm/api/contracts.py: generate, request_otp, verify_otp, get_contract, sign, download_pdf; _transition() state machine
+  cs-s1-3-hooks-patches: ready-for-dev              # [dev-story] hooks.py doc_events for CRM Contract; after_migrate ensure_signing_key; patches.txt
+  cs-s1-4-pdf-print-format: ready-for-dev           # [dev-story] crm_contract_standard print format: contract body + 2 signature blocks; wkhtmltopdf
+  cs-s1-5-onboarding-approval-api: ready-for-dev    # [dev-story] crm/api/onboarding.py: approve_onboarding(slot, reject); all-3-approved → Approved; any-reject → Rejected
+
+  # Sprint 2 — Signing portal
+  cs-s2-1-signing-portal: review                    # [dev-story] Frappe Web Page /sign-contract; OtpGate reuse; SignatureCanvas (signature_pad.js); scroll-lock before canvas
+
+  # Chain: epic-optin-handoff (gap analysis 25 Aug 2026 — exec-handoff-stories.md; maps BRD-OPTIN-001 Phase 2 + BRD-CONTRACT-001 Phases 4-5)
+  epic-optin-handoff: ready-for-dev
+
+  # Sprint 1 — Traceability spine (backend)
+  oh-s1-1-provenance-fields: review                 # [dev-story] Patch: Lead opt-in/T&C custom fields + Deal.optin_submission backlink; stop silent .set() drop — proven OIS-2026-00005: 6 Lead CF + Deal.optin_submission in meta, hash persisted, backlink==OIS, quote crm_sent=1
+  oh-s1-2-deal-lifecycle-api: review                # [dev-story] crm/api/lifecycle.py get_deal_lifecycle(deal): reverse-resolve OIS+quote+contract+signatories+onboarding+invoice — proven deal 18952 all 6 keys, bare deal all-None never-raise, non-priv→PermissionError, HTTP 200; AC-04 no db.sql/get_all
+  oh-s1-3-transition-timeline: review               # [dev-story] log_deal_event() writes comment_type=Comment on 3 transitions (OIS processed/contract generated/both-signed); track_changes=1 on CRM Onboarding Request — proven: migrate exit 0 + get_meta.track_changes==1, Version captured on save (ONB-2026-00004 0→1), deal 97111 Activity shows 3 distinct entries (screenshot /tmp/ohs13-ac02-deal-97111.png), AC-03 no f-strings. NOTE: comment_type=Comment (not Info per spec) — Salim-approved, since Info routes to docinfo.info_logs which get_deal_activities ignores
+
+  # Sprint 2 — Exec pick-up surface (frontend)
+  oh-s2-1-submissions-queue: ready-for-dev          # [dev-story] /opt-in-submissions full-page list + sidebar; list_submissions + retry_submission APIs; status filter, deal link, retry-failed
+  oh-s2-2-deal-contracting-panel: review     # [dev-story] v3 clean rewrite: QuotingTab.vue — prominent hero card (OIS ref mono, OTP Verified chip, name xl bold, role·org, email link, phone, Email Applicant btn) + facilities table + smart button Cases A/B/C (Build Quote from OIS solid btn when no quote, View/Adjust when quote exists, New Quote only on non-OIS); lifecycle fetched in QuotingTab, passed as prop to ContractingPanel; oisDoc passed as prop. ContractingPanel.vue — no internal OIS/lifecycle fetch; props: dealId+oisDoc+lifecycle; emit lifecycle-reload after generate; pre-fill from explicit facility_signatory fields > raw_json fallback; Exec Notes + Generate Contract form (7 fields, Combobox approvers) + Lifecycle strip. build clean (39s), zero hex (grep empty), Combobox not Autocomplete; screenshots /tmp/ohs22v3-hero-light.png /tmp/ohs22v3-hero-dark.png /tmp/ohs22v3-build-quote.png /tmp/ohs22v3-form.png — deal 48872 OIS-2026-00008 Thomas Mwogi visible, Build Quote from OIS btn present, signatory pre-filled
+
+  # Sprint 3 — Completion chain (backend)
+  oh-s3-1-contract-state-machine: ready-for-dev     # [dev-story] both-signed→Awaiting Internal Approval + Deal Won (D-2); all-3-approved→Fully Executed + finalize_contract (idempotent)
+  oh-s3-2-finalize-quote-pdf-email: ready-for-dev   # [dev-story] finalize_contract: _finalize_quotation submits Quotation+Sales Invoice (D-1) + executed PDF via CRM Contract Standard + email all parties incl deal contact
+  oh-s3-3-reconciliation-scheduler: ready-for-dev   # [dev-story] scheduler: re-enqueue stuck Pending/Processing OIS; create missing invoice for Accepted quotes; idempotent
+
+  # Sprint 4 — Finance posting visibility
+  oh-s4-1-finance-ar-provenance: ready-for-dev      # [dev-story] AR crm_deal/crm_quotation columns + fix RBAC-blocked exec deep link (invoices auto-submitted per D-1, no draft view)
+
+  # Chain: epic-optin-contact-us (planned 26 Aug 2026 — "no fallback" directive; BRD pending)
+  # Directive: an un-onboarded network must NOT fall through to default CareverseHIMS
+  # branding. Instead the visitor is told the network isn't onboarded and routed to
+  # their network coordinator + a Contact Us form. Requests land in the CRM for agents
+  # to confirm and promote into the Pre-Qualified list / Opt-In Network.
+  epic-optin-contact-us: ready-for-dev
+
+  cu-s1-1-contact-request-doctype: ready-for-dev    # [dev-story] CRM Contact Request DocType (facility_name, contact_name, email, phone, network_name free-text, message, status New/In Review/Added/Closed, linked_prequalified_facility, linked_network, handled_by); CRM list view + sidebar entry for agent follow-up
+  cu-s1-2-guest-api: ready-for-dev                  # [dev-story] crm/api/contact_request.py submit_contact_request (allow_guest, per-IP rate limit, branded acknowledgement email now=True); no PII leak
+  cu-s1-3-no-fallback-wizard: ready-for-dev         # [dev-story] Remove default-branding fallback: get_settings returns matched flag; unknown/disabled slug → wizard shows "Network not onboarded" state → coordinator note + Contact Us form (no CareverseHIMS default path)
+  cu-s1-4-crm-followup-actions: ready-for-dev       # [dev-story] Agent actions on CRM Contact Request: "Add to Pre-Qualified Facility" + "Add to Opt-In Network"; status transitions; audit trail
+
+  # Sprint 2 — Seamless CRM destination surfaces (context added 26 Aug 2026)
+  # RATIONALE: CRM Opt-In Network + CRM Pre-Qualified Facility currently have NO frappe-ui
+  # views (grep frontend/src = 0 hits; no router.js routes) — they are Desk-only today
+  # (/app/crm-opt-in-network, /app/crm-pre-qualified-facility). The two are relationally
+  # linked (CRM Pre-Qualified Facility.network -> CRM Opt-In Network, reqd). cu-s1-4's
+  # "promote" actions would otherwise dump agents into raw Desk forms, breaking the
+  # frappe-ui UX everywhere else in the CRM. These stories give the promote-destinations
+  # a native home so the follow-up flow is seamless end-to-end.
+  cu-s2-1-network-crm-views: ready-for-dev          # [dev-story] frappe-ui list + detail for CRM Opt-In Network: sidebar entry, /crm/opt-in-networks route, status/branding/partner-logos fields, count of linked pre-qualified facilities, RBAC (Network Coordinator scoped to assigned_network)
+  cu-s2-2-prequalified-crm-views: ready-for-dev     # [dev-story] frappe-ui list + detail for CRM Pre-Qualified Facility: /crm/pre-qualified route, filter by network, status (Active/Opted In/Declined), breadcrumb link up to parent Opt-In Network, "already quoted" indicator reusing _get_quoted_facility_map; deep-link from Contact Request promote action
+  cu-qa: ready-for-dev                              # [qa] Full contact-us flow: submit as guest → CRM record → agent promotes to Pre-Qualified → opt-in succeeds; un-onboarded slug shows no fallback; promote lands on native frappe-ui Network/Pre-Qualified views (not Desk)
+
+  # Chain: epic-network-cosign (planned 26 Aug 2026 — network-cosign-stories.md)
+  # Network side moves from an in-CRM approval gate to EXTERNAL signatories: approvers
+  # configured per network auto-populate the Quote page, opt-in captures the witness,
+  # execs edit unsigned Network Signatory rows, and EVERY signatory signs via the same
+  # OTP+signature-pad flow with NO CRM login even when they are Users. DECISION (default,
+  # confirm): network approval == network signature; only final Tiberbu execution stays
+  # internal. Refactor core is nc-s2-4 (generalize the facility→witness state machine).
+  epic-network-cosign: in-progress
+
+  # Sprint 1 — Schema
+  nc-s1-1-network-signer-child: review              # [dev-story] M: CRM Network Signer child DocType + network_signers Table on CRM Opt-In Network. PROOF: meta dump — CRM Network Signer has full_name(Data)+email(Data/Email); CRM Opt-In Network.network_signers is Table→CRM Network Signer. NOTE (model change): original spec's signer_role/user fields intentionally DROPPED — every network_signers row is treated as "Network Signatory" (role applied in code, contracts.py:491) and signers are external parties keyed by name+email, no User link (per confirmed "even users just get an email" model)
+  nc-s1-2-contract-signatory-roles: review          # [dev-story] S: extend CRM Contract Signatory.signatory_role Select. PROOF: meta dump — options = "Facility Signatory / Facility Witness / Network Signatory / Tiberbu Signatory". NOTE: "Tiberbu Signatory" replaces the spec's "Network Witness" (final Tiberbu executor per confirmed model)
+  nc-s1-3-submission-witness-fields: review         # [dev-story] S: facility_witness_name/email fields on CRM Opt-In Submission. PROOF: meta dump — facility_witness_name(Data) + facility_witness_email(Data) present alongside raw_json(Long Text)
+
+  # Sprint 2 — Backend
+  nc-s2-1-optin-witness-capture: review             # [dev-story] M: optin.py submission handler persists witness to fields + raw_json (dep nc-s1-3). PROOF: live submit_async call w/ minted signing_token — created OIS persisted facility_witness_name='Dr. Grace Wanjiru', facility_witness_email='grace.wanjiru@apex.co.ke' (lower-cased), raw_json.witness retained original casing; fixture deleted
+  nc-s2-2-get-network-signatories: review           # [dev-story] M: contracts.get_network_signatories(deal|network_slug) CRM-gated, resolves user→name/email (dep nc-s1-1). PROOF: live-exercised by Surface 2 — returns Partner RM (Network Signatory · partner-rm@tiberbu.test) + OHS12 NoPerm (Tiberbu Signatory · ohs12-noperm@example.com) for deal 71189/apex-medical; /tmp/cosign-qa/surface2-contracting-light.png
+  nc-s2-3-generate-seed-rows: review                # [dev-story] M: generate() seeds Network Signatory rows + pre-fills witness from OIS; network_approver_* params now legacy no-ops (dep nc-s1-2,nc-s2-2,nc-s1-3). PROOF: live generate(deal=71189, witness args empty) — seeded rows Facility Signatory + Facility Witness (PREFILLED from OIS: "Dr. Prefill FromOIS") + Network Signatory (Partner RM, from config) + Tiberbu Signatory (OHS12 NoPerm); only Facility Signatory invited immediately; contract+OIS-temp fixture reverted
+  nc-s2-4-state-machine-refactor: review            # [dev-story] L: generalize _transition to ordered N-signatory flow; refactor core (dep nc-s2-3). PROOF: full-lifecycle trace on throwaway contract — Awaiting Facility Signature → (fac sig signs) invite witness → (witness signs) invite Network+Tiberbu IN PARALLEL, state "Awaiting Counterparty Signatures" → (network signs) tiberbu still pending → (tiberbu signs) "Fully Executed"; re-running _transition mid-flow re-invited nobody (IDEMPOTENT True); fixture deleted
+  nc-s2-5-guest-only-signing-guard: review          # [dev-story] M: signers who are Users sign as Guest via /sign-contract, no session elevation/CRM route (dep nc-s2-4). PROOF: every signature in the nc-s2-4 lifecycle trace (incl. Network Signatory + Tiberbu Signatory, who are Users) executed verify_otp+sign with frappe.session.user=="Guest" (asserted), driven purely by the OTP-issued signing_token; endpoints are @frappe.whitelist(allow_guest=True)
+
+  # Sprint 3 — Frontend
+  nc-s3-1-wizard-witness-ui: review                 # [dev-story] M: opt-in wizard captures witness name/email → submit payload (dep nc-s2-1). PROOF: Review step "Facility Witness" card (Witness Name/Email required, gates Continue), witness rides submit payload via StepCommit; /tmp/cosign-qa/surface1-review-witness-{light,dark}.png + surface1-review-filled-{light,dark}.png
+  nc-s3-2-panel-autopopulate: review                # [dev-story] M: ContractingPanel pre-fills network signers from get_network_signatories + witness from OIS (dep nc-s2-2,nc-s2-3). PROOF: Quoting tab "Network & Tiberbu Co-Signatories" read-only chips (Partner RM/OHS12 NoPerm) + "Nominate Facility Signatory & Witness" prefill; light+dark; /tmp/cosign-qa/surface2-contracting-{light,dark}.png
+  nc-s3-3-panel-edit-network-rows: review           # [dev-story] M: ContractingPanel inline-edit Network Signatory pending rows via update_signatory (dep nc-s3-2, same file — sequence). PROOF: Signatories block — pending Network Signatory inline-edit form (name/email + "changing the email invalidates the old link…" hint, Cancel/Save) and pending Tiberbu Signatory Edit/Resend actions; /tmp/cosign-qa/surface3-inline-edit.png
+  nc-s3-4-edit-until-signed-tiberbu-user-dropdown: review  # [dev-story] M: ContractingPanel — widened edit gate isPending→canEdit (status!=='Signed', so Network+Tiberbu editable while Pending OR Declined) + Tiberbu Signatory row edits via a frappe-UI User picker (Controls/Link.vue doctype=User, avatars + full_name/email item-label, selected-user chip) while Network/Facility stay free-text; saveEdit re-resolves the authoritative full_name via frappe.client.get_value at submit time (never persists the users-store email-prefix stub); Resend gated to Pending. Backend: update_signatory guard widened !="Pending"→=="Signed" and non-Pending rows reset to Pending (contracts.py) — required bench+web restart. Requested 2026-08-27, refines nc-s3-3. dep nc-s3-3 (same file). Blocks nc-qa re-verify. Spec: _bmad-output/self-optin/network-cosign-stories.md#nc-s3-4. PROOF (Playwright on cr-dev, CONT-00008/deal 71189, rows seeded Pending): AC1 Edit shows on non-signed rows; AC3 Tiberbu edit renders User dropdown WITH avatars (/tmp/nc-s34/tiberbu-user-picker-light.png), picked sales-manager + Save → bench confirmed signatory_name="Sales Manager" / signatory_email="sales-manager@tiberbu.test"; AC4 Network edit stays free-text (/tmp/nc-s34/network-freetext-light.png); fixture restored. Second-pass review (frappe-code-reviewer): 1 real bug (stub-name persistence) FIXED + 3 nits addressed; verified clean. yarn build clean, zero new hex, isPending removed.
+
+  nc-s3-5-cosign-block-editable-and-backfill: review  # [dev-story] M: ContractingPanel — the "Network & Tiberbu Co-Signatories" block (was read-only config preview) becomes the per-contract editable owner of counterparties; facility rows split into their own "Facility Signatories" block (facilitySignatories = lc.signatories minus Network/Tiberbu, no duplicate edit surface). coSignatoryItems merges on-contract counterparty rows with configured coSigners missing from the contract — dedupe Tiberbu by ROLE (hasTiberbuOnContract; its config email may change post-generation) and Network by lowercased email. Missing → "Add to contract" (new backend add_signatory → Pending row, then _transition invites immediately if facility already signed); on-contract unsigned → Edit + Resend (gated onContract && isPendingStatus); Tiberbu uses the User dropdown (name re-resolved via frappe.client.get_value), Network free-text. Backend: add_signatory(contract,role,name,email) — CRM-gated, role∈_COUNTERPARTY_ROLES, dedupe (Tiberbu singular / Network by email), Pending+is_witness:0, save(ignore_permissions) # SYSTEM-INTERNAL + commit + _transition(contract) — required bench+web restart. Fixes "still can't edit" (exec was on the read-only block; repro CONT-00007 is legacy with no counterparty rows). Requested 2026-08-27, refines nc-s3-4. dep nc-s3-4 (same file). Blocks nc-qa re-verify. Spec: _bmad-output/self-optin/network-cosign-stories.md#nc-s3-5. Multi-signer disambiguation RESOLVED (see FOLLOW-UP below). PROOF (cr-dev, CONT-00007/deal 43791 — legacy, 2 facility rows Signed, config has 1 Tiberbu co-signer not on contract): backend console add_signatory → {status:added}, child-row dump shows Tiberbu Signatory OHS12 NoPerm/ohs12-noperm@example.com Pending, dedupe re-add throws "already on the contract", state restored; fix-2 verify → added row invited=True (invite_token set) + workflow_state "Awaiting Counterparty Signatures". Playwright PASS AC1-5 (light+dark): AC1 "Not on contract"+"Add to contract" (/tmp/nc-s3-5-proof/AC1-initial-not-on-contract-light.png), AC2 Tiberbu User dropdown w/ avatar rows (AC2-dropdown-open-light.png), AC3 select+Save → Pending pill+Edit (AC3-after-save-pending-light.png), AC4 Edit-in-place dropdown (AC4-edit-form-light.png), AC5 dark parity (AC5-after-save-pending-dark.png); QAMARK confirms persisted row, QACLEAN restored. yarn build clean, zero hex. Second-pass (frappe-code-reviewer): 2 SHOULD-FIX (Tiberbu phantom-Add row; stranded un-invited co-signatory) FIXED + re-verified CONFIRMED, data-shape trace + dark/light parity clean. FOLLOW-UP (2026-08-27, requested "make signatories editable — incl. already-Signed"): ALL rows now editable (canEdit→true); repro CONT-00007 had both facility rows Signed so no Edit control showed — root cause of "still can't edit". Editing a Signed row now invalidates the signature (new _invalidate_signature clears signature_data/ip/signed_at/otp/signing_token), resets status→Pending, downgrades contract (status "Awaiting Signatures"; workflow_state role-appropriate), and re-issues a fresh invite; amber warning in both edit forms. Second-pass on this change found + we FIXED a BLOCKER (role-only row resolution wiped the WRONG Network Signatory + broke multi-signer signing): rows now disambiguated by child docname (row_name: lifecycle→items→update_signatory/resend_invitation→_load_signatory→_get_signatory_row exact-name match) for authenticated edits and by invite/signing token (_load_signatory_by_token, hmac.compare_digest) for the guest OTP/sign flow; per-row OTP brute-force counter (_attempts_cache_key +row_name); resend spinner re-keyed resendingKey=rowKey(row). Plus SHOULD-FIX: editing a Signed Facility Signatory now also voids a Signed witness (attestation of a signing event that no longer exists) → witness Pending + invite cleared, re-invited by _transition after principal re-signs. PROOF: helper unit test (row_name exact/first/None; token invite+signing match right row; no-match fallback; per-row attempts key) PASS; E2E CONT-00007 signed Facility Signatory edit via row_name → principal+witness →Pending, signatures cleared (35678/18974), contract →Awaiting Facility Signature, resent=True, then restored verbatim; yarn build clean, zero hex; bench+web restarted. Re-verified by frappe-code-reviewer: BLOCKER + SHOULD-FIX both CONFIRMED FIXED, no guest OTP/sign regression from token resolution.
+
+  nc-s3-6-configure-cosigners-from-panel: review  # [dev-story] M: ContractingPanel — replaced the dead-end "configure them elsewhere" empty-state with in-panel Add/Edit controls for the Network Signatory and Tiberbu Signatory. Decisions (Salim 2026-08-27): Network Signatory add/edit/replace WRITES BACK to network config (CRM Opt-In Network.network_signers / CRM Network Signer) + syncs the current contract; Tiberbu Signatory add/edit is PER-CONTRACT ONLY (must NOT overwrite CRM Opt-In Settings.tiberbu_signatory — global singleton). SCHEMA CHANGE (Salim 2026-08-27): CRM Network Signer dropped the mandatory `user` Link — network signers are now external people captured as free-text full_name + email (both reqd Data, were read_only fetch_from user); _network_signers reads full_name/email only. Also (Salim 2026-08-27): the Tiberbu Signatory panel input is now free-text name + email too (User picker removed from BOTH the top Signatories block and the co-signatory block) so the signing flow is identical across the board — removed onTiberbuUserPicked/onCoTiberbuPicked/resolveSignatoryName + resolveUserResource + unused Link/UserAvatar/getUser imports. Backend: new save_network_signer(network_slug,name,email,original_email="",contract="") — CRM-gated (_check_crm_role) config write-back (net.save(ignore_permissions) # SYSTEM-INTERNAL, established add_signatory/generate pattern) + contract sync via _sync_network_signer_on_contract (reuses update_signatory/add_signatory; matches contract row by original email THEN new email so a rename to an address already on the contract updates in place instead of throwing); Tiberbu reuses per-contract add_signatory/update_signatory and never routes to save_network_signer. Frontend: saveNetworkSignerResource, networkSlug computed (from get_network_signatories), coEditOrigEmail, tiberbuOnContract, startAddNetwork/startAddTiberbu, ADD_KEY sentinel; co-signatory block renders post-generate even when empty with "+ Add Network Signatory" (disabled when !networkSlug) / "+ Add Tiberbu Signatory" (hidden once a Tiberbu row is on contract); saveCoEdit branches Network→save_network_signer(+refresh coSigners) / Tiberbu→per-contract. OPS: required `bench --site cr-dev migrate` (child-table meta re-sync — bench restart alone does NOT reload doctype meta) + bench restart + web restart. Requested 2026-08-27, refines nc-s3-5. dep nc-s3-5 (same files). Blocks nc-qa re-verify. Spec: _bmad-output/self-optin/network-cosign-stories.md#nc-s3-6. PROOF (cr-dev, network test-network + CONT-00007): backend console — ADD (original_email="") → config gained {NC S36 One, nc.s36.one@…}, contract gained Pending Network Signatory row, OIS tiberbu_signatory UNCHANGED; EDIT (original_email=E1→E2) → SAME config docname updated in place (no dup), SAME contract docname updated, OIS UNCHANGED; duplicate-email add throws "already exists"; full restore verified. Finding-2 edge proof: rename E1→E2 where E2 already a different contract row → contract_synced=updated (in-place, NO throw), config+contract both updated, restored. yarn build clean, zero hex. Second-pass (frappe-code-reviewer): BLOCKER (migrate required) — DONE + documented above; SHOULD-FIX (config committed before sync could throw) — FIXED via dual-match in _sync; NIT stale `user` param in doc — corrected here; NIT Add-Network enabled w/o network — now disabled when !networkSlug; NIT Network edit copy — now states config write-back. Invariants reviewer-CONFIRMED: Tiberbu never writes OIS; no residual signer .user refs; RBAC + row_name plumbing intact; dark/light parity clean.
+
+  # Sprint 4 — QA
+  nc-qa: review                                    # [qa] L: configure signers → opt-in witness → generate → facility+witness+network sign via OTP+pad NO login → final execution → PDF certificate lists all (dep nc-s2-5,nc-s3-1,nc-s3-3). PROOF: (1) guest signing PORTAL E2E — Playwright drove /sign-contract as an anonymous browser context (no CRM login): OTP gate → Verify Code → Review&Sign → scrolled contract → read-confirm → drew signature on pad → Confirm Signature → success screen "Your signature has been recorded." (/tmp/cosign-qa/surface4-portal-signed.png); server confirmed row status=Signed, signed_at set, signature_ip captured from HTTP request, workflow_state=Fully Executed. (2) PDF Certificate of Completion — _build_contract_document_html on a fully-executed contract signed via the real sign() path (all 4 roles) contains "Certificate of Completion", the T&C integrity hash, and every signatory (Facility Signatory, Facility Witness, Network Signatory, Tiberbu Signatory) with status=Signed + signed_at. Suite: frontend/e2e/proof/cosign_proof.spec.ts "Surface 4"; scripts /tmp/ncqa_cert_full.py, /tmp/ncqa_setup.py
+
+  # Chain: epic-facility-cx-portal (activated 2026-10-06)
+  # Objective: complete the post-Opt-In Website User invitation and the
+  # permission-bound Customer Experience progress view. GoLive is projected
+  # from CRM Facility Membership.go_live for each Network Contact.
+  epic-facility-cx-portal: in-progress
+
+  # Sprint 0 — Network identity foundation
+  facility-cx-s0-1-network-owned-partner-id: review # [dev-story] Admin-created CRM Opt-In Network owns a unique six-digit Partner ID; generate on insert or validate an admin-supplied value, backfill existing Networks, and keep the ID immutable. PROOF: cr-dev migration/backfill passed; 3/3 Network ID tests pass; Network list/detail and public settings expose the ID.
+
+  # Sprint 1 — Access and progress spine (depends on the canonical Network/OIS records)
+  facility-cx-s1-1-website-user-invitation: review # [dev-story] Processed OIS → idempotent Website User + User Permission(allow=CRM Opt-In Submission, for_value=OIS) + native welcome invitation; block internal-user collisions. PROOF: focused invitation tests pass; normal cr-dev migration applied portal fields.
+  facility-cx-s1-2-progress-projection: review     # [dev-story] Permission-bound get_portal_context projection: OIS, contract/signature progress, facility membership, Network Contact source, and authoritative go_live/GoLive milestone. PROOF: GoLive projection test passes; no browser-supplied OIS is trusted.
+  facility-cx-s1-3-cx-portal-progress-ui: review    # [dev-story] Vue /cx-portal experience: next action, milestone stepper, facility cards, membership status, GoLive readiness, and unlinked-account state. PROOF: frontend tests/build previously passed; served route is /cx-portal with /portal compatibility alias.
+  facility-cx-s1-4-invitation-portal-security-qa: review # [qa] IDOR/BOLA, OIS enumeration, duplicate account/permission, multi-facility isolation, stale permission, and GoLive projection regression tests. PROOF: 5/5 focused portal tests, 31/31 opt-in admin tests, ruff, py_compile, diff-check, and normal migration pass.
+  facility-cx-s2-1-crm-owned-hfr-client-registry-adapter: review # [dev-story] CRM-native guest adapter copied from the approved upstream request shapes; encrypted session, generic failure responses, OTP limits, strict facility/session binding. PROOF: CRM module compiles, cr-dev migration applied, no careverse_hq imports.
+  facility-cx-s2-2-facility-onboarding-wizard: review # [dev-story] Vue public wizard: ID → OTP → multi-facility selection → Partner ID/default Network → token package → witness/terms → one OIS per facility. PROOF: production frontend build passed.
+  facility-cx-s2-3-cx-catalog-and-invoice-visibility: review # [dev-story] Permission-bound Customer Experience catalog, Network Contact/GoLive progress, and open invoice visibility using existing checkout authorization.
+  facility-cx-s2-4-authenticated-token-purchase-chain: review # [dev-story] Portal purchase now: Website-User-only endpoints, server-derived natural key (OIS+facility+package+billing period; browser key ignored), one Quotation + submitted Sales Order (VAT template, payment schedule), one submitted Sales Invoice only at Start Payment, retries return the same records, missing/foreign orders indistinguishable, documents created as system after OIS-permission checks, document_linked evidence. Fixes found by real-document tests: draft SO could never map to an invoice (ERPNext requires docstatus 1) and Website Users hit 'Insufficient Permission for Customer Group'. PROOF: 11/11 crm.tests.test_customer_experience pass on cr-dev with real Quotation/Sales Order/Sales Invoice (rolled back; 0 leaked rows); ruff clean. NOTE: portal frontend still reads submission.open_orders (API returns orders) and valid_till; handled in facility-cx-s3-9.
+  facility-cx-s2-5-paystack-portal-checkout: review # [dev-story] Authenticated checkout: get_portal_checkout / initialize_portal_paystack_payment / verify_portal_paystack_payment authorise by server-side OIS User Permission (no second OTP), amount+currency always from the Sales Invoice, callback /cx-portal?reference=; guest OTP path kept and sharing the same helpers; Payment Entry creation serialised per reference and run as system (Guest/Website User lack bank-account permission, which broke webhook + verify in tests); webhook gettext shadowing bug fixed; currency mismatch rejected. PROOF: 10/10 crm.tests.test_checkout pass on cr-dev with real invoices/Payment Entries and Paystack HTTP mocked (no live charge): foreign/guest/staff denied, amount from invoice, mismatched amount/currency/OIS rejected, replay and webhook+browser race yield one Payment Entry, bad webhook signature rejected, guest payload == portal payload; ruff clean. Not covered: live Paystack sandbox (E21) needs configured keys.
+  facility-cx-s2-6-onboarding-e2e-qa: review # [qa] S2-6a backend E2E: mocked HFR/Client Registry/mail/Paystack; guest identity->OTP->catalog->idempotent submit->Network membership->Website User+permission->Quotation/Sales Order->Sales Invoice->authorised checkout->replay-safe Payment Entry, cross-user denial, evidence without PII. PROOF: crm.tests.test_cx_onboarding_e2e passes; full `bench run-tests --app crm` on cr-dev: all suites pass except 12 test_dashboard failures that fail identically on the untouched apps/crm code (shared-site data). OIS pipeline processing is stubbed in the E2E (it commits) and covered by test_optin (88 pass). No live Paystack.
+
+  # Follow-on stories from customer-experience-onboarding-e2e-spec.md (approved 2026-10-11). Execute strictly in this order; one story at a time.
+  facility-cx-s3-13-cr-lookup-first-otp-recovery: review # [dev-story] CR contact + OTP now precede HFR; generic pre-verification responses; serialized bounded HFR retries and consumed-OTP recovery. PROOF: backend 54/54; focused frontend 21/21; Corepack Yarn build; Ruff; diff-check; independent review clear. UAT identity/screenshots and authenticated portal permission proof pending.
+  facility-cx-s4-1-self-onboarding-fields: ready-for-dev # S4-1 repeatable self-onboarding source, keyed identity reference, account email, and terms snapshot fields.
+  facility-cx-s4-2-self-onboarding-terms: ready-for-dev # S4-2 settings-driven Self-Onboarded terms with legacy fallback and immutable acceptance snapshot.
+  facility-cx-s4-3-duplicate-guard: ready-for-dev # S4-3 keyed-ID dedupe for new self records; canonical facility ID/MFL conflict checks for legacy records (no historical ID assertion).
+  facility-cx-s4-4-account-email: ready-for-dev # S4-4 verified Sam-supplied email for safe Website User provisioning/password setup and recovery.
+  facility-cx-s4-5-self-source-no-signature: ready-for-dev # S4-5 omit signature/contract milestones for self source only; preserve legacy Opt-In.
+  facility-cx-s4-6-network-and-catalog: ready-for-dev # S4-6 global token catalog; one optional Partner ID at final review, blank falls back to configured Network.
+  facility-cx-s4-7-initial-order-reuse: ready-for-dev # S4-7 reuse the onboarding quote for one submitted Sales Order per selected facility.
+  facility-cx-s4-8-submit-orchestration: ready-for-dev # S4-8 idempotent verified submit: membership + OIS + quote/order + account permission; no invoice/payment.
+  facility-cx-s4-9-wizard-review: ready-for-dev # S4-9 confirm data, capture email/terms, apply the one optional final Partner ID; careverse_hq interaction reference reskinned to CRM.
+  facility-cx-s4-10-portal-progress: ready-for-dev # S4-10 portal Opt-In/order/payment/GoLive progress; no self signature milestone; retain existing authenticated checkout.
+  facility-cx-s4-11-authenticated-user-access: in-progress # S4-11 allow Website and System Users to open CX portal; record access remains exact Customer/OIS User Permission scoped.
+  facility-cx-s3-1-onboarding-evidence-schema: review # [dev-story] CX-1 append-only CRM Onboarding Evidence DocType + record_event/evidence_ref. PROOF: 5/5 crm.tests.test_onboarding_evidence pass on cr-dev (insert, edit/delete blocked, PII-shaped detail rejected, unknown event rejected, keyed ref); DocType synced with frappe.reload_doc (full migrate not run: 3 unrelated develop patches pending on shared cr-dev); ruff clean; tests run with PYTHONPATH=<worktree>. Context7 unavailable: delete_doc/on_trash behaviour verified by test only.
+  facility-cx-s3-2-otp-channel-setting: review # [dev-story] CX-2 CRM Opt-In Settings preferred OTP channel (default Email), added as a Custom Field patch because all onboarding settings fields are patch-defined, not in the DocType JSON. PROOF: 2/2 crm.tests.test_otp_channel_setting pass on cr-dev (Select Email/SMS, default Email, patch repeatable, registered under [post_model_sync]); ruff clean.
+  facility-cx-s3-3-hfr-first-otp-channel-policy: review # [dev-story] CX-3 HFR-first lookup, preferred+fallback email/SMS OTP, masked delivery with stable decoy for unknown IDs, resend cooldown+limit, OTP email queue redaction, registry error logs no longer embed the owner ID. PROOF: 19/19 crm.tests.test_facility_onboarding pass on cr-dev (order, skip-registry, email/SMS preferred, both fallbacks, phone-only, unavailable, decoy shape, no pre-verification disclosure, replay, attempt limit, expiry, resend limits, log redaction); ruff clean. Residual: status 'unavailable' is only returned for valid IDs whose every channel failed.
+  facility-cx-s3-4-onboarding-evidence-events: review # [dev-story] CX-4 append-only evidence for lookup, OTP sent/failed/blocked/verified, terms acceptance, facility selection; failure rows committed before the error response; evidence errors never block the flow; subject/session stored only as keyed digests. PROOF: 24/24 crm.tests.test_facility_onboarding pass on cr-dev incl. per-stage events, bounded attempts, no ID/contact/OTP/token/facility name in any row, evidence-failure tolerance; 0 evidence rows left on the site; ruff clean. document_linked is written in CX-5.
+  facility-cx-s3-5-idempotent-submission-provenance: review # [dev-story] CX-5 submit_onboarding runs under a per-session file lock, maps each session facility to one staged OIS (created and committed before processing), resumes/reprocesses it on retry (Failed reset to Pending), keeps the session for safe replay, stamps crm_token_facility_mfl/crm_token_package_item on the OIS Quotations and records document_linked evidence. PROOF: 31/31 crm.tests.test_facility_onboarding pass on cr-dev (double submit, processing-failure retry, Failed reset, cross-session FID rejected, multi-facility, server-only pricing payload, quotation stamping + evidence); ruff clean. Not covered here: real Quotation creation (S2-6a E2E) and true parallel requests (lock is a Frappe filelock; replays tested sequentially).
+  facility-cx-s3-6-catalog-price-tax-preview: review # [dev-story] CX-6 get_catalog returns server-resolved price_ex_vat/vat_amount/gross_total/vat_rate/vat_label from the configured VAT template, hides the Price List name, and fails generically on pricing errors. PROOF: 34/34 crm.tests.test_facility_onboarding pass; live _catalog_packages on cr-dev returns 30000/4800/34800 (16% VAT) for CV-TOKEN-CORE; ruff clean. NOTE: frappe.ConfigurationError does not exist in Frappe 16.17.4 but is used in 25 places in crm/ (latent AttributeError on config-error paths); not fixed repo-wide.
+  facility-cx-s3-7-otp-code-input: review # [dev-story] CX-7 segmented OTP input: pure editing rules in src/utils/otpCode.js (revised: the repo has no Vue component test harness, so logic is a tested util) + OtpCodeInput.vue (one-time-code autofill, numeric keypad, per-box labels, arrow/backspace/paste, aria-live error, 48-56px touch boxes). PROOF: 9 new vitest cases pass (159 total at the time), eslint + prettier clean.
+  facility-cx-s3-8-wizard-mobile-review: review # [dev-story] CX-8 wizard: masked delivery + channel + expiry + resend countdown, unavailable-delivery state, segmented OTP, step states with aria-current, Back/Edit, facility list + ex-VAT/VAT/gross review totals from server values, session-expired restart. PROOF: 7 onboardingSteps vitest cases; 166/166 frontend tests pass; eslint clean; production vite build succeeds. Screenshots: see facility-cx-s3-11-ui-proof.
+  facility-cx-s3-12-portal-catalog-vat: review # [dev-story] Added during CX-9 (4th file would break the 3-file rule): portal context token_packages now come from _catalog_packages (ex-VAT/VAT/gross, no Price List name). Files: crm/api/website_redirect.py, crm/tests/test_website_redirect.py. Depends: s3-6. Blocks: s3-9. PROOF: 11/11 crm.tests.test_website_redirect pass; ruff clean.
+  facility-cx-s3-9-portal-purchase-ui: review # [dev-story] CX-9 portal: package cards with VAT, Create/Resume order, Open orders with confirmation before Create invoice, invoices with overdue state and Pay now via initialize_portal_paystack_payment (bank-transfer fallback only when Paystack is unconfigured), return-from-Paystack verification limited to the user's own OIS, notices, busy states. Fixes: portal never showed open orders because _order_rows selected a non-existent valid_till field and the caller swallowed the error. PROOF: 7 portalOrderState vitest cases; 166/166 frontend tests pass; eslint clean; production vite build succeeds. Screenshots: see facility-cx-s3-11-ui-proof.
+  facility-cx-s3-10-e2e-fixture-patch: review # [dev-story] CX-10 seed_cx_e2e_fixture patch registered under [post_model_sync]; runs only when site_config crm_enable_e2e_fixtures is set (absent = no-op); creates/reconciles only the CX-E2E-TOKEN item/price/package and cx-e2e-network, appends one package row, never edits other rows or sets an OTP/bypass. PROOF: 6/6 crm.tests.test_cx_e2e_fixture pass (disabled default, seeded set, repeat runs unchanged, existing rows untouched, catalog visibility, no OTP code); ruff clean. Needs a configured token Price List.
+  facility-cx-s3-11-ui-proof: review # [qa] S2-6b: Playwright against the real production build with API/Paystack mocked, desktop 1440 and mobile 390, 8/8 pass, asserts no horizontal overflow on every screenshot (caught and fixed a 58px mobile overflow in the portal). Covers keyboard/paste OTP, masked delivery + SMS fallback, VAT review, back/edit, order resume, invoice confirmation, Pay now, return verification, foreign-OIS reference ignored, bank-transfer fallback. 30 screenshots: _bmad-output/implementation-artifacts/proof/cx-onboarding/. Run: cd frontend && ../node_modules/.bin/playwright test -c e2e/proof/cx.config.ts (needs a prior vite build). yarn is not installed here; npx vitest run (166 pass) and npx vite build were used.
+
+  # Chain: epic-hmis-provisioning — start HMIS setup at onboarding + implementation status revamp
+  # Plan: hmis-provisioning/planning-artifacts/hmis-provisioning-on-onboarding-2026-10-25.md (Party Mode review). PRD: docs/hmis-implementation-prd.md HIMS-09..12.
+  # Maintainer decisions 2026-10-25: deployment happens on a separate site, so CRM polls status every 5 min; typical setup time 1 h, editable; TA field list in docs/hmis-provisioning-status-api-requirements.md.
+  epic-hmis-provisioning: in-progress
+  hmis-09-s1-typical-setup-time-setting: review # [dev-story] CRM HFR Settings provisioning_typical_minutes (default 60, editable, 0 hides, clamped >= 0) in doctype, get/update_hfr_settings, HFRSettings.vue. PROOF: migrate on the test and dev sites OK; _typical_setup_minutes() -> 60 on the dev site.
+  hmis-10-s2-journey-normalization: review # [dev-story] crm/api/hfr.py _provisioning_journey: phase/steps/progress/estimate (TA ETA > progress extrapolation > typical)/site (https only)/poll on every status response; optional TA site/ETA fields read via aliases. PROOF: 12 journey cases in crm.tests.test_hmis_provisioning_journey.
+  hmis-11-s3-provision-at-onboarding: review # [dev-story] submit_onboarding queues crm.api.hfr.provision_onboarded_facility per MFL (after commit, job_id dedupe) running ensure as the portal user; failures logged, never block onboarding. PROOF: 4 unit cases; real RQ on the test site: rollback queues nothing, commit queues one job that a worker ran, failure logged not raised.
+  hmis-12-s4-implementation-ui-revamp: review # [dev-story] FacilitySingleView live site card (URL, Open HMIS, Copy link, sign-in steps), stepper + estimate + 5-minute read-only GET poll; TA "Approved" mapped; FacilityPortal unwrap() fix (root cause of "Not started / has not been checked"); onboarding success "HMIS setup started". PROOF: yarn build OK; vitest 209/209.
+  hmis-12-s5-regression-coverage: review # [qa] Playwright (playwright.facility.config.ts) 13/13 incl. real-envelope regression (verified failing on the old unwrap), live card, polling via page.clock, blocked, success screen started/deferred; python 57/57 (journey + test_hfr_provisioning_status + onboarding session); test_facility_onboarding 15 pre-existing failures identical with/without change. DEV SITE (migrated + restarted, no mocks): live proof (e2e/proof/hmis_live.config.ts) 5/5 real facilities (Deployed->live, Approved/Draft->queued with 1 h estimate and 5-min GET poll, missing licence->blocked); live self-onboarding with a synthetic identity: all calls 200, success screen "HMIS setup started", job ran on the real worker as the new portal user, blocked by CRM validation so no setup-service POST; test records and sessions removed.

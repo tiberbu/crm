@@ -1,0 +1,25 @@
+<!doctype html>
+<html class="h-full" lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CareverseHIMS — Sign Contract</title>
+    <script>window.csrf_token = {{ (csrf_token or '') | tojson }};</script>
+    <style>
+      :root {
+        --brand-primary: {{ brand_primary or '#bc1823' }};
+        --brand-primary-dark: {{ brand_primary_dark or '#8f111b' }};
+      }
+    </style>
+    {{ signing_head | safe }}
+  </head>
+  <body class="h-full">
+    <div
+      id="signing-app"
+      class="h-full"
+      data-contract="{{ sc_contract }}"
+      data-role="{{ sc_role }}"
+      data-token="{{ sc_token }}"
+    ></div>
+  </body>
+</html>

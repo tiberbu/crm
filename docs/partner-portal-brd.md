@@ -1,4 +1,10 @@
 # BRD — Partner Portal Integration
+
+> **Retired / out of scope:** This legacy BRD is retained for historical
+> reference only. No Partner Portal or partner workspace is being built. The
+> active customer journey is facility self-onboarding plus the authenticated
+> Customer Experience surface. New work must not implement the stories below.
+
 **Version:** 1.1  
 **Date:** 2026-07-31  
 **Author:** Salim  

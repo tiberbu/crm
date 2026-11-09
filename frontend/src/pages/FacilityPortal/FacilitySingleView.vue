@@ -1,0 +1,1047 @@
+<script setup>
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { call } from 'frappe-ui'
+import CxIcon from './components/CxIcon.vue'
+import TokenAlertCard from './components/TokenAlertCard.vue'
+import BillingJourney from './components/BillingJourney.vue'
+import PlanPanel from './components/PlanPanel.vue'
+import { tokenBalanceText } from '@/utils/tokenBalance'
+import { subscriptionCard } from '@/utils/subscription'
+import {
+  balanceOrNextText,
+  canTopUp,
+  commercialOf,
+  rowFacilityMfls,
+  showsTokens,
+} from '@/utils/portalCommercial'
+
+const props = defineProps({
+  facility: { type: Object, required: true },
+  invoices: { type: Array, default: () => [] },
+  orders: { type: Array, default: () => [] },
+  payments: { type: Array, default: () => [] },
+  tokenPackages: { type: Array, default: () => [] },
+  defaultCurrency: { type: String, default: 'KES' },
+  ensureProvisioningDraft: { type: Function, required: true },
+  // Read-only refresh used while setup is in progress; never creates a draft.
+  getProvisioningStatus: { type: Function, default: null },
+  // Order whose invoice is being generated, so its button can show progress.
+  busyOrder: { type: String, default: '' },
+  // Records that belong to the account, not to this one facility (SPEC 8 notice).
+  accountLevelCount: { type: Number, default: 0 },
+  // The owner's low-token email alert for this facility, if any.
+  tokenAlert: { type: Object, default: null },
+  // Tab to open first (overview | quote | order | invoice | payment | billing).
+  initialTab: { type: String, default: 'overview' },
+})
+const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay', 'review-order', 'create-invoice', 'open-billing', 'token-alert-saved'])
+const provisioning = ref(null)
+const provisioningBusy = ref(true)
+const provisioningError = ref('')
+const errorDetailsOpen = ref(false)
+const siteLinkCopied = ref(false)
+let statusRequestSequence = 0
+let pollTimer = null
+// Fallback when the journey does not say how soon to check again. The backend
+// asks for 60 s while deploying or configuring and 5 minutes while waiting.
+const POLL_INTERVAL_MS = 5 * 60 * 1000
+// Phases whose setup journey the backend normalizes for display. Identity and
+// connection problems keep their own FID-specific guidance below.
+const JOURNEY_LABELS = {
+  preparing: 'Preparing setup',
+  queued: 'Request received',
+  deploying: 'Deploying',
+  configuring: 'Configuring',
+  live: 'Live',
+  blocked: 'Setup needs information',
+  needs_attention: 'Needs attention',
+}
+const journey = computed(() => {
+  const value = provisioning.value?.journey
+  return value && JOURNEY_LABELS[value.phase] ? value : null
+})
+const journeySteps = computed(() => journey.value?.steps || [])
+const liveSite = computed(() => journey.value?.phase === 'live' ? journey.value.site : null)
+const pollingActive = computed(() => Boolean(journey.value?.poll && props.getProvisioningStatus))
+const pollIntervalMs = computed(() => {
+  const seconds = Number(journey.value?.poll_after_seconds)
+  return Number.isFinite(seconds) && seconds >= 30 ? seconds * 1000 : POLL_INTERVAL_MS
+})
+const pollIntervalLabel = computed(() => {
+  const seconds = Math.round(pollIntervalMs.value / 1000)
+  return seconds < 120 ? `Checks again every ${seconds} seconds` : `Checks again every ${Math.round(seconds / 60)} minutes`
+})
+// v2.0 setup services report their 12 deployment steps; the journey names one.
+const deployStep = computed(() => journey.value?.deploy_step?.text ? journey.value.deploy_step : null)
+const checkedAt = computed(() => {
+  const value = journey.value?.checked_at
+  const parsed = value ? new Date(value) : null
+  return parsed && !Number.isNaN(parsed.getTime())
+    ? parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : ''
+})
+
+const submissionErrorMessage = computed(() => {
+  return provisioning.value?.submission?.state === 'error'
+    ? provisioning.value.submission.message || 'The setup request could not be completed.'
+    : ''
+})
+const submissionBlockedMessage = computed(() => {
+  return provisioning.value?.submission?.state === 'blocked'
+    ? provisioning.value.submission.message || 'The setup request is waiting for required facility or billing information.'
+    : ''
+})
+const canRetryStatusCheck = computed(() => {
+  const submission = provisioning.value?.submission
+  if (submission?.state === 'blocked') return true
+  if (submission) return submission.retryable === true
+  return provisioning.value?.retryable !== false
+})
+// Older portal records may still serialize the HFR deployment identifier as
+// `facility_fid` or `fid`. Never treat an MFL code or generic HIE ID as a FID.
+const deploymentFid = computed(() => {
+  const candidates = [props.facility.hfr_facility_id, props.facility.facility_fid, props.facility.fid, provisioning.value?.fid]
+  return candidates.map((value) => String(value || '').trim()).find(Boolean) || ''
+})
+const submissionCreated = computed(() => provisioning.value?.submission?.state === 'created')
+const submissionAlreadyExists = computed(() => provisioning.value?.submission?.state === 'already_exists')
+const submissionUnknown = computed(() => provisioning.value?.submission?.state === 'unknown')
+
+function stopPolling() {
+  if (pollTimer) clearTimeout(pollTimer)
+  pollTimer = null
+}
+
+function schedulePoll() {
+  stopPolling()
+  if (!pollingActive.value) return
+  pollTimer = setTimeout(pollStatus, pollIntervalMs.value)
+}
+
+// Silent refresh: keeps the last good state on failure and never flips the view
+// into its loading state, so the stepper does not flash every 30 seconds.
+async function pollStatus() {
+  const requestSequence = statusRequestSequence
+  const requestedMflCode = props.facility.mfl_code
+  if (document.hidden) return schedulePoll()
+  try {
+    const result = await props.getProvisioningStatus(requestedMflCode)
+    if (requestSequence === statusRequestSequence && result && typeof result === 'object' && result.status) {
+      provisioning.value = result
+    }
+  } catch {
+    // The next tick or a manual check retries.
+  } finally {
+    if (requestSequence === statusRequestSequence) schedulePoll()
+  }
+}
+
+async function copySiteLink() {
+  try {
+    await navigator.clipboard.writeText(liveSite.value?.url || '')
+    siteLinkCopied.value = true
+    setTimeout(() => { siteLinkCopied.value = false }, 2000)
+  } catch {
+    siteLinkCopied.value = false
+  }
+}
+
+// One-time view of the temporary HMIS owner password (setup service v2.0 returns it
+// while its credentials email is undelivered). The polled status only says whether
+// it is on offer; the password comes from a separate POST, lives in this component
+// while the dialog is open, and is cleared when the dialog closes.
+const ownerCredentials = computed(() => liveSite.value?.credentials?.password_available ? liveSite.value.credentials : null)
+const revealConfirmOpen = ref(false)
+const revealBusy = ref(false)
+const revealError = ref('')
+const revealedCredential = ref(null)
+const revealSaved = ref(false)
+const revealCopied = ref(false)
+const credentialViewedOn = computed(() => {
+  const value = ownerCredentials.value?.viewed_on
+  const parsed = value ? new Date(String(value).replace(' ', 'T')) : null
+  return parsed && !Number.isNaN(parsed.getTime())
+    ? parsed.toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : ''
+})
+
+function warnBeforeLeaving(event) {
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+async function revealOwnerPassword() {
+  revealBusy.value = true
+  revealError.value = ''
+  try {
+    const result = await call('crm.api.hfr.reveal_hmis_owner_password', { mfl_code: props.facility.mfl_code })
+    const data = result?.message && typeof result.message === 'object' ? result.message : result
+    if (!data?.password) throw new Error('The temporary password is not available right now.')
+    revealedCredential.value = { email: data.email, password: data.password }
+    revealSaved.value = false
+    revealCopied.value = false
+    window.addEventListener('beforeunload', warnBeforeLeaving)
+  } catch (error) {
+    revealError.value = (error?.messages || []).join(' ') || error?.message || 'The temporary password could not be shown.'
+  } finally {
+    revealBusy.value = false
+    revealConfirmOpen.value = false
+  }
+}
+
+async function copyOwnerPassword() {
+  try {
+    await navigator.clipboard.writeText(revealedCredential.value?.password || '')
+    revealCopied.value = true
+  } catch {
+    revealCopied.value = false
+    revealError.value = 'Copy did not work in this browser. Select the password and copy it by hand.'
+  }
+}
+
+function clearRevealedCredential() {
+  revealedCredential.value = null
+  revealSaved.value = false
+  revealCopied.value = false
+  window.removeEventListener('beforeunload', warnBeforeLeaving)
+}
+
+function closeRevealedCredential() {
+  if (!revealSaved.value) return
+  clearRevealedCredential()
+  revealError.value = ''
+  // Refresh so the card says when the password was viewed.
+  if (props.getProvisioningStatus) pollStatus()
+}
+
+async function loadStatus() {
+  stopPolling()
+  const requestSequence = ++statusRequestSequence
+  const requestedMflCode = props.facility.mfl_code
+  provisioningBusy.value = true
+  provisioningError.value = ''
+  try {
+    const result = await props.ensureProvisioningDraft(requestedMflCode)
+    if (requestSequence === statusRequestSequence) provisioning.value = result
+  } catch (error) {
+    if (requestSequence === statusRequestSequence) {
+      provisioning.value = null
+      provisioningError.value = error?.messages?.[0] || error?.message || 'We could not refresh implementation status. Your facility and billing records are unchanged. Try again shortly.'
+    }
+  } finally {
+    if (requestSequence === statusRequestSequence) {
+      provisioningBusy.value = false
+      schedulePoll()
+    }
+  }
+}
+onMounted(loadStatus)
+onUnmounted(() => {
+  stopPolling()
+  clearRevealedCredential()
+})
+watch(() => props.facility.mfl_code, () => {
+  provisioning.value = null
+  loadStatus()
+})
+
+const statusLabel = computed(() => {
+  if (provisioningBusy.value && !provisioning.value) return 'Checking status'
+  if (provisioningError.value && !provisioning.value) return 'Status unavailable'
+  if (journey.value) return journey.value.label || JOURNEY_LABELS[journey.value.phase]
+  if (submissionBlockedMessage.value) return 'Setup needs information'
+  if (submissionErrorMessage.value) return 'Setup request needs attention'
+  if (submissionUnknown.value) return 'Checking setup request'
+  if (submissionCreated.value) return 'Draft submitted for review'
+  if (submissionAlreadyExists.value) return 'Draft already exists'
+  const status = String(provisioning.value?.status || '').toLowerCase()
+  if (status === 'deployed') return 'Live'
+  if (status === 'draft') return 'Draft ready for review'
+  if (status === 'not_submitted') return 'Setup not started'
+  if (status === 'not_linked') return deploymentFid.value ? 'FID lookup needs attention' : 'HFR FID needed'
+  if (status.includes('error') || provisioning.value?.has_error) return 'Needs attention'
+  if (status === 'not_configured') return 'Tracking not connected'
+  if (status === 'route_not_provisioned') return 'Tracking not available yet'
+  if (status === 'needs_support') return 'Needs implementation support'
+  if (status === 'unavailable') return 'Status unavailable'
+  return provisioning.value?.status || 'Not started'
+})
+
+const statusTone = computed(() => {
+  if (provisioningBusy.value && !provisioning.value) return 'border-cx-brand-soft-border bg-cx-brand-soft text-cx-brand-ink'
+  if (provisioningError.value && !provisioning.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  if (journey.value) {
+    const phase = journey.value.phase
+    if (phase === 'live') return 'border-cx-success-border bg-cx-success-soft text-cx-success-ink'
+    if (phase === 'needs_attention') return 'border-cx-danger-border bg-cx-danger-soft text-cx-danger-ink'
+    if (phase === 'blocked') return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+    return 'border-cx-brand-soft-border bg-cx-brand-soft text-cx-brand-ink'
+  }
+  if (submissionBlockedMessage.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  if (submissionErrorMessage.value) return 'border-cx-danger-border bg-cx-danger-soft text-cx-danger-ink'
+  if (submissionUnknown.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  if (submissionCreated.value || submissionAlreadyExists.value) return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  const status = String(provisioning.value?.status || '').toLowerCase()
+  if (status === 'deployed') return 'border-cx-success-border bg-cx-success-soft text-cx-success-ink'
+  if (status === 'draft' || status === 'not_submitted') return 'border-cx-warning-border bg-cx-warning-soft text-cx-warning-ink'
+  if (status.includes('error') || status === 'needs_support' || provisioning.value?.has_error) return 'border-cx-danger-border bg-cx-danger-soft text-cx-danger-ink'
+  return 'border-cx-border bg-cx-well text-cx-ink-2'
+})
+
+const statusGuidance = computed(() => {
+  if (provisioningBusy.value && !provisioning.value) return 'Checking the setup service. If no setup exists, the service will prepare the request automatically when the facility is eligible.'
+  if (provisioningError.value && !provisioning.value) return 'The latest status is not available right now. You can retry without affecting your facility or payments.'
+  if (journey.value?.detail) return journey.value.detail
+  if (submissionBlockedMessage.value) return submissionBlockedMessage.value
+  if (submissionErrorMessage.value) return submissionErrorMessage.value
+  if (submissionUnknown.value) return provisioning.value.submission.message || 'The request response was unclear. We are checking whether a setup record was created before trying anything again.'
+  if (submissionCreated.value) return provisioning.value.submission.message || 'A draft setup request was created. The implementation team will review it before deployment.'
+  if (submissionAlreadyExists.value) return provisioning.value.submission.message || 'A setup request already exists. The implementation team will review it before deployment.'
+  if (provisioning.value?.error_title) return provisioning.value.message || 'The implementation service could not return the latest status.'
+  const status = String(provisioning.value?.status || '').toLowerCase()
+  if (status === 'draft') return 'A setup record exists. The implementation team must review it and start deployment from the setup tool.'
+  if (status === 'deployed') return 'The implementation service reports this facility as deployed.'
+  if (status === 'not_submitted') return 'No setup record exists yet. The setup request will be prepared automatically once the facility has the required HFR, administrator, and billing details.'
+  if (status === 'not_linked') return deploymentFid.value
+    ? `The portal has HFR FID ${deploymentFid.value}, but the setup service could not match it. Retry the status check; if it continues, contact network support and include this FID.`
+    : 'This facility has no saved HFR deployment FID. Add or refresh the facility from the Health Facility Registry, then check again.'
+  if (status.includes('error') || provisioning.value?.has_error) return 'The implementation team needs to review the latest deployment attempt.'
+  return provisioning.value?.message || (provisioningBusy.value ? 'Checking the implementation service…' : 'Implementation status has not been checked.')
+})
+
+const progressValue = computed(() => {
+  if (journey.value) return journey.value.progress ?? null
+  if (provisioning.value?.progress == null || provisioning.value?.progress === '') return null
+  const value = Number(provisioning.value?.progress)
+  return Number.isFinite(value) ? Math.min(100, Math.max(0, Math.round(value))) : null
+})
+
+const statusSource = computed(() => provisioning.value?.source === 'external_setup' ? 'Setup service' : provisioning.value?.source === 'hie_gateway' ? 'HIE gateway' : 'Status source pending')
+const setupUnavailable = computed(() => provisioning.value?.status === 'unavailable' || Boolean(provisioningError.value) || Boolean(submissionErrorMessage.value) || submissionUnknown.value)
+const setupConnectionReached = computed(() => Boolean(provisioning.value?.connection_reached))
+const setupAlertMessage = computed(() => submissionErrorMessage.value || (submissionUnknown.value ? provisioning.value?.submission?.message : '') || provisioning.value?.message || provisioningError.value)
+const errorDetails = computed(() => {
+  const details = provisioning.value?.submission?.error_details || provisioning.value?.error_details || provisioningError.value
+  return typeof details === 'string' ? details : details ? JSON.stringify(details, null, 2) : ''
+})
+const errorHttpStatus = computed(() => {
+  try {
+    return JSON.parse(errorDetails.value)?.http_status || ''
+  } catch {
+    return ''
+  }
+})
+const errorCorrelationId = computed(() => provisioning.value?.submission?.correlation_id || provisioning.value?.correlation_id || '')
+// A deployed site is ready only once its owner login exists, which the journey phase reflects.
+const goLiveReady = computed(() => journey.value ? journey.value.phase === 'live' : String(provisioning.value?.status || '').toLowerCase() === 'deployed')
+const configuredPackage = computed(() => props.tokenPackages.find((pkg) => pkg.item_code === props.facility.token_package_item_code) || null)
+const selectedPackageTokens = computed(() => Number(props.facility.token_quantity || configuredPackage.value?.token_quantity || 0))
+const selectedPackageCost = computed(() => Number(props.facility.package_gross_total ?? configuredPackage.value?.gross_total ?? props.facility.package_price ?? configuredPackage.value?.price ?? 0))
+const hasConfiguredPackage = computed(() => Boolean(props.facility.token_package || configuredPackage.value || selectedPackageTokens.value > 0))
+const facilityOutstandingInvoice = computed(() => props.invoices.find((invoice) => Number(invoice.amount || 0) > 0) || null)
+const facilityPaymentPending = computed(() => props.invoices.some((invoice) => Number(invoice.amount || 0) > 0 && pendingPaymentForInvoice(invoice)))
+const yesNo = (value) => value == null || value === '' ? '' : Number(value) ? 'Yes' : 'No'
+const hfrProfileGroups = computed(() => {
+  const details = [
+    {
+      title: 'Registration',
+      items: [
+        { label: 'Registration number', value: props.facility.registration_number },
+        { label: 'License number', value: props.facility.license_number },
+        { label: 'License type', value: props.facility.license_type },
+        { label: 'License expiry', value: props.facility.license_expiry },
+        { label: 'Board registration', value: props.facility.board_registration_number },
+        { label: 'Regulatory body', value: props.facility.regulatory_body },
+        { label: 'KRA PIN', value: props.facility.kra_pin },
+      ],
+    },
+    {
+      title: 'Location',
+      items: [
+        { label: 'County', value: props.facility.hfr_county || props.facility.county },
+        { label: 'Sub-county', value: props.facility.hfr_sub_county },
+        { label: 'Constituency', value: props.facility.hfr_constituency },
+        { label: 'Ward', value: props.facility.hfr_ward },
+        { label: 'Coordinates', value: props.facility.latitude != null && props.facility.longitude != null ? `${props.facility.latitude}, ${props.facility.longitude}` : '' },
+      ],
+    },
+    {
+      title: 'Facility profile',
+      items: [
+        { label: 'Type', value: props.facility.facility_type },
+        { label: 'Category', value: props.facility.facility_category },
+        { label: 'Level', value: props.facility.keph_level || props.facility.facility_level },
+        { label: 'Owner', value: props.facility.facility_owner },
+        { label: 'Owner type', value: props.facility.facility_owner_type },
+        { label: 'Operational status', value: props.facility.operational_status },
+        { label: 'Facility standing', value: props.facility.facility_standing },
+      ],
+    },
+    {
+      title: 'Capacity & hours',
+      items: [
+        { label: 'Beds', value: props.facility.number_of_beds },
+        { label: 'Cots', value: props.facility.number_of_cots },
+        { label: 'Open all day', value: yesNo(props.facility.open_whole_day) },
+        { label: 'Open weekends', value: yesNo(props.facility.open_weekends) },
+        { label: 'Open holidays', value: yesNo(props.facility.open_public_holidays) },
+        { label: 'Open late night', value: yesNo(props.facility.open_late_night) },
+      ],
+    },
+  ]
+
+  return details.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.value !== null && item.value !== undefined && item.value !== ''),
+  }))
+})
+
+const freePackages = computed(() => props.tokenPackages.filter((pkg) => {
+  const amount = Number(pkg.price_ex_vat ?? pkg.price ?? pkg.gross_total)
+  return Number.isFinite(amount) && amount <= 0
+}))
+const paidPackages = computed(() => props.tokenPackages.filter((pkg) => {
+  const amount = Number(pkg.price_ex_vat ?? pkg.price ?? pkg.gross_total)
+  return Number.isFinite(amount) && amount > 0
+}))
+
+function money(amount, currency) {
+  return new Intl.NumberFormat('en-KE', { style: 'currency', currency: currency || props.defaultCurrency, currencyDisplay: 'code', maximumFractionDigits: 0 }).format(amount || 0)
+}
+
+const draftOrders = computed(() => props.orders.filter((order) => order.is_draft))
+// Outstanding invoices plus draft orders, which have no invoice until they are reviewed.
+const amountDue = computed(() =>
+  props.invoices.reduce((sum, invoice) => sum + Math.max(Number(invoice.amount) || 0, 0), 0) +
+  draftOrders.value.reduce((sum, order) => sum + (Number(order.grand_total) || 0), 0),
+)
+// Until a package is paid for, show the one on order.
+const orderedPackage = computed(() => {
+  if (props.facility.token_package) return null
+  const order = props.orders.find((row) => row.crm_token_package_item)
+  return order ? packageName(order.crm_token_package_item) : null
+})
+const amountDueNote = computed(() => {
+  if (draftOrders.value.length) return `${draftOrders.value.length} ${draftOrders.value.length === 1 ? 'order' : 'orders'} to review before invoicing`
+  const count = props.invoices.filter((invoice) => Number(invoice.amount) > 0).length
+  const base = count ? `${count} outstanding ${count === 1 ? 'invoice' : 'invoices'}` : 'Nothing outstanding'
+  const shared = props.invoices.some(
+    (invoice) => Number(invoice.amount) > 0 && rowFacilityMfls(invoice).length > 1,
+  )
+  return shared ? `${base} · Includes invoices shared with other facilities` : base
+})
+
+// The server's commercial projection drives every plan-aware surface (SPEC 5.3/5.5).
+const commercial = computed(() => commercialOf(props.facility))
+const tokens = computed(() => showsTokens(props.facility))
+const topUp = computed(() => canTopUp(props.facility))
+
+const summaryCards = computed(() => {
+  const cards = []
+  // SPEC 6 matrix, checked in order: time_bound (never token copy, even with a token
+  // meter), then any live token balance (token plan or metered unknown), then unknown.
+  if (commercial.value.plan_type === 'time_bound') {
+    cards.push({
+      testid: 'facility-plan-card',
+      label: 'Plan',
+      value: commercial.value.plan.name || 'Not set up yet',
+      note: commercial.value.plan.cycle_label || commercial.value.journey_label || '',
+      valueClass: 'text-cx-ink',
+      icon: 'file-text',
+    })
+    cards.push({
+      testid: 'facility-next-invoice',
+      label: 'Next invoice',
+      value: balanceOrNextText(props.facility),
+      note: commercial.value.plan.next_invoice?.label || '',
+      valueClass: 'text-cx-ink',
+      icon: 'receipt',
+    })
+  } else if (tokens.value) {
+    cards.push({
+      testid: 'facility-available-tokens',
+      label: 'Available tokens',
+      value: liveBalanceText.value,
+      note: liveBalanceNote.value,
+      valueClass: 'text-cx-brand',
+      icon: 'coins',
+    })
+    cards.push({
+      testid: 'facility-current-package',
+      label: 'Current package',
+      value: props.facility.token_package || orderedPackage.value || 'None yet',
+      note: props.facility.token_package
+        ? props.facility.token_quantity
+          ? `${Number(props.facility.token_quantity).toLocaleString()} Care Tokens per package`
+          : 'Active package'
+        : orderedPackage.value
+          ? 'Ordered · tokens are added once paid'
+          : 'Choose a package to get started',
+      valueClass: 'text-cx-ink',
+      icon: null,
+    })
+  } else {
+    cards.push({
+      testid: 'facility-plan-card',
+      label: 'Plan',
+      value: 'Not set up yet',
+      note: topUp.value ? 'Choose a plan below' : '',
+      valueClass: 'text-cx-ink',
+      icon: 'file-text',
+    })
+  }
+  // P-114: a Fixed subscription's term, from metering (status, active since, expiry).
+  const subscription = subscriptionCard(props.facility.subscription)
+  if (subscription) {
+    cards.splice(1, 0, {
+      testid: 'facility-subscription',
+      label: 'Subscription',
+      value: subscription.value,
+      note: subscription.note,
+      valueClass: 'text-cx-ink',
+      icon: 'clock',
+    })
+  }
+  cards.push({
+    testid: 'facility-amount-due',
+    label: 'Amount to pay',
+    value: money(amountDue.value),
+    note: amountDueNote.value,
+    noteClass: draftOrders.value.length ? 'font-semibold text-cx-warning-ink' : 'text-cx-ink-2',
+    valueClass: 'text-cx-ink',
+    icon: null,
+  })
+  if (props.facility.network) {
+    cards.push({
+      testid: 'facility-partner-card',
+      label: 'Partner',
+      value: props.facility.network,
+      note: 'Your onboarding partner',
+      valueClass: 'text-cx-ink',
+      icon: 'globe',
+    })
+  }
+  return cards
+})
+const summaryGridClass = computed(() => {
+  const count = Math.min(summaryCards.value.length, 4)
+  return { 2: 'xl:grid-cols-2', 3: 'xl:grid-cols-3', 4: 'xl:grid-cols-4' }[count] || 'xl:grid-cols-3'
+})
+
+function packageName(itemCode) {
+  return props.tokenPackages.find((pkg) => pkg.item_code === itemCode)?.display_name || itemCode || 'Token order'
+}
+
+// Who this facility's invoices are billed to; read-only here, edited in the order review.
+const billing = ref(null)
+const billingState = ref('idle')
+async function loadBilling() {
+  const customer = props.facility.customer
+  billing.value = null
+  if (!customer) {
+    billingState.value = 'none'
+    return
+  }
+  billingState.value = 'loading'
+  try {
+    const response = await call('crm.api.customer_experience.get_billing_profile', { customer })
+    if (props.facility.customer !== customer) return
+    billing.value = response?.data || response
+    billingState.value = 'ready'
+  } catch {
+    if (props.facility.customer === customer) billingState.value = 'error'
+  }
+}
+onMounted(loadBilling)
+watch(() => props.facility.customer, loadBilling)
+const billingAddress = computed(() => billing.value?.addresses?.[0] || null)
+const billingAddressLines = computed(() => {
+  const address = billingAddress.value
+  if (!address) return []
+  return [address.address_line1, address.address_line2, [address.city, address.state].filter(Boolean).join(', '), address.country].filter(Boolean)
+})
+
+function pendingPaymentForInvoice(invoice) {
+  return props.payments.find((payment) => {
+    if (payment.status !== 'Pending Verification') return false
+    const invoiceNames = payment.invoice_names?.length
+      ? payment.invoice_names
+      : payment.invoice
+        ? [payment.invoice]
+        : []
+    return invoiceNames.some((name) => String(name) === String(invoice.name))
+  }) || null
+}
+
+// Live balance from OpenMeter (crm_get_facility_token_balances); absent when metering is off.
+const liveBalance = computed(() => props.facility.token_balance || null)
+const liveBalanceText = computed(() => tokenBalanceText(props.facility))
+const liveBalanceNote = computed(() => {
+  const entry = liveBalance.value
+  if (entry?.status !== 'ok') return 'Tokens are added when the package invoice is paid.'
+  const time = entry.as_of ? new Date(entry.as_of).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+  return time ? `Care Tokens · updated ${time}` : 'Care Tokens'
+})
+
+const billingJourney = ref(null)
+async function reviewInvoice() {
+  billingJourney.value?.selectTab('invoice')
+  await nextTick()
+  document.querySelector('[data-testid="facility-tabs"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+</script>
+
+<template>
+  <section class="mx-auto w-full max-w-6xl space-y-6 pb-8">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <button type="button" class="mb-3 inline-flex items-center gap-2 text-xs font-semibold text-cx-brand hover:underline" @click="emit('back')">
+          <CxIcon name="chevron-left" class="size-4" /> Back to facilities
+        </button>
+        <p class="text-xs font-semibold text-cx-ink-3">Facility portfolio</p>
+        <h1 class="mt-1 text-4xl font-semibold tracking-tight text-cx-ink">{{ facility.facility_name }}</h1>
+        <p class="mt-1 text-sm font-medium text-cx-ink-2">{{ facility.keph_level }} <span v-if="facility.county">· {{ facility.county }}</span></p>
+        <p class="mt-1 text-sm text-cx-ink-2" data-testid="facility-header-ids">Facility ID <span class="font-mono font-semibold text-cx-ink">{{ deploymentFid || 'not linked yet' }}</span><span v-if="facility.mfl_code"> · MFL <span class="font-mono font-semibold text-cx-ink">{{ facility.mfl_code }}</span></span></p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" class="inline-flex items-center gap-2 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2.5 text-xs font-semibold text-cx-ink-2 shadow-sm transition hover:bg-cx-well" @click="emit('open-support', facility)">
+          <CxIcon name="chat" class="size-4" /> Network support
+        </button>
+        <button
+          v-if="tokens"
+          type="button"
+          class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong"
+          @click="emit('open-top-up', facility, 'paid')"
+        >
+          Top up tokens
+        </button>
+        <button
+          v-else-if="topUp"
+          type="button"
+          class="rounded-cx-sm bg-cx-brand px-4 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong"
+          @click="emit('open-top-up', facility, 'paid')"
+        >
+          Choose a plan
+        </button>
+      </div>
+    </div>
+
+    <!-- Summary: plan-aware cards per the journey-by-plan matrix (SPEC 6) -->
+    <div class="grid gap-4 sm:grid-cols-2" :class="summaryGridClass" data-testid="facility-summary">
+      <article
+        v-for="card in summaryCards"
+        :key="card.testid"
+        :data-testid="card.testid"
+        class="flex flex-col rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx"
+      >
+        <p class="flex items-center gap-1.5 text-xs font-semibold text-cx-ink-3">
+          <CxIcon v-if="card.icon" :name="card.icon" class="size-4" /> {{ card.label }}
+        </p>
+        <p
+          :data-testid="`${card.testid}-value`"
+          class="mt-2 line-clamp-2 break-words text-3xl font-semibold tracking-tight sm:text-2xl"
+          :class="card.valueClass"
+          :title="card.value"
+        >{{ card.value }}</p>
+        <p v-if="card.note" class="mt-auto pt-1 text-xs" :class="card.noteClass || 'text-cx-ink-2'">{{ card.note }}</p>
+      </article>
+    </div>
+
+    <PlanPanel
+      :facility="facility"
+      :default-currency="defaultCurrency"
+      @open-top-up="(target, mode) => emit('open-top-up', target, mode)"
+      @open-support="emit('open-support', facility)"
+    />
+
+    <TokenAlertCard v-if="tokens" :facility="facility" :alert="tokenAlert" @saved="emit('token-alert-saved', $event)" />
+
+    <section class="overflow-hidden rounded-cx border border-cx-border bg-cx-surface shadow-cx">
+      <div class="border-b border-cx-border-soft bg-gradient-to-br from-cx-surface via-cx-surface to-cx-well/70 p-5 sm:p-7">
+        <div class="flex flex-wrap items-start justify-between gap-5">
+          <div class="max-w-3xl">
+            <p class="text-xs font-semibold text-cx-ink-3">Implementation</p>
+            <div class="mt-2 flex flex-wrap items-center gap-3">
+              <h2 class="text-lg font-semibold text-cx-ink">HMIS implementation</h2>
+              <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold" :class="statusTone">{{ statusLabel }}</span>
+            </div>
+            <p class="mt-2 max-w-2xl text-sm leading-relaxed text-cx-ink-2">{{ statusGuidance }}</p>
+          </div>
+          <button type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well disabled:opacity-50" :disabled="provisioningBusy" @click="loadStatus">
+            {{ provisioningBusy ? 'Checking…' : 'Check status' }}
+          </button>
+        </div>
+        <div v-if="provisioningBusy && !provisioning" class="cx-glass-panel mt-5 flex max-w-3xl items-center gap-4 rounded-cx-sm border border-cx-brand-soft-border bg-cx-brand-soft/60 p-4" aria-live="polite" aria-busy="true">
+          <span class="size-5 shrink-0 animate-spin rounded-full border-2 border-cx-brand/25 border-t-cx-brand" />
+          <div class="min-w-0 flex-1 space-y-2">
+            <p class="text-xs font-semibold text-cx-brand-ink">Checking status and preparing setup if needed</p>
+            <div class="h-2 w-3/4 animate-pulse rounded-full bg-cx-brand/15" />
+            <p class="text-xs text-cx-ink-2">This can take a few seconds. You can continue reviewing facility details.</p>
+          </div>
+        </div>
+        <div v-else-if="setupUnavailable" class="cx-glass-panel mt-5 flex max-w-3xl items-start gap-3 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/70 p-4" role="alert">
+          <span class="grid size-9 shrink-0 place-items-center rounded-full bg-cx-surface text-cx-warning-ink"><CxIcon name="alert" class="size-4" /></span>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="text-xs font-semibold text-cx-ink">{{ provisioning?.error_title || 'Status could not be refreshed' }}</p>
+              <span v-if="setupConnectionReached" class="rounded-full border border-cx-success-border bg-cx-success-soft px-2 py-0.5 text-[11px] font-semibold text-cx-success-ink">Service reached</span>
+            </div>
+            <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">{{ setupAlertMessage }}</p>
+            <p v-if="provisioning?.error_code === 'method_not_published'" class="mt-2 text-xs leading-relaxed text-cx-ink-2">Your portal reached the deployment service, but its status method is not published for portal access yet. Token selection and billing information below remain available.</p>
+            <p v-if="submissionUnknown" class="mt-2 text-xs leading-relaxed text-cx-ink-2">The next check will look for an existing setup before any further submission is considered.</p>
+            <button v-if="errorDetails" type="button" class="mt-3 text-xs font-semibold text-cx-brand underline-offset-2 hover:underline" @click="errorDetailsOpen = true">View deployment diagnostics</button>
+          </div>
+          <button v-if="canRetryStatusCheck" type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">Retry check</button>
+        </div>
+        <div v-else-if="submissionBlockedMessage" class="cx-glass-panel mt-5 flex max-w-3xl items-start gap-3 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/70 p-4" role="status">
+          <span class="grid size-9 shrink-0 place-items-center rounded-full bg-cx-surface text-cx-warning-ink"><CxIcon name="alert" class="size-4" /></span>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-semibold text-cx-ink">Setup request not sent</p>
+            <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">{{ submissionBlockedMessage }}</p>
+            <p class="mt-2 text-xs leading-relaxed text-cx-ink-2">Update the missing facility or billing information, then check again. This check did not create a setup draft.</p>
+          </div>
+          <button type="button" class="shrink-0 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" :disabled="provisioningBusy" @click="loadStatus">{{ provisioningBusy ? 'Checking…' : 'Check again' }}</button>
+        </div>
+        <section v-if="liveSite" class="mt-5 max-w-3xl overflow-hidden rounded-cx-sm border border-cx-success-border bg-cx-success-soft" data-testid="hmis-live-site">
+          <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
+            <div class="flex min-w-0 items-center gap-3">
+              <span class="grid size-10 shrink-0 place-items-center rounded-full bg-cx-surface text-cx-success-ink shadow-sm"><CxIcon name="globe" class="size-5" /></span>
+              <div class="min-w-0">
+                <p class="text-xs font-semibold text-cx-success-ink">Your HMIS site</p>
+                <p v-if="liveSite.url" class="mt-0.5 break-all font-mono text-sm font-semibold text-cx-ink sm:text-base">{{ liveSite.url }}</p>
+                <p v-else class="mt-0.5 text-xs font-medium text-cx-ink-2">The site address is in the welcome email sent to your administrator.</p>
+                <p v-if="liveSite.live_since" class="mt-0.5 text-xs font-medium text-cx-ink-2" data-testid="hmis-live-since">{{ liveSite.live_since }}</p>
+              </div>
+            </div>
+            <div v-if="liveSite.url" class="flex flex-wrap items-center gap-2">
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 shadow-sm hover:bg-cx-well" @click="copySiteLink">
+                <CxIcon :name="siteLinkCopied ? 'check' : 'copy'" class="size-3.5" /> {{ siteLinkCopied ? 'Copied' : 'Copy link' }}
+              </button>
+              <a :href="liveSite.login_url || liveSite.url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-success px-3.5 py-2 text-xs font-semibold text-cx-contrast shadow-cx hover:opacity-90">
+                Open HMIS <CxIcon name="arrow-right" class="size-3.5" />
+              </a>
+            </div>
+          </div>
+          <div class="border-t border-cx-success-border/60 bg-cx-surface px-4 py-3.5 sm:px-5">
+            <p class="text-xs font-semibold text-cx-ink">How to sign in</p>
+            <ol class="mt-2 space-y-1.5">
+              <li v-for="(step, index) in liveSite.instructions" :key="index" class="flex items-start gap-2.5 text-xs leading-relaxed text-cx-ink-2">
+                <span class="grid size-5 shrink-0 place-items-center rounded-full bg-cx-success-soft text-[11px] font-semibold text-cx-success-ink">{{ index + 1 }}</span>
+                <span class="break-words">{{ step }}</span>
+              </li>
+            </ol>
+            <div v-if="ownerCredentials" class="mt-3 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/60 p-3" data-testid="hmis-owner-password">
+              <template v-if="ownerCredentials.can_view">
+                <p class="text-xs font-semibold text-cx-ink">Temporary password</p>
+                <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">You can view it once. Have somewhere safe ready to save it, such as a password manager, before you open it.</p>
+                <button type="button" class="mt-2 inline-flex items-center gap-1.5 rounded-cx-sm bg-cx-brand px-3 py-2 text-xs font-semibold text-cx-contrast shadow-sm hover:opacity-90 disabled:opacity-50" :disabled="revealBusy" @click="revealConfirmOpen = true">
+                  <CxIcon name="eye" class="size-3.5" /> View temporary password
+                </button>
+              </template>
+              <div v-else-if="ownerCredentials.viewed_on" class="text-xs leading-relaxed text-cx-ink-2">
+                <p>{{ ownerCredentials.viewed_by_you ? 'You viewed' : 'The facility administrator viewed' }} the temporary password on {{ credentialViewedOn || ownerCredentials.viewed_on }}. It cannot be shown again.</p>
+                <p class="mt-1">Lost it? <button type="button" class="font-semibold text-cx-brand underline-offset-2 hover:underline" @click="emit('open-support')">Contact Network Support</button>.</p>
+              </div>
+              <p v-else class="text-xs leading-relaxed text-cx-ink-2">Only the facility administrator{{ ownerCredentials.owner_email_masked ? ` (${ownerCredentials.owner_email_masked})` : '' }} can view the temporary password, once, while signed in to this portal.</p>
+              <p v-if="revealError" class="mt-2 text-xs font-medium text-cx-danger-ink" role="alert">{{ revealError }}</p>
+            </div>
+          </div>
+        </section>
+        <section v-else-if="journeySteps.length" class="mt-5 max-w-3xl rounded-cx-sm border border-cx-border-soft bg-cx-surface p-4 sm:p-5" data-testid="hmis-setup-journey" aria-live="polite">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="text-xs font-semibold text-cx-ink">{{ journey.poll ? journey.headline : 'Where setup stopped' }}</p>
+              <p v-if="journey.estimate" class="mt-1 inline-flex items-center gap-1.5 text-xs font-medium" :class="journey.estimate.overdue ? 'text-cx-warning-ink' : 'text-cx-ink-2'" data-testid="hmis-setup-estimate">
+                <CxIcon name="clock" class="size-3.5" /> {{ journey.estimate.label }}
+              </p>
+            </div>
+            <span v-if="progressValue != null" class="text-sm font-semibold text-cx-ink">{{ progressValue }}%</span>
+          </div>
+          <div v-if="progressValue != null" class="mt-3 h-2 overflow-hidden rounded-full bg-cx-well" role="progressbar" :aria-valuenow="progressValue" aria-valuemin="0" aria-valuemax="100" aria-label="Reported deployment progress">
+            <div class="h-full rounded-full bg-cx-brand transition-all duration-500" :style="{ width: `${progressValue}%` }"></div>
+          </div>
+          <p v-if="deployStep" class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium" :class="deployStep.state === 'failed' ? 'text-cx-danger-ink' : 'text-cx-ink-2'" data-testid="hmis-deploy-step">
+            <CxIcon :name="deployStep.state === 'failed' ? 'alert' : 'clock'" class="size-3.5" /> {{ deployStep.text }}
+          </p>
+          <ol class="mt-4 grid gap-2 sm:grid-cols-4">
+            <li v-for="step in journeySteps" :key="step.key" class="flex items-center gap-2 sm:flex-col sm:items-start sm:gap-1.5" :data-state="step.state">
+              <span class="grid size-6 shrink-0 place-items-center rounded-full border text-[11px] font-semibold"
+                :class="{
+                  'border-cx-success-border bg-cx-success-soft text-cx-success-ink': step.state === 'done',
+                  'border-cx-brand bg-cx-brand-soft text-cx-brand-ink': step.state === 'current',
+                  'border-cx-danger-border bg-cx-danger-soft text-cx-danger-ink': step.state === 'error',
+                  'border-cx-border bg-cx-well text-cx-ink-3': step.state === 'upcoming',
+                }">
+                <CxIcon v-if="step.state === 'done'" name="check" class="size-3.5" />
+                <CxIcon v-else-if="step.state === 'error'" name="alert" class="size-3.5" />
+                <span v-else-if="step.state === 'current'" class="size-2 animate-pulse rounded-full bg-cx-brand" />
+                <span v-else class="size-1.5 rounded-full bg-cx-ink-3/40" />
+              </span>
+              <span class="text-xs leading-snug" :class="step.state === 'upcoming' ? 'text-cx-ink-3' : 'font-semibold text-cx-ink'">{{ step.label }}</span>
+            </li>
+          </ol>
+        </section>
+        <div v-else-if="progressValue != null" class="mt-6 max-w-3xl">
+          <div class="mb-2 flex items-center justify-between text-xs"><span class="font-semibold text-cx-ink-2">Reported deployment progress</span><strong class="text-sm text-cx-ink">{{ progressValue }}%</strong></div>
+          <div class="h-2.5 overflow-hidden rounded-full bg-cx-well"><div class="h-full rounded-full bg-cx-brand transition-all duration-500" :style="{ width: `${progressValue}%` }"></div></div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-cx-border-soft bg-cx-surface px-5 py-3.5 text-xs sm:px-7">
+        <div class="flex items-baseline gap-2">
+          <span class="text-cx-ink-2">Last attempt</span>
+          <span class="font-medium text-cx-ink">{{ provisioning?.last_attempt || 'None recorded' }}</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-cx-ink-2">Status source</span>
+          <span class="font-medium text-cx-ink">{{ statusSource }}</span>
+        </div>
+        <div v-if="checkedAt" class="flex items-baseline gap-2">
+          <span class="text-cx-ink-2">Last checked</span>
+          <span class="font-medium text-cx-ink">{{ checkedAt }}</span>
+        </div>
+        <span v-if="pollingActive" class="inline-flex items-center gap-1.5 text-xs font-medium text-cx-brand-ink" data-testid="hmis-auto-refresh">
+          <span class="size-1.5 animate-pulse rounded-full bg-cx-brand" /> {{ pollIntervalLabel }}
+        </span>
+      </div>
+
+      <section v-if="!goLiveReady && tokens && commercial.plan_type !== 'time_bound'" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="max-w-2xl">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-lg font-semibold text-cx-ink">Go-live token allocation</h3>
+              <span class="rounded-full border border-cx-warning-border bg-cx-warning-soft px-2.5 py-1 text-[11px] font-semibold text-cx-warning-ink">Required before setup</span>
+            </div>
+            <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">The setup service requires a token quantity when a go-live setup request is created. Choose a free package or order paid tokens; after paying an invoice, wait for payment verification before setup proceeds.</p>
+          </div>
+          <div v-if="hasConfiguredPackage" class="min-w-0 max-w-full rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-right shadow-sm sm:max-w-xs">
+            <p class="text-xs font-semibold text-cx-ink-3">Selected package</p>
+            <p class="mt-1 break-words text-xs font-semibold text-cx-ink">{{ configuredPackage?.display_name || facility.token_package || 'Token package' }}</p>
+            <p class="mt-0.5 text-xs text-cx-ink-2">{{ selectedPackageTokens.toLocaleString() }} tokens · {{ selectedPackageCost > 0 ? money(selectedPackageCost, facility.package_currency) : 'Free' }}</p>
+          </div>
+        </div>
+
+        <div v-if="hasConfiguredPackage" class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-cx-sm border border-cx-border-soft bg-cx-surface p-3">
+          <div class="flex items-start gap-2.5">
+            <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-cx-success-soft text-cx-success-ink"><CxIcon name="check" class="size-4" /></span>
+            <div>
+              <p class="text-xs font-semibold text-cx-ink">Package selection is on file</p>
+              <p class="mt-0.5 text-xs leading-relaxed text-cx-ink-2">This is the package quantity on file, not a live remaining-token balance or confirmation that setup has received this quantity. The status API does not report token usage.</p>
+              <p v-if="facilityPaymentPending" class="mt-1 text-xs font-semibold text-cx-warning-ink">A facility payment is awaiting verification. Wait for confirmation before paying that invoice again.</p>
+              <p v-else-if="facilityOutstandingInvoice" class="mt-1 text-xs text-cx-ink-2">This facility has an outstanding invoice below. Review its status before ordering more tokens.</p>
+            </div>
+          </div>
+          <button v-if="facilityOutstandingInvoice && !facilityPaymentPending" type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well" @click="reviewInvoice">Review invoice</button>
+        </div>
+
+        <div v-else class="mt-4 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/50 p-3 text-xs leading-relaxed text-cx-warning-ink">
+          No token package is selected for this facility yet. Choose a free allocation or select a paid package to create its order and invoice.
+        </div>
+
+        <div v-if="!hasConfiguredPackage" class="mt-4 flex flex-wrap gap-2">
+          <button v-if="freePackages.length" type="button" class="rounded-cx-sm border border-cx-brand-soft-border bg-cx-brand-soft px-3.5 py-2.5 text-xs font-semibold text-cx-brand-ink transition hover:bg-cx-brand-soft/80" @click="emit('open-top-up', facility, 'free')">
+            Choose free tokens
+          </button>
+          <button v-if="paidPackages.length" type="button" class="rounded-cx-sm bg-cx-brand px-3.5 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-brand-strong" @click="emit('open-top-up', facility, 'paid')">
+            Choose paid tokens
+          </button>
+          <button v-if="!freePackages.length && !paidPackages.length" type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-xs font-semibold text-cx-ink-2" @click="emit('open-support', facility)">
+            Ask Network Support
+          </button>
+        </div>
+        <div v-else-if="paidPackages.length" class="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p class="text-xs leading-relaxed text-cx-ink-2">The portal can create token orders and show their invoices. The go-live setup request itself is reviewed by the implementation team.</p>
+          <button type="button" class="rounded-cx-sm border border-cx-border bg-cx-surface px-3 py-2 text-xs font-semibold text-cx-ink-2 hover:bg-cx-well" @click="emit('open-top-up', facility, 'paid')">Buy more tokens</button>
+        </div>
+      </section>
+
+      <section v-else-if="!goLiveReady && commercial.plan_type === 'unknown' && topUp" class="border-t border-cx-border-soft bg-gradient-to-r from-cx-brand-soft/50 via-cx-surface to-cx-surface px-4 py-5 sm:px-6">
+        <div class="max-w-2xl">
+          <h3 class="text-lg font-semibold text-cx-ink">Go-live plan</h3>
+          <p class="mt-1 text-xs leading-relaxed text-cx-ink-2">Choose a plan for this facility to continue.</p>
+          <button
+            v-if="freePackages.length || paidPackages.length"
+            type="button"
+            class="mt-3 rounded-cx-sm bg-cx-brand px-3.5 py-2.5 text-xs font-semibold text-cx-contrast shadow-cx transition hover:bg-cx-brand-strong"
+            @click="emit('open-top-up', facility, 'paid')"
+          >
+            Choose a plan
+          </button>
+          <button
+            v-else
+            type="button"
+            class="mt-3 rounded-cx-sm border border-cx-border bg-cx-surface px-3.5 py-2.5 text-xs font-semibold text-cx-ink-2"
+            @click="emit('open-support', facility)"
+          >
+            Ask Network Support
+          </button>
+        </div>
+      </section>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-well px-4 py-3 sm:px-6">
+        <p class="text-xs text-cx-ink-2">{{ tokens ? 'Need help with go-live or token allocation?' : 'Need help with go-live?' }}</p>
+        <button type="button" class="inline-flex items-center gap-1.5 text-xs font-semibold text-cx-brand hover:underline" @click="emit('open-support', facility)">
+          Contact Network Support <CxIcon name="chevron-right" class="size-3.5" />
+        </button>
+      </div>
+    </section>
+
+    <BillingJourney
+      ref="billingJourney"
+      :facility="facility"
+      :initial-tab="initialTab"
+      :orders="orders"
+      :invoices="invoices"
+      :payments="payments"
+      :busy-order="busyOrder"
+      :account-level-count="accountLevelCount"
+      :default-currency="defaultCurrency"
+      :token-packages="tokenPackages"
+      @review-order="emit('review-order', $event)"
+      @create-invoice="emit('create-invoice', $event)"
+      @pay="emit('pay', $event)"
+      @open-billing="emit('open-billing')"
+    >
+      <template #overview>
+        <section class="overflow-hidden rounded-cx border border-cx-border bg-cx-surface shadow-cx" data-testid="facility-profile">
+          <header class="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-6">
+            <div>
+              <p class="text-xs font-semibold text-cx-ink-3">Health Facility Registry</p>
+              <h3 class="mt-1 text-lg font-semibold text-cx-ink">Facility profile</h3>
+            </div>
+            <div class="flex items-center gap-2">
+              <span v-if="facility.hfr_last_synced" class="text-xs text-cx-ink-2">Synced {{ facility.hfr_last_synced }}</span>
+            </div>
+          </header>
+
+          <div class="grid gap-px border-y border-white/60 bg-cx-border-soft/70 sm:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.6fr)]">
+            <div class="bg-cx-brand-soft/45 px-4 py-4 sm:px-6 sm:py-5">
+              <p class="text-xs font-semibold text-cx-ink-3">Facility ID</p>
+              <p v-if="deploymentFid" class="mt-1.5 break-all font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ deploymentFid }}</p>
+              <p v-else class="mt-1.5 text-sm font-semibold text-cx-warning-ink">Not linked to the Health Facility Registry yet</p>
+            </div>
+            <div class="bg-cx-surface px-4 py-4 sm:px-6 sm:py-5">
+              <p class="text-xs font-semibold text-cx-ink-3">MFL code</p>
+              <p class="mt-1.5 font-mono text-lg font-semibold tracking-tight text-cx-ink">{{ facility.mfl_code || '—' }}</p>
+            </div>
+          </div>
+
+          <div class="grid sm:grid-cols-2 xl:grid-cols-4">
+            <div v-for="(group, index) in hfrProfileGroups" :key="group.title" class="min-w-0 px-4 py-4 sm:px-5 sm:py-5" :class="index ? 'border-t border-cx-border-soft sm:border-l xl:border-t-0' : ''">
+              <h4 class="mb-2 text-xs font-semibold text-cx-ink-3">{{ group.title }}</h4>
+              <dl v-if="group.items.length" class="divide-y divide-cx-border-soft/80">
+                <div v-for="item in group.items" :key="item.label" class="flex items-start justify-between gap-3 py-2 first:pt-1 last:pb-1">
+                  <dt class="text-xs leading-relaxed text-cx-ink-3">{{ item.label }}</dt>
+                  <dd class="max-w-[60%] break-words text-right text-xs font-medium leading-relaxed text-cx-ink">{{ item.value }}</dd>
+                </div>
+              </dl>
+              <p v-else class="text-xs leading-relaxed text-cx-ink-2">No details recorded</p>
+            </div>
+          </div>
+          <div v-if="!deploymentFid" class="flex flex-wrap items-center justify-between gap-3 border-t border-cx-border-soft bg-cx-warning-soft/25 px-4 py-3 sm:px-6" data-testid="facility-fid-missing">
+            <p class="text-xs leading-relaxed text-cx-warning-ink">Add this facility's HFR Facility ID to enable deployment and setup.</p>
+            <button type="button" class="text-xs font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
+          </div>
+        </section>
+      </template>
+      <template #billing>
+        <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx" data-testid="facility-billing">
+            <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 class="text-lg font-semibold text-cx-ink">Billing information</h2>
+              <button type="button" class="inline-flex items-center gap-1 text-xs font-semibold text-cx-brand hover:underline" @click="emit('open-billing')">
+                Billing &amp; Invoices <CxIcon name="chevron-right" class="size-3.5" />
+              </button>
+            </div>
+            <div v-if="billingState === 'loading'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2" aria-busy="true">Loading billing details…</div>
+            <div v-else-if="billingState === 'none'" class="rounded-cx-sm bg-cx-well p-4 text-xs text-cx-ink-2">Billing details appear here once this facility has a billing account.</div>
+            <div v-else-if="billingState === 'error'" class="flex flex-wrap items-center justify-between gap-2 rounded-cx-sm border border-cx-warning-border bg-cx-warning-soft/60 p-4 text-xs text-cx-warning-ink" role="alert">
+              <span>We could not load the billing details.</span>
+              <button type="button" class="font-semibold underline" @click="loadBilling">Try again</button>
+            </div>
+            <dl v-else-if="billing" class="grid gap-4 sm:grid-cols-3">
+              <div class="rounded-cx-sm border border-cx-border-soft p-4">
+                <dt class="text-xs font-semibold text-cx-ink-3">Billed to</dt>
+                <dd v-if="billing.customer_name" class="mt-1 break-words text-sm font-semibold text-cx-ink" data-testid="billing-customer">{{ billing.customer_name }}</dd>
+                <dd v-else class="mt-1 text-sm text-cx-ink-2" data-testid="billing-customer">Added when you review your first order</dd>
+              </div>
+              <div class="rounded-cx-sm border border-cx-border-soft p-4">
+                <dt class="text-xs font-semibold text-cx-ink-3">KRA PIN</dt>
+                <dd v-if="billing.kra_pin" class="mt-1 font-mono text-sm font-semibold text-cx-ink">{{ billing.kra_pin }}</dd>
+                <dd v-else class="mt-1 text-sm text-cx-ink-2">Added when you review your first order</dd>
+              </div>
+              <div class="rounded-cx-sm border border-cx-border-soft p-4">
+                <dt class="text-xs font-semibold text-cx-ink-3">Billing address</dt>
+                <dd v-if="billingAddressLines.length" class="mt-1 text-sm font-semibold leading-snug text-cx-ink">
+                  <span v-for="line in billingAddressLines" :key="line" class="block">{{ line }}</span>
+                </dd>
+                <dd v-else class="mt-1 text-sm text-cx-ink-2">Added when you review your first order</dd>
+              </div>
+            </dl>
+        </section>
+      </template>
+    </BillingJourney>
+
+
+    <div v-if="revealConfirmOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation" tabindex="-1" @click.self="revealConfirmOpen = false" @keydown.esc="revealConfirmOpen = false">
+      <section role="dialog" aria-modal="true" aria-labelledby="hmis-reveal-confirm-title" class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl" data-testid="hmis-reveal-confirm">
+        <h2 id="hmis-reveal-confirm-title" class="text-sm font-semibold text-cx-ink">View the temporary password once?</h2>
+        <p class="mt-2 text-xs leading-relaxed text-cx-ink-2">The password is shown one time only. After you close the window it cannot be shown again, so have a password manager or another safe place ready to save it.</p>
+        <div class="mt-4 flex justify-end gap-2">
+          <button type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="revealConfirmOpen = false">Not now</button>
+          <button type="button" class="rounded-md bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:opacity-90 disabled:opacity-50" :disabled="revealBusy" @click="revealOwnerPassword">{{ revealBusy ? 'Opening…' : 'Show password' }}</button>
+        </div>
+      </section>
+    </div>
+    <div v-if="revealedCredential" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation">
+      <section role="dialog" aria-modal="true" aria-labelledby="hmis-owner-password-title" class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl" data-testid="hmis-owner-password-dialog">
+        <h2 id="hmis-owner-password-title" class="text-sm font-semibold text-cx-ink">Temporary HMIS password</h2>
+        <p class="mt-1 text-xs font-medium text-cx-danger-ink">Shown once. It will not be available again after you close this window.</p>
+        <dl class="mt-4 space-y-3">
+          <div>
+            <dt class="text-xs font-semibold text-cx-ink-3">Sign in with</dt>
+            <dd class="mt-0.5 break-all text-sm font-medium text-cx-ink">{{ revealedCredential.email }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs font-semibold text-cx-ink-3">Temporary password</dt>
+            <dd class="mt-1 flex items-center gap-2">
+              <code class="min-w-0 flex-1 select-all break-all rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-base font-semibold text-cx-ink" data-testid="hmis-owner-password-value">{{ revealedCredential.password }}</code>
+              <button type="button" class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="copyOwnerPassword">
+                <CxIcon :name="revealCopied ? 'check' : 'copy'" class="size-3.5" /> {{ revealCopied ? 'Copied' : 'Copy' }}
+              </button>
+            </dd>
+          </div>
+        </dl>
+        <p class="mt-3 text-xs leading-relaxed text-cx-ink-2">Change this password after you first sign in to HMIS.</p>
+        <p v-if="revealError" class="mt-2 text-xs font-medium text-cx-danger-ink" role="alert">{{ revealError }}</p>
+        <label class="mt-4 flex items-start gap-2 text-xs font-medium text-cx-ink">
+          <input v-model="revealSaved" type="checkbox" class="mt-0.5 rounded border-slate-300" data-testid="hmis-owner-password-saved" />
+          I have copied and saved this password
+        </label>
+        <div class="mt-4 flex justify-end">
+          <button type="button" class="rounded-md bg-cx-brand px-3 py-1.5 text-xs font-semibold text-cx-contrast hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!revealSaved" @click="closeRevealedCredential">Close</button>
+        </div>
+      </section>
+    </div>
+    <div v-if="errorDetailsOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="presentation" tabindex="-1" @click.self="errorDetailsOpen = false" @keydown.esc="errorDetailsOpen = false">
+      <section role="dialog" aria-modal="true" aria-labelledby="hmis-error-details-title" class="w-full max-w-3xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <header class="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 id="hmis-error-details-title" class="text-sm font-semibold text-cx-ink">Deployment service diagnostics</h2>
+              <span v-if="errorHttpStatus" class="rounded-full bg-red-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-red-700">HTTP {{ errorHttpStatus }}</span>
+            </div>
+            <p class="mt-1 text-xs text-slate-600">Facility ID {{ deploymentFid || 'not linked' }} · MFL {{ facility.mfl_code }}</p>
+            <p v-if="errorCorrelationId" class="mt-1 break-all font-mono text-xs text-slate-500">Correlation ID: {{ errorCorrelationId }}</p>
+          </div>
+          <button type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="errorDetailsOpen = false">Close</button>
+        </header>
+        <div class="bg-slate-950 px-5 py-4">
+          <p class="mb-2 text-xs font-semibold text-slate-400">Upstream response / deployment log</p>
+          <pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-slate-100">{{ errorDetails }}</pre>
+        </div>
+        <p class="border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs leading-relaxed text-slate-600">Credentials are redacted. If the response only says “Internal Server Error,” the deployment service did not include its traceback in the API response; share the correlation ID with the deployment administrator so they can find the server-side log.</p>
+      </section>
+    </div>
+  </section>
+</template>
+

@@ -1,0 +1,2385 @@
+<template>
+  <div class="mt-6 space-y-5 px-3 pb-6 sm:px-0">
+    <!-- ── DEAL PROGRESS (prominent hero) ─────────────────────────────────── -->
+    <div
+      class="rounded-xl border border-outline-gray-2 bg-surface-white p-5 shadow-sm dark:bg-surface-gray-1"
+    >
+      <div class="mb-4 flex items-end justify-between gap-3">
+        <div>
+          <h3 class="text-base font-semibold text-ink-gray-9">
+            {{ __('Deal Progress') }}
+          </h3>
+          <p class="mt-0.5 text-xs text-ink-gray-5">
+            {{ __('{0} of {1} stages complete', [doneCount, stages.length]) }}
+          </p>
+        </div>
+        <span class="text-2xl font-bold leading-none text-ink-gray-9"
+          >{{ progressPct }}%</span
+        >
+      </div>
+
+      <!-- Overall progress bar -->
+      <div
+        class="mb-6 h-2 w-full overflow-hidden rounded-full bg-surface-gray-3"
+      >
+        <div
+          class="h-full rounded-full bg-green-500 transition-all duration-500 dark:bg-green-400"
+          :style="{ width: progressPct + '%' }"
+        />
+      </div>
+
+      <!-- Loading skeleton when lifecycle prop not yet available -->
+      <div v-if="!props.lifecycle" class="flex gap-2">
+        <div
+          v-for="n in 6"
+          :key="n"
+          class="h-16 flex-1 animate-pulse rounded-lg bg-surface-gray-2"
+        />
+      </div>
+
+      <!-- Stepper: vertical timeline on mobile, horizontal on lg -->
+      <ol v-else class="flex flex-col gap-6 lg:flex-row lg:gap-0">
+        <li
+          v-for="(st, i) in stages"
+          :key="st.key"
+          class="relative flex flex-1 items-start gap-3 lg:flex-col lg:items-center lg:gap-0 lg:text-center"
+        >
+          <!-- Connector to the previous node -->
+          <span
+            v-if="i > 0"
+            class="absolute left-4 top-[-24px] h-6 w-0.5 lg:left-auto lg:right-1/2 lg:top-4 lg:h-0.5 lg:w-full"
+            :class="
+              stages[i - 1].state === 'done'
+                ? 'bg-green-500 dark:bg-green-400'
+                : 'bg-surface-gray-3'
+            "
+          />
+
+          <!-- Node circle -->
+          <div
+            class="relative z-10 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border text-xs font-semibold"
+            :class="nodeClass(st.state)"
+          >
+            <svg
+              v-if="st.state === 'done'"
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            <svg
+              v-else-if="st.state === 'blocked'"
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+            <span v-else>{{ i + 1 }}</span>
+          </div>
+
+          <!-- Label + reference + status pill -->
+          <div class="min-w-0 lg:mt-2 lg:w-full lg:px-1">
+            <p class="text-xs font-semibold text-ink-gray-8">
+              {{ __(st.label) }}
+            </p>
+            <p class="truncate text-xs text-ink-gray-5" :title="st.ref || ''">
+              {{ st.ref || '—' }}
+            </p>
+            <span
+              class="mt-1 inline-flex items-center gap-1 rounded-full bg-surface-gray-2 px-2 py-0.5 dark:bg-surface-gray-3"
+            >
+              <span
+                :class="statusDot(st.status)"
+                class="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+              />
+              <span
+                class="text-xs font-medium"
+                :class="statusText(st.status)"
+                >{{ __(st.statusLabel) }}</span
+              >
+            </span>
+          </div>
+        </li>
+      </ol>
+
+      <!-- A network/Tiberbu signatory who is also a CRM user can act from the
+           protected Quote page. This is a separate authenticated branch: the
+           existing public invitation + OTP pathway remains unchanged. -->
+      <section
+        v-if="authenticatedSigningContext?.action_required"
+        class="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20"
+        aria-label="Your pending signature"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p
+              class="text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300"
+            >
+              {{ __('Your signature is required') }}
+            </p>
+            <p class="mt-1 text-sm font-medium text-ink-gray-9">
+              {{
+                authenticatedSigningContext.signatory_name || __('Signatory')
+              }}
+              <span class="font-normal text-ink-gray-6">
+                · {{ authenticatedSigningContext.role }}
+              </span>
+            </p>
+            <p class="mt-1 text-xs text-ink-gray-6">
+              {{
+                __(
+                  'You are signed in as {0}. Review the contract and sign securely from this page.',
+                  [authenticatedSigningContext.email],
+                )
+              }}
+            </p>
+          </div>
+          <Button variant="solid" theme="red" @click="openAuthenticatedSigning">
+            {{ __('Review & sign') }}
+          </Button>
+        </div>
+      </section>
+
+      <Dialog
+        v-model="showAuthenticatedSigning"
+        :options="{ title: __('Sign contract from CRM'), size: 'xl' }"
+      >
+        <template #body-content>
+          <div class="space-y-4">
+            <div v-if="authenticatedContractLoading" class="space-y-2">
+              <div class="h-4 animate-pulse rounded bg-surface-gray-2" />
+              <div class="h-4 animate-pulse rounded bg-surface-gray-2" />
+              <div class="h-32 animate-pulse rounded bg-surface-gray-2" />
+            </div>
+            <template v-else>
+              <div
+                class="max-h-64 overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-white p-4 text-sm text-ink-gray-8 dark:bg-surface-gray-1"
+              >
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <div v-html="authenticatedContractHtml" />
+              </div>
+              <div
+                v-if="authenticatedSigningProgress.length"
+                class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+              >
+                <p
+                  class="text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+                >
+                  {{ __('Signing progress') }}
+                </p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <span
+                    v-for="(signer, index) in authenticatedSigningProgress"
+                    :key="`${signer.role}-${signer.name}-${index}`"
+                    class="rounded-full px-2 py-1 text-xs font-medium"
+                    :class="
+                      signer.status === 'Signed'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-amber-100 text-amber-700'
+                    "
+                  >
+                    {{ signer.name }} · {{ signer.status }}
+                  </span>
+                </div>
+              </div>
+              <label class="flex items-start gap-2 text-sm text-ink-gray-7">
+                <input
+                  v-model="authenticatedReadConfirmed"
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4"
+                />
+                <span>{{
+                  __(
+                    'I have reviewed this contract and am authorised to sign it.',
+                  )
+                }}</span>
+              </label>
+              <div>
+                <p
+                  class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-gray-5"
+                >
+                  {{ __('Your signature') }}
+                </p>
+                <SignatureCanvas
+                  ref="authenticatedCanvas"
+                  :disabled="!authenticatedReadConfirmed"
+                  @has-signature="authenticatedHasSignature = $event"
+                />
+              </div>
+            </template>
+            <p v-if="authenticatedSigningError" class="text-sm text-ink-red-6">
+              {{ authenticatedSigningError }}
+            </p>
+          </div>
+        </template>
+        <template #actions>
+          <Button variant="subtle" @click="closeAuthenticatedSigning">
+            {{ __('Cancel') }}
+          </Button>
+          <Button
+            variant="solid"
+            theme="red"
+            :loading="authenticatedSigning"
+            :disabled="
+              !authenticatedReadConfirmed ||
+              !authenticatedHasSignature ||
+              authenticatedContractLoading
+            "
+            @click="submitAuthenticatedSignature"
+          >
+            {{ __('Confirm signature') }}
+          </Button>
+        </template>
+      </Dialog>
+
+      <!-- Signatory detail: edit unsigned signatories, resend/regenerate links -->
+      <div
+        v-if="contractExists && facilitySignatories.length"
+        class="mt-6 border-t border-outline-gray-2 pt-4"
+      >
+        <p
+          class="mb-2 text-xs font-medium uppercase tracking-wide text-ink-gray-4"
+        >
+          {{ __('Facility Signatories') }}
+        </p>
+        <div class="space-y-2">
+          <div
+            v-for="s in facilitySignatories"
+            :key="s.role"
+            class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+          >
+            <!-- Display row -->
+            <div
+              v-if="editingRole !== s.role"
+              class="flex flex-wrap items-center gap-x-3 gap-y-1"
+            >
+              <span
+                :class="statusDot(s.status)"
+                class="h-2 w-2 flex-shrink-0 rounded-full"
+              />
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-ink-gray-8">
+                  {{ s.name || __(s.role) }}
+                </p>
+                <p class="truncate text-xs text-ink-gray-5">
+                  {{ __(s.role)
+                  }}<template v-if="s.email"> · {{ s.email }}</template>
+                  <template v-if="s.phone"> · {{ s.phone }}</template>
+                </p>
+                <p v-if="smsDelivery(s)" class="mt-0.5 text-xs text-ink-gray-5">
+                  {{ __('SMS: {0}', [smsDelivery(s).status]) }}
+                  <template v-if="smsDelivery(s).attempts">
+                    · {{ __('{0} attempt(s)', [smsDelivery(s).attempts]) }}
+                  </template>
+                </p>
+                <p
+                  v-if="
+                    isSignedStatus(s.status) &&
+                    (s.signature_ip || s.signature_device)
+                  "
+                  class="mt-0.5 truncate text-[11px] text-ink-gray-5"
+                  :title="s.signature_user_agent || undefined"
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ s.signature_ip || __('Not captured') }}
+                  <template v-if="s.signature_device">
+                    · {{ s.signature_device }}
+                  </template>
+                </p>
+              </div>
+              <span
+                class="ml-auto text-xs font-medium"
+                :class="statusText(s.status)"
+                >{{ __(s.status) }}</span
+              >
+
+              <!-- Actions for signatories who have not yet signed -->
+              <div
+                v-if="canEdit(s.status)"
+                class="flex w-full items-center gap-4 pt-1 sm:w-auto sm:basis-full sm:justify-end sm:pt-1"
+              >
+                <button
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="!canGenerate || resendingKey === rowKey(s)"
+                  :title="
+                    canGenerate
+                      ? __('Edit this signatory')
+                      : __('Sales Manager role required')
+                  "
+                  @click="startEdit(s)"
+                >
+                  {{ __('Edit') }}
+                </button>
+                <button
+                  v-if="isPendingStatus(s.status)"
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="!canGenerate || resendingKey === rowKey(s)"
+                  :title="
+                    canGenerate
+                      ? __('Regenerate and re-send the signing link')
+                      : __('Sales Manager role required')
+                  "
+                  @click="doResend(s.role, s.row_name)"
+                >
+                  {{
+                    resendingKey === rowKey(s)
+                      ? __('Sending…')
+                      : __('Resend link')
+                  }}
+                </button>
+                <button
+                  v-if="canRetrySms(s)"
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="retryingSmsKey === rowKey(s)"
+                  @click="retrySms(s)"
+                >
+                  {{
+                    retryingSmsKey === rowKey(s)
+                      ? __('Retrying…')
+                      : __('Retry SMS')
+                  }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Inline edit form — free-text name + email for unsigned signatories -->
+            <div v-else class="space-y-2">
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <input
+                  v-model="editName"
+                  type="text"
+                  :placeholder="__('Full legal name')"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+                <input
+                  v-model="editEmail"
+                  type="email"
+                  :placeholder="__('signatory@hospital.org')"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+                <input
+                  v-model="editPhone"
+                  type="tel"
+                  inputmode="tel"
+                  autocomplete="tel"
+                  :placeholder="__('Phone for SMS')"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+              </div>
+              <p
+                v-if="isSignedStatus(s.status)"
+                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
+              >
+                {{
+                  __('This signatory has already signed and cannot be edited.')
+                }}
+              </p>
+              <p v-else class="text-xs text-ink-gray-4">
+                {{
+                  __(
+                    'Changing the email invalidates the old link and re-sends a fresh one to the new address.',
+                  )
+                }}
+              </p>
+              <div class="flex items-center justify-end gap-2">
+                <Button variant="subtle" @click="cancelEdit">{{
+                  __('Cancel')
+                }}</Button>
+                <Button
+                  variant="solid"
+                  :loading="savingEdit"
+                  :disabled="!editName.trim() || !editEmail.trim()"
+                  @click="saveEdit(s.role)"
+                >
+                  {{ __('Save') }}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── EXEC NOTES ────────────────────────────────────────────────────── -->
+    <div
+      class="rounded-lg border border-outline-gray-2 bg-surface-white p-4 dark:bg-surface-gray-1"
+    >
+      <label
+        class="mb-1 block text-xs font-medium uppercase tracking-wide text-ink-gray-4"
+        for="exec-notes"
+      >
+        {{ __('Exec Notes') }}
+      </label>
+      <textarea
+        id="exec-notes"
+        v-model="execNotes"
+        rows="4"
+        :placeholder="__('Record your review notes here...')"
+        class="w-full rounded-md border border-outline-gray-2 bg-surface-white p-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-1"
+        @blur="saveNotes"
+      />
+    </div>
+
+    <!-- ── GENERATE CONTRACT FORM ─────────────────────────────────────────── -->
+    <div
+      class="flex items-center justify-between border-b border-outline-gray-2 pb-3"
+    >
+      <h3 class="text-base font-semibold text-ink-gray-9">
+        {{ __('Send Contract for Signing') }}
+      </h3>
+    </div>
+
+    <!-- Success banner -->
+    <div
+      v-if="successMsg"
+      class="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 dark:border-green-800 dark:bg-green-900/20"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600 dark:text-green-400"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+      <p class="text-sm text-green-800 dark:text-green-300">{{ successMsg }}</p>
+    </div>
+
+    <!-- Error banner -->
+    <div
+      v-if="errorMsg"
+      class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 dark:border-red-800 dark:bg-red-900/20"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600 dark:text-red-400"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="15" y1="9" x2="9" y2="15" />
+        <line x1="9" y1="9" x2="15" y2="15" />
+      </svg>
+      <p class="text-sm text-red-800 dark:text-red-300">{{ errorMsg }}</p>
+    </div>
+
+    <!-- Permission notice — visible-but-informative, never hidden -->
+    <div
+      v-if="!canGenerate"
+      class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-800 dark:bg-amber-900/20"
+    >
+      <p class="text-xs text-amber-700 dark:text-amber-400">
+        {{ __('Sales Manager role required to generate contracts.') }}
+      </p>
+    </div>
+
+    <!-- Nomination form -->
+    <div
+      class="rounded-lg border border-outline-gray-2 bg-surface-white p-4 dark:bg-surface-gray-1"
+    >
+      <p
+        class="mb-4 text-xs font-medium uppercase tracking-wide text-ink-gray-4"
+      >
+        {{ __('Nominate Facility Signatory & Witness') }}
+      </p>
+
+      <!-- Facility Signatory -->
+      <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+            {{ __('Facility Signatory Name')
+            }}<span class="text-red-500">*</span>
+          </label>
+          <input
+            v-model="facilitySignatoryName"
+            type="text"
+            :placeholder="__('Full legal name')"
+            :disabled="formLocked"
+            class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+            {{ __('Facility Signatory Email')
+            }}<span class="text-red-500">*</span>
+          </label>
+          <input
+            v-model="facilitySignatoryEmail"
+            type="email"
+            :placeholder="__('signatory@hospital.org')"
+            :disabled="formLocked"
+            class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+            {{ __('Facility Signatory Phone') }}
+          </label>
+          <input
+            v-model="facilitySignatoryPhone"
+            type="tel"
+            inputmode="tel"
+            autocomplete="tel"
+            :placeholder="__('+254 7xx xxx xxx')"
+            :disabled="formLocked"
+            class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+      </div>
+
+      <!-- Facility Witness -->
+      <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+            {{ __('Facility Witness Name') }}<span class="text-red-500">*</span>
+          </label>
+          <input
+            v-model="facilityWitnessName"
+            type="text"
+            :placeholder="__('Full legal name')"
+            :disabled="formLocked"
+            class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+            {{ __('Facility Witness Email')
+            }}<span class="text-red-500">*</span>
+          </label>
+          <input
+            v-model="facilityWitnessEmail"
+            type="email"
+            :placeholder="__('witness@hospital.org')"
+            :disabled="formLocked"
+            class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+            {{ __('Facility Witness Phone') }}
+          </label>
+          <input
+            v-model="facilityWitnessPhone"
+            type="tel"
+            inputmode="tel"
+            autocomplete="tel"
+            :placeholder="__('+254 7xx xxx xxx')"
+            :disabled="formLocked"
+            class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+      </div>
+
+      <!-- Co-signatories — Network Signatory(ies) + Tiberbu Signatory.
+           Pre-generate: read-only preview resolved from the network / Opt-In config.
+           Post-generate: editable per-contract — correct an unsigned row, or add a
+           configured co-signatory that is missing from the contract (legacy /
+           reconfigured). Each signs via the same OTP + pad once invited. -->
+      <div class="mb-6">
+        <div class="mb-2 flex items-center justify-between">
+          <div>
+            <label class="block text-xs font-medium text-ink-gray-6">
+              {{ __('Network & Tiberbu Co-Signatories') }}
+            </label>
+            <p class="mt-0.5 text-xs text-ink-gray-4">
+              {{
+                __('Settings contacts are shown here. Signed rows are locked.')
+              }}
+              <template v-if="tiberbuSigningRequirement">
+                ·
+                {{
+                  __('Tiberbu rule: {0}', [tiberbuSigningRequirement])
+                }}</template
+              >
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <span v-if="coSignersLoading" class="text-xs text-ink-gray-4">{{
+              __('Loading…')
+            }}</span>
+            <Button
+              v-if="contractExists"
+              variant="subtle"
+              size="sm"
+              :loading="syncingCo"
+              :label="__('Sync from settings')"
+              @click="syncConfiguredSignatories"
+            />
+          </div>
+        </div>
+
+        <!-- Post-generate: editable rows (on-contract rows + configured-but-missing) -->
+        <div v-if="contractExists" class="space-y-2">
+          <div
+            v-for="item in coSignatoryItems"
+            :key="item.key"
+            class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+          >
+            <!-- Display row -->
+            <div
+              v-if="coEditKey !== item.key"
+              class="flex flex-wrap items-center gap-x-3 gap-y-1"
+            >
+              <span
+                class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-xs font-semibold text-ink-gray-7 dark:bg-surface-gray-4"
+              >
+                {{ initials(item.name || item.email) }}
+              </span>
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-ink-gray-8">
+                  {{ item.name || __(item.role) }}
+                </p>
+                <p class="truncate text-xs text-ink-gray-5">
+                  {{ __(item.role)
+                  }}<template v-if="item.email"> · {{ item.email }}</template>
+                  <template v-if="item.phone"> · {{ item.phone }}</template>
+                </p>
+                <p
+                  v-if="smsDelivery(item)"
+                  class="mt-0.5 text-xs text-ink-gray-5"
+                >
+                  {{ __('SMS: {0}', [smsDelivery(item).status]) }}
+                  <template v-if="smsDelivery(item).attempts">
+                    · {{ __('{0} attempt(s)', [smsDelivery(item).attempts]) }}
+                  </template>
+                </p>
+                <p
+                  v-if="
+                    item.onContract &&
+                    isSignedStatus(item.status) &&
+                    (item.signature_ip || item.signature_device)
+                  "
+                  class="mt-0.5 truncate text-[11px] text-ink-gray-5"
+                  :title="item.signature_user_agent || undefined"
+                >
+                  {{ __('Audit') }} · {{ __('Public IP') }}:
+                  {{ item.signature_ip || __('Not captured') }}
+                  <template v-if="item.signature_device">
+                    · {{ item.signature_device }}
+                  </template>
+                </p>
+              </div>
+              <span
+                v-if="item.onContract"
+                class="ml-auto text-xs font-medium"
+                :class="statusText(item.status)"
+                >{{ __(item.status) }}</span
+              >
+              <span
+                v-else
+                class="ml-auto rounded-full bg-surface-gray-3 px-2 py-0.5 text-xs font-medium text-ink-gray-6 dark:bg-surface-gray-4"
+                >{{ __('Not on contract') }}</span
+              >
+
+              <!-- Actions: Edit an unsigned on-contract row, or Add a missing one -->
+              <div
+                v-if="!item.onContract || canEdit(item.status)"
+                class="flex w-full items-center gap-4 pt-1 sm:w-auto sm:basis-full sm:justify-end sm:pt-1"
+              >
+                <button
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="
+                    !canGenerate || savingCo || resendingKey === rowKey(item)
+                  "
+                  :title="
+                    canGenerate
+                      ? item.onContract
+                        ? __('Edit this co-signatory')
+                        : __('Add this co-signatory to the contract')
+                      : __('Sales Manager role required')
+                  "
+                  @click="startCoEdit(item)"
+                >
+                  {{ item.onContract ? __('Edit') : __('Add to contract') }}
+                </button>
+                <button
+                  v-if="item.onContract && isPendingStatus(item.status)"
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="!canGenerate || resendingKey === rowKey(item)"
+                  :title="
+                    canGenerate
+                      ? __('Regenerate and re-send the signing link')
+                      : __('Sales Manager role required')
+                  "
+                  @click="doResend(item.role, item.row_name)"
+                >
+                  {{
+                    resendingKey === rowKey(item)
+                      ? __('Sending…')
+                      : __('Resend link')
+                  }}
+                </button>
+                <button
+                  v-if="item.onContract && canRetrySms(item)"
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+                  :disabled="retryingSmsKey === rowKey(item)"
+                  @click="retrySms(item)"
+                >
+                  {{
+                    retryingSmsKey === rowKey(item)
+                      ? __('Retrying…')
+                      : __('Retry SMS')
+                  }}
+                </button>
+                <button
+                  v-if="item.onContract && canRemoveCoSignatory(item)"
+                  type="button"
+                  class="text-xs underline text-ink-gray-6 hover:text-red-600 disabled:opacity-40 disabled:no-underline"
+                  :disabled="
+                    !canGenerate || removingKey === rowKey(item) || savingCo
+                  "
+                  :title="
+                    canGenerate
+                      ? __('Remove this unsigned signatory from the contract')
+                      : __('Sales Manager role required')
+                  "
+                  @click="removeCoSignatory(item)"
+                >
+                  {{
+                    removingKey === rowKey(item)
+                      ? __('Removing…')
+                      : __('Remove')
+                  }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Inline edit / add form — free-text name + email for every co-signatory -->
+            <div v-else class="space-y-2">
+              <label class="block text-xs font-medium text-ink-gray-6">
+                {{
+                  isTiberbuRole(item.role)
+                    ? __('Tiberbu Signatory')
+                    : __('Network Signatory')
+                }}
+              </label>
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <input
+                  v-model="coEditName"
+                  type="text"
+                  :placeholder="__('Full legal name')"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+                <input
+                  v-model="coEditPhone"
+                  type="tel"
+                  inputmode="tel"
+                  autocomplete="tel"
+                  :placeholder="__('Phone for SMS')"
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+                <input
+                  v-model="coEditEmail"
+                  type="email"
+                  :placeholder="
+                    isTiberbuRole(item.role)
+                      ? __('signatory@tiberbu.com')
+                      : __('signatory@network.org')
+                  "
+                  class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+                />
+              </div>
+              <p
+                v-if="!coEditIsAdd && isSignedStatus(item.status)"
+                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
+              >
+                {{
+                  __(
+                    'This co-signatory has already signed and cannot be edited.',
+                  )
+                }}
+              </p>
+              <p v-else class="text-xs text-ink-gray-4">
+                <template v-if="isTiberbuRole(item.role)">
+                  {{
+                    coEditIsAdd
+                      ? __(
+                          'Adds a Tiberbu co-signatory to this contract only. Opt-In Settings is not changed.',
+                        )
+                      : __(
+                          'Changing the email invalidates the old link and re-sends a fresh one. This contract only — Opt-In Settings is not changed.',
+                        )
+                  }}
+                </template>
+                <template v-else>
+                  {{
+                    __(
+                      'Saves this signatory to the network configuration (used by future contracts) and updates them on this contract. Changing the email re-sends a fresh signing link.',
+                    )
+                  }}
+                </template>
+              </p>
+              <div class="flex items-center justify-end gap-2">
+                <Button variant="subtle" @click="cancelCoEdit">{{
+                  __('Cancel')
+                }}</Button>
+                <Button
+                  variant="solid"
+                  :loading="savingCo"
+                  :disabled="!coEditName.trim() || !coEditEmail.trim()"
+                  @click="saveCoEdit"
+                >
+                  {{ coEditIsAdd ? __('Add to contract') : __('Save') }}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <!-- Add a co-signatory from scratch. Network → written back to the network
+               config; Tiberbu → this contract only (never the Opt-In singleton). -->
+          <div
+            v-if="coEditKey === ADD_KEY"
+            class="space-y-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+          >
+            <label class="block text-xs font-medium text-ink-gray-6">
+              {{
+                isTiberbuRole(coEditRole)
+                  ? __('Add Tiberbu Signatory')
+                  : __('Add Network Signatory')
+              }}
+            </label>
+
+            <!-- Free-text name + email for both roles -->
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <input
+                v-model="coEditName"
+                type="text"
+                :placeholder="__('Full legal name')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+              />
+              <input
+                v-model="coEditEmail"
+                type="email"
+                :placeholder="
+                  isTiberbuRole(coEditRole)
+                    ? __('signatory@tiberbu.com')
+                    : __('signatory@network.org')
+                "
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-gray-3 dark:bg-surface-gray-1"
+              />
+              <input
+                v-model="coEditPhone"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel"
+                :placeholder="__('Phone for SMS')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 dark:bg-surface-gray-1"
+              />
+            </div>
+
+            <div
+              v-if="isTiberbuRole(coEditRole)"
+              class="text-xs"
+              aria-live="polite"
+              role="status"
+            >
+              <span v-if="coEditUserLookupLoading" class="text-ink-gray-5">
+                {{ __('Checking for an existing user account…') }}
+              </span>
+              <span
+                v-else-if="coEditUserLookup?.linked"
+                class="font-medium text-green-700 dark:text-green-400"
+              >
+                ✓
+                {{ __('Existing user account linked') }}
+                <span v-if="coEditUserLookup.full_name" class="font-normal">
+                  · {{ coEditUserLookup.full_name }}
+                </span>
+              </span>
+              <span
+                v-else-if="coEditUserLookup?.checked"
+                class="text-ink-gray-5"
+              >
+                {{
+                  __(
+                    'No active user account found — this signer will use the secure email/SMS link.',
+                  )
+                }}
+              </span>
+              <span
+                v-else-if="coEditUserLookupError"
+                class="text-amber-700 dark:text-amber-400"
+              >
+                {{
+                  __(
+                    'We could not verify the account right now. You can still add this signer.',
+                  )
+                }}
+              </span>
+            </div>
+
+            <p class="text-xs text-ink-gray-4">
+              {{
+                isTiberbuRole(coEditRole)
+                  ? __(
+                      'Adds a Tiberbu co-signatory to this contract only. Opt-In Settings is not changed.',
+                    )
+                  : __(
+                      'Saves this signatory to the network configuration (used by future contracts) and adds them to this contract.',
+                    )
+              }}
+            </p>
+            <div class="flex items-center justify-end gap-2">
+              <Button variant="subtle" @click="cancelCoEdit">{{
+                __('Cancel')
+              }}</Button>
+              <Button
+                variant="solid"
+                :loading="savingCo"
+                :disabled="!coEditName.trim() || !coEditEmail.trim()"
+                @click="saveCoEdit"
+              >
+                {{ __('Add to contract') }}
+              </Button>
+            </div>
+          </div>
+
+          <!-- Add actions (hidden while an edit/add form is open) -->
+          <div
+            v-else-if="!coEditKey"
+            class="flex flex-wrap items-center gap-4 pt-1"
+          >
+            <button
+              type="button"
+              class="text-xs font-medium underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+              :disabled="!canGenerate || !networkSlug"
+              :title="
+                !canGenerate
+                  ? __('Sales Manager role required')
+                  : !networkSlug
+                    ? __(
+                        'No opt-in network is linked to this deal, so a network signatory cannot be saved.',
+                      )
+                    : __(
+                        'Add a network signatory (saved to the network configuration)',
+                      )
+              "
+              @click="startAddNetwork"
+            >
+              + {{ __('Add Network Signatory') }}
+            </button>
+            <button
+              type="button"
+              class="text-xs font-medium underline text-ink-gray-6 hover:text-ink-gray-8 disabled:opacity-40 disabled:no-underline"
+              :disabled="!canGenerate"
+              :title="
+                canGenerate
+                  ? __('Add the Tiberbu signatory to this contract')
+                  : __('Sales Manager role required')
+              "
+              @click="startAddTiberbu"
+            >
+              + {{ __('Add Tiberbu Signatory') }}
+            </button>
+          </div>
+
+          <p v-if="coSignatoryItems.length" class="text-xs text-ink-gray-4">
+            {{
+              __(
+                'Co-signatories are invited automatically once the facility signatory signs. They can sign in any order.',
+              )
+            }}
+          </p>
+          <p v-else class="text-xs text-ink-gray-4">
+            {{
+              __(
+                'No co-signatories yet. Add a Network or Tiberbu signatory so the contract can be co-signed.',
+              )
+            }}
+          </p>
+        </div>
+
+        <!-- Pre-generate: read-only preview resolved from configuration -->
+        <div v-else-if="!contractExists && coSigners.length" class="space-y-2">
+          <div
+            v-for="(cs, i) in coSigners"
+            :key="`${cs.signer_role}:${cs.email}:${i}`"
+            class="flex items-center gap-3 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 dark:bg-surface-gray-2"
+          >
+            <span
+              class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-xs font-semibold text-ink-gray-7 dark:bg-surface-gray-4"
+            >
+              {{ initials(cs.full_name || cs.email) }}
+            </span>
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium text-ink-gray-8">
+                {{ cs.full_name || cs.email }}
+              </p>
+              <p class="truncate text-xs text-ink-gray-5">
+                {{ __(cs.signer_role)
+                }}<template v-if="cs.email"> · {{ cs.email }}</template>
+                <template v-if="cs.phone"> · {{ cs.phone }}</template>
+              </p>
+            </div>
+          </div>
+          <p class="text-xs text-ink-gray-4">
+            {{
+              __(
+                'These co-signatories are seeded onto the contract at generation and invited automatically once the facility signatory signs. They can sign in any order.',
+              )
+            }}
+          </p>
+        </div>
+
+        <!-- Pre-generate, nothing configured — co-signatories are added on the
+             contract itself once it is generated (see the Add controls above). -->
+        <div
+          v-else-if="!coSignersLoading"
+          class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-800 dark:bg-amber-900/20"
+        >
+          <p class="text-xs text-amber-700 dark:text-amber-400">
+            {{
+              __(
+                'No Network or Tiberbu co-signatories are configured for this network. You can add them on the contract once it is generated.',
+              )
+            }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Tiberbu approval contacts are configured alongside signatories but do
+           not sign the contract. Keep them visible on the quote for a clear
+           hand-off, and refresh them with the same settings sync action above. -->
+      <div
+        v-if="tiberbuApprovers.length"
+        class="mb-6 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-3 dark:bg-surface-gray-2"
+      >
+        <p class="text-xs font-medium uppercase tracking-wide text-ink-gray-4">
+          {{ __('Tiberbu approval contacts') }}
+        </p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+          <div
+            v-for="approver in tiberbuApprovers"
+            :key="`${approver.email}:${approver.full_name}`"
+            class="min-w-0 rounded-md bg-surface-white px-3 py-2 dark:bg-surface-gray-1"
+          >
+            <p class="truncate text-sm font-medium text-ink-gray-8">
+              {{ approver.full_name || approver.email }}
+            </p>
+            <p class="truncate text-xs text-ink-gray-5">
+              <template v-if="approver.email">{{ approver.email }}</template>
+              <template v-if="approver.phone">
+                <span v-if="approver.email"> · </span>{{ approver.phone }}
+              </template>
+            </p>
+          </div>
+        </div>
+        <p class="mt-2 text-xs text-ink-gray-4">
+          {{
+            __(
+              'Shown from Opt-In Settings. These contacts receive approval notifications after execution.',
+            )
+          }}
+        </p>
+      </div>
+
+      <Dialog
+        v-model="showDispatchDialog"
+        :options="{ title: __('Dispatch contract'), size: 'md' }"
+      >
+        <template #body-content>
+          <div class="space-y-4">
+            <p class="text-sm text-ink-gray-6">
+              {{
+                __(
+                  'Send a PDF copy of this contract to any email address. This does not change the configured signatory or signing link.',
+                )
+              }}
+            </p>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+                {{ __('Recipient email') }}<span class="text-red-500">*</span>
+              </label>
+              <input
+                v-model="dispatchEmail"
+                type="email"
+                autocomplete="email"
+                :placeholder="__('name@organisation.org')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2"
+                @keyup.enter="dispatchContract"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-ink-gray-6">
+                {{ __('Recipient name') }}
+              </label>
+              <input
+                v-model="dispatchName"
+                type="text"
+                autocomplete="name"
+                :placeholder="__('Optional')"
+                class="w-full rounded-lg border border-outline-gray-2 bg-surface-white px-3 py-2 text-sm text-ink-gray-9 placeholder-ink-gray-4 focus:outline-none focus:ring-2 focus:ring-outline-blue-4 dark:bg-surface-gray-2"
+              />
+            </div>
+            <p v-if="dispatchError" class="text-sm text-ink-red-6">
+              {{ dispatchError }}
+            </p>
+          </div>
+        </template>
+        <template #actions>
+          <Button
+            variant="subtle"
+            :disabled="dispatching"
+            @click="showDispatchDialog = false"
+          >
+            {{ __('Cancel') }}
+          </Button>
+          <Button
+            variant="solid"
+            :disabled="!dispatchEmail.trim()"
+            :loading="dispatching"
+            @click="dispatchContract"
+          >
+            {{ __('Send PDF copy') }}
+          </Button>
+        </template>
+      </Dialog>
+
+      <!-- Action row -->
+      <div class="flex flex-wrap items-center justify-end gap-3">
+        <span
+          v-if="contractExists && !successMsg"
+          class="text-xs text-ink-gray-5"
+        >
+          {{ __('Contract already generated — see Deal Progress above.') }}
+        </span>
+        <Button
+          v-if="contractExists"
+          variant="subtle"
+          :loading="downloadLoading"
+          @click="doDownloadPdf"
+        >
+          <template #prefix>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </template>
+          {{ __('Download PDF') }}
+        </Button>
+        <Button
+          v-if="contractExists && canGenerate"
+          variant="solid"
+          icon="lucide-send"
+          @click="openDispatchDialog"
+        >
+          {{ __('Dispatch contract') }}
+        </Button>
+        <Button
+          v-if="!contractExists"
+          variant="solid"
+          :disabled="generateDisabled"
+          :loading="isGenerating"
+          @click="doGenerate"
+        >
+          {{ __('Generate Contract') }}
+        </Button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { createResource, toast, Button, Dialog } from 'frappe-ui'
+import { usersStore } from '@/stores/users'
+import { sessionStore } from '@/stores/session'
+import { collectSigningDeviceInfo } from '@/utils/signingAudit'
+import SignatureCanvas from '../ContractSigning/SignatureCanvas.vue'
+
+// ---------------------------------------------------------------------------
+// Props / Emits
+// ---------------------------------------------------------------------------
+const props = defineProps({
+  dealId: { type: String, required: true },
+  oisDoc: { type: Object, default: null },
+  lifecycle: { type: Object, default: null },
+})
+
+const emit = defineEmits(['lifecycle-reload', 'email-dispatched'])
+
+// ---------------------------------------------------------------------------
+// Stores — mirrors AppSidebar.vue lines 444-445 exactly
+// ---------------------------------------------------------------------------
+const { user: sessionUser } = sessionStore()
+const { isManager } = usersStore()
+
+// ---------------------------------------------------------------------------
+// Lifecycle alias (null-safe)
+// ---------------------------------------------------------------------------
+const lc = computed(() => props.lifecycle ?? {})
+
+const contractExists = computed(() => !!lc.value.contract?.name)
+
+// ---------------------------------------------------------------------------
+// Authenticated CRM signatory branch
+// ---------------------------------------------------------------------------
+const authenticatedSigningContext = ref(null)
+const authenticatedSigningContextResource = createResource({
+  url: 'crm.api.contracts.get_authenticated_signing_context',
+})
+const authenticatedContractResource = createResource({
+  url: 'crm.api.contracts.get_authenticated_contract',
+})
+const authenticatedSignResource = createResource({
+  url: 'crm.api.contracts.sign_authenticated',
+})
+const showAuthenticatedSigning = ref(false)
+const authenticatedContractLoading = ref(false)
+const authenticatedContractHtml = ref('')
+const authenticatedSigningProgress = ref([])
+const authenticatedReadConfirmed = ref(false)
+const authenticatedHasSignature = ref(false)
+const authenticatedSigning = ref(false)
+const authenticatedSigningError = ref('')
+const authenticatedCanvas = ref(null)
+
+function sanitizeAuthenticatedContractHtml(raw) {
+  return (raw || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/?(?:html|head|body|meta|link|title)[^>]*>/gi, '')
+}
+
+async function loadAuthenticatedSigningContext(contract) {
+  authenticatedSigningContext.value = null
+  if (!contract) return
+  try {
+    authenticatedSigningContext.value =
+      await authenticatedSigningContextResource.submit({
+        contract,
+      })
+  } catch {
+    // Most CRM users are not contract signatories. A denied/non-matching probe
+    // is intentionally silent and leaves the normal contract panel unchanged.
+  }
+}
+
+watch(
+  () => lc.value.contract?.name,
+  (contract) => loadAuthenticatedSigningContext(contract),
+  { immediate: true },
+)
+
+async function openAuthenticatedSigning() {
+  const contract = lc.value.contract?.name
+  const role = authenticatedSigningContext.value?.role
+  if (!contract || !role) return
+  authenticatedContractLoading.value = true
+  authenticatedSigningError.value = ''
+  try {
+    const data = await authenticatedContractResource.submit({ contract, role })
+    authenticatedContractHtml.value = sanitizeAuthenticatedContractHtml(
+      data?.contract_html,
+    )
+    authenticatedSigningProgress.value = data?.signing_progress ?? []
+    authenticatedReadConfirmed.value = false
+    authenticatedHasSignature.value = false
+    showAuthenticatedSigning.value = true
+  } catch (err) {
+    authenticatedSigningError.value =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('This signing action is no longer available.')
+  } finally {
+    authenticatedContractLoading.value = false
+  }
+}
+
+function closeAuthenticatedSigning() {
+  showAuthenticatedSigning.value = false
+  authenticatedReadConfirmed.value = false
+  authenticatedHasSignature.value = false
+  authenticatedSigningError.value = ''
+}
+
+async function submitAuthenticatedSignature() {
+  if (authenticatedSigning.value || !authenticatedHasSignature.value) return
+  const contract = lc.value.contract?.name
+  const role = authenticatedSigningContext.value?.role
+  const signature = authenticatedCanvas.value?.getSignatureDataUrl?.() || ''
+  if (!contract || !role || !signature) return
+  authenticatedSigning.value = true
+  authenticatedSigningError.value = ''
+  try {
+    await authenticatedSignResource.submit({
+      contract,
+      role,
+      signature_b64: signature,
+      device_info: JSON.stringify(collectSigningDeviceInfo()),
+    })
+    toast.success(__('Your signature has been recorded.'))
+    closeAuthenticatedSigning()
+    emit('lifecycle-reload')
+  } catch (err) {
+    authenticatedSigningError.value =
+      err?.messages?.[0] ?? err?.message ?? __('Could not save your signature.')
+  } finally {
+    authenticatedSigning.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deal doc — for exec_notes pre-fill only
+// ---------------------------------------------------------------------------
+const dealDocResource = createResource({
+  url: 'frappe.client.get',
+  makeParams: () => ({ doctype: 'CRM Deal', name: props.dealId }),
+  auto: true,
+})
+const dealDoc = computed(() => dealDocResource.data ?? null)
+
+// ---------------------------------------------------------------------------
+// Co-signatories — Network Signatories (per network) + Tiberbu contacts,
+// auto-resolved from configuration.
+// ---------------------------------------------------------------------------
+const coSignersResource = createResource({
+  url: 'crm.api.contracts.get_network_signatories',
+})
+const coSignersLoading = ref(true)
+
+const coSigners = computed(() => coSignersResource.data?.signers ?? [])
+const tiberbuApprovers = computed(() => coSignersResource.data?.approvers ?? [])
+const networkSlug = computed(() => coSignersResource.data?.network_slug ?? '')
+const tiberbuSigningRequirement = computed(
+  () =>
+    lc.value.contract?.tiberbu_signing_requirement ||
+    coSignersResource.data?.tiberbu_signing_requirement ||
+    'All must sign',
+)
+const smsDeliveryResource = createResource({
+  url: 'crm.api.contracts.get_sms_delivery_status',
+})
+const retrySmsResource = createResource({
+  url: 'crm.api.contracts.retry_sms_delivery',
+})
+const smsDeliveries = ref([])
+const retryingSmsKey = ref('')
+
+const smsDeliveryByRow = computed(() => {
+  const latest = {}
+  for (const row of smsDeliveries.value) {
+    if (row.purpose !== 'Invitation' || latest[row.signatory_row]) continue
+    latest[row.signatory_row] = row
+  }
+  return latest
+})
+
+function smsDelivery(row) {
+  return row?.row_name ? smsDeliveryByRow.value[row.row_name] ?? null : null
+}
+
+function canRetrySms(row) {
+  const delivery = smsDelivery(row)
+  return !!delivery && ['Failed', 'Not Available'].includes(delivery.status)
+}
+
+async function loadSmsDeliveries(contract) {
+  if (!contract) {
+    smsDeliveries.value = []
+    return
+  }
+  try {
+    smsDeliveries.value = (await smsDeliveryResource.submit({ contract })) ?? []
+  } catch {
+    smsDeliveries.value = []
+  }
+}
+
+async function retrySms(row) {
+  const delivery = smsDelivery(row)
+  if (!delivery || retryingSmsKey.value) return
+  retryingSmsKey.value = rowKey(row)
+  try {
+    await retrySmsResource.submit({ notification: delivery.name })
+    toast.success(__('SMS invitation retried.'))
+    await loadSmsDeliveries(lc.value.contract?.name)
+  } catch (err) {
+    toast.error(
+      err?.messages?.[0] ??
+        err?.message ??
+        __('Could not retry the SMS invitation.'),
+    )
+  } finally {
+    retryingSmsKey.value = ''
+  }
+}
+
+// The top "Signatories" block owns only the facility parties; the Network /
+// Tiberbu counterparties are edited in their own block below (coSignatoryItems).
+const facilitySignatories = computed(() =>
+  (lc.value.signatories ?? []).filter((s) => !isCoRole(s.role)),
+)
+
+onMounted(async () => {
+  try {
+    await coSignersResource.submit({ deal: props.dealId })
+  } catch {
+    // non-fatal — the empty-state notice covers a failed/empty resolve
+  } finally {
+    coSignersLoading.value = false
+  }
+  await loadSmsDeliveries(lc.value.contract?.name)
+})
+
+watch(
+  () => lc.value.contract?.name,
+  (contract) => {
+    loadSmsDeliveries(contract)
+  },
+)
+
+function initials(nameOrEmail) {
+  const s = (nameOrEmail ?? '').trim()
+  if (!s) return '?'
+  const parts = s.split(/[\s@.]+/).filter(Boolean)
+  const first = parts[0]?.[0] ?? ''
+  const second = parts.length > 1 ? parts[1]?.[0] ?? '' : ''
+  return (first + second).toUpperCase() || '?'
+}
+
+// ---------------------------------------------------------------------------
+// OIS raw_json (parsed from prop — no fetch, parent owns the resource)
+// ---------------------------------------------------------------------------
+const oisRawJson = computed(() => {
+  const raw = props.oisDoc?.raw_json
+  if (!raw) return {}
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Exec Notes
+// ---------------------------------------------------------------------------
+const execNotes = ref('')
+const execNotesReady = ref(false)
+
+watch(
+  () => dealDoc.value?.exec_notes,
+  (notes) => {
+    if (!execNotesReady.value && notes !== undefined) {
+      execNotes.value = notes ?? ''
+      execNotesReady.value = true
+    }
+  },
+  { immediate: true },
+)
+
+const saveNotesResource = createResource({ url: 'frappe.client.set_value' })
+
+async function saveNotes() {
+  try {
+    await saveNotesResource.submit({
+      doctype: 'CRM Deal',
+      name: props.dealId,
+      fieldname: 'exec_notes',
+      value: execNotes.value,
+    })
+  } catch {
+    // best-effort; non-fatal
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Form state
+// ---------------------------------------------------------------------------
+const facilitySignatoryName = ref('')
+const facilitySignatoryEmail = ref('')
+const facilitySignatoryPhone = ref('')
+const facilityWitnessName = ref('')
+const facilityWitnessEmail = ref('')
+const facilityWitnessPhone = ref('')
+
+// Pre-fill signatory + witness fields from oisDoc prop
+// Priority: explicit fields > raw_json contact > empty
+watch(
+  () => props.oisDoc,
+  (doc) => {
+    if (!doc) return
+    const explicitName = (doc.facility_signatory_name ?? '').trim()
+    const explicitEmail = (doc.facility_signatory_email ?? '').trim()
+    const rawContact = oisRawJson.value?.contact
+
+    if (!facilitySignatoryName.value) {
+      facilitySignatoryName.value =
+        explicitName ||
+        [rawContact?.first_name, rawContact?.last_name]
+          .filter(Boolean)
+          .join(' ')
+    }
+    if (!facilitySignatoryEmail.value) {
+      facilitySignatoryEmail.value = explicitEmail || (rawContact?.email ?? '')
+    }
+    if (!facilitySignatoryPhone.value) {
+      facilitySignatoryPhone.value = rawContact?.mobile_no ?? ''
+    }
+
+    // Witness captured during opt-in submission — pre-fill so the exec doesn't
+    // have to re-key it (still editable before generating).
+    if (!facilityWitnessName.value) {
+      facilityWitnessName.value = (doc.facility_witness_name ?? '').trim()
+    }
+    if (!facilityWitnessEmail.value) {
+      facilityWitnessEmail.value = (doc.facility_witness_email ?? '').trim()
+    }
+    if (!facilityWitnessPhone.value) {
+      facilityWitnessPhone.value = (doc.facility_witness_phone ?? '').trim()
+    }
+  },
+  { immediate: true },
+)
+
+// ---------------------------------------------------------------------------
+// Permission check — mirrors AppSidebar.vue / existing ContractingPanel
+// ---------------------------------------------------------------------------
+const canGenerate = computed(() => isManager(sessionUser.value))
+
+// ---------------------------------------------------------------------------
+// Form locking + validation
+// ---------------------------------------------------------------------------
+const isGenerating = ref(false)
+
+// Locked: no permission, OR contract exists, OR currently generating
+const formLocked = computed(
+  () => !canGenerate.value || contractExists.value || isGenerating.value,
+)
+
+const formValid = computed(
+  () =>
+    facilitySignatoryName.value.trim() !== '' &&
+    facilitySignatoryEmail.value.trim() !== '' &&
+    facilityWitnessName.value.trim() !== '' &&
+    facilityWitnessEmail.value.trim() !== '',
+)
+
+// Disabled: locked, form incomplete, or no quote yet
+const generateDisabled = computed(
+  () => formLocked.value || !formValid.value || !lc.value.quotation,
+)
+
+// ---------------------------------------------------------------------------
+// Banners
+// ---------------------------------------------------------------------------
+const successMsg = ref(null)
+const errorMsg = ref(null)
+
+// ---------------------------------------------------------------------------
+// Dispatch contract PDF to an arbitrary recipient
+// ---------------------------------------------------------------------------
+const showDispatchDialog = ref(false)
+const dispatchEmail = ref('')
+const dispatchName = ref('')
+const dispatchError = ref('')
+const dispatching = ref(false)
+const dispatchResource = createResource({
+  url: 'crm.api.contracts.dispatch_contract',
+})
+
+function openDispatchDialog() {
+  const facility = facilitySignatories.value[0] ?? {}
+  dispatchEmail.value = facility.email || dealDoc.value?.email || ''
+  dispatchName.value = facility.name || ''
+  dispatchError.value = ''
+  showDispatchDialog.value = true
+}
+
+async function dispatchContract() {
+  const email = dispatchEmail.value.trim()
+  if (!email || dispatching.value || !contractExists.value) return
+  dispatching.value = true
+  dispatchError.value = ''
+  try {
+    const result = await dispatchResource.submit({
+      contract: lc.value.contract?.name ?? '',
+      recipient_email: email,
+      recipient_name: dispatchName.value.trim(),
+    })
+    showDispatchDialog.value = false
+    toast.success(__('Contract PDF sent to {0}', [result?.email || email]))
+    emit('email-dispatched')
+    emit('lifecycle-reload')
+  } catch (err) {
+    dispatchError.value =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('Could not dispatch the contract.')
+  } finally {
+    dispatching.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Generate contract
+// ---------------------------------------------------------------------------
+const generateResource = createResource({ url: 'crm.api.contracts.generate' })
+
+async function doGenerate() {
+  if (generateDisabled.value) return
+  isGenerating.value = true
+  successMsg.value = null
+  errorMsg.value = null
+  try {
+    await generateResource.submit({
+      deal: props.dealId,
+      quote: lc.value.quotation?.name ?? '',
+      facility_signatory_name: facilitySignatoryName.value.trim(),
+      facility_signatory_email: facilitySignatoryEmail.value.trim(),
+      facility_signatory_phone: facilitySignatoryPhone.value.trim(),
+      facility_witness_name: facilityWitnessName.value.trim(),
+      facility_witness_email: facilityWitnessEmail.value.trim(),
+      facility_witness_phone: facilityWitnessPhone.value.trim(),
+    })
+    successMsg.value = __('Contract sent — signing invitation emailed to {0}', [
+      facilitySignatoryEmail.value.trim(),
+    ])
+    toast.success(successMsg.value)
+    emit('lifecycle-reload')
+  } catch (err) {
+    const msg =
+      err?.messages?.[0] ?? err?.message ?? __('Contract generation failed.')
+    errorMsg.value = msg
+    toast.error(msg)
+  } finally {
+    isGenerating.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Resend / regenerate signing invitation
+// ---------------------------------------------------------------------------
+const resendResource = createResource({
+  url: 'crm.api.contracts.resend_invitation',
+})
+// Tracked by a per-row key (row_name when present, else role) so resending on one
+// Network Signatory doesn't spin the button on its sibling row sharing the role.
+const resendingKey = ref('')
+
+function rowKey(row) {
+  return row?.row_name || row?.role || ''
+}
+
+async function doResend(role, rowName) {
+  if (!canGenerate.value || resendingKey.value) return
+  resendingKey.value = rowName || role
+  try {
+    const res = await resendResource.submit({
+      contract: lc.value.contract?.name ?? '',
+      role,
+      row_name: rowName ?? '',
+    })
+    if (res?.status === 'crm_login_required') {
+      toast.info(
+        __(
+          'This signatory is a CRM user. They must sign in to complete this action.',
+        ),
+      )
+    } else {
+      if (res?.status === 'already_sent') {
+        toast.info(
+          __(
+            'A signing link was sent moments ago. No duplicate email was sent.',
+          ),
+        )
+      } else {
+        toast.success(__('Signing link re-sent to {0}', [res?.email ?? role]))
+      }
+    }
+    emit('lifecycle-reload')
+  } catch (err) {
+    const msg =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('Could not resend the signing link.')
+    toast.error(msg)
+  } finally {
+    resendingKey.value = ''
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Edit an unsigned signatory
+// ---------------------------------------------------------------------------
+const updateSignatoryResource = createResource({
+  url: 'crm.api.contracts.update_signatory',
+})
+const editingRole = ref('')
+const editRowName = ref('')
+const editName = ref('')
+const editEmail = ref('')
+const editPhone = ref('')
+const savingEdit = ref(false)
+
+// A captured signature is immutable. Pending and Declined rows remain editable.
+function canEdit(status) {
+  return !isSignedStatus(status)
+}
+
+// True for an already-signed row — used to lock the captured signature.
+function isSignedStatus(status) {
+  return (status ?? '').toLowerCase() === 'signed'
+}
+
+// Resending a signing link only makes sense for a Pending (invited) row;
+// resend_invitation throws for any other status.
+function isPendingStatus(status) {
+  return (status ?? '').toLowerCase() === 'pending'
+}
+
+// Distinguishes the two counterparty roles for labels, helper text, and the
+// per-role save routing. Every signatory — including Tiberbu — is captured as
+// free-text name + email so the signing flow is identical across the board.
+function isTiberbuRole(role) {
+  return (role ?? '').toLowerCase() === 'tiberbu signatory'
+}
+
+function startEdit(s) {
+  if (!canGenerate.value || !canEdit(s.status)) return
+  editingRole.value = s.role
+  editRowName.value = s.row_name ?? ''
+  editName.value = s.name ?? ''
+  editEmail.value = s.email ?? ''
+  editPhone.value = s.phone ?? ''
+}
+
+function cancelEdit() {
+  editingRole.value = ''
+  editRowName.value = ''
+  editName.value = ''
+  editEmail.value = ''
+  editPhone.value = ''
+}
+
+async function saveEdit(role) {
+  if (!editName.value.trim() || !editEmail.value.trim() || savingEdit.value)
+    return
+  savingEdit.value = true
+  try {
+    const email = editEmail.value.trim()
+    const name = editName.value.trim()
+    const res = await updateSignatoryResource.submit({
+      contract: lc.value.contract?.name ?? '',
+      role,
+      name,
+      email,
+      phone: editPhone.value.trim(),
+      row_name: editRowName.value ?? '',
+    })
+    toast.success(
+      res?.resent
+        ? __('Signatory updated — new signing link sent to {0}', [res.email])
+        : __('Signatory updated.'),
+    )
+    cancelEdit()
+    emit('lifecycle-reload')
+  } catch (err) {
+    const msg =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('Could not update the signatory.')
+    toast.error(msg)
+  } finally {
+    savingEdit.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Network & Tiberbu co-signatories — editable per-contract (post-generate).
+//
+// The "Signatories" block above handles the facility parties. This surface owns
+// the counterparties (Network Signatory, Tiberbu Signatory): it edits the rows
+// already on the contract AND lets the exec add a configured co-signatory that
+// is missing from the contract (e.g. legacy contracts generated before co-signing
+// was wired, or where the network/Tiberbu config changed after generation).
+//
+// Persistence differs by role (per the confirmed design):
+//   • Network Signatory — writes back to the network configuration (source of
+//     truth, for future contracts) AND syncs onto this contract.
+//   • Tiberbu Signatory — per-contract only; never overwrites the Opt-In Settings
+//     singleton (shared across all networks).
+// ---------------------------------------------------------------------------
+const addSignatoryResource = createResource({
+  url: 'crm.api.contracts.add_signatory',
+})
+const removeSignatoryResource = createResource({
+  url: 'crm.api.contracts.remove_signatory',
+})
+const saveNetworkSignerResource = createResource({
+  url: 'crm.api.contracts.save_network_signer',
+})
+const syncConfiguredSignatoriesResource = createResource({
+  url: 'crm.api.contracts.sync_configured_signatories',
+})
+const syncingCo = ref(false)
+
+const ADD_KEY = '__add__' // sentinel: the standalone "add from scratch" form is open
+
+const coEditKey = ref('') // unique key of the row being edited (role + email)
+const coEditRole = ref('')
+const coEditRowName = ref('') // child docname — targets the exact row when a role repeats
+const coEditName = ref('')
+const coEditEmail = ref('')
+const coEditPhone = ref('')
+const coEditOrigEmail = ref('') // network write-back: the config row to update (blank → append)
+const coEditIsAdd = ref(false) // true → row is configured but not yet on the contract
+const savingCo = ref(false)
+const removingKey = ref('')
+
+// The add form uses the same enabled-user rule as the contract invitation
+// routing. Debounce the lookup so typing an address never creates a request per
+// keystroke, and ignore late responses when the email has changed.
+const userEmailLookupResource = createResource({
+  url: 'crm.api.contracts.check_user_email',
+})
+const coEditUserLookup = ref(null)
+const coEditUserLookupLoading = ref(false)
+const coEditUserLookupError = ref(false)
+let userEmailLookupTimer = null
+let userEmailLookupSequence = 0
+
+function clearUserEmailLookup() {
+  if (userEmailLookupTimer) {
+    clearTimeout(userEmailLookupTimer)
+    userEmailLookupTimer = null
+  }
+  userEmailLookupSequence += 1
+  coEditUserLookup.value = null
+  coEditUserLookupError.value = false
+  coEditUserLookupLoading.value = false
+}
+
+function scheduleUserEmailLookup() {
+  clearUserEmailLookup()
+  if (coEditKey.value !== ADD_KEY || !isTiberbuRole(coEditRole.value)) return
+
+  const email = coEditEmail.value.trim().toLowerCase()
+  if (!email || !email.includes('@')) return
+
+  const sequence = userEmailLookupSequence
+  userEmailLookupTimer = setTimeout(async () => {
+    coEditUserLookupLoading.value = true
+    try {
+      const result = await userEmailLookupResource.submit({ email })
+      if (
+        sequence === userEmailLookupSequence &&
+        coEditEmail.value.trim().toLowerCase() === email
+      ) {
+        coEditUserLookup.value = result
+      }
+    } catch {
+      if (sequence === userEmailLookupSequence) {
+        coEditUserLookupError.value = true
+      }
+    } finally {
+      if (sequence === userEmailLookupSequence) {
+        coEditUserLookupLoading.value = false
+        userEmailLookupTimer = null
+      }
+    }
+  }, 300)
+}
+
+watch([coEditEmail, coEditKey, coEditRole], scheduleUserEmailLookup)
+onBeforeUnmount(clearUserEmailLookup)
+
+// Counterparty roles this surface owns — matches contracts.py _COUNTERPARTY_ROLES.
+function isCoRole(role) {
+  const r = (role ?? '').toLowerCase()
+  return r === 'network signatory' || r === 'tiberbu signatory'
+}
+
+function coKey(role, email) {
+  return `${(role ?? '').toLowerCase()}::${(email ?? '').trim().toLowerCase()}`
+}
+
+// Merge the contract's counterparty rows with configured co-signatories that are
+// not yet on the contract. `onContract` rows are edited via update_signatory; the
+// rest are added via add_signatory. Contract child rows stay independently
+// addressable even when legacy data contains repeated role/email pairs.
+const coSignatoryItems = computed(() => {
+  const rows = (lc.value.signatories ?? []).filter((s) => isCoRole(s.role))
+  const excludedKeys = new Set(
+    (lc.value.contract?.excluded_signatories ?? []).map((s) =>
+      coKey(s.role, s.email),
+    ),
+  )
+  const onContractKeys = new Set(
+    rows.map((r) => coKey(r.role, r.email)).filter(Boolean),
+  )
+  const items = rows.map((r) => ({
+    // Child row names keep repeated role/email rows independently addressable.
+    key: r.row_name ? `contract::${r.row_name}` : coKey(r.role, r.email),
+    row_name: r.row_name,
+    role: r.role,
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    status: r.status,
+    signature_ip: r.signature_ip,
+    signature_device: r.signature_device,
+    signature_user_agent: r.signature_user_agent,
+    onContract: true,
+  }))
+  for (const cs of coSigners.value) {
+    const email = (cs.email ?? '').trim().toLowerCase()
+    const role = cs.signer_role || 'Network Signatory'
+    // A removal is scoped to this contract. Keep the source configuration intact
+    // for future contracts without presenting the removed contact as re-addable.
+    if (excludedKeys.has(coKey(role, email))) continue
+    // Skip config entries already represented by a contract row.
+    if (email && onContractKeys.has(coKey(role, email))) {
+      continue
+    }
+    items.push({
+      key: coKey(role, cs.email),
+      row_name: null,
+      role,
+      name: cs.full_name || cs.email,
+      email: cs.email,
+      phone: cs.phone,
+      status: null,
+      onContract: false,
+    })
+  }
+  return items
+})
+
+function canRemoveCoSignatory(item) {
+  return !!item?.row_name && item.onContract && !isSignedStatus(item.status)
+}
+
+async function syncConfiguredSignatories() {
+  if (!canGenerate.value || syncingCo.value || !contractExists.value) return
+  syncingCo.value = true
+  try {
+    const result = await syncConfiguredSignatoriesResource.submit({
+      contract: lc.value.contract?.name ?? '',
+    })
+    await coSignersResource.submit({ deal: props.dealId })
+    emit('lifecycle-reload')
+    toast.success(
+      __(
+        'Settings synced: {0} added, {1} updated, {2} signed rows protected.',
+        [result?.added ?? 0, result?.updated ?? 0, result?.skipped_signed ?? 0],
+      ),
+    )
+  } catch (err) {
+    toast.error(
+      err?.messages?.[0] ??
+        err?.message ??
+        __('Could not sync signing contacts from settings.'),
+    )
+  } finally {
+    syncingCo.value = false
+  }
+}
+
+async function removeCoSignatory(item) {
+  if (!canGenerate.value || !canRemoveCoSignatory(item) || removingKey.value)
+    return
+
+  const label = item.name || item.email || item.role
+  if (
+    !confirm(
+      __(
+        'Remove {0} from this contract? Their current signing link will stop working. The configured contact will remain available for future contracts.',
+        [label],
+      ),
+    )
+  )
+    return
+
+  removingKey.value = rowKey(item)
+  try {
+    await removeSignatoryResource.submit({
+      contract: lc.value.contract?.name ?? '',
+      role: item.role,
+      row_name: item.row_name,
+    })
+    toast.success(__('{0} removed from this contract.', [label]))
+    cancelCoEdit()
+    emit('lifecycle-reload')
+  } catch (err) {
+    toast.error(
+      err?.messages?.[0] ??
+        err?.message ??
+        __('Could not remove this signatory.'),
+    )
+  } finally {
+    removingKey.value = ''
+  }
+}
+
+function startCoEdit(item) {
+  if (!canGenerate.value || (item.onContract && !canEdit(item.status))) return
+  coEditKey.value = item.key
+  coEditRole.value = item.role
+  coEditRowName.value = item.row_name ?? ''
+  coEditName.value = item.name ?? ''
+  coEditEmail.value = item.email ?? ''
+  coEditPhone.value = item.phone ?? ''
+  coEditOrigEmail.value = item.email ?? ''
+  coEditIsAdd.value = !item.onContract
+}
+
+// Open the standalone "add from scratch" form for a given counterparty role.
+function startAddNetwork() {
+  if (!canGenerate.value) return
+  cancelCoEdit()
+  coEditKey.value = ADD_KEY
+  coEditRole.value = 'Network Signatory'
+  coEditIsAdd.value = true
+}
+
+function startAddTiberbu() {
+  if (!canGenerate.value) return
+  cancelCoEdit()
+  coEditKey.value = ADD_KEY
+  coEditRole.value = 'Tiberbu Signatory'
+  coEditIsAdd.value = true
+}
+
+function cancelCoEdit() {
+  coEditKey.value = ''
+  coEditRole.value = ''
+  coEditRowName.value = ''
+  coEditName.value = ''
+  coEditEmail.value = ''
+  coEditPhone.value = ''
+  coEditOrigEmail.value = ''
+  coEditIsAdd.value = false
+}
+
+async function saveCoEdit() {
+  if (!coEditName.value.trim() || !coEditEmail.value.trim() || savingCo.value)
+    return
+  savingCo.value = true
+  try {
+    const role = coEditRole.value
+    const email = coEditEmail.value.trim()
+    const name = coEditName.value.trim()
+    const contract = lc.value.contract?.name ?? ''
+
+    if (isTiberbuRole(role)) {
+      // Tiberbu stays per-contract — never overwrites the Opt-In Settings singleton.
+      if (coEditIsAdd.value) {
+        await addSignatoryResource.submit({
+          contract,
+          role,
+          name,
+          email,
+          phone: coEditPhone.value.trim(),
+        })
+        toast.success(__('Tiberbu signatory added to the contract.'))
+      } else {
+        const res = await updateSignatoryResource.submit({
+          contract,
+          role,
+          name,
+          email,
+          phone: coEditPhone.value.trim(),
+          row_name: coEditRowName.value ?? '',
+        })
+        toast.success(
+          res?.resent
+            ? __('Tiberbu signatory updated — new signing link sent to {0}', [
+                res.email,
+              ])
+            : __('Tiberbu signatory updated.'),
+        )
+      }
+    } else {
+      // Network Signatory writes back to the network config (source of truth) and
+      // syncs onto this contract in one call.
+      if (!networkSlug.value) {
+        throw new Error(
+          __(
+            'No network is resolved for this deal, so the signer cannot be saved.',
+          ),
+        )
+      }
+      const res = await saveNetworkSignerResource.submit({
+        network_slug: networkSlug.value,
+        name,
+        email,
+        phone: coEditPhone.value.trim(),
+        original_email: coEditOrigEmail.value ?? '',
+        contract,
+      })
+      toast.success(
+        res?.contract_synced === 'updated'
+          ? __(
+              'Network signatory saved to the network and updated on this contract.',
+            )
+          : __(
+              'Network signatory saved to the network and added to this contract.',
+            ),
+      )
+      // Refresh the resolved config so the list reflects the write-back.
+      await coSignersResource.submit({ deal: props.dealId })
+    }
+
+    cancelCoEdit()
+    emit('lifecycle-reload')
+  } catch (err) {
+    const msg =
+      err?.messages?.[0] ??
+      err?.message ??
+      __('Could not save the co-signatory.')
+    toast.error(msg)
+  } finally {
+    savingCo.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Download PDF
+// ---------------------------------------------------------------------------
+const downloadPdfResource = createResource({
+  url: 'crm.api.contracts.download_pdf',
+})
+const downloadLoading = ref(false)
+
+async function doDownloadPdf() {
+  if (!contractExists.value) return
+  downloadLoading.value = true
+  try {
+    const result = await downloadPdfResource.submit({
+      contract: lc.value.contract.name,
+    })
+    const b64 = result?.pdf_b64
+    if (!b64) {
+      toast.error(__('PDF generation failed.'))
+      return
+    }
+    const bytes = atob(b64)
+    const arr = new Uint8Array(bytes.length)
+    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+    const blob = new Blob([arr], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `contract-${lc.value.contract.name ?? 'document'}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    const msg = err?.messages?.[0] ?? err?.message ?? __('PDF download failed.')
+    toast.error(msg)
+  } finally {
+    downloadLoading.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle status derived from prop
+// ---------------------------------------------------------------------------
+
+const submissionStatus = computed(() => lc.value.submission?.status ?? 'None')
+const quotationStatus = computed(() => lc.value.quotation?.status ?? 'None')
+const contractStatus = computed(
+  () =>
+    lc.value.contract?.workflow_state ?? lc.value.contract?.status ?? 'None',
+)
+const approvalStatus = computed(
+  () => lc.value.onboarding?.approval_status ?? 'None',
+)
+const invoiceStatus = computed(() => {
+  const inv = lc.value.sales_invoice
+  if (!inv) return 'None'
+  const ds = inv.docstatus ?? 0
+  if (ds === 0) return 'Draft'
+  if (ds === 1) return 'Submitted'
+  return 'Cancelled'
+})
+
+// Signatories roll up into a single lifecycle stage.
+const signatoriesStatus = computed(() => {
+  const list = lc.value.signatories ?? []
+  if (!list.length) return 'None'
+  const signed = list.filter(
+    (s) => (s.status ?? '').toLowerCase() === 'signed',
+  ).length
+  if (signed === list.length) return 'Signed'
+  if (signed > 0) return 'Awaiting Signatures'
+  return 'Pending'
+})
+
+const signatoriesSummary = computed(() => {
+  const list = lc.value.signatories ?? []
+  if (!list.length) return ''
+  const signed = list.filter(
+    (s) => (s.status ?? '').toLowerCase() === 'signed',
+  ).length
+  return __('{0} of {1} signed', [signed, list.length])
+})
+
+// ---------------------------------------------------------------------------
+// Stepper model — six ordered lifecycle stages
+// ---------------------------------------------------------------------------
+const stages = computed(() =>
+  [
+    {
+      key: 'optin',
+      label: 'Opt-In',
+      ref: lc.value.submission?.ref,
+      status: submissionStatus.value,
+    },
+    {
+      key: 'quote',
+      label: 'Quote',
+      ref: lc.value.quotation?.name,
+      status: quotationStatus.value,
+    },
+    {
+      key: 'contract',
+      label: 'Contract',
+      ref: lc.value.contract?.name,
+      status: contractStatus.value,
+    },
+    {
+      key: 'signatories',
+      label: 'Signatories',
+      ref: signatoriesSummary.value,
+      status: signatoriesStatus.value,
+    },
+    {
+      key: 'approval',
+      label: 'Approval',
+      ref: lc.value.onboarding?.name,
+      status: approvalStatus.value,
+    },
+    {
+      key: 'invoice',
+      label: 'Invoice',
+      ref: lc.value.sales_invoice?.name,
+      status: invoiceStatus.value,
+    },
+  ].map((s) => ({ ...s, state: stageState(s.status), statusLabel: s.status })),
+)
+
+const doneCount = computed(
+  () => stages.value.filter((s) => s.state === 'done').length,
+)
+const progressPct = computed(() =>
+  stages.value.length
+    ? Math.round((doneCount.value / stages.value.length) * 100)
+    : 0,
+)
+
+// ---------------------------------------------------------------------------
+// Status colour helpers — tokens only, never hex
+// ---------------------------------------------------------------------------
+
+const DONE_KEYS = [
+  'processed',
+  'accepted',
+  'signed',
+  'approved',
+  'submitted',
+  'fully executed',
+  'paid',
+]
+const BLOCKED_KEYS = ['failed', 'rejected', 'cancelled']
+
+function isDone(status) {
+  const s = (status ?? '').toLowerCase()
+  return DONE_KEYS.some((k) => s.includes(k))
+}
+function isBlocked(status) {
+  const s = (status ?? '').toLowerCase()
+  return BLOCKED_KEYS.some((k) => s.includes(k))
+}
+function isIdle(status) {
+  const s = (status ?? '').toLowerCase()
+  return s === '' || s === 'none'
+}
+
+/**
+ * Stage node state:
+ *   done    = green (completed)
+ *   blocked = red   (failed/rejected/cancelled)
+ *   idle    = gray  (not started)
+ *   active  = amber (in progress)
+ */
+function stageState(status) {
+  if (isBlocked(status)) return 'blocked'
+  if (isDone(status)) return 'done'
+  if (isIdle(status)) return 'idle'
+  return 'active'
+}
+
+function nodeClass(state) {
+  return (
+    {
+      done: 'border-green-500 bg-green-500 text-white dark:border-green-400 dark:bg-green-400',
+      active:
+        'border-amber-400 bg-amber-50 text-amber-600 dark:border-amber-500 dark:bg-amber-900/20 dark:text-amber-400',
+      blocked:
+        'border-red-400 bg-red-50 text-red-600 dark:border-red-500 dark:bg-red-900/20 dark:text-red-400',
+      idle: 'border-outline-gray-2 bg-surface-gray-2 text-ink-gray-4',
+    }[state] ?? 'border-outline-gray-2 bg-surface-gray-2 text-ink-gray-4'
+  )
+}
+
+/**
+ * Green  = done/success  (Processed, Accepted, Signed, Approved, Submitted, Fully Executed)
+ * Amber  = in-progress   (Pending, Processing, Awaiting, Draft, Sent)
+ * Red    = failure/stop  (Failed, Rejected, Cancelled)
+ * Gray   = absent/none
+ */
+function statusDot(status) {
+  const state = stageState(status)
+  return {
+    done: 'bg-green-500 dark:bg-green-400',
+    blocked: 'bg-red-500 dark:bg-red-400',
+    idle: 'bg-surface-gray-4 dark:bg-surface-gray-5',
+    active: 'bg-amber-500 dark:bg-amber-400',
+  }[state]
+}
+
+function statusText(status) {
+  const state = stageState(status)
+  return {
+    done: 'text-green-700 dark:text-green-400',
+    blocked: 'text-red-600 dark:text-red-400',
+    idle: 'text-ink-gray-4',
+    active: 'text-amber-700 dark:text-amber-400',
+  }[state]
+}
+</script>

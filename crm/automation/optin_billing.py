@@ -1,0 +1,571 @@
+"""Retry-safe quarterly billing for multi-year Opt-In subscriptions.
+
+This service is intentionally separate from ``accept_quote``.  That endpoint
+continues to serve legacy, one-off quotations. Opt-In Year 1 commercial handoff
+starts at the facility signature; later scheduled periods remain governed by
+the Network schedule and native ERPNext document validation.
+"""
+
+from __future__ import annotations
+
+import json
+
+import frappe
+from frappe import _
+from frappe.utils import getdate, now_datetime, nowdate
+
+from crm.utils.optin_bundles import add_months
+from crm.utils.optin_network import set_network_link
+
+
+def _json(value, default):
+	try:
+		result = json.loads(value or "")
+	except (TypeError, ValueError, json.JSONDecodeError):
+		return default
+	return result if isinstance(result, type(default)) else default
+
+
+def _field(doc, name, value):
+	try:
+		if doc.meta.has_field(name):
+			setattr(doc, name, value)
+	except Exception:
+		pass
+
+
+def _quarter_items(quotation, quarter_number):
+	"""Copy annual quotation items as one quarter without mutating the quote."""
+	items = []
+	for row in quotation.items or []:
+		annual_amount = float(row.amount or (row.qty or 0) * (row.rate or 0))
+		quarter_amount = round(annual_amount / 4, 2)
+		# Keep the four quarters exactly reconciled to the annual quotation. Any
+		# half-cent rounding remainder is carried by Q4 rather than silently
+		# over/under-billing the customer.
+		if int(quarter_number or 0) == 4:
+			quarter_amount = round(annual_amount - (round(annual_amount / 4, 2) * 3), 2)
+		items.append(
+			{
+				"item_code": row.item_code,
+				"item_name": row.item_name,
+				"description": row.description,
+				"qty": 1,
+				"uom": row.uom or "Nos",
+				"rate": quarter_amount,
+				"price_list_rate": quarter_amount,
+				"discount_percentage": 0,
+				"crm_optin_facility_mfl_code": row.get("crm_optin_facility_mfl_code"),
+				"crm_rebate_supplier": row.get("crm_rebate_supplier"),
+			}
+		)
+	return items
+
+
+def _apply_order_tax_template(order, quotation):
+	"""Copy the quotation's exclusive VAT template to a generated order.
+
+	ERPNext's Sales Order → Sales Invoice mapper only carries taxes that are
+	actually present on the order.  Keeping the same template prevents quarterly
+	invoices from silently becoming net-only when the annual quotation already
+	contains the configured VAT charge.
+	"""
+	tax_template = frappe.utils.cstr(getattr(quotation, "taxes_and_charges", "") or "").strip()
+	if not tax_template:
+		return
+	try:
+		from erpnext.controllers.accounts_controller import get_taxes_and_charges
+
+		order.taxes_and_charges = tax_template
+		order.set("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", tax_template))
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "optin billing: quotation VAT template could not be copied")
+		raise
+
+
+def _find_billing_document(doctype, billing_key, submission=None, year=None, quarter=None):
+	"""Find a document created for a schedule row, when additive fields exist.
+
+	The submission link is part of the lookup whenever available.  A bare
+	``Y1-Q1`` key is not globally unique, so it must never allow one customer's
+	document to satisfy another customer's schedule.
+	"""
+	if not frappe.db.exists("DocType", doctype):
+		return ""
+	try:
+		has_key = frappe.db.has_column(doctype, "crm_optin_billing_key")
+		has_submission = bool(submission) and frappe.db.has_column(doctype, "crm_optin_submission")
+		has_year = year is not None and frappe.db.has_column(doctype, "crm_optin_year")
+		has_quarter = quarter is not None and frappe.db.has_column(doctype, "crm_optin_quarter")
+		if not has_key and not (has_submission and has_year and has_quarter):
+			return ""
+		filters = {}
+		if has_key and billing_key:
+			filters["crm_optin_billing_key"] = billing_key
+		if has_submission:
+			filters["crm_optin_submission"] = submission
+		if has_year:
+			filters["crm_optin_year"] = year
+		if has_quarter:
+			filters["crm_optin_quarter"] = quarter
+		rows = frappe.get_list(
+			doctype,
+			filters=filters,
+			fields=["name"],
+			limit=1,
+			ignore_permissions=True,  # SYSTEM-INTERNAL
+		)
+		return rows[0].name if rows else ""
+	except Exception:
+		# Older ERPNext sites may not have the custom field during a rolling
+		# migration. The scheduler remains usable; the submission row is still
+		# the idempotency source on those sites.
+		return ""
+
+
+def _create_order_and_invoice(schedule, quotation, submission, issue_date, create_invoice=True):
+	"""Create a native Sales Order and optionally its native Sales Invoice."""
+	if not frappe.db.exists("DocType", "Sales Order"):
+		return "", ""
+	if create_invoice and not frappe.db.exists("DocType", "Sales Invoice"):
+		return "", ""
+	billing_key = frappe.utils.cstr(schedule.get("billing_key") or "").strip()
+	year = schedule.get("year_number")
+	quarter = schedule.get("quarter_number")
+	order_name = _find_billing_document("Sales Order", billing_key, submission.name, year, quarter)
+	invoice_name = (
+		_find_billing_document("Sales Invoice", billing_key, submission.name, year, quarter)
+		if create_invoice
+		else ""
+	)
+	if invoice_name:
+		return order_name, invoice_name
+
+	if int(quotation.docstatus or 0) != 1:
+		quotation.flags.ignore_permissions = True  # SYSTEM-INTERNAL
+		quotation.flags.ignore_validate = True
+		quotation.submit()
+
+	if order_name:
+		order = frappe.get_doc("Sales Order", order_name)
+		if int(order.docstatus or 0) != 1:
+			order.flags.ignore_permissions = True  # SYSTEM-INTERNAL
+			order.flags.ignore_validate = True
+			order.flags.ignore_mandatory = True
+			order.submit()
+	else:
+		quarter_items = _quarter_items(quotation, schedule.get("quarter_number"))
+		order = frappe.get_doc(
+			{
+				"doctype": "Sales Order",
+				"customer": quotation.party_name,
+				"company": quotation.company,
+				"transaction_date": issue_date,
+				"delivery_date": issue_date,
+				"currency": quotation.currency or "KES",
+				"selling_price_list": quotation.selling_price_list,
+				"items": quarter_items,
+			}
+		)
+		_field(order, "crm_optin_submission", submission.name)
+		_field(order, "crm_optin_year", schedule.get("year_number"))
+		_field(order, "crm_optin_quarter", schedule.get("quarter_number"))
+		_field(order, "crm_optin_quotation", quotation.name)
+		_field(order, "crm_optin_billing_key", billing_key)
+		_field(order, "quotation", quotation.name)
+		set_network_link(order, submission.network_slug)
+		order.flags.ignore_permissions = True  # SYSTEM-INTERNAL
+		order.flags.ignore_validate = True
+		order.flags.ignore_mandatory = True
+		order.set_missing_values()
+		# set_missing_values may resolve the monthly Item Price. The quarterly
+		# amount is authoritative for this schedule row, so restore each rate before
+		# calculating taxes and totals.
+		for row, source in zip(order.items or [], quarter_items, strict=False):
+			row.price_list_rate = source["price_list_rate"]
+			row.rate = source["rate"]
+			row.discount_percentage = 0
+		_apply_order_tax_template(order, quotation)
+		order.calculate_taxes_and_totals()
+		due_date = frappe.utils.add_days(issue_date, 30)
+		order.set("payment_schedule", [])
+		order.append(
+			"payment_schedule",
+			{
+				"due_date": due_date,
+				"invoice_portion": 100,
+				"payment_amount": order.grand_total,
+				"base_payment_amount": order.base_grand_total,
+			},
+		)
+		order.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+		order.submit()
+
+	if not create_invoice:
+		return order.name, ""
+
+	invoice = None
+	try:
+		from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+
+		invoice = make_sales_invoice(order.name)
+	except Exception:
+		# ERPNext v15/v16 mapper names are stable, but keep a clear fallback for a
+		# CRM-only or partially-installed site rather than marking a false success.
+		frappe.log_error(frappe.get_traceback(), "optin billing: sales invoice mapper failed")
+		raise
+	invoice.posting_date = issue_date
+	invoice.due_date = frappe.utils.add_days(issue_date, 30)
+	# The native mapper carries the order's quarter values, but restoring them
+	# here protects against ERPNext versions that re-fetch a current list price
+	# while preparing the target invoice.
+	quarter_items = _quarter_items(quotation, schedule.get("quarter_number"))
+	for row, source in zip(invoice.items or [], quarter_items, strict=False):
+		row.price_list_rate = source["price_list_rate"]
+		row.rate = source["rate"]
+		row.discount_percentage = 0
+	if getattr(invoice, "taxes", None):
+		invoice.calculate_taxes_and_totals()
+	for payment in invoice.get("payment_schedule") or []:
+		payment.due_date = invoice.due_date
+	_field(invoice, "crm_optin_submission", submission.name)
+	_field(invoice, "crm_optin_year", schedule.get("year_number"))
+	_field(invoice, "crm_optin_quarter", schedule.get("quarter_number"))
+	_field(invoice, "crm_optin_quotation", quotation.name)
+	_field(invoice, "crm_optin_billing_key", billing_key)
+	invoice.flags.ignore_permissions = True  # SYSTEM-INTERNAL
+	invoice.flags.ignore_validate = True
+	invoice.flags.ignore_mandatory = True
+	invoice.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
+	invoice.submit()
+	return order.name, invoice.name
+
+
+def _mark_deal_won(deal_name):
+	"""Move the linked CRM Deal to its existing native Won status once."""
+	if not deal_name or not frappe.db.exists("CRM Deal", deal_name):
+		return False
+	deal = frappe.get_doc("CRM Deal", deal_name)
+	if deal.status == "Won":
+		return False
+	deal.status = "Won"
+	deal.save(ignore_permissions=True)  # SYSTEM-INTERNAL: signed facility handoff
+	return True
+
+
+def _facility_handoff_schedule(submission, signed_at):
+	"""Return the persisted Year 1/Q1 row or a traceable no-schedule row.
+
+	The fallback row is schedule metadata, not a new ERPNext/CRM status. It lets
+	Finance see why an invoice was not created while preserving the immediately
+	required Q1 Sales Order.
+	"""
+	schedules = _json(getattr(submission, "billing_schedule_json", ""), [])
+	for row in schedules:
+		if (
+			isinstance(row, dict)
+			and frappe.utils.cint(row.get("year_number")) == 1
+			and frappe.utils.cint(row.get("quarter_number")) == 1
+		):
+			return schedules, row, True
+
+	anchor = getdate(signed_at or now_datetime())
+	return schedules, {
+		"year_number": 1,
+		"quarter_number": 1,
+		"scheduled_order_date": anchor.isoformat(),
+		"invoice_date": anchor.isoformat(),
+		"invoice_due_date": frappe.utils.add_days(anchor, 30),
+		"status": "Scheduled",
+		"billing_key": "%s-Y1-Q1" % submission.name,
+		"invoice_schedule_configured": False,
+		"error": _(
+			"Network billing schedule is not configured; the Q1 Sales Order was created, "
+			"but no Sales Invoice was generated. Configure the Network invoice schedule "
+			"and retry the Finance handoff."
+		),
+	}, False
+
+
+def _invoice_at_facility_handoff(schedule, persisted_schedule):
+	"""Return true only for the Network's explicit signature invoice rule."""
+	return bool(
+		persisted_schedule
+		and frappe.utils.cstr(schedule.get("invoice_issue_timing") or "").strip()
+		== "contract_signature"
+	)
+
+
+def handoff_facility_signed(contract_name, signed_at=None):
+	"""Start the native Year 1 commercial handoff at facility signature.
+
+	This function is deliberately retry-safe and best-effort for the signature
+	workflow: a missing ERPNext configuration is recorded for Finance without
+	rolling back the legally recorded facility signature.
+	"""
+	if not contract_name or not frappe.db.exists("CRM Opt-In Submission", {"contract": contract_name}):
+		return {
+			"ok": False,
+			"reason_code": "missing_submission",
+			"reason": _("Opt-In submission for this contract was not found."),
+		}
+	rows = frappe.get_list(
+		"CRM Opt-In Submission",
+		filters={"contract": contract_name},
+		fields=["name"],
+		limit=1,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: signature transition
+	)
+	if not rows:
+		return {
+			"ok": False,
+			"reason_code": "missing_submission",
+			"reason": _("Opt-In submission for this contract was not found."),
+		}
+
+	submission = frappe.get_doc("CRM Opt-In Submission", rows[0].name)
+	if getattr(submission, "status", "Processed") not in ("", "Processed"):
+		return {
+			"ok": False,
+			"reason_code": "submission_not_processed",
+			"reason": _("The Opt-In submission is not ready for Finance handoff yet."),
+		}
+	schedules, schedule, persisted_schedule = _facility_handoff_schedule(submission, signed_at)
+	if schedule.get("sales_order") and (
+		schedule.get("sales_invoice") or schedule.get("invoice_schedule_configured") is False
+	):
+		_mark_deal_won(getattr(submission, "deal", ""))
+		return {
+			"ok": True,
+			"quotation": _quote_for_schedule(submission, 1),
+			"sales_order": schedule.get("sales_order"),
+			"sales_invoice": schedule.get("sales_invoice") or "",
+			"invoice_created": bool(schedule.get("sales_invoice")),
+			"invoice_reason": schedule.get("error") or schedule.get("handoff_note") or "",
+		}
+
+	quote_name = _quote_for_schedule(submission, 1)
+	if not quote_name:
+		return {"ok": False, "reason": _("Year 1 quotation is missing for this submission.")}
+
+	issue_date = getdate(signed_at or now_datetime())
+	# Only the Network's native signature-timing rule permits an invoice at this
+	# handoff. A normal scheduled/offset rule creates the order now and waits for
+	# the existing due-period worker after legal execution.
+	invoice_at_handoff = _invoice_at_facility_handoff(schedule, persisted_schedule)
+	if not frappe.utils.cstr(schedule.get("billing_key") or "").strip():
+		schedule["billing_key"] = "%s-Y1-Q1" % submission.name
+	save_point = "optin_facility_handoff_%s" % frappe.utils.cstr(submission.name).replace("-", "_")
+	frappe.db.savepoint(save_point)
+	try:
+		quotation = frappe.get_doc("Quotation", quote_name)
+		order_name, invoice_name = _create_order_and_invoice(
+			schedule,
+			quotation,
+			submission,
+			issue_date,
+			create_invoice=invoice_at_handoff,
+		)
+		if not order_name:
+			raise frappe.ValidationError(
+				_("Sales Order could not be generated. Check the company, customer, item, account, tax, and period configuration.")
+			)
+		schedule["sales_order"] = order_name
+		if invoice_name:
+			schedule["sales_invoice"] = invoice_name
+			schedule["invoice_due_date"] = frappe.utils.add_days(issue_date, 30)
+			schedule["status"] = "Invoiced"
+			schedule.pop("error", None)
+		else:
+			schedule["handoff_note"] = (
+				_("Sales Invoice deferred until the configured Network billing period.")
+				if persisted_schedule
+				else schedule.get("error")
+			)
+		_mark_deal_won(getattr(submission, "deal", ""))
+		if persisted_schedule:
+			submission.billing_schedule_json = json.dumps(schedules, default=str)
+		else:
+			submission.billing_schedule_json = json.dumps([schedule], default=str)
+		submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL: handoff metadata
+		return {
+			"ok": True,
+			"quotation": quote_name,
+			"sales_order": order_name,
+			"sales_invoice": invoice_name or "",
+			"invoice_created": bool(invoice_name),
+			"invoice_reason": schedule.get("error") or schedule.get("handoff_note") or "",
+		}
+	except Exception as exc:
+		frappe.db.rollback(save_point=save_point)
+		schedule["status"] = "Failed"
+		schedule["error"] = frappe.utils.cstr(exc)[:500]
+		try:
+			submission.billing_schedule_json = json.dumps(
+				schedules if persisted_schedule else [schedule], default=str
+			)
+			submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL: retryable error
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "optin billing: handoff error could not be persisted")
+		frappe.log_error(frappe.get_traceback(), "optin billing: facility handoff failed for %s" % contract_name)
+		return {"ok": False, "reason": schedule["error"]}
+
+
+def activate_contract_billing_schedule(contract_name, signed_at=None):
+	"""Anchor the first invoice to the signature date when the network opted in."""
+	if (
+		not contract_name
+		or not frappe.db.exists("DocType", "CRM Opt-In Submission")
+		or not frappe.db.has_column("CRM Opt-In Submission", "billing_schedule_json")
+	):
+		return False
+	submissions = frappe.get_list(
+		"CRM Opt-In Submission",
+		filters={"contract": contract_name},
+		fields=["name", "billing_schedule_json"],
+		limit=1,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: contract state transition
+	)
+	if not submissions:
+		return False
+	submission = frappe.get_doc("CRM Opt-In Submission", submissions[0].name)
+	schedules = _json(submission.billing_schedule_json, [])
+	if not schedules:
+		return False
+	first = schedules[0] if isinstance(schedules[0], dict) else {}
+	mode = frappe.utils.cstr(first.get("invoice_issue_timing") or "submission_offset").strip()
+	if mode != "contract_signature":
+		return False
+	anchor = getdate(signed_at or now_datetime())
+	for row in schedules:
+		if not isinstance(row, dict):
+			continue
+		if row.get("status") != "Scheduled" or row.get("sales_invoice"):
+			continue
+		year_number = max(frappe.utils.cint(row.get("year_number")) or 1, 1)
+		quarter_number = min(max(frappe.utils.cint(row.get("quarter_number")) or 1, 1), 4)
+		issue = add_months(anchor, (year_number - 1) * 12 + (quarter_number - 1) * 3)
+		row["scheduled_order_date"] = issue.isoformat()
+		row["invoice_date"] = issue.isoformat()
+		row["invoice_due_date"] = frappe.utils.add_days(issue, 30)
+	submission.billing_schedule_json = json.dumps(schedules, default=str)
+	submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	frappe.db.commit()
+	return True
+
+
+def enqueue_due_optin_billing():
+	"""Ask the short queue to issue any invoice made due by a signature."""
+	try:
+		frappe.enqueue(
+			"crm.automation.optin_billing.process_due_optin_billing",
+			queue="short",
+		)
+		return True
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "optin billing: immediate queue could not be scheduled")
+		return False
+
+
+def process_due_optin_billing():
+	"""Issue due, fully-executed Opt-In schedule rows; safe to run hourly/daily."""
+	if not frappe.db.exists("DocType", "CRM Opt-In Submission"):
+		return {"processed": 0, "skipped": 0}
+	if not frappe.db.has_column("CRM Opt-In Submission", "billing_schedule_json"):
+		return {"processed": 0, "skipped": 0}
+	rows = frappe.get_list(
+		"CRM Opt-In Submission",
+		filters={"status": "Processed"},
+		fields=["name", "deal", "contract", "billing_schedule_json"],
+		limit_page_length=0,
+		ignore_permissions=True,  # SYSTEM-INTERNAL: scheduled system task
+	)
+	processed = skipped = failed = 0
+	for row in rows:
+		schedules = _json(row.billing_schedule_json, [])
+		if not schedules:
+			continue
+		if not row.contract or not frappe.db.exists("CRM Contract", row.contract):
+			skipped += 1
+			continue
+		contract_status = frappe.db.get_value("CRM Contract", row.contract, "status")
+		if contract_status != "Fully Executed":
+			continue
+		# Serialize workers per submission before reading/writing the JSON schedule.
+		# The stable billing key protects retries, while this row lock prevents two
+		# scheduler processes from both observing the same Scheduled row at once.
+		if not frappe.db.get_value("CRM Opt-In Submission", row.name, "name", for_update=True):
+			continue
+		submission = frappe.get_doc("CRM Opt-In Submission", row.name)
+		for schedule in schedules:
+			if schedule.get("status") != "Scheduled" or schedule.get("sales_invoice"):
+				continue
+			# A facility-signature handoff may create the required Q1 order before a
+			# Network billing schedule exists. Do not let the recurring worker invent
+			# an invoice later for that explicitly unconfigured row.
+			if schedule.get("invoice_schedule_configured") is False:
+				continue
+			# Older bundles used ``Y1-Q1`` as the key. Normalize that value at
+			# processing time so retries on migrated records cannot collide with
+			# another submission's same quarter.
+			raw_key = frappe.utils.cstr(schedule.get("billing_key") or "").strip()
+			if raw_key and not raw_key.startswith("%s-" % row.name):
+				schedule["billing_key"] = "%s-%s" % (row.name, raw_key)
+			if getdate(schedule.get("invoice_date") or schedule.get("scheduled_order_date")) > getdate(
+				nowdate()
+			):
+				continue
+			save_point = "optin_billing_%s_%s" % (
+				frappe.utils.cstr(row.name).replace("-", "_"),
+				frappe.utils.cstr(schedule.get("billing_key") or "row").replace("-", "_"),
+			)
+			frappe.db.savepoint(save_point)
+			try:
+				year = int(schedule.get("year_number") or 0)
+				quote_name = _quote_for_schedule(submission, year)
+				if not quote_name:
+					schedule["status"] = "Failed"
+					schedule["error"] = "Yearly quotation is missing"
+					failed += 1
+					continue
+				quotation = frappe.get_doc("Quotation", quote_name)
+				issue_date = getdate(schedule.get("invoice_date") or schedule.get("scheduled_order_date"))
+				order_name, invoice_name = _create_order_and_invoice(
+					schedule, quotation, submission, issue_date
+				)
+				if not order_name or not invoice_name:
+					raise frappe.ValidationError(
+						_("ERPNext billing is not available on this site; the schedule was not issued.")
+					)
+				schedule["sales_order"] = order_name
+				schedule["sales_invoice"] = invoice_name
+				schedule["status"] = "Invoiced"
+				schedule["invoice_due_date"] = frappe.utils.add_days(issue_date, 30)
+				processed += 1
+			except Exception as exc:
+				frappe.db.rollback(save_point=save_point)
+				schedule["status"] = "Failed"
+				schedule["error"] = frappe.utils.cstr(exc)[:500]
+				failed += 1
+				frappe.log_error(frappe.get_traceback(), "optin billing: %s" % row.name)
+		if frappe.db.has_column("CRM Opt-In Submission", "billing_schedule_json"):
+			submission.billing_schedule_json = json.dumps(schedules, default=str)
+			submission.save(ignore_permissions=True)  # SYSTEM-INTERNAL
+	if processed or failed:
+		frappe.db.commit()
+	return {"processed": processed, "skipped": skipped, "failed": failed}
+
+
+def _quote_for_schedule(submission, year):
+	if frappe.db.has_column("CRM Opt-In Submission", "quote_names_json"):
+		quote_names = _json(submission.get("quote_names_json"), [])
+		if quote_names:
+			plans = _json(submission.get("pricing_plans_json"), [])
+			for index, plan in enumerate(plans):
+				if int(plan.get("year_number") or index + 1) == year and index < len(quote_names):
+					return quote_names[index]
+	filters = {"crm_deal": submission.deal}
+	if frappe.db.has_column("Quotation", "crm_optin_submission"):
+		filters = {"crm_optin_submission": submission.name, "crm_optin_year": year}
+	rows = frappe.get_list("Quotation", filters=filters, fields=["name"], limit=1, ignore_permissions=True)
+	return rows[0].name if rows else ""

@@ -8,6 +8,7 @@ field is empty, so a brand-less install still renders.
 Fork-safety: this is a NEW additive module — it does not edit any upstream file. The only
 core touch-points are the `www/` pages and the `hooks.py` wiring (E2-S1), both additive.
 """
+
 import frappe
 
 # Interim Tiberbu identity (BRD watch-out: swap for official SVG + canonical hex when
