@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  couponMatches,
   couponValueLabel,
   derivedStatus,
   parseMflList,
@@ -48,6 +49,11 @@ describe('derivedStatus', () => {
     max_redemptions: 0,
     redeemed_count: 0,
   }
+  it('is Inactive ahead of the date window', () => {
+    expect(
+      derivedStatus({ status: 'Inactive', valid_from: '2999-01-01' }),
+    ).toBe('Inactive')
+  })
   it('prefers Revoked', () => {
     expect(derivedStatus({ ...base, status: 'Revoked' })).toBe('Revoked')
   })
@@ -82,5 +88,28 @@ describe('VALUE_TYPES', () => {
       'flat_tokens',
       'percentage_of_purchase',
     ])
+  })
+})
+
+describe('couponMatches', () => {
+  const coupon = {
+    network: 'north-net',
+    network_name: 'Northern Partner Network',
+    coupon_title: 'Launch bonus',
+    coupon_code: 'LAUNCH-24',
+  }
+  it('matches the partner network name case-insensitively', () => {
+    expect(couponMatches(coupon, 'northern partner')).toBe(true)
+  })
+  it('matches the network ID, title and code', () => {
+    expect(couponMatches(coupon, 'north-net')).toBe(true)
+    expect(couponMatches(coupon, 'launch b')).toBe(true)
+    expect(couponMatches(coupon, 'launch-24')).toBe(true)
+  })
+  it('matches everything on an empty query', () => {
+    expect(couponMatches(coupon, '  ')).toBe(true)
+  })
+  it('rejects a non-matching query', () => {
+    expect(couponMatches(coupon, 'southern')).toBe(false)
   })
 })
