@@ -10,7 +10,9 @@ import json
 import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
-from frappe.utils import cstr
+from frappe.utils import cint, cstr
+
+from crm.utils.facility_ids import owner_facility_candidates, record_facility_id
 
 NO_ACCESS = {"enabled": False, "can_manage": False, "can_reveal": False}
 
@@ -54,17 +56,59 @@ def get_deal_facilities(deal: str) -> list[dict]:
 	rows = frappe.get_all(
 		"CRM Deal Facility",
 		filters={"parent": deal, "parenttype": "CRM Deal"},
-		fields=["hfr_facility_id", "facility_name", "mfl_code"],
+		fields=["name", "hfr_facility_id", "facility_name", "mfl_code"],
 		order_by="idx asc",
 	)
 	return [
 		{
+			"row_name": row.name,
 			"fid": cstr(row.hfr_facility_id).strip(),
 			"facility_name": row.facility_name,
 			"mfl_code": row.mfl_code,
 		}
 		for row in rows
 	]
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=600)
+def find_owner_facilities(deal: str, owner_id_number: str) -> dict:
+	"""The owner's registry facilities, for staff to link a Facility ID from the Metering tab."""
+	frappe.has_permission("CRM Deal", "read", deal, throw=True)
+	_require_manage()
+	return owner_facility_candidates(owner_id_number)
+
+
+@frappe.whitelist(methods=["POST"])
+def link_deal_facility(deal: str, row_name: str, hfr_facility_id: str, source: str = "manual", confirm_shared: int = 0):
+	"""Link a Facility ID to one of the deal's facility rows, or report a conflict."""
+	frappe.has_permission("CRM Deal", "read", deal, throw=True)
+	_require_manage()
+	if source not in ("hfr", "manual"):
+		frappe.throw(_("Unknown link source."), frappe.ValidationError)
+	row = frappe.db.get_value(
+		"CRM Deal Facility",
+		{"name": row_name, "parent": deal, "parenttype": "CRM Deal"},
+		["name", "mfl_code"],
+		as_dict=True,
+	)
+	if not row:
+		frappe.throw(_("Facility row not found."), frappe.ValidationError)
+	result = record_facility_id(
+		cstr(row.mfl_code).strip(),
+		cstr(hfr_facility_id).strip(),
+		source=source,
+		actor=frappe.session.user,
+		allow_shared=bool(cint(confirm_shared)),
+		deal_row=row_name,
+	)
+	if result["status"] in ("linked", "already_linked"):
+		return {"status": "linked", "fid": result["hfr_facility_id"]}
+	if result["status"] == "invalid":
+		frappe.throw(_("Enter a Facility ID like FID-00-12345-1."))
+	if result["status"] == "different_fid":
+		frappe.throw(_("This facility already has a different Facility ID. Change it on the network facility form."))
+	return {"status": "in_use", "holders": result["holders"]}
 
 
 @frappe.whitelist(methods=["GET"])

@@ -48,9 +48,10 @@
     </p>
     <FacilityMeteringCard
       v-for="facility in facilities.data || []"
-      :key="facility.fid || facility.facility_name"
-      :ref="(el) => (cards[facility.fid] = el)"
+      :key="`${facility.row_name}:${facility.fid}`"
+      :ref="(el) => setCard(facility.fid, el)"
       :facility="facility"
+      :deal-id="dealId"
       :can-reveal="canReveal"
       :busy="busyFid === facility.fid ? busy : null"
       @action="({ action, fid }) => runAndReload(action, fid)"
@@ -60,6 +61,7 @@
       @bonus="(fid) => confirm('bonus', fid)"
       @reveal="openReveal"
       @probe="sendProbe"
+      @linked="onLinked"
     />
 
     <Dialog
@@ -255,6 +257,7 @@ import FacilityMeteringCard from './FacilityMeteringCard.vue'
 import { copyToClipboard } from '@/utils'
 import { probeOutcome } from '@/utils/metering'
 import { useMeteringAccess } from '@/composables/meteringAccess'
+import { useDocument } from '@/data/document'
 
 const props = defineProps({
   dealId: { type: String, required: true },
@@ -310,8 +313,20 @@ async function runAction(action, fid = null, params = {}) {
   }
 }
 
+function setCard(fid, el) {
+  if (!fid) return
+  if (el) cards[fid] = el
+  else delete cards[fid]
+}
+
 function reloadCards() {
   Object.values(cards).forEach((card) => card?.reload())
+}
+
+async function onLinked() {
+  await facilities.reload()
+  useDocument('CRM Deal', props.dealId).document.reload()
+  toast.success(__('Facility ID linked'))
 }
 
 async function runAndReload(action, fid) {

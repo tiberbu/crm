@@ -91,6 +91,14 @@ export const useOptInStore = defineStore('optin', {
       this.selectedFacilities = facilities
     },
 
+    setFacilityId(mflCode, fid) {
+      for (const list of [this.facilities, this.selectedFacilities]) {
+        for (const facility of list || []) {
+          if (facility.mfl_code === mflCode) facility.hfr_facility_id = fid
+        }
+      }
+    },
+
     setPricing(pricing) {
       this.pricing = pricing
       this.pricingPlans = pricing?.plans || []
