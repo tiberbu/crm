@@ -11,7 +11,8 @@ listing both facilities, and:
 
 - facility A: a Value Express draft order (with the quote that flow raises) and a direct quotation;
 - facility B: a Value Express draft order (with its quote), confirmed and invoiced (draft invoice);
-- one account-level quotation tied to no facility.
+- one account-level quotation tied to no facility;
+- ``bulk_quotes`` (default 11) more facility-A quotations, so its Quotes tab pages.
 
 So facility A's view shows A's order and quotes only, facility B's its order, quote and invoice,
 both note one record not tied to a facility, and the owner view shows everything.
@@ -59,7 +60,8 @@ def _quotation(customer: str, mfl: str | None) -> str:
 	return doc.name
 
 
-def setup(run_id: str, admin_password: str) -> dict:
+def setup(run_id: str, admin_password: str, bulk_quotes: int = 11) -> dict:
+	"""``bulk_quotes`` extra facility-A quotations push its Quotes tab past one page (10 rows)."""
 	from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
 	from openmeter_mediator.tests import e2e_fixture as base
 
@@ -130,6 +132,8 @@ def setup(run_id: str, admin_password: str) -> dict:
 	b_order = create_express_draft_order(customer, ids["b_mfl"], package)["data"]["sales_order"]
 	a_quote = _quotation(customer, ids["a_mfl"])
 	account_quote = _quotation(customer, None)
+	for _ in range(max(0, min(int(bulk_quotes or 0), 30))):
+		_quotation(customer, ids["a_mfl"])
 
 	# Facility B's order is confirmed and invoiced (draft invoice; the header facility carries over).
 	order = frappe.get_doc("Sales Order", b_order)
@@ -152,6 +156,10 @@ def setup(run_id: str, admin_password: str) -> dict:
 		"a_quote": a_quote,
 		"account_quote": account_quote,
 		"b_invoice": invoice.name,
+		"a_quote_count": frappe.db.count(
+			"Quotation", {"party_name": customer, "crm_token_facility_mfl": ids["a_mfl"]}
+		),
+		"quote_count": frappe.db.count("Quotation", {"party_name": customer}),
 		"b_invoice_mfl": frappe.db.get_value("Sales Invoice", invoice.name, "crm_token_facility_mfl"),
 	}
 

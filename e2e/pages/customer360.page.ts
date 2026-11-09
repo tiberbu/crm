@@ -96,11 +96,27 @@ export class Customer360Page {
 	}
 
 	get billingSection() {
-		return this.page.getByText('Billing', { exact: true }).first()
+		return this.tab('Billing')
+	}
+
+	/** A Customer 360 tab trigger by its label (labels carry a count, e.g. "Orders 2"). */
+	tab(label: 'Overview' | 'Orders' | 'Quotes' | 'Billing' | 'Facilities' | 'Deals') {
+		return this.page
+			.getByTestId('c360-tabs')
+			.getByRole('tab', { name: new RegExp(`^\\s*${label}\\b`) })
+	}
+
+	async openTab(label: 'Overview' | 'Orders' | 'Quotes' | 'Billing' | 'Facilities' | 'Deals') {
+		await this.tab(label).click()
+		await expect(this.tab(label)).toHaveAttribute('aria-selected', 'true')
+	}
+
+	get pagerLabel() {
+		return this.page.getByTestId('c360-pager-label')
 	}
 
 	get facilitiesSection() {
-		return this.page.getByText('Facilities & Provisioning', { exact: true })
+		return this.tab('Facilities')
 	}
 }
 

@@ -210,33 +210,34 @@ test.describe('Customer 360', () => {
 			page.getByText('LIFEMED LTD').first(),
 		).toBeVisible({ timeout: 15000 })
 
-		// KPI tiles, provisioning and billing sections render.
+		// KPI tiles stay above the tabs; each list lives in its own tab.
+		const p360 = new Customer360Page(page)
 		await expect(
 			page.getByText('Package Paid', { exact: true }),
 		).toBeVisible()
 		await expect(
 			page.getByText('Site Provisioning', { exact: true }),
 		).toBeVisible()
-		await expect(
-			page.getByText('Facilities & Provisioning', { exact: true }),
-		).toBeVisible()
 
 		// The customer's facility is listed with its network membership.
+		await p360.openTab('Facilities')
 		await expect(page.getByText('CORE CLINIC').first()).toBeVisible()
-
-		// Detail rows deep-link into the Finance Cockpit record views.
-		const invoiceLink = page
-			.locator('a[href*="finance-cockpit#/invoices?doctype=Sales"]')
-			.first()
-		await expect(invoiceLink).toBeVisible()
-		await expect(
-			page.locator('a[href*="finance-cockpit#/orders?doctype=Sales"]').first(),
-		).toBeVisible()
 		await expect(
 			page.locator(
 				'a[href*="finance-cockpit#/quotes?doctype=CRM+Pre-Qualified"]',
 			).first(),
 		).toBeVisible()
+
+		// Detail rows deep-link into the Finance Cockpit record views.
+		await p360.openTab('Orders')
+		await expect(
+			page.locator('a[href*="finance-cockpit#/orders?doctype=Sales"]').first(),
+		).toBeVisible()
+		await p360.openTab('Billing')
+		const invoiceLink = page
+			.locator('a[href*="finance-cockpit#/invoices?doctype=Sales"]')
+			.first()
+		await expect(invoiceLink).toBeVisible()
 
 		// Clicking the invoice row opens its record in the Finance Cockpit.
 		const href = (await invoiceLink.getAttribute('href')) as string

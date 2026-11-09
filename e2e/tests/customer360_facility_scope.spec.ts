@@ -3,7 +3,7 @@ import { expect, Page, test } from '@playwright/test'
 import { Customer360Page } from '../pages'
 
 /**
- * Customer 360 — clearable search, closable results, facility scope (2026-11-09).
+ * Customer 360 — clearable search, closable results, facility scope and tabs (2026-11-09).
  * Spec: _bmad-output/customer-360-facility-scope/planning-artifacts/customer-360-facility-scope-spec.md
  *
  * Needs the synthetic fixture crm.tests.e2e_customer360_fixture.setup for this run; pass its JSON
@@ -90,7 +90,7 @@ test.describe('Customer 360 facility scope', () => {
 		await expect(hit).toContainText(`MFL: ${fx.a_mfl}`)
 		await hit.click()
 
-		// Facility scope by default, carried in the URL.
+		// Facility scope by default, carried in the URL; the view opens on the Overview tab.
 		await expect(page).toHaveURL(new RegExp(`facility=${fx.a_facility}`))
 		await expect(page).toHaveURL(/scope=facility/)
 		await expect(p360.results).toBeHidden()
@@ -98,57 +98,98 @@ test.describe('Customer 360 facility scope', () => {
 		await expect(p360.scopeBar).toContainText(fx.a_fid)
 		await expect(p360.scopeBar).toContainText(fx.organization)
 		await expect(p360.scopeOption('This facility')).toBeChecked()
+		await expect(p360.tab('Overview')).toHaveAttribute('aria-selected', 'true')
+		await expect(page.getByTestId('c360-attention')).toContainText('Open orders · 1')
 
-		// Only facility A's records.
+		// Tab labels carry facility A's counts: 1 order, its quotes, 0 invoices, 1 facility.
+		const aQuotes = Number(fx.a_quote_count)
+		await expect(p360.tab('Orders')).toHaveText(/Orders\s*1$/)
+		await expect(p360.tab('Quotes')).toHaveText(new RegExp(`Quotes\\s*${aQuotes}$`))
+		await expect(p360.tab('Billing')).toHaveText(/Billing\s*0$/)
+		await expect(p360.tab('Facilities')).toHaveText(/Facilities\s*1$/)
+		await expect(page.getByTestId('c360-unattributed-note')).toContainText("1 record isn't tied to one facility.")
+		expect(await brandViolations(page, '[data-testid="c360-scope-bar"], [data-testid="c360-unattributed-note"], [data-testid="c360-tabs"]')).toEqual([])
+		await shot(page, 'c360-2-facility-overview')
+
+		// Only one tab's list is on the page at a time.
+		await p360.openTab('Orders')
+		await expect(page).toHaveURL(/tab=orders/)
 		await expect(p360.rows('order')).toHaveCount(1)
 		await expect(p360.rows('order').first()).toContainText(fx.a_order)
-		await expect(p360.rows('quote').filter({ hasText: fx.a_quote })).toHaveCount(1)
-		await expect(p360.rows('quote').filter({ hasText: fx.account_quote })).toHaveCount(0)
-		await expect(p360.rows('invoice')).toHaveCount(0)
-		await expect(p360.rows('facility')).toHaveCount(1)
-		await expect(p360.rows('facility').first()).toContainText(`Facility ID: ${fx.a_fid}`)
-		await expect(page.getByTestId('c360-unattributed-note')).toContainText("1 record isn't tied to one facility.")
+		await expect(p360.rows('quote')).toHaveCount(0)
 		// The facility view needs no Facility column.
 		await expect(page.getByTestId('c360-orders').getByRole('columnheader', { name: 'Facility' })).toHaveCount(0)
-		expect(await brandViolations(page, '[data-testid="c360-scope-bar"], [data-testid="c360-unattributed-note"], [data-testid="c360-quotes"]')).toEqual([])
-		await shot(page, 'c360-2-facility-scope')
 
-		// All facilities: the owner's full picture, each record naming its facility.
+		// Quotes page at 10 rows.
+		await p360.openTab('Quotes')
+		await expect(p360.rows('quote')).toHaveCount(10)
+		expect(aQuotes).toBeGreaterThan(10)
+		await expect(p360.pagerLabel).toHaveText(`1–10 of ${aQuotes}`)
+		await page.getByTestId('c360-pager-next').click()
+		await expect(p360.rows('quote')).toHaveCount(aQuotes - 10)
+		await expect(p360.pagerLabel).toHaveText(`11–${aQuotes} of ${aQuotes}`)
+		await expect(page.getByTestId('c360-pager-next')).toBeDisabled()
+		await expect(page.getByTestId('c360-quotes').getByText(fx.account_quote)).toHaveCount(0)
+		await shot(page, 'c360-3-facility-quotes-page-2')
+
+		await p360.openTab('Billing')
+		await expect(p360.rows('invoice')).toHaveCount(0)
+		await expect(page.getByTestId('c360-billing')).toContainText('No invoices yet')
+		await p360.openTab('Facilities')
+		await expect(p360.rows('facility')).toHaveCount(1)
+		await expect(p360.rows('facility').first()).toContainText(`Facility ID: ${fx.a_fid}`)
+
+		// All facilities keeps the open tab and shows the owner's full picture.
+		await p360.openTab('Billing')
 		await p360.scopeOption('All facilities').click()
 		await expect(page).toHaveURL(/scope=organization/)
-		await expect(p360.rows('order')).toHaveCount(2)
-		await expect(p360.rows('quote').filter({ hasText: fx.account_quote })).toHaveCount(1)
-		await expect(p360.rows('invoice').filter({ hasText: fx.b_invoice })).toHaveCount(1)
-		await expect(p360.rows('invoice').filter({ hasText: fx.b_invoice })).toContainText(fx.b_name)
-		await expect(p360.rows('quote').filter({ hasText: fx.account_quote })).toContainText('—')
-		await expect(p360.rows('facility')).toHaveCount(2)
+		await expect(page).toHaveURL(/tab=billing/)
+		await expect(p360.tab('Billing')).toHaveAttribute('aria-selected', 'true')
+		await expect(p360.rows('invoice')).toHaveCount(1)
+		await expect(p360.rows('invoice').first()).toContainText(fx.b_invoice)
+		await expect(p360.rows('invoice').first()).toContainText(fx.b_name)
+		await expect(p360.tab('Orders')).toHaveText(/Orders\s*2$/)
+		await expect(p360.tab('Quotes')).toHaveText(new RegExp(`Quotes\\s*${fx.quote_count}$`))
+		await expect(p360.tab('Facilities')).toHaveText(/Facilities\s*2$/)
 		await expect(page.getByTestId('c360-unattributed-note')).toBeHidden()
-		await expect(p360.scopeBar).toContainText(fx.a_name)
-		await shot(page, 'c360-3-all-facilities')
+		await shot(page, 'c360-4-all-facilities-billing')
+		await p360.openTab('Orders')
+		await expect(p360.rows('order')).toHaveCount(2)
+		await expect(page.getByTestId('c360-orders').getByRole('columnheader', { name: 'Facility' })).toBeVisible()
 
-		// The scope survives a reload, and the note's link widens too.
+		// Scope and tab survive a reload and the back button.
 		await page.reload()
 		await p360.dismissGettingStarted()
 		await expect(p360.scopeOption('All facilities')).toBeChecked()
+		await expect(p360.tab('Orders')).toHaveAttribute('aria-selected', 'true')
 		await p360.scopeOption('This facility').click()
 		await expect(p360.rows('order')).toHaveCount(1)
 		await page.getByTestId('c360-unattributed-note').getByRole('button', { name: 'Show all facilities' }).click()
 		await expect(p360.scopeOption('All facilities')).toBeChecked()
 		await expect(p360.rows('order')).toHaveCount(2)
 
-		// After a pick, a new search shows its results again (regression: they stayed hidden).
+		// A KPI tile opens its tab.
+		await page.getByTestId('c360-kpi-sites').click()
+		await expect(p360.tab('Facilities')).toHaveAttribute('aria-selected', 'true')
+		await page.getByTestId('c360-kpi-orders').click()
+		await expect(p360.tab('Orders')).toHaveAttribute('aria-selected', 'true')
+
+		// A new pick starts on the Overview, and a second search shows its results.
 		await p360.search(fx.b_mfl)
 		await p360.results.getByTestId('c360-facility-result').first().click()
 		await expect(p360.scopeBar).toContainText(fx.b_name)
 		await expect(p360.scopeOption('This facility')).toBeChecked()
+		await expect(p360.tab('Overview')).toHaveAttribute('aria-selected', 'true')
+		await expect(page).not.toHaveURL(/tab=/)
+		await p360.openTab('Billing')
 		await expect(p360.rows('invoice')).toHaveCount(1)
 		await expect(p360.rows('invoice').first()).toContainText(fx.b_invoice)
+		await p360.openTab('Orders')
 		await expect(p360.rows('order')).toHaveCount(1)
 		await expect(p360.rows('order').first()).toContainText(fx.b_order)
-		await expect(p360.rows('quote').filter({ hasText: fx.a_quote })).toHaveCount(0)
 	})
 
-	test('the owner organization view is unchanged apart from quotes and the facility column', async ({ page }) => {
+	test('the owner organization view uses the same tabs', async ({ page }) => {
 		const p360 = new Customer360Page(page)
 		await p360.goto()
 		await p360.search(fx.organization)
@@ -156,10 +197,12 @@ test.describe('Customer 360 facility scope', () => {
 		await expect(page).toHaveURL(/organization=/)
 		await expect(p360.scopeBar).toBeHidden()
 		await expect(p360.kpiSection).toBeVisible()
-		await expect(p360.rows('order')).toHaveCount(2)
-		await expect(p360.rows('facility')).toHaveCount(2)
-		await expect(page.getByTestId('c360-orders').getByRole('columnheader', { name: 'Facility' })).toBeVisible()
 		await expect(page.getByText(fx.organization).first()).toBeVisible()
+		await p360.openTab('Orders')
+		await expect(p360.rows('order')).toHaveCount(2)
+		await expect(page.getByTestId('c360-orders').getByRole('columnheader', { name: 'Facility' })).toBeVisible()
+		await p360.openTab('Facilities')
+		await expect(p360.rows('facility')).toHaveCount(2)
 	})
 
 	test('facility scope at every viewport', async ({ page }) => {
@@ -168,12 +211,19 @@ test.describe('Customer 360 facility scope', () => {
 			await page.setViewportSize({ width: viewport.width, height: viewport.height })
 			await p360.goto(`/crm/customer-360?facility=${fx.a_facility}&scope=facility`)
 			await expect(p360.scopeBar).toContainText(fx.a_name)
-			await expect(p360.rows('order')).toHaveCount(1)
-			// The scope bar and its toggle fit the viewport.
+			await p360.openTab('Quotes')
+			await expect(p360.rows('quote')).toHaveCount(10)
+			// The scope bar, its toggle and the tab list fit the viewport (tabs scroll sideways).
 			const box = await p360.scopeBar.boundingBox()
 			expect(box && box.x + box.width).toBeLessThanOrEqual(viewport.width + 1)
 			const toggle = await p360.scopeOption('All facilities').boundingBox()
 			expect(toggle && toggle.x + toggle.width).toBeLessThanOrEqual(viewport.width + 1)
+			const tabs = await page.getByTestId('c360-tabs').boundingBox()
+			expect(tabs && tabs.x + tabs.width).toBeLessThanOrEqual(viewport.width + 1)
+			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1)
+			// Rows stay on one line; a narrow table scrolls sideways inside its card instead of wrapping.
+			const row = await p360.rows('quote').first().boundingBox()
+			expect(row && row.height).toBeLessThan(56)
 			await shot(page, `c360-4-facility-${viewport.name}`)
 		}
 	})
