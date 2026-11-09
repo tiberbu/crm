@@ -108,6 +108,12 @@ def setup(run_id: str, admin_password: str, owner_password: str) -> dict:
 	_facility(ids["fixed_mfl"], ids["fixed_fid"], f"E2E Fixed Coupon Clinic {ids['run']} (synthetic)", network, customer, base.OWNER_EMAIL)
 	_facility(ids["flex_mfl"], ids["flex_fid"], f"E2E Flex Coupon Clinic {ids['run']} (synthetic)", network, customer, base.OWNER_EMAIL)
 	frappe.db.set_value("Customer", customer, "tax_id", "")
+	# Metering sites, so Deal › Metering shows each facility's card (OpenMeter itself may be off).
+	from openmeter_mediator.services.sites import ensure_site_for_fid
+
+	for fid in (ids["fixed_fid"], ids["flex_fid"]):
+		site = ensure_site_for_fid(fid)
+		frappe.db.set_value("OpenMeter Site", site.name, "status", "Active")
 	frappe.db.commit()
 
 	# The packages exactly as self-onboarding raises their draft orders.

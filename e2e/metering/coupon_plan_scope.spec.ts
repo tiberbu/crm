@@ -52,20 +52,24 @@ test("coupons are scoped to Flex or Fixed, and the customer sees the subscriptio
     await expect(field(dialog, "coupon-fixed-discount")).toHaveCount(0);
     await dialog.getByTestId("coupon-applies-to-fixed").check();
     await expect(field(dialog, "coupon-fixed-discount")).toBeVisible();
-    await expect(field(dialog, "coupon-value-type", "select")).toHaveCount(0);
+    await expect(dialog.getByRole("combobox", { name: "Value type" })).toHaveCount(0);
     await dialog.getByTestId("coupon-applies-to-both").check();
     await expect(field(dialog, "coupon-fixed-discount")).toBeVisible();
-    await expect(field(dialog, "coupon-value-type", "select")).toBeVisible();
+    await expect(dialog.getByRole("combobox", { name: "Value type" })).toBeVisible();
+    // Brand guide: the checked radio is the brand red (#bc1823), not the forms-plugin blue.
+    const radioColour = await dialog.getByTestId("coupon-applies-to-both").evaluate((el) => getComputedStyle(el).color);
+    expect(radioColour).toBe("rgb(188, 24, 35)");
     await shot(admin, "1-coupon-dialog-both");
 
     // A Fixed-only CRM coupon (left Inactive, the default) saves as a discount with no tokens.
     await dialog.getByTestId("coupon-applies-to-fixed").check();
     await field(dialog, "coupon-title").fill(`E2E fixed only ${RUN}`);
     await field(dialog, "coupon-fixed-discount").fill("10");
-    await field(dialog, "coupon-targeting", "select").selectOption("Coupon Code");
+    await dialog.getByRole("combobox", { name: "How facilities get this coupon" }).click();
+    await admin.getByRole("option", { name: "Coupon code" }).click();
     await field(dialog, "coupon-code").fill(`E2E-CPS-${RUN}`);
     await dialog.getByTestId("coupon-save").click();
-    await expect(dialog).toBeHidden();
+    await expect(admin.getByTestId("coupon-save")).toHaveCount(0);
     await field(admin, "coupon-search").fill(`E2E fixed only ${RUN}`);
     const fixedCard = admin.getByTestId("coupon-card").first();
     await expect(fixedCard.getByTestId("coupon-value")).toHaveText("10% off Fixed");
