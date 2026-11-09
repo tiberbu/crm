@@ -84,6 +84,7 @@ import SESSettings from '@/components/Settings/SESSettings.vue'
 import HFRSettings from '@/components/Settings/HFRSettings.vue'
 import OptInSettings from '@/components/Settings/OptInSettings.vue'
 import PackageCatalogue from '@/components/Settings/PackageCatalogue.vue'
+import CouponManager from '@/components/Settings/CouponManager.vue'
 import Icon from '@/components/Icon.vue'
 import { usersStore } from '@/stores/users'
 import {
@@ -274,6 +275,12 @@ const tabs = computed(() => {
           label: __('Opt-In Process'),
           icon: 'clipboard-list',
           component: markRaw(OptInSettings),
+          condition: () => isAdmin(),
+        },
+        {
+          label: __('Coupons'),
+          icon: 'ticket',
+          component: markRaw(CouponManager),
           condition: () => isAdmin(),
         },
       ],

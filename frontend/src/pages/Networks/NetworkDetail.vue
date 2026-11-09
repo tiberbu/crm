@@ -702,6 +702,35 @@
     </div>
 
     <template v-if="!isNewNetwork">
+      <!-- ── COUPONS ───────────────────────────────────────────────────────── -->
+      <section class="mt-6 rounded-xl border border-outline-gray-2 bg-surface-white p-5 dark:bg-surface-gray-1">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-base font-semibold text-ink-gray-9">{{ __('Coupons') }}</h2>
+          <span class="text-sm text-ink-gray-5">
+            {{
+              networkCoupons.length
+                ? __('{0} coupon(s)', [networkCoupons.length])
+                : __('No coupon yet — the deprecated global fallback applies until you add one in Settings › Coupons.')
+            }}
+          </span>
+        </div>
+        <div v-if="networkCoupons.length" class="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(14rem,1fr))]">
+          <div
+            v-for="coupon in networkCoupons"
+            :key="coupon.name"
+            class="rounded-lg border border-outline-gray-2 p-3"
+            :class="{ 'opacity-70': coupon.derived_status !== 'Active' }"
+            data-testid="network-coupon-card"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <p class="truncate text-sm font-semibold text-ink-gray-9">{{ coupon.coupon_title }}</p>
+              <Badge :label="__(coupon.derived_status)" :theme="COUPON_STATUS_THEME[coupon.derived_status] || 'gray'" variant="subtle" />
+            </div>
+            <p class="mt-1 font-mono text-sm">{{ couponValueLabel(coupon) }}</p>
+          </div>
+        </div>
+      </section>
+
       <!-- ── PREQUALIFIED CONTACTS ─────────────────────────────────────────── -->
       <div class="mt-6 flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -1676,6 +1705,7 @@ import {
   call,
   createResource,
   Button,
+  Badge,
   Dialog,
   FileUploader,
   FormControl,
@@ -1684,6 +1714,7 @@ import {
 } from 'frappe-ui'
 import { isValidFacilityId } from '@/utils/facilityId'
 import { copyToClipboard, validateIsImageFile } from '@/utils'
+import { couponValueLabel, COUPON_STATUS_THEME } from '@/utils/coupons'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
@@ -1703,6 +1734,15 @@ const networkResource = createResource({
 })
 
 const networkDoc = computed(() => networkResource.data ?? null)
+
+// ── Coupons for this network ───────────────────────────────────────────────
+const networkCouponsResource = createResource({
+  url: 'crm.api.coupons.list_coupons',
+  makeParams: () => ({ network: props.networkSlug }),
+  auto: !isNewNetwork.value,
+})
+const networkCoupons = computed(() => networkCouponsResource.data?.coupons || [])
+
 const invoiceTimingSummary = computed(() => {
   const doc = networkDoc.value
   if (!doc) return ''

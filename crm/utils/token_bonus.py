@@ -2,9 +2,13 @@
 
 Both are zero-rated lines on the facility's token Sales Order (and so its invoice), marked with
 `crm_bonus_type` and `crm_bonus_tokens`. openmeter_mediator grants each type once per facility
-when the invoice is paid, separately from the bought tokens. Quantities come from CRM Opt-In
-Settings. A facility gets each bonus on one confirmed order only: the first-purchase bonus while it
-has no other confirmed token order, the Partner Coupon while no confirmed order carried one.
+when the invoice is paid, separately from the bought tokens. A facility gets each bonus on one
+confirmed order only: the first-purchase bonus while it has no other confirmed token order, the
+coupon while no confirmed order carried one.
+
+The coupon line is resolved from the coupon domain (`crm.utils.coupons.resolve_coupon`): a partner
+network's own coupon (flat tokens or a percentage of the purchase), a CRM coupon, or — for a network
+that has never had a coupon — the deprecated global `partner_coupon_tokens` setting.
 
 The welcome bonus can also go out before any payment (P-76): an admin dispenses it from the
 Deal's Metering tab, or CRM Opt-In Settings auto-assigns it when the facility selects a package.
@@ -21,6 +25,7 @@ from frappe.utils import cint, cstr
 BONUS_ITEM = "CV-TOKEN-BONUS"
 WELCOME_BONUS = "Welcome Bonus"
 PARTNER_COUPON = "Partner Coupon"
+CRM_COUPON = "CRM Coupon"
 
 
 def bonus_settings() -> dict[str, int]:
@@ -156,7 +161,7 @@ def _coupon_network(customer: str, facility_mfl: str) -> str | None:
 
 
 def eligible_bonuses(
-	customer: str, facility_mfl: str, exclude_order: str | None = None, facility_fid: str | None = None
+	customer: str, facility_mfl: str, exclude_order: str | None = None, facility_fid: str | None = None, purchased_tokens: int = 0
 ) -> list[dict]:
 	"""The complimentary lines a facility's next confirmed token order should carry."""
 	facility_mfl = cstr(facility_mfl).strip()
@@ -180,21 +185,25 @@ def eligible_bonuses(
 				),
 			}
 		)
-	network = _coupon_network(customer, facility_mfl) if amounts[PARTNER_COUPON] else None
-	if network and not (
-		others
-		and frappe.db.exists(
-			"Sales Order Item", {"parent": ["in", others], "crm_bonus_type": PARTNER_COUPON}
-		)
-	):
-		label = frappe.db.get_value("CRM Opt-In Network", network, "display_name") or network
+	# The coupon line (partner or CRM) resolves from the coupon domain; a network with no coupon of its
+	# own falls back to the (deprecated) global setting. Imported here: coupons imports this module.
+	from crm.utils import coupons
+
+	resolved = coupons.resolve_coupon(customer, facility_mfl, facility_fid, purchased_tokens, exclude_order=exclude_order)
+	if resolved:
+		label = resolved["label"]
+		if resolved["type"] == PARTNER_COUPON:
+			description = _("Partner Coupon ({0}): {1} complimentary Care Tokens (no charge)").format(
+				label, f"{resolved['tokens']:,}"
+			)
+		else:
+			description = _("Coupon ({0}): {1} complimentary Care Tokens (no charge)").format(label, f"{resolved['tokens']:,}")
 		lines.append(
 			{
-				"type": PARTNER_COUPON,
-				"tokens": amounts[PARTNER_COUPON],
-				"description": _("Partner Coupon ({0}): {1} complimentary Care Tokens (no charge)").format(
-					label, f"{amounts[PARTNER_COUPON]:,}"
-				),
+				"type": resolved["type"],
+				"tokens": resolved["tokens"],
+				"description": description,
+				"coupon": resolved["coupon"],
 			}
 		)
 	return lines
@@ -214,6 +223,8 @@ def apply_bonus_lines(order) -> list[dict]:
 	"""Replace the order's complimentary lines with the ones the facility is eligible for now."""
 	if not _installed():
 		return []
+	from crm.utils import coupons
+
 	order.set("items", [row for row in order.items if not row.get("crm_bonus_type")])
 	if not _earns_bonus(order.get("crm_token_package_item")):
 		return []
@@ -222,27 +233,56 @@ def apply_bonus_lines(order) -> list[dict]:
 		order.get("crm_token_facility_mfl"),
 		exclude_order=order.name,
 		facility_fid=cstr(order.get("crm_token_facility_fid")).strip() or None,
+		purchased_tokens=coupons.purchased_tokens(order),
 	)
 	if not bonuses:
 		return []
 	item = frappe.db.get_value("Item", BONUS_ITEM, ["item_name", "stock_uom"], as_dict=True)
 	delivery_date = order.get("delivery_date") or (order.items[0].delivery_date if order.items else None)
 	for bonus in bonuses:
-		order.append(
-			"items",
-			{
-				"item_code": BONUS_ITEM,
-				"item_name": item.item_name,
-				"description": bonus["description"],
-				"qty": 1,
-				"uom": item.stock_uom,
-				"stock_uom": item.stock_uom,
-				"conversion_factor": 1,
-				"price_list_rate": 0,
-				"rate": 0,
-				"delivery_date": delivery_date,
-				"crm_bonus_type": bonus["type"],
-				"crm_bonus_tokens": bonus["tokens"],
-			},
-		)
+		row = {
+			"item_code": BONUS_ITEM,
+			"item_name": item.item_name,
+			"description": bonus["description"],
+			"qty": 1,
+			"uom": item.stock_uom,
+			"stock_uom": item.stock_uom,
+			"conversion_factor": 1,
+			"price_list_rate": 0,
+			"rate": 0,
+			"delivery_date": delivery_date,
+			"crm_bonus_type": bonus["type"],
+			"crm_bonus_tokens": bonus["tokens"],
+		}
+		if bonus.get("coupon"):
+			row["crm_coupon"] = bonus["coupon"]
+		order.append("items", row)
 	return bonuses
+
+
+def drop_coupon_lines_from_drafts(coupon: str) -> list[str]:
+	"""Take a coupon's line off unconfirmed orders once the coupon can no longer be confirmed.
+
+	A revoked or expired coupon must not be promised on a draft the client is about to review.
+	Confirmed orders keep their lines; the payment either grants (if the mediator still allows it) or
+	marks the redemption Lapsed.
+	"""
+	if not (coupon and frappe.db.has_column("Sales Order Item", "crm_coupon") and _installed()):
+		return []
+	parents = frappe.get_all("Sales Order Item", filters={"crm_coupon": coupon}, pluck="parent", ignore_permissions=True)
+	changed = []
+	for name in set(parents):
+		order = frappe.get_doc("Sales Order", name)
+		if order.docstatus != 0:
+			continue
+		rows = [
+			row
+			for row in order.items
+			if not (row.get("crm_bonus_type") in (PARTNER_COUPON, CRM_COUPON) and row.get("crm_coupon") == coupon)
+		]
+		if len(rows) == len(order.items):
+			continue
+		order.set("items", rows)
+		order.save(ignore_permissions=True)  # SYSTEM-INTERNAL: removes a zero-rated line only
+		changed.append(name)
+	return changed

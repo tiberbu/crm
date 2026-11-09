@@ -1485,7 +1485,8 @@ def set_admin_account_email(session_token: Any, email: Any):
 # nosemgrep: guest-whitelisted-method -- only public package metadata is returned after strict six-digit Network validation.
 @frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
 def get_catalog(partner_id: Any = None):
-	from crm.utils.token_bonus import PARTNER_COUPON, WELCOME_BONUS, bonus_settings
+	from crm.utils import coupons
+	from crm.utils.token_bonus import WELCOME_BONUS, bonus_settings
 
 	partner_id = _text(partner_id)
 	partner = _public_network(partner_id)
@@ -1495,6 +1496,15 @@ def get_catalog(partner_id: Any = None):
 		)
 	bonuses = bonus_settings()
 	packages = _catalog_packages()
+	# A live offer only: a revoked/expired coupon shows nothing (the network still validates).
+	# Never returns counts or limits on this guest endpoint.
+	offer = coupons.public_offer(partner["name"]) if partner else None
+	if offer and offer["value_type"] == "flat_tokens":
+		value = int(offer["value"])
+		cap = int(offer.get("max_tokens") or 0)
+		partner_coupon_tokens = min(value, cap) if cap else value
+	else:
+		partner_coupon_tokens = 0
 	return {
 		"success": True,
 		"data": {
@@ -1505,7 +1515,8 @@ def get_catalog(partner_id: Any = None):
 			"calculator_config": _calculator_config(),
 			"welcome_bonus_tokens": bonuses[WELCOME_BONUS],
 			# Only a coupon the client entered earns tokens, never the default Network.
-			"partner_coupon_tokens": bonuses[PARTNER_COUPON] if partner_id else 0,
+			"partner_coupon_tokens": partner_coupon_tokens,
+			"partner_coupon_offer": offer,
 		},
 	}
 
@@ -1710,7 +1721,7 @@ def _custom_package(amount: Any, flex: list[dict[str, Any]]) -> dict[str, Any]:
 		"description": "Value Express Flex Custom: %s Care Tokens at %s %.2f per token (%s rate)"
 		% ("{:,}".format(quote["tokens"]), row["currency"], quote["rate"], quote["tier"]),
 		"token_quantity": quote["tokens"],
-		# Invoiced per token: OpenMeter grants the row's 1 token × qty.
+		# Invoiced per token: OpenMeter grants the row's 1 token x qty.
 		"qty": quote["tokens"],
 		"rate": quote["rate"],
 		"price": quote["charge"],
@@ -1854,7 +1865,7 @@ def _facility_conflicts(facilities: list[dict[str, Any]], network: str | None, s
 		*(_ois_facility_codes(row.get("raw_json")) for row in ois_rows if _text(row.get("name")) in submitted)
 	) if submitted else set()
 
-	person_email = _text((((session or {}).get("person") or {}).get("email"))).lower()
+	person_email = _text(((session or {}).get("person") or {}).get("email")).lower()
 	existing_customer = _resolve_existing_customer(session, person_email)
 
 	deal_names = [name for name in submitted_values if frappe.db.exists("CRM Deal", name)]
@@ -1960,7 +1971,7 @@ def _check_onboarding_conflicts(session: dict[str, Any], selected: set[str], net
 					is_existing_identity = True
 					break
 	if not is_existing_identity:
-		account_email = _text(((session.get("person") or {}).get("email"))).lower()
+		account_email = _text((session.get("person") or {}).get("email")).lower()
 		if account_email and frappe.db.exists("User", {"email": account_email}):
 			is_existing_identity = True
 

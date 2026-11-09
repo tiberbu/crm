@@ -891,7 +891,7 @@ async function saveUserProfile() {
         ...data,
       }
       profileModalOpen.value = false
-      await loadContext()
+      await refreshContext()
       notice.value = {
         tone: 'success',
         text: 'Profile and account details updated successfully!',

@@ -615,6 +615,7 @@ const GRANT_SOURCE_TIPS = {
   'Token Purchase': __('Tokens bought on a fully paid token invoice.'),
   'Welcome Bonus': __("The facility's one-time welcome bonus."),
   'Partner Coupon': __('Complimentary tokens from the referring partner.'),
+  'CRM Coupon': __('Complimentary tokens from a coupon set by the CRM.'),
   Reissue: __('Tokens re-issued in place of a grant that would expire.'),
   Manual: __('Tokens granted manually by an administrator.'),
 }
