@@ -1134,3 +1134,61 @@ test('"Review invoice" opens the Invoices tab', async ({ page }) => {
   await expect(page.getByTestId('facility-tab-invoice')).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByTestId('stage-invoice')).toBeVisible()
 })
+
+// S4: the context row only carries actionable records plus record_counts; the
+// stepper and tab labels use the counts and the tabs page full history from the server.
+test('a slim context row still shows the full journey and history', async ({ page }) => {
+  const paid = Array.from({ length: 30 }, (_, i) => ({
+    name: `ACC-INV-SLIM-${String(i).padStart(3, '0')}`,
+    invoice_number: `ACC-INV-SLIM-${String(i).padStart(3, '0')}`,
+    amount: 0,
+    due_date: '2026-09-30',
+    posting_date: '2026-09-01',
+    facility_mfls: ['90300'],
+  }))
+  const due = { ...paid[0], name: 'ACC-INV-SLIM-DUE', invoice_number: 'ACC-INV-SLIM-DUE', amount: 900, due_date: '2026-12-31' }
+  const slim = {
+    ...tokenFacility,
+    mfl_code: '90300',
+    facility_name: 'Slim Row Clinic',
+    orders: [],
+    invoices: [due],
+    payments: [],
+    record_counts: { order: 31, order_draft: 0, invoice: 31, invoice_due: 1, payment: 30, payment_pending: 0 },
+  }
+  await openFacility(
+    page,
+    async (route) => route.fulfill(status({ configured: false, status: 'not_configured' })),
+    slim,
+    undefined,
+    {},
+    async (method, body, route) => {
+      if (method === 'crm.api.facility_documents.get_facility_document_counts') {
+        await route.fulfill({ json: { message: { order: 31, invoice: 31, invoiceDue: 1, payment: 30 } } })
+        return true
+      }
+      if (method === 'crm.api.facility_documents.get_facility_documents' && body.kind === 'invoice') {
+        const rows = body.status === 'outstanding' ? [due] : [due, ...paid]
+        const start = Number(body.start) || 0
+        await route.fulfill({
+          json: { message: { rows: rows.slice(start, start + 20), total: rows.length, start, page_length: 20, counts: {}, truncated: false } },
+        })
+        return true
+      }
+      return false
+    },
+  )
+
+  const stepper = page.getByTestId('journey-stepper')
+  await expect(stepper.locator('li[data-state]')).toHaveCount(3)
+  await expect(stepper.locator('li').nth(0)).toHaveAttribute('data-state', 'done')
+  await expect(stepper.locator('li').nth(1)).toHaveAttribute('data-state', 'current')
+  await expect(page.getByTestId('facility-tab-invoice')).toContainText('31')
+  await expect(page.getByTestId('facility-tab-invoice')).toContainText('1 due')
+
+  await page.getByTestId('facility-tab-invoice').click()
+  const invoices = page.getByTestId('stage-invoice')
+  await expect(invoices.getByTestId('stage-invoice-rows').locator(':scope > li')).toHaveCount(1)
+  await invoices.getByTestId('stage-invoice-filter-all').click()
+  await expect(invoices.getByTestId('stage-invoice-pager')).toContainText('Showing 1–20 of 31')
+})

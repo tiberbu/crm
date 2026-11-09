@@ -42,6 +42,7 @@ const stages = computed(() =>
     orders: props.orders,
     invoices: props.invoices,
     payments: props.payments,
+    counts: props.facility?.record_counts,
   }),
 )
 
@@ -63,12 +64,15 @@ const server = computed(() => {
 
 const localDue = computed(() => props.invoices.filter((invoice) => Number(invoice.amount) > 0).length)
 const serverCounts = ref(null)
+// The context row keeps only actionable records (S4); record_counts carries the totals
+// until the server counts arrive.
+const recordCounts = computed(() => props.facility?.record_counts || null)
 const counts = computed(() => ({
   quote: commercial.value.quotes.length,
-  order: props.orders.length,
-  invoice: props.invoices.length,
-  invoiceDue: localDue.value,
-  payment: props.payments.length,
+  order: recordCounts.value ? Number(recordCounts.value.order) || 0 : props.orders.length,
+  invoice: recordCounts.value ? Number(recordCounts.value.invoice) || 0 : props.invoices.length,
+  invoiceDue: recordCounts.value ? Number(recordCounts.value.invoice_due) || 0 : localDue.value,
+  payment: recordCounts.value ? Number(recordCounts.value.payment) || 0 : props.payments.length,
   ...(server.value && serverCounts.value ? serverCounts.value : {}),
 }))
 const tabs = computed(() => facilityTabs({ showQuote: showQuote.value, counts: counts.value }))

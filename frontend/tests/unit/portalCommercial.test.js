@@ -204,6 +204,40 @@ describe('portalCommercial', () => {
     expect(orderStatus({ display_status: 'Confirmed' })).toBe('Confirmed')
   })
 
+  it('uses record_counts when the context row only carries actionable records (S4)', () => {
+    const keys = (result) => result.map((stage) => `${stage.key}:${stage.state}`)
+    // Fully paid history: no rows in context, counts show it exists.
+    expect(
+      keys(
+        stageStates({
+          showQuote: false,
+          quotes: [],
+          orders: [],
+          invoices: [],
+          payments: [],
+          counts: { order: 4, order_draft: 0, invoice: 4, invoice_due: 0, payment: 4, payment_pending: 0 },
+        }),
+      ),
+    ).toEqual(['order:done', 'invoice:done', 'payment:done'])
+    // One invoice due and paid ones in history: invoices are current.
+    expect(
+      keys(
+        stageStates({
+          showQuote: false,
+          quotes: [],
+          orders: [],
+          invoices: [{ amount: 500 }],
+          payments: [],
+          counts: { order: 3, invoice: 3, invoice_due: 1, payment: 2 },
+        }),
+      ),
+    ).toEqual(['order:done', 'invoice:current', 'payment:upcoming'])
+    // No counts: the old row-based behaviour is unchanged.
+    expect(
+      keys(stageStates({ showQuote: false, quotes: [], orders: [], invoices: [], payments: [] })),
+    ).toEqual(['order:current', 'invoice:upcoming', 'payment:upcoming'])
+  })
+
   it('computes stage states per the SPEC 7.2 table', () => {
     const keys = (result) => result.map((stage) => `${stage.key}:${stage.state}`)
     // Quote done (accepted), order pending (draft), rest upcoming
