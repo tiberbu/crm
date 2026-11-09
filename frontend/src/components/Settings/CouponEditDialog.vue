@@ -28,7 +28,7 @@
           />
         </div>
 
-        <div class="flex flex-col gap-2" data-testid="coupon-applies-to">
+        <div class="coupon-plans flex flex-col gap-2" data-testid="coupon-applies-to">
           <p class="text-sm text-ink-gray-7">{{ __('Applies to') }}</p>
           <div class="flex flex-wrap gap-4">
             <label
@@ -317,3 +317,14 @@ async function submit() {
   }
 }
 </script>
+
+<style>
+/* Brand guide: native radios take the brand red, never the forms-plugin blue. */
+.coupon-plans input[type='radio'] {
+  color: var(--ink-blue-6); /* the desk theme maps this token to the brand red */
+  accent-color: var(--ink-blue-6);
+}
+.coupon-plans input[type='radio']:focus {
+  --tw-ring-color: var(--brand-tint-07);
+}
+</style>
