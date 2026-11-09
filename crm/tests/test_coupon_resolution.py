@@ -36,6 +36,7 @@ def _coupon(network=None, value_type="flat_tokens", value=100, max_tokens=0, tar
 				"value": value,
 				"max_tokens": max_tokens,
 				"targeting": targeting,
+				"status": kw.pop("status", "Active"),
 				**kw,
 			}
 		)

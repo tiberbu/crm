@@ -4,7 +4,7 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import cstr, now_datetime
+from frappe.utils import cstr, get_fullname, now_datetime
 
 from crm.utils import coupons
 from crm.utils.coupon_math import derived_status
@@ -55,6 +55,12 @@ def _get_coupon(name):
 			"revoked_on",
 			"revoked_by",
 			"revocation_reason",
+			"owner",
+			"creation",
+			"enabled_on",
+			"enabled_by",
+			"disabled_on",
+			"disabled_by",
 		],
 		as_dict=True,
 	)
@@ -68,7 +74,31 @@ def _get_coupon(name):
 		row.max_redemptions,
 		row.redeemed_count,
 	)
+	_add_audit_labels([row])
 	return row
+
+
+def _add_audit_labels(rows):
+	"""Network display name and the full names of the creator and the revoker, for the admin cards."""
+	networks = {r.network for r in rows if r.get("network")}
+	names = (
+		dict(
+			frappe.get_all(
+				"CRM Opt-In Network",
+				filters={"name": ["in", list(networks)]},
+				fields=["name", "display_name"],
+				as_list=True,
+				ignore_permissions=True,
+			)
+		)
+		if networks
+		else {}
+	)
+	for row in rows:
+		row["network_name"] = (names.get(row.network) or row.network) if row.get("network") else None
+		row["created_by_name"] = get_fullname(row.owner) if row.get("owner") else None
+		for who in ("revoked_by", "enabled_by", "disabled_by"):
+			row[f"{who}_name"] = get_fullname(row[who]) if row.get(who) else None
 
 
 @frappe.whitelist()
@@ -111,6 +141,15 @@ def list_coupons(network: Any = None):
 		"coupon_code",
 		"client_label",
 		"modified",
+		"owner",
+		"creation",
+		"revoked_on",
+		"revoked_by",
+		"revocation_reason",
+		"enabled_on",
+		"enabled_by",
+		"disabled_on",
+		"disabled_by",
 	]
 	rows = frappe.get_all(
 		"CRM Coupon", filters=filters, fields=fields, ignore_permissions=True, order_by="modified desc"
@@ -124,6 +163,7 @@ def list_coupons(network: Any = None):
 			row.max_redemptions,
 			row.redeemed_count,
 		)
+	_add_audit_labels(rows)
 	return {"coupons": rows}
 
 
@@ -160,6 +200,38 @@ def save_coupon(name: Any, payload: Any):
 	coupon.description = payload.get("description") or ""
 	coupon.insert(ignore_permissions=True) if coupon.is_new() else coupon.save(ignore_permissions=True)
 	return {"name": coupon.name}
+
+
+def _set_enabled(name, enabled):
+	name = _text(name)
+	_assert_coupon_access(name)
+	status = frappe.db.get_value("CRM Coupon", name, "status")
+	if not status:
+		frappe.throw(_("Coupon {0} does not exist.").format(name), frappe.ValidationError)
+	if status == "Revoked":
+		frappe.throw(_("A revoked coupon cannot be enabled or disabled."), frappe.ValidationError)
+	target = "Active" if enabled else "Inactive"
+	if status != target:
+		doc = frappe.get_doc("CRM Coupon", name)
+		doc.status = target
+		prefix = "enabled" if enabled else "disabled"
+		doc.set(f"{prefix}_on", now_datetime())
+		doc.set(f"{prefix}_by", frappe.session.user)
+		# Saving runs validate, so enabling still refuses a window that overlaps a live coupon.
+		doc.save(ignore_permissions=True)
+	return {"name": name, "status": target}
+
+
+@frappe.whitelist()
+def enable_coupon(name: Any):
+	"""Make an Inactive coupon Active so new orders can use it."""
+	return _set_enabled(name, True)
+
+
+@frappe.whitelist()
+def disable_coupon(name: Any):
+	"""Pause an Active coupon. New orders stop using it; reservations already made still grant."""
+	return _set_enabled(name, False)
 
 
 @frappe.whitelist()
@@ -240,8 +312,8 @@ def assign_coupon(coupon: Any, facility_mfls: Any, facility_fids: Any = None):
 	row = frappe.db.get_value("CRM Coupon", coupon, ["network", "status", "targeting"], as_dict=True)
 	if not row or row.network:
 		frappe.throw(_("Assignments are for CRM coupons (no network)."), frappe.ValidationError)
-	if row.status != "Active":
-		frappe.throw(_("Only an active coupon can be assigned."), frappe.ValidationError)
+	if row.status == "Revoked":
+		frappe.throw(_("A revoked coupon cannot be assigned."), frappe.ValidationError)
 	if row.targeting != "Assigned Facilities":
 		frappe.throw(
 			_("Assignments require a coupon with Assigned Facilities targeting."), frappe.ValidationError

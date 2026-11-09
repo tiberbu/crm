@@ -31,13 +31,15 @@ def coupon_tokens(value_type, value, max_tokens, purchased_tokens) -> int:
 
 
 def derived_status(status, valid_from, valid_to, today, max_redemptions, redeemed_count) -> str:
-	"""The effective status of a coupon: Revoked > Scheduled > Expired > Exhausted > Active.
+	"""The effective status of a coupon: Revoked > Inactive > Scheduled > Expired > Exhausted > Active.
 
 	Dates are ``datetime.date`` (or ``datetime.datetime``) objects, or None. Expiry is never
 	stored; it is derived here so it cannot drift from ``valid_to``.
 	"""
 	if status == "Revoked":
 		return "Revoked"
+	if status == "Inactive":
+		return "Inactive"
 	if valid_from and today < valid_from:
 		return "Scheduled"
 	if valid_to and today > valid_to:

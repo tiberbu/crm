@@ -17,9 +17,10 @@ export function couponValueLabel(coupon) {
   return `${value.toLocaleString()} tokens`
 }
 
-/** The effective status shown in the list: Revoked > Scheduled > Expired > Exhausted > Active. */
+/** The effective status shown in the list: Revoked > Inactive > Scheduled > Expired > Exhausted > Active. */
 export function derivedStatus(coupon) {
   if (coupon?.status === 'Revoked') return 'Revoked'
+  if (coupon?.status === 'Inactive') return 'Inactive'
   const today = new Date()
   const from = coupon?.valid_from ? new Date(coupon.valid_from) : null
   const to = coupon?.valid_to ? new Date(coupon.valid_to) : null
@@ -33,6 +34,7 @@ export function derivedStatus(coupon) {
 export const COUPON_STATUS_THEME = {
   Active: 'green',
   Revoked: 'red',
+  Inactive: 'gray',
   Scheduled: 'blue',
   Expired: 'orange',
   Exhausted: 'gray',
@@ -52,4 +54,22 @@ export function parseMflList(text) {
     }
   }
   return out
+}
+
+/** Case-insensitive match on network name, network ID, coupon title or code. Empty query matches all. */
+export function couponMatches(coupon, query) {
+  const q = String(query || '')
+    .trim()
+    .toLowerCase()
+  if (!q) return true
+  return [
+    coupon?.network_name,
+    coupon?.network,
+    coupon?.coupon_title,
+    coupon?.coupon_code,
+  ].some((v) =>
+    String(v || '')
+      .toLowerCase()
+      .includes(q),
+  )
 }

@@ -27,6 +27,12 @@
   "section_break_display",
   "client_label",
   "description",
+  "section_break_status_audit",
+  "enabled_on",
+  "enabled_by",
+  "col_break_status_audit",
+  "disabled_on",
+  "disabled_by",
   "section_break_revoke",
   "revoked_on",
   "revoked_by",
@@ -99,11 +105,11 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Active\nRevoked",
+   "options": "Inactive\nActive\nRevoked",
    "read_only": 1,
-   "default": "Active",
+   "default": "Inactive",
    "in_list_view": 1,
-   "description": "Changed only by Revoke. Revoked is terminal."
+   "description": "New coupons start Inactive. Enable/Disable switch Inactive and Active; Revoke is terminal."
   },
   {
    "fieldname": "redeemed_count",
@@ -176,6 +182,41 @@
    "fieldtype": "Small Text",
    "label": "Description",
    "description": "Internal notes."
+  },
+  {
+   "fieldname": "section_break_status_audit",
+   "fieldtype": "Section Break",
+   "label": "Enable and disable"
+  },
+  {
+   "fieldname": "enabled_on",
+   "fieldtype": "Datetime",
+   "label": "Last Enabled On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "enabled_by",
+   "fieldtype": "Link",
+   "label": "Last Enabled By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_break_status_audit",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "disabled_on",
+   "fieldtype": "Datetime",
+   "label": "Last Disabled On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "disabled_by",
+   "fieldtype": "Link",
+   "label": "Last Disabled By",
+   "options": "User",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_revoke",
