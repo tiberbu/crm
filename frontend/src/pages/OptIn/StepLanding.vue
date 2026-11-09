@@ -86,7 +86,7 @@
       <!-- Partner logos strip -->
       <div v-if="partnerLogos.length" class="mt-10">
         <p
-          class="mb-4 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500"
+          class="mb-4 text-xs font-medium text-ink-gray-6"
         >
           Trusted by our partners
         </p>

@@ -1,5 +1,5 @@
 <template>
-  <div class="flow-root min-h-screen bg-gray-50 dark:bg-gray-950" :style="brandStyle">
+  <div class="optin-wizard flow-root min-h-screen bg-gray-50 dark:bg-gray-950" :style="brandStyle">
     <!-- Wrapper card (steps 1-6): a bounded, viewport-fitting column — fixed header,
          scrollable body — so the wizard never grows past one screen. -->
     <div
@@ -324,3 +324,17 @@ function onPartialSaved(ref) {
   showPartialSaved.value = true
 }
 </script>
+
+<style>
+/* The forms plugin paints checked radios and checkboxes with its own blue. In the
+   opt-in they take the network brand colour (brand guide red by default). */
+.optin-wizard input[type='radio'],
+.optin-wizard input[type='checkbox'] {
+  color: var(--brand-primary);
+  accent-color: var(--brand-primary);
+}
+.optin-wizard input[type='radio']:focus,
+.optin-wizard input[type='checkbox']:focus {
+  --tw-ring-color: var(--brand-primary);
+}
+</style>

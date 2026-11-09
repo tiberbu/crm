@@ -261,7 +261,7 @@
             <div class="flex items-start justify-between gap-3">
               <div>
                 <p
-                  class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+                  class="text-xs font-semibold text-ink-gray-6"
                 >
                   Total contract commitment · incl. VAT
                 </p>
@@ -302,7 +302,7 @@
           class="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-800/50"
         >
           <p
-            class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+            class="text-xs font-semibold text-ink-gray-6"
           >
             Active year · Year {{ activePlan.year_number || 1 }}
           </p>
@@ -330,22 +330,22 @@
           <thead class="bg-gray-50 dark:bg-gray-800">
             <tr>
               <th
-                class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+                class="px-4 py-3 text-left text-xs font-semibold text-ink-gray-6"
               >
                 Facility
               </th>
               <th
-                class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+                class="px-4 py-3 text-left text-xs font-semibold text-ink-gray-6"
               >
-                KEPH Level
+                KEPH level
               </th>
               <th
-                class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+                class="px-4 py-3 text-right text-xs font-semibold text-ink-gray-6"
               >
                 Monthly (KES, excl. VAT)
               </th>
               <th
-                class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+                class="px-4 py-3 text-right text-xs font-semibold text-ink-gray-6"
               >
                 Annual (KES, excl. VAT)
               </th>

@@ -14,7 +14,7 @@
     >
       <div class="mb-3 flex items-center justify-between">
         <h3
-          class="text-sm font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+          class="text-sm font-semibold text-ink-gray-6"
         >
           Contact
         </h3>
@@ -96,7 +96,7 @@
       >
         <div class="mb-4">
           <h3
-            class="text-sm font-semibold uppercase tracking-wider"
+            class="text-sm font-semibold"
             style="color: var(--brand-primary)"
           >
             Who will sign the agreement?
@@ -285,10 +285,10 @@
       >
         <div class="mb-4">
           <h3
-            class="text-sm font-semibold uppercase tracking-wider"
+            class="text-sm font-semibold"
             style="color: var(--brand-primary)"
           >
-            Facility Witness
+            Facility witness
           </h3>
           <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
             A colleague at your facility who will witness the signing of your
@@ -361,7 +361,7 @@
     >
       <div class="mb-3 flex items-center justify-between">
         <h3
-          class="text-sm font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+          class="text-sm font-semibold text-ink-gray-6"
         >
           Facilities ({{ store.selectedFacilities.length }})
         </h3>
@@ -420,9 +420,9 @@
       >
         <div class="mb-2 flex items-center justify-between">
           <h3
-            class="text-sm font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+            class="text-sm font-semibold text-ink-gray-6"
           >
-            Commitment Summary
+            Commitment summary
           </h3>
           <button
             class="text-xs underline"
@@ -433,7 +433,7 @@
           </button>
         </div>
         <p
-          class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400"
+          class="text-xs font-semibold text-ink-gray-6"
         >
           Total contract commitment · incl. VAT
         </p>
@@ -476,7 +476,7 @@
           class="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700"
         >
           <p
-            class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+            class="text-xs font-semibold text-ink-gray-6"
           >
             Yearly quotations
           </p>
@@ -504,7 +504,7 @@
           class="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700"
         >
           <p
-            class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+            class="text-xs font-semibold text-ink-gray-6"
           >
             Optional services noted
           </p>

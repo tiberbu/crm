@@ -46,9 +46,9 @@
       class="mb-6 rounded-xl border border-gray-200 bg-white p-4 text-left dark:border-gray-700 dark:bg-gray-800"
     >
       <p
-        class="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+        class="mb-3 text-xs font-semibold text-ink-gray-6"
       >
-        Registered Facilities
+        Registered facilities
       </p>
       <div class="space-y-2">
         <div
