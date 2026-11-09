@@ -6,6 +6,7 @@ import TokenAlertCard from './components/TokenAlertCard.vue'
 import BillingJourney from './components/BillingJourney.vue'
 import PlanPanel from './components/PlanPanel.vue'
 import { tokenBalanceText } from '@/utils/tokenBalance'
+import { subscriptionCard } from '@/utils/subscription'
 import {
   balanceOrNextText,
   canTopUp,
@@ -487,6 +488,18 @@ const summaryCards = computed(() => {
       note: topUp.value ? 'Choose a plan below' : '',
       valueClass: 'text-cx-ink',
       icon: 'file-text',
+    })
+  }
+  // P-114: a Fixed subscription's term, from metering (status, active since, expiry).
+  const subscription = subscriptionCard(props.facility.subscription)
+  if (subscription) {
+    cards.splice(1, 0, {
+      testid: 'facility-subscription',
+      label: 'Subscription',
+      value: subscription.value,
+      note: subscription.note,
+      valueClass: 'text-cx-ink',
+      icon: 'clock',
     })
   }
   cards.push({

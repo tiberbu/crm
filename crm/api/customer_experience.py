@@ -462,7 +462,7 @@ def get_draft_order(sales_order: Any):
 			"total_taxes_and_charges": flt(doc.total_taxes_and_charges),
 			"grand_total": flt(doc.grand_total),
 			"items": [
-				{"item_code": row.item_code, "item_name": row.item_name, "description": row.description, "qty": flt(row.qty), "rate": flt(row.rate), "amount": flt(row.amount), "bonus_type": _text(row.get("crm_bonus_type")), "bonus_tokens": int(row.get("crm_bonus_tokens") or 0)}
+				{"item_code": row.item_code, "item_name": row.item_name, "description": row.description, "qty": flt(row.qty), "rate": flt(row.rate), "amount": flt(row.amount), "bonus_type": _text(row.get("crm_bonus_type")), "bonus_tokens": int(row.get("crm_bonus_tokens") or 0), "discount_percentage": flt(row.get("discount_percentage")) if row.get("crm_coupon") and not row.get("crm_bonus_type") else 0, "discount_amount": flt(row.get("discount_amount")) * flt(row.qty) if row.get("crm_coupon") and not row.get("crm_bonus_type") else 0}
 				for row in doc.items
 			],
 			"package_tokens": _order_tokens(doc),

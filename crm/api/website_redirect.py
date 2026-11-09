@@ -1858,10 +1858,43 @@ def _attach_token_balances(accounts: list[dict]) -> None:
 	"""
 	facilities = [facility for account in accounts for facility in account.get("facilities") or []]
 	balances = fetch_facility_token_balances(f.get("hfr_facility_id") for f in facilities)
+	plans = fetch_facility_plans(f.get("hfr_facility_id") for f in facilities)
 	for facility in facilities:
-		entry = balances.get(cstr(facility.get("hfr_facility_id")).strip())
+		fid = cstr(facility.get("hfr_facility_id")).strip()
+		entry = balances.get(fid)
 		if entry:
 			facility["token_balance"] = entry
+		subscription = (plans.get(fid) or {}).get("subscription")
+		if subscription:
+			facility["subscription"] = subscription
+
+
+def fetch_facility_plans(fids) -> dict[str, dict]:
+	"""Map each FID to its plan from the metering app's crm_get_facility_plan hook (P-114, ADR-007).
+
+	Only the customer-facing part is kept: plan type and the subscription term (status, package,
+	billing period, activated_at, expires_at, cancelled_at). Returns {} without a metering app.
+	"""
+	fids = sorted({cstr(fid).strip() for fid in fids if cstr(fid).strip()})
+	methods = frappe.get_hooks("crm_get_facility_plan")
+	if not (fids and methods):
+		return {}
+	method = frappe.get_attr(methods[-1])
+	plans = {}
+	for fid in fids:
+		try:
+			plan = method(fid) or {}
+		except Exception:
+			frappe.log_error(title="Facility plan unavailable", message=frappe.get_traceback())
+			continue
+		subscription = plan.get("subscription") or None
+		if subscription:
+			subscription = {
+				key: subscription.get(key)
+				for key in ("status", "package", "billing_period", "activated_at", "expires_at", "cancelled_at")
+			}
+		plans[fid] = {"plan_type": plan.get("plan_type"), "subscription": subscription}
+	return plans
 
 
 def _ois_facility_commercial(submission, progress, ois_orders, ois_invoices, network_ctx_by_mfl, quote_cache) -> None:

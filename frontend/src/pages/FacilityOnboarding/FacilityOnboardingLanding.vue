@@ -331,7 +331,7 @@
                   <input id="partner-coupon-input" ref="couponInputRef" :value="partnerId" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]{6}" placeholder="123456" :aria-invalid="Boolean(partnerId && partnerId.length !== 6)" @input="onPartnerIdInput" @keydown.enter.prevent="closeCoupon" />
                   <span class="hint">{{ partnerId && partnerId.length !== 6 ? __('Enter all six digits, or clear the field to leave it blank.') : __('Leave it blank if you don’t have one.') }}</span>
                 </div>
-                <p v-if="couponApplied" class="ok" data-testid="partner-coupon-applied">✓ {{ __('Partner Coupon applied') }}<template v-if="catalog.network?.display_name"> · <span data-testid="partner-coupon-network">{{ catalog.network.display_name }}</span></template>: +{{ couponOfferLabel }} {{ __('with your first purchase') }}</p>
+                <p v-if="couponApplied" class="ok" data-testid="partner-coupon-applied">✓ {{ __('Partner Coupon applied') }}<template v-if="catalog.network?.display_name"> · <span data-testid="partner-coupon-network">{{ catalog.network.display_name }}</span></template>: {{ couponOfferLabel }} {{ __('with your first purchase') }}</p>
                 <div style="display: flex; gap: 10px; margin-top: 10px">
                   <button type="button" class="btn primary small" data-testid="partner-coupon-close" @click="closeCoupon">{{ partnerId ? __('Done') : __('Close') }}</button>
                 </div>
@@ -726,9 +726,12 @@ watch(
 const welcomeBonusTokens = computed(() => Number(catalog.value.welcome_bonus_tokens) || 0)
 const couponTokens = computed(() => Number(catalog.value.partner_coupon_tokens) || 0)
 const couponOffer = computed(() => catalog.value.partner_coupon_offer || null)
-const couponOfferLabel = computed(() =>
-  couponOffer.value ? `${couponValueLabel(couponOffer.value)}` : '',
-)
+// "+150 tokens", "5% off Fixed" or "+150 tokens on Flex · 5% off Fixed" (P-113).
+const couponOfferLabel = computed(() => {
+  if (!couponOffer.value) return ''
+  const label = couponValueLabel(couponOffer.value)
+  return couponOffer.value.applies_to === 'Fixed' ? label : `+${label}`
+})
 const couponApplied = computed(
   () =>
     partnerId.value.length === 6 &&

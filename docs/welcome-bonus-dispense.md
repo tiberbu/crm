@@ -12,6 +12,8 @@ grants it, and the other two then add nothing.
 
 ## Rules
 
+- **Flex purchase only (P-107, 2026-11-09).** The bonus, by any path, goes only to a facility that has a Flex package order that is not cancelled. The Dispense button is disabled for a facility with only a Fixed order (or none) and says why; the API refuses it too.
+
 - **Once per facility, ever.** All three paths write the same metering ledger entry,
   `OpenMeter Grant` `welcome:<FID>`. The grant runs under a Redis lock, and before posting it looks
   for a grant OpenMeter already holds under that key. Two clicks, a click racing a payment, or a

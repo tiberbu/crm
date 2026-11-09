@@ -111,6 +111,10 @@
             {{ couponValueLabel(coupon) }}
           </p>
           <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+            <dt class="text-ink-gray-5">{{ __('Applies to') }}</dt>
+            <dd class="text-right" data-testid="coupon-applies-to-label">
+              {{ __(PLAN_LABELS[coupon.applies_to || 'Flex']) }}
+            </dd>
             <dt class="text-ink-gray-5">{{ __('Redeemed') }}</dt>
             <dd class="text-right font-mono">
               {{ coupon.redeemed_count
@@ -221,6 +225,7 @@ import {
   COUPON_STATUS_THEME,
   couponMatches,
   couponValueLabel,
+  PLAN_LABELS,
 } from '@/utils/coupons'
 
 const API = 'crm.api.coupons'

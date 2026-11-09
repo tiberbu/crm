@@ -3433,6 +3433,16 @@ onUnmounted(() => {
               <span>{{ row.bonus_type ? row.description : `${row.item_name || row.item_code} × ${row.qty}` }}</span>
               <span class="shrink-0 font-semibold">{{ row.bonus_type ? 'Free' : money(row.amount, orderReview.currency) }}</span>
             </div>
+            <template v-for="(row, index) in orderReview.items" :key="`discount-${index}`">
+              <div
+                v-if="row.discount_percentage > 0"
+                class="flex items-start justify-between gap-3 text-xs text-cx-success-ink"
+                data-testid="order-review-discount"
+              >
+                <span>Coupon: {{ row.discount_percentage }}% off {{ row.item_name || row.item_code }} (included above)</span>
+                <span class="shrink-0 font-semibold">−{{ money(row.discount_amount, orderReview.currency) }}</span>
+              </div>
+            </template>
             <div v-for="tax in orderReview.taxes" :key="tax.description" class="flex items-center justify-between text-xs text-cx-ink-3">
               <span>{{ tax.description }}</span>
               <span>{{ money(tax.tax_amount, orderReview.currency) }}</span>

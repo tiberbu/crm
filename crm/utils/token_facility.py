@@ -26,6 +26,21 @@ def facility_fid_for_mfl(mfl_code):
 	return next(iter(fids.values())) if len(fids) == 1 else ""
 
 
+def facility_mfls_for_fid(fid):
+	"""Every MFL code CRM records for an FID (orders are keyed by MFL, older ones carry no FID)."""
+	fid = cstr(fid).strip()
+	if not fid:
+		return []
+	mfls = set()
+	for doctype in ("CRM Deal Facility", "CRM Pre-Qualified Facility"):
+		mfls.update(
+			cstr(m).strip()
+			for m in frappe.get_all(doctype, filters={"hfr_facility_id": fid, "mfl_code": ["is", "set"]}, pluck="mfl_code")
+		)
+	mfls.discard("")
+	return sorted(mfls)
+
+
 def stamp_facility_fid(doc, method=None):
 	"""Fill the purchase's FID from its MFL code when it is not already set."""
 	if not doc.meta.has_field(FID_FIELD) or doc.get(FID_FIELD):
