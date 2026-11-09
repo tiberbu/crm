@@ -116,7 +116,7 @@
             </div>
           </div>
           <div class="flex items-center gap-2 text-xs text-ink-gray-5">
-            <span v-if="partner.partner_id" class="rounded bg-surface-gray-2 px-2 py-0.5 font-mono">
+            <span v-if="partner.partner_id" class="rounded bg-surface-gray-2 px-2 py-0.5 tabular-nums">
               {{ partner.partner_id }}
             </span>
             <span v-if="partner.partner_type">{{ partner.partner_type }}</span>
@@ -210,7 +210,10 @@
     </section>
 
     <!-- Orders -->
-    <section class="rounded-lg border border-outline-gray-2 bg-surface-white">
+    <section
+      class="rounded-lg border border-outline-gray-2 bg-surface-white"
+      data-testid="c360-orders"
+    >
       <h2 class="border-b border-outline-gray-2 px-4 py-3 text-sm font-semibold text-ink-gray-9">
         {{ __('Orders') }}
       </h2>
@@ -219,13 +222,20 @@
           <thead>
             <tr class="text-left text-xs text-ink-gray-5">
               <th class="px-4 py-2 font-medium">{{ __('Order') }}</th>
+              <th v-if="showFacilityColumn" class="px-4 py-2 font-medium">
+                {{ __('Facility') }}
+              </th>
               <th class="px-4 py-2 font-medium">{{ __('Date') }}</th>
               <th class="px-4 py-2 font-medium">{{ __('Amount') }}</th>
               <th class="px-4 py-2 font-medium">{{ __('Status') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-outline-gray-2">
-              <tr v-for="order in data.orders" :key="order.name">
+              <tr
+                v-for="order in data.orders"
+                :key="order.name"
+                data-testid="c360-order-row"
+              >
                 <td class="px-4 py-2">
                   <a
                     v-if="recordLink('Sales Order', order.name)"
@@ -237,6 +247,9 @@
                   >
                   <span v-else class="text-ink-gray-9">{{ order.name }}</span>
                 </td>
+              <td v-if="showFacilityColumn" class="px-4 py-2 text-ink-gray-5">
+                {{ facilityLabel(order) }}
+              </td>
               <td class="px-4 py-2 text-ink-gray-5">{{ formatDate(order.transaction_date) }}</td>
               <td class="px-4 py-2 tabular-nums text-ink-gray-9">
                 {{ money(order.grand_total, order.currency) }}
@@ -264,13 +277,89 @@
       <div v-else class="flex flex-col items-center gap-1 px-4 py-6">
         <p class="text-sm font-medium text-ink-gray-7">{{ __('No orders yet') }}</p>
         <p class="text-xs text-ink-gray-4">
-          {{ __('Sales orders will appear here once created for this customer.') }}
+          {{
+            facilityMode
+              ? __('Sales orders will appear here once created for this facility.')
+              : __('Sales orders will appear here once created for this customer.')
+          }}
+        </p>
+      </div>
+    </section>
+
+    <!-- Quotes -->
+    <section
+      class="rounded-lg border border-outline-gray-2 bg-surface-white"
+      data-testid="c360-quotes"
+    >
+      <h2 class="border-b border-outline-gray-2 px-4 py-3 text-sm font-semibold text-ink-gray-9">
+        {{ __('Quotes') }}
+      </h2>
+      <div v-if="data.quotes?.length" class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs text-ink-gray-5">
+              <th class="px-4 py-2 font-medium">{{ __('Quote') }}</th>
+              <th v-if="showFacilityColumn" class="px-4 py-2 font-medium">
+                {{ __('Facility') }}
+              </th>
+              <th class="px-4 py-2 font-medium">{{ __('Date') }}</th>
+              <th class="px-4 py-2 font-medium">{{ __('Amount') }}</th>
+              <th class="px-4 py-2 font-medium">{{ __('Valid till') }}</th>
+              <th class="px-4 py-2 font-medium">{{ __('Status') }}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-outline-gray-2">
+            <tr v-for="quote in data.quotes" :key="quote.name" data-testid="c360-quote-row">
+              <td class="px-4 py-2">
+                <a
+                  v-if="recordLink('Quotation', quote.name)"
+                  :href="recordLink('Quotation', quote.name)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-ink-blue-6 hover:underline"
+                  >{{ quote.name }}</a
+                >
+                <span v-else class="text-ink-gray-9">{{ quote.name }}</span>
+              </td>
+              <td v-if="showFacilityColumn" class="px-4 py-2 text-ink-gray-5">
+                {{ facilityLabel(quote) }}
+              </td>
+              <td class="px-4 py-2 text-ink-gray-5">{{ formatDate(quote.transaction_date) }}</td>
+              <td class="px-4 py-2 tabular-nums text-ink-gray-9">
+                {{ money(quote.grand_total, quote.currency) }}
+              </td>
+              <td class="px-4 py-2 text-ink-gray-5">
+                {{ quote.valid_till ? formatDate(quote.valid_till) : '—' }}
+              </td>
+              <td class="px-4 py-2">
+                <Badge
+                  :label="quoteState(quote).label"
+                  size="sm"
+                  :theme="quoteState(quote).theme"
+                  variant="subtle"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else class="flex flex-col items-center gap-1 px-4 py-6">
+        <p class="text-sm font-medium text-ink-gray-7">{{ __('No quotes yet') }}</p>
+        <p class="text-xs text-ink-gray-4">
+          {{
+            facilityMode
+              ? __('Quotations will appear here once raised for this facility.')
+              : __('Quotations will appear here once raised for this customer.')
+          }}
         </p>
       </div>
     </section>
 
     <!-- Billing -->
-    <section class="rounded-lg border border-outline-gray-2 bg-surface-white">
+    <section
+      class="rounded-lg border border-outline-gray-2 bg-surface-white"
+      data-testid="c360-billing"
+    >
       <h2 class="border-b border-outline-gray-2 px-4 py-3 text-sm font-semibold text-ink-gray-9">
         {{ __('Billing') }}
       </h2>
@@ -280,6 +369,9 @@
             <thead>
               <tr class="text-left text-xs text-ink-gray-5">
                 <th class="px-2 py-2 font-medium">{{ __('Invoice') }}</th>
+                <th v-if="showFacilityColumn" class="px-2 py-2 font-medium">
+                  {{ __('Facility') }}
+                </th>
                 <th class="px-2 py-2 font-medium">{{ __('Date') }}</th>
                 <th class="px-2 py-2 font-medium">{{ __('Total') }}</th>
                 <th class="px-2 py-2 font-medium">{{ __('Outstanding') }}</th>
@@ -288,7 +380,11 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-outline-gray-2">
-              <tr v-for="invoice in data.invoices" :key="invoice.name">
+              <tr
+                v-for="invoice in data.invoices"
+                :key="invoice.name"
+                data-testid="c360-invoice-row"
+              >
                 <td class="px-2 py-2">
                   <a
                     v-if="recordLink('Sales Invoice', invoice.name)"
@@ -299,6 +395,9 @@
                     >{{ invoice.name }}</a
                   >
                   <span v-else class="text-ink-gray-9">{{ invoice.name }}</span>
+                </td>
+                <td v-if="showFacilityColumn" class="px-2 py-2 text-ink-gray-5">
+                  {{ facilityLabel(invoice) }}
                 </td>
                 <td class="px-2 py-2 text-ink-gray-5">{{ formatDate(invoice.creation) }}</td>
                 <td class="px-2 py-2 tabular-nums text-ink-gray-9">
@@ -338,6 +437,7 @@
                 v-for="payment in data.payments"
                 :key="payment.name"
                 class="flex items-center justify-between"
+                data-testid="c360-payment-row"
               >
                 <span class="flex items-center gap-1 text-ink-gray-5">
                   <a
@@ -362,7 +462,10 @@
     </section>
 
     <!-- Facilities & provisioning -->
-    <section class="rounded-lg border border-outline-gray-2 bg-surface-white">
+    <section
+      class="rounded-lg border border-outline-gray-2 bg-surface-white"
+      data-testid="c360-facilities"
+    >
       <h2 class="border-b border-outline-gray-2 px-4 py-3 text-sm font-semibold text-ink-gray-9">
         {{ __('Facilities & Provisioning') }}
       </h2>
@@ -372,6 +475,7 @@
             v-for="facility in data.facilities"
             :key="facility.name"
             class="border-b border-outline-gray-2 py-3 last:border-0"
+            data-testid="c360-facility-row"
           >
             <div class="flex flex-wrap items-center gap-2">
               <a
@@ -385,8 +489,12 @@
               <span v-else class="font-medium text-ink-gray-9">
                 {{ facility.facility_name }}
               </span>
-              <span class="rounded bg-surface-gray-2 px-2 py-0.5 font-mono text-xs text-ink-gray-5">
-                {{ facility.mfl_code }}
+              <span class="rounded bg-surface-gray-2 px-2 py-0.5 text-xs text-ink-gray-5">
+                {{ __('Facility ID') }}:
+                <span class="tabular-nums">{{ facilityId(facility) || __('Not linked yet') }}</span>
+              </span>
+              <span class="rounded bg-surface-gray-2 px-2 py-0.5 text-xs text-ink-gray-5">
+                {{ __('MFL') }}: <span class="tabular-nums">{{ facility.mfl_code }}</span>
               </span>
               <Badge
                 v-if="facility.keph_level"
@@ -544,12 +652,15 @@ import { Badge } from 'frappe-ui'
 import { formatDate } from '@/utils/index.js'
 import { formatCurrency } from '@/utils/numberFormat.js'
 import { cockpitRecordHref } from '@/pages/FinanceCockpit/composables/useFinanceNavigation.js'
+import { facilityId } from '@/utils/facilityId.js'
 import {
+	facilityLabelFor,
 	invoiceState,
 	onboardingState,
 	paidState,
 	partnerKindLabel,
 	provisioningHeadline,
+	quoteState,
 	siteState,
 } from '@/utils/customer360.js'
 
@@ -560,6 +671,15 @@ const props = defineProps({
 const summary = computed(() => props.data?.summary || {})
 const paid = computed(() => paidState(summary.value))
 const provisioning = computed(() => provisioningHeadline(summary.value))
+const facilityMode = computed(() => props.data?.scope?.mode === 'facility')
+// The organization view names each record's facility once there is more than one.
+const showFacilityColumn = computed(
+	() => !facilityMode.value && (props.data?.facilities?.length || 0) > 1,
+)
+
+function facilityLabel(row) {
+	return facilityLabelFor(row?.facility_mfls, props.data?.facilities)
+}
 
 function money(value, currency) {
 	if (value === null || value === undefined || value === '') return '0'

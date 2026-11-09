@@ -77,3 +77,88 @@ export function onboardingState(row = {}) {
 	}
 	return { label: row.status || 'Submitted', theme: 'amber' }
 }
+
+/**
+ * Display state for one quotation row.
+ * quote: { docstatus, status }
+ */
+export function quoteState(quote = {}) {
+	if (quote.docstatus === 2 || quote.status === 'Cancelled') {
+		return { label: 'Cancelled', theme: 'gray' }
+	}
+	if (quote.docstatus !== 1) {
+		return { label: 'Draft', theme: 'gray' }
+	}
+	if (quote.status === 'Ordered') return { label: 'Ordered', theme: 'green' }
+	if (quote.status === 'Lost') return { label: 'Lost', theme: 'red' }
+	if (quote.status === 'Expired') return { label: 'Expired', theme: 'gray' }
+	return { label: quote.status || 'Open', theme: 'blue' }
+}
+
+/**
+ * Facility names for a record's attributed MFL codes (organization view's Facility column).
+ * Unknown codes are shown as-is; a record tied to no facility reads "—".
+ */
+export function facilityLabelFor(mfls = [], facilities = []) {
+	const names = new Map(
+		(facilities || []).map((f) => [String(f.mfl_code || '').trim().toLowerCase(), f.facility_name]),
+	)
+	const labels = (mfls || [])
+		.map((mfl) => String(mfl || '').trim())
+		.filter(Boolean)
+		.map((mfl) => names.get(mfl.toLowerCase()) || mfl)
+	return labels.length ? [...new Set(labels)].join(', ') : '—'
+}
+
+/**
+ * Records left out of the facility view because they are tied to no facility.
+ * scope: { mode, unattributed: { orders, quotes, invoices } }
+ */
+export function unattributedCount(scope = {}) {
+	if (scope?.mode !== 'facility') return 0
+	const counts = scope.unattributed || {}
+	return (counts.orders || 0) + (counts.quotes || 0) + (counts.invoices || 0)
+}
+
+const SCOPES = ['facility', 'organization']
+
+/**
+ * The page's selection from the route query. A facility wins over a deal, a deal over an
+ * organization; a facility's scope defaults to "facility".
+ * Returns null when nothing is selected.
+ */
+export function selectionFromQuery(query = {}) {
+	const pick = (key) => {
+		const value = Array.isArray(query[key]) ? query[key][0] : query[key]
+		return String(value || '').trim()
+	}
+	if (pick('facility')) {
+		const scope = SCOPES.includes(pick('scope')) ? pick('scope') : 'facility'
+		return { kind: 'facility', name: pick('facility'), scope }
+	}
+	if (pick('deal')) return { kind: 'deal', name: pick('deal') }
+	if (pick('organization')) return { kind: 'organization', name: pick('organization') }
+	return null
+}
+
+/**
+ * The route query for a selection (inverse of selectionFromQuery).
+ */
+export function queryForSelection(selection) {
+	if (!selection?.name) return {}
+	if (selection.kind === 'facility') {
+		return { facility: selection.name, scope: selection.scope === 'organization' ? 'organization' : 'facility' }
+	}
+	return { [selection.kind]: selection.name }
+}
+
+/**
+ * The get_customer_360 params for a selection.
+ */
+export function paramsForSelection(selection) {
+	if (!selection?.name) return null
+	if (selection.kind === 'facility') {
+		return { facility: selection.name, scope: selection.scope || 'facility' }
+	}
+	return { [selection.kind]: selection.name }
+}
