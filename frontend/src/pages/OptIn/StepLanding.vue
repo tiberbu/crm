@@ -16,13 +16,13 @@
           class="flex h-16 w-16 items-center justify-center rounded-2xl"
           style="background-color: var(--brand-primary)"
         >
-          <span class="text-2xl font-black text-white">C</span>
+          <span class="text-2xl font-semibold text-white">C</span>
         </div>
       </div>
 
       <!-- Headline -->
       <h1
-        class="mb-3 text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white"
+        class="mb-3 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white"
       >
         {{ networkConfig ? networkConfig.display_name : 'CareverseHIMS' }}
       </h1>
@@ -86,7 +86,7 @@
       <!-- Partner logos strip -->
       <div v-if="partnerLogos.length" class="mt-10">
         <p
-          class="mb-4 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500"
+          class="mb-4 text-xs font-medium text-ink-gray-6"
         >
           Trusted by our partners
         </p>
@@ -154,7 +154,7 @@ const brandTint = computed(() => {
     const b = parseInt(full.slice(4, 6), 16)
     return `rgba(${r}, ${g}, ${b}, 0.1)`
   }
-  return 'rgba(192, 16, 26, 0.1)'
+  return 'rgba(188, 24, 35, 0.1)' // brand guide #bc1823
 })
 
 // Expanded value propositions — each pill from the old landing, now explained so

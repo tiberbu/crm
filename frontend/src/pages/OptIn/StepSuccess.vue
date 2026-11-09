@@ -20,7 +20,7 @@
       </div>
     </div>
 
-    <h1 class="mb-2 text-2xl font-extrabold text-gray-900 dark:text-white">
+    <h1 class="mb-2 text-2xl font-semibold text-gray-900 dark:text-white">
       Opt-In submitted
     </h1>
 
@@ -30,7 +30,7 @@
     >
       <p class="text-xs text-gray-400 dark:text-gray-500">Reference Number</p>
       <p
-        class="mt-0.5 font-mono text-lg font-bold text-gray-900 dark:text-white"
+        class="mt-0.5 font-mono text-lg font-semibold text-gray-900 dark:text-white"
       >
         {{ store.submissionRef }}
       </p>
@@ -46,9 +46,9 @@
       class="mb-6 rounded-xl border border-gray-200 bg-white p-4 text-left dark:border-gray-700 dark:bg-gray-800"
     >
       <p
-        class="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+        class="mb-3 text-xs font-semibold text-ink-gray-6"
       >
-        Registered Facilities
+        Registered facilities
       </p>
       <div class="space-y-2">
         <div
@@ -92,7 +92,7 @@
         Total contract commitment (incl. VAT)
       </p>
       <p
-        class="mt-1 text-2xl font-black"
+        class="mt-1 text-2xl font-semibold"
         :style="{ color: 'var(--brand-primary)' }"
       >
         {{ fmtKes(totalCommitment) }}

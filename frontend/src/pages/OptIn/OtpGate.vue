@@ -25,7 +25,7 @@
       </svg>
     </div>
 
-    <h2 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">
+    <h2 class="mb-2 text-xl font-semibold text-gray-900 dark:text-white">
       Verify your identity
     </h2>
     <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
@@ -51,7 +51,7 @@
         inputmode="numeric"
         maxlength="1"
         :class="[
-          'h-12 w-10 rounded-lg border-2 bg-white text-center text-lg font-bold text-gray-900 transition focus:outline-none dark:bg-gray-800 dark:text-white',
+          'h-12 w-10 rounded-lg border-2 bg-white text-center text-lg font-semibold text-gray-900 transition focus:outline-none dark:bg-gray-800 dark:text-white',
           errorMsg
             ? 'border-red-400 dark:border-red-600'
             : 'border-gray-200 focus:border-[color:var(--brand-primary)] dark:border-gray-700',

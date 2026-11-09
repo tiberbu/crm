@@ -28,7 +28,7 @@
           <path d="M9 13h6M9 17h4" />
         </svg>
       </span>
-      <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
         Terms &amp; Conditions
       </h2>
     </div>
@@ -219,12 +219,12 @@ function handleContinue() {
    round its corners and add a hover cue. */
 .tc-panel :deep(h3) {
   font-size: 1.05rem;
-  font-weight: 700;
+  font-weight: 600;
   margin: 0 0 0.5rem;
 }
 .tc-panel :deep(h4) {
   font-size: 0.9rem;
-  font-weight: 700;
+  font-weight: 600;
   margin: 1.25rem 0 0.35rem;
 }
 .tc-panel :deep(p) {

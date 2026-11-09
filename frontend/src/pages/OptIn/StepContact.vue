@@ -40,7 +40,7 @@
         </svg>
       </div>
 
-      <h2 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">
+      <h2 class="mb-2 text-xl font-semibold text-gray-900 dark:text-white">
         {{
           blockState === 'rate_limited'
             ? 'Too many attempts'
@@ -106,7 +106,7 @@
     </div>
 
     <template v-else>
-      <h2 class="mb-1 text-xl font-bold text-gray-900 dark:text-white">
+      <h2 class="mb-1 text-xl font-semibold text-gray-900 dark:text-white">
         Your Details
       </h2>
       <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">

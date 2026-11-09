@@ -1,10 +1,10 @@
 <template>
-  <div class="cx-enrollment min-h-screen bg-gray-50 dark:bg-gray-950" :style="brandStyle">
+  <div class="optin-wizard flow-root min-h-screen bg-gray-50 dark:bg-gray-950" :style="brandStyle">
     <!-- Wrapper card (steps 1-6): a bounded, viewport-fitting column — fixed header,
          scrollable body — so the wizard never grows past one screen. -->
     <div
       v-if="showCard"
-      class="cx-enrollment-glass mx-auto flex h-screen max-w-2xl flex-col overflow-hidden border bg-white shadow-xl dark:bg-gray-900 md:my-[4vh] md:h-[92vh] md:rounded-2xl"
+      class="mx-auto flex h-screen max-w-2xl flex-col overflow-hidden bg-white shadow-xl dark:bg-gray-900 md:my-[4vh] md:h-[92vh] md:rounded-2xl"
     >
       <!-- Card header: logo + progress bar -->
       <div
@@ -113,7 +113,7 @@
       class="flex min-h-screen items-center justify-center px-4"
     >
       <div
-        class="cx-enrollment-glass w-full max-w-sm rounded-xl border py-6 dark:bg-gray-900"
+        class="w-full max-w-sm rounded-xl bg-white py-6 shadow-lg dark:bg-gray-900"
       >
         <StepProgress
           :network-slug="networkSlug"
@@ -129,7 +129,7 @@
       class="flex min-h-screen items-center justify-center px-4"
     >
       <div
-        class="cx-enrollment-glass w-full max-w-sm rounded-xl border py-6 dark:bg-gray-900"
+        class="w-full max-w-sm rounded-xl bg-white py-6 shadow-lg dark:bg-gray-900"
       >
         <StepSuccess />
       </div>
@@ -141,7 +141,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
     >
       <div
-        class="cx-enrollment-glass w-full max-w-sm rounded-xl border p-6 text-center dark:bg-gray-800"
+        class="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-xl dark:bg-gray-800"
       >
         <div
           class="mb-4 flex h-12 w-12 items-center justify-center rounded-full mx-auto"
@@ -160,7 +160,7 @@
             <circle cx="12" cy="7" r="4" />
           </svg>
         </div>
-        <h3 class="mb-2 font-bold text-gray-900 dark:text-white">
+        <h3 class="mb-2 font-semibold text-gray-900 dark:text-white">
           Progress saved!
         </h3>
         <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">
@@ -223,13 +223,14 @@ const partialRef = ref('')
 
 const networkConfig = computed(() => store.networkConfig)
 
-const DEFAULT_BRAND = '#C0101A'
+// Brand guide red (docs/tiberbu-crm-centralized-theme-spec.md). A partner colour
+// is used only when it is a strict hex literal.
+const DEFAULT_BRAND = '#bc1823'
+const HEX_COLOUR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
 
-// Derive brand style from network config
 const brandStyle = computed(() => {
-  const color =
-    (networkConfig.value && networkConfig.value.primary_colour) || DEFAULT_BRAND
-  return { '--brand-primary': color }
+  const colour = (networkConfig.value?.primary_colour || '').trim()
+  return { '--brand-primary': HEX_COLOUR.test(colour) ? colour : DEFAULT_BRAND }
 })
 
 // Show card wrapper for steps 1–6
@@ -266,7 +267,7 @@ onMounted(async () => {
     store.setNetworkConfig({
       display_name: 'CareverseHIMS',
       logo_url: '',
-      primary_colour: '#C0101A',
+      primary_colour: DEFAULT_BRAND,
       contact_email: '',
       footer_legal_name: 'Tiberbu Healthnet Solutions',
     })
@@ -323,3 +324,17 @@ function onPartialSaved(ref) {
   showPartialSaved.value = true
 }
 </script>
+
+<style>
+/* The forms plugin paints checked radios and checkboxes with its own blue. In the
+   opt-in they take the network brand colour (brand guide red by default). */
+.optin-wizard input[type='radio'],
+.optin-wizard input[type='checkbox'] {
+  color: var(--brand-primary);
+  accent-color: var(--brand-primary);
+}
+.optin-wizard input[type='radio']:focus,
+.optin-wizard input[type='checkbox']:focus {
+  --tw-ring-color: var(--brand-primary);
+}
+</style>

@@ -176,9 +176,9 @@
               <span
                 class="size-3 rounded-full border border-outline-gray-3"
                 :style="{
-                  backgroundColor: networkDoc?.primary_colour || '#e53e3e',
+                  backgroundColor: networkDoc?.primary_colour || '#bc1823',
                 }"
-              />{{ networkDoc?.primary_colour || '#e53e3e' }}
+              />{{ networkDoc?.primary_colour || '#bc1823' }}
             </div>
           </div>
           <div>
@@ -376,7 +376,7 @@
                 v-model="networkForm.primary_colour"
                 type="text"
                 class="flex-1 rounded border border-outline-gray-2 bg-surface-white px-3 py-1.5 text-sm text-ink-gray-9 focus:outline-none focus:ring-2 focus:ring-red-600 dark:bg-surface-gray-3 dark:text-ink-gray-3"
-                placeholder="#e53e3e"
+                placeholder="#bc1823"
               />
             </div>
           </div>
@@ -1785,7 +1785,7 @@ const networkForm = reactive({
   contact_email: '',
   footer_legal_name: '',
   logo_url: '',
-  primary_colour: '#e53e3e',
+  primary_colour: '#bc1823',
   price_list_override: '',
   first_invoice_offset_months: 3,
   invoice_on_contract_signature: false,
@@ -1809,7 +1809,7 @@ function startEditNetwork() {
     contact_email: doc?.contact_email ?? '',
     footer_legal_name: doc?.footer_legal_name ?? '',
     logo_url: doc?.logo_url ?? '',
-    primary_colour: doc?.primary_colour ?? '#e53e3e',
+    primary_colour: doc?.primary_colour ?? '#bc1823',
     price_list_override: doc?.price_list_override ?? '',
     first_invoice_offset_months: doc?.first_invoice_offset_months || 3,
     invoice_on_contract_signature:

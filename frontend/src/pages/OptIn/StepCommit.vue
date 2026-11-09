@@ -1,6 +1,6 @@
 <template>
   <div class="mx-auto w-full max-w-lg px-4 py-8">
-    <h2 class="mb-1 text-xl font-bold text-gray-900 dark:text-white">
+    <h2 class="mb-1 text-xl font-semibold text-gray-900 dark:text-white">
       Ready to Commit?
     </h2>
     <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
@@ -49,7 +49,7 @@
             >Total contract commitment (incl. VAT)</span
           >
           <span
-            class="text-xl font-black"
+            class="text-xl font-semibold"
             :style="{ color: 'var(--brand-primary)' }"
           >
             {{ fmtKes(totalCommitment) }}

@@ -269,7 +269,7 @@ takes about 5 minutes:</p>
 
 <p style="margin: 24px 0;">
   <a href="{optin_url}"
-     style="background:#b91c1c;color:#fff;padding:12px 24px;border-radius:6px;
+     style="background:#bc1823;color:#fff;padding:12px 24px;border-radius:6px;
             text-decoration:none;font-weight:600;">
     View your invitation &rarr;
   </a>

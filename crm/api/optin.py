@@ -46,6 +46,8 @@ from crm.api._email import (
 	create_transactional_communication,
 	schedule_email_queue_redaction,
 )
+from crm.api._email import hex_to_rgba as _hex_to_rgba
+from crm.api._email import valid_brand_colour as _valid_brand_colour
 from crm.utils.error_types import ConfigurationError
 from crm.utils.facility_ids import (
 	facility_id_holders,
@@ -1022,29 +1024,6 @@ def _get_or_create_submission_organization(lead, submission_ref):
 	organization.organization_name = organization_name
 	organization.insert(ignore_permissions=True)  # SYSTEM-INTERNAL
 	return organization.name
-
-
-DEFAULT_BRAND_COLOUR = "#b91c1c"  # Tiberbu red — used when a network has no colour set
-
-
-def _hex_to_rgba(hex_colour, alpha):
-	"""Convert '#RRGGBB' / '#RGB' to 'rgba(r,g,b,alpha)'. Falls back to the brand red."""
-	value = frappe.utils.cstr(hex_colour).strip().lstrip("#")
-	if len(value) == 3:
-		value = "".join(ch * 2 for ch in value)
-	try:
-		r, g, b = (int(value[i : i + 2], 16) for i in (0, 2, 4))
-	except (ValueError, IndexError):
-		r, g, b = (185, 28, 28)  # DEFAULT_BRAND_COLOUR
-	return "rgba(%d,%d,%d,%s)" % (r, g, b, alpha)
-
-
-def _valid_brand_colour(hex_colour):
-	"""Return a usable #RRGGBB brand colour, defaulting to the Tiberbu red."""
-	value = frappe.utils.cstr(hex_colour).strip()
-	if value.startswith("#") and len(value) in (4, 7):
-		return value
-	return DEFAULT_BRAND_COLOUR
 
 
 def _otp_email_html(otp, network):
@@ -2715,11 +2694,11 @@ def send_deal_optin_invitation(deal: Any, price_list: Any = None):
 		"<p>Please review your facility details, pricing, and agreement for "
 		"<strong>%s</strong>.</p>"
 		'<p style="margin:24px 0"><a href="%s" '
-		'style="background:#b91c1c;color:#fff;padding:12px 24px;border-radius:6px;'
+		'style="background:%s;color:#fff;padding:12px 24px;border-radius:6px;'
 		'text-decoration:none;font-weight:600">Complete Opt-In</a></p>'
 		"<p>If the button does not work, paste this link into your browser:<br>"
 		'<a href="%s">%s</a></p><p>This invitation expires in seven days.</p>'
-	) % (recipient_name, network_name, url, url, url)
+	) % (recipient_name, network_name, url, _valid_brand_colour(network.get("primary_colour")), url, url)
 	communication_name = create_transactional_communication(
 		"CRM Deal",
 		deal,

@@ -50,7 +50,7 @@
       </div>
     </div>
 
-    <h2 class="mb-2 text-xl font-bold text-gray-900 dark:text-white">
+    <h2 class="mb-2 text-xl font-semibold text-gray-900 dark:text-white">
       <span v-if="overall === 'complete'">All done!</span>
       <span v-else-if="overall === 'failed'">Something went wrong</span>
       <span v-else>Setting things up...</span>

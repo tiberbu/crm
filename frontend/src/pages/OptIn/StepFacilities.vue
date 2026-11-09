@@ -2,7 +2,7 @@
   <div class="mx-auto w-full max-w-2xl px-4 py-8">
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
           Your Facilities
         </h2>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
