@@ -1,6 +1,6 @@
 # CX facility page — tabbed records and registry notice removal
 
-Status: **Implemented** (S1–S4) · Date: 2026-11-09 · Scope: CX portal facility page
+Status: **Implemented** (S1–S5) · Date: 2026-11-09 · Scope: CX portal facility page
 (`frontend/src/pages/FacilityPortal/FacilitySingleView.vue` and `components/BillingJourney.vue`).
 
 Reviewed in a BMAD round-table (UX, PM, Architect, Dev, Analyst). Two problems:
@@ -166,6 +166,7 @@ page and server rows live in a map `BillingJourney` provides, and switching tabs
 | S2 | `get_facility_documents` and `get_facility_document_counts` paged endpoints, with authorization and Python tests | Done |
 | S3 | Tabbed facility page: tabs with counts, paged and searchable lists, invoice filter, stepper → tab, cross-links → tab + page + highlight, `initialTab` | Done |
 | S4 | Slim the `get_portal_context` facility rows to actionable records plus `record_counts` | Done |
+| S5 | Show the Quote → Order → Invoice → Payment stepper only until the first purchase cycle is complete; afterwards each tab shows an action badge | Done |
 
 ## Delivery notes
 
@@ -183,9 +184,36 @@ page and server rows live in a map `BillingJourney` provides, and switching tabs
   Billing view are unchanged.
 - `JourneyStage.vue` (show-5 / "Show all" expander) is removed; `FacilityDocumentList.vue` replaces it.
 
+## S5: stepper only for the first purchase (maintainer request, 2026-11-09)
+
+**Problem.** The stepper picks one "current" stage for the whole facility. A returning customer
+can have a draft order, an unpaid invoice and a payment awaiting verification at the same time.
+One "current step" then misleads, and it repeats a lesson the customer has already learned.
+
+**Round-table outcome (UX, PM, Architect, Dev, Analyst).**
+- The stepper is onboarding: it teaches the first purchase, and its job ends there.
+- "Completed once" means **a paid invoice or a recorded payment exists** for the facility. A paid
+  invoice includes a zero-amount (free) invoice. Drafts, unpaid invoices and M-Pesa reports
+  pending verification do not count.
+- After that, status lives on the tabs. Each tab shows what is waiting: Orders "*n* to review"
+  (drafts), Invoices "*n* due", Payments "*n* pending" (M-Pesa reports awaiting verification).
+  Three documents at three stages show three badges, not one step.
+- Rejected: one stepper per document (it rebuilds the stacked layout); a "latest document"
+  stepper (it hides the other documents); keeping the stepper with a caption (the same noise).
+
+**Built.** `journeyCompleted({ invoices, payments, counts })` in `utils/portalCommercial.js`
+decides. With slim context rows it reads `record_counts` (`invoice > invoice_due` or
+`payment > payment_pending`), otherwise the rows. `BillingJourney` renders the stepper only when
+it returns false. `facilityTabs()` returns a `badge` per tab: `orderDraft` and `paymentPending`
+come from the context row, which always carries drafts and pending reports, and `invoiceDue`
+comes from the counts.
+
+**Checked.** On 28 real dev facilities, 14 have completed a cycle and no longer see the stepper.
+For all 28, the slimmed row plus counts gives the same answer as the full history.
+
 ## Verification (2026-11-09)
 
-- Frontend unit tests: `yarn test:run`, 305 passed, including 8 new `facilityTabs` tests and a `stageStates` counts test.
+- Frontend unit tests: `yarn test:run`, 307 passed (S5 adds `journeyCompleted` and tab badge tests), including 8 new `facilityTabs` tests and a `stageStates` counts test.
 - Facility page browser suite (`npx playwright test -c playwright.facility.config.ts
   e2e/regression/facility-single-view.spec.ts`), run against the built bundle with the API faked: all
   passed. It covers 100 orders, invoices and payments on both the server and local paths (page height
