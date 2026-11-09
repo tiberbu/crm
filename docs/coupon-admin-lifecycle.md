@@ -32,3 +32,23 @@ Existing coupons are not migrated: whatever was Active stays Active.
 - Each card shows **Created** (who · date), **Last enabled** / **Last disabled** (who · date) once
   they have happened, and, once revoked, **Revoked** (who · date) and **Reason**.
 - The actions menu shows Enable or Disable, plus Revoke, for any coupon that is not revoked.
+
+## Plans: Flex, Fixed or Both (2026-11-09, P-107 to P-115)
+
+Every coupon says which plans it is for (**Applies to**):
+
+| Applies to | What a facility gets | Fields |
+|---|---|---|
+| Flex | Complimentary tokens on a Flex token package order (as before) | Value type, value, token cap |
+| Fixed | A percentage off the Fixed package price on that order. No tokens | Fixed plan discount (%) |
+| Both | Flex orders get the tokens; Fixed orders get the discount | Both of the above |
+
+- Coupons created before this change are **Flex**. The plan and the discount cannot change once a coupon has been used.
+- The plan is checked three times: the order only picks up a coupon that fits its plan; confirming an order refuses a coupon for the other plan; the metering app never grants tokens for a Fixed-only coupon.
+- A Fixed discount is ERPNext's `discount_percentage` on the package line, marked with the coupon. It is copied to the invoice. Its redemption (plan Fixed, discount % and amount, 0 tokens) is Reserved when the order is confirmed and Granted once the invoice is fully paid.
+- A confirmed discounted order keeps its price if the coupon is later revoked or expires. Drafts lose the discount at the daily reconcile.
+- A facility still uses one coupon once, whichever plan.
+- **Bonus tokens need a Flex purchase:** the welcome bonus and coupon tokens go only to a facility with a Flex package order that is not cancelled. The Deal › Metering **Dispense** button is disabled otherwise and explains why.
+- **Customers:** the CX Portal order review shows the discount ("Coupon: 5% off … −KES 750"). A Fixed facility's page shows a **Subscription** card (active since, expires).
+
+Design: `_bmad-output/coupon-plan-scope/planning-artifacts/adr-coupon-plan-scope.md`.
