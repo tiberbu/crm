@@ -7,6 +7,7 @@ import { startPortalServer } from './portalFixture'
 // Network opt-in journey (pre-qualified invitation → wizard) against the brand guide:
 // docs/tiberbu-crm-centralized-theme-spec.md and docs/tiberbu-crm-typography-perf-spec.md.
 // Brand red #bc1823, frappe-ui neutrals on a plain page, local InterVar, weights ≤ 600,
+// sentence case (no uppercase eyebrows),
 // and no CX Portal glass, gradients or off-brand tints.
 const SHOTS = process.env.SCREENSHOT_DIR || ''
 const BRAND_RGB = 'rgb(188, 24, 35)'
@@ -84,8 +85,13 @@ async function brandViolations(page: Page): Promise<Violation[]> {
         out.push({ rule: 'no-glass', el: label(el), value: s.backdropFilter })
       for (const k of ['color', 'backgroundColor', 'borderTopColor'] as const)
         if (offBrand(s[k])) out.push({ rule: 'off-brand-colour', el: label(el), value: `${k} ${s[k]}` })
+      // Radios and checkboxes take the brand colour, not the forms plugin blue.
+      if (el instanceof HTMLInputElement && ['radio', 'checkbox'].includes(el.type) && s.color !== 'rgb(188, 24, 35)')
+        out.push({ rule: 'brand-control', el: label(el), value: s.color })
       const hasText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent!.trim())
       if (!hasText) continue
+      if (s.textTransform === 'uppercase')
+        out.push({ rule: 'sentence-case', el: label(el), value: s.textTransform })
       if (Number(s.fontWeight) > 600) out.push({ rule: 'weight<=600', el: label(el), value: s.fontWeight })
       if (parseFloat(s.fontSize) < 11) out.push({ rule: 'size>=11px', el: label(el), value: s.fontSize })
       if (!/^"?InterVar/.test(s.fontFamily)) out.push({ rule: 'font=InterVar', el: label(el), value: s.fontFamily })
