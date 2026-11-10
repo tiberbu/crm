@@ -110,6 +110,21 @@
           >
             {{ couponValueLabel(coupon) }}
           </p>
+          <dl
+            v-if="couponLevelLines(coupon).length"
+            class="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm"
+            data-testid="coupon-level-lines"
+          >
+            <template
+              v-for="line in couponLevelLines(coupon)"
+              :key="line.level"
+            >
+              <dt class="text-ink-gray-5">{{ __(line.level) }}</dt>
+              <dd class="text-right" data-testid="coupon-level-line">
+                {{ line.label }}
+              </dd>
+            </template>
+          </dl>
           <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
             <dt class="text-ink-gray-5">{{ __('Applies to') }}</dt>
             <dd class="text-right" data-testid="coupon-applies-to-label">
@@ -223,6 +238,7 @@ import CouponRedemptions from '@/components/Settings/CouponRedemptions.vue'
 import { formatDate } from '@/utils'
 import {
   COUPON_STATUS_THEME,
+  couponLevelLines,
   couponMatches,
   couponValueLabel,
   PLAN_LABELS,

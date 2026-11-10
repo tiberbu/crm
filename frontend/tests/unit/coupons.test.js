@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  cleanLevelRewards,
+  couponLevelLines,
   couponMatches,
+  couponOfferByLevel,
   couponValueLabel,
   derivedStatus,
   parseMflList,
@@ -137,5 +140,68 @@ describe('couponValueLabel by plan (P-108)', () => {
     expect(couponValueLabel({ value_type: 'flat_tokens', value: 500 })).toBe(
       '500 tokens',
     )
+  })
+})
+
+describe('coupon rewards by facility level (P-116 to P-123)', () => {
+  const both = {
+    applies_to: 'Both',
+    value_type: 'flat_tokens',
+    value: 0,
+    fixed_discount_percent: 0,
+    reward_by_level: 1,
+    level_rewards: [
+      { facility_level: 'Level 2', flex_value: 1000, fixed_discount_percent: 10 },
+      { facility_level: 'Level 4', flex_value: 2500, fixed_discount_percent: 0 },
+    ],
+  }
+  it('labels a level-rewarded coupon "By facility level"', () => {
+    expect(couponValueLabel(both)).toBe('By facility level')
+  })
+  it('lists each level, then all other levels', () => {
+    expect(couponLevelLines(both)).toEqual([
+      { level: 'Level 2', label: '1,000 tokens on Flex · 10% off Fixed' },
+      { level: 'Level 4', label: '2,500 tokens' },
+      { level: 'All other levels', label: 'No reward' },
+    ])
+  })
+  it('uses the coupon value type and cap for every level', () => {
+    const pct = {
+      applies_to: 'Flex',
+      value_type: 'percentage_of_purchase',
+      value: 5,
+      max_tokens: 400,
+      reward_by_level: 1,
+      level_rewards: [{ facility_level: 'Level 3B', flex_value: 20 }],
+    }
+    expect(couponLevelLines(pct)).toEqual([
+      { level: 'Level 3B', label: '20% of purchase (max 400)' },
+      { level: 'All other levels', label: '5% of purchase (max 400)' },
+    ])
+  })
+  it('has no level lines when levels are off', () => {
+    expect(couponLevelLines({ ...both, reward_by_level: 0 })).toEqual([])
+  })
+  it('reads the guest offer per level, leaving out levels that get nothing', () => {
+    expect(couponOfferByLevel(both)).toBe(
+      'Level 2: +1,000 tokens on Flex · 10% off Fixed; Level 4: +2,500 tokens',
+    )
+    const fixed = {
+      applies_to: 'Fixed',
+      fixed_discount_percent: 3,
+      reward_by_level: 1,
+      level_rewards: [{ facility_level: 'Level 2', fixed_discount_percent: 8 }],
+    }
+    expect(couponOfferByLevel(fixed)).toBe(
+      'Level 2: 8% off Fixed; All other levels: 3% off Fixed',
+    )
+  })
+  it('cleans the rows the dialog sends', () => {
+    expect(
+      cleanLevelRewards([
+        { facility_level: '  Level   3B ', flex_value: '500', fixed_discount_percent: '' },
+        { facility_level: '', flex_value: 0, fixed_discount_percent: 0 },
+      ]),
+    ).toEqual([{ facility_level: 'Level 3B', flex_value: 500, fixed_discount_percent: 0 }])
   })
 })

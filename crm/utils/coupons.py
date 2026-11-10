@@ -12,7 +12,7 @@ from frappe import _
 from frappe.utils import cint, cstr, flt, getdate, now_datetime
 
 from crm.utils import token_bonus
-from crm.utils.coupon_math import coupon_tokens, derived_status
+from crm.utils.coupon_math import coupon_tokens, derived_status, level_reward
 
 
 class CouponUnavailable(frappe.ValidationError):
@@ -122,6 +122,8 @@ def resolve_coupon(customer, facility_mfl, facility_fid, purchased, exclude_orde
 	if not facility_mfl:
 		return None
 
+	level = _facility_level(facility_mfl)
+
 	# 1. Already used? (any of three conditions)
 	if frappe.db.exists("CRM Coupon Redemption", {"facility_guard": facility_mfl}):
 		return None
@@ -149,11 +151,13 @@ def resolve_coupon(customer, facility_mfl, facility_fid, purchased, exclude_orde
 				"client_label",
 				"applies_to",
 				"fixed_discount_percent",
+				"reward_by_level",
 			],
 			ignore_permissions=True,
 		)
 		label = frappe.db.get_value("CRM Opt-In Network", network, "display_name") or network
 		active = [c for c in coupons if _derived(c) == "Active" and applies_to_plan(c.applies_to, plan)]
+		_attach_level_rewards(active)
 		if not coupons:
 			# Fallback: a network that has never had a coupon uses the global amount (tokens, so Flex only).
 			tokens = token_bonus.bonus_settings()[token_bonus.PARTNER_COUPON]
@@ -161,15 +165,19 @@ def resolve_coupon(customer, facility_mfl, facility_fid, purchased, exclude_orde
 				return {"type": token_bonus.PARTNER_COUPON, "coupon": None, "tokens": tokens, "label": label, "plan": plan}
 			return None
 		if active:
-			return _benefit(active[0], token_bonus.PARTNER_COUPON, plan, purchased, active[0].client_label or label)
+			return _benefit(
+				active[0], token_bonus.PARTNER_COUPON, plan, purchased, active[0].client_label or label, level
+			)
 		return None
 
 	# 3. CRM coupons (no network): assigned first, then the best value for this plan.
 	best = None
-	for coupon in _crm_coupon_candidates(facility_mfl):
-		if not applies_to_plan(coupon.get("applies_to"), plan):
-			continue
-		benefit = _benefit(coupon, token_bonus.CRM_COUPON, plan, purchased, coupon["client_label"] or coupon["coupon_title"])
+	candidates = [c for c in _crm_coupon_candidates(facility_mfl, level) if applies_to_plan(c.get("applies_to"), plan)]
+	_attach_level_rewards(candidates)
+	for coupon in candidates:
+		benefit = _benefit(
+			coupon, token_bonus.CRM_COUPON, plan, purchased, coupon["client_label"] or coupon["coupon_title"], level
+		)
 		if not benefit:
 			continue
 		size = benefit.get("tokens") or benefit.get("discount_percent") or 0
@@ -179,20 +187,73 @@ def resolve_coupon(customer, facility_mfl, facility_fid, purchased, exclude_orde
 	return best[1] if best else None
 
 
-def _benefit(coupon, coupon_type, plan, purchased, label):
-	"""What a coupon gives on an order of ``plan``, or None when it gives nothing."""
+def _level_rewards_by_coupon(names) -> dict:
+	"""``{coupon: [level rows]}`` for the given coupons."""
+	names = [name for name in names if name]
+	if not names:
+		return {}
+	rows = frappe.get_all(
+		"CRM Coupon Level Reward",
+		filters={"parenttype": "CRM Coupon", "parentfield": "level_rewards", "parent": ["in", names]},
+		fields=["parent", "facility_level", "flex_value", "fixed_discount_percent"],
+		order_by="idx asc",
+		ignore_permissions=True,
+	)
+	result = {}
+	for row in rows:
+		result.setdefault(row.parent, []).append(row)
+	return result
+
+
+def _attach_level_rewards(coupons) -> None:
+	"""Load each level-rewarded coupon's rows onto it as ``level_rewards``."""
+	rows = _level_rewards_by_coupon([c.get("name") for c in coupons if cint(c.get("reward_by_level"))])
+	for coupon in coupons:
+		coupon["level_rewards"] = rows.get(coupon.get("name"), [])
+
+
+def reward_for(coupon, facility_level) -> dict:
+	"""P-117/P-118: the coupon's Flex value and Fixed discount for a facility of this level."""
+	return level_reward(
+		coupon.get("reward_by_level"),
+		coupon.get("level_rewards"),
+		facility_level,
+		coupon.get("value"),
+		coupon.get("fixed_discount_percent"),
+	)
+
+
+def _benefit(coupon, coupon_type, plan, purchased, label, facility_level=None):
+	"""What a coupon gives a facility of ``facility_level`` on an order of ``plan``, or None for nothing."""
+	reward = reward_for(coupon, facility_level)
+	base = {"type": coupon_type, "coupon": coupon["name"], "label": label, "plan": plan, "facility_level": reward["level"]}
 	if plan == PLAN_FIXED:
-		percent = float(coupon.get("fixed_discount_percent") or 0)
+		percent = reward["fixed_discount_percent"]
 		if percent <= 0:
 			return None
-		return {"type": coupon_type, "coupon": coupon["name"], "discount_percent": percent, "label": label, "plan": plan}
-	tokens = coupon_tokens(coupon.get("value_type"), coupon.get("value"), coupon.get("max_tokens"), purchased)
+		return {**base, "discount_percent": percent}
+	tokens = coupon_tokens(coupon.get("value_type"), reward["value"], coupon.get("max_tokens"), purchased)
 	if tokens <= 0:
 		return None
-	return {"type": coupon_type, "coupon": coupon["name"], "tokens": tokens, "label": label, "plan": plan}
+	return {**base, "tokens": tokens}
 
 
-def _crm_coupon_candidates(facility_mfl):
+def token_ceiling(coupon_name, purchased, facility_level=None) -> int:
+	"""P-121: the most tokens a coupon may grant a facility of this level (for the metering grant check)."""
+	coupon = frappe.db.get_value(
+		"CRM Coupon",
+		coupon_name,
+		["name", "value_type", "value", "max_tokens", "fixed_discount_percent", "reward_by_level"],
+		as_dict=True,
+	)
+	if not coupon:
+		return 0
+	_attach_level_rewards([coupon])
+	reward = reward_for(coupon, facility_level)
+	return coupon_tokens(coupon.value_type, reward["value"], coupon.max_tokens, purchased)
+
+
+def _crm_coupon_candidates(facility_mfl, level=None):
 	"""Redeemable no-network coupons targeting this facility (assigned, then facility level)."""
 	assigned = {
 		row.coupon
@@ -203,7 +264,8 @@ def _crm_coupon_candidates(facility_mfl):
 			ignore_permissions=True,
 		)
 	}
-	level = _facility_level(facility_mfl)
+	if level is None:
+		level = _facility_level(facility_mfl)
 	all_coupons = frappe.get_all(
 		"CRM Coupon",
 		filters={"network": ["in", ["", None]]},
@@ -223,6 +285,7 @@ def _crm_coupon_candidates(facility_mfl):
 			"coupon_title",
 			"applies_to",
 			"fixed_discount_percent",
+			"reward_by_level",
 		],
 		ignore_permissions=True,
 	)
@@ -249,17 +312,17 @@ def _facility_level(facility_mfl):
 
 
 def _level_matches(facility_levels, level) -> bool:
-	want = level.casefold()
-	for line in cstr(facility_levels or "").splitlines():
-		if line.strip().casefold() == want:
-			return True
-	return False
+	from crm.utils.value_express import level_key
+
+	want = level_key(level)
+	return any(level_key(line) == want for line in cstr(facility_levels or "").splitlines() if line.strip())
 
 
 def public_offer(network):
 	"""The live coupon offer for a network, for the guest onboarding page.
 
-	Returns ``{applies_to, value_type, value, max_tokens, fixed_discount_percent, label}`` or None.
+	Returns ``{applies_to, value_type, value, max_tokens, fixed_discount_percent, label, reward_by_level,
+	level_rewards}`` or None.
 	Never returns counts or limits. A
 	revoked or expired coupon shows no offer (the network still validates and onboarding proceeds).
 	"""
@@ -283,12 +346,14 @@ def public_offer(network):
 			"client_label",
 			"applies_to",
 			"fixed_discount_percent",
+			"reward_by_level",
 		],
 		ignore_permissions=True,
 	)
 	active = [c for c in coupons if _derived(c) == "Active"]
 	if active:
 		coupon = active[0]
+		_attach_level_rewards([coupon])
 		return {
 			"applies_to": coupon.applies_to or PLAN_FLEX,
 			"value_type": coupon.value_type,
@@ -296,6 +361,16 @@ def public_offer(network):
 			"max_tokens": coupon.max_tokens,
 			"fixed_discount_percent": coupon.fixed_discount_percent or 0,
 			"label": coupon.client_label or label,
+			# P-123: the reward per level (no counts or limits).
+			"reward_by_level": cint(coupon.reward_by_level),
+			"level_rewards": [
+				{
+					"facility_level": row.facility_level,
+					"flex_value": row.flex_value,
+					"fixed_discount_percent": row.fixed_discount_percent,
+				}
+				for row in coupon.level_rewards
+			],
 		}
 	if not coupons:
 		amount = token_bonus.bonus_settings()[token_bonus.PARTNER_COUPON]
@@ -307,6 +382,8 @@ def public_offer(network):
 				"max_tokens": 0,
 				"fixed_discount_percent": 0,
 				"label": label,
+				"reward_by_level": 0,
+				"level_rewards": [],
 			}
 	return None
 
@@ -354,6 +431,7 @@ def claim_on_submit(doc, method=None):
 		return
 
 	purchased = purchased_tokens(doc)
+	facility_level = _facility_level(mfl) or None
 	discount_percent = discount_amount = 0
 	if row.get("crm_coupon"):
 		coupon = frappe.db.get_value(
@@ -371,6 +449,7 @@ def claim_on_submit(doc, method=None):
 				"network",
 				"applies_to",
 				"fixed_discount_percent",
+				"reward_by_level",
 			],
 			as_dict=True,
 			for_update=True,
@@ -390,8 +469,12 @@ def claim_on_submit(doc, method=None):
 			frappe.throw(CouponUnavailable())
 		if not applies_to_plan(coupon.applies_to, plan):
 			frappe.throw(PLAN_MISMATCH(plan))
+		coupon.name = row.crm_coupon
+		_attach_level_rewards([coupon])
+		# P-121: the reward for the facility's level now, whatever the draft was stamped with.
+		reward = reward_for(coupon, facility_level)
 		if plan == PLAN_FIXED:
-			discount_percent = flt(coupon.fixed_discount_percent)
+			discount_percent = flt(reward["fixed_discount_percent"])
 			if discount_percent <= 0:
 				frappe.throw(CouponUnavailable())
 			restamped = False
@@ -405,7 +488,7 @@ def claim_on_submit(doc, method=None):
 				doc.calculate_taxes_and_totals()
 			tokens = 0
 		else:
-			tokens = coupon_tokens(coupon.value_type, coupon.value, coupon.max_tokens, purchased)
+			tokens = coupon_tokens(coupon.value_type, reward["value"], coupon.max_tokens, purchased)
 			if tokens <= 0:
 				frappe.throw(CouponUnavailable())
 			row.crm_bonus_tokens = tokens  # server value wins over anything stamped earlier
@@ -431,6 +514,7 @@ def claim_on_submit(doc, method=None):
 				"facility_mfl": mfl,
 				"facility_fid": fid or None,
 				"customer": doc.customer,
+				"facility_level": facility_level,
 				"sales_order": doc.name,
 				"status": "Reserved",
 				"purchased_tokens": purchased,

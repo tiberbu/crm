@@ -1,0 +1,43 @@
+{
+ "actions": [],
+ "creation": "2026-11-10 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "facility_level",
+  "flex_value",
+  "fixed_discount_percent"
+ ],
+ "fields": [
+  {
+   "fieldname": "facility_level",
+   "fieldtype": "Data",
+   "label": "Facility Level",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The facility's registry level, e.g. Level 2. Case and spacing are ignored."
+  },
+  {
+   "fieldname": "flex_value",
+   "fieldtype": "Float",
+   "label": "Flex Reward",
+   "in_list_view": 1,
+   "description": "Tokens for a flat coupon, or % of purchased tokens for a percentage coupon. 0 gives nothing on Flex at this level."
+  },
+  {
+   "fieldname": "fixed_discount_percent",
+   "fieldtype": "Percent",
+   "label": "Fixed Plan Discount (%)",
+   "in_list_view": 1,
+   "description": "Percentage off the Fixed package price at this level. 0 gives nothing on Fixed at this level."
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-10 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "FCRM",
+ "name": "CRM Coupon Level Reward",
+ "owner": "Administrator",
+ "permissions": []
+}

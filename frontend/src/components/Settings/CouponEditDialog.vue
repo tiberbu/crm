@@ -50,6 +50,93 @@
           <p class="text-sm text-ink-gray-6">{{ planHelp }}</p>
         </div>
 
+        <div class="coupon-plans flex flex-col gap-1">
+          <label class="flex items-center gap-2 text-base text-ink-gray-8">
+            <input
+              v-model="form.reward_by_level"
+              type="checkbox"
+              class="rounded"
+              :disabled="locked"
+              data-testid="coupon-reward-by-level"
+            />
+            {{ __('Set the reward per facility level') }}
+          </label>
+          <p class="text-sm text-ink-gray-6">
+            {{
+              __(
+                "A facility gets the reward for its registry level. Levels you do not list get the values under All other levels (0 gives them nothing).",
+              )
+            }}
+          </p>
+        </div>
+
+        <div
+          v-if="form.reward_by_level"
+          class="flex flex-col gap-2"
+          data-testid="coupon-level-rewards"
+        >
+          <p class="text-sm text-ink-gray-7">{{ __('Rewards by facility level') }}</p>
+          <div
+            v-for="(row, index) in form.level_rewards"
+            :key="index"
+            class="grid items-end gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]"
+            data-testid="coupon-level-row"
+          >
+            <FormControl
+              v-model="row.facility_level"
+              type="text"
+              :label="__('Facility level')"
+              :placeholder="__('Level 2')"
+              list="coupon-level-options"
+              autocomplete="off"
+              :disabled="locked"
+              data-testid="coupon-level-name"
+            />
+            <FormControl
+              v-if="form.applies_to !== 'Fixed'"
+              v-model="row.flex_value"
+              type="number"
+              :label="levelValueLabel"
+              min="0"
+              step="0.01"
+              :disabled="locked"
+              data-testid="coupon-level-flex"
+            />
+            <FormControl
+              v-if="form.applies_to !== 'Flex'"
+              v-model="row.fixed_discount_percent"
+              type="number"
+              :label="__('Fixed discount (%)')"
+              min="0"
+              max="100"
+              step="0.01"
+              :disabled="locked"
+              data-testid="coupon-level-discount"
+            />
+            <Button
+              variant="ghost"
+              icon="x"
+              :aria-label="__('Remove {0}', [row.facility_level || __('level')])"
+              :disabled="locked"
+              data-testid="coupon-level-remove"
+              @click="form.level_rewards.splice(index, 1)"
+            />
+          </div>
+          <datalist id="coupon-level-options">
+            <option v-for="level in levelOptions" :key="level" :value="level" />
+          </datalist>
+          <div>
+            <Button
+              :label="__('Add level')"
+              icon-left="plus"
+              :disabled="locked"
+              data-testid="coupon-level-add"
+              @click="addLevel"
+            />
+          </div>
+          <p class="mt-2 text-sm text-ink-gray-7">{{ __('All other levels') }}</p>
+        </div>
+
         <div
           v-if="form.applies_to !== 'Flex'"
           class="grid gap-4 sm:grid-cols-3"
@@ -68,7 +155,7 @@
         </div>
 
         <p
-          v-if="form.applies_to !== 'Fixed'"
+          v-if="form.applies_to !== 'Fixed' && !form.reward_by_level"
           class="-mb-2 text-sm text-ink-gray-7"
         >
           {{
@@ -213,7 +300,8 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, FormControl, call } from 'frappe-ui'
+import { cleanLevelRewards } from '@/utils/coupons'
 
 const show = defineModel({ type: Boolean, default: false })
 const props = defineProps({
@@ -231,6 +319,8 @@ const blank = () => ({
   value: 0,
   max_tokens: 0,
   fixed_discount_percent: 0,
+  reward_by_level: false,
+  level_rewards: [],
   valid_from: '',
   valid_to: '',
   max_redemptions: 0,
@@ -254,9 +344,45 @@ watch(show, (open) => {
     fixed_discount_percent: c.fixed_discount_percent || 0,
     max_tokens: c.max_tokens || 0,
     max_redemptions: c.max_redemptions || 0,
+    reward_by_level: Boolean(Number(c.reward_by_level || 0)),
+    level_rewards: (c.level_rewards || []).map((row) => ({
+      facility_level: row.facility_level || '',
+      flex_value: row.flex_value || 0,
+      fixed_discount_percent: row.fixed_discount_percent || 0,
+    })),
   })
   error.value = ''
+  loadLevelOptions()
 })
+
+// Suggested levels (self-onboarding levels, Fixed package levels, levels on record); a new one can be typed.
+const levelOptions = ref([])
+let levelOptionsLoaded = false
+async function loadLevelOptions() {
+  if (levelOptionsLoaded) return
+  try {
+    const result = await call('crm.api.coupons.coupon_level_options')
+    levelOptions.value = result?.levels || []
+    levelOptionsLoaded = true
+  } catch {
+    levelOptions.value = []
+  }
+}
+
+function addLevel() {
+  form.level_rewards.push({
+    facility_level: '',
+    flex_value: 0,
+    fixed_discount_percent: 0,
+  })
+}
+
+watch(
+  () => form.reward_by_level,
+  (on) => {
+    if (on && !form.level_rewards.length) addLevel()
+  },
+)
 
 const title = computed(() =>
   form.name ? __('Edit {0}', [form.coupon_title]) : __('New coupon'),
@@ -297,6 +423,11 @@ const targetingOptions = [
   { label: __('Facility level'), value: 'Facility Level' },
   { label: __('Coupon code'), value: 'Coupon Code' },
 ]
+const levelValueLabel = computed(() =>
+  form.value_type === 'percentage_of_purchase'
+    ? __('Flex: % of purchase')
+    : __('Flex tokens'),
+)
 const valueLabel = computed(() =>
   form.value_type === 'percentage_of_purchase'
     ? __('Percentage of purchase')
@@ -307,7 +438,13 @@ async function submit() {
   error.value = ''
   saving.value = true
   try {
-    await props.save({ ...form })
+    await props.save({
+      ...form,
+      reward_by_level: form.reward_by_level ? 1 : 0,
+      level_rewards: form.reward_by_level
+        ? cleanLevelRewards(form.level_rewards)
+        : [],
+    })
     show.value = false
   } catch (e) {
     error.value =
@@ -320,11 +457,13 @@ async function submit() {
 
 <style>
 /* Brand guide: native radios take the brand red, never the forms-plugin blue. */
-.coupon-plans input[type='radio'] {
+.coupon-plans input[type='radio'],
+.coupon-plans input[type='checkbox'] {
   color: var(--ink-blue-6); /* the desk theme maps this token to the brand red */
   accent-color: var(--ink-blue-6);
 }
-.coupon-plans input[type='radio']:focus {
+.coupon-plans input[type='radio']:focus,
+.coupon-plans input[type='checkbox']:focus {
   --tw-ring-color: var(--brand-tint-07);
 }
 </style>

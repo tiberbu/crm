@@ -13,6 +13,9 @@
   "value",
   "max_tokens",
   "fixed_discount_percent",
+  "section_break_level_rewards",
+  "reward_by_level",
+  "level_rewards",
   "section_break_validity",
   "valid_from",
   "valid_to",
@@ -84,7 +87,7 @@
    "fieldtype": "Float",
    "label": "Value",
    "precision": "2",
-   "description": "Flat: the number of tokens. Percentage: the percent of the purchased token amount.",
+   "description": "With Reward by Facility Level on, this is the reward for every level not listed (0 gives nothing).",
    "depends_on": "eval:doc.applies_to!='Fixed'",
    "mandatory_depends_on": "eval:doc.applies_to!='Fixed'"
   },
@@ -102,7 +105,26 @@
    "label": "Fixed Plan Discount (%)",
    "depends_on": "eval:doc.applies_to!='Flex'",
    "description": "Percentage off the Fixed package price on the order this coupon is used on.",
-   "mandatory_depends_on": "eval:doc.applies_to!='Flex'"
+   "mandatory_depends_on": "eval:doc.applies_to!='Flex' && !doc.reward_by_level"
+  },
+  {
+   "fieldname": "section_break_level_rewards",
+   "fieldtype": "Section Break",
+   "label": "Rewards by Facility Level"
+  },
+  {
+   "fieldname": "reward_by_level",
+   "fieldtype": "Check",
+   "label": "Reward by Facility Level",
+   "default": "0",
+   "description": "Set a different reward for each facility level. The values above then apply to every level not listed."
+  },
+  {
+   "fieldname": "level_rewards",
+   "fieldtype": "Table",
+   "label": "Level Rewards",
+   "options": "CRM Coupon Level Reward",
+   "depends_on": "eval:doc.reward_by_level"
   },
   {
    "fieldname": "section_break_validity",
@@ -271,7 +293,7 @@
  "issingle": 0,
  "istsource": 0,
  "links": [],
- "modified": "2026-11-09 12:00:00.000000",
+ "modified": "2026-11-10 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "FCRM",
  "name": "CRM Coupon",

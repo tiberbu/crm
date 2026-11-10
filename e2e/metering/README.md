@@ -104,3 +104,20 @@ E2E_ADMIN_PASSWORD=... npx playwright test --config e2e/metering/playwright.conf
 ```
 
 Use a new `run_id` for each run: the journey cancels the subscription it checks.
+
+## Coupon rewards by facility level (P-116 to P-123)
+
+`coupon_level_rewards.spec.ts`: one Partner Coupon rewards each facility level differently. The
+admin sees the per-level lines on the coupon card and creates a level-rewarded coupon in the dialog;
+the customer's four draft orders (Level 2 and Level 4 Flex, Level 2 and Level 3B Fixed) each show
+their own level's tokens or discount; confirming records the level and the metering grant check lets
+the Level 4 amount through.
+
+```bash
+bench --site <site> execute crm.tests.e2e_coupon_level_fixture.setup \
+  --kwargs '{"run_id": "<alphanumeric>", "admin_password": "...", "owner_password": "..."}' > clr.out
+# save the JSON object printed last to a file, then:
+E2E_CLR_FIXTURE=/path/to/clr.json BENCH_DIR=... BENCH_SITE=<site> E2E_ADMIN_PASSWORD=... E2E_OWNER_PASSWORD=... \
+npx playwright test --config e2e/metering/playwright.config.ts coupon_level_rewards
+bench --site <site> execute crm.tests.e2e_coupon_level_fixture.teardown --kwargs '{"run_id": "<same>"}'
+```

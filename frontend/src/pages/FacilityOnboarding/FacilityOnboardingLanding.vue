@@ -610,7 +610,7 @@ import {
 import { FACILITY_PAGE_SIZE, facilityPage, filterFacilities } from '@/utils/facilityPager'
 import { facilityId } from '@/utils/facilityId'
 import { termsDocument, termsFileName } from '@/utils/termsDownload'
-import { couponValueLabel } from '@/utils/coupons'
+import { couponOfferByLevel, couponValueLabel } from '@/utils/coupons'
 import {
   CUSTOM,
   customQuote,
@@ -729,6 +729,8 @@ const couponOffer = computed(() => catalog.value.partner_coupon_offer || null)
 // "+150 tokens", "5% off Fixed" or "+150 tokens on Flex · 5% off Fixed" (P-113).
 const couponOfferLabel = computed(() => {
   if (!couponOffer.value) return ''
+  // P-123: a reward per facility level reads "Level 2: +1,000 tokens; Level 4: +2,500 tokens".
+  if (Number(couponOffer.value.reward_by_level || 0)) return couponOfferByLevel(couponOffer.value)
   const label = couponValueLabel(couponOffer.value)
   return couponOffer.value.applies_to === 'Fixed' ? label : `+${label}`
 })
