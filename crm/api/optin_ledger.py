@@ -226,10 +226,14 @@ def build_ledger(submission, staff: bool = False) -> dict:
 		for name, row in invoices.items()
 		if not name.startswith("key:") and name not in matched and cint(row.docstatus) == 1
 	]
-	policy = rules.advance_policy(submission.status, contract_status, rows, _unpaid_count(invoices))
+	due_only = not staff
+	policy = rules.advance_policy(
+		submission.status, contract_status, rows, _unpaid_count(invoices), today=today, due_only=due_only
+	)
+	policy["due_only"] = due_only
 	policy["next"] = [
 		{"billing_key": cstr(row.get("billing_key") or ""), "label": rules.period_label(row), "amount": flt(row.get("amount_incl_vat"))}
-		for row in rules.issuable_rows(rows)[: rules.MAX_ADVANCE_PERIODS]
+		for row in rules.eligible_rows(rows, today, due_only)[: rules.MAX_ADVANCE_PERIODS]
 	]
 	years = []
 	for period in periods:
@@ -283,15 +287,21 @@ def issue_periods(submission_name: str, count: Any, issued_by: str) -> dict:
 		cstr(frappe.db.get_value("CRM Contract", submission.contract, "status") or "") if submission.get("contract") else ""
 	)
 	invoices = _documents(submission, rows)[1]
-	policy = rules.advance_policy(submission.status, contract_status, rows, _unpaid_count(invoices))
+	today = getdate(nowdate())
+	# P-134: a customer can only invoice periods whose contract date has arrived.
+	due_only = issued_by != "staff"
+	policy = rules.advance_policy(
+		submission.status, contract_status, rows, _unpaid_count(invoices), today=today, due_only=due_only
+	)
 	if not policy["allowed"]:
 		frappe.throw(_(policy["reason"]), frappe.ValidationError)
 	count = cint(count)
 	if count < 1 or count > policy["max_periods"]:
 		frappe.throw(_("Choose between 1 and {0} periods.").format(policy["max_periods"]), frappe.ValidationError)
-	selected = rules.select_next_periods(rows, count)
+	selected = rules.select_next_periods(rows, count, today=today, due_only=due_only)
+	if due_only and any(not rules.is_due(row, today) for row in selected):
+		frappe.throw(_("Invoices are issued on their scheduled date, not before."), frappe.ValidationError)
 
-	today = getdate(nowdate())
 	issued, failure = [], ""
 	for row in selected:
 		key = cstr(row.get("billing_key") or "").strip()
@@ -336,7 +346,7 @@ def issue_periods(submission_name: str, count: Any, issued_by: str) -> dict:
 			}
 		)
 		row.pop("error", None)
-		issued.append({"billing_key": key, "label": rules.period_label(row), "sales_order": order_name, "sales_invoice": invoice_name, "amount": flt(row.get("amount_incl_vat"))})
+		issued.append({"billing_key": key, "label": rules.period_label(row), "sales_order": order_name, "sales_invoice": invoice_name, "amount": flt(row.get("amount_incl_vat")), "early": row["issued_early"]})
 
 	submission.billing_schedule_json = json.dumps(rows, default=str)
 	submission.flags.ignore_permissions = True
@@ -344,10 +354,11 @@ def issue_periods(submission_name: str, count: Any, issued_by: str) -> dict:
 	if issued:
 		submission.add_comment(
 			"Info",
-			_("{0} issued {1} early: {2}").format(
+			_("{0} issued {1}{3}: {2}").format(
 				"Customer" if issued_by == "customer" else "Staff",
 				len(issued),
 				", ".join("%s (%s)" % (item["label"], item["sales_invoice"]) for item in issued),
+				_(" early") if any(item.get("early") for item in issued) else "",
 			),
 		)
 	frappe.db.commit()

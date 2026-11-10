@@ -74,6 +74,36 @@ class TestPayingAhead(unittest.TestCase):
 		self.assertFalse(rules.advance_policy("Processed", "Fully Executed", done, 0)["allowed"])
 
 
+class TestCustomerInvoicesOnlyWhenDue(unittest.TestCase):
+	"""P-134: a customer never invoices a period ahead of its contract date."""
+
+	def setUp(self):
+		# Q1 on 2027-01-30, Q2 on 2027-04-30, Q3 on 2027-07-30; Q1 already invoiced.
+		self.rows = [_row(1, 1, sales_invoice="SINV-1"), _row(1, 2), _row(1, 3)]
+
+	def test_nothing_is_issuable_before_the_date(self):
+		policy = rules.advance_policy("Processed", "Fully Executed", self.rows, 0, today="2027-02-01", due_only=True)
+		self.assertFalse(policy["allowed"])
+		self.assertIn("2027-04-30", policy["reason"])
+		self.assertEqual(rules.select_next_periods(self.rows, 1, today="2027-02-01", due_only=True), [])
+
+	def test_only_due_periods_are_issuable(self):
+		policy = rules.advance_policy("Processed", "Fully Executed", self.rows, 0, today="2027-05-01", due_only=True)
+		self.assertTrue(policy["allowed"])
+		self.assertEqual(policy["max_periods"], 1)
+		picked = rules.select_next_periods(self.rows, 2, today="2027-05-01", due_only=True)
+		self.assertEqual([rules.period_label(r) for r in picked], ["Year 1 · Q2"])
+
+	def test_the_date_itself_counts_as_due(self):
+		self.assertTrue(rules.is_due(_row(1, 2), "2027-04-30"))
+		self.assertFalse(rules.is_due(_row(1, 2), "2027-04-29"))
+
+	def test_staff_may_still_issue_early(self):
+		policy = rules.advance_policy("Processed", "Fully Executed", self.rows, 0, today="2027-02-01")
+		self.assertTrue(policy["allowed"])
+		self.assertEqual(policy["max_periods"], 2)
+
+
 class TestSummary(unittest.TestCase):
 	def test_totals_and_next_payment(self):
 		periods = [

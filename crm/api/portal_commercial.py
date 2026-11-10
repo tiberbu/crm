@@ -16,7 +16,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, add_months, cstr, flt, getdate
+from frappe.utils import add_days, add_months, cstr, flt, getdate, nowdate
 
 from crm.utils import value_express
 from crm.utils.portal_commercial import (
@@ -233,7 +233,9 @@ def _enrich_order_fields(rows, ois_mfls_by_name, account_mfls, packages, prevdoc
 		row["period_label"] = period
 		row["quotation"] = cstr(row.get("crm_optin_quotation") or prevdocs.get(row.get("name"), "") or "")
 		row["is_draft"] = docstatus == 0
-		row["can_create_invoice"] = can_create_invoice(row["is_draft"], status, governed)
+		row["can_create_invoice"] = can_create_invoice(
+			row["is_draft"], status, governed, row.get("transaction_date"), nowdate()
+		)
 		row.pop("crm_optin_billing_key", None)
 		row.pop("_item_mfls", None)
 	return rows

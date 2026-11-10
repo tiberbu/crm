@@ -90,3 +90,11 @@
 
 - The 4-period cap and the 4-unpaid limit are constants (`MAX_ADVANCE_PERIODS`, `MAX_UNPAID_INVOICES`). Say if a network needs different numbers.
 - Paying ahead does not discount. If early payment should earn a discount, that is a pricing decision for a later change.
+
+## P-134 — Customers never invoice before the date (owner feedback, 2026-11-10)
+
+Supersedes the customer half of P-125/P-126. The customer keeps the full breakdown (quotes, every period's invoice
+and due dates) but cannot generate an invoice for a period whose contract invoice date has not arrived, on the
+Opt-In journey or on Express fixed packages. Portal issuing is `due_only`: it only catches up a period that is
+already due (worker lag or a failed row). The pay-ahead card becomes "How your payments work" with a Next invoice
+panel. Staff early issue on the Deal stays. Express: future-dated orders cannot be invoiced (`is_future_dated`).

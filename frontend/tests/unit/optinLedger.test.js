@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   advanceLabels,
   advanceTotal,
-  clampCount,
+  nextScheduledPeriod,
   payableInvoice,
   periodAction,
   periodRange,
@@ -51,10 +51,18 @@ describe('Opt-In ledger display rules', () => {
     })
   })
 
-  it('bounds the pay-ahead count and totals the chosen periods', () => {
-    expect(clampCount(0, 3)).toBe(1)
-    expect(clampCount(9, 3)).toBe(3)
-    expect(clampCount(2, 0)).toBe(0)
+  it('finds the next invoice and totals the due periods', () => {
+    const years = [
+      { periods: [{ label: 'Year 1 · Q1', sales_invoice: 'S1', amount: 5 }] },
+      { periods: [{ label: 'Year 2 · Q1', amount: '7', scheduled_date: '2027-01-30', due_date: '2027-03-01' }] },
+    ]
+    expect(nextScheduledPeriod(years)).toEqual({
+      label: 'Year 2 · Q1',
+      amount: 7,
+      scheduled_date: '2027-01-30',
+      due_date: '2027-03-01',
+    })
+    expect(nextScheduledPeriod([{ periods: [{ sales_invoice: 'S1' }] }])).toBeNull()
     expect(advanceTotal(next, 2)).toBeCloseTo(197844.48)
     expect(periodRange(advanceLabels(next, 3))).toBe('Year 1 · Q1 – Year 1 · Q3')
     expect(periodRange(advanceLabels(next, 1))).toBe('Year 1 · Q1')

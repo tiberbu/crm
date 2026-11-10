@@ -50,12 +50,21 @@ export function payableInvoice(source, oisName, currency = 'KES') {
   }
 }
 
-// Pay-ahead choice: 1..max, never more than the periods still to invoice.
-export function clampCount(value, max) {
-  const limit = Math.max(Number(max) || 0, 0)
-  if (!limit) return 0
-  const count = Math.round(Number(value) || 1)
-  return Math.min(Math.max(count, 1), limit)
+// The first period still waiting for its invoice date, for the "Next invoice" panel (P-134).
+export function nextScheduledPeriod(years) {
+  for (const year of years || []) {
+    for (const period of year?.periods || []) {
+      if (!period?.sales_invoice) {
+        return {
+          label: period.label,
+          amount: Number(period.amount) || 0,
+          scheduled_date: period.scheduled_date || '',
+          due_date: period.due_date || '',
+        }
+      }
+    }
+  }
+  return null
 }
 
 export function advanceTotal(next, count) {
