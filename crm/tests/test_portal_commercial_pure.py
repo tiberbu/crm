@@ -181,6 +181,11 @@ class CanCreateInvoiceTests(unittest.TestCase):
 	def test_normal_allowed(self):
 		self.assertTrue(can_create_invoice(False, "Draft", False))
 
+	def test_future_dated_blocked(self):
+		self.assertFalse(can_create_invoice(False, "To Bill", False, "2027-01-30", "2026-11-10"))
+		self.assertTrue(can_create_invoice(False, "To Bill", False, "2026-11-10", "2026-11-10"))
+		self.assertTrue(can_create_invoice(False, "To Bill", False, None, "2026-11-10"))
+
 
 class DecideCommercialTests(unittest.TestCase):
 	def test_network_wins(self):

@@ -1,4 +1,6 @@
-"""Pure decisions for the Opt-In billing ledger and paying ahead (spec P-124 to P-133).
+"""Pure decisions for the Opt-In billing ledger (spec P-124 to P-134).
+
+P-134: customers never invoice a period before its contract date; only staff may issue early.
 
 No frappe import: the API module reads the schedule and the ERPNext documents and
 hands plain dicts here, so every rule is unit-tested without a site.
@@ -102,12 +104,27 @@ def issuable_rows(rows) -> list[dict]:
 	return sorted((row for row in rows or [] if isinstance(row, dict) and not is_issued(row)), key=sort_key)
 
 
-def select_next_periods(rows, count) -> list[dict]:
-	"""The next ``count`` unissued rows, in schedule order (P-125). No holes by construction."""
+def is_due(row: dict, today) -> bool:
+	"""The period's contract invoice date has arrived (P-134)."""
+	start = to_date(scheduled_date(row))
+	today = to_date(today) or date.today()
+	return bool(start) and start <= today
+
+
+def eligible_rows(rows, today=None, due_only: bool = False) -> list[dict]:
+	"""Unissued rows that may be invoiced now. Customers only get rows that are due (P-134)."""
+	pending = issuable_rows(rows)
+	if not due_only:
+		return pending
+	return [row for row in pending if is_due(row, today)]
+
+
+def select_next_periods(rows, count, today=None, due_only: bool = False) -> list[dict]:
+	"""The next ``count`` eligible rows, in schedule order (P-125). No holes by construction."""
 	count = _int(count)
 	if count < 1 or count > MAX_ADVANCE_PERIODS:
 		raise ValueError("Choose between 1 and %d periods." % MAX_ADVANCE_PERIODS)
-	return issuable_rows(rows)[:count]
+	return eligible_rows(rows, today, due_only)[:count]
 
 
 def early_due_date(today, scheduled_due) -> str:
@@ -117,21 +134,33 @@ def early_due_date(today, scheduled_due) -> str:
 	return (due if due and due > today else today).isoformat()
 
 
-def advance_policy(ois_status, contract_status, rows, unpaid_count) -> dict:
-	"""Whether paying ahead is open, and why not (P-125, P-126)."""
-	remaining = len(issuable_rows(rows))
-	policy = {"allowed": False, "reason": "", "max_periods": 0, "remaining": remaining}
+def advance_policy(ois_status, contract_status, rows, unpaid_count, today=None, due_only: bool = False) -> dict:
+	"""Whether periods can be invoiced now, and why not (P-125, P-126, P-134).
+
+	``due_only`` is the customer rule: a period is invoiced only once its contract date
+	arrives, never ahead of it. Staff may still issue early (``due_only=False``).
+	"""
+	pending = issuable_rows(rows)
+	eligible = eligible_rows(rows, today, due_only)
+	policy = {"allowed": False, "reason": "", "max_periods": 0, "remaining": len(pending)}
 	if str(ois_status or "").strip() != "Processed":
 		policy["reason"] = "Your Opt-In request is still being processed."
 	elif str(contract_status or "").strip() != "Fully Executed":
-		policy["reason"] = "Paying ahead opens once every signatory has signed the contract."
-	elif remaining <= 0:
+		policy["reason"] = "Invoicing starts once every signatory has signed the contract."
+	elif not pending:
 		policy["reason"] = "Every period of your contract already has an invoice."
+	elif not eligible:
+		nxt = scheduled_date(pending[0])
+		policy["reason"] = (
+			"Your next invoice is created on %s. Invoices are issued on their scheduled date, not before." % nxt
+			if nxt
+			else "Your next invoice is created on its scheduled date."
+		)
 	elif _int(unpaid_count) >= MAX_UNPAID_INVOICES:
 		policy["reason"] = "Pay your open invoices first. You can have up to %d unpaid invoices at a time." % MAX_UNPAID_INVOICES
 	else:
 		slots = MAX_UNPAID_INVOICES - _int(unpaid_count)
-		policy.update({"allowed": True, "max_periods": max(1, min(MAX_ADVANCE_PERIODS, remaining, slots))})
+		policy.update({"allowed": True, "max_periods": max(1, min(MAX_ADVANCE_PERIODS, len(eligible), slots))})
 	return policy
 
 

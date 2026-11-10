@@ -137,9 +137,18 @@ def order_display_status(docstatus, status, per_billed, governed) -> str:
 	return "Awaiting invoice"
 
 
-def can_create_invoice(is_draft, status, governed) -> bool:
-	"""False for drafts, schedule-governed orders and closed/on-hold/cancelled ones."""
+def is_future_dated(transaction_date, today) -> bool:
+	"""True when the order's date has not arrived yet (P-134: nothing is invoiced before it is due)."""
+	order_day = str(transaction_date or "").strip()[:10]
+	today_day = str(today or "").strip()[:10]
+	return bool(order_day and today_day) and order_day > today_day
+
+
+def can_create_invoice(is_draft, status, governed, transaction_date=None, today=None) -> bool:
+	"""False for drafts, schedule-governed, future-dated and closed/on-hold/cancelled orders."""
 	if is_draft or governed:
+		return False
+	if is_future_dated(transaction_date, today):
 		return False
 	text = (status or "").strip().lower()
 	if text in ("closed", "on hold", "cancelled", "canceled"):
