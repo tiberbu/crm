@@ -27,11 +27,74 @@ export function couponDiscountLabel(coupon) {
  * existed) reads as its token value; Fixed as "5% off Fixed"; Both as "1,000 tokens on Flex · 5% off Fixed".
  */
 export function couponValueLabel(coupon) {
+  if (Number(coupon?.reward_by_level || 0)) return 'By facility level'
+  return planValueLabel(coupon)
+}
+
+/** The single reward's label for the coupon's plans. */
+function planValueLabel(coupon) {
   const plan = coupon?.applies_to || 'Flex'
   if (plan === 'Fixed') return couponDiscountLabel(coupon)
   if (plan === 'Both')
     return `${couponTokenLabel(coupon)} on Flex · ${couponDiscountLabel(coupon)}`
   return couponTokenLabel(coupon)
+}
+
+/**
+ * P-123: one line per level reward, then "All other levels", e.g.
+ * [{ level: 'Level 2', label: '1,000 tokens on Flex · 10% off Fixed' }, …].
+ * A plan the row gives nothing for is left out; a row (or the other levels) giving nothing reads "No reward".
+ */
+export function couponLevelLines(coupon) {
+  if (!Number(coupon?.reward_by_level || 0)) return []
+  const plan = coupon?.applies_to || 'Flex'
+  const describe = (value, discount) => {
+    const parts = []
+    const reward = { ...coupon, value, fixed_discount_percent: discount }
+    if (plan !== 'Fixed' && Number(value || 0) > 0) parts.push(couponTokenLabel(reward))
+    if (plan !== 'Flex' && Number(discount || 0) > 0) parts.push(couponDiscountLabel(reward))
+    if (!parts.length) return 'No reward'
+    if (plan === 'Both' && parts.length === 2) parts[0] += ' on Flex'
+    return parts.join(' · ')
+  }
+  const lines = (coupon?.level_rewards || []).map((row) => ({
+    level: row.facility_level,
+    label: describe(row.flex_value, row.fixed_discount_percent),
+  }))
+  lines.push({
+    level: 'All other levels',
+    label: describe(coupon?.value, coupon?.fixed_discount_percent),
+  })
+  return lines
+}
+
+/**
+ * The guest offer for a level-rewarded coupon, levels giving nothing left out:
+ * "Level 2: +1,000 tokens; Level 4: +2,500 tokens" (a Fixed-only coupon has no "+", as before).
+ */
+export function couponOfferByLevel(offer) {
+  const plus = (offer?.applies_to || 'Flex') === 'Fixed' ? '' : '+'
+  return couponLevelLines(offer)
+    .filter((line) => line.label !== 'No reward')
+    .map((line) => `${line.level}: ${plus}${line.label}`)
+    .join('; ')
+}
+
+/** The level-rewards rows the dialog sends: trimmed levels, numbers, blank rows dropped. */
+export function cleanLevelRewards(rows) {
+  return (rows || [])
+    .map((row) => ({
+      facility_level: String(row?.facility_level || '')
+        .split(/\s+/)
+        .filter(Boolean)
+        .join(' '),
+      flex_value: Number(row?.flex_value || 0),
+      fixed_discount_percent: Number(row?.fixed_discount_percent || 0),
+    }))
+    .filter(
+      (row) =>
+        row.facility_level || row.flex_value || row.fixed_discount_percent,
+    )
 }
 
 export const PLAN_LABELS = {
