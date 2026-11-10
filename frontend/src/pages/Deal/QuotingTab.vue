@@ -346,6 +346,8 @@
         </div>
       </section>
 
+      <OptInBillingSchedule v-if="quotes.length" :deal="dealId" />
+
       <Dialog
         v-model="showOisInvoiceDialog"
         :options="{ title: invoiceBreakdownTitle, size: '4xl' }"
@@ -1181,6 +1183,7 @@ import { useRoute } from 'vue-router'
 import { createResource, Button, Dialog, FormControl, toast } from 'frappe-ui'
 import ContractingPanel from './ContractingPanel.vue'
 import QuotePanel from './QuotePanel.vue'
+import OptInBillingSchedule from './OptInBillingSchedule.vue'
 import { copyToClipboard } from '@/utils'
 import { facilityId } from '@/utils/facilityId'
 import { useFacilityIds } from '@/composables/useFacilityIds'
