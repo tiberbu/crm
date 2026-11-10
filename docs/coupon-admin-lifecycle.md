@@ -52,3 +52,28 @@ Every coupon says which plans it is for (**Applies to**):
 - **Customers:** the CX Portal order review shows the discount ("Coupon: 5% off … −KES 750"). A Fixed facility's page shows a **Subscription** card (active since, expires).
 
 Design: `_bmad-output/coupon-plan-scope/planning-artifacts/adr-coupon-plan-scope.md`.
+
+## Rewards by facility level (2026-11-10, P-116 to P-123)
+
+The same tokens go further at a small facility than at a large one, so one coupon can give each
+facility level its own reward. Tick **Set the reward per facility level** and add a row per level:
+
+| Column | Meaning |
+|---|---|
+| Facility level | The facility's registry level (`CRM Pre-Qualified Facility.keph_level`), e.g. Level 2. Case and spacing are ignored; "Level 3" is not "Level 3B". The dialog suggests the self-onboarding levels, the Fixed packages' levels and the levels on record |
+| Flex tokens (or Flex: % of purchase) | The Flex reward at this level, in the coupon's value type. The coupon's token cap still applies |
+| Fixed discount (%) | The Fixed reward at this level |
+
+- The normal value fields become **All other levels**: the reward for any level not listed, or a facility with no level on record. 0 means those levels get nothing, and the coupon is not used for them.
+- Each level appears once, and each row must give something for the coupon's plan. A plan's column is hidden (and cleared) when the coupon does not apply to it.
+- Example: Both, Level 2 = 1,000 tokens / 10% off; Level 4 = 2,500 tokens; all other levels = nothing. A Level 2 Flex clinic and a Level 4 Flex clinic entering the same Partner Coupon get 1,000 and 2,500 coupon tokens; a Level 2 Fixed clinic gets 10% off.
+- Works for partner network coupons and CRM coupons. `targeting = Facility Level` still decides who may get a CRM coupon; the level rows decide how much. When a CRM facility qualifies for several coupons, the largest reward *for its level* wins (assigned coupons first, as before).
+- Confirming an order recomputes the reward from the facility's level at that moment and records it on the redemption (`facility_level`). The metering app's grant check uses that level (`crm.utils.coupons.token_ceiling`), so the level amount is granted in full and never exceeded.
+- The level rows, like the value, cannot change once the coupon has been used.
+- The card shows "By facility level" and one line per level. The onboarding page lists the reward per level ("Level 2: +1,000 tokens; Level 4: +2,500 tokens"). Order lines and the CX order review show the facility's own amount.
+
+API: `get_coupon`, `list_coupons` and `save_coupon` carry `reward_by_level` and `level_rewards`
+(`facility_level`, `flex_value`, `fixed_discount_percent`); `coupon_level_options()` returns the
+suggested levels; `public_offer` adds both fields to the guest offer.
+
+Design: `_bmad-output/coupon-level-rewards/planning-artifacts/adr-coupon-level-rewards.md`.
