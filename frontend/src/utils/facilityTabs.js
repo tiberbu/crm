@@ -6,6 +6,7 @@ export const DOCUMENT_PAGE_SIZE = 20
 
 const TAB_LABELS = {
   overview: 'Overview',
+  schedule: 'Payment schedule',
   quote: 'Quotes',
   order: 'Orders',
   invoice: 'Invoices',
@@ -23,8 +24,17 @@ const BADGES = {
 
 // counts: { quote, order, orderDraft, invoice, invoiceDue, payment, paymentPending };
 // a missing count renders no number.
-export function facilityTabs({ showQuote = false, counts = {} } = {}) {
-  const keys = ['overview', ...(showQuote ? ['quote'] : []), 'order', 'invoice', 'payment', 'billing']
+// showSchedule: Network Opt-In facilities get the contract's Payment schedule (ledger) tab.
+export function facilityTabs({ showQuote = false, showSchedule = false, counts = {} } = {}) {
+  const keys = [
+    'overview',
+    ...(showSchedule ? ['schedule'] : []),
+    ...(showQuote ? ['quote'] : []),
+    'order',
+    'invoice',
+    'payment',
+    'billing',
+  ]
   return keys.map((key) => {
     const count = Number.isFinite(counts[key]) ? counts[key] : null
     const rule = BADGES[key]

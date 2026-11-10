@@ -33,8 +33,10 @@ const props = defineProps({
   tokenAlert: { type: Object, default: null },
   // Tab to open first (overview | quote | order | invoice | payment | billing).
   initialTab: { type: String, default: 'overview' },
+  // Bumped after a payment so the Opt-In Payment schedule reloads.
+  ledgerRefreshKey: { type: [Number, String], default: 0 },
 })
-const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay', 'review-order', 'create-invoice', 'open-billing', 'token-alert-saved'])
+const emit = defineEmits(['back', 'open-top-up', 'open-support', 'pay', 'review-order', 'create-invoice', 'open-billing', 'token-alert-saved', 'ledger-issued'])
 const provisioning = ref(null)
 const provisioningBusy = ref(true)
 const provisioningError = ref('')
@@ -897,6 +899,8 @@ async function reviewInvoice() {
       :account-level-count="accountLevelCount"
       :default-currency="defaultCurrency"
       :token-packages="tokenPackages"
+      :refresh-key="ledgerRefreshKey"
+      @issued="emit('ledger-issued', $event)"
       @review-order="emit('review-order', $event)"
       @create-invoice="emit('create-invoice', $event)"
       @pay="emit('pay', $event)"

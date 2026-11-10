@@ -783,7 +783,8 @@ const optinRequests = computed(() => {
     return {
       name: ois.name,
       status: ois.status || 'Submitted',
-      network: partnerName(ois.network || ois.network_slug) || 'Self-onboarding',
+      // `ois.network` is the network record; its display name is the partner (was `[object Object]`).
+      network: partnerName(ois.network?.display_name || ois.network_slug),
       signatory: ois.facility_signatory_name || '',
       source: ois.onboarding_source || '',
       contract: ois.contract || '',
@@ -1122,9 +1123,13 @@ function unwrap(response) {
   )
 }
 
+// Bumped on every context refresh so Opt-In ledgers reload after a payment.
+const ledgerRefreshKey = ref(0)
+
 async function refreshContext() {
   const refreshed = await call('crm.api.website_redirect.get_portal_context')
   context.value = unwrap(refreshed) || context.value
+  ledgerRefreshKey.value += 1
   if (!selectedFacilityMfl.value && allFacilities.value.length === 1) {
     selectedFacilityMfl.value = allFacilities.value[0].mfl_code
   }
@@ -1829,6 +1834,8 @@ onUnmounted(() => {
             :account-level-count="drawerAccountLevelCount"
             :token-alert="tokenAlerts[drawerFacility.mfl_code] || null"
             :initial-tab="drawerTab"
+            :ledger-refresh-key="ledgerRefreshKey"
+            @ledger-issued="refreshContext"
             @back="closeFacilityDrawer"
             @open-top-up="openTopUpModal"
             @open-support="openNetworkSupportDrawer"
@@ -2829,7 +2836,7 @@ onUnmounted(() => {
           <!-- VIEW E1: OPT-IN REQUESTS (first-class records with quotes)     -->
           <!-- ============================================================== -->
           <div v-if="activeView === 'optin_requests'" class="space-y-6">
-            <OptInRequests :requests="optinRequests" />
+            <OptInRequests :requests="optinRequests" :refresh-key="ledgerRefreshKey" @pay="openMpesaModal" @issued="refreshContext" />
           </div>
 
           <!-- ============================================================== -->

@@ -303,6 +303,10 @@ class ScheduleRowsTests(unittest.TestCase):
 		rows = schedule_rows([{"year_number": 2, "quarter_number": 3}], contract_complete=True)
 		self.assertEqual(rows[0]["label"], "Year 2 · Quarter 3")
 
+	def test_year_and_quarter_beat_the_repeating_stored_label(self):
+		rows = schedule_rows([{"year_number": 3, "quarter_number": 1, "period_label": "Quarter 1"}], contract_complete=True)
+		self.assertEqual(rows[0]["label"], "Year 3 · Quarter 1")
+
 	def test_non_dict_rows_skipped(self):
 		self.assertEqual(schedule_rows(["junk", None], contract_complete=True), [])
 

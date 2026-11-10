@@ -13,6 +13,9 @@ ERPNext fields may not exist yet. Existing-submission synchronization is
 available as a Sales Manager-only, per-network action; it adds missing yearly
 quotations without changing accepted line values or executed contracts.
 
+> **Paying ahead and the billing ledger:** customers and staff can issue the next quarters early; see
+> [optin-billing-ledger.md](./optin-billing-ledger.md).
+
 ## Confirmed business rules
 
 1. A selected subscription term produces one ERPNext **Quotation per year**.

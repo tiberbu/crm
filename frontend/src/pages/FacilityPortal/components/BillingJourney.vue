@@ -3,6 +3,8 @@ import { computed, nextTick, provide, reactive, ref, watch } from 'vue'
 import { Tabs, call } from 'frappe-ui'
 import CxIcon from './CxIcon.vue'
 import FacilityDocumentList from './FacilityDocumentList.vue'
+import OptInLedger from './OptInLedger.vue'
+import { quotationPdfUrl } from '@/utils/optinLedger'
 import { invoiceStatus } from '@/utils/portalOrderState'
 import { facilityTabs, tabIndex, tabKey } from '@/utils/facilityTabs'
 import {
@@ -27,9 +29,11 @@ const props = defineProps({
   defaultCurrency: { type: String, default: 'KES' },
   tokenPackages: { type: Array, default: () => [] },
   initialTab: { type: String, default: 'overview' },
+  // Bumped by the portal after a payment so the Payment schedule reloads.
+  refreshKey: { type: [Number, String], default: 0 },
 })
 
-const emit = defineEmits(['review-order', 'create-invoice', 'pay', 'open-billing'])
+const emit = defineEmits(['review-order', 'create-invoice', 'pay', 'open-billing', 'issued'])
 
 const commercial = computed(() => commercialOf(props.facility))
 const showQuote = computed(
@@ -89,7 +93,33 @@ const counts = computed(() => ({
   orderDraft: props.orders.filter((order) => order.is_draft).length,
   paymentPending: props.payments.filter((payment) => payment.status === 'Pending Verification').length,
 }))
-const tabs = computed(() => facilityTabs({ showQuote: showQuote.value, counts: counts.value }))
+// The submission behind a Network Opt-In facility: its ledger is the Payment schedule tab.
+const scheduleOis = computed(() =>
+  commercial.value.journey === 'network_optin'
+    ? String(commercial.value.plan?.ois || props.facility?.ois_name || '').trim()
+    : '',
+)
+const tabs = computed(() =>
+  facilityTabs({ showQuote: showQuote.value, showSchedule: Boolean(scheduleOis.value), counts: counts.value }),
+)
+
+// Quotes open as PDFs: a Network quote through its submission, an Express quote through the customer.
+function quoteUrl(row) {
+  if (scheduleOis.value) return quotationPdfUrl(row.name, { oisNumber: scheduleOis.value })
+  const customer = String(props.facility?.customer || '').trim()
+  return customer ? quotationPdfUrl(row.name, { customer }) : ''
+}
+
+// Money at a glance on every journey: billed, paid and still to pay for this facility.
+const accountTotals = computed(() => {
+  const totals = serverCounts.value?.totals
+  if (totals) return totals
+  // Without full history the local rows are open invoices only; the Payment schedule has the real totals.
+  if (server.value || scheduleOis.value) return null
+  const billed = props.invoices.reduce((sum, row) => sum + (Number(row.grand_total) || Number(row.amount) || 0), 0)
+  const outstanding = props.invoices.reduce((sum, row) => sum + Math.max(Number(row.amount) || 0, 0), 0)
+  return props.invoices.length ? { billed, paid: Math.max(billed - outstanding, 0), outstanding } : null
+})
 
 let countsSeq = 0
 async function loadCounts() {
@@ -285,6 +315,21 @@ defineExpose({ selectTab: selectStage })
       </li>
     </ol>
 
+    <dl v-if="accountTotals" class="grid grid-cols-3 gap-2" data-testid="facility-account-totals">
+      <div class="min-w-0 rounded-cx-sm border border-cx-border-soft bg-cx-well p-3">
+        <dt class="text-xs font-medium text-cx-ink-3">Billed</dt>
+        <dd class="mt-1 break-words text-sm font-semibold text-cx-ink">{{ money(accountTotals.billed, defaultCurrency, defaultCurrency) }}</dd>
+      </div>
+      <div class="min-w-0 rounded-cx-sm border border-cx-border-soft bg-cx-well p-3">
+        <dt class="text-xs font-medium text-cx-ink-3">Paid</dt>
+        <dd class="mt-1 break-words text-sm font-semibold text-cx-ink">{{ money(accountTotals.paid, defaultCurrency, defaultCurrency) }}</dd>
+      </div>
+      <div class="min-w-0 rounded-cx-sm border border-cx-border-soft bg-cx-well p-3">
+        <dt class="text-xs font-medium text-cx-ink-3">Outstanding</dt>
+        <dd class="mt-1 break-words text-sm font-semibold text-cx-ink">{{ money(accountTotals.outstanding, defaultCurrency, defaultCurrency) }}</dd>
+      </div>
+    </dl>
+
     <Tabs v-model="tabModel" as="div" :tabs="tabs" class="!flex-none !overflow-visible [&_[role='tablist']]:gap-1 [&_[role='tablist']]:border-cx-border [&_[role='tablist']]:px-0 [&_[role='tablist']::-webkit-scrollbar]:h-0 [&_[role='tablist']>div>div]:bg-cx-brand [&_[role='tab']]:shrink-0 [&_[role='tabpanel']]:overflow-visible" data-testid="facility-tabs">
       <template #tab-item="{ tab, selected }">
         <button
@@ -310,6 +355,14 @@ defineExpose({ selectTab: selectStage })
         <div class="pt-4" :data-testid="`facility-panel-${tab.key}`">
           <slot v-if="tab.key === 'overview'" name="overview" />
           <slot v-else-if="tab.key === 'billing'" name="billing" />
+          <OptInLedger
+            v-else-if="tab.key === 'schedule'"
+            :ois-number="scheduleOis"
+            :refresh-key="refreshKey"
+            :show-quotes="false"
+            @pay="emit('pay', $event)"
+            @issued="emit('issued', $event)"
+          />
           <FacilityDocumentList
             v-else-if="tab.key === 'quote'"
             ref="quoteList"
@@ -326,8 +379,18 @@ defineExpose({ selectTab: selectStage })
                 tabindex="-1"
               >
                 <div class="min-w-0">
-                  <p class="break-all font-mono text-xs font-semibold text-cx-ink">{{ row.name }}</p>
-                  <p class="mt-1 text-xs text-cx-ink-2">{{ row.label }}</p>
+                  <a
+                    v-if="quoteUrl(row)"
+                    :href="quoteUrl(row)"
+                    target="_blank"
+                    rel="noopener"
+                    class="inline-flex items-center gap-1.5 break-all font-mono text-xs font-semibold text-cx-brand underline-offset-2 hover:underline"
+                    :data-testid="`facility-quote-link-${row.name}`"
+                  >
+                    {{ row.name }} <CxIcon name="file-text" class="size-3.5 shrink-0" />
+                  </a>
+                  <p v-else class="break-all font-mono text-xs font-semibold text-cx-ink">{{ row.name }}</p>
+                  <p class="mt-1 text-xs text-cx-ink-2">{{ row.label }}<template v-if="quoteUrl(row)"> · Open the PDF</template></p>
                 </div>
                 <div class="flex items-center gap-3">
                   <span

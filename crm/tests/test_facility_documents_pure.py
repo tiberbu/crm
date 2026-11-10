@@ -108,3 +108,17 @@ class SlimFacilityRecordsTests(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class InvoiceTotalsTests(unittest.TestCase):
+	def test_billed_paid_outstanding(self):
+		from crm.api.facility_documents import invoice_totals
+
+		totals = invoice_totals(
+			[
+				{"grand_total": 98922.24, "amount": 98922},  # unpaid; rounding is not a payment
+				{"grand_total": 6960, "amount": 0},
+				{"grand_total": 1000, "amount": 400},
+			]
+		)
+		self.assertEqual(totals, {"billed": 106882.24, "paid": 7560.0, "outstanding": 99322.0})

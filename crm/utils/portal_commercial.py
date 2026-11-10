@@ -233,20 +233,29 @@ def _schedule_state(row, contract_complete) -> str:
 	return "upcoming"
 
 
+def schedule_label(row) -> str:
+	"""``Year N · Quarter M`` whenever the row knows its year and quarter.
+
+	Stored ``period_label`` values are only "Quarter N", which repeats every year
+	(five "Quarter 1" rows on a five-year contract), so it is a last resort.
+	"""
+	year = row.get("year_number")
+	quarter = row.get("quarter_number")
+	if year and quarter:
+		return "Year %s · Quarter %s" % (year, quarter)
+	label = str(row.get("period_label") or "").strip()
+	if label:
+		return label
+	return "Year %s" % year if year else ""
+
+
 def schedule_rows(rows, contract_complete) -> list[dict]:
 	"""Allow-listed projection of ``billing_schedule_json`` rows (SPEC 4.5)."""
 	out = []
 	for row in rows or []:
 		if not isinstance(row, dict):
 			continue
-		label = str(row.get("period_label") or "").strip()
-		if not label:
-			year = row.get("year_number")
-			quarter = row.get("quarter_number")
-			if year and quarter:
-				label = "Year %s · Quarter %s" % (year, quarter)
-			elif year:
-				label = "Year %s" % year
+		label = schedule_label(row)
 		out.append(
 			{
 				"label": label,
