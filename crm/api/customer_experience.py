@@ -839,7 +839,7 @@ def start_token_payment(sales_order: Any):
 	"""Create and submit the one invoice for a submitted Sales Order, only when the user starts payment."""
 	require_portal_user()
 	name = _text(sales_order)
-	fields = ["name", "crm_token_purchase_key", "docstatus", "status", "customer"]
+	fields = ["name", "crm_token_purchase_key", "docstatus", "status", "customer", "transaction_date"]
 	if frappe.db.has_column("Sales Order", "crm_optin_submission"):
 		fields.append("crm_optin_submission")
 	order = (
@@ -886,6 +886,14 @@ def _order_is_schedule_governed(order_name) -> bool:
 def _start_or_resume_payment(order):
 	if _order_is_schedule_governed(order.name):
 		frappe.throw(_("This invoice is issued on your billing schedule."), frappe.ValidationError)
+	from crm.utils.portal_commercial import is_future_dated
+
+	if is_future_dated(order.get("transaction_date"), frappe.utils.nowdate()):
+		# P-134: a package period is never invoiced before its date arrives.
+		frappe.throw(
+			_("This order is not due yet. Its invoice can be created from {0}.").format(order.transaction_date),
+			frappe.ValidationError,
+		)
 	key = _text(order.crm_token_purchase_key)
 	existing_filters = {}
 	if _text(order.get("crm_optin_submission")):
