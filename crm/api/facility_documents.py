@@ -192,7 +192,25 @@ def get_facility_document_counts(customer=None, mfl_code=None):
 		"invoice": len(facility_invoices),
 		"invoiceDue": sum(1 for row in facility_invoices if flt(row.get("amount")) > 0),
 		"payment": len(for_facility(payments, mfl_code)),
+		"totals": invoice_totals(facility_invoices),
 	}
+
+
+def invoice_totals(rows: list[dict]) -> dict:
+	"""Billed / paid / outstanding for the facility page's money strip (spec P-132).
+
+	ERPNext's outstanding follows the rounded total, so a sub-unit difference
+	between grand and rounded totals is not reported as a payment.
+	"""
+	billed = paid = outstanding = 0.0
+	for row in rows or []:
+		total = flt(row.get("grand_total"))
+		due = max(flt(row.get("amount")), 0.0)
+		billed += total
+		outstanding += due
+		settled = total - due
+		paid += settled if settled >= 1 or due <= 0 else 0.0
+	return {"billed": round(billed, 2), "paid": round(paid, 2), "outstanding": round(outstanding, 2)}
 
 
 @frappe.whitelist(methods=["GET", "POST"])

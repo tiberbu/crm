@@ -123,8 +123,13 @@ def _find_billing_document(doctype, billing_key, submission=None, year=None, qua
 		return ""
 
 
-def _create_order_and_invoice(schedule, quotation, submission, issue_date, create_invoice=True):
-	"""Create a native Sales Order and optionally its native Sales Invoice."""
+def _create_order_and_invoice(schedule, quotation, submission, issue_date, create_invoice=True, due_date=None):
+	"""Create a native Sales Order and optionally its native Sales Invoice.
+
+	``due_date`` overrides the default 30 days after ``issue_date``. Paying ahead
+	uses it so an early invoice is never due before its contract date (P-127).
+	"""
+	due_date = getdate(due_date) if due_date else getdate(frappe.utils.add_days(issue_date, 30))
 	if not frappe.db.exists("DocType", "Sales Order"):
 		return "", ""
 	if create_invoice and not frappe.db.exists("DocType", "Sales Invoice"):
@@ -187,7 +192,6 @@ def _create_order_and_invoice(schedule, quotation, submission, issue_date, creat
 			row.discount_percentage = 0
 		_apply_order_tax_template(order, quotation)
 		order.calculate_taxes_and_totals()
-		due_date = frappe.utils.add_days(issue_date, 30)
 		order.set("payment_schedule", [])
 		order.append(
 			"payment_schedule",
@@ -215,7 +219,7 @@ def _create_order_and_invoice(schedule, quotation, submission, issue_date, creat
 		frappe.log_error(frappe.get_traceback(), "optin billing: sales invoice mapper failed")
 		raise
 	invoice.posting_date = issue_date
-	invoice.due_date = frappe.utils.add_days(issue_date, 30)
+	invoice.due_date = due_date
 	# The native mapper carries the order's quarter values, but restoring them
 	# here protects against ERPNext versions that re-fetch a current list price
 	# while preparing the target invoice.

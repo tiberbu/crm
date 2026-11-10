@@ -39,6 +39,7 @@ from crm.utils.portal_commercial import (
 	order_display_title,
 	period_label,
 	quote_status_label,
+	schedule_label,
 	schedule_rows,
 	term_label,
 )
@@ -750,7 +751,7 @@ def _fill_network_plan(plan: dict, mfl, network_ctx, quotes) -> None:
 	next_year = 1
 	if next_inv:
 		for row in raw_schedule:
-			if isinstance(row, dict) and cstr(row.get("period_label") or "") == cstr(next_inv.get("label")) and _raw_schedule_state(row) != "invoiced":
+			if isinstance(row, dict) and schedule_label(row) == cstr(next_inv.get("label")) and _raw_schedule_state(row) != "invoiced":
 				next_year = int(flt(row.get("year_number"))) or 1
 				break
 		else:
@@ -771,6 +772,8 @@ def _fill_network_plan(plan: dict, mfl, network_ctx, quotes) -> None:
 		{
 			"name": "Network subscription",
 			"source": "optin_contract",
+			# The submission whose ledger the facility page's Payment schedule tab loads.
+			"ois": cstr(network_ctx.get("ois") or ""),
 			"status": network_plan_status(network_ctx.get("status"), network_ctx.get("contract_complete")),
 			"cycle": cycle,
 			"cycle_label": cycle_label(cycle),
