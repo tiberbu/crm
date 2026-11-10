@@ -1,6 +1,6 @@
 <script setup>
-// The Opt-In billing ledger (spec P-124 to P-133): money at a glance, paying ahead,
-// the quarterly schedule with its order → invoice → payment trail, and the yearly
+// The Opt-In billing ledger (spec P-124 to P-134): money at a glance, how payments
+// work (no invoicing before a period's date), the quarterly schedule with its order → invoice → payment trail, and the yearly
 // quotes. One component on the Opt-In Requests page and the facility page tab.
 import { computed, onMounted, ref, watch } from 'vue'
 import { call } from 'frappe-ui'
@@ -9,7 +9,7 @@ import { formatDate, money as formatMoney } from '@/utils/portalCommercial'
 import {
   advanceLabels,
   advanceTotal,
-  clampCount,
+  nextScheduledPeriod,
   payableInvoice,
   periodAction,
   periodRange,
@@ -32,7 +32,6 @@ const ledger = ref(null)
 const loading = ref(false)
 const error = ref('')
 const updatedAt = ref('')
-const count = ref(1)
 const issuing = ref(false)
 const issueError = ref('')
 const issuedNotice = ref('')
@@ -42,12 +41,14 @@ const currency = computed(() => ledger.value?.currency || 'KES')
 const money = (amount) => formatMoney(amount, currency.value)
 const summary = computed(() => ledger.value?.summary || {})
 const advance = computed(() => ledger.value?.advance || { allowed: false, next: [] })
-const maxCount = computed(() => (advance.value.allowed ? advance.value.max_periods || 0 : 0))
+// Every due period is invoiced together; there is no choice of how many to pay ahead.
+const count = computed(() => (advance.value.allowed ? advance.value.max_periods || 0 : 0))
 const chosenTotal = computed(() => advanceTotal(advance.value.next, count.value))
 const chosenRange = computed(() => periodRange(advanceLabels(advance.value.next, count.value)))
 const years = computed(() => ledger.value?.years || [])
 const otherInvoices = computed(() => ledger.value?.other_invoices || [])
 const nextPayment = computed(() => summary.value.next_payment || null)
+const nextInvoice = computed(() => nextScheduledPeriod(years.value))
 
 const tiles = computed(() => [
   { key: 'contract', label: 'Contract value', value: money(summary.value.contract_total), note: 'All years, incl. VAT' },
@@ -82,16 +83,11 @@ function setLedger(data) {
   if (!data || typeof data !== 'object') return
   ledger.value = data
   updatedAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  count.value = clampCount(count.value, data.advance?.allowed ? data.advance.max_periods : 0) || 1
   const open = { ...openYears.value }
   ;(data.years || []).forEach((year, index) => {
     if (!(year.year in open)) open[year.year] = yearOpenByDefault(year, index)
   })
   openYears.value = open
-}
-
-function setCount(value) {
-  count.value = clampCount(value, maxCount.value)
 }
 
 async function issue() {
@@ -174,34 +170,26 @@ defineExpose({ reload: load })
         </div>
       </div>
 
-      <!-- Pay ahead: above the schedule so the call to action is on first view. -->
-      <div class="rounded-cx border border-cx-border bg-cx-surface p-4 shadow-cx" data-testid="ledger-pay-ahead">
+      <!-- How payments work: on first view, above the schedule. Customers never invoice a
+           period before its date (P-134); the action appears only for a period that is due. -->
+      <div class="rounded-cx border border-cx-border bg-cx-surface p-4 shadow-cx" data-testid="ledger-how-to-pay">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div class="min-w-0 lg:max-w-md">
-            <h3 class="text-sm font-semibold text-cx-ink">Pay ahead of your schedule</h3>
+            <h3 class="text-sm font-semibold text-cx-ink">How your payments work</h3>
             <p class="mt-1 text-xs text-cx-ink-2">
-              Invoices are issued automatically on the dates below. You can also pay early, one quarter or several, whenever you are ready.
+              Each quarter is invoiced on the invoice date shown in the schedule below, not before. You pay each invoice by its due date.
             </p>
             <ol class="mt-3 space-y-1.5 text-xs text-cx-ink-2">
-              <li class="flex gap-2"><span class="grid size-5 shrink-0 place-items-center rounded-full bg-cx-brand-soft text-[11px] font-semibold text-cx-brand-ink">1</span>Choose how many quarters to pay now.</li>
-              <li class="flex gap-2"><span class="grid size-5 shrink-0 place-items-center rounded-full bg-cx-brand-soft text-[11px] font-semibold text-cx-brand-ink">2</span>Create the invoices. Each one keeps its contract due date, so nothing becomes due sooner.</li>
-              <li class="flex gap-2"><span class="grid size-5 shrink-0 place-items-center rounded-full bg-cx-brand-soft text-[11px] font-semibold text-cx-brand-ink">3</span>Choose Pay on each invoice in the schedule: card, M-Pesa or bank transfer.</li>
+              <li class="flex gap-2"><span class="grid size-5 shrink-0 place-items-center rounded-full bg-cx-brand-soft text-[11px] font-semibold text-cx-brand-ink">1</span>On its invoice date, the quarter's invoice is created for you and appears here.</li>
+              <li class="flex gap-2"><span class="grid size-5 shrink-0 place-items-center rounded-full bg-cx-brand-soft text-[11px] font-semibold text-cx-brand-ink">2</span>Choose Pay on that invoice in the schedule: card, M-Pesa or bank transfer.</li>
+              <li class="flex gap-2"><span class="grid size-5 shrink-0 place-items-center rounded-full bg-cx-brand-soft text-[11px] font-semibold text-cx-brand-ink">3</span>Pay by the due date. Paid quarters show the payment date and method.</li>
             </ol>
           </div>
 
-          <div v-if="advance.allowed" class="w-full rounded-cx-sm border border-cx-border-soft bg-cx-well p-3 lg:w-80" data-testid="ledger-advance-form">
-            <span id="ledger-count-label" class="block text-xs font-medium text-cx-ink-3">Quarters to pay now</span>
-            <div class="mt-2 flex items-center gap-2" role="group" aria-labelledby="ledger-count-label">
-              <button type="button" class="grid size-9 place-items-center rounded-cx-sm border border-cx-border bg-cx-surface text-cx-ink-2 hover:bg-cx-well disabled:opacity-40" :disabled="count <= 1" aria-label="Fewer quarters" data-testid="ledger-count-minus" @click="setCount(count - 1)">
-                <CxIcon name="minus" class="size-3.5" />
-              </button>
-              <span class="min-w-8 text-center text-base font-semibold text-cx-ink" aria-live="polite" data-testid="ledger-count">{{ count }}</span>
-              <button type="button" class="grid size-9 place-items-center rounded-cx-sm border border-cx-border bg-cx-surface text-cx-ink-2 hover:bg-cx-well disabled:opacity-40" :disabled="count >= maxCount" aria-label="More quarters" data-testid="ledger-count-plus" @click="setCount(count + 1)">
-                <CxIcon name="plus" class="size-3.5" />
-              </button>
-              <span class="text-xs text-cx-ink-2">of up to {{ maxCount }}</span>
-            </div>
-            <p class="mt-2 break-words text-xs text-cx-ink-2" data-testid="ledger-advance-range">{{ chosenRange }}</p>
+          <div v-if="advance.allowed" class="w-full rounded-cx-sm border border-cx-border-soft bg-cx-well p-3 lg:w-80" data-testid="ledger-due-form">
+            <span class="block text-xs font-medium text-cx-ink-3">Ready to invoice</span>
+            <p class="mt-1 break-words text-sm font-semibold text-cx-ink" data-testid="ledger-due-range">{{ chosenRange }}</p>
+            <p class="mt-1 text-xs text-cx-ink-2">Its invoice date has arrived. Create the invoice now to pay it straight away.</p>
             <button
               type="button"
               class="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-cx-sm bg-cx-brand px-3 text-xs font-semibold text-cx-contrast shadow-cx hover:bg-cx-brand-strong disabled:opacity-60"
@@ -213,8 +201,15 @@ defineExpose({ reload: load })
               {{ issuing ? 'Creating…' : `Create ${count === 1 ? 'invoice' : `${count} invoices`} · ${money(chosenTotal)}` }}
             </button>
           </div>
-          <div v-else class="w-full rounded-cx-sm border border-cx-border-soft bg-cx-well p-3 text-xs text-cx-ink-2 lg:w-80" data-testid="ledger-advance-blocked">
-            <CxIcon name="info" class="mr-1 inline-block size-3.5 align-[-0.15em] text-cx-ink-3" />{{ advance.reason }}
+          <div v-else class="w-full rounded-cx-sm border border-cx-border-soft bg-cx-well p-3 lg:w-80" data-testid="ledger-next-invoice">
+            <template v-if="nextInvoice">
+              <span class="block text-xs font-medium text-cx-ink-3">Next invoice</span>
+              <p class="mt-1 text-sm font-semibold text-cx-ink">{{ nextInvoice.label }} · {{ money(nextInvoice.amount) }}</p>
+              <p class="mt-1 text-xs text-cx-ink-2">Created on {{ formatDate(nextInvoice.scheduled_date) }}, due {{ formatDate(nextInvoice.due_date) }}.</p>
+            </template>
+            <p v-else class="text-xs text-cx-ink-2" data-testid="ledger-advance-blocked">
+              <CxIcon name="info" class="mr-1 inline-block size-3.5 align-[-0.15em] text-cx-ink-3" />{{ advance.reason }}
+            </p>
           </div>
         </div>
         <p v-if="issuedNotice" class="mt-3 rounded-cx-sm border border-cx-success-border bg-cx-success-soft p-3 text-xs font-medium text-cx-success-ink" role="status" data-testid="ledger-issued">{{ issuedNotice }}</p>
