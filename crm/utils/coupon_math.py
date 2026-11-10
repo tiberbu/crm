@@ -10,6 +10,36 @@ FLAT = "flat_tokens"
 PERCENTAGE = "percentage_of_purchase"
 
 
+def _level_key(value) -> str:
+	from crm.utils.value_express import level_key  # pure module too; imported lazily for the mediator
+
+	return level_key(value)
+
+
+def level_reward(reward_by_level, level_rewards, facility_level, value, fixed_discount_percent) -> dict:
+	"""The reward a coupon gives a facility of ``facility_level`` (P-116 to P-118).
+
+	Returns ``{"value", "fixed_discount_percent", "level"}``: the matching level row's values, or the
+	coupon's own values ("All other levels") when levels are off, the level is unknown or not listed.
+	``level`` is the matched row's level, or None. ``level_rewards`` rows are dicts (or documents)
+	(anything with ``.get``) with ``facility_level``, ``flex_value`` and ``fixed_discount_percent``.
+	"""
+	fallback = {"value": float(value or 0), "fixed_discount_percent": float(fixed_discount_percent or 0), "level": None}
+	if not int(reward_by_level or 0):
+		return fallback
+	key = _level_key(facility_level)
+	if not key:
+		return fallback
+	for row in level_rewards or []:
+		if _level_key(row.get("facility_level")) == key:
+			return {
+				"value": float(row.get("flex_value") or 0),
+				"fixed_discount_percent": float(row.get("fixed_discount_percent") or 0),
+				"level": " ".join(str(row.get("facility_level") or "").split()),
+			}
+	return fallback
+
+
 def coupon_tokens(value_type, value, max_tokens, purchased_tokens) -> int:
 	"""Tokens a coupon is worth on an order: floor first, then the cap.
 

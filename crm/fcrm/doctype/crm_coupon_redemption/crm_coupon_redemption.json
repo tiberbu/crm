@@ -15,6 +15,7 @@
   "facility_mfl",
   "facility_fid",
   "customer",
+  "facility_level",
   "section_break_order",
   "sales_order",
   "sales_invoice",
@@ -98,6 +99,13 @@
    "options": "Customer"
   },
   {
+   "fieldname": "facility_level",
+   "fieldtype": "Data",
+   "label": "Facility Level",
+   "read_only": 1,
+   "description": "The facility's level when the coupon was claimed; it picks the coupon's level reward."
+  },
+  {
    "fieldname": "section_break_order",
    "fieldtype": "Section Break",
    "label": "Order"
@@ -176,7 +184,7 @@
  "issingle": 0,
  "istsable": 0,
  "links": [],
- "modified": "2026-11-09 12:00:00.000000",
+ "modified": "2026-11-10 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "FCRM",
  "name": "CRM Coupon Redemption",

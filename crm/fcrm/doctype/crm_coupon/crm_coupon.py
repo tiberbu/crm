@@ -3,7 +3,9 @@ import re
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, cstr
+from frappe.utils import cint, cstr, flt
+
+from crm.utils.value_express import level_key
 
 CODE_RE = re.compile(r"^[A-Z0-9-]{4,32}$")
 SIX_DIGITS_RE = re.compile(r"^\d{6}$")
@@ -15,6 +17,7 @@ IMMUTABLE_FIELDS = (
 	"max_tokens",
 	"fixed_discount_percent",
 	"targeting",
+	"reward_by_level",
 )
 PLANS = ("Flex", "Fixed", "Both")
 
@@ -44,11 +47,13 @@ class CRMCoupon(Document):
 		self.applies_to = cstr(self.applies_to or "Flex").strip() or "Flex"
 		if self.applies_to not in PLANS:
 			frappe.throw(_("Applies To must be Flex, Fixed or Both."), frappe.ValidationError)
+		by_level = cint(self.reward_by_level)
 		if self.applies_to == "Flex":
 			self.fixed_discount_percent = 0
 		else:
-			discount = float(self.fixed_discount_percent or 0)
-			if discount <= 0 or discount > 100:
+			discount = flt(self.fixed_discount_percent)
+			# With level rewards, 0 means "no discount for levels not listed" (P-118).
+			if not (by_level and discount == 0) and not _valid_discount(discount):
 				frappe.throw(
 					_("For a Fixed plan the discount must be greater than 0% and at most 100%."),
 					frappe.ValidationError,
@@ -60,7 +65,55 @@ class CRMCoupon(Document):
 			self.max_tokens = 0
 		else:
 			self._apply_token_rules()
+		self._apply_level_rules()
 		self._apply_common_rules()
+
+	def _apply_level_rules(self):
+		"""P-116/P-119: one row per level, each giving a valid benefit for the coupon's plan."""
+		if not cint(self.reward_by_level):
+			self.reward_by_level = 0
+			self.set("level_rewards", [])
+			return
+		self.reward_by_level = 1
+		if not self.get("level_rewards"):
+			frappe.throw(
+				_("Add at least one facility level, or turn off Reward by Facility Level."),
+				frappe.ValidationError,
+			)
+		uses_flex = self.applies_to != "Fixed"
+		uses_fixed = self.applies_to != "Flex"
+		seen = set()
+		for row in self.level_rewards:
+			level = " ".join(cstr(row.facility_level).split())
+			key = level_key(level)
+			if not key:
+				frappe.throw(_("Each level reward needs a facility level."), frappe.ValidationError)
+			if key in seen:
+				frappe.throw(
+					_("{0} is listed more than once. Give each facility level one row.").format(level),
+					frappe.ValidationError,
+				)
+			seen.add(key)
+			row.facility_level = level
+			if not uses_flex:
+				row.flex_value = 0
+			if not uses_fixed:
+				row.fixed_discount_percent = 0
+			flex, discount = flt(row.flex_value), flt(row.fixed_discount_percent)
+			if flex and not _valid_token_value(self.value_type, flex):
+				frappe.throw(
+					_("{0}: {1}").format(level, _token_value_message(self.value_type)), frappe.ValidationError
+				)
+			if discount and not _valid_discount(discount):
+				frappe.throw(
+					_("{0}: the Fixed plan discount must be greater than 0% and at most 100%.").format(level),
+					frappe.ValidationError,
+				)
+			if flex <= 0 and discount <= 0:
+				frappe.throw(
+					_("{0} gives nothing. Set its reward, or remove the row.").format(level),
+					frappe.ValidationError,
+				)
 
 	def _apply_token_rules(self):
 		if self.value_type not in ("flat_tokens", "percentage_of_purchase"):
@@ -68,21 +121,10 @@ class CRMCoupon(Document):
 				_("Value type must be flat tokens or a percentage of the purchase."), frappe.ValidationError
 			)
 
-		value = float(self.value or 0)
-		if self.value_type == "flat_tokens":
-			if value < 1 or value > 1_000_000 or int(value) != value:
-				frappe.throw(
-					_(
-						"For a flat coupon the value must be a whole number of tokens between 1 and 1,000,000."
-					),
-					frappe.ValidationError,
-				)
-		else:
-			if value <= 0 or value > 100:
-				frappe.throw(
-					_("For a percentage coupon the value must be greater than 0 and at most 100."),
-					frappe.ValidationError,
-				)
+		value = flt(self.value)
+		# With level rewards, 0 means "no tokens for levels not listed" (P-118).
+		if not (cint(self.reward_by_level) and value == 0) and not _valid_token_value(self.value_type, value):
+			frappe.throw(_token_value_message(self.value_type), frappe.ValidationError)
 
 		if self.max_tokens is not None and self.max_tokens:
 			if cint(self.max_tokens) < 1 or cint(self.max_tokens) > 1_000_000:
@@ -163,9 +205,17 @@ class CRMCoupon(Document):
 		)
 		if not previous:
 			return
+		changed = _level_rows(self.get("level_rewards")) != _level_rows(
+			frappe.get_all(
+				"CRM Coupon Level Reward",
+				filters={"parent": self.name, "parenttype": "CRM Coupon", "parentfield": "level_rewards"},
+				fields=["facility_level", "flex_value", "fixed_discount_percent"],
+				order_by="idx asc",
+			)
+		)
 		for field in IMMUTABLE_FIELDS:
 			current = getattr(self, field)
-			if (cstr(current or "") or None) != (cstr(previous.get(field) or "") or None):
+			if changed or (cstr(current or "") or None) != (cstr(previous.get(field) or "") or None):
 				frappe.throw(
 					_(
 						"This coupon has been used, so its value cannot be changed. To change it, revoke the coupon and create a new one."
@@ -192,6 +242,31 @@ class CRMCoupon(Document):
 					frappe.ValidationError,
 				)
 				return
+
+
+def _valid_discount(percent) -> bool:
+	return 0 < flt(percent) <= 100
+
+
+def _valid_token_value(value_type, value) -> bool:
+	value = flt(value)
+	if value_type == "flat_tokens":
+		return 1 <= value <= 1_000_000 and int(value) == value
+	return 0 < value <= 100
+
+
+def _token_value_message(value_type):
+	if value_type == "flat_tokens":
+		return _("For a flat coupon the value must be a whole number of tokens between 1 and 1,000,000.")
+	return _("For a percentage coupon the value must be greater than 0 and at most 100.")
+
+
+def _level_rows(rows) -> list:
+	"""Level rows as comparable tuples, ignoring order."""
+	return sorted(
+		(level_key(row.get("facility_level")), flt(row.get("flex_value")), flt(row.get("fixed_discount_percent")))
+		for row in rows or []
+	)
 
 
 def _normalise_facility_levels(value):

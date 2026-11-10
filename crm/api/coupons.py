@@ -43,6 +43,7 @@ def _get_coupon(name):
 			"value",
 			"max_tokens",
 			"fixed_discount_percent",
+			"reward_by_level",
 			"valid_from",
 			"valid_to",
 			"status",
@@ -76,6 +77,7 @@ def _get_coupon(name):
 		row.max_redemptions,
 		row.redeemed_count,
 	)
+	coupons._attach_level_rewards([row])
 	_add_audit_labels([row])
 	return row
 
@@ -133,6 +135,7 @@ def list_coupons(network: Any = None):
 		"network",
 		"applies_to",
 		"fixed_discount_percent",
+		"reward_by_level",
 		"value_type",
 		"value",
 		"max_tokens",
@@ -167,8 +170,44 @@ def list_coupons(network: Any = None):
 			row.max_redemptions,
 			row.redeemed_count,
 		)
+	coupons._attach_level_rewards(rows)
 	_add_audit_labels(rows)
 	return {"coupons": rows}
+
+
+@frappe.whitelist()
+def coupon_level_options():
+	"""P-123: facility levels to suggest in the coupon dialog (typing a new one is still allowed).
+
+	The self-onboarding allowed levels, the Fixed packages' levels and the levels on record, once each.
+	"""
+	from crm.utils.value_express import level_key, levels_of
+
+	from crm.api.optin_admin import _get_coordinator_networks
+
+	if not _is_admin() and not _get_coordinator_networks():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	sources = [frappe.db.get_single_value("CRM Opt-In Settings", "self_onboarding_allowed_facility_levels") or ""]
+	sources += [
+		"\n".join(levels_of(row))
+		for row in frappe.get_all(
+			"CRM Token Package",
+			filters={"parenttype": "CRM Opt-In Settings", "plan": "Fixed"},
+			fields=["facility_levels"],
+			ignore_permissions=True,
+		)
+	]
+	sources += frappe.get_all(
+		"CRM Pre-Qualified Facility", distinct=True, pluck="keph_level", ignore_permissions=True
+	)
+	seen, levels = set(), []
+	for source in sources:
+		for line in cstr(source or "").splitlines():
+			level = " ".join(line.split())
+			if level and level_key(level) not in seen:
+				seen.add(level_key(level))
+				levels.append(level)
+	return {"levels": sorted(levels, key=level_key)}
 
 
 @frappe.whitelist()
@@ -196,6 +235,21 @@ def save_coupon(name: Any, payload: Any):
 	coupon.value = payload.get("value") or 0
 	coupon.max_tokens = int(payload.get("max_tokens") or 0)
 	coupon.fixed_discount_percent = payload.get("fixed_discount_percent") or 0
+	coupon.reward_by_level = 1 if payload.get("reward_by_level") else 0
+	coupon.set(
+		"level_rewards",
+		[
+			{
+				"facility_level": _text(row.get("facility_level")),
+				"flex_value": row.get("flex_value") or 0,
+				"fixed_discount_percent": row.get("fixed_discount_percent") or 0,
+			}
+			for row in (payload.get("level_rewards") or [])
+			if isinstance(row, dict)
+		]
+		if coupon.reward_by_level
+		else [],
+	)
 	coupon.valid_from = payload.get("valid_from") or None
 	coupon.valid_to = payload.get("valid_to") or None
 	coupon.max_redemptions = int(payload.get("max_redemptions") or 0)
