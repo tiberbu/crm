@@ -1,6 +1,6 @@
 <script setup>
 // Opt-In and Self-Onboarding requests. A Network Opt-In request carries its live
-// billing ledger (OptInLedger): summary, pay ahead, quarterly schedule, quotes.
+// billing ledger (OptInLedger): summary, how payments work, quarterly schedule, quotes.
 import { computed } from 'vue'
 import CxIcon from './components/CxIcon.vue'
 import OptInLedger from './components/OptInLedger.vue'
@@ -25,7 +25,7 @@ const pageDescription = computed(() => {
   }
   return hasSelfOnboarding.value
     ? 'Your Self-Onboarding requests, quotations, and next steps in one place.'
-    : 'Your Network Opt-In contract, payment schedule, invoices and quotations in one place. Pay on schedule or ahead of it.'
+    : 'Your Network Opt-In contract, payment schedule, invoices and quotations in one place. Each quarter is invoiced on its date; pay it from here.'
 })
 
 function statusClasses(status) {

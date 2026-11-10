@@ -11,7 +11,7 @@
         <p class="mt-0.5 text-xs text-ink-gray-6">
           {{
             __(
-              'Orders, invoices and payments for every contract period. Invoices are issued automatically on their date; the customer or a manager can issue them early.',
+              'Orders, invoices and payments for every contract period. Invoices are issued automatically on their date. Customers cannot invoice a period before its date; a manager can issue one early.',
             )
           }}
         </p>

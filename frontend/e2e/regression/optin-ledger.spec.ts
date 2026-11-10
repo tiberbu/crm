@@ -10,10 +10,10 @@ import {
   startPortalServer,
 } from './portalFixture'
 
-// Opt-In billing ledger (spec P-124 to P-133): the Opt-In Requests page and the facility
+// Opt-In billing ledger (spec P-124 to P-134): the Opt-In Requests page and the facility
 // Payment schedule tab, with Frappe's API mocked. Covers the `[object Object]` network
-// regression, first-view payment dates, paying ahead and the Pay hand-off, plus the
-// layout and brand type gates at every viewport.
+// regression, first-view payment dates, no invoicing before a period's date (P-134), a
+// due period invoiced and handed to Pay, plus the layout and brand type gates.
 const SHOTS = process.env.SCREENSHOT_DIR || ''
 const WEIGHTS = new Set([400, 420, 500, 600])
 const OIS = 'OIS-E2E-0001'
@@ -49,7 +49,8 @@ function period(year: number, quarter: number, extra: Record<string, unknown> = 
   }
 }
 
-function ledger(issued = 0) {
+// `dueNow`: today is past Year 1 Q1's invoice date and the hourly worker has not run yet.
+function ledger(issued = 0, dueNow = false) {
   const periods = [1, 2].flatMap((year) => [1, 2, 3, 4].map((q) => period(year, q)))
   periods[0] = period(1, 1, { sales_order: 'SAL-ORD-E2E-1', state: 'order_ready', state_label: 'Order ready' })
   for (let i = 0; i < issued; i += 1) {
@@ -61,11 +62,13 @@ function ledger(issued = 0) {
       invoice_date: '2026-11-10',
       invoice_total: 98922.24,
       outstanding: 98922,
-      issued_early: true,
+      issued_early: false,
       issued_by: 'customer',
     })
   }
   const remaining = periods.filter((row) => !row.sales_invoice)
+  const today = dueNow ? '2027-02-02' : '2026-11-10'
+  const due = remaining.filter((row) => row.scheduled_date <= today)
   return {
     ois: OIS,
     network: 'Example Partner Health Network',
@@ -73,7 +76,7 @@ function ledger(issued = 0) {
     contract_status: 'Fully Executed',
     status: 'Processed',
     currency: 'KES',
-    today: '2026-11-10',
+    today,
     summary: {
       contract_total: 791377.92,
       invoiced_total: issued * 98922.24,
@@ -86,11 +89,12 @@ function ledger(issued = 0) {
         : { label: 'Year 1 · Q1', date: '2027-01-30', amount: 98922.24, state: 'order_ready', sales_invoice: '' },
     },
     advance: {
-      allowed: true,
-      reason: '',
-      max_periods: Math.min(4, 4 - issued),
+      allowed: due.length > 0,
+      reason: due.length ? '' : `Your next invoice is created on ${remaining[0].scheduled_date}. Invoices are issued on their scheduled date, not before.`,
+      max_periods: Math.min(4, due.length),
       remaining: remaining.length,
-      next: remaining.slice(0, 4).map((row) => ({ billing_key: row.billing_key, label: row.label, amount: row.amount })),
+      due_only: true,
+      next: due.slice(0, 4).map((row) => ({ billing_key: row.billing_key, label: row.label, amount: row.amount })),
     },
     years: [1, 2].map((year) => ({
       year,
@@ -140,16 +144,17 @@ function optinContext() {
   return context
 }
 
-async function openRequests(page: Page) {
+async function openRequests(page: Page, dueNow = false) {
   let issued = 0
   await mockPortalApi(page, optinContext(), (method, body, route) => {
     if (method === 'crm.api.optin_ledger.get_optin_ledger') {
-      void route.fulfill({ json: { message: ledger(issued) } })
+      void route.fulfill({ json: { message: ledger(issued, dueNow) } })
       return true
     }
     if (method === 'crm.api.optin_ledger.issue_optin_periods') {
-      issued += Number(body.count) || 1
-      const data = ledger(issued)
+      // The server only ever invoices due periods; mirror that cap.
+      issued += Math.min(Number(body.count) || 1, ledger(issued, dueNow).advance.max_periods)
+      const data = ledger(issued, dueNow)
       void route.fulfill({
         json: {
           message: {
@@ -196,7 +201,12 @@ test('Opt-In Requests names the network and shows the schedule on first view', a
   // Year 1 is open on first view, with dates, and its order is on the trail.
   await expect(page.getByTestId(`ledger-period-${OIS}-Y1-Q2`)).toContainText('Invoice on')
   await expect(page.getByTestId(`ledger-trail-${OIS}-Y1-Q1`)).toContainText('SAL-ORD-E2E-1')
-  await expect(page.getByTestId('ledger-pay-ahead')).toContainText('Pay ahead of your schedule')
+  // P-124..P-134: no way to invoice a quarter before its date, only when it will be invoiced.
+  await expect(page.getByTestId('ledger-how-to-pay')).toContainText('How your payments work')
+  await expect(page.getByTestId('ledger-issue')).toHaveCount(0)
+  await expect(page.getByTestId('ledger-next-invoice')).toContainText('Year 1 · Q1')
+  await expect(page.getByTestId('ledger-next-invoice')).toContainText('Created on')
+  await expect(page.getByText(/pay ahead/i)).toHaveCount(0)
   // Quotes are links to the permission-checked PDF.
   await expect(page.getByTestId('ledger-quote-SAL-QTN-E2E-2')).toHaveAttribute(
     'href',
@@ -209,17 +219,18 @@ test('Opt-In Requests names the network and shows the schedule on first view', a
   await brandGates(page)
 })
 
-test('paying ahead creates the chosen invoices and each one can be paid', async ({ page }, info) => {
-  await openRequests(page)
-  await page.getByTestId('ledger-count-plus').click()
-  await expect(page.getByTestId('ledger-count')).toHaveText('2')
-  await expect(page.getByTestId('ledger-advance-range')).toHaveText('Year 1 · Q1 – Year 1 · Q2')
-  await expect(page.getByTestId('ledger-issue')).toContainText('Create 2 invoices')
+test('a quarter whose date has arrived can be invoiced and paid, later ones cannot', async ({ page }, info) => {
+  await openRequests(page, true)
+  await expect(page.getByTestId('ledger-due-range')).toHaveText('Year 1 · Q1')
+  await expect(page.getByTestId('ledger-issue')).toContainText('Create invoice')
   await page.getByTestId('ledger-issue').click()
-  await expect(page.getByTestId('ledger-issued')).toContainText('ACC-SINV-E2E-2')
-  await expect(page.getByTestId(`ledger-state-${OIS}-Y1-Q2`)).toHaveText('Due')
-  await expect(page.getByTestId('ledger-tile-outstanding')).toContainText('197,844')
-  if (SHOTS) await page.screenshot({ path: join(SHOTS, `${info.project.name}-optin-paid-ahead.png`), fullPage: true })
+  await expect(page.getByTestId('ledger-issued')).toContainText('ACC-SINV-E2E-1')
+  await expect(page.getByTestId(`ledger-state-${OIS}-Y1-Q1`)).toHaveText('Due')
+  // Year 1 Q2 is not due yet, so nothing more can be invoiced.
+  await expect(page.getByTestId('ledger-issue')).toHaveCount(0)
+  await expect(page.getByTestId('ledger-next-invoice')).toContainText('Year 1 · Q2')
+  await expect(page.getByTestId('ledger-tile-outstanding')).toContainText('98,922')
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, `${info.project.name}-optin-due-invoiced.png`), fullPage: true })
   await brandGates(page)
   await page.getByTestId(`ledger-pay-${OIS}-Y1-Q1`).click()
   await expect(page.getByText('ACC-SINV-E2E-1').filter({ visible: true }).last()).toBeVisible()
