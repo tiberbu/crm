@@ -94,3 +94,11 @@ CX tokens only on the CX Portal; frappe-ui tokens on Desk. Weights ≤ 600, no u
 - Python: `crm/tests/test_optin_ledger.py` (pure helpers) on the scratch runner.
 - Playwright: new `optin-ledger.spec.ts` in the portal UI suite at 4 viewports (overflow, brand weights, pay-ahead flow with the API mocked), plus the full `playwright.portal-ui.config.ts` run.
 - Live: on crm-dev, issue Y1-Q1 early for a dev OIS via the API, confirm Sales Invoice + schedule row, then cancel nothing (dev data only).
+
+## P-134 — Customers never invoice before the date (owner feedback, 2026-11-10)
+
+Supersedes the customer half of P-125/P-126. The customer keeps the full breakdown (quotes, every period's invoice
+and due dates) but cannot generate an invoice for a period whose contract invoice date has not arrived, on the
+Opt-In journey or on Express fixed packages. Portal issuing is `due_only`: it only catches up a period that is
+already due (worker lag or a failed row). The pay-ahead card becomes "How your payments work" with a Next invoice
+panel. Staff early issue on the Deal stays. Express: future-dated orders cannot be invoiced (`is_future_dated`).
