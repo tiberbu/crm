@@ -29,6 +29,8 @@ const props = defineProps({
   defaultCurrency: { type: String, default: 'KES' },
   tokenPackages: { type: Array, default: () => [] },
   initialTab: { type: String, default: 'overview' },
+  // Token-plan facility with an FID: adds the Usage tab, filled by the #usage slot (P-135).
+  showUsage: { type: Boolean, default: false },
   // Bumped by the portal after a payment so the Payment schedule reloads.
   refreshKey: { type: [Number, String], default: 0 },
 })
@@ -100,7 +102,12 @@ const scheduleOis = computed(() =>
     : '',
 )
 const tabs = computed(() =>
-  facilityTabs({ showQuote: showQuote.value, showSchedule: Boolean(scheduleOis.value), counts: counts.value }),
+  facilityTabs({
+    showQuote: showQuote.value,
+    showSchedule: Boolean(scheduleOis.value),
+    showUsage: props.showUsage,
+    counts: counts.value,
+  }),
 )
 
 // Quotes open as PDFs: a Network quote through its submission, an Express quote through the customer.
@@ -355,6 +362,7 @@ defineExpose({ selectTab: selectStage })
         <div class="pt-4" :data-testid="`facility-panel-${tab.key}`">
           <slot v-if="tab.key === 'overview'" name="overview" />
           <slot v-else-if="tab.key === 'billing'" name="billing" />
+          <slot v-else-if="tab.key === 'usage'" name="usage" />
           <OptInLedger
             v-else-if="tab.key === 'schedule'"
             :ois-number="scheduleOis"

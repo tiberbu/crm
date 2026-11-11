@@ -6,6 +6,7 @@ export const DOCUMENT_PAGE_SIZE = 20
 
 const TAB_LABELS = {
   overview: 'Overview',
+  usage: 'Usage',
   schedule: 'Payment schedule',
   quote: 'Quotes',
   order: 'Orders',
@@ -25,9 +26,11 @@ const BADGES = {
 // counts: { quote, order, orderDraft, invoice, invoiceDue, payment, paymentPending };
 // a missing count renders no number.
 // showSchedule: Network Opt-In facilities get the contract's Payment schedule (ledger) tab.
-export function facilityTabs({ showQuote = false, showSchedule = false, counts = {} } = {}) {
+// showUsage: token-plan facilities with an FID get the Usage report tab (P-135).
+export function facilityTabs({ showQuote = false, showSchedule = false, showUsage = false, counts = {} } = {}) {
   const keys = [
     'overview',
+    ...(showUsage ? ['usage'] : []),
     ...(showSchedule ? ['schedule'] : []),
     ...(showQuote ? ['quote'] : []),
     'order',

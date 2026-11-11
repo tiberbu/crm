@@ -5,6 +5,8 @@ import CxIcon from './components/CxIcon.vue'
 import TokenAlertCard from './components/TokenAlertCard.vue'
 import BillingJourney from './components/BillingJourney.vue'
 import PlanPanel from './components/PlanPanel.vue'
+import UsageReport from './components/UsageReport.vue'
+import { showsUsageTab } from '@/utils/usageReport'
 import { tokenBalanceText } from '@/utils/tokenBalance'
 import { subscriptionCard } from '@/utils/subscription'
 import {
@@ -436,6 +438,8 @@ const amountDueNote = computed(() => {
 // The server's commercial projection drives every plan-aware surface (SPEC 5.3/5.5).
 const commercial = computed(() => commercialOf(props.facility))
 const tokens = computed(() => showsTokens(props.facility))
+// Token-plan facilities with an FID get the Usage report tab (P-135).
+const showUsage = computed(() => showsUsageTab({ tokens: tokens.value, fid: deploymentFid.value }))
 const topUp = computed(() => canTopUp(props.facility))
 
 const summaryCards = computed(() => {
@@ -892,6 +896,7 @@ async function reviewInvoice() {
       ref="billingJourney"
       :facility="facility"
       :initial-tab="initialTab"
+      :show-usage="showUsage"
       :orders="orders"
       :invoices="invoices"
       :payments="payments"
@@ -947,6 +952,9 @@ async function reviewInvoice() {
             <button type="button" class="text-xs font-semibold text-cx-warning-ink underline-offset-2 hover:underline" @click="emit('open-support', facility)">Contact network support</button>
           </div>
         </section>
+      </template>
+      <template #usage>
+        <UsageReport :mfl-code="facility.mfl_code || ''" :fid="deploymentFid" :facility-name="facility.facility_name || ''" />
       </template>
       <template #billing>
         <section class="rounded-cx border border-cx-border bg-cx-surface p-5 shadow-cx" data-testid="facility-billing">
