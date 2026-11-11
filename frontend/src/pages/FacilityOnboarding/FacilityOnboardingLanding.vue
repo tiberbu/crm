@@ -184,11 +184,18 @@
           </template>
         </form>
 
-        <div v-if="stage === 'identity' && !adminMode" class="alt-entry">
-          <button type="button" class="btn link" data-testid="admin-path-toggle" @click="adminMode = true">
-            {{ __('I’m not the registered owner — set up on behalf of a facility →') }}
+        <section v-if="stage === 'identity' && !adminMode" class="onbehalf" aria-labelledby="onbehalf-title" data-testid="admin-path-card">
+          <span class="onbehalf-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5" /><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.6.8 2.6 2.6 3 5.2" /></svg>
+          </span>
+          <div class="onbehalf-body">
+            <h2 id="onbehalf-title">{{ __('Not the registered owner?') }}</h2>
+            <p>{{ __('Administrators and staff can set up a facility on the owner’s behalf. We confirm with the registered owner by one-time code, so the facility stays protected.') }}</p>
+          </div>
+          <button type="button" class="btn ghost" data-testid="admin-path-toggle" @click="startOnBehalf">
+            {{ __('Set up on behalf of the owner →') }}
           </button>
-        </div>
+        </section>
 
         <div class="assist">
           <b>{{ __('No longer have access to this contact? Having trouble finding your facility?') }}</b>
@@ -225,8 +232,9 @@
       <!-- STEP 2: facility -->
       <section v-else-if="stage === 'facilities'" class="wrap">
         <form class="card" @submit.prevent="continueFacilities">
-          <h1>{{ __('Select the facility you want to onboard') }}</h1>
-          <p class="muted" style="margin-top: 10px">
+          <h1 v-if="facilities.length">{{ __('Select the facility you want to onboard') }}</h1>
+          <h1 v-else id="nofac-title">{{ __('No facilities are registered to this ID') }}</h1>
+          <p v-if="facilities.length" class="muted" style="margin-top: 10px">
             {{ __('We found the facilities linked to your verified details. Select one or more eligible facilities. You can choose a different Value Express plan for each facility.') }}
           </p>
           <p v-if="identityPreview.full_name || identityPreview.email" class="verified" :aria-label="__('Verified identity')">
@@ -234,9 +242,18 @@
             <span v-if="identityPreview.email"> · {{ identityPreview.email }}</span>
             <span v-if="identityPreview.phone"> · {{ identityPreview.phone }}</span>
           </p>
-          <p v-if="!facilities.length" class="catalog-note" role="status">
-            {{ __('We couldn’t find eligible facilities linked to your details. Check that you used the right identification, or contact us and we’ll help.') }}
-          </p>
+          <section v-if="!facilities.length" class="nofac" role="status" aria-labelledby="nofac-title" data-testid="no-facilities-panel">
+            <p>{{ __('Facilities are linked to the ID of their registered owner. If you are an administrator or staff member setting up a facility for its owner, continue on their behalf.') }}</p>
+            <ol class="nofac-steps">
+              <li><span>1</span><div><b>{{ __('Find the facility') }}</b>{{ __('By its MFL code or registration number.') }}</div></li>
+              <li><span>2</span><div><b>{{ __('The owner gets a code') }}</b>{{ __('We send a one-time code to the registered contact. Ask them for it.') }}</div></li>
+              <li><span>3</span><div><b>{{ __('Choose a plan') }}</b>{{ __('Then pick a Value Express plan and pay, as usual.') }}</div></li>
+            </ol>
+            <div class="nofac-actions">
+              <button type="button" class="btn primary" data-testid="no-facilities-on-behalf" @click="startOnBehalf">{{ __('Set up on behalf of the owner →') }}</button>
+              <button type="button" class="btn ghost" data-testid="no-facilities-different-id" @click="editIdentity">{{ __('Use a different ID') }}</button>
+            </div>
+          </section>
           <div v-if="facilities.length > FACILITY_PAGE_SIZE" class="fsearch field">
             <input v-model="facilitySearch" type="search" autocomplete="off" data-testid="facility-search" :aria-label="__('Search facilities')" :placeholder="__('Search by facility name, Facility ID or MFL code')" />
             <span class="muted" data-testid="facility-selected-count" aria-live="polite">{{ __('{0} of {1} selected', [selectedFacilities.length, facilities.length]) }}</span>
@@ -298,7 +315,7 @@
           <div class="assist"><b>{{ __('Can’t see your facility?') }}</b><a href="/#contact">{{ __('Get onboarding assistance →') }}</a></div>
           <div class="actions">
             <button type="button" class="btn ghost" @click="reset">{{ __('Start over') }}</button>
-            <div class="next">
+            <div v-if="facilities.length" class="next">
               <button class="btn primary" :disabled="!selectedFacilities.length">
                 {{ __('Continue to Packages →') }}
                 <span v-if="selectedFacilities.length" class="sr-only" data-testid="facility-continue-count">{{ selectedFacilities.length }}</span>
@@ -1169,6 +1186,14 @@ async function retryHfr() {
   } finally {
     busy.value = false
   }
+}
+// The on-behalf path (P-136): from the ID step or from an empty facilities result, open the
+// administrator form with a fresh session and put the cursor in the facility reference.
+function startOnBehalf() {
+  if (stage.value !== 'identity') editIdentity()
+  adminMode.value = true
+  adminTipOpen.value = false
+  nextTick(() => document.getElementById('admin-ref')?.focus())
 }
 function editIdentity() {
   stopResendTimer()
