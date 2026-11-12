@@ -225,7 +225,7 @@ test("Opt-In: a Partner-Coupon-only buyer is not a network contact", async ({
   ).toBeVisible();
 });
 
-test("Admin: Network Detail shows both links, labels rows by journey, and an edit keeps both rows", async ({
+test("Admin: Network Detail shows the full Partner Coupon link, labels rows by journey, and an edit keeps both rows", async ({
   page,
 }) => {
   const password = readFileSync(join(secretDir, "admin"), "utf8");
@@ -235,11 +235,10 @@ test("Admin: Network Detail shows both links, labels rows by journey, and an edi
   expect(login.ok()).toBe(true);
   await page.goto(`/crm/networks/${fx.network}`);
 
-  await expect(page.getByTestId("optin-invitation-link")).toContainText(
-    `/opt-in?network=${fx.network}`,
-  );
-  await expect(page.getByTestId("partner-coupon-link")).toContainText(
-    `partner_coupon=${fx.partner_id}`,
+  await expect(page.getByTestId("optin-invitation-link")).toHaveCount(0);
+  const siteOrigin = new URL(page.url()).origin;
+  await expect(page.getByTestId("partner-coupon-url")).toHaveText(
+    `${siteOrigin}/facility-onboarding?partner_coupon=${fx.partner_id}`,
   );
 
   const rowA = page.locator("tr", { hasText: facilityA().facility_name });
@@ -296,3 +295,71 @@ test("Admin: Network Detail shows both links, labels rows by journey, and an edi
     contact_email: fx.coupon_only_email,
   });
 });
+
+// Lenovo E14-class laptops in Chrome: a 1920×1080 panel at 150% scaling, or 1366×768 at
+// 100%, leaves a short CSS viewport once the browser bars are drawn.
+for (const viewport of [
+  { width: 1280, height: 631 },
+  { width: 1366, height: 657 },
+]) {
+  test(`Admin: Network Detail contacts stay readable at ${viewport.width}×${viewport.height}`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize(viewport);
+    const password = readFileSync(join(secretDir, "admin"), "utf8");
+    const login = await page.request.post("/api/method/login", {
+      data: { usr: fx.admin_email, pwd: password },
+    });
+    expect(login.ok()).toBe(true);
+    await page.goto(`/crm/networks/${fx.network}`);
+    const table = page.getByTestId("network-contacts-table");
+    await expect(table).toBeVisible();
+    const gettingStarted = page.locator("div.fixed.z-50", {
+      hasText: "Welcome to Frappe CRM",
+    });
+    if (await gettingStarted.isVisible())
+      await gettingStarted.locator("button").nth(1).click();
+    await expect(gettingStarted).toBeHidden();
+    await expect(page.locator("tr", { hasText: facilityA().facility_name })).toBeVisible();
+
+    // The contacts table is never squeezed into a short inner scroll box: the page
+    // scrolls, and the table shows every row at its full height.
+    const box = await table.evaluate((el) => ({
+      clientHeight: el.clientHeight,
+      scrollHeight: el.scrollHeight,
+      clientWidth: el.clientWidth,
+      scrollWidth: el.scrollWidth,
+    }));
+    expect(box.scrollHeight - box.clientHeight).toBeLessThanOrEqual(1);
+    // Every column fits: no sideways scrolling to reach the actions.
+    expect(box.scrollWidth - box.clientWidth).toBeLessThanOrEqual(1);
+    const pageScroll = await page
+      .getByTestId("network-detail-scroll")
+      .evaluate((el) => el.scrollHeight > el.clientHeight);
+    expect(pageScroll).toBe(true);
+
+    // Row actions wrap inside their column instead of widening the table, and the
+    // last action is reachable by scrolling the page.
+    const rowActions = page
+      .locator("tr", { hasText: facilityA().facility_name })
+      .getByTestId("network-contact-actions");
+    const actionsBox = await rowActions.boundingBox();
+    expect(actionsBox!.width).toBeLessThanOrEqual(13 * 16 + 1);
+    const remove = rowActions.getByRole("button", { name: "Remove" });
+    await remove.scrollIntoViewIfNeeded();
+    await expect(remove).toBeInViewport();
+
+    // Brand guide: sentence-case labels (no uppercase eyebrows) and weights ≤ 600.
+    const offBrand = await page.getByTestId("network-detail-scroll").evaluate((root) =>
+      Array.from(root.querySelectorAll("*"))
+        .filter((el) => (el as HTMLElement).innerText?.trim())
+        .map((el) => getComputedStyle(el))
+        .filter((cs) => cs.textTransform === "uppercase" || Number(cs.fontWeight) > 600).length,
+    );
+    expect(offBrand).toBe(0);
+    await page.screenshot({
+      path: info.outputPath(`network-detail-${viewport.width}x${viewport.height}.png`),
+      fullPage: false,
+    });
+  });
+}

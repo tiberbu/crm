@@ -1,5 +1,8 @@
 <template>
-  <div class="flex flex-col h-full overflow-y-auto px-3 pb-3 sm:px-10 sm:pb-5">
+  <div
+    class="h-full overflow-y-auto px-3 pb-3 sm:px-10 sm:pb-5"
+    data-testid="network-detail-scroll"
+  >
     <!-- ── NETWORK HERO CARD ─────────────────────────────────────────────── -->
     <div
       class="mt-4 rounded-xl border-2 border-outline-gray-2 bg-surface-white dark:bg-surface-gray-1 p-5"
@@ -23,7 +26,7 @@
               :alt="__('Network logo')"
               class="size-9 rounded border border-outline-gray-2 object-contain"
             />
-            <h1 class="text-xl font-bold text-ink-gray-9">
+            <h1 class="text-xl font-semibold text-ink-gray-9">
               {{ networkDoc?.display_name || networkSlug }}
             </h1>
             <span class="font-mono text-xs text-ink-gray-4">{{
@@ -73,28 +76,6 @@
         </p>
         <div class="mt-3 grid gap-2" data-testid="network-journey-links">
           <div
-            class="flex flex-wrap items-center gap-2 rounded-lg bg-surface-gray-1 px-3 py-2"
-            data-testid="optin-invitation-link"
-          >
-            <span class="text-xs font-medium text-ink-gray-6">{{
-              __('Opt-In invitation')
-            }}</span>
-            <span class="text-xs text-ink-gray-5">{{
-              __('Network contacts sign the network contract')
-            }}</span>
-            <code
-              class="max-w-full truncate font-mono text-xs text-ink-gray-5"
-              :title="optInUrl"
-              >{{ optInUrl }}</code
-            >
-            <Button
-              variant="subtle"
-              size="sm"
-              @click="copyToClipboard(optInUrl)"
-              >{{ __('Copy link') }}</Button
-            >
-          </div>
-          <div
             v-if="networkDoc?.partner_id"
             class="flex flex-wrap items-center gap-2 rounded-lg bg-surface-gray-1 px-3 py-2"
             data-testid="partner-coupon-link"
@@ -106,8 +87,9 @@
               __('Any facility buys Tiberbu Express tokens with this coupon')
             }}</span>
             <code
-              class="max-w-full truncate font-mono text-xs text-ink-gray-5"
+              class="min-w-0 max-w-full break-all font-mono text-xs text-ink-gray-5"
               :title="selfOnboardingUrl"
+              data-testid="partner-coupon-url"
               >{{ selfOnboardingUrl }}</code
             >
             <Button
@@ -130,7 +112,7 @@
         >
           <div>
             <p
-              class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
+              class="text-xs font-medium text-ink-gray-5"
             >
               {{ __('Tiberbu Express configuration') }}
             </p>
@@ -183,7 +165,7 @@
           </div>
           <div>
             <p
-              class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
+              class="text-xs font-medium text-ink-gray-5"
             >
               {{ __('Partners') }}
             </p>
@@ -215,7 +197,7 @@
           <div class="space-y-3">
             <div>
               <p
-                class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
+                class="text-xs font-medium text-ink-gray-5"
               >
                 {{ __('Coordinators') }}
               </p>
@@ -228,7 +210,7 @@
             </div>
             <div>
               <p
-                class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
+                class="text-xs font-medium text-ink-gray-5"
               >
                 {{ __('Network signatories') }}
               </p>
@@ -242,7 +224,7 @@
             </div>
             <div>
               <p
-                class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
+                class="text-xs font-medium text-ink-gray-5"
               >
                 {{ __('Technology delivery partner') }}
               </p>
@@ -459,7 +441,7 @@
             <div class="flex items-center justify-between">
               <div>
                 <p
-                  class="text-xs font-medium uppercase tracking-wide text-ink-gray-5"
+                  class="text-xs font-medium text-ink-gray-5"
                 >
                   {{ __('Subscription years') }}
                 </p>
@@ -886,35 +868,25 @@
       <!-- Contacts table -->
       <div
         v-else-if="contactRows.length"
-        class="mt-3 overflow-x-auto rounded-lg border border-outline-gray-2"
+        class="mt-3 shrink-0 overflow-x-auto rounded-lg border border-outline-gray-2"
+        data-testid="network-contacts-table"
       >
         <table class="w-full text-sm">
-          <thead
-            class="bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5"
-          >
+          <thead class="bg-surface-gray-1 text-xs text-ink-gray-5">
             <tr>
-              <th class="px-4 py-2.5 text-left font-medium">
+              <th class="px-3 py-2.5 text-left font-medium">
                 {{ __('Facility') }}
               </th>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('KEPH Level') }}
+              <th class="px-3 py-2.5 text-left font-medium">
+                {{ __('Status') }}
               </th>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Opt-in') }}
-              </th>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Go Live') }}
-              </th>
-              <th class="px-4 py-2.5 text-left font-medium">
+              <th class="px-3 py-2.5 text-left font-medium">
                 {{ __('Contact') }}
               </th>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Invitation') }}
+              <th class="px-3 py-2.5 text-left font-medium">
+                {{ __('Access') }}
               </th>
-              <th class="px-4 py-2.5 text-left font-medium">
-                {{ __('Tiberbu Express') }}
-              </th>
-              <th class="px-4 py-2.5 text-right font-medium">
+              <th class="px-3 py-2.5 text-right font-medium">
                 {{ __('Actions') }}
               </th>
             </tr>
@@ -925,7 +897,7 @@
               :key="row.name"
               class="transition-colors hover:bg-surface-gray-1"
             >
-              <td class="px-4 py-3">
+              <td class="min-w-[12rem] px-3 py-3 align-top">
                 <p class="font-medium text-ink-gray-9">
                   {{ row.facility_name }}
                 </p>
@@ -939,25 +911,28 @@
                 <p class="mt-0.5 text-xs text-ink-gray-5">
                   {{ facilityContractScheduleLabel(row) }}
                 </p>
-              </td>
-              <td class="px-4 py-3">
                 <span
-                  class="rounded-full bg-surface-gray-2 px-2 py-0.5 text-xs font-medium text-ink-gray-7 dark:bg-surface-gray-4 dark:text-ink-gray-4"
-                  >{{ row.keph_level || '—' }}</span
+                  class="mt-1 inline-flex whitespace-nowrap rounded-full bg-surface-gray-2 px-2 py-0.5 text-xs font-medium text-ink-gray-7 dark:bg-surface-gray-4 dark:text-ink-gray-4"
+                  :title="__('KEPH Level')"
+                  >{{ __('KEPH {0}', [row.keph_level || '—']) }}</span
                 >
               </td>
-              <td class="px-4 py-3">
-                <span :class="optInPill(isOptedIn(row))">
-                  {{ isOptedIn(row) ? __('Opted in') : __('Not opted in') }}
-                </span>
-              </td>
-              <td class="px-4 py-3" @click.stop>
-                <div class="flex min-w-28 flex-col items-start gap-1">
+              <td class="px-3 py-3 align-top" @click.stop>
+                <div class="flex flex-col items-start gap-1.5">
+                  <span
+                    class="whitespace-nowrap"
+                    :class="optInPill(isOptedIn(row))"
+                  >
+                    {{ isOptedIn(row) ? __('Opted in') : __('Not opted in') }}
+                  </span>
                   <Switch
                     size="sm"
+                    class="whitespace-nowrap"
                     :model-value="isGoLive(row)"
                     :disabled="!isOptedIn(row) || togglingGoLive === row.name"
-                    :label="isGoLive(row) ? __('Ready') : __('Not ready')"
+                    :label="
+                      isGoLive(row) ? __('Go live: ready') : __('Go live: not ready')
+                    "
                     @update:model-value="setGoLive(row, $event)"
                   />
                   <p v-if="!isOptedIn(row)" class="text-[11px] text-ink-gray-5">
@@ -965,40 +940,48 @@
                   </p>
                 </div>
               </td>
-              <td class="px-4 py-3">
+              <td class="min-w-[11rem] max-w-[15rem] px-3 py-3 align-top">
                 <p class="text-xs font-medium text-ink-gray-7">
                   {{ networkMembership(row)?.contact_name || '—' }}
                 </p>
-                <p class="mt-0.5 text-xs text-ink-gray-5">
+                <p
+                  class="mt-0.5 text-xs text-ink-gray-5 [overflow-wrap:anywhere]"
+                >
                   {{ networkMembership(row)?.contact_email || '—' }}
-                  <template v-if="networkMembership(row)?.contact_phone">
-                    · {{ networkMembership(row).contact_phone }}
-                  </template>
                 </p>
-                <span
-                  class="mt-1 inline-flex rounded-full border border-outline-gray-2 px-2 py-0.5 text-[10px] font-medium text-ink-gray-6"
+                <p
+                  v-if="networkMembership(row)?.contact_phone"
+                  class="text-xs text-ink-gray-5"
                 >
-                  {{
-                    isSelfOnboardingContact(row)
-                      ? __('Self-Onboarding')
-                      : __('Network Opt-In')
-                  }}
-                </span>
-                <span
-                  v-if="
-                    !isSelfOnboardingContact(row) && hasPartnerCouponRow(row)
-                  "
-                  class="mt-1 ml-1 inline-flex rounded-full border border-outline-gray-2 px-2 py-0.5 text-[10px] font-medium text-ink-gray-6"
-                  :title="
-                    __(
-                      'This facility also buys Tiberbu Express tokens with this network\'s Partner Coupon',
-                    )
-                  "
-                >
-                  {{ __('Also Partner Coupon') }}
-                </span>
+                  {{ networkMembership(row).contact_phone }}
+                </p>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  <span
+                    class="inline-flex whitespace-nowrap rounded-full border border-outline-gray-2 px-2 py-0.5 text-[10px] font-medium text-ink-gray-6"
+                  >
+                    {{
+                      isSelfOnboardingContact(row)
+                        ? __('Self-Onboarding')
+                        : __('Network Opt-In')
+                    }}
+                  </span>
+                  <span
+                    v-if="
+                      !isSelfOnboardingContact(row) && hasPartnerCouponRow(row)
+                    "
+                    class="inline-flex whitespace-nowrap rounded-full border border-outline-gray-2 px-2 py-0.5 text-[10px] font-medium text-ink-gray-6"
+                    :title="
+                      __(
+                        'This facility also buys Tiberbu Express tokens with this network\'s Partner Coupon',
+                      )
+                    "
+                  >
+                    {{ __('Also Partner Coupon') }}
+                  </span>
+                </div>
               </td>
-              <td class="px-4 py-3">
+              <td class="min-w-[10rem] max-w-[14rem] px-3 py-3 align-top">
+                <p class="text-[11px] text-ink-gray-5">{{ __('Invitation') }}</p>
                 <span
                   v-if="isSelfOnboardingContact(row)"
                   class="text-xs text-ink-gray-5"
@@ -1007,6 +990,7 @@
                 </span>
                 <span
                   v-else
+                  class="whitespace-nowrap"
                   :class="
                     inviteStatusPill(networkMembership(row)?.invite_status)
                   "
@@ -1019,9 +1003,11 @@
                 >
                   {{ formatDate(networkMembership(row).invite_sent_at) }}
                 </p>
-              </td>
-              <td class="px-4 py-3">
+                <p class="mt-2 text-[11px] text-ink-gray-5">
+                  {{ __('Tiberbu Express') }}
+                </p>
                 <span
+                  class="whitespace-nowrap"
                   :class="
                     customerExperiencePill(customerExperienceLink(row)?.linked)
                   "
@@ -1034,7 +1020,7 @@
                 </span>
                 <p
                   v-if="customerExperienceLink(row)?.user"
-                  class="mt-1 text-xs text-ink-gray-5"
+                  class="mt-1 text-xs text-ink-gray-5 [overflow-wrap:anywhere]"
                 >
                   {{ customerExperienceLink(row).user }}
                 </p>
@@ -1048,8 +1034,11 @@
                   {{ __('Available after a processed Opt-In Request') }}
                 </p>
               </td>
-              <td class="px-4 py-3 text-right" @click.stop>
-                <div class="flex items-center justify-end gap-2">
+              <td class="px-3 py-3 align-top" @click.stop>
+                <div
+                  class="ml-auto flex w-[13rem] flex-wrap justify-end gap-1.5"
+                  data-testid="network-contact-actions"
+                >
                   <Button
                     size="sm"
                     variant="subtle"
@@ -1057,7 +1046,7 @@
                     @click="viewSampleQuote(row)"
                     >{{ __('Sample quote') }}</Button
                   >
-                  <div class="flex max-w-[13rem] flex-col items-end gap-1">
+                  <div class="flex w-full flex-col items-end gap-1">
                     <Button
                       size="sm"
                       variant="subtle"
@@ -1202,7 +1191,7 @@
               <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                   <thead
-                    class="bg-surface-gray-1 text-left text-xs uppercase tracking-wide text-ink-gray-5 dark:bg-surface-gray-2"
+                    class="bg-surface-gray-1 text-left text-xs text-ink-gray-5 dark:bg-surface-gray-2"
                   >
                     <tr>
                       <th class="px-3 py-2 font-medium">{{ __('Year') }}</th>
@@ -1257,7 +1246,7 @@
               class="flex items-end justify-between gap-4 rounded-lg bg-surface-gray-1 px-3 py-3 dark:bg-surface-gray-2"
             >
               <div>
-                <p class="text-xs uppercase tracking-wide text-ink-gray-5">
+                <p class="text-xs text-ink-gray-5">
                   {{ __('Total contract commitment') }}
                 </p>
                 <p class="mt-1 text-xs text-ink-gray-5">
@@ -1605,7 +1594,7 @@
         >
           <table class="w-full text-xs">
             <thead
-              class="bg-surface-gray-1 text-xs uppercase tracking-wide text-ink-gray-5"
+              class="bg-surface-gray-1 text-xs text-ink-gray-5"
             >
               <tr>
                 <th class="px-3 py-2 text-left font-medium">{{ __('Row') }}</th>
@@ -1714,7 +1703,11 @@ import {
 } from 'frappe-ui'
 import { isValidFacilityId } from '@/utils/facilityId'
 import { copyToClipboard, validateIsImageFile } from '@/utils'
-import { couponValueLabel, COUPON_STATUS_THEME } from '@/utils/coupons'
+import {
+  couponValueLabel,
+  COUPON_STATUS_THEME,
+  partnerCouponLink,
+} from '@/utils/coupons'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
@@ -1764,9 +1757,11 @@ const optInUrl = computed(
   () => `/opt-in?network=${encodeURIComponent(props.networkSlug)}`,
 )
 // Public Value Express self-onboarding link carrying this network's Partner Coupon.
+// Shown and copied as a full URL on the current site's base URL, so it can be
+// pasted straight into an email or chat.
 const selfOnboardingUrl = computed(() =>
   networkDoc.value?.partner_id
-    ? `/facility-onboarding?partner_coupon=${encodeURIComponent(networkDoc.value.partner_id)}`
+    ? partnerCouponLink(window.location.origin, networkDoc.value.partner_id)
     : '',
 )
 function copySelfOnboardingLink() {
