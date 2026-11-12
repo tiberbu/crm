@@ -323,7 +323,7 @@ const links = [
     to: 'Quotes',
   },
   {
-    label: 'Finance Cockpit',
+    label: 'Finance Workbook',
     icon: LucideLayoutDashboard,
     to: '/finance-cockpit',
     externalUrl: '/finance-cockpit',

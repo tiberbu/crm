@@ -35,7 +35,7 @@ def require_access(user=None, roles=None):
 	"""Raise a stable, user-facing permission error for non-accounting users."""
 	if not has_access(user=user, roles=roles):
 		frappe.throw(
-			_("Finance Cockpit requires the Accounts User or Accounts Manager role."),
+			_("Finance Workbook requires the Accounts User or Accounts Manager role."),
 			frappe.PermissionError,
 		)
 
