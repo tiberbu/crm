@@ -3961,8 +3961,8 @@ def _process_deal_invitation_submission(sub, payload):
 	_mark_opted_in_facilities(sub.network_slug, payload.get("facilities") or [])
 	sub.status = "Processed"
 	sub.save(ignore_permissions=True)  # SYSTEM-INTERNAL
-	# Contract journeys defer the access email to the facility's first
-	# signature; self-onboarding keeps its native welcome here.
+	# Contract journeys defer the access email until the facility signatory
+	# and witness have signed; self-onboarding keeps its native welcome here.
 	_provision_customer_experience_access(sub, send_access_email=not requires_contract_signature(sub))
 	data = _get_job_progress(sub.name) or {}
 	data["overall"] = "complete"
@@ -4347,7 +4347,8 @@ def _process_submission(submission_ref):
 		# selected facility has been processed by the onboarding coordinator.
 		# Keep the historic per-OIS behavior for existing Opt-In submissions.
 		# Contract journeys provision the user now but defer the access email
-		# to the facility's first signature (send_cx_access_invitation).
+		# until the facility signatory and witness have signed
+		# (send_cx_access_invitation).
 		if requires_contract_signature(sub):
 			_provision_customer_experience_access(sub, send_access_email=False)
 		# Submission sends only the signing invitation. The invoice checkout link is

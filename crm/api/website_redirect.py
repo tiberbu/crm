@@ -20,6 +20,7 @@ import frappe
 from frappe import _
 from frappe.utils import cstr
 
+from crm.api._email import valid_brand_colour
 from crm.api.facility_onboarding import NO_NETWORK_SLUG
 from crm.api.portal_commercial import (
 	_append_mfl,
@@ -477,8 +478,8 @@ def ensure_website_user_for_ois(
 
 	_set_submission_portal_field(submission, "portal_user", user_name)
 	if not send_access_email:
-		# Contract journeys defer the platform-access email to the facility's
-		# first signature (send_cx_access_invitation). Record that the account
+		# Contract journeys defer the platform-access email until the facility
+		# signatory and witness have signed (send_cx_access_invitation). Record that the account
 		# and permission exist but the email has not gone out yet.
 		previous_status = frappe.db.get_value(OIS_DOCTYPE, submission.name, "portal_invitation_status")
 		if previous_status != "Sent":
@@ -542,7 +543,8 @@ def _cx_access_labels(submission, network_doc):
 
 
 def _cx_access_invitation_html(
-	contact_name, network_name, facility_label, action_url, portal_url, kind, trigger, expiry_text
+	contact_name, network_name, facility_label, action_url, portal_url, kind, trigger, expiry_text,
+	brand_colour=None,
 ):
 	"""Branded platform-access invitation (same look as the pre-qualification emails)."""
 	if kind == "set_password":
@@ -572,7 +574,7 @@ def _cx_access_invitation_html(
 
 <p style="margin: 24px 0;">
   <a href="{action_url}"
-     style="background:#0284c7;color:#fff;padding:12px 24px;border-radius:6px;
+     style="background:{brand_colour};color:#fff;padding:12px 24px;border-radius:6px;
             text-decoration:none;font-weight:600;">
     {action_label}
   </a>
@@ -593,13 +595,15 @@ def _cx_access_invitation_html(
 		portal_url=portal_url,
 		body=body,
 		action_label=action_label,
+		brand_colour=valid_brand_colour(brand_colour),
 	)
 
 
-def send_cx_access_invitation(submission_name, *, trigger="facility_signed", force=False):
+def send_cx_access_invitation(submission_name, *, trigger="facility_side_signed", force=False):
 	"""Send the branded Tiberbu Express access email for an Opt-In submission.
 
-	Called at the facility signatory's first contract signature. Best-effort:
+	Called once the facility side of the contract (Facility Signatory and
+	Facility Witness) has signed. Best-effort:
 	every failure is logged and returned, never raised, so a signature always
 	commits. Idempotent per OIS: once the status is `Sent` (and `sent_at` is
 	set) nothing is sent again unless `force` is set.
@@ -637,7 +641,8 @@ def send_cx_access_invitation(submission_name, *, trigger="facility_signed", for
 		else:
 			action_url = frappe.utils.get_url(PORTAL_ROUTE)
 			kind = "login"
-		facility_label, network_name = _cx_access_labels(sub, _get_network_doc(sub.network_slug))
+		network_doc = _get_network_doc(sub.network_slug)
+		facility_label, network_name = _cx_access_labels(sub, network_doc)
 		contact_name = (
 			cstr(getattr(user, "first_name", "") or "")
 			or cstr(getattr(sub, "facility_signatory_name", "") or "")
@@ -654,6 +659,7 @@ def send_cx_access_invitation(submission_name, *, trigger="facility_signed", for
 			kind,
 			trigger,
 			_cx_reset_link_expiry_text(),
+			brand_colour=(network_doc or {}).get("primary_colour"),
 		)
 		# No Communication record: the body carries a secret reset key.
 		queue = frappe.sendmail(

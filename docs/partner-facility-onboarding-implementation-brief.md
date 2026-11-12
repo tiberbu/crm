@@ -1298,8 +1298,10 @@ membership record.
 - The facility may see GoLive progress but cannot set or edit it. CRM
   implementation staff use the existing guarded `set_facility_go_live` action.
 - On contract journeys the account and permission are created after the OIS
-  is processed, but the platform-access email is sent at the facility
-  signatory's first contract signature (a branded Tiberbu Express invitation
+  is processed, but the platform-access email is sent once the facility side
+  of the contract has signed: the Facility Signatory and the Facility Witness
+  (the signatory alone on a contract with no witness row). Network and Tiberbu
+  signatures are not waited for. The email is a branded Tiberbu Express invitation
   with a set-password link that lands on `/cx-portal`, or a login link for
   accounts that already have a password). While the email is still to be sent
   the OIS shows `Awaiting signature`; once queued it shows `Sent`.

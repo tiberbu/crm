@@ -5,6 +5,7 @@ from frappe.tests import UnitTestCase
 
 from crm.api.website_redirect import (
 	CRM_LOGIN_MARKER,
+	_cx_access_invitation_html,
 	_portal_progress,
 	_set_submission_portal_field,
 	ensure_website_user_for_ois,
@@ -648,6 +649,8 @@ class TestCxAccessInvitation(UnitTestCase):
 		self.assertIn("This link expires in 20 minutes", message)
 		self.assertIn("First Clinic", message)
 		self.assertIn("Test Network", message)
+		self.assertIn("background:#bc1823", message)
+		self.assertNotIn("#0284c7", message)
 		self.assertEqual(sendmail.call_args.kwargs["recipients"], ["new@example.com"])
 		self.assertEqual(
 			sendmail.call_args.kwargs["subject"], "Contract signed — access Tiberbu Express for Test Network"
@@ -875,6 +878,19 @@ class TestCxAccessInvitation(UnitTestCase):
 		self.assertIn("First Clinic + 1 more facilities", message)
 		self.assertIn("Test &lt;Network&gt;", message)
 		self.assertEqual(sendmail.call_args.kwargs["subject"], "Contract signed — access Tiberbu Express for Test <Network>")
+
+	def test_access_email_button_uses_brand_colour_rules(self):
+		html = _cx_access_invitation_html(
+			"Admin", "Net", "Clinic", "https://a.example.test", "https://p.example.test",
+			"login", "facility_side_signed", "", brand_colour="#123abc",
+		)
+		self.assertIn("background:#123abc", html)
+		for colour in (None, "", "red", "#12345", "url(x)"):
+			html = _cx_access_invitation_html(
+				"Admin", "Net", "Clinic", "https://a.example.test", "https://p.example.test",
+				"login", "facility_side_signed", "", brand_colour=colour,
+			)
+			self.assertIn("background:#bc1823", html, colour)
 
 	def test_expiry_text_variants(self):
 		submission = self._submission()

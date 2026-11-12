@@ -12,6 +12,7 @@ from crm.api.contracts import (
 	_ensure_contract_signing_open,
 	_ensure_pending_signatory,
 	_facility_name_for_contract,
+	_facility_side_signed,
 	_generate_contract,
 	_generate_invitation_email_reference,
 	_internal_reminder_item,
@@ -2176,12 +2177,7 @@ class TestOptInContractAutomation(UnitTestCase):
 		mark_action.assert_called_once_with(contract, internal)
 		set_state.assert_called_once_with(contract, "Awaiting Remaining Signatures")
 
-	def test_facility_signature_sends_access_invitation_after_handoff_and_wave(self):
-		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed", invite_token="original")
-		witness = SimpleNamespace(signatory_role="Facility Witness", status="Pending", invite_token=None)
-		contract = SimpleNamespace(
-			name="CONT-ACC-00001", deal="DEAL-ACC-00001", signatories=[facility, witness]
-		)
+	def _access_order_for(self, contract):
 		order = []
 		with (
 			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
@@ -2191,6 +2187,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			),
 			patch("crm.api.contracts._set_contract_state"),
 			patch("crm.api.contracts._notify_internal_approvers"),
+			patch("crm.api.contracts._send_fully_executed_contract"),
 			patch("crm.api.contracts.log_deal_event"),
 			patch(
 				"crm.automation.optin_billing.handoff_facility_signed",
@@ -2202,8 +2199,58 @@ class TestOptInContractAutomation(UnitTestCase):
 			),
 		):
 			_transition(contract.name)
+		return order
 
-		self.assertEqual(order, ["handoff", "wave", "access"])
+	def test_facility_signature_alone_does_not_send_access_invitation(self):
+		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed", invite_token="original")
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Pending", invite_token=None)
+		contract = SimpleNamespace(
+			name="CONT-ACC-00001", deal="DEAL-ACC-00001", signatories=[facility, witness]
+		)
+		self.assertEqual(self._access_order_for(contract), ["handoff", "wave"])
+
+	def test_witness_signature_sends_access_invitation_after_handoff(self):
+		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed", invite_token="original")
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Signed", invite_token="issued")
+		network = SimpleNamespace(signatory_role="Network Signatory", status="Pending", invite_token="issued")
+		contract = SimpleNamespace(
+			name="CONT-ACC-00011", deal="DEAL-ACC-00011", signatories=[facility, witness, network]
+		)
+		self.assertEqual(self._access_order_for(contract), ["handoff", "access"])
+
+	def test_contract_without_witness_sends_access_invitation_at_facility_signature(self):
+		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed", invite_token="original")
+		network = SimpleNamespace(signatory_role="Network Signatory", status="Pending", invite_token=None)
+		contract = SimpleNamespace(
+			name="CONT-ACC-00012", deal="DEAL-ACC-00012", signatories=[facility, network]
+		)
+		self.assertEqual(self._access_order_for(contract), ["handoff", "wave", "access"])
+
+	def test_facility_side_signed_needs_signatory_and_every_witness(self):
+		def row(role, status):
+			return SimpleNamespace(signatory_role=role, status=status)
+
+		def contract(*rows):
+			return SimpleNamespace(signatories=list(rows))
+
+		self.assertFalse(_facility_side_signed(contract()))
+		self.assertFalse(_facility_side_signed(contract(row("Facility Witness", "Signed"))))
+		self.assertFalse(
+			_facility_side_signed(
+				contract(row("Facility Signatory", "Signed"), row("Facility Witness", "Pending"))
+			)
+		)
+		self.assertTrue(
+			_facility_side_signed(
+				contract(
+					row("Facility Signatory", "Signed"),
+					row("Facility Witness", "Signed"),
+					row("Network Signatory", "Pending"),
+					row("Tiberbu Signatory", "Pending"),
+				)
+			)
+		)
+		self.assertTrue(_facility_side_signed(contract(row("Facility Signatory", "Signed"))))
 
 	def test_non_facility_signature_does_not_send_access_invitation(self):
 		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Pending", invite_token=None)
@@ -2245,9 +2292,10 @@ class TestOptInContractAutomation(UnitTestCase):
 
 	def test_access_invitation_failure_does_not_block_signature(self):
 		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed", invite_token="original")
-		witness = SimpleNamespace(signatory_role="Facility Witness", status="Pending", invite_token=None)
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Signed", invite_token="issued")
+		network = SimpleNamespace(signatory_role="Network Signatory", status="Pending", invite_token="issued")
 		contract = SimpleNamespace(
-			name="CONT-ACC-00005", deal="DEAL-ACC-00005", signatories=[facility, witness]
+			name="CONT-ACC-00005", deal="DEAL-ACC-00005", signatories=[facility, witness, network]
 		)
 		with (
 			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
@@ -2266,7 +2314,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			"contracts._transition: facility access invitation failed for CONT-ACC-00005",
 			log_error.call_args.args[1],
 		)
-		set_state.assert_called_once_with(contract, "Awaiting Remaining Signatures")
+		set_state.assert_not_called()
 
 	def test_access_invitation_outcome_is_logged_on_deal_timeline(self):
 		contract = SimpleNamespace(name="CONT-ACC-00006", deal="DEAL-ACC-00006")
@@ -2361,7 +2409,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			patch("crm.api.contracts.log_deal_event") as log_event,
 		):
 			result = _send_facility_access_invitation(contract)
-		send_access.assert_called_once_with("OIS-ACC-00007", trigger="facility_signed")
+		send_access.assert_called_once_with("OIS-ACC-00007", trigger="facility_side_signed")
 		self.assertEqual(result["status"], "sent")
 		log_event.assert_not_called()
 

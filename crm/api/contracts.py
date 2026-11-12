@@ -1226,8 +1226,26 @@ def _optin_submission_for_contract(contract):
 	return None
 
 
+def _facility_side_signed(contract):
+	"""True once every facility-side row (signatory and witness) has signed.
+
+	A contract without a witness row (older or manually trimmed contracts) is
+	facility-complete as soon as the Facility Signatory has signed.
+	"""
+	rows = [
+		row
+		for row in (contract.signatories or [])
+		if row.signatory_role in ("Facility Signatory", "Facility Witness")
+	]
+	if not any(row.signatory_role == "Facility Signatory" for row in rows):
+		return False
+	return all(row.status == "Signed" for row in rows)
+
+
 def _send_facility_access_invitation(contract):
 	"""Email the facility signatory the Tiberbu Express access link, once per contract.
+
+	Called when the facility side (signatory and witness) has finished signing.
 
 	Best-effort: every failure is logged and noted on the Deal timeline, and the
 	signature transaction is never rolled back because of it.
@@ -1238,7 +1256,7 @@ def _send_facility_access_invitation(contract):
 			return None
 		from crm.api.website_redirect import send_cx_access_invitation
 
-		result = send_cx_access_invitation(ois, trigger="facility_signed") or {}
+		result = send_cx_access_invitation(ois, trigger="facility_side_signed") or {}
 		status = result.get("status")
 		if not contract.deal:
 			return result
@@ -1352,10 +1370,13 @@ def _transition(contract_name):
 					"Facility signatory signed contract %s — all external remaining "
 					"signatories invited together (7-day links)" % contract.name,
 				)
-		# The platform-access email goes out at the facility's first signature:
-		# branded, idempotent per OIS, best-effort. Runs after the finance
-		# handoff so it reads a fresh OIS and its writes are not overwritten.
-		_send_facility_access_invitation(contract)
+		# The platform-access email goes out once the facility side is done: the
+		# Facility Signatory and the Facility Witness have both signed (the
+		# network and Tiberbu signatures are not the facility's steps). Branded,
+		# idempotent per OIS, best-effort. Runs after the finance handoff so it
+		# reads a fresh OIS and its writes are not overwritten.
+		if _facility_side_signed(contract):
+			_send_facility_access_invitation(contract)
 
 	# Done: all mandatory parties have signed. Tiberbu rows may be configured as
 	# "At Least One" while facility, witness, and network rows remain mandatory.
