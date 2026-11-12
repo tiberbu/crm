@@ -12,6 +12,7 @@ from crm.api.contracts import (
 	_ensure_contract_signing_open,
 	_ensure_pending_signatory,
 	_facility_name_for_contract,
+	_facility_side_signed,
 	_generate_contract,
 	_generate_invitation_email_reference,
 	_internal_reminder_item,
@@ -19,12 +20,14 @@ from crm.api.contracts import (
 	_issue_and_send_invitation,
 	_network_signers,
 	_notify_internal_approvers,
+	_optin_submission_for_contract,
 	_render_certificate_page,
 	_render_signature_block,
 	_request_public_ip,
 	_required_signatures_complete,
 	_save_otp_state,
 	_send_contract_sms,
+	_send_facility_access_invitation,
 	_send_fully_executed_contract,
 	_send_internal_signatory_reminder,
 	_signature_audit_metadata,
@@ -60,6 +63,7 @@ from crm.api.optin import (
 	_note_contract_handoff_skipped,
 	_prepare_submission_payload,
 	_process_submission,
+	_provision_customer_experience_access,
 	_queue_confirmation_email,
 	_should_auto_generate_contract,
 	_signatory_package_summary_html,
@@ -888,6 +892,22 @@ class TestOptInContractHandoffVisibility(UnitTestCase):
 		log_event.assert_not_called()
 		self.assertEqual(submission.error_log, reason)
 		submission.save.assert_called_once_with(ignore_permissions=True)
+
+
+class TestOptInPortalProvisioning(UnitTestCase):
+	def test_provision_defers_access_email_for_contract_journeys(self):
+		submission = SimpleNamespace(name="OIS-PORT-00001")
+		with patch("crm.api.website_redirect.ensure_website_user_for_ois") as ensure:
+			_provision_customer_experience_access(submission, send_access_email=False)
+
+		ensure.assert_called_once_with(submission, send_access_email=False)
+
+	def test_provision_keeps_access_email_by_default(self):
+		submission = SimpleNamespace(name="OIS-PORT-00002")
+		with patch("crm.api.website_redirect.ensure_website_user_for_ois") as ensure:
+			_provision_customer_experience_access(submission)
+
+		ensure.assert_called_once_with(submission, send_access_email=True)
 
 
 class TestOptInConfirmationEmail(UnitTestCase):
@@ -2113,6 +2133,7 @@ class TestOptInContractAutomation(UnitTestCase):
 			patch("crm.api.contracts._set_contract_state") as set_state,
 			patch("crm.api.contracts._notify_internal_approvers"),
 			patch("crm.api.contracts.log_deal_event") as log_event,
+			patch("crm.api.contracts._send_facility_access_invitation"),
 		):
 			_transition(contract.name)
 			_transition(contract.name)
@@ -2148,12 +2169,371 @@ class TestOptInContractAutomation(UnitTestCase):
 			patch("crm.api.contracts._issue_and_send_invitation") as issue,
 			patch("crm.api.contracts._set_contract_state") as set_state,
 			patch("crm.api.contracts.log_deal_event"),
+			patch("crm.api.contracts._send_facility_access_invitation"),
 		):
 			_transition(contract.name)
 
 		issue.assert_not_called()
 		mark_action.assert_called_once_with(contract, internal)
 		set_state.assert_called_once_with(contract, "Awaiting Remaining Signatures")
+
+	def _access_order_for(self, contract):
+		order = []
+		with (
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch(
+				"crm.api.contracts._issue_and_send_invitation",
+				side_effect=lambda *a, **k: order.append("wave"),
+			),
+			patch("crm.api.contracts._set_contract_state"),
+			patch("crm.api.contracts._notify_internal_approvers"),
+			patch("crm.api.contracts._send_fully_executed_contract"),
+			patch("crm.api.contracts.log_deal_event"),
+			patch(
+				"crm.automation.optin_billing.handoff_facility_signed",
+				side_effect=lambda *a, **k: (order.append("handoff"), {"ok": True})[1],
+			),
+			patch(
+				"crm.api.contracts._send_facility_access_invitation",
+				side_effect=lambda c: order.append("access"),
+			),
+		):
+			_transition(contract.name)
+		return order
+
+	def test_facility_signature_alone_does_not_send_access_invitation(self):
+		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed", invite_token="original")
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Pending", invite_token=None)
+		contract = SimpleNamespace(
+			name="CONT-ACC-00001", deal="DEAL-ACC-00001", signatories=[facility, witness]
+		)
+		self.assertEqual(self._access_order_for(contract), ["handoff", "wave"])
+
+	def test_witness_signature_sends_access_invitation_after_handoff(self):
+		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed", invite_token="original")
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Signed", invite_token="issued")
+		network = SimpleNamespace(signatory_role="Network Signatory", status="Pending", invite_token="issued")
+		contract = SimpleNamespace(
+			name="CONT-ACC-00011", deal="DEAL-ACC-00011", signatories=[facility, witness, network]
+		)
+		self.assertEqual(self._access_order_for(contract), ["handoff", "access"])
+
+	def test_contract_without_witness_sends_access_invitation_at_facility_signature(self):
+		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed", invite_token="original")
+		network = SimpleNamespace(signatory_role="Network Signatory", status="Pending", invite_token=None)
+		contract = SimpleNamespace(
+			name="CONT-ACC-00012", deal="DEAL-ACC-00012", signatories=[facility, network]
+		)
+		self.assertEqual(self._access_order_for(contract), ["handoff", "wave", "access"])
+
+	def test_facility_side_signed_needs_signatory_and_every_witness(self):
+		def row(role, status):
+			return SimpleNamespace(signatory_role=role, status=status)
+
+		def contract(*rows):
+			return SimpleNamespace(signatories=list(rows))
+
+		self.assertFalse(_facility_side_signed(contract()))
+		self.assertFalse(_facility_side_signed(contract(row("Facility Witness", "Signed"))))
+		self.assertFalse(
+			_facility_side_signed(
+				contract(row("Facility Signatory", "Signed"), row("Facility Witness", "Pending"))
+			)
+		)
+		self.assertTrue(
+			_facility_side_signed(
+				contract(
+					row("Facility Signatory", "Signed"),
+					row("Facility Witness", "Signed"),
+					row("Network Signatory", "Pending"),
+					row("Tiberbu Signatory", "Pending"),
+				)
+			)
+		)
+		self.assertTrue(_facility_side_signed(contract(row("Facility Signatory", "Signed"))))
+
+	def test_non_facility_signature_does_not_send_access_invitation(self):
+		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Pending", invite_token=None)
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Signed", invite_token="original")
+		contract = SimpleNamespace(
+			name="CONT-ACC-00002", deal="DEAL-ACC-00002", signatories=[facility, witness]
+		)
+		with (
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts._send_facility_access_invitation") as send_access,
+		):
+			_transition(contract.name)
+
+		send_access.assert_not_called()
+
+	def test_access_invitation_resolves_ois_by_contract_then_deal(self):
+		contract = SimpleNamespace(name="CONT-ACC-00003", deal="DEAL-ACC-00003")
+		with patch("crm.api.contracts.frappe.get_all", return_value=["OIS-BY-CONTRACT"]) as get_all:
+			self.assertEqual(_optin_submission_for_contract(contract), "OIS-BY-CONTRACT")
+		with patch("crm.api.contracts.frappe.get_all", side_effect=[[], ["OIS-BY-DEAL"]]) as get_all:
+			self.assertEqual(_optin_submission_for_contract(contract), "OIS-BY-DEAL")
+			fallback = get_all.call_args_list[1]
+		self.assertEqual(fallback.kwargs["filters"]["deal"], "DEAL-ACC-00003")
+		self.assertEqual(fallback.kwargs["filters"]["status"], "Processed")
+		self.assertEqual(fallback.kwargs["filters"]["contract"], ["is", "not set"])
+		with patch("crm.api.contracts.frappe.get_all", return_value=[]):
+			self.assertIsNone(_optin_submission_for_contract(contract))
+
+	def test_contract_without_ois_sends_no_access_invitation(self):
+		contract = SimpleNamespace(name="CONT-ACC-00004", deal="DEAL-ACC-00004")
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value=None),
+			patch("crm.api.website_redirect.send_cx_access_invitation") as send_access,
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			self.assertIsNone(_send_facility_access_invitation(contract))
+		send_access.assert_not_called()
+		log_event.assert_not_called()
+
+	def test_access_invitation_failure_does_not_block_signature(self):
+		facility = SimpleNamespace(signatory_role="Facility Signatory", status="Signed", invite_token="original")
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Signed", invite_token="issued")
+		network = SimpleNamespace(signatory_role="Network Signatory", status="Pending", invite_token="issued")
+		contract = SimpleNamespace(
+			name="CONT-ACC-00005", deal="DEAL-ACC-00005", signatories=[facility, witness, network]
+		)
+		with (
+			patch("crm.api.contracts.frappe.get_doc", return_value=contract),
+			patch("crm.api.contracts._issue_and_send_invitation"),
+			patch("crm.api.contracts._set_contract_state") as set_state,
+			patch("crm.api.contracts._notify_internal_approvers"),
+			patch("crm.api.contracts.log_deal_event"),
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00005"),
+			patch("crm.api.website_redirect.send_cx_access_invitation", side_effect=RuntimeError("boom")),
+			patch("crm.api.contracts.frappe.log_error") as log_error,
+		):
+			_transition(contract.name)
+
+		log_error.assert_called_once()
+		self.assertIn(
+			"contracts._transition: facility access invitation failed for CONT-ACC-00005",
+			log_error.call_args.args[1],
+		)
+		set_state.assert_not_called()
+
+	def test_access_invitation_outcome_is_logged_on_deal_timeline(self):
+		contract = SimpleNamespace(name="CONT-ACC-00006", deal="DEAL-ACC-00006")
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.website_redirect.send_cx_access_invitation", return_value={"status": "sent"}),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_send_facility_access_invitation(contract)
+		log_event.assert_called_once()
+		self.assertIn("access email sent", log_event.call_args.args[1])
+
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.contracts.frappe.get_all", return_value=[]),
+			patch(
+				"crm.api.website_redirect.send_cx_access_invitation",
+				return_value={"status": "failed", "reason": "No valid facility email"},
+			),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_send_facility_access_invitation(contract)
+		log_event.assert_called_once()
+		self.assertIn("No valid facility email", log_event.call_args.args[1])
+		self.assertIn("OIS-ACC-00006", log_event.call_args.args[1])
+
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.contracts.frappe.get_all", return_value=[]),
+			patch(
+				"crm.api.website_redirect.send_cx_access_invitation",
+				return_value={"status": "blocked", "reason": "Email belongs to an internal user"},
+			),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_send_facility_access_invitation(contract)
+		log_event.assert_called_once()
+		self.assertIn("Email belongs to an internal user", log_event.call_args.args[1])
+
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.website_redirect.send_cx_access_invitation", return_value={"status": "already_sent"}),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_send_facility_access_invitation(contract)
+		log_event.assert_not_called()
+
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00006"),
+			patch("crm.api.contracts.frappe.get_all", return_value=[frappe._dict({"name": "existing note"})]),
+			patch(
+				"crm.api.website_redirect.send_cx_access_invitation",
+				return_value={"status": "failed", "reason": "No valid facility email"},
+			),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_send_facility_access_invitation(contract)
+		log_event.assert_not_called()
+
+	def test_access_invitation_blocked_at_processing_is_still_noted_once(self):
+		contract = SimpleNamespace(name="CONT-ACC-00008", deal="DEAL-ACC-00008")
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00008"),
+			patch("crm.api.contracts.frappe.get_all") as get_all,
+			patch(
+				"crm.api.website_redirect.send_cx_access_invitation",
+				return_value={"status": "blocked", "reason": "Email belongs to an internal user"},
+			),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			get_all.return_value = []
+			_send_facility_access_invitation(contract)
+		log_event.assert_called_once()
+		self.assertIn("not sent after contract CONT-ACC-00008", log_event.call_args.args[1])
+		get_all.assert_called_once()
+		self.assertEqual(get_all.call_args.args[0], "Comment")
+		filters = get_all.call_args.kwargs["filters"]
+		self.assertEqual(filters["reference_doctype"], "CRM Deal")
+		self.assertEqual(filters["reference_name"], "DEAL-ACC-00008")
+		self.assertEqual(
+			filters["content"],
+			["like", "Tiberbu Express access email not sent after contract CONT-ACC-00008%"],
+		)
+
+	def test_contract_without_a_deal_still_sends_but_logs_nothing(self):
+		contract = SimpleNamespace(name="CONT-ACC-00007", deal=None)
+		with (
+			patch("crm.api.contracts._optin_submission_for_contract", return_value="OIS-ACC-00007"),
+			patch(
+				"crm.api.website_redirect.send_cx_access_invitation", return_value={"status": "sent"}
+			) as send_access,
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			result = _send_facility_access_invitation(contract)
+		send_access.assert_called_once_with("OIS-ACC-00007", trigger="facility_side_signed")
+		self.assertEqual(result["status"], "sent")
+		log_event.assert_not_called()
+
+	def test_first_facility_signature_queues_exactly_one_access_email_across_reentries(self):
+		facility = SimpleNamespace(
+			signatory_role="Facility Signatory", status="Signed", invite_token="original"
+		)
+		witness = SimpleNamespace(signatory_role="Facility Witness", status="Pending", invite_token=None)
+		contract = SimpleNamespace(
+			name="CONT-CAP1-00001", deal="DEAL-CAP1-00001", signatories=[facility, witness]
+		)
+		ois = frappe._dict(
+			{
+				"name": "OIS-CAP1-00001",
+				"status": "Processed",
+				"onboarding_source": "",
+				"network_slug": "network-a",
+				"facility_signatory_name": "Admin One",
+				"facility_signatory_email": "signer@example.com",
+				"submitter_email": "signer@example.com",
+				"raw_json": '{"facilities":[{"mfl_code":"1001","facility_name":"First Clinic"}]}',
+			}
+		)
+		user = frappe._dict(
+			{
+				"name": "signer@example.com",
+				"email": "signer@example.com",
+				"first_name": "Signer",
+				"flags": frappe._dict({"email_sent": 0}),
+				"db_set": Mock(),
+				"_reset_password": Mock(return_value="https://site.example/api/reset/KEY"),
+			}
+		)
+		user.insert = lambda **kwargs: None
+		permission = frappe._dict()
+		permission.insert = lambda **kwargs: None
+		meta = Mock()
+		meta.has_field.return_value = True
+		queue = frappe._dict({"name": "Email Queue-CAP1"})
+		ts = "2026-11-05 10:00:00"
+		state = {"sent": False}
+		db_writes = []
+
+		def get_doc(doctype, name=None, **kwargs):
+			if doctype == "CRM Contract":
+				return contract
+			if doctype == "CRM Opt-In Submission":
+				return ois
+			if doctype == "User":
+				return user
+			return frappe._dict()
+
+		def get_all(doctype, filters=None, **kwargs):
+			if doctype == "CRM Opt-In Submission":
+				return ["OIS-CAP1-00001"]
+			return []
+
+		exists_calls = []
+
+		def db_exists(doctype, *args, **kwargs):
+			exists_calls.append((doctype, args[0]) if args else (doctype, None))
+			if doctype == "CRM Opt-In Submission":
+				return True
+			return False
+
+		def db_get_value(doctype, name=None, fieldname=None, **kwargs):
+			if doctype == "User" and isinstance(name, dict):
+				return None
+			if doctype == "CRM Opt-In Submission" and isinstance(fieldname, list):
+				return ("Sent", ts, "signer@example.com") if state["sent"] else (None, None, None)
+			if doctype == "CRM Opt-In Submission":
+				return "Sent" if state["sent"] else None
+			return None
+
+		def db_set_value(doctype, name, fieldname, value, **kwargs):
+			db_writes.append((fieldname, value))
+			if fieldname == "portal_invitation_status" and value == "Sent":
+				state["sent"] = True
+
+		with (
+			patch("crm.api.contracts.frappe.get_doc", side_effect=get_doc),
+			patch("crm.api.contracts.frappe.get_all", side_effect=get_all),
+			patch("crm.api.contracts.frappe.db.exists", side_effect=db_exists),
+			patch("crm.api.contracts.frappe.db.get_value", side_effect=db_get_value),
+			patch("crm.api.contracts.frappe.db.set_value", side_effect=db_set_value),
+			patch("crm.api.contracts.frappe.db.get_single_value", return_value=1200),
+			patch("crm.api.contracts.frappe.get_meta", return_value=meta),
+			patch("crm.api.contracts.frappe.new_doc", side_effect=[user, permission]),
+			patch("crm.api.contracts.frappe.utils.get_url", return_value="https://site.example/cx-portal"),
+			patch("crm.api.contracts.frappe.utils.now_datetime", return_value=ts),
+			patch("crm.api.contracts.frappe.sendmail", return_value=queue) as sendmail,
+			patch("crm.api.optin.requires_contract_signature", return_value=True),
+			patch("crm.api.optin._get_network_doc", return_value={"display_name": "Test Network"}),
+			patch("crm.automation.optin_billing.handoff_facility_signed", return_value={"ok": True}),
+			patch("crm.automation.optin_billing.activate_contract_billing_schedule", return_value=False),
+			patch("crm.api.contracts._issue_and_send_invitation") as issue,
+			patch("crm.api.contracts._set_contract_state") as set_state,
+			patch("crm.api.contracts._notify_internal_approvers"),
+			patch("crm.api.contracts._send_fully_executed_contract"),
+			patch("crm.api.contracts.log_deal_event") as log_event,
+		):
+			_transition(contract.name)
+			witness.status = "Signed"
+			witness.invite_token = "issued"
+			_transition(contract.name)
+
+		sendmail.assert_called_once()
+		sent_kwargs = sendmail.call_args.kwargs
+		self.assertEqual(sent_kwargs["recipients"], ["signer@example.com"])
+		self.assertEqual(
+			sent_kwargs["subject"], "Contract signed — access Tiberbu Express for Test Network"
+		)
+		self.assertEqual(sent_kwargs["reference_doctype"], "CRM Opt-In Submission")
+		self.assertEqual(sent_kwargs["reference_name"], "OIS-CAP1-00001")
+		self.assertTrue(sent_kwargs["now"])
+		self.assertIn(("portal_user", "signer@example.com"), db_writes)
+		self.assertIn(("portal_invitation_status", "Awaiting signature"), db_writes)
+		self.assertIn(("portal_invitation_status", "Sent"), db_writes)
+		self.assertIn(("portal_invitation_sent_at", ts), db_writes)
+		self.assertEqual(ois.portal_invitation_status, "Sent")
+		self.assertIn(("CRM Opt-In Submission", "OIS-CAP1-00001"), exists_calls)
+		issue.assert_called_once()
+		set_state.assert_called()
+		self.assertGreaterEqual(log_event.call_count, 2)
 
 	def test_internal_signatory_reminder_is_facility_named_and_logged(self):
 		contract = SimpleNamespace(name="CONT-TEST-00004", deal="DEAL-TEST-00004")

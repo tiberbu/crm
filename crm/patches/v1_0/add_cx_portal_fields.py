@@ -27,7 +27,7 @@ def execute():
 					"fieldname": "portal_invitation_status",
 					"fieldtype": "Select",
 					"label": "Portal Invitation Status",
-					"options": "Pending\nSent\nAlready active\nBlocked\nFailed",
+					"options": "Pending\nAwaiting signature\nSent\nAlready active\nBlocked\nFailed",
 					"default": "Pending",
 					"read_only": 1,
 					"no_copy": 1,

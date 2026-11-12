@@ -138,7 +138,7 @@
       </div>
     </div>
 
-    <!-- Finance Cockpit handoff banner -->
+    <!-- Finance Workbook handoff banner -->
     <div
       v-if="acceptedQuote"
       class="mt-4 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 dark:border-green-800 dark:bg-green-900/20"
@@ -163,7 +163,7 @@
           href="/finance-cockpit#/receivables/invoices"
           target="_blank"
           class="ml-1 underline font-medium"
-          >{{ __('View in Finance Cockpit → Receivables → AR Invoices') }}</a
+          >{{ __('View in Finance Workbook → Receivables → AR Invoices') }}</a
         >
       </span>
     </div>

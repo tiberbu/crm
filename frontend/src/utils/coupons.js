@@ -159,3 +159,15 @@ export function couponMatches(coupon, query) {
       .includes(q),
   )
 }
+
+/**
+ * Full Partner Coupon self-onboarding link on the given site base URL, e.g.
+ * "https://site.example.test/facility-onboarding?partner_coupon=123456".
+ * Trailing slashes on the base are dropped; an empty coupon gives ''.
+ */
+export function partnerCouponLink(baseUrl, partnerId) {
+  const coupon = String(partnerId ?? '').trim()
+  if (!coupon) return ''
+  const base = String(baseUrl ?? '').trim().replace(/\/+$/, '')
+  return `${base}/facility-onboarding?partner_coupon=${encodeURIComponent(coupon)}`
+}

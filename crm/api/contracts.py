@@ -1201,6 +1201,100 @@ def _mark_internal_action_available(contract, signatory_row):
 	return True
 
 
+def _optin_submission_for_contract(contract):
+	"""Resolve the OIS behind a contract, or None for manually created contracts."""
+	rows = frappe.get_all(
+		"CRM Opt-In Submission",
+		filters={"contract": contract.name},
+		pluck="name",
+		limit=1,
+		ignore_permissions=True,
+	)
+	if rows:
+		return rows[0]
+	if getattr(contract, "deal", None):
+		rows = frappe.get_all(
+			"CRM Opt-In Submission",
+			filters={"deal": contract.deal, "status": "Processed", "contract": ["is", "not set"]},
+			order_by="creation desc",
+			pluck="name",
+			limit=1,
+			ignore_permissions=True,
+		)
+		if rows:
+			return rows[0]
+	return None
+
+
+def _facility_side_signed(contract):
+	"""True once every facility-side row (signatory and witness) has signed.
+
+	A contract without a witness row (older or manually trimmed contracts) is
+	facility-complete as soon as the Facility Signatory has signed.
+	"""
+	rows = [
+		row
+		for row in (contract.signatories or [])
+		if row.signatory_role in ("Facility Signatory", "Facility Witness")
+	]
+	if not any(row.signatory_role == "Facility Signatory" for row in rows):
+		return False
+	return all(row.status == "Signed" for row in rows)
+
+
+def _send_facility_access_invitation(contract):
+	"""Email the facility signatory the Tiberbu Express access link, once per contract.
+
+	Called when the facility side (signatory and witness) has finished signing.
+
+	Best-effort: every failure is logged and noted on the Deal timeline, and the
+	signature transaction is never rolled back because of it.
+	"""
+	try:
+		ois = _optin_submission_for_contract(contract)
+		if not ois:
+			return None
+		from crm.api.website_redirect import send_cx_access_invitation
+
+		result = send_cx_access_invitation(ois, trigger="facility_side_signed") or {}
+		status = result.get("status")
+		if not contract.deal:
+			return result
+		if status == "sent":
+			log_deal_event(
+				contract.deal,
+				"Tiberbu Express access email sent to the facility signatory after "
+				"contract %s was signed" % contract.name,
+			)
+		elif status in ("blocked", "failed"):
+			# One timeline note per contract: the first attempt that reports the
+			# problem notes it (even when the OIS was already Blocked from
+			# processing, which writes no note of its own); later re-entries
+			# retry silently and the OIS fields carry the reason.
+			note_prefix = "Tiberbu Express access email not sent after contract %s" % contract.name
+			existing_notes = frappe.get_all(
+				"Comment",
+				filters={
+					"reference_doctype": "CRM Deal",
+					"reference_name": contract.deal,
+					"content": ["like", note_prefix + "%"],
+				},
+			)
+			if not existing_notes:
+				log_deal_event(
+					contract.deal,
+					"%s: %s — see %s portal invitation fields"
+					% (note_prefix, frappe.utils.cstr(result.get("reason") or "unknown reason"), ois),
+				)
+		return result
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			"contracts._transition: facility access invitation failed for %s" % contract.name,
+		)
+		return None
+
+
 def _transition(contract_name):
 	"""
 	Advance the contract workflow after a signatory signs. The Facility Signatory
@@ -1276,6 +1370,13 @@ def _transition(contract_name):
 					"Facility signatory signed contract %s — all external remaining "
 					"signatories invited together (7-day links)" % contract.name,
 				)
+		# The platform-access email goes out once the facility side is done: the
+		# Facility Signatory and the Facility Witness have both signed (the
+		# network and Tiberbu signatures are not the facility's steps). Branded,
+		# idempotent per OIS, best-effort. Runs after the finance handoff so it
+		# reads a fresh OIS and its writes are not overwritten.
+		if _facility_side_signed(contract):
+			_send_facility_access_invitation(contract)
 
 	# Done: all mandatory parties have signed. Tiberbu rows may be configured as
 	# "At Least One" while facility, witness, and network rows remain mandatory.

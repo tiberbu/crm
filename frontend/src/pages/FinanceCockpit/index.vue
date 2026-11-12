@@ -288,7 +288,7 @@
                     Preferences
                   </h2>
                   <p class="mt-0.5 text-sm text-ink-gray-5">
-                    Manage how the Finance Cockpit looks and behaves.
+                    Manage how the Finance Workbook looks and behaves.
                   </p>
                 </div>
                 <div class="space-y-3">

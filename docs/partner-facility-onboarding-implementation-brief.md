@@ -1297,10 +1297,18 @@ membership record.
   signature completion.
 - The facility may see GoLive progress but cannot set or edit it. CRM
   implementation staff use the existing guarded `set_facility_go_live` action.
-- The invitation is created after the OIS is processed. Account creation is
-  idempotent; an existing Website User is linked rather than duplicated. An
-  existing internal User with the same email is blocked and reported for
-  manual reconciliation.
+- On contract journeys the account and permission are created after the OIS
+  is processed, but the platform-access email is sent once the facility side
+  of the contract has signed: the Facility Signatory and the Facility Witness
+  (the signatory alone on a contract with no witness row). Network and Tiberbu
+  signatures are not waited for. The email is a branded Tiberbu Express invitation
+  with a set-password link that lands on `/cx-portal`, or a login link for
+  accounts that already have a password). While the email is still to be sent
+  the OIS shows `Awaiting signature`; once queued it shows `Sent`.
+  Self-onboarding journeys are unchanged: they keep the native welcome email
+  at processing. Account creation is idempotent; an existing Website User is
+  linked rather than duplicated. An existing internal User with the same
+  email is blocked and reported for manual reconciliation.
 
 ### Deferred dependencies
 

@@ -7,6 +7,7 @@ import {
   couponValueLabel,
   derivedStatus,
   parseMflList,
+  partnerCouponLink,
   VALUE_TYPES,
 } from '@/utils/coupons'
 
@@ -203,5 +204,22 @@ describe('coupon rewards by facility level (P-116 to P-123)', () => {
         { facility_level: '', flex_value: 0, fixed_discount_percent: 0 },
       ]),
     ).toEqual([{ facility_level: 'Level 3B', flex_value: 500, fixed_discount_percent: 0 }])
+  })
+})
+
+describe('partnerCouponLink', () => {
+  it('builds a full link on the site base URL', () => {
+    expect(partnerCouponLink('https://site.example.test', '123456')).toBe(
+      'https://site.example.test/facility-onboarding?partner_coupon=123456',
+    )
+  })
+  it('drops trailing slashes on the base and encodes the coupon', () => {
+    expect(partnerCouponLink('https://site.example.test//', ' 12 34 ')).toBe(
+      'https://site.example.test/facility-onboarding?partner_coupon=12%2034',
+    )
+  })
+  it('returns an empty string without a coupon', () => {
+    expect(partnerCouponLink('https://site.example.test', '')).toBe('')
+    expect(partnerCouponLink('https://site.example.test', null)).toBe('')
   })
 })

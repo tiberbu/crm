@@ -509,7 +509,11 @@
             Optional services noted
           </p>
           <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
-            {{ store.optionalItems.map((item) => item.item_name).join(', ') }}
+            {{
+              store.optionalItems
+                .map((item) => optionalServiceDisplay(item).label)
+                .join(', ')
+            }}
           </p>
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Our team will quote these separately.
@@ -542,6 +546,7 @@
 import { computed } from 'vue'
 import { useOptInStore } from './useOptInStore.js'
 import { facilityId } from '@/utils/facilityId'
+import { optionalServiceDisplay } from '@/utils/optionalServices'
 
 const emit = defineEmits([
   'continue',

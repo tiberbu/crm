@@ -56,7 +56,10 @@
             }}
           </span>
         </div>
-        <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div
+          class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3"
+          data-testid="optin-year-plans"
+        >
           <div
             v-for="plan in availablePlans"
             :key="plan.year_number"
@@ -79,8 +82,12 @@
               <span class="mt-0.5 block text-xs opacity-70"
                 >Contract schedule</span
               >
-              <span class="mt-1 block text-xs font-semibold opacity-90"
-                >{{ fmtKes(plan.grand_total_annual) }} / year incl. VAT</span
+              <span
+                class="mt-1 block break-words text-xs font-semibold tabular-nums opacity-90"
+                ><span class="whitespace-nowrap">{{
+                  fmtKes(plan.grand_total_annual)
+                }}</span>
+                / year incl. VAT</span
               >
               <span class="mt-2 block text-[11px] font-medium opacity-80">
                 {{
@@ -92,7 +99,7 @@
             </button>
             <button
               type="button"
-              class="mt-1 flex w-full items-center justify-between px-2 text-left text-[11px] font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+              class="mt-1 flex w-full items-center justify-between gap-1 px-2 text-left text-[11px] font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
               :aria-expanded="expandedScheduleYear === plan.year_number"
               :aria-controls="`invoice-schedule-${plan.year_number}`"
               @click="toggleSchedule(plan.year_number)"
@@ -150,14 +157,14 @@
             Monthly equivalent:
             {{ fmtKes(expandedPlan.grand_total_monthly) }} incl. VAT.
           </p>
-          <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="mt-3 grid gap-2 sm:grid-cols-2">
             <article
               v-for="row in expandedPlan.invoice_schedule || []"
               :key="
                 row.billing_key ||
                 `${expandedPlan.year_number}-${row.quarter_number}`
               "
-              class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900"
+              class="min-w-0 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900"
             >
               <div class="flex items-center justify-between gap-2">
                 <span
@@ -170,7 +177,9 @@
                   >Invoice</span
                 >
               </div>
-              <p class="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+              <p
+                class="mt-2 break-words text-sm font-semibold tabular-nums text-gray-900 dark:text-white"
+              >
                 {{ fmtKes(row.amount_incl_vat) }}
               </p>
               <p class="text-[11px] text-gray-500 dark:text-gray-400">
@@ -215,11 +224,14 @@
             are not part of the subscription total.
           </p>
         </div>
-        <div class="mt-3 grid gap-2 sm:grid-cols-2">
+        <div
+          class="mt-3 grid gap-2 sm:grid-cols-2"
+          data-testid="optin-optional-services"
+        >
           <label
-            v-for="item in optionalServices"
+            v-for="item in optionalServiceRows"
             :key="item.item_code"
-            class="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-200 bg-white p-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+            class="flex min-w-0 cursor-pointer items-start gap-2 rounded-xl border border-gray-200 bg-white p-3 text-sm dark:border-gray-700 dark:bg-gray-900"
           >
             <input
               v-model="selectedOptionalCodes"
@@ -227,20 +239,22 @@
               :value="item.item_code"
               class="mt-0.5"
             />
-            <span
+            <span class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
               ><span class="block font-medium text-gray-900 dark:text-white">{{
-                item.item_name
+                item.label
               }}</span
-              ><span class="block text-xs text-gray-500">{{
-                item.description
-              }}</span></span
+              ><span
+                v-if="item.detail"
+                class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400"
+                >{{ item.detail }}</span
+              ></span
             >
           </label>
         </div>
       </section>
 
       <!-- Hero total: selected-term commitment is the number that matters. -->
-      <div class="mb-5 grid gap-3 sm:grid-cols-2">
+      <div class="mb-5 grid gap-3" data-testid="optin-pricing-hero">
         <div
           class="flex overflow-hidden rounded-2xl border border-gray-200 shadow-sm dark:border-gray-700"
         >
@@ -249,7 +263,7 @@
             style="background-color: var(--brand-primary)"
           />
           <div
-            class="flex-1 p-5"
+            class="min-w-0 flex-1 p-5"
             style="
               background-color: color-mix(
                 in srgb,
@@ -259,14 +273,12 @@
             "
           >
             <div class="flex items-start justify-between gap-3">
-              <div>
-                <p
-                  class="text-xs font-semibold text-ink-gray-6"
-                >
+              <div class="min-w-0">
+                <p class="text-xs font-semibold text-ink-gray-6">
                   Total contract commitment · incl. VAT
                 </p>
                 <p
-                  class="mt-0.5 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white"
+                  class="mt-0.5 break-words text-3xl font-semibold tabular-nums tracking-tight text-gray-900 dark:text-white"
                 >
                   {{ fmtKes(commitmentAnnual) }}
                 </p>
@@ -306,7 +318,9 @@
           >
             Active year · Year {{ activePlan.year_number || 1 }}
           </p>
-          <p class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
+          <p
+            class="mt-1 break-words text-2xl font-semibold tabular-nums text-gray-900 dark:text-white"
+          >
             {{ fmtKes(activePlan.grand_total_annual) }}
           </p>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -376,12 +390,12 @@
                 </span>
               </td>
               <td
-                class="px-4 py-3 text-right font-medium text-gray-900 dark:text-white"
+                class="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums text-gray-900 dark:text-white"
               >
                 {{ fmtKes(fac.monthly_kes) }}
               </td>
               <td
-                class="px-4 py-3 text-right font-medium text-gray-900 dark:text-white"
+                class="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums text-gray-900 dark:text-white"
               >
                 {{ fmtKes(fac.annual_kes) }}
               </td>
@@ -397,12 +411,12 @@
                 Subtotal
               </td>
               <td
-                class="px-4 py-2 text-right text-sm text-gray-700 dark:text-gray-300"
+                class="whitespace-nowrap px-4 py-2 text-right text-sm tabular-nums text-gray-700 dark:text-gray-300"
               >
                 {{ fmtKes(activePlan.subtotal_monthly) }}
               </td>
               <td
-                class="px-4 py-2 text-right text-sm text-gray-700 dark:text-gray-300"
+                class="whitespace-nowrap px-4 py-2 text-right text-sm tabular-nums text-gray-700 dark:text-gray-300"
               >
                 {{ fmtKes(activePlan.subtotal_annual) }}
               </td>
@@ -415,12 +429,12 @@
                 {{ pricing.vat_label || 'VAT' }}
               </td>
               <td
-                class="px-4 py-2 text-right text-sm text-gray-700 dark:text-gray-300"
+                class="whitespace-nowrap px-4 py-2 text-right text-sm tabular-nums text-gray-700 dark:text-gray-300"
               >
                 {{ fmtKes(activePlan.vat_monthly) }}
               </td>
               <td
-                class="px-4 py-2 text-right text-sm text-gray-700 dark:text-gray-300"
+                class="whitespace-nowrap px-4 py-2 text-right text-sm tabular-nums text-gray-700 dark:text-gray-300"
               >
                 {{ fmtKes(activePlan.vat_annual) }}
               </td>
@@ -433,13 +447,13 @@
                 Grand Total (incl. VAT)
               </td>
               <td
-                class="px-4 py-3 text-right text-base font-semibold"
+                class="whitespace-nowrap px-4 py-3 text-right text-base font-semibold tabular-nums"
                 :style="{ color: 'var(--brand-primary)' }"
               >
                 {{ fmtKes(activePlan.grand_total_monthly) }}
               </td>
               <td
-                class="px-4 py-3 text-right text-base font-semibold"
+                class="whitespace-nowrap px-4 py-3 text-right text-base font-semibold tabular-nums"
                 :style="{ color: 'var(--brand-primary)' }"
               >
                 {{ fmtKes(activePlan.grand_total_annual) }}
@@ -480,6 +494,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { createResource } from 'frappe-ui'
 import { useOptInStore } from './useOptInStore.js'
 import { facilityId } from '@/utils/facilityId'
+import { optionalServiceDisplay } from '@/utils/optionalServices'
 
 const props = defineProps({
   networkSlug: { type: String, required: true },
@@ -522,6 +537,12 @@ const optionalServices = computed(
     store.networkConfig?.optional_services ||
     pricing.value?.optional_services ||
     [],
+)
+// Item names/descriptions come from the ERPNext Item master: descriptions are
+// Text Editor HTML and names can carry HTML entities. Show plain text, and do
+// not repeat a description that only restates the name.
+const optionalServiceRows = computed(() =>
+  optionalServices.value.map((item) => optionalServiceDisplay(item)),
 )
 const activePlan = computed(() => {
   const year = selectedYears.value[0]
